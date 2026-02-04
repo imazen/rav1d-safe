@@ -141,31 +141,33 @@ They're just slower than SIMD-optimized versions.
 
 ## Investigation Notes
 
-### 8-tap Filter Implementation Plan
+### 8-tap Filter - COMPLETED
 
-The 8-tap motion compensation filters (`put_8tap`, `prep_8tap`) are the highest-impact remaining
-SIMD targets. They use a separable 2D filter:
+All 8-tap filter variants are now implemented with AVX2 SIMD:
+- 8bpc: Full SIMD for H+V, H-only, V-only, and copy cases
+- 16bpc: SIMD for H+V case, scalar for H-only and V-only (can be optimized later)
 
-1. **Horizontal pass**: For each row, apply 8-tap filter (coefficients from `dav1d_mc_subpel_filters`)
-2. **Vertical pass**: Apply 8-tap filter to intermediate buffer columns
-
-Helper functions implemented:
-- `h_filter_8tap_8bpc_avx2`: Uses `_mm256_maddubs_epi16` for efficient multiply-add
-- `v_filter_8tap_8bpc_avx2`: Uses 32-bit arithmetic with coefficient broadcast
-
-To complete:
-1. Create public `put_8tap_*_8bpc_avx2` functions matching asm naming
-2. Add to dispatch table in `init_x86_safe_simd()`
-3. Handle all 4 cases: H+V, H-only, V-only, copy
-
-There are 9 filter type combinations (regular/smooth/sharp × 2), plus bilinear,
-totaling 10 variants per bitdepth × 2 (put/prep) × 2 (normal/scaled) = 80 entry points.
+Bilinear filters similarly have SIMD for H+V case in both bitdepths.
 
 ### Performance Notes (2026-02-04)
 
-Benchmark: 20 decodes of test.avif
+Previous benchmark (before 8-tap SIMD):
 - asm: ~1.17s
 - safe-simd: ~1.30s (~11% slower)
 
-Most time is spent in pure Rust fallbacks (8-tap filters, itx, ipred).
-The AVX2 implementations of avg/w_avg/mask/blend are fast.
+With 8-tap/bilinear SIMD now wired in, performance should be improved.
+Most remaining time is in pure Rust fallbacks (itx, ipred, loopfilter, cdef).
+
+### Remaining MC Functions
+
+- `mc_scaled`/`mct_scaled` - Variable dx/dy strides per sample, complex SIMD
+- `warp8x8`/`warp8x8t` - Per-pixel filter selection, complex SIMD
+- `emu_edge` - Edge extension, mostly memory ops
+- `resize` - 8-tap resampling with variable phase
+
+### Next Targets
+
+Other DSP modules for SIMD optimization:
+- CDEF (~7k asm lines) - direction-based filtering
+- Loopfilter (~9k asm lines) - deblocking filter
+- ITX (~42k asm lines) - inverse transforms (largest)
