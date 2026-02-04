@@ -841,6 +841,117 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_avx2(
 }
 
 // ============================================================================
+// 16x16 IDTX (Identity)
+// ============================================================================
+
+/// 16x16 IDTX (identity transform)
+/// Identity16: out = 2 * in + (in * 1697 + 1024) >> 11
+/// For 16x16 IDTX: apply identity16 to rows, then identity16 to cols
+/// Plus final shift: (+ 8) >> 4
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_identity_add_16x16_8bpc_avx2(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
+) {
+    let c_ptr = coeff;
+    let zero = unsafe { _mm256_setzero_si256() };
+    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
+
+    // Identity16 scale factor: f(x) = 2*x + (x*1697 + 1024) >> 11
+    // For 16x16, applied twice (row + col), then final (+ 8) >> 4
+    // Combined row+col: g(x) = f(f(x))
+    // This is complex, so we'll use scalar for the coefficient transform
+    // and SIMD for the add-to-destination
+
+    // First, transform all coefficients in-place
+    let mut tmp = [[0i32; 16]; 16];
+    for y in 0..16 {
+        for x in 0..16 {
+            let c = unsafe { *c_ptr.add(y + x * 16) as i32 };
+            // Row pass: identity16
+            let r = 2 * c + ((c * 1697 + 1024) >> 11);
+            tmp[y][x] = r;
+        }
+    }
+
+    // Column pass
+    for x in 0..16 {
+        for y in 0..16 {
+            let c = tmp[y][x];
+            // Col pass: identity16, then final shift
+            let r = 2 * c + ((c * 1697 + 1024) >> 11);
+            tmp[y][x] = (r + 8) >> 4;
+        }
+    }
+
+    // Add to destination with SIMD
+    for y in 0..16 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+
+        // Load 16 destination pixels
+        let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
+        let d_lo = unsafe { _mm256_cvtepu8_epi16(d) };
+
+        // Load 16 transformed coefficients
+        let c_vec = unsafe {
+            _mm256_set_epi16(
+                tmp[y][15] as i16, tmp[y][14] as i16, tmp[y][13] as i16, tmp[y][12] as i16,
+                tmp[y][11] as i16, tmp[y][10] as i16, tmp[y][9] as i16, tmp[y][8] as i16,
+                tmp[y][7] as i16, tmp[y][6] as i16, tmp[y][5] as i16, tmp[y][4] as i16,
+                tmp[y][3] as i16, tmp[y][2] as i16, tmp[y][1] as i16, tmp[y][0] as i16,
+            )
+        };
+
+        // Add and clamp
+        let sum = unsafe { _mm256_add_epi16(d_lo, c_vec) };
+        let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+
+        // Pack to bytes
+        let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
+        let packed_lo = unsafe { _mm256_castsi256_si128(packed) };
+        let packed_hi = unsafe { _mm256_extracti128_si256(packed, 1) };
+        let result = unsafe { _mm_unpacklo_epi64(packed_lo, packed_hi) };
+
+        unsafe { _mm_storeu_si128(dst_row as *mut __m128i, result) };
+    }
+
+    // Clear coefficients (16x16 = 256 i16 = 512 bytes = 32 x 16-byte stores)
+    unsafe {
+        let z = _mm_setzero_si128();
+        for i in 0..32 {
+            _mm_storeu_si128(coeff.add(i * 8) as *mut __m128i, z);
+        }
+    }
+}
+
+/// FFI wrapper for 16x16 IDTX 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_identity_add_16x16_8bpc_avx2(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
+
+// ============================================================================
 // 16x16 DCT_DCT
 // ============================================================================
 

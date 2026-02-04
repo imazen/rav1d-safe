@@ -812,6 +812,10 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_16x16][DCT_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x16_8bpc_avx2);
 
+        // IDTX 16x16
+        self.itxfm_add[tx_16x16][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x16_8bpc_avx2);
+
         self
     }
 
