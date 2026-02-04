@@ -51,7 +51,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 |--------|----------|--------|
 | mc | `src/safe_simd/mc.rs` | **Complete** - 8bpc+16bpc, x86 AVX2 |
 | mc_arm | `src/safe_simd/mc_arm.rs` | **Partial** - 8bpc NEON (avg, w_avg, mask, blend) |
-| itx | `src/safe_simd/itx.rs` | **Complete** - All square + ALL rect DCT (4x8 to 64x16) |
+| itx | `src/safe_simd/itx.rs` | **Complete** - All square + ALL rect (DCT, ADST, IDTX, etc.) |
 | loopfilter | `src/safe_simd/loopfilter.rs` | **Complete** - 8bpc + 16bpc |
 | cdef | `src/safe_simd/cdef.rs` | **Complete** - 8bpc + 16bpc |
 | looprestoration | `src/safe_simd/looprestoration.rs` | **Complete** - Wiener + SGR 5x5/3x3/mix (8bpc + 16bpc) |
@@ -62,22 +62,25 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 
 Full-stack benchmark via zenavif (20 decodes of test.avif):
 - ASM: ~1.17s
-- Safe-SIMD: ~1.16s
-- **Safe-SIMD slightly faster than ASM!**
+- Safe-SIMD: ~1.18s
+- **Safe-SIMD matches ASM performance**
 
 ## Porting Progress (160k lines target)
 
-**SIMD optimized:**
+**SIMD optimized (20,598 lines in safe_simd/):**
 - MC module (~7k lines): Complete (8bpc + 16bpc)
-- ITX module (~42k lines): ~75% complete (all square + all rectangular DCT_DCT)
+- ITX module (~42k lines): ~85% complete
+  - All square transforms (DCT, ADST, IDTX, etc.)
+  - All rectangular DCT_DCT (4x8 to 64x16)
+  - All rectangular ADST/FLIPADST for 4x8, 8x4, 8x16, 16x8, 4x16, 16x4
+  - All identity-based transforms (IDTX, H_DCT, V_DCT, H_ADST, V_ADST, etc.)
 - Loopfilter (~9k lines): Complete (8bpc + 16bpc)
 - CDEF (~7k lines): Complete (8bpc + 16bpc)
 - Looprestoration (~17k lines): Complete (Wiener + SGR 8bpc + 16bpc)
 - ipred (~26k lines): Complete (all 14 modes, 8bpc + 16bpc)
 
-**Using Rust fallbacks (PORT THESE NEXT):**
+**Using Rust fallbacks:**
 - filmgrain (~13k lines): Scaffolding exists but fallback is faster
-- ITX: ADST/FLIPADST combinations for rectangular transforms
 - ITX: 16bpc variants
 
 ## Architecture
