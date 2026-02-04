@@ -452,6 +452,30 @@ impl Rav1dLoopFilterDSPContext {
         self
     }
 
+    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+    #[inline(always)]
+    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
+        use crate::include::common::bitdepth::BPC;
+        use crate::src::safe_simd::loopfilter as safe_lpf;
+
+        if !flags.contains(CpuFlags::AVX2) {
+            return self;
+        }
+
+        // Only 8bpc implemented for now
+        match BD::BPC {
+            BPC::BPC8 => {
+                self.loop_filter_sb.y.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_y_8bpc_avx2);
+                self.loop_filter_sb.y.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_y_8bpc_avx2);
+                self.loop_filter_sb.uv.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_uv_8bpc_avx2);
+                self.loop_filter_sb.uv.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_uv_8bpc_avx2);
+            }
+            _ => {}
+        }
+
+        self
+    }
+
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -464,6 +488,11 @@ impl Rav1dLoopFilterDSPContext {
             {
                 return self.init_arm::<BD>(flags);
             }
+        }
+
+        #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+        {
+            return self.init_x86_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.

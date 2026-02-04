@@ -15,6 +15,9 @@ pub mod cdef;
 #[cfg(target_arch = "x86_64")]
 pub mod itx;
 
+#[cfg(target_arch = "x86_64")]
+pub mod loopfilter;
+
 // Re-export x86 implementations
 pub use mc::*;
 
