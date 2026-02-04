@@ -2214,9 +2214,30 @@ impl Rav1dMCDSPContext {
                 I444 => bd_fn!(w_mask::decl_fn, BD, w_mask_444, avx2),
             });
 
-            self.blend = bd_fn!(blend::decl_fn, BD, blend, avx2);
-            self.blend_v = bd_fn!(blend_dir::decl_fn, BD, blend_v, avx2);
-            self.blend_h = bd_fn!(blend_dir::decl_fn, BD, blend_h, avx2);
+            // blend safe SIMD
+            #[cfg(feature = "safe-simd")]
+            {
+                use crate::src::safe_simd::mc as safe_mc;
+                use crate::include::common::bitdepth::BPC;
+                self.blend = match BD::BPC {
+                    BPC::BPC8 => blend::decl_fn_safe!(safe_mc::blend_8bpc_avx2),
+                    BPC::BPC16 => blend::decl_fn_safe!(safe_mc::blend_16bpc_avx2),
+                };
+                self.blend_v = match BD::BPC {
+                    BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc::blend_v_8bpc_avx2),
+                    BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_v_16bpc_avx2),
+                };
+                self.blend_h = match BD::BPC {
+                    BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc::blend_h_8bpc_avx2),
+                    BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_h_16bpc_avx2),
+                };
+            }
+            #[cfg(not(feature = "safe-simd"))]
+            {
+                self.blend = bd_fn!(blend::decl_fn, BD, blend, avx2);
+                self.blend_v = bd_fn!(blend_dir::decl_fn, BD, blend_v, avx2);
+                self.blend_h = bd_fn!(blend_dir::decl_fn, BD, blend_h, avx2);
+            }
             self.warp8x8 = bd_fn!(warp8x8::decl_fn, BD, warp_affine_8x8, avx2);
             self.warp8x8t = bd_fn!(warp8x8t::decl_fn, BD, warp_affine_8x8t, avx2);
             self.emu_edge = bd_fn!(emu_edge::decl_fn, BD, emu_edge, avx2);
