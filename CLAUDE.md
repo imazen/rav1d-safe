@@ -69,17 +69,22 @@ The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_si
 
 **SIMD Optimized (using AVX2 intrinsics):**
 - [x] `avg_8bpc_avx2` - Average two buffers (true SIMD)
-- [x] `avg_16bpc_avx2` - 16-bit average (scalar, TODO: SIMD)
+- [x] `avg_16bpc_avx2` - 16-bit average (true SIMD with 32-bit arithmetic)
 - [x] `w_avg_8bpc_avx2` - Weighted average (true SIMD)
-- [x] `w_avg_16bpc_avx2` - 16-bit weighted average (scalar)
+- [x] `w_avg_16bpc_avx2` - 16-bit weighted average (true SIMD)
 - [x] `mask_8bpc_avx2` - Per-pixel masked blend (true SIMD)
-- [x] `mask_16bpc_avx2` - 16-bit masked blend (scalar)
+- [x] `mask_16bpc_avx2` - 16-bit masked blend (true SIMD)
 - [x] `blend_8bpc_avx2` - Pixel blend (true SIMD)
-- [x] `blend_16bpc_avx2` - 16-bit blend (scalar)
+- [x] `blend_16bpc_avx2` - 16-bit blend (true SIMD)
 - [x] `blend_v_8bpc` - Vertical OBMC blend (true SIMD)
-- [x] `blend_v_16bpc` - Vertical OBMC blend (scalar)
+- [x] `blend_v_16bpc` - Vertical OBMC blend (true SIMD)
 - [x] `blend_h_8bpc` - Horizontal OBMC blend (true SIMD)
-- [x] `blend_h_16bpc` - Horizontal OBMC blend (scalar)
+- [x] `blend_h_16bpc` - Horizontal OBMC blend (true SIMD)
+
+**8-tap Filter Helpers (building blocks, not yet in dispatch):**
+- [x] `h_filter_8tap_8bpc_avx2` - Horizontal 8-tap filter using maddubs
+- [x] `v_filter_8tap_8bpc_avx2` - Vertical 8-tap filter with 32-bit arithmetic
+- [x] `get_filter()` - Access filter coefficients from tables
 
 **Using Pure Rust Fallbacks:**
 - [ ] `mc` (8tap filters) - 10 filter variants per bitdepth
@@ -117,4 +122,31 @@ They're just slower than SIMD-optimized versions.
 
 ## Investigation Notes
 
-(none yet)
+### 8-tap Filter Implementation Plan
+
+The 8-tap motion compensation filters (`put_8tap`, `prep_8tap`) are the highest-impact remaining
+SIMD targets. They use a separable 2D filter:
+
+1. **Horizontal pass**: For each row, apply 8-tap filter (coefficients from `dav1d_mc_subpel_filters`)
+2. **Vertical pass**: Apply 8-tap filter to intermediate buffer columns
+
+Helper functions implemented:
+- `h_filter_8tap_8bpc_avx2`: Uses `_mm256_maddubs_epi16` for efficient multiply-add
+- `v_filter_8tap_8bpc_avx2`: Uses 32-bit arithmetic with coefficient broadcast
+
+To complete:
+1. Create public `put_8tap_*_8bpc_avx2` functions matching asm naming
+2. Add to dispatch table in `init_x86_safe_simd()`
+3. Handle all 4 cases: H+V, H-only, V-only, copy
+
+There are 9 filter type combinations (regular/smooth/sharp × 2), plus bilinear,
+totaling 10 variants per bitdepth × 2 (put/prep) × 2 (normal/scaled) = 80 entry points.
+
+### Performance Notes (2026-02-04)
+
+Benchmark: 20 decodes of test.avif
+- asm: ~1.17s
+- safe-simd: ~1.30s (~11% slower)
+
+Most time is spent in pure Rust fallbacks (8-tap filters, itx, ipred).
+The AVX2 implementations of avg/w_avg/mask/blend are fast.
