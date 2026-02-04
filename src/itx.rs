@@ -959,6 +959,25 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_16x8][DCT_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x8_8bpc_avx2);
 
+        // Larger rectangular transforms: 16x32, 32x16, 32x64, 64x32
+        let tx_16x32 = TxfmSize::from_wh(16, 32) as usize;
+        let tx_32x16 = TxfmSize::from_wh(32, 16) as usize;
+        let tx_32x64 = TxfmSize::from_wh(32, 64) as usize;
+        let tx_64x32 = TxfmSize::from_wh(64, 32) as usize;
+
+        // DCT_DCT 16x32
+        self.itxfm_add[tx_16x32][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x32_8bpc_avx2);
+        // DCT_DCT 32x16
+        self.itxfm_add[tx_32x16][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x16_8bpc_avx2);
+        // DCT_DCT 32x64
+        self.itxfm_add[tx_32x64][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x64_8bpc_avx2);
+        // DCT_DCT 64x32
+        self.itxfm_add[tx_64x32][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x32_8bpc_avx2);
+
         self
     }
 
