@@ -10,7 +10,9 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+use std::cmp;
 use std::ffi::c_int;
+use std::ffi::c_uint;
 use std::slice;
 
 use crate::include::common::bitdepth::AsPrimitive;
@@ -26,6 +28,7 @@ use crate::src::disjoint_mut::DisjointMut;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::looprestoration::{padding, LrEdgeFlags, LooprestorationParams};
 use crate::src::strided::Strided as _;
+use crate::src::tables::dav1d_sgr_x_by_x;
 use libc::ptrdiff_t;
 
 // Must match the constant in looprestoration.rs
@@ -451,6 +454,529 @@ pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
 }
 
 // ============================================================================
+// SGR (Self-Guided Restoration) FILTER - AVX2 IMPLEMENTATION
+// ============================================================================
+
+// Maximum restoration width (256 * 1.5)
+const MAX_RESTORATION_WIDTH: usize = 256 * 3 / 2;
+
+/// Compute box sum for 5x5 window (sum and sum of squares)
+///
+/// The input is padded with 3 pixels on each side.
+/// Output arrays have the same layout but contain sums.
+#[inline(always)]
+fn boxsum5_8bpc(
+    sumsq: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i16; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    src: &[u8; (64 + 3 + 3) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+) {
+    // Vertical pass: sum 5 consecutive rows
+    for x in 0..w {
+        let mut sum_v = x;
+        let mut sumsq_v = x;
+
+        let mut a = src[x] as i32;
+        let mut a2 = a * a;
+        let mut b = src[1 * REST_UNIT_STRIDE + x] as i32;
+        let mut b2 = b * b;
+        let mut c = src[2 * REST_UNIT_STRIDE + x] as i32;
+        let mut c2 = c * c;
+        let mut d = src[3 * REST_UNIT_STRIDE + x] as i32;
+        let mut d2 = d * d;
+
+        let mut s_idx = 3 * REST_UNIT_STRIDE + x;
+
+        // Skip first 2 rows, process up to h-2
+        for _ in 2..h - 2 {
+            s_idx += REST_UNIT_STRIDE;
+            let e = src[s_idx] as i32;
+            let e2 = e * e;
+            sum_v += REST_UNIT_STRIDE;
+            sumsq_v += REST_UNIT_STRIDE;
+            sum[sum_v] = (a + b + c + d + e) as i16;
+            sumsq[sumsq_v] = a2 + b2 + c2 + d2 + e2;
+            a = b; a2 = b2;
+            b = c; b2 = c2;
+            c = d; c2 = d2;
+            d = e; d2 = e2;
+        }
+    }
+
+    // Horizontal pass: sum 5 consecutive columns
+    let mut sum_idx = REST_UNIT_STRIDE;
+    let mut sumsq_idx = REST_UNIT_STRIDE;
+    for _ in 2..h - 2 {
+        let mut a = sum[sum_idx];
+        let mut a2 = sumsq[sumsq_idx];
+        let mut b = sum[sum_idx + 1];
+        let mut b2 = sumsq[sumsq_idx + 1];
+        let mut c = sum[sum_idx + 2];
+        let mut c2 = sumsq[sumsq_idx + 2];
+        let mut d = sum[sum_idx + 3];
+        let mut d2 = sumsq[sumsq_idx + 3];
+
+        for x in 2..w - 2 {
+            let e = sum[sum_idx + x + 2];
+            let e2 = sumsq[sumsq_idx + x + 2];
+            sum[sum_idx + x] = a + b + c + d + e;
+            sumsq[sumsq_idx + x] = a2 + b2 + c2 + d2 + e2;
+            a = b;
+            b = c;
+            c = d;
+            d = e;
+            a2 = b2;
+            b2 = c2;
+            c2 = d2;
+            d2 = e2;
+        }
+        sum_idx += REST_UNIT_STRIDE;
+        sumsq_idx += REST_UNIT_STRIDE;
+    }
+}
+
+/// Compute box sum for 3x3 window (sum and sum of squares)
+#[inline(always)]
+fn boxsum3_8bpc(
+    sumsq: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i16; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    src: &[u8; (64 + 3 + 3) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+) {
+    // Skip the first row
+    let src = &src[REST_UNIT_STRIDE..];
+
+    // Vertical pass: sum 3 consecutive rows
+    for x in 1..w - 1 {
+        let mut sum_v = x;
+        let mut sumsq_v = x;
+
+        let mut a = src[x] as i32;
+        let mut a2 = a * a;
+        let mut b = src[REST_UNIT_STRIDE + x] as i32;
+        let mut b2 = b * b;
+
+        let mut s_idx = REST_UNIT_STRIDE + x;
+
+        for _ in 2..h - 2 {
+            s_idx += REST_UNIT_STRIDE;
+            let c = src[s_idx] as i32;
+            let c2 = c * c;
+            sum_v += REST_UNIT_STRIDE;
+            sumsq_v += REST_UNIT_STRIDE;
+            sum[sum_v] = (a + b + c) as i16;
+            sumsq[sumsq_v] = a2 + b2 + c2;
+            a = b; a2 = b2;
+            b = c; b2 = c2;
+        }
+    }
+
+    // Horizontal pass: sum 3 consecutive columns
+    let mut sum_idx = REST_UNIT_STRIDE;
+    let mut sumsq_idx = REST_UNIT_STRIDE;
+    for _ in 2..h - 2 {
+        let mut a = sum[sum_idx + 1];
+        let mut a2 = sumsq[sumsq_idx + 1];
+        let mut b = sum[sum_idx + 2];
+        let mut b2 = sumsq[sumsq_idx + 2];
+
+        for x in 2..w - 2 {
+            let c = sum[sum_idx + x + 1];
+            let c2 = sumsq[sumsq_idx + x + 1];
+            sum[sum_idx + x] = a + b + c;
+            sumsq[sumsq_idx + x] = a2 + b2 + c2;
+            a = b;
+            b = c;
+            a2 = b2;
+            b2 = c2;
+        }
+        sum_idx += REST_UNIT_STRIDE;
+        sumsq_idx += REST_UNIT_STRIDE;
+    }
+}
+
+/// Self-guided filter computation for 8bpc
+///
+/// Computes the filter coefficients and applies the guided filter.
+/// n = 25 for 5x5, n = 9 for 3x3
+#[inline(never)]
+fn selfguided_filter_8bpc(
+    dst: &mut [i16; 64 * MAX_RESTORATION_WIDTH],
+    src: &[u8; (64 + 3 + 3) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    n: i32,
+    s: u32,
+) {
+    let sgr_one_by_x: u32 = if n == 25 { 164 } else { 455 };
+
+    // Working buffers
+    let mut sumsq = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
+    let mut sum = [0i16; (64 + 2 + 2) * REST_UNIT_STRIDE];
+
+    let step = if n == 25 { 2 } else { 1 };
+
+    if n == 25 {
+        boxsum5_8bpc(&mut sumsq, &mut sum, src, w + 6, h + 6);
+    } else {
+        boxsum3_8bpc(&mut sumsq, &mut sum, src, w + 6, h + 6);
+    }
+
+    // For 8bpc, bitdepth_min_8 = 0, so the scaling factors are 1
+    // Calculate filter coefficients a and b
+    // After this loop: sumsq contains 'a', sum contains 'b' (renamed)
+    let base = 2 * REST_UNIT_STRIDE + 3;
+
+    for row_offset in (0..(h + 2)).step_by(step) {
+        let row_start = (row_offset as isize - 1) as usize;
+        let aa_base = base + row_start * REST_UNIT_STRIDE - REST_UNIT_STRIDE;
+
+        for i in 0..(w + 2) {
+            let idx = aa_base + i;
+            let a_val = sumsq.get(idx).copied().unwrap_or(0);
+            let b_val = sum.get(idx).copied().unwrap_or(0) as i32;
+
+            let p = cmp::max(a_val * n - b_val * b_val, 0) as u32;
+            let z = (p * s + (1 << 19)) >> 20;
+            let x = dav1d_sgr_x_by_x.0[cmp::min(z, 255) as usize] as u32;
+
+            // Store inverted: a = x * b * sgr_one_by_x, b = x
+            if let Some(aa) = sumsq.get_mut(idx) {
+                *aa = ((x * (b_val as u32) * sgr_one_by_x + (1 << 11)) >> 12) as i32;
+            }
+            if let Some(bb) = sum.get_mut(idx) {
+                *bb = x as i16;
+            }
+        }
+    }
+
+    // Apply neighbor-weighted filter to produce output
+    let src_base = 3 * REST_UNIT_STRIDE + 3;
+
+    if n == 25 {
+        // 5x5: use six_neighbors weighting, step by 2 rows
+        let mut j = 0usize;
+        while j < h.saturating_sub(1) {
+            // Even row: full 6-neighbor calculation
+            for i in 0..w {
+                let idx = base + j * REST_UNIT_STRIDE + i;
+                // six_neighbors for b (sum array)
+                let b_six = {
+                    let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
+                    let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
+                    let above_left = sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let above_right = sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let below_left = sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let below_right = sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
+                };
+                // six_neighbors for a (sumsq array)
+                let a_six = {
+                    let above = sumsq.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0);
+                    let below = sumsq.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0);
+                    let above_left = sumsq.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
+                    let above_right = sumsq.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
+                    let below_left = sumsq.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
+                    let below_right = sumsq.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
+                    (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
+                };
+
+                let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i32;
+                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_six - b_six * src_val + (1 << 8)) >> 9) as i16;
+            }
+
+            // Odd row: simplified 3-neighbor horizontal calculation
+            if j + 1 < h {
+                for i in 0..w {
+                    let idx = base + (j + 1) * REST_UNIT_STRIDE + i;
+                    // Simplified: center * 6 + (left + right) * 5
+                    let b_horiz = {
+                        let center = sum.get(idx).copied().unwrap_or(0) as i32;
+                        let left = sum.get(idx - 1).copied().unwrap_or(0) as i32;
+                        let right = sum.get(idx + 1).copied().unwrap_or(0) as i32;
+                        center * 6 + (left + right) * 5
+                    };
+                    let a_horiz = {
+                        let center = sumsq.get(idx).copied().unwrap_or(0);
+                        let left = sumsq.get(idx - 1).copied().unwrap_or(0);
+                        let right = sumsq.get(idx + 1).copied().unwrap_or(0);
+                        center * 6 + (left + right) * 5
+                    };
+
+                    let src_val = src[src_base + (j + 1) * REST_UNIT_STRIDE + i] as i32;
+                    dst[(j + 1) * MAX_RESTORATION_WIDTH + i] = ((a_horiz - b_horiz * src_val + (1 << 7)) >> 8) as i16;
+                }
+            }
+            j += 2;
+        }
+        // Handle last row if height is odd
+        if j < h {
+            for i in 0..w {
+                let idx = base + j * REST_UNIT_STRIDE + i;
+                let b_six = {
+                    let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
+                    let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
+                    let above_left = sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let above_right = sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let below_left = sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let below_right = sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
+                };
+                let a_six = {
+                    let above = sumsq.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0);
+                    let below = sumsq.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0);
+                    let above_left = sumsq.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
+                    let above_right = sumsq.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
+                    let below_left = sumsq.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
+                    let below_right = sumsq.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
+                    (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
+                };
+
+                let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i32;
+                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_six - b_six * src_val + (1 << 8)) >> 9) as i16;
+            }
+        }
+    } else {
+        // 3x3: use eight_neighbors weighting
+        for j in 0..h {
+            for i in 0..w {
+                let idx = base + j * REST_UNIT_STRIDE + i;
+                // eight_neighbors for b
+                let b_eight = {
+                    let center = sum.get(idx).copied().unwrap_or(0) as i32;
+                    let left = sum.get(idx - 1).copied().unwrap_or(0) as i32;
+                    let right = sum.get(idx + 1).copied().unwrap_or(0) as i32;
+                    let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
+                    let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
+                    let above_left = sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let above_right = sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let below_left = sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let below_right = sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    (center + left + right + above + below) * 4
+                        + (above_left + above_right + below_left + below_right) * 3
+                };
+                // eight_neighbors for a
+                let a_eight = {
+                    let center = sumsq.get(idx).copied().unwrap_or(0);
+                    let left = sumsq.get(idx - 1).copied().unwrap_or(0);
+                    let right = sumsq.get(idx + 1).copied().unwrap_or(0);
+                    let above = sumsq.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0);
+                    let below = sumsq.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0);
+                    let above_left = sumsq.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
+                    let above_right = sumsq.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
+                    let below_left = sumsq.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
+                    let below_right = sumsq.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
+                    (center + left + right + above + below) * 4
+                        + (above_left + above_right + below_left + below_right) * 3
+                };
+
+                let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i32;
+                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_eight - b_eight * src_val + (1 << 8)) >> 9) as i16;
+            }
+        }
+    }
+}
+
+/// SGR 5x5 filter for 8bpc using AVX2
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn sgr_5x5_8bpc_avx2_inner(
+    p: Rav1dPictureDataComponentOffset,
+    left: &[LeftPixelRow<u8>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+) {
+    let mut tmp = [0u8; (64 + 3 + 3) * REST_UNIT_STRIDE];
+    let mut dst = [0i16; 64 * MAX_RESTORATION_WIDTH];
+
+    padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+
+    let sgr = params.sgr();
+    selfguided_filter_8bpc(&mut dst, &tmp, w, h, 25, sgr.s0);
+
+    let w0 = sgr.w0 as i32;
+    let stride = p.pixel_stride::<BitDepth8>();
+
+    for j in 0..h {
+        let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);
+        for i in 0..w {
+            let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
+            p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+        }
+    }
+}
+
+/// SGR 3x3 filter for 8bpc using AVX2
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn sgr_3x3_8bpc_avx2_inner(
+    p: Rav1dPictureDataComponentOffset,
+    left: &[LeftPixelRow<u8>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+) {
+    let mut tmp = [0u8; (64 + 3 + 3) * REST_UNIT_STRIDE];
+    let mut dst = [0i16; 64 * MAX_RESTORATION_WIDTH];
+
+    padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+
+    let sgr = params.sgr();
+    selfguided_filter_8bpc(&mut dst, &tmp, w, h, 9, sgr.s1);
+
+    let w1 = sgr.w1 as i32;
+    let stride = p.pixel_stride::<BitDepth8>();
+
+    for j in 0..h {
+        let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);
+        for i in 0..w {
+            let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
+            p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+        }
+    }
+}
+
+/// SGR mix filter for 8bpc using AVX2 (combines 5x5 and 3x3)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn sgr_mix_8bpc_avx2_inner(
+    p: Rav1dPictureDataComponentOffset,
+    left: &[LeftPixelRow<u8>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+) {
+    let mut tmp = [0u8; (64 + 3 + 3) * REST_UNIT_STRIDE];
+    let mut dst0 = [0i16; 64 * MAX_RESTORATION_WIDTH];
+    let mut dst1 = [0i16; 64 * MAX_RESTORATION_WIDTH];
+
+    padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+
+    let sgr = params.sgr();
+    selfguided_filter_8bpc(&mut dst0, &tmp, w, h, 25, sgr.s0);
+    selfguided_filter_8bpc(&mut dst1, &tmp, w, h, 9, sgr.s1);
+
+    let w0 = sgr.w0 as i32;
+    let w1 = sgr.w1 as i32;
+    let stride = p.pixel_stride::<BitDepth8>();
+
+    for j in 0..h {
+        let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);
+        for i in 0..w {
+            let v = w0 * dst0[j * MAX_RESTORATION_WIDTH + i] as i32
+                  + w1 * dst1[j * MAX_RESTORATION_WIDTH + i] as i32;
+            p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+        }
+    }
+}
+
+// ============================================================================
+// SGR FFI WRAPPERS
+// ============================================================================
+
+/// FFI wrapper for SGR 5x5 filter 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn sgr_filter_5x5_8bpc_avx2(
+    _p_ptr: *mut DynPixel,
+    _stride: ptrdiff_t,
+    left: *const LeftPixelRow<DynPixel>,
+    lpf_ptr: *const DynPixel,
+    w: c_int,
+    h: c_int,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    _bitdepth_max: c_int,
+    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
+) {
+    let p = unsafe { *FFISafe::get(p) };
+    let left = left.cast::<LeftPixelRow<u8>>();
+    let lpf = unsafe { FFISafe::get(lpf) };
+    let lpf_ptr = lpf_ptr.cast::<u8>();
+    let lpf_off = reconstruct_lpf_offset(lpf, lpf_ptr);
+    let w = w as usize;
+    let h = h as usize;
+    let left = unsafe { slice::from_raw_parts(left, h) };
+
+    unsafe {
+        sgr_5x5_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
+    }
+}
+
+/// FFI wrapper for SGR 3x3 filter 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn sgr_filter_3x3_8bpc_avx2(
+    _p_ptr: *mut DynPixel,
+    _stride: ptrdiff_t,
+    left: *const LeftPixelRow<DynPixel>,
+    lpf_ptr: *const DynPixel,
+    w: c_int,
+    h: c_int,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    _bitdepth_max: c_int,
+    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
+) {
+    let p = unsafe { *FFISafe::get(p) };
+    let left = left.cast::<LeftPixelRow<u8>>();
+    let lpf = unsafe { FFISafe::get(lpf) };
+    let lpf_ptr = lpf_ptr.cast::<u8>();
+    let lpf_off = reconstruct_lpf_offset(lpf, lpf_ptr);
+    let w = w as usize;
+    let h = h as usize;
+    let left = unsafe { slice::from_raw_parts(left, h) };
+
+    unsafe {
+        sgr_3x3_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
+    }
+}
+
+/// FFI wrapper for SGR mix filter 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn sgr_filter_mix_8bpc_avx2(
+    _p_ptr: *mut DynPixel,
+    _stride: ptrdiff_t,
+    left: *const LeftPixelRow<DynPixel>,
+    lpf_ptr: *const DynPixel,
+    w: c_int,
+    h: c_int,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    _bitdepth_max: c_int,
+    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
+) {
+    let p = unsafe { *FFISafe::get(p) };
+    let left = left.cast::<LeftPixelRow<u8>>();
+    let lpf = unsafe { FFISafe::get(lpf) };
+    let lpf_ptr = lpf_ptr.cast::<u8>();
+    let lpf_off = reconstruct_lpf_offset(lpf, lpf_ptr);
+    let w = w as usize;
+    let h = h as usize;
+    let left = unsafe { slice::from_raw_parts(left, h) };
+
+    unsafe {
+        sgr_mix_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
+    }
+}
+
+// ============================================================================
 // TESTS
 // ============================================================================
 
@@ -463,5 +989,10 @@ mod tests {
         // Verify our constant matches the one in looprestoration.rs
         assert_eq!(REST_UNIT_STRIDE, 256 * 3 / 2 + 3 + 3);
         assert_eq!(REST_UNIT_STRIDE, 390);
+    }
+
+    #[test]
+    fn test_max_restoration_width() {
+        assert_eq!(MAX_RESTORATION_WIDTH, 384);
     }
 }

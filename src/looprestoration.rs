@@ -3551,7 +3551,19 @@ impl Rav1dLoopRestorationDSPContext {
                     loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter5_16bpc_avx2);
             }
         }
-        // SGR filters use Rust fallback for now
+        match BD::BPC {
+            BPC::BPC8 => {
+                self.sgr[0] =
+                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_5x5_8bpc_avx2);
+                self.sgr[1] =
+                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_3x3_8bpc_avx2);
+                self.sgr[2] =
+                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_mix_8bpc_avx2);
+            }
+            BPC::BPC16 => {
+                // SGR 16bpc uses Rust fallback for now
+            }
+        }
 
         self
     }

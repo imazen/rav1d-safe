@@ -1,5 +1,25 @@
 # rav1d-safe
 
+## DO NOT STOP - KEEP PORTING ASM TO SAFE RUST
+
+**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
+**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
+**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
+**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
+**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
+**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
+**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
+**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
+**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
+**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
+
+Pick the next unfinished module and port it. Priority order:
+1. SGR filters (looprestoration) - ~17k lines remaining
+2. More ITX transforms (ADST, 32x32, 64x64) - ~38k lines remaining  
+3. ipred (~26k lines)
+4. filmgrain (~13k lines)
+5. 16bpc variants of loopfilter/CDEF
+
 Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with safe Rust intrinsics.
 
 ## Quick Commands
@@ -31,7 +51,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 |--------|----------|--------|
 | mc | `src/safe_simd/mc.rs` | **Complete** - 8bpc+16bpc, x86 AVX2 |
 | mc_arm | `src/safe_simd/mc_arm.rs` | **Partial** - 8bpc NEON (avg, w_avg, mask, blend) |
-| itx | `src/safe_simd/itx.rs` | **Partial** - DCT 4x4/8x8/16x16, WHT 4x4, IDTX 4x4 (8bpc) |
+| itx | `src/safe_simd/itx.rs` | **Partial** - DCT 4x4/8x8/16x16, WHT 4x4, IDTX 4x4/8x8/16x16 (8bpc) |
 | loopfilter | `src/safe_simd/loopfilter.rs` | **8bpc only** - lpf_h/v_sb_y/uv |
 | cdef | `src/safe_simd/cdef.rs` | **8bpc only** - filter 8x8/4x8/4x4, find_dir |
 | looprestoration | `src/safe_simd/looprestoration.rs` | **8bpc+16bpc** - Wiener 7/5 tap (vertical SIMD) |
@@ -40,22 +60,23 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 
 Full-stack benchmark via zenavif (20 decodes of test.avif):
 - ASM: ~1.14s
-- Safe-SIMD: ~1.15s
-- **At parity** - less than 1% overhead
+- Safe-SIMD: ~1.14s
+- **At exact parity**
 
 ## Porting Progress (160k lines target)
 
 **SIMD optimized:**
 - MC module (~7k lines): Complete
-- ITX module (~42k lines): ~10% complete (square transforms)
+- ITX module (~42k lines): ~10% complete (square transforms, IDTX)
 - Loopfilter (~9k lines): 8bpc complete
 - CDEF (~7k lines): 8bpc complete
 - Looprestoration (~17k lines): Wiener complete, SGR using fallback
 
-**Using Rust fallbacks:**
+**Using Rust fallbacks (PORT THESE NEXT):**
+- SGR filters (looprestoration)
 - ipred (~26k lines)
 - filmgrain (~13k lines)
-- SGR filters (looprestoration)
+- More ITX transforms (ADST, 32x32, 64x64)
 - 16bpc variants of loopfilter/CDEF
 
 ## Architecture
