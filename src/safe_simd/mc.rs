@@ -10,9 +10,11 @@
 use core::arch::x86_64::*;
 
 use crate::include::common::bitdepth::DynPixel;
+use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::COMPINTER_LEN;
+use crate::src::levels::Filter2d;
 
 /// Rounding constant for pmulhrsw: 1024 = (1 << 10)
 /// pmulhrsw computes: (a * b + 16384) >> 15
@@ -1476,6 +1478,871 @@ unsafe fn v_filter_8tap_8bpc_avx2(
             *dst.add(col) = val as u8;
             col += 1;
         }
+    }
+}
+
+// =============================================================================
+// 8-TAP PUT FUNCTIONS (mc)
+// =============================================================================
+
+/// Get filter coefficients for a given subpixel position and filter type
+///
+/// Returns None if m == 0 (integer position, no filtering needed)
+#[inline]
+fn get_filter_coeff(m: usize, d: usize, filter_type: Rav1dFilterMode) -> Option<&'static [i8; 8]> {
+    let m = m.checked_sub(1)?;
+    let i = if d > 4 {
+        filter_type as u8
+    } else {
+        3 + (filter_type as u8 & 1)
+    };
+    Some(&dav1d_mc_subpel_filters.0[i as usize][m])
+}
+
+/// Generic 8-tap put function for 8bpc
+///
+/// This handles all 4 cases:
+/// 1. H+V filtering (mx != 0 && my != 0)
+/// 2. H-only filtering (mx != 0 && my == 0)
+/// 3. V-only filtering (mx == 0 && my != 0)
+/// 4. Simple copy (mx == 0 && my == 0)
+///
+/// # Safety
+///
+/// - Caller must ensure AVX2 is available
+/// - dst_ptr must be valid for writing w*h bytes
+/// - src_ptr must be valid for reading (w+7)*(h+7) bytes (with proper padding)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn put_8tap_8bpc_avx2_impl(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    h_filter_type: Rav1dFilterMode,
+    v_filter_type: Rav1dFilterMode,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let mx = mx as usize;
+    let my = my as usize;
+    let dst = dst_ptr as *mut u8;
+    let src = src_ptr as *const u8;
+
+    // For 8bpc: intermediate_bits = 4
+    let intermediate_bits = 4u8;
+
+    let fh = get_filter_coeff(mx, w, h_filter_type);
+    let fv = get_filter_coeff(my, h, v_filter_type);
+
+    // SAFETY: All operations require AVX2 which is guaranteed by target_feature
+    unsafe {
+        match (fh, fv) {
+            (Some(fh), Some(fv)) => {
+                // Case 1: Both H and V filtering
+                // First pass: horizontal filter to intermediate buffer
+                let tmp_h = h + 7;
+                let mut mid = [[0i16; MID_STRIDE]; 135];
+
+                for y in 0..tmp_h {
+                    let src_row = src.offset((y as isize - 3) * src_stride);
+                    h_filter_8tap_8bpc_avx2(
+                        mid[y].as_mut_ptr(),
+                        src_row.sub(3), // Offset by -3 for tap 0
+                        w,
+                        fh,
+                        6 - intermediate_bits,
+                    );
+                }
+
+                // Second pass: vertical filter to output
+                for y in 0..h {
+                    let dst_row = dst.offset(y as isize * dst_stride);
+                    v_filter_8tap_8bpc_avx2(
+                        dst_row,
+                        &mid[y..],
+                        w,
+                        fv,
+                        6 + intermediate_bits,
+                        255,
+                    );
+                }
+            }
+            (Some(fh), None) => {
+                // Case 2: H-only filtering
+                // intermediate_rnd = 32 + (1 << (6 - intermediate_bits)) >> 1 = 32 + 2 = 34
+                // But for direct output we need different rounding
+                // sh = 6, rnd = 32 for 8bpc
+                for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    let dst_row = dst.offset(y as isize * dst_stride);
+
+                    // Use horizontal filter with sh=6 for direct output
+                    // Then clamp to [0, 255]
+                    let mut tmp = [0i16; MID_STRIDE];
+                    h_filter_8tap_8bpc_avx2(tmp.as_mut_ptr(), src_row.sub(3), w, fh, 6);
+
+                    // Copy and clamp to output
+                    for x in 0..w {
+                        *dst_row.add(x) = tmp[x].clamp(0, 255) as u8;
+                    }
+                }
+            }
+            (None, Some(fv)) => {
+                // Case 3: V-only filtering
+                // We need to read 8 rows of source for each output row
+                for y in 0..h {
+                    let dst_row = dst.offset(y as isize * dst_stride);
+
+                    // Build intermediate buffer from 8 source rows
+                    let mut mid = [[0i16; MID_STRIDE]; 8];
+                    for i in 0..8 {
+                        let src_row = src.offset((y as isize + i as isize - 3) * src_stride);
+                        for x in 0..w {
+                            mid[i][x] = *src_row.add(x) as i16;
+                        }
+                    }
+
+                    v_filter_8tap_8bpc_avx2(dst_row, &mid, w, fv, 6, 255);
+                }
+            }
+            (None, None) => {
+                // Case 4: Simple copy
+                for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    let dst_row = dst.offset(y as isize * dst_stride);
+                    std::ptr::copy_nonoverlapping(src_row, dst_row, w);
+                }
+            }
+        }
+    }
+}
+
+/// Generic put_8tap function wrapper with Filter2d const generic
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_8tap_8bpc_avx2<const FILTER: usize>(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    _bitdepth_max: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let filter = Filter2d::from_repr(FILTER).unwrap();
+    let (h_filter, v_filter) = filter.hv();
+
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+        put_8tap_8bpc_avx2_impl(
+            dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, h_filter, v_filter,
+        );
+    }
+}
+
+// Specific filter type wrappers for dispatch table
+// These are needed because decl_fn_safe! requires concrete functions, not generics
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_8tap_regular_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    put_8tap_8bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
+        dst_ptr,
+        dst_stride,
+        src_ptr,
+        src_stride,
+        w,
+        h,
+        mx,
+        my,
+        bitdepth_max,
+        dst,
+        src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_8tap_regular_smooth_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    put_8tap_8bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
+        dst_ptr,
+        dst_stride,
+        src_ptr,
+        src_stride,
+        w,
+        h,
+        mx,
+        my,
+        bitdepth_max,
+        dst,
+        src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_8tap_regular_sharp_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    put_8tap_8bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
+        dst_ptr,
+        dst_stride,
+        src_ptr,
+        src_stride,
+        w,
+        h,
+        mx,
+        my,
+        bitdepth_max,
+        dst,
+        src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_8tap_smooth_regular_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    put_8tap_8bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
+        dst_ptr,
+        dst_stride,
+        src_ptr,
+        src_stride,
+        w,
+        h,
+        mx,
+        my,
+        bitdepth_max,
+        dst,
+        src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_8tap_smooth_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    put_8tap_8bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
+        dst_ptr,
+        dst_stride,
+        src_ptr,
+        src_stride,
+        w,
+        h,
+        mx,
+        my,
+        bitdepth_max,
+        dst,
+        src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_8tap_smooth_sharp_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    put_8tap_8bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
+        dst_ptr,
+        dst_stride,
+        src_ptr,
+        src_stride,
+        w,
+        h,
+        mx,
+        my,
+        bitdepth_max,
+        dst,
+        src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_8tap_sharp_regular_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    put_8tap_8bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
+        dst_ptr,
+        dst_stride,
+        src_ptr,
+        src_stride,
+        w,
+        h,
+        mx,
+        my,
+        bitdepth_max,
+        dst,
+        src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_8tap_sharp_smooth_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    put_8tap_8bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
+        dst_ptr,
+        dst_stride,
+        src_ptr,
+        src_stride,
+        w,
+        h,
+        mx,
+        my,
+        bitdepth_max,
+        dst,
+        src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_8tap_sharp_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    put_8tap_8bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
+        dst_ptr,
+        dst_stride,
+        src_ptr,
+        src_stride,
+        w,
+        h,
+        mx,
+        my,
+        bitdepth_max,
+        dst,
+        src,
+    )
+    }
+}
+
+// =============================================================================
+// 8-TAP PREP FUNCTIONS (mct)
+// =============================================================================
+
+/// Generic 8-tap prep function for 8bpc
+///
+/// Similar to put but writes to i16 intermediate buffer instead of pixel output
+///
+/// # Safety
+///
+/// - Caller must ensure AVX2 is available
+/// - tmp must be valid for writing w*h i16 values
+/// - src_ptr must be valid for reading (w+7)*(h+7) bytes (with proper padding)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn prep_8tap_8bpc_avx2_impl(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    h_filter_type: Rav1dFilterMode,
+    v_filter_type: Rav1dFilterMode,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let mx = mx as usize;
+    let my = my as usize;
+    let src = src_ptr as *const u8;
+
+    // For 8bpc: intermediate_bits = 4
+    let intermediate_bits = 4u8;
+
+    let fh = get_filter_coeff(mx, w, h_filter_type);
+    let fv = get_filter_coeff(my, h, v_filter_type);
+
+    // SAFETY: All operations require AVX2 which is guaranteed by target_feature
+    unsafe {
+        match (fh, fv) {
+            (Some(fh), Some(fv)) => {
+                // Case 1: Both H and V filtering
+                let tmp_h = h + 7;
+                let mut mid = [[0i16; MID_STRIDE]; 135];
+
+                // Horizontal pass
+                for y in 0..tmp_h {
+                    let src_row = src.offset((y as isize - 3) * src_stride);
+                    h_filter_8tap_8bpc_avx2(
+                        mid[y].as_mut_ptr(),
+                        src_row.sub(3),
+                        w,
+                        fh,
+                        6 - intermediate_bits,
+                    );
+                }
+
+                // Vertical pass to intermediate output
+                for y in 0..h {
+                    let out_row = tmp.add(y * w);
+                    v_filter_8tap_to_i16_avx2(&mid[y..], out_row, w, fv, 6 + intermediate_bits);
+                }
+            }
+            (Some(fh), None) => {
+                // Case 2: H-only filtering
+                for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    let out_row = tmp.add(y * w);
+                    h_filter_8tap_8bpc_avx2(out_row, src_row.sub(3), w, fh, intermediate_bits);
+                }
+            }
+            (None, Some(fv)) => {
+                // Case 3: V-only filtering
+                for y in 0..h {
+                    let out_row = tmp.add(y * w);
+
+                    // Build intermediate buffer from 8 source rows
+                    let mut mid = [[0i16; MID_STRIDE]; 8];
+                    for i in 0..8 {
+                        let src_row = src.offset((y as isize + i as isize - 3) * src_stride);
+                        for x in 0..w {
+                            mid[i][x] = (*src_row.add(x) as i16) << intermediate_bits;
+                        }
+                    }
+
+                    v_filter_8tap_to_i16_avx2(&mid, out_row, w, fv, 6);
+                }
+            }
+            (None, None) => {
+                // Case 4: Simple copy with intermediate scaling
+                for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    let out_row = tmp.add(y * w);
+                    for x in 0..w {
+                        *out_row.add(x) = (*src_row.add(x) as i16) << intermediate_bits;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Vertical 8-tap filter to i16 output (for prep functions)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn v_filter_8tap_to_i16_avx2(
+    mid: &[[i16; MID_STRIDE]],
+    dst: *mut i16,
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
+    // SAFETY: All operations require AVX2 which is guaranteed by target_feature
+    unsafe {
+        let rnd = _mm256_set1_epi32((1i32 << sh) >> 1);
+
+        let c0 = _mm256_set1_epi32(filter[0] as i32);
+        let c1 = _mm256_set1_epi32(filter[1] as i32);
+        let c2 = _mm256_set1_epi32(filter[2] as i32);
+        let c3 = _mm256_set1_epi32(filter[3] as i32);
+        let c4 = _mm256_set1_epi32(filter[4] as i32);
+        let c5 = _mm256_set1_epi32(filter[5] as i32);
+        let c6 = _mm256_set1_epi32(filter[6] as i32);
+        let c7 = _mm256_set1_epi32(filter[7] as i32);
+
+        let mut col = 0usize;
+
+        while col + 8 <= w {
+            let m0 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[0][col..].as_ptr() as *const __m128i));
+            let m1 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[1][col..].as_ptr() as *const __m128i));
+            let m2 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[2][col..].as_ptr() as *const __m128i));
+            let m3 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[3][col..].as_ptr() as *const __m128i));
+            let m4 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[4][col..].as_ptr() as *const __m128i));
+            let m5 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[5][col..].as_ptr() as *const __m128i));
+            let m6 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[6][col..].as_ptr() as *const __m128i));
+            let m7 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[7][col..].as_ptr() as *const __m128i));
+
+            let mut sum = _mm256_mullo_epi32(m0, c0);
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m1, c1));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m2, c2));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m3, c3));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m4, c4));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m5, c5));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m6, c6));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m7, c7));
+
+            let shift_count = _mm_cvtsi32_si128(sh as i32);
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+
+            // Pack to i16 (signed saturation is fine for intermediate values)
+            let packed = _mm256_packs_epi32(shifted, shifted);
+            let packed = _mm256_permute4x64_epi64(packed, 0b11011000);
+
+            // Store 8 i16 values
+            _mm_storeu_si128(
+                dst.add(col) as *mut __m128i,
+                _mm256_castsi256_si128(packed),
+            );
+
+            col += 8;
+        }
+
+        while col < w {
+            let mut sum = 0i32;
+            for i in 0..8 {
+                sum += filter[i] as i32 * mid[i][col] as i32;
+            }
+            *dst.add(col) = ((sum + ((1 << sh) >> 1)) >> sh) as i16;
+            col += 1;
+        }
+    }
+}
+
+/// Generic prep_8tap function wrapper with Filter2d const generic
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_8tap_8bpc_avx2<const FILTER: usize>(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    _bitdepth_max: i32,
+    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let filter = Filter2d::from_repr(FILTER).unwrap();
+    let (h_filter, v_filter) = filter.hv();
+
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+        prep_8tap_8bpc_avx2_impl(tmp, src_ptr, src_stride, w, h, mx, my, h_filter, v_filter);
+    }
+}
+
+// Specific filter type wrappers for dispatch table
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_8tap_regular_8bpc_avx2(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    prep_8tap_8bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
+        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_8tap_regular_smooth_8bpc_avx2(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    prep_8tap_8bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
+        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_8tap_regular_sharp_8bpc_avx2(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    prep_8tap_8bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
+        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_8tap_smooth_regular_8bpc_avx2(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    prep_8tap_8bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
+        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_8tap_smooth_8bpc_avx2(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    prep_8tap_8bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
+        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_8tap_smooth_sharp_8bpc_avx2(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    prep_8tap_8bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
+        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_8tap_sharp_regular_8bpc_avx2(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    prep_8tap_8bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
+        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_8tap_sharp_smooth_8bpc_avx2(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    prep_8tap_8bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
+        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
+    )
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_8tap_sharp_8bpc_avx2(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+    prep_8tap_8bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
+        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
+    )
     }
 }
 
