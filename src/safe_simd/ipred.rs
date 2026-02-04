@@ -756,3 +756,98 @@ pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
         }
     }
 }
+
+// ============================================================================
+// FILTER Prediction (filter intra)
+// ============================================================================
+
+use crate::src::tables::{dav1d_filter_intra_taps, filter_fn, FLT_INCR};
+
+/// FILTER prediction: uses directional filter taps on 4x2 blocks
+///
+/// Processes in 4x2 blocks. Each output pixel is:
+/// sum = sum(filter[i] * p[i] for i in 0..7)
+/// out = (sum + 8) >> 4
+///
+/// Input pixels:
+/// p0 = topleft, p1-p4 = top row (4 pixels), p5-p6 = left column (2 pixels)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    filt_idx: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = (width as usize / 4) * 4; // Round down to multiple of 4
+    let height = height as usize;
+    let dst = dst_ptr as *mut u8;
+    let tl = topleft as *const u8;
+    let filt_idx = (filt_idx as usize) & 511;
+
+    let filter = &dav1d_filter_intra_taps[filt_idx];
+
+    unsafe {
+        // Process in 4x2 blocks
+        for y in (0..height).step_by(2) {
+            let tl_off = topleft_off - y;
+            let mut tl_pixel = *tl.wrapping_add(tl_off) as i32;
+
+            for x in (0..width).step_by(4) {
+                // Get top 4 pixels (p1-p4)
+                let top_ptr = tl.wrapping_add(topleft_off + 1 + x);
+                let p1 = *top_ptr as i32;
+                let p2 = *top_ptr.add(1) as i32;
+                let p3 = *top_ptr.add(2) as i32;
+                let p4 = *top_ptr.add(3) as i32;
+
+                // Get left 2 pixels (p5, p6)
+                let (p5, p6) = if x == 0 {
+                    // From original topleft buffer
+                    let left_ptr = tl.wrapping_add(tl_off - 1);
+                    (*left_ptr as i32, *left_ptr.wrapping_sub(1) as i32)
+                } else {
+                    // From previously computed output
+                    let dst_row0 = dst.offset(y as isize * stride);
+                    let dst_row1 = dst.offset((y + 1) as isize * stride);
+                    (*dst_row0.add(x - 1) as i32, *dst_row1.add(x - 1) as i32)
+                };
+
+                let p0 = tl_pixel;
+                let p = [p0, p1, p2, p3, p4, p5, p6];
+
+                // Process 4x2 = 8 output pixels using filter taps
+                let flt = filter.0.as_slice();
+                let mut flt_offset = 0;
+
+                // Row 0 (4 pixels)
+                let dst_row0 = dst.offset(y as isize * stride);
+                for xx in 0..4 {
+                    let acc = filter_fn(&flt[flt_offset..], p);
+                    let val = ((acc + 8) >> 4).clamp(0, 255) as u8;
+                    *dst_row0.add(x + xx) = val;
+                    flt_offset += FLT_INCR;
+                }
+
+                // Row 1 (4 pixels)
+                let dst_row1 = dst.offset((y + 1) as isize * stride);
+                for xx in 0..4 {
+                    let acc = filter_fn(&flt[flt_offset..], p);
+                    let val = ((acc + 8) >> 4).clamp(0, 255) as u8;
+                    *dst_row1.add(x + xx) = val;
+                    flt_offset += FLT_INCR;
+                }
+
+                // Update topleft for next 4x2 block
+                tl_pixel = p4;
+            }
+        }
+    }
+}

@@ -2273,6 +2273,8 @@ impl Rav1dIntraPredDSPContext {
             angular_ipred::Fn::new(safe_ipred::ipred_smooth_v_8bpc_avx2);
         self.intra_pred[SMOOTH_H_PRED as usize] =
             angular_ipred::Fn::new(safe_ipred::ipred_smooth_h_8bpc_avx2);
+        self.intra_pred[FILTER_PRED as usize] =
+            angular_ipred::Fn::new(safe_ipred::ipred_filter_8bpc_avx2);
 
         self
     }
