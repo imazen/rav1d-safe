@@ -5,26 +5,27 @@ Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with saf
 ## Quick Commands
 
 ```bash
-# Build without asm (pure Rust, uses safe-simd implementations)
-cargo build --no-default-features --features "bitdepth_8,bitdepth_16,safe-simd" --release
+# Build without asm (pure Rust + SIMD intrinsics via archmage)
+cargo build --no-default-features --features "bitdepth_8,bitdepth_16" --release
 
 # Build with asm (original rav1d behavior)
 cargo build --features "asm,bitdepth_8,bitdepth_16" --release
 
 # Run tests
-cargo test --no-default-features --features "bitdepth_8,bitdepth_16,safe-simd" --release
+cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release
 
 # Check both configurations compile
-cargo check --no-default-features --features "bitdepth_8,bitdepth_16,safe-simd"
+cargo check --no-default-features --features "bitdepth_8,bitdepth_16"
 cargo check --features "asm,bitdepth_8,bitdepth_16"
 ```
 
 ## Feature Flags
 
 - `asm` - Use hand-written assembly (default, original rav1d)
-- `safe-simd` - Use safe Rust SIMD implementations via intrinsics
 - `bitdepth_8` - 8-bit pixel support
 - `bitdepth_16` - 10/12-bit pixel support
+
+When `asm` is disabled, safe Rust SIMD implementations using archmage are automatically used.
 
 ## Architecture
 
@@ -35,21 +36,23 @@ rav1d uses function pointer dispatch for SIMD:
 2. `init_x86(CpuFlags)` populates dispatch table based on detected features
 3. `bd_fn!` macro links to asm symbols (e.g., `dav1d_avg_8bpc_avx2`)
 
-For safe-simd:
+For safe SIMD (when asm disabled):
 1. `decl_fn_safe!` macro wraps our Rust functions
-2. `#[cfg(feature = "safe-simd")]` in `init_x86` uses our implementations
-3. `#[target_feature(enable = "avx2")]` enables SIMD codegen
+2. `#[cfg(not(feature = "asm"))]` selects safe implementations
+3. archmage `#[arcane]` macro enables SIMD codegen with token-based safety
 
 ### Files
 
 - `src/safe_simd/mod.rs` - Safe SIMD module root
-- `src/safe_simd/mc.rs` - Motion compensation functions
-- `src/mc.rs` - Dispatch table (modified to use safe-simd when enabled)
-- `src/wrap_fn_ptr.rs` - Added `decl_fn_safe!` macro
+- `src/safe_simd/mc.rs` - x86 AVX2 motion compensation (archmage/target_feature)
+- `src/safe_simd/mc_arm.rs` - ARM NEON motion compensation (archmage)
+- `src/safe_simd/cdef.rs` - CDEF helpers (started)
+- `src/mc.rs` - Dispatch table
+- `src/wrap_fn_ptr.rs` - `decl_fn_safe!` macro
 
 ## How safe-simd Works
 
-When built with `--features safe-simd` (without `asm`):
+When built without `--features asm`:
 
 1. **SIMD-optimized functions** (in `src/safe_simd/mc.rs`):
    - avg, w_avg, mask, blend, blend_v, blend_h
@@ -66,6 +69,24 @@ The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_si
 ## Porting Progress
 
 ### Motion Compensation (mc) - src/safe_simd/mc.rs
+
+### ARM NEON (mc) - src/safe_simd/mc_arm.rs
+
+**SIMD Optimized (using NEON intrinsics via archmage):**
+- [x] `avg_8bpc_neon` / `avg_16bpc_neon` - Average two buffers
+- [x] `w_avg_8bpc_neon` / `w_avg_16bpc_neon` - Weighted average
+- [x] `mask_8bpc_neon` / `mask_16bpc_neon` - Per-pixel masked blend
+- [x] `blend_8bpc_neon` / `blend_16bpc_neon` - Pixel blend
+- [x] `blend_v_8bpc_neon` / `blend_v_16bpc_neon` - Vertical OBMC blend
+- [x] `blend_h_8bpc_neon` / `blend_h_16bpc_neon` - Horizontal OBMC blend
+- [x] `w_mask_444/422/420_8bpc_neon` - Weighted mask (all subsampling variants)
+
+**Using Pure Rust Fallbacks on ARM:**
+- [ ] 8-tap filters (mc/mct)
+- [ ] Bilinear filters
+- [ ] w_mask 16bpc
+- [ ] All other MC functions
+
 
 **SIMD Optimized (using AVX2 intrinsics):**
 - [x] `avg_8bpc_avx2` - Average two buffers (true SIMD)
