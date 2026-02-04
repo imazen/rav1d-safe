@@ -175,8 +175,8 @@ All bilinear filter variants now use AVX2 SIMD:
 
 ### Performance Notes (2026-02-04)
 Full-stack benchmark via zenavif (20 decodes of test.avif):
-- asm: ~1.35s (67.5ms per decode)
-- safe-simd: ~1.35s (67.5ms per decode)
+- asm: ~1.31s (65.5ms per decode)
+- safe-simd: ~1.32s (66ms per decode)
 - safe-simd at parity with asm
 
 **ARM NEON support added:** Using archmage tokens for safe SIMD invocation.
