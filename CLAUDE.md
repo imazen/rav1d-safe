@@ -96,8 +96,11 @@ The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_si
 **Bilinear Filter (mc/mct):**
 - [x] `put_bilin_8bpc_avx2` - Bilinear put for 8bpc (AVX2 SIMD with maddubs)
 - [x] `prep_bilin_8bpc_avx2` - Bilinear prep for 8bpc (AVX2 SIMD)
-- [x] `put_bilin_16bpc_avx2` - Bilinear put for 16bpc (scalar, not SIMD yet)
-- [x] `prep_bilin_16bpc_avx2` - Bilinear prep for 16bpc (scalar, not SIMD yet)
+- [x] `put_bilin_16bpc_avx2` - Bilinear put for 16bpc (SIMD for H+V, scalar for H/V-only)
+- [x] `prep_bilin_16bpc_avx2` - Bilinear prep for 16bpc (SIMD for H+V, scalar for H/V-only)
+- [x] `h_bilin_16bpc_avx2` - Horizontal bilinear filter for 16bpc (cvtepu16_epi32)
+- [x] `v_bilin_16bpc_avx2` - Vertical bilinear filter for 16bpc put
+- [x] `v_bilin_16bpc_prep_avx2` - Vertical bilinear filter for 16bpc prep (with PREP_BIAS)
 
 **Weighted Mask (w_mask):**
 - [x] `w_mask_444_8bpc_avx2` - 4:4:4 (no subsampling)
