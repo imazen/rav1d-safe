@@ -2558,8 +2558,77 @@ impl Rav1dMCDSPContext {
             BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_h_16bpc_avx2),
         };
 
-        // mc/mct/mc_scaled/mct_scaled use the pure Rust defaults (put_c_erased, etc.)
-        // TODO: Optimize with SIMD later
+        // w_mask
+        self.w_mask = match BD::BPC {
+            BPC::BPC8 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                I420 => w_mask::decl_fn_safe!(safe_mc::w_mask_420_8bpc_avx2),
+                I422 => w_mask::decl_fn_safe!(safe_mc::w_mask_422_8bpc_avx2),
+                I444 => w_mask::decl_fn_safe!(safe_mc::w_mask_444_8bpc_avx2),
+            }),
+            BPC::BPC16 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                I420 => w_mask::decl_fn_safe!(safe_mc::w_mask_420_16bpc_avx2),
+                I422 => w_mask::decl_fn_safe!(safe_mc::w_mask_422_16bpc_avx2),
+                I444 => w_mask::decl_fn_safe!(safe_mc::w_mask_444_16bpc_avx2),
+            }),
+        };
+
+        // mc (put_8tap + bilinear) and mct (prep_8tap + bilinear)
+        match BD::BPC {
+            BPC::BPC8 => {
+                self.mc = enum_map!(Filter2d => mc::Fn; match key {
+                    Regular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_8bpc_avx2),
+                    RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_smooth_8bpc_avx2),
+                    RegularSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_sharp_8bpc_avx2),
+                    SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_regular_8bpc_avx2),
+                    Smooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_8bpc_avx2),
+                    SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_sharp_8bpc_avx2),
+                    SharpRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_regular_8bpc_avx2),
+                    SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_smooth_8bpc_avx2),
+                    Sharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_8bpc_avx2),
+                    Bilinear => mc::decl_fn_safe!(safe_mc::put_bilin_8bpc_avx2),
+                });
+                self.mct = enum_map!(Filter2d => mct::Fn; match key {
+                    Regular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_8bpc_avx2),
+                    RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_smooth_8bpc_avx2),
+                    RegularSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_sharp_8bpc_avx2),
+                    SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_regular_8bpc_avx2),
+                    Smooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_8bpc_avx2),
+                    SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_sharp_8bpc_avx2),
+                    SharpRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_regular_8bpc_avx2),
+                    SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_smooth_8bpc_avx2),
+                    Sharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_8bpc_avx2),
+                    Bilinear => mct::decl_fn_safe!(safe_mc::prep_bilin_8bpc_avx2),
+                });
+            }
+            BPC::BPC16 => {
+                self.mc = enum_map!(Filter2d => mc::Fn; match key {
+                    Regular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_16bpc_avx2),
+                    RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_smooth_16bpc_avx2),
+                    RegularSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_sharp_16bpc_avx2),
+                    SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_regular_16bpc_avx2),
+                    Smooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_16bpc_avx2),
+                    SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_sharp_16bpc_avx2),
+                    SharpRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_regular_16bpc_avx2),
+                    SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_smooth_16bpc_avx2),
+                    Sharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_16bpc_avx2),
+                    Bilinear => mc::decl_fn_safe!(safe_mc::put_bilin_16bpc_avx2),
+                });
+                self.mct = enum_map!(Filter2d => mct::Fn; match key {
+                    Regular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_16bpc_avx2),
+                    RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_smooth_16bpc_avx2),
+                    RegularSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_sharp_16bpc_avx2),
+                    SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_regular_16bpc_avx2),
+                    Smooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_16bpc_avx2),
+                    SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_sharp_16bpc_avx2),
+                    SharpRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_regular_16bpc_avx2),
+                    SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_smooth_16bpc_avx2),
+                    Sharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_16bpc_avx2),
+                    Bilinear => mct::decl_fn_safe!(safe_mc::prep_bilin_16bpc_avx2),
+                });
+            }
+        }
+
+        // mc_scaled/mct_scaled/warp/emu_edge/resize use pure Rust defaults for now
 
         self
     }
