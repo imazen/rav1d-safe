@@ -1319,6 +1319,42 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_8x8][FLIPADST_ADST as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_8x8_16bpc_avx2);
 
+        // 4x4 ADST/FLIPADST transforms 16bpc
+        self.itxfm_add[tx_4x4][ADST_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_4x4_16bpc_avx2);
+        self.itxfm_add[tx_4x4][DCT_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_4x4_16bpc_avx2);
+        self.itxfm_add[tx_4x4][ADST_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_4x4_16bpc_avx2);
+        self.itxfm_add[tx_4x4][FLIPADST_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_4x4_16bpc_avx2);
+        self.itxfm_add[tx_4x4][DCT_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_4x4_16bpc_avx2);
+        self.itxfm_add[tx_4x4][FLIPADST_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2);
+        self.itxfm_add[tx_4x4][ADST_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_4x4_16bpc_avx2);
+        self.itxfm_add[tx_4x4][FLIPADST_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_4x4_16bpc_avx2);
+
+        // 16x16 ADST/FLIPADST transforms 16bpc
+        self.itxfm_add[tx_16x16][ADST_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_16x16_16bpc_avx2);
+        self.itxfm_add[tx_16x16][DCT_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_16x16_16bpc_avx2);
+        self.itxfm_add[tx_16x16][ADST_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_16x16_16bpc_avx2);
+        self.itxfm_add[tx_16x16][FLIPADST_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_16x16_16bpc_avx2);
+        self.itxfm_add[tx_16x16][DCT_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_16x16_16bpc_avx2);
+        self.itxfm_add[tx_16x16][FLIPADST_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2);
+        self.itxfm_add[tx_16x16][ADST_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_16x16_16bpc_avx2);
+        self.itxfm_add[tx_16x16][FLIPADST_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_16x16_16bpc_avx2);
+
         self
     }
 

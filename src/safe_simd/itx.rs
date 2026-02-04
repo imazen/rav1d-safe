@@ -9095,3 +9095,197 @@ impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_8x8_16bpc_avx2, inv_txfm_a
 impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_8x8_16bpc_avx2, inv_txfm_add_flipadst_flipadst_8x8_16bpc_avx2_inner);
 impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_8x8_16bpc_avx2, inv_txfm_add_adst_flipadst_8x8_16bpc_avx2_inner);
 impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_8x8_16bpc_avx2, inv_txfm_add_flipadst_adst_8x8_16bpc_avx2_inner);
+
+// ============================================================================
+// 4x4 ADST/FLIPADST TRANSFORMS 16bpc
+// ============================================================================
+
+/// Helper macro for 4x4 transform implementations (16bpc)
+macro_rules! impl_4x4_transform_16bpc {
+    ($name:ident, $row_fn:ident, $col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        pub unsafe fn $name(
+            dst: *mut u16,
+            dst_stride: isize,
+            coeff: *mut i16,
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let stride_u16 = (dst_stride / 2) as usize;
+
+            // Load coefficients (row-major)
+            let mut c = [[0i32; 4]; 4];
+            for y in 0..4 {
+                for x in 0..4 {
+                    c[y][x] = unsafe { *coeff.add(y * 4 + x) } as i32;
+                }
+            }
+
+            // First pass: transform on rows
+            let mut tmp = [[0i32; 4]; 4];
+            for y in 0..4 {
+                let (o0, o1, o2, o3) = $row_fn(c[y][0], c[y][1], c[y][2], c[y][3]);
+                tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+            }
+
+            // Second pass: transform on columns
+            let mut out = [[0i32; 4]; 4];
+            for x in 0..4 {
+                let (o0, o1, o2, o3) = $col_fn(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+                out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+            }
+
+            // Add to destination with rounding
+            for y in 0..4 {
+                let dst_row = unsafe { dst.add(y * stride_u16) };
+                for x in 0..4 {
+                    let pixel = unsafe { *dst_row.add(x) } as i32;
+                    let val = pixel + ((out[y][x] + 8) >> 4);
+                    unsafe { *dst_row.add(x) = val.clamp(0, bitdepth_max) as u16 };
+                }
+            }
+
+            // Clear coefficients
+            unsafe {
+                for i in 0..16 {
+                    *coeff.add(i) = 0;
+                }
+            }
+        }
+    };
+}
+
+// Generate all 4x4 ADST/FlipADST combinations for 16bpc
+impl_4x4_transform_16bpc!(inv_txfm_add_adst_dct_4x4_16bpc_avx2_inner, adst4_1d_scalar, dct4_1d_scalar);
+impl_4x4_transform_16bpc!(inv_txfm_add_dct_adst_4x4_16bpc_avx2_inner, dct4_1d_scalar, adst4_1d_scalar);
+impl_4x4_transform_16bpc!(inv_txfm_add_adst_adst_4x4_16bpc_avx2_inner, adst4_1d_scalar, adst4_1d_scalar);
+impl_4x4_transform_16bpc!(inv_txfm_add_flipadst_dct_4x4_16bpc_avx2_inner, flipadst4_1d_scalar, dct4_1d_scalar);
+impl_4x4_transform_16bpc!(inv_txfm_add_dct_flipadst_4x4_16bpc_avx2_inner, dct4_1d_scalar, flipadst4_1d_scalar);
+impl_4x4_transform_16bpc!(inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2_inner, flipadst4_1d_scalar, flipadst4_1d_scalar);
+impl_4x4_transform_16bpc!(inv_txfm_add_adst_flipadst_4x4_16bpc_avx2_inner, adst4_1d_scalar, flipadst4_1d_scalar);
+impl_4x4_transform_16bpc!(inv_txfm_add_flipadst_adst_4x4_16bpc_avx2_inner, flipadst4_1d_scalar, adst4_1d_scalar);
+
+// FFI wrappers for 4x4 16bpc transforms
+macro_rules! impl_4x4_ffi_wrapper_16bpc {
+    ($wrapper:ident, $inner:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        pub unsafe extern "C" fn $wrapper(
+            dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+            eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            unsafe { $inner(dst_ptr as *mut u16, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+        }
+    };
+}
+
+impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_adst_dct_4x4_16bpc_avx2, inv_txfm_add_adst_dct_4x4_16bpc_avx2_inner);
+impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_dct_adst_4x4_16bpc_avx2, inv_txfm_add_dct_adst_4x4_16bpc_avx2_inner);
+impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_adst_adst_4x4_16bpc_avx2, inv_txfm_add_adst_adst_4x4_16bpc_avx2_inner);
+impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_dct_4x4_16bpc_avx2, inv_txfm_add_flipadst_dct_4x4_16bpc_avx2_inner);
+impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_4x4_16bpc_avx2, inv_txfm_add_dct_flipadst_4x4_16bpc_avx2_inner);
+impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2, inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2_inner);
+impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_4x4_16bpc_avx2, inv_txfm_add_adst_flipadst_4x4_16bpc_avx2_inner);
+impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_4x4_16bpc_avx2, inv_txfm_add_flipadst_adst_4x4_16bpc_avx2_inner);
+
+// ============================================================================
+// 16x16 ADST/FLIPADST TRANSFORMS 16bpc
+// ============================================================================
+
+/// Helper macro for 16x16 transform implementations (16bpc)
+macro_rules! impl_16x16_transform_16bpc {
+    ($name:ident, $row_fn:ident, $col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        pub unsafe fn $name(
+            dst: *mut u16,
+            dst_stride: isize,
+            coeff: *mut i16,
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let stride_u16 = (dst_stride / 2) as usize;
+            const MIN: i32 = i32::MIN;
+            const MAX: i32 = i32::MAX;
+
+            // Load coefficients (row-major)
+            let mut c = [[0i32; 16]; 16];
+            for y in 0..16 {
+                for x in 0..16 {
+                    c[y][x] = unsafe { *coeff.add(y * 16 + x) } as i32;
+                }
+            }
+
+            // First pass: transform on rows
+            let mut tmp = [[0i32; 16]; 16];
+            for y in 0..16 {
+                let mut row = [0i32; 16];
+                for x in 0..16 { row[x] = c[y][x]; }
+                $row_fn(&mut row, 1, MIN, MAX);
+                for x in 0..16 { tmp[y][x] = row[x]; }
+            }
+
+            // Second pass: transform on columns
+            let mut out = [[0i32; 16]; 16];
+            for x in 0..16 {
+                let mut col = [0i32; 16];
+                for y in 0..16 { col[y] = tmp[y][x]; }
+                $col_fn(&mut col, 1, MIN, MAX);
+                for y in 0..16 { out[y][x] = col[y]; }
+            }
+
+            // Add to destination with rounding
+            for y in 0..16 {
+                let dst_row = unsafe { dst.add(y * stride_u16) };
+                for x in 0..16 {
+                    let pixel = unsafe { *dst_row.add(x) } as i32;
+                    let val = pixel + ((out[y][x] + 8) >> 4);
+                    unsafe { *dst_row.add(x) = val.clamp(0, bitdepth_max) as u16 };
+                }
+            }
+
+            // Clear coefficients
+            unsafe {
+                for i in 0..256 {
+                    *coeff.add(i) = 0;
+                }
+            }
+        }
+    };
+}
+
+// Generate key 16x16 ADST combinations for 16bpc
+impl_16x16_transform_16bpc!(inv_txfm_add_adst_dct_16x16_16bpc_avx2_inner, adst16_1d, dct16_1d);
+impl_16x16_transform_16bpc!(inv_txfm_add_dct_adst_16x16_16bpc_avx2_inner, dct16_1d, adst16_1d);
+impl_16x16_transform_16bpc!(inv_txfm_add_adst_adst_16x16_16bpc_avx2_inner, adst16_1d, adst16_1d);
+impl_16x16_transform_16bpc!(inv_txfm_add_flipadst_dct_16x16_16bpc_avx2_inner, flipadst16_1d, dct16_1d);
+impl_16x16_transform_16bpc!(inv_txfm_add_dct_flipadst_16x16_16bpc_avx2_inner, dct16_1d, flipadst16_1d);
+impl_16x16_transform_16bpc!(inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2_inner, flipadst16_1d, flipadst16_1d);
+impl_16x16_transform_16bpc!(inv_txfm_add_adst_flipadst_16x16_16bpc_avx2_inner, adst16_1d, flipadst16_1d);
+impl_16x16_transform_16bpc!(inv_txfm_add_flipadst_adst_16x16_16bpc_avx2_inner, flipadst16_1d, adst16_1d);
+
+// FFI wrappers for 16x16 16bpc transforms
+macro_rules! impl_16x16_ffi_wrapper_16bpc {
+    ($wrapper:ident, $inner:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        pub unsafe extern "C" fn $wrapper(
+            dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+            eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            unsafe { $inner(dst_ptr as *mut u16, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+        }
+    };
+}
+
+impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_adst_dct_16x16_16bpc_avx2, inv_txfm_add_adst_dct_16x16_16bpc_avx2_inner);
+impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_dct_adst_16x16_16bpc_avx2, inv_txfm_add_dct_adst_16x16_16bpc_avx2_inner);
+impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_adst_adst_16x16_16bpc_avx2, inv_txfm_add_adst_adst_16x16_16bpc_avx2_inner);
+impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_dct_16x16_16bpc_avx2, inv_txfm_add_flipadst_dct_16x16_16bpc_avx2_inner);
+impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_16x16_16bpc_avx2, inv_txfm_add_dct_flipadst_16x16_16bpc_avx2_inner);
+impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2, inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2_inner);
+impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_16x16_16bpc_avx2, inv_txfm_add_adst_flipadst_16x16_16bpc_avx2_inner);
+impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_16x16_16bpc_avx2, inv_txfm_add_flipadst_adst_16x16_16bpc_avx2_inner);
