@@ -80,8 +80,6 @@ pub mod src {
     mod mem;
 
     // Safe SIMD implementations using archmage
-    #[cfg(feature = "safe-simd")]
-    pub mod safe_simd;
     mod msac;
     mod obu;
     mod pal;
@@ -89,6 +87,8 @@ pub mod src {
     mod qm;
     mod recon;
     mod refmvs;
+    #[cfg(feature = "safe-simd")]
+    pub mod safe_simd;
     mod scan;
     mod tables;
     mod thread_task;

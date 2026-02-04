@@ -2166,8 +2166,8 @@ impl Rav1dMCDSPContext {
             // Use safe SIMD implementations when safe-simd feature is enabled
             #[cfg(feature = "safe-simd")]
             {
-                use crate::src::safe_simd::mc as safe_mc;
                 use crate::include::common::bitdepth::BPC;
+                use crate::src::safe_simd::mc as safe_mc;
                 self.avg = match BD::BPC {
                     BPC::BPC8 => avg::decl_fn_safe!(safe_mc::avg_8bpc_avx2),
                     BPC::BPC16 => avg::decl_fn_safe!(safe_mc::avg_16bpc_avx2),
@@ -2181,8 +2181,8 @@ impl Rav1dMCDSPContext {
             // w_avg safe SIMD
             #[cfg(feature = "safe-simd")]
             {
-                use crate::src::safe_simd::mc as safe_mc;
                 use crate::include::common::bitdepth::BPC;
+                use crate::src::safe_simd::mc as safe_mc;
                 self.w_avg = match BD::BPC {
                     BPC::BPC8 => w_avg::decl_fn_safe!(safe_mc::w_avg_8bpc_avx2),
                     BPC::BPC16 => w_avg::decl_fn_safe!(safe_mc::w_avg_16bpc_avx2),
@@ -2196,8 +2196,8 @@ impl Rav1dMCDSPContext {
             // mask safe SIMD
             #[cfg(feature = "safe-simd")]
             {
-                use crate::src::safe_simd::mc as safe_mc;
                 use crate::include::common::bitdepth::BPC;
+                use crate::src::safe_simd::mc as safe_mc;
                 self.mask = match BD::BPC {
                     BPC::BPC8 => mask::decl_fn_safe!(safe_mc::mask_8bpc_avx2),
                     BPC::BPC16 => mask::decl_fn_safe!(safe_mc::mask_16bpc_avx2),
@@ -2217,8 +2217,8 @@ impl Rav1dMCDSPContext {
             // blend safe SIMD
             #[cfg(feature = "safe-simd")]
             {
-                use crate::src::safe_simd::mc as safe_mc;
                 use crate::include::common::bitdepth::BPC;
+                use crate::src::safe_simd::mc as safe_mc;
                 self.blend = match BD::BPC {
                     BPC::BPC8 => blend::decl_fn_safe!(safe_mc::blend_8bpc_avx2),
                     BPC::BPC16 => blend::decl_fn_safe!(safe_mc::blend_16bpc_avx2),

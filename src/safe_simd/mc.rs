@@ -10,9 +10,9 @@
 use core::arch::x86_64::*;
 
 use crate::include::common::bitdepth::DynPixel;
+use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::COMPINTER_LEN;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
 
 /// Rounding constant for pmulhrsw: 1024 = (1 << 10)
 /// pmulhrsw computes: (a * b + 16384) >> 15
@@ -53,9 +53,8 @@ pub unsafe extern "C" fn avg_8bpc_avx2(
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
         // SAFETY: dst_ptr is valid for w*h bytes, dst_stride is correct
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
-        };
+        let dst_row =
+            unsafe { std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w) };
 
         // Process 32 pixels at a time (64 bytes of i16 input → 32 bytes of u8 output)
         let mut col = 0;
@@ -151,31 +150,73 @@ pub unsafe extern "C" fn avg_16bpc_avx2(
     // stride is in bytes, convert to u16 elements
     let dst_stride_elems = dst_stride / 2;
 
-    // For 16bpc, intermediate_bits = 4, so shift = 5, round = 16
+    // For 16bpc, intermediate_bits = 4, so shift = 5, round = 16400
+    // rnd = (1 << 4) + 8192 * 2 = 16 + 16384 = 16400
     // Result should be clamped to [0, bitdepth_max]
-    let intermediate_bits = 4; // for 10/12 bit
-    let sh = intermediate_bits + 1;
-    let rnd = (1 << intermediate_bits) + 8192 * 2; // PREP_BIAS = 8192 for 16bpc
-
+    let rnd = 16400i32;
     let max = bitdepth_max as i32;
 
-    for row in 0..h {
-        let tmp1_row = &tmp1[row * w..][..w];
-        let tmp2_row = &tmp2[row * w..][..w];
-        // SAFETY: dst_ptr is valid, stride is correct
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(
-                dst.offset(row as isize * dst_stride_elems),
-                w
-            )
-        };
+    // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
+    let rnd_vec = unsafe { _mm256_set1_epi32(rnd) };
+    let zero = unsafe { _mm256_setzero_si256() };
+    let max_vec = unsafe { _mm256_set1_epi32(max) };
 
-        // Scalar implementation for now - SIMD for 16bpc is more complex
-        // TODO: Add AVX2 SIMD path
-        for col in 0..w {
-            let sum = tmp1_row[col] as i32 + tmp2_row[col] as i32;
-            let val = ((sum + rnd) >> sh).clamp(0, max) as u16;
-            dst_row[col] = val;
+    for row in 0..h {
+        let tmp1_ptr = tmp1[row * w..].as_ptr();
+        let tmp2_ptr = tmp2[row * w..].as_ptr();
+        // SAFETY: dst_ptr is valid, stride is correct
+        let dst_row = unsafe { dst.offset(row as isize * dst_stride_elems) };
+
+        let mut col = 0usize;
+
+        // Process 16 pixels at a time (need 32-bit arithmetic)
+        while col + 16 <= w {
+            // SAFETY: AVX2 intrinsics with valid pointers
+            unsafe {
+                // Load 16x i16 values
+                let t1 = _mm256_loadu_si256(tmp1_ptr.add(col) as *const __m256i);
+                let t2 = _mm256_loadu_si256(tmp2_ptr.add(col) as *const __m256i);
+
+                // Sign-extend low 8 values to 32-bit
+                let t1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t1));
+                let t2_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t2));
+
+                // Sign-extend high 8 values to 32-bit
+                let t1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t1, 1));
+                let t2_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t2, 1));
+
+                // sum = tmp1 + tmp2 + rnd
+                let sum_lo = _mm256_add_epi32(_mm256_add_epi32(t1_lo, t2_lo), rnd_vec);
+                let sum_hi = _mm256_add_epi32(_mm256_add_epi32(t1_hi, t2_hi), rnd_vec);
+
+                // >> 5
+                let result_lo = _mm256_srai_epi32(sum_lo, 5);
+                let result_hi = _mm256_srai_epi32(sum_hi, 5);
+
+                // Clamp to [0, max]
+                let clamped_lo = _mm256_min_epi32(_mm256_max_epi32(result_lo, zero), max_vec);
+                let clamped_hi = _mm256_min_epi32(_mm256_max_epi32(result_hi, zero), max_vec);
+
+                // Pack 32-bit to 16-bit (unsigned saturation handles the low clamp)
+                let packed = _mm256_packus_epi32(clamped_lo, clamped_hi);
+                // Fix lane ordering after packus
+                let packed = _mm256_permute4x64_epi64(packed, 0b11011000);
+
+                // Store 16x u16
+                _mm256_storeu_si256(dst_row.add(col) as *mut __m256i, packed);
+            }
+            col += 16;
+        }
+
+        // Handle remaining pixels with scalar
+        while col < w {
+            // SAFETY: pointers are valid within bounds
+            unsafe {
+                let sum = *tmp1_ptr.add(col) as i32 + *tmp2_ptr.add(col) as i32;
+                let val = ((sum + rnd) >> 5).clamp(0, max) as u16;
+                *dst_row.add(col) = val;
+            }
+            col += 1;
         }
     }
 }
@@ -227,9 +268,8 @@ pub unsafe extern "C" fn avg_scalar(
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
         // SAFETY: dst_ptr is valid, stride is correct
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
-        };
+        let dst_row =
+            unsafe { std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w) };
 
         for col in 0..w {
             let sum = tmp1_row[col].wrapping_add(tmp2_row[col]);
@@ -289,9 +329,8 @@ pub unsafe extern "C" fn w_avg_8bpc_avx2(
         let tmp1_row = &tmp1_ptr[row * w..][..w];
         let tmp2_row = &tmp2_ptr[row * w..][..w];
         // SAFETY: dst_ptr is valid for w*h bytes, dst_stride is correct
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
-        };
+        let dst_row =
+            unsafe { std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w) };
 
         let mut col = 0;
         while col + 32 <= w {
@@ -369,25 +408,72 @@ pub unsafe extern "C" fn w_avg_16bpc_avx2(
     let dst = dst_ptr as *mut u16;
     let dst_stride_elems = dst_stride / 2;
 
-    // For 16bpc: intermediate_bits = 4, sh = 8, rnd = 128 + PREP_BIAS*16
-    let intermediate_bits = 4;
-    let sh = intermediate_bits + 4;
-    let rnd = (8 << intermediate_bits) + 8192 * 16; // PREP_BIAS = 8192 for 16bpc
+    // For 16bpc: intermediate_bits = 4, sh = 8, rnd = 128 + PREP_BIAS*16 = 131200
+    let rnd = 131200i32;
     let max = bitdepth_max as i32;
+    let inv_weight = 16 - weight;
+
+    // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
+    let rnd_vec = unsafe { _mm256_set1_epi32(rnd) };
+    let zero = unsafe { _mm256_setzero_si256() };
+    let max_vec = unsafe { _mm256_set1_epi32(max) };
+    let weight_vec = unsafe { _mm256_set1_epi32(weight) };
+    let inv_weight_vec = unsafe { _mm256_set1_epi32(inv_weight) };
 
     for row in 0..h {
-        let tmp1_row = &tmp1[row * w..][..w];
-        let tmp2_row = &tmp2[row * w..][..w];
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride_elems), w)
-        };
+        let tmp1_ptr = tmp1[row * w..].as_ptr();
+        let tmp2_ptr = tmp2[row * w..].as_ptr();
+        let dst_row = unsafe { dst.offset(row as isize * dst_stride_elems) };
 
-        // Scalar for now
-        for col in 0..w {
-            let a = tmp1_row[col] as i32;
-            let b = tmp2_row[col] as i32;
-            let val = (a * weight + b * (16 - weight) + rnd) >> sh;
-            dst_row[col] = val.clamp(0, max) as u16;
+        let mut col = 0usize;
+
+        // Process 8 pixels at a time (need 32-bit arithmetic)
+        while col + 8 <= w {
+            // SAFETY: AVX2 intrinsics with valid pointers
+            unsafe {
+                // Load 8x i16 values and sign-extend to 32-bit
+                let t1_16 = _mm_loadu_si128(tmp1_ptr.add(col) as *const __m128i);
+                let t2_16 = _mm_loadu_si128(tmp2_ptr.add(col) as *const __m128i);
+                let t1 = _mm256_cvtepi16_epi32(t1_16);
+                let t2 = _mm256_cvtepi16_epi32(t2_16);
+
+                // val = a * weight + b * inv_weight + rnd
+                let term1 = _mm256_mullo_epi32(t1, weight_vec);
+                let term2 = _mm256_mullo_epi32(t2, inv_weight_vec);
+                let sum = _mm256_add_epi32(_mm256_add_epi32(term1, term2), rnd_vec);
+
+                // >> 8
+                let result = _mm256_srai_epi32(sum, 8);
+
+                // Clamp to [0, max]
+                let clamped = _mm256_min_epi32(_mm256_max_epi32(result, zero), max_vec);
+
+                // Pack 32-bit to 16-bit
+                // packus_epi32 expects two 256-bit inputs, use the same for both halves
+                let packed = _mm256_packus_epi32(clamped, clamped);
+                // After packus, low 64-bits of each lane have our 8 values
+                // Extract as 128-bit
+                let lo128 = _mm256_castsi256_si128(packed);
+                let hi128 = _mm256_extracti128_si256(packed, 1);
+                // Combine: lo128 has [0-3, 0-3], hi128 has [4-7, 4-7]
+                let result_128 = _mm_unpacklo_epi64(lo128, hi128);
+
+                // Store 8x u16
+                _mm_storeu_si128(dst_row.add(col) as *mut __m128i, result_128);
+            }
+            col += 8;
+        }
+
+        // Handle remaining pixels with scalar
+        while col < w {
+            // SAFETY: pointers are valid within bounds
+            unsafe {
+                let a = *tmp1_ptr.add(col) as i32;
+                let b = *tmp2_ptr.add(col) as i32;
+                let val = (a * weight + b * inv_weight + rnd) >> 8;
+                *dst_row.add(col) = val.clamp(0, max) as u16;
+            }
+            col += 1;
         }
     }
 }
@@ -420,9 +506,8 @@ pub unsafe extern "C" fn w_avg_scalar(
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
-        };
+        let dst_row =
+            unsafe { std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w) };
 
         for col in 0..w {
             let a = tmp1_row[col] as i32;
@@ -572,25 +657,76 @@ pub unsafe extern "C" fn mask_16bpc_avx2(
     let dst_stride_elems = dst_stride / 2;
     let max = bitdepth_max as i32;
 
-    // For 16bpc: intermediate_bits = 4, sh = 10, rnd = 512 + PREP_BIAS * 64
-    let intermediate_bits = 4;
-    let sh = intermediate_bits + 6;
-    let rnd = (32 << intermediate_bits) + 8192 * 64;
+    // For 16bpc: rnd = (32 << 4) + 8192 * 64 = 512 + 524288 = 524800
+    let rnd = 524800i32;
+
+    // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
+    let rnd_vec = unsafe { _mm256_set1_epi32(rnd) };
+    let zero = unsafe { _mm256_setzero_si256() };
+    let max_vec = unsafe { _mm256_set1_epi32(max) };
+    let sixty_four = unsafe { _mm256_set1_epi32(64) };
 
     for row in 0..h {
-        let tmp1_row = &tmp1[row * w..][..w];
-        let tmp2_row = &tmp2[row * w..][..w];
-        let mask_row = unsafe { std::slice::from_raw_parts(mask_ptr.add(row * w), w) };
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride_elems), w)
-        };
+        let tmp1_ptr = tmp1[row * w..].as_ptr();
+        let tmp2_ptr = tmp2[row * w..].as_ptr();
+        // SAFETY: mask_ptr is valid for row * w + w elements
+        let mask_row_ptr = unsafe { mask_ptr.add(row * w) };
+        // SAFETY: dst is valid for row * stride + w elements
+        let dst_row = unsafe { dst.offset(row as isize * dst_stride_elems) };
 
-        for col in 0..w {
-            let a = tmp1_row[col] as i32;
-            let b = tmp2_row[col] as i32;
-            let m = mask_row[col] as i32;
-            let val = (a * m + b * (64 - m) + rnd) >> sh;
-            dst_row[col] = val.clamp(0, max) as u16;
+        let mut col = 0usize;
+
+        // Process 8 pixels at a time with 32-bit arithmetic
+        while col + 8 <= w {
+            // SAFETY: AVX2 intrinsics with valid pointers
+            unsafe {
+                // Load 8x i16 tmp values and sign-extend to 32-bit
+                let t1_16 = _mm_loadu_si128(tmp1_ptr.add(col) as *const __m128i);
+                let t2_16 = _mm_loadu_si128(tmp2_ptr.add(col) as *const __m128i);
+                let t1 = _mm256_cvtepi16_epi32(t1_16);
+                let t2 = _mm256_cvtepi16_epi32(t2_16);
+
+                // Load 8 bytes of mask and zero-extend to 32-bit
+                let mask_bytes = _mm_loadl_epi64(mask_row_ptr.add(col) as *const __m128i);
+                let mask = _mm256_cvtepu8_epi32(mask_bytes);
+
+                // Compute (64 - mask)
+                let inv_mask = _mm256_sub_epi32(sixty_four, mask);
+
+                // val = a * m + b * (64 - m) + rnd
+                let term1 = _mm256_mullo_epi32(t1, mask);
+                let term2 = _mm256_mullo_epi32(t2, inv_mask);
+                let sum = _mm256_add_epi32(_mm256_add_epi32(term1, term2), rnd_vec);
+
+                // >> 10
+                let result = _mm256_srai_epi32(sum, 10);
+
+                // Clamp to [0, max]
+                let clamped = _mm256_min_epi32(_mm256_max_epi32(result, zero), max_vec);
+
+                // Pack 32-bit to 16-bit
+                let packed = _mm256_packus_epi32(clamped, clamped);
+                let lo128 = _mm256_castsi256_si128(packed);
+                let hi128 = _mm256_extracti128_si256(packed, 1);
+                let result_128 = _mm_unpacklo_epi64(lo128, hi128);
+
+                // Store 8x u16
+                _mm_storeu_si128(dst_row.add(col) as *mut __m128i, result_128);
+            }
+            col += 8;
+        }
+
+        // Handle remaining pixels with scalar
+        while col < w {
+            // SAFETY: pointers are valid within bounds
+            unsafe {
+                let a = *tmp1_ptr.add(col) as i32;
+                let b = *tmp2_ptr.add(col) as i32;
+                let m = *mask_row_ptr.add(col) as i32;
+                let val = (a * m + b * (64 - m) + rnd) >> 10;
+                *dst_row.add(col) = val.clamp(0, max) as u16;
+            }
+            col += 1;
         }
     }
 }
@@ -620,9 +756,8 @@ pub unsafe extern "C" fn mask_scalar(
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
         let mask_row = unsafe { std::slice::from_raw_parts(mask_ptr.add(row * w), w) };
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
-        };
+        let dst_row =
+            unsafe { std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w) };
 
         for col in 0..w {
             let a = tmp1_row[col] as i32;
@@ -748,19 +883,66 @@ pub unsafe extern "C" fn blend_16bpc_avx2(
     let dst_stride_elems = dst_stride / 2;
     let tmp = tmp as *const u16;
 
-    for row in 0..h {
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride_elems), w)
-        };
-        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
-        let mask_row = unsafe { std::slice::from_raw_parts(mask_ptr.add(row * w), w) };
+    // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
+    let rnd = unsafe { _mm256_set1_epi32(32) };
+    let sixty_four = unsafe { _mm256_set1_epi32(64) };
 
-        for col in 0..w {
-            let a = dst_row[col] as u32;
-            let b = tmp_row[col] as u32;
-            let m = mask_row[col] as u32;
-            let val = (a * (64 - m) + b * m + 32) >> 6;
-            dst_row[col] = val as u16;
+    for row in 0..h {
+        // SAFETY: dst is valid for row * stride + w elements
+        let dst_row = unsafe { dst.offset(row as isize * dst_stride_elems) };
+        let tmp_row = unsafe { tmp.add(row * w) };
+        let mask_row = unsafe { mask_ptr.add(row * w) };
+
+        let mut col = 0usize;
+
+        // Process 8 pixels at a time with 32-bit arithmetic
+        while col + 8 <= w {
+            // SAFETY: AVX2 intrinsics with valid pointers
+            unsafe {
+                // Load 8x u16 dst and tmp, zero-extend to 32-bit
+                let dst_16 = _mm_loadu_si128(dst_row.add(col) as *const __m128i);
+                let tmp_16 = _mm_loadu_si128(tmp_row.add(col) as *const __m128i);
+                let dst_32 = _mm256_cvtepu16_epi32(dst_16);
+                let tmp_32 = _mm256_cvtepu16_epi32(tmp_16);
+
+                // Load 8 bytes of mask and zero-extend to 32-bit
+                let mask_bytes = _mm_loadl_epi64(mask_row.add(col) as *const __m128i);
+                let mask_32 = _mm256_cvtepu8_epi32(mask_bytes);
+
+                // Compute (64 - mask)
+                let inv_mask = _mm256_sub_epi32(sixty_four, mask_32);
+
+                // val = dst * (64-m) + tmp * m + 32
+                let term1 = _mm256_mullo_epi32(dst_32, inv_mask);
+                let term2 = _mm256_mullo_epi32(tmp_32, mask_32);
+                let sum = _mm256_add_epi32(_mm256_add_epi32(term1, term2), rnd);
+
+                // >> 6
+                let result = _mm256_srli_epi32(sum, 6);
+
+                // Pack 32-bit to 16-bit (values fit in u16)
+                let packed = _mm256_packus_epi32(result, result);
+                let lo128 = _mm256_castsi256_si128(packed);
+                let hi128 = _mm256_extracti128_si256(packed, 1);
+                let result_128 = _mm_unpacklo_epi64(lo128, hi128);
+
+                // Store 8x u16
+                _mm_storeu_si128(dst_row.add(col) as *mut __m128i, result_128);
+            }
+            col += 8;
+        }
+
+        // Handle remaining pixels with scalar
+        while col < w {
+            // SAFETY: pointers valid
+            unsafe {
+                let a = *dst_row.add(col) as u32;
+                let b = *tmp_row.add(col) as u32;
+                let m = *mask_row.add(col) as u32;
+                let val = (a * (64 - m) + b * m + 32) >> 6;
+                *dst_row.add(col) = val as u16;
+            }
+            col += 1;
         }
     }
 }
@@ -937,20 +1119,64 @@ pub unsafe extern "C" fn blend_v_16bpc_avx2(
     let dst = dst_ptr as *mut u16;
     let dst_stride_elems = dst_stride / 2;
     let tmp = tmp as *const u16;
-    let mask = &dav1d_obmc_masks.0[h..];
+    let obmc_mask = &dav1d_obmc_masks.0[h..];
+
+    // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
+    let rnd = unsafe { _mm256_set1_epi32(32) };
+    let sixty_four = unsafe { _mm256_set1_epi32(64) };
 
     for row in 0..h {
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride_elems), w)
-        };
-        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
-        let m = mask[row] as u32;
+        let dst_row = unsafe { dst.offset(row as isize * dst_stride_elems) };
+        let tmp_row = unsafe { tmp.add(row * w) };
+        let m = obmc_mask[row] as u32;
 
-        for col in 0..w {
-            let a = dst_row[col] as u32;
-            let b = tmp_row[col] as u32;
-            let val = (a * (64 - m) + b * m + 32) >> 6;
-            dst_row[col] = val as u16;
+        // Broadcast mask value for the whole row
+        // SAFETY: AVX2 is available
+        let mask_32 = unsafe { _mm256_set1_epi32(m as i32) };
+        let inv_mask = unsafe { _mm256_sub_epi32(sixty_four, mask_32) };
+
+        let mut col = 0usize;
+
+        // Process 8 pixels at a time with 32-bit arithmetic
+        while col + 8 <= w {
+            // SAFETY: AVX2 intrinsics with valid pointers
+            unsafe {
+                // Load 8x u16 dst and tmp, zero-extend to 32-bit
+                let dst_16 = _mm_loadu_si128(dst_row.add(col) as *const __m128i);
+                let tmp_16 = _mm_loadu_si128(tmp_row.add(col) as *const __m128i);
+                let dst_32 = _mm256_cvtepu16_epi32(dst_16);
+                let tmp_32 = _mm256_cvtepu16_epi32(tmp_16);
+
+                // val = dst * (64-m) + tmp * m + 32
+                let term1 = _mm256_mullo_epi32(dst_32, inv_mask);
+                let term2 = _mm256_mullo_epi32(tmp_32, mask_32);
+                let sum = _mm256_add_epi32(_mm256_add_epi32(term1, term2), rnd);
+
+                // >> 6
+                let result = _mm256_srli_epi32(sum, 6);
+
+                // Pack 32-bit to 16-bit
+                let packed = _mm256_packus_epi32(result, result);
+                let lo128 = _mm256_castsi256_si128(packed);
+                let hi128 = _mm256_extracti128_si256(packed, 1);
+                let result_128 = _mm_unpacklo_epi64(lo128, hi128);
+
+                // Store 8x u16
+                _mm_storeu_si128(dst_row.add(col) as *mut __m128i, result_128);
+            }
+            col += 8;
+        }
+
+        // Handle remaining pixels with scalar
+        while col < w {
+            // SAFETY: pointers valid
+            unsafe {
+                let a = *dst_row.add(col) as u32;
+                let b = *tmp_row.add(col) as u32;
+                let val = (a * (64 - m) + b * m + 32) >> 6;
+                *dst_row.add(col) = val as u16;
+            }
+            col += 1;
         }
     }
 }
@@ -971,20 +1197,64 @@ pub unsafe extern "C" fn blend_h_16bpc_avx2(
     let dst = dst_ptr as *mut u16;
     let dst_stride_elems = dst_stride / 2;
     let tmp = tmp as *const u16;
-    let mask = &dav1d_obmc_masks.0[w..];
+    let obmc_mask = &dav1d_obmc_masks.0[w..];
+
+    // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
+    let rnd = unsafe { _mm256_set1_epi32(32) };
+    let sixty_four = unsafe { _mm256_set1_epi32(64) };
 
     for row in 0..h {
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride_elems), w)
-        };
-        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
+        let dst_row = unsafe { dst.offset(row as isize * dst_stride_elems) };
+        let tmp_row = unsafe { tmp.add(row * w) };
 
-        for col in 0..w {
-            let a = dst_row[col] as u32;
-            let b = tmp_row[col] as u32;
-            let m = mask[col] as u32;
-            let val = (a * (64 - m) + b * m + 32) >> 6;
-            dst_row[col] = val as u16;
+        let mut col = 0usize;
+
+        // Process 8 pixels at a time with 32-bit arithmetic
+        while col + 8 <= w {
+            // SAFETY: AVX2 intrinsics with valid pointers
+            unsafe {
+                // Load 8x u16 dst and tmp, zero-extend to 32-bit
+                let dst_16 = _mm_loadu_si128(dst_row.add(col) as *const __m128i);
+                let tmp_16 = _mm_loadu_si128(tmp_row.add(col) as *const __m128i);
+                let dst_32 = _mm256_cvtepu16_epi32(dst_16);
+                let tmp_32 = _mm256_cvtepu16_epi32(tmp_16);
+
+                // Load 8 bytes of mask and zero-extend to 32-bit
+                let mask_bytes = _mm_loadl_epi64(obmc_mask[col..].as_ptr() as *const __m128i);
+                let mask_32 = _mm256_cvtepu8_epi32(mask_bytes);
+                let inv_mask = _mm256_sub_epi32(sixty_four, mask_32);
+
+                // val = dst * (64-m) + tmp * m + 32
+                let term1 = _mm256_mullo_epi32(dst_32, inv_mask);
+                let term2 = _mm256_mullo_epi32(tmp_32, mask_32);
+                let sum = _mm256_add_epi32(_mm256_add_epi32(term1, term2), rnd);
+
+                // >> 6
+                let result = _mm256_srli_epi32(sum, 6);
+
+                // Pack 32-bit to 16-bit
+                let packed = _mm256_packus_epi32(result, result);
+                let lo128 = _mm256_castsi256_si128(packed);
+                let hi128 = _mm256_extracti128_si256(packed, 1);
+                let result_128 = _mm_unpacklo_epi64(lo128, hi128);
+
+                // Store 8x u16
+                _mm_storeu_si128(dst_row.add(col) as *mut __m128i, result_128);
+            }
+            col += 8;
+        }
+
+        // Handle remaining pixels with scalar
+        while col < w {
+            // SAFETY: pointers valid
+            unsafe {
+                let a = *dst_row.add(col) as u32;
+                let b = *tmp_row.add(col) as u32;
+                let m = obmc_mask[col] as u32;
+                let val = (a * (64 - m) + b * m + 32) >> 6;
+                *dst_row.add(col) = val as u16;
+            }
+            col += 1;
         }
     }
 }
@@ -1012,8 +1282,24 @@ mod tests {
         }
 
         let test_values: Vec<i16> = vec![
-            0, 1, 2, 127, 128, 255, 256, 511, 512, 1023, 1024,
-            -1, -128, -256, -512, -1024, i16::MIN, i16::MAX,
+            0,
+            1,
+            2,
+            127,
+            128,
+            255,
+            256,
+            511,
+            512,
+            1023,
+            1024,
+            -1,
+            -128,
+            -256,
+            -512,
+            -1024,
+            i16::MIN,
+            i16::MAX,
         ];
 
         let w = 64i32;
@@ -1059,9 +1345,13 @@ mod tests {
                 }
 
                 assert_eq!(
-                    dst_avx2, dst_scalar,
+                    dst_avx2,
+                    dst_scalar,
                     "Mismatch for v1={}, v2={}: avx2={:?} scalar={:?}",
-                    v1, v2, &dst_avx2[..8], &dst_scalar[..8]
+                    v1,
+                    v2,
+                    &dst_avx2[..8],
+                    &dst_scalar[..8]
                 );
             }
         }
@@ -1122,8 +1412,7 @@ mod tests {
         }
 
         let test_values: Vec<i16> = vec![
-            0, 1, 127, 255, 512, 1023, 2047, 4095, 8191,
-            -1, -128, -512, -1024,
+            0, 1, 127, 255, 512, 1023, 2047, 4095, 8191, -1, -128, -512, -1024,
         ];
         let test_weights = [0, 1, 4, 8, 12, 15, 16];
 
@@ -1172,9 +1461,14 @@ mod tests {
                     }
 
                     assert_eq!(
-                        dst_avx2, dst_scalar,
+                        dst_avx2,
+                        dst_scalar,
                         "Mismatch for weight={}, v1={}, v2={}: avx2={:?} scalar={:?}",
-                        weight, v1, v2, &dst_avx2[..8], &dst_scalar[..8]
+                        weight,
+                        v1,
+                        v2,
+                        &dst_avx2[..8],
+                        &dst_scalar[..8]
                     );
                 }
             }
@@ -1238,9 +1532,14 @@ mod tests {
                     }
 
                     assert_eq!(
-                        dst_avx2, dst_scalar,
+                        dst_avx2,
+                        dst_scalar,
                         "Mismatch for mask={}, v1={}, v2={}: avx2={:?} scalar={:?}",
-                        m, v1, v2, &dst_avx2[..8], &dst_scalar[..8]
+                        m,
+                        v1,
+                        v2,
+                        &dst_avx2[..8],
+                        &dst_scalar[..8]
                     );
                 }
             }
