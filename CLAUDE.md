@@ -84,10 +84,13 @@ The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_si
 **8-tap Filter (mc/mct):**
 - [x] `put_8tap_*_8bpc_avx2` - All 9 filter variants for 8bpc (SIMD)
 - [x] `prep_8tap_*_8bpc_avx2` - All 9 filter variants for 8bpc (SIMD)
-- [x] `put_8tap_*_16bpc_avx2` - All 9 filter variants for 16bpc (scalar, not SIMD yet)
-- [x] `prep_8tap_*_16bpc_avx2` - All 9 filter variants for 16bpc (scalar, not SIMD yet)
+- [x] `put_8tap_*_16bpc_avx2` - All 9 filter variants for 16bpc (SIMD for H+V, scalar for H/V-only)
+- [x] `prep_8tap_*_16bpc_avx2` - All 9 filter variants for 16bpc (SIMD for H+V, scalar for H/V-only)
 - [x] `h_filter_8tap_8bpc_avx2` - Horizontal 8-tap filter using maddubs
 - [x] `v_filter_8tap_8bpc_avx2` - Vertical 8-tap filter with 32-bit arithmetic
+- [x] `h_filter_8tap_16bpc_avx2` - Horizontal 8-tap filter for 16-bit pixels (madd_epi16)
+- [x] `v_filter_8tap_16bpc_avx2` - Vertical 8-tap filter for 16bpc put (mullo_epi32)
+- [x] `v_filter_8tap_16bpc_prep_avx2` - Vertical 8-tap filter for 16bpc prep (with PREP_BIAS)
 - [x] `get_filter_coeff()` - Access filter coefficients from tables
 
 **Bilinear Filter (mc/mct):**
