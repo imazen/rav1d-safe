@@ -890,6 +890,38 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_16x16][IDTX as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x16_8bpc_avx2);
 
+        // ADST/FlipADST combinations 16x16
+        self.itxfm_add[tx_16x16][ADST_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][DCT_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][ADST_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][FLIPADST_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][DCT_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][FLIPADST_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][ADST_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][FLIPADST_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_16x16_8bpc_avx2);
+
+        // V/H transforms 16x16 (Identity + DCT/ADST/FlipADST)
+        self.itxfm_add[tx_16x16][H_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][V_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][H_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][V_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][H_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_16x16_8bpc_avx2);
+        self.itxfm_add[tx_16x16][V_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_16x16_8bpc_avx2);
+
         self
     }
 

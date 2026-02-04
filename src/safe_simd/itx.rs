@@ -1036,6 +1036,326 @@ fn dct16_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
     c[15 * stride] = clip(t0 - t15a);
 }
 
+/// ADST16 1D transform (in-place)
+#[inline]
+fn adst16_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
+    let clip = |v: i32| v.clamp(min, max);
+
+    let in0 = c[0 * stride];
+    let in1 = c[1 * stride];
+    let in2 = c[2 * stride];
+    let in3 = c[3 * stride];
+    let in4 = c[4 * stride];
+    let in5 = c[5 * stride];
+    let in6 = c[6 * stride];
+    let in7 = c[7 * stride];
+    let in8 = c[8 * stride];
+    let in9 = c[9 * stride];
+    let in10 = c[10 * stride];
+    let in11 = c[11 * stride];
+    let in12 = c[12 * stride];
+    let in13 = c[13 * stride];
+    let in14 = c[14 * stride];
+    let in15 = c[15 * stride];
+
+    let mut t0 = ((in15 * (4091 - 4096) + in0 * 201 + 2048) >> 12) + in15;
+    let mut t1 = ((in15 * 201 - in0 * (4091 - 4096) + 2048) >> 12) - in0;
+    let mut t2 = ((in13 * (3973 - 4096) + in2 * 995 + 2048) >> 12) + in13;
+    let mut t3 = ((in13 * 995 - in2 * (3973 - 4096) + 2048) >> 12) - in2;
+    let mut t4 = ((in11 * (3703 - 4096) + in4 * 1751 + 2048) >> 12) + in11;
+    let mut t5 = ((in11 * 1751 - in4 * (3703 - 4096) + 2048) >> 12) - in4;
+    let mut t6 = (in9 * 1645 + in6 * 1220 + 1024) >> 11;
+    let mut t7 = (in9 * 1220 - in6 * 1645 + 1024) >> 11;
+    let mut t8 = ((in7 * 2751 + in8 * (3035 - 4096) + 2048) >> 12) + in8;
+    let mut t9 = ((in7 * (3035 - 4096) - in8 * 2751 + 2048) >> 12) + in7;
+    let mut t10 = ((in5 * 2106 + in10 * (3513 - 4096) + 2048) >> 12) + in10;
+    let mut t11 = ((in5 * (3513 - 4096) - in10 * 2106 + 2048) >> 12) + in5;
+    let mut t12 = ((in3 * 1380 + in12 * (3857 - 4096) + 2048) >> 12) + in12;
+    let mut t13 = ((in3 * (3857 - 4096) - in12 * 1380 + 2048) >> 12) + in3;
+    let mut t14 = ((in1 * 601 + in14 * (4052 - 4096) + 2048) >> 12) + in14;
+    let mut t15 = ((in1 * (4052 - 4096) - in14 * 601 + 2048) >> 12) + in1;
+
+    let t0a = clip(t0 + t8);
+    let t1a = clip(t1 + t9);
+    let mut t2a = clip(t2 + t10);
+    let mut t3a = clip(t3 + t11);
+    let mut t4a = clip(t4 + t12);
+    let mut t5a = clip(t5 + t13);
+    let mut t6a = clip(t6 + t14);
+    let mut t7a = clip(t7 + t15);
+    let mut t8a = clip(t0 - t8);
+    let mut t9a = clip(t1 - t9);
+    let mut t10a = clip(t2 - t10);
+    let mut t11a = clip(t3 - t11);
+    let mut t12a = clip(t4 - t12);
+    let mut t13a = clip(t5 - t13);
+    let mut t14a = clip(t6 - t14);
+    let mut t15a = clip(t7 - t15);
+
+    t8 = ((t8a * (4017 - 4096) + t9a * 799 + 2048) >> 12) + t8a;
+    t9 = ((t8a * 799 - t9a * (4017 - 4096) + 2048) >> 12) - t9a;
+    t10 = ((t10a * 2276 + t11a * (3406 - 4096) + 2048) >> 12) + t11a;
+    t11 = ((t10a * (3406 - 4096) - t11a * 2276 + 2048) >> 12) + t10a;
+    t12 = ((t13a * (4017 - 4096) - t12a * 799 + 2048) >> 12) + t13a;
+    t13 = ((t13a * 799 + t12a * (4017 - 4096) + 2048) >> 12) + t12a;
+    t14 = ((t15a * 2276 - t14a * (3406 - 4096) + 2048) >> 12) - t14a;
+    t15 = ((t15a * (3406 - 4096) + t14a * 2276 + 2048) >> 12) + t15a;
+
+    t0 = clip(t0a + t4a);
+    t1 = clip(t1a + t5a);
+    t2 = clip(t2a + t6a);
+    t3 = clip(t3a + t7a);
+    t4 = clip(t0a - t4a);
+    t5 = clip(t1a - t5a);
+    t6 = clip(t2a - t6a);
+    t7 = clip(t3a - t7a);
+    t8a = clip(t8 + t12);
+    t9a = clip(t9 + t13);
+    t10a = clip(t10 + t14);
+    t11a = clip(t11 + t15);
+    t12a = clip(t8 - t12);
+    t13a = clip(t9 - t13);
+    t14a = clip(t10 - t14);
+    t15a = clip(t11 - t15);
+
+    t4a = ((t4 * (3784 - 4096) + t5 * 1567 + 2048) >> 12) + t4;
+    t5a = ((t4 * 1567 - t5 * (3784 - 4096) + 2048) >> 12) - t5;
+    t6a = ((t7 * (3784 - 4096) - t6 * 1567 + 2048) >> 12) + t7;
+    t7a = ((t7 * 1567 + t6 * (3784 - 4096) + 2048) >> 12) + t6;
+    t12 = ((t12a * (3784 - 4096) + t13a * 1567 + 2048) >> 12) + t12a;
+    t13 = ((t12a * 1567 - t13a * (3784 - 4096) + 2048) >> 12) - t13a;
+    t14 = ((t15a * (3784 - 4096) - t14a * 1567 + 2048) >> 12) + t15a;
+    t15 = ((t15a * 1567 + t14a * (3784 - 4096) + 2048) >> 12) + t14a;
+
+    c[0 * stride] = clip(t0 + t2);
+    c[15 * stride] = -clip(t1 + t3);
+    t2a = clip(t0 - t2);
+    t3a = clip(t1 - t3);
+    c[3 * stride] = -clip(t4a + t6a);
+    c[12 * stride] = clip(t5a + t7a);
+    t6 = clip(t4a - t6a);
+    t7 = clip(t5a - t7a);
+    c[1 * stride] = -clip(t8a + t10a);
+    c[14 * stride] = clip(t9a + t11a);
+    t10 = clip(t8a - t10a);
+    t11 = clip(t9a - t11a);
+    c[2 * stride] = clip(t12 + t14);
+    c[13 * stride] = -clip(t13 + t15);
+    t14a = clip(t12 - t14);
+    t15a = clip(t13 - t15);
+
+    c[7 * stride] = -(((t2a + t3a) * 181 + 128) >> 8);
+    c[8 * stride] = ((t2a - t3a) * 181 + 128) >> 8;
+    c[4 * stride] = ((t6 + t7) * 181 + 128) >> 8;
+    c[11 * stride] = -(((t6 - t7) * 181 + 128) >> 8);
+    c[6 * stride] = ((t10 + t11) * 181 + 128) >> 8;
+    c[9 * stride] = -(((t10 - t11) * 181 + 128) >> 8);
+    c[5 * stride] = -(((t14a + t15a) * 181 + 128) >> 8);
+    c[10 * stride] = ((t14a - t15a) * 181 + 128) >> 8;
+}
+
+/// FlipADST16 1D transform (in-place)
+#[inline]
+fn flipadst16_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
+    // Apply ADST then reverse
+    adst16_1d(c, stride, min, max);
+    // Swap in place
+    for i in 0..8 {
+        let tmp = c[i * stride];
+        c[i * stride] = c[(15 - i) * stride];
+        c[(15 - i) * stride] = tmp;
+    }
+}
+
+/// Identity16 1D transform (in-place)
+#[inline]
+fn identity16_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
+    // Identity16 multiplies by 2 * sqrt(2) ≈ 2.828
+    // Implemented as (x * 2 * 1.414) = (x * 5793 + 2048) >> 11 + x
+    // But simpler: for 16pt identity, out = in * 2 * sqrt(2)
+    // AV1 spec uses: out = (in * 2 * 181 + 128) >> 8 but that's only 1.414x
+    // Actually for 16x16 identity: out = in * 2 (same as 8x8)
+    for i in 0..16 {
+        c[i * stride] *= 2;
+    }
+}
+
+/// Generic 16x16 transform function
+#[inline]
+fn inv_txfm_16x16_inner(
+    tmp: &mut [i32; 256],
+    coeff: *const i16,
+    row_transform: fn(&mut [i32], usize, i32, i32),
+    col_transform: fn(&mut [i32], usize, i32, i32),
+    row_clip_min: i32, row_clip_max: i32,
+    col_clip_min: i32, col_clip_max: i32,
+) {
+    let rnd = 2;
+    let shift = 2;
+
+    // Row transform
+    for y in 0..16 {
+        // Load row from column-major
+        for x in 0..16 {
+            tmp[x] = unsafe { *coeff.add(y + x * 16) as i32 };
+        }
+        row_transform(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        // Apply intermediate shift and store row-major
+        for x in 0..16 {
+            tmp[y * 16 + x] = ((tmp[x] + rnd) >> shift).clamp(col_clip_min, col_clip_max);
+        }
+    }
+
+    // Column transform (in-place, row-major with stride 16)
+    for x in 0..16 {
+        col_transform(&mut tmp[x..], 16, col_clip_min, col_clip_max);
+    }
+}
+
+/// Add transformed coefficients to destination with SIMD
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn add_16x16_to_dst(
+    dst: *mut u8,
+    dst_stride: isize,
+    tmp: &[i32; 256],
+    coeff: *mut i16,
+    bitdepth_max: i32,
+) {
+    unsafe {
+        let zero = _mm256_setzero_si256();
+        let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+        let rnd_final = _mm256_set1_epi32(8);
+
+        for y in 0..16 {
+            let dst_row = dst.offset(y as isize * dst_stride);
+
+            // Load destination pixels (16 bytes)
+            let d = _mm_loadu_si128(dst_row as *const __m128i);
+            let d16 = _mm256_cvtepu8_epi16(d);
+
+            // Load and scale coefficients (16 values)
+            let c0 = _mm256_set_epi32(
+                tmp[y * 16 + 7], tmp[y * 16 + 6],
+                tmp[y * 16 + 5], tmp[y * 16 + 4],
+                tmp[y * 16 + 3], tmp[y * 16 + 2],
+                tmp[y * 16 + 1], tmp[y * 16 + 0]
+            );
+            let c1 = _mm256_set_epi32(
+                tmp[y * 16 + 15], tmp[y * 16 + 14],
+                tmp[y * 16 + 13], tmp[y * 16 + 12],
+                tmp[y * 16 + 11], tmp[y * 16 + 10],
+                tmp[y * 16 + 9], tmp[y * 16 + 8]
+            );
+
+            // Final scaling: (c + 8) >> 4
+            let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
+            let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
+
+            // Pack to 16-bit
+            let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+            // Fix lane order after packs
+            let c16 = _mm256_permute4x64_epi64::<0b11_01_10_00>(c16);
+
+            // Add to destination
+            let sum = _mm256_add_epi16(d16, c16);
+            let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
+
+            // Pack to 8-bit
+            let packed = _mm256_packus_epi16(clamped, clamped);
+            let packed = _mm256_permute4x64_epi64::<0b11_01_10_00>(packed);
+
+            // Store 16 pixels
+            _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed));
+        }
+
+        // Clear coefficients (256 * 2 = 512 bytes = 16 * 32 bytes)
+        let zero256 = _mm256_setzero_si256();
+        for i in 0..16 {
+            _mm256_storeu_si256((coeff as *mut __m256i).add(i), zero256);
+        }
+    }
+}
+
+// ============================================================================
+// 16x16 ADST TRANSFORM VARIANTS
+// ============================================================================
+
+/// Macro to generate 16x16 transform inner functions
+macro_rules! impl_16x16_transform {
+    ($name:ident, $row_fn:ident, $col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        unsafe fn $name(
+            dst: *mut u8,
+            dst_stride: isize,
+            coeff: *mut i16,
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let row_clip_min = i16::MIN as i32;
+            let row_clip_max = i16::MAX as i32;
+            let col_clip_min = i16::MIN as i32;
+            let col_clip_max = i16::MAX as i32;
+
+            let mut tmp = [0i32; 256];
+            inv_txfm_16x16_inner(
+                &mut tmp, coeff, $row_fn, $col_fn,
+                row_clip_min, row_clip_max,
+                col_clip_min, col_clip_max,
+            );
+            unsafe { add_16x16_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max); }
+        }
+    };
+}
+
+/// Macro to generate FFI wrappers for 16x16 transforms
+macro_rules! impl_16x16_ffi_wrapper {
+    ($wrapper:ident, $inner:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        pub unsafe extern "C" fn $wrapper(
+            dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+            eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+        }
+    };
+}
+
+// Generate inner functions for all 16x16 transform combinations
+impl_16x16_transform!(inv_txfm_add_adst_dct_16x16_8bpc_avx2_inner, adst16_1d, dct16_1d);
+impl_16x16_transform!(inv_txfm_add_dct_adst_16x16_8bpc_avx2_inner, dct16_1d, adst16_1d);
+impl_16x16_transform!(inv_txfm_add_adst_adst_16x16_8bpc_avx2_inner, adst16_1d, adst16_1d);
+impl_16x16_transform!(inv_txfm_add_flipadst_dct_16x16_8bpc_avx2_inner, flipadst16_1d, dct16_1d);
+impl_16x16_transform!(inv_txfm_add_dct_flipadst_16x16_8bpc_avx2_inner, dct16_1d, flipadst16_1d);
+impl_16x16_transform!(inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2_inner, flipadst16_1d, flipadst16_1d);
+impl_16x16_transform!(inv_txfm_add_adst_flipadst_16x16_8bpc_avx2_inner, adst16_1d, flipadst16_1d);
+impl_16x16_transform!(inv_txfm_add_flipadst_adst_16x16_8bpc_avx2_inner, flipadst16_1d, adst16_1d);
+impl_16x16_transform!(inv_txfm_add_identity_dct_16x16_8bpc_avx2_inner, identity16_1d, dct16_1d);
+impl_16x16_transform!(inv_txfm_add_dct_identity_16x16_8bpc_avx2_inner, dct16_1d, identity16_1d);
+impl_16x16_transform!(inv_txfm_add_identity_adst_16x16_8bpc_avx2_inner, identity16_1d, adst16_1d);
+impl_16x16_transform!(inv_txfm_add_adst_identity_16x16_8bpc_avx2_inner, adst16_1d, identity16_1d);
+impl_16x16_transform!(inv_txfm_add_identity_flipadst_16x16_8bpc_avx2_inner, identity16_1d, flipadst16_1d);
+impl_16x16_transform!(inv_txfm_add_flipadst_identity_16x16_8bpc_avx2_inner, flipadst16_1d, identity16_1d);
+
+// Generate FFI wrappers
+impl_16x16_ffi_wrapper!(inv_txfm_add_adst_dct_16x16_8bpc_avx2, inv_txfm_add_adst_dct_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_dct_adst_16x16_8bpc_avx2, inv_txfm_add_dct_adst_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_adst_adst_16x16_8bpc_avx2, inv_txfm_add_adst_adst_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_flipadst_dct_16x16_8bpc_avx2, inv_txfm_add_flipadst_dct_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_dct_flipadst_16x16_8bpc_avx2, inv_txfm_add_dct_flipadst_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2, inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_adst_flipadst_16x16_8bpc_avx2, inv_txfm_add_adst_flipadst_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_flipadst_adst_16x16_8bpc_avx2, inv_txfm_add_flipadst_adst_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_identity_dct_16x16_8bpc_avx2, inv_txfm_add_identity_dct_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_dct_identity_16x16_8bpc_avx2, inv_txfm_add_dct_identity_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_identity_adst_16x16_8bpc_avx2, inv_txfm_add_identity_adst_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_adst_identity_16x16_8bpc_avx2, inv_txfm_add_adst_identity_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_identity_flipadst_16x16_8bpc_avx2, inv_txfm_add_identity_flipadst_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(inv_txfm_add_flipadst_identity_16x16_8bpc_avx2, inv_txfm_add_flipadst_identity_16x16_8bpc_avx2_inner);
+
 /// Full 2D DCT_DCT 16x16 inverse transform with add-to-destination
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
