@@ -2095,6 +2095,44 @@ impl_8x4_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2, inv_txfm_add
 impl_8x4_ffi_wrapper!(inv_txfm_add_adst_flipadst_8x4_8bpc_avx2, inv_txfm_add_adst_flipadst_8x4_8bpc_avx2_inner);
 impl_8x4_ffi_wrapper!(inv_txfm_add_flipadst_adst_8x4_8bpc_avx2, inv_txfm_add_flipadst_adst_8x4_8bpc_avx2_inner);
 
+// IDTX for 4x8 and 8x4
+impl_4x8_transform!(inv_txfm_add_identity_identity_4x8_8bpc_avx2_inner, identity4_1d, identity8_1d);
+impl_8x4_transform!(inv_txfm_add_identity_identity_8x4_8bpc_avx2_inner, identity8_1d, identity4_1d);
+impl_4x8_ffi_wrapper!(inv_txfm_add_identity_identity_4x8_8bpc_avx2, inv_txfm_add_identity_identity_4x8_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_identity_identity_8x4_8bpc_avx2, inv_txfm_add_identity_identity_8x4_8bpc_avx2_inner);
+
+// H_DCT and V_DCT for 4x8 (identity+dct mixes)
+impl_4x8_transform!(inv_txfm_add_identity_dct_4x8_8bpc_avx2_inner, identity4_1d, dct8_1d);
+impl_4x8_transform!(inv_txfm_add_dct_identity_4x8_8bpc_avx2_inner, dct4_1d, identity8_1d);
+impl_4x8_ffi_wrapper!(inv_txfm_add_identity_dct_4x8_8bpc_avx2, inv_txfm_add_identity_dct_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(inv_txfm_add_dct_identity_4x8_8bpc_avx2, inv_txfm_add_dct_identity_4x8_8bpc_avx2_inner);
+
+// H_DCT and V_DCT for 8x4
+impl_8x4_transform!(inv_txfm_add_identity_dct_8x4_8bpc_avx2_inner, identity8_1d, dct4_1d);
+impl_8x4_transform!(inv_txfm_add_dct_identity_8x4_8bpc_avx2_inner, dct8_1d, identity4_1d);
+impl_8x4_ffi_wrapper!(inv_txfm_add_identity_dct_8x4_8bpc_avx2, inv_txfm_add_identity_dct_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_dct_identity_8x4_8bpc_avx2, inv_txfm_add_dct_identity_8x4_8bpc_avx2_inner);
+
+// H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 4x8
+impl_4x8_transform!(inv_txfm_add_identity_adst_4x8_8bpc_avx2_inner, identity4_1d, adst8_1d);
+impl_4x8_transform!(inv_txfm_add_adst_identity_4x8_8bpc_avx2_inner, adst4_1d, identity8_1d);
+impl_4x8_transform!(inv_txfm_add_identity_flipadst_4x8_8bpc_avx2_inner, identity4_1d, flipadst8_1d);
+impl_4x8_transform!(inv_txfm_add_flipadst_identity_4x8_8bpc_avx2_inner, flipadst4_1d, identity8_1d);
+impl_4x8_ffi_wrapper!(inv_txfm_add_identity_adst_4x8_8bpc_avx2, inv_txfm_add_identity_adst_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(inv_txfm_add_adst_identity_4x8_8bpc_avx2, inv_txfm_add_adst_identity_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(inv_txfm_add_identity_flipadst_4x8_8bpc_avx2, inv_txfm_add_identity_flipadst_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(inv_txfm_add_flipadst_identity_4x8_8bpc_avx2, inv_txfm_add_flipadst_identity_4x8_8bpc_avx2_inner);
+
+// H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 8x4
+impl_8x4_transform!(inv_txfm_add_identity_adst_8x4_8bpc_avx2_inner, identity8_1d, adst4_1d);
+impl_8x4_transform!(inv_txfm_add_adst_identity_8x4_8bpc_avx2_inner, adst8_1d, identity4_1d);
+impl_8x4_transform!(inv_txfm_add_identity_flipadst_8x4_8bpc_avx2_inner, identity8_1d, flipadst4_1d);
+impl_8x4_transform!(inv_txfm_add_flipadst_identity_8x4_8bpc_avx2_inner, flipadst8_1d, identity4_1d);
+impl_8x4_ffi_wrapper!(inv_txfm_add_identity_adst_8x4_8bpc_avx2, inv_txfm_add_identity_adst_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_adst_identity_8x4_8bpc_avx2, inv_txfm_add_adst_identity_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_identity_flipadst_8x4_8bpc_avx2, inv_txfm_add_identity_flipadst_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_flipadst_identity_8x4_8bpc_avx2, inv_txfm_add_flipadst_identity_8x4_8bpc_avx2_inner);
+
 // ============================================================================
 // 8x16 and 16x8 ADST/FLIPADST variants
 // ============================================================================
@@ -2375,6 +2413,44 @@ impl_16x8_ffi_wrapper!(inv_txfm_add_dct_flipadst_16x8_8bpc_avx2, inv_txfm_add_dc
 impl_16x8_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2, inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2_inner);
 impl_16x8_ffi_wrapper!(inv_txfm_add_adst_flipadst_16x8_8bpc_avx2, inv_txfm_add_adst_flipadst_16x8_8bpc_avx2_inner);
 impl_16x8_ffi_wrapper!(inv_txfm_add_flipadst_adst_16x8_8bpc_avx2, inv_txfm_add_flipadst_adst_16x8_8bpc_avx2_inner);
+
+// IDTX for 8x16 and 16x8
+impl_8x16_transform!(inv_txfm_add_identity_identity_8x16_8bpc_avx2_inner, identity8_1d, identity16_1d);
+impl_16x8_transform!(inv_txfm_add_identity_identity_16x8_8bpc_avx2_inner, identity16_1d, identity8_1d);
+impl_8x16_ffi_wrapper!(inv_txfm_add_identity_identity_8x16_8bpc_avx2, inv_txfm_add_identity_identity_8x16_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_identity_identity_16x8_8bpc_avx2, inv_txfm_add_identity_identity_16x8_8bpc_avx2_inner);
+
+// H_DCT and V_DCT for 8x16
+impl_8x16_transform!(inv_txfm_add_identity_dct_8x16_8bpc_avx2_inner, identity8_1d, dct16_1d);
+impl_8x16_transform!(inv_txfm_add_dct_identity_8x16_8bpc_avx2_inner, dct8_1d, identity16_1d);
+impl_8x16_ffi_wrapper!(inv_txfm_add_identity_dct_8x16_8bpc_avx2, inv_txfm_add_identity_dct_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(inv_txfm_add_dct_identity_8x16_8bpc_avx2, inv_txfm_add_dct_identity_8x16_8bpc_avx2_inner);
+
+// H_DCT and V_DCT for 16x8
+impl_16x8_transform!(inv_txfm_add_identity_dct_16x8_8bpc_avx2_inner, identity16_1d, dct8_1d);
+impl_16x8_transform!(inv_txfm_add_dct_identity_16x8_8bpc_avx2_inner, dct16_1d, identity8_1d);
+impl_16x8_ffi_wrapper!(inv_txfm_add_identity_dct_16x8_8bpc_avx2, inv_txfm_add_identity_dct_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_dct_identity_16x8_8bpc_avx2, inv_txfm_add_dct_identity_16x8_8bpc_avx2_inner);
+
+// H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 8x16
+impl_8x16_transform!(inv_txfm_add_identity_adst_8x16_8bpc_avx2_inner, identity8_1d, adst16_1d);
+impl_8x16_transform!(inv_txfm_add_adst_identity_8x16_8bpc_avx2_inner, adst8_1d, identity16_1d);
+impl_8x16_transform!(inv_txfm_add_identity_flipadst_8x16_8bpc_avx2_inner, identity8_1d, flipadst16_1d);
+impl_8x16_transform!(inv_txfm_add_flipadst_identity_8x16_8bpc_avx2_inner, flipadst8_1d, identity16_1d);
+impl_8x16_ffi_wrapper!(inv_txfm_add_identity_adst_8x16_8bpc_avx2, inv_txfm_add_identity_adst_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(inv_txfm_add_adst_identity_8x16_8bpc_avx2, inv_txfm_add_adst_identity_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(inv_txfm_add_identity_flipadst_8x16_8bpc_avx2, inv_txfm_add_identity_flipadst_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(inv_txfm_add_flipadst_identity_8x16_8bpc_avx2, inv_txfm_add_flipadst_identity_8x16_8bpc_avx2_inner);
+
+// H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 16x8
+impl_16x8_transform!(inv_txfm_add_identity_adst_16x8_8bpc_avx2_inner, identity16_1d, adst8_1d);
+impl_16x8_transform!(inv_txfm_add_adst_identity_16x8_8bpc_avx2_inner, adst16_1d, identity8_1d);
+impl_16x8_transform!(inv_txfm_add_identity_flipadst_16x8_8bpc_avx2_inner, identity16_1d, flipadst8_1d);
+impl_16x8_transform!(inv_txfm_add_flipadst_identity_16x8_8bpc_avx2_inner, flipadst16_1d, identity8_1d);
+impl_16x8_ffi_wrapper!(inv_txfm_add_identity_adst_16x8_8bpc_avx2, inv_txfm_add_identity_adst_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_adst_identity_16x8_8bpc_avx2, inv_txfm_add_adst_identity_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_identity_flipadst_16x8_8bpc_avx2, inv_txfm_add_identity_flipadst_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_flipadst_identity_16x8_8bpc_avx2, inv_txfm_add_flipadst_identity_16x8_8bpc_avx2_inner);
 
 /// Full 2D DCT_DCT 8x8 inverse transform
 #[cfg(target_arch = "x86_64")]
@@ -3731,6 +3807,44 @@ impl_16x4_ffi_wrapper!(inv_txfm_add_dct_flipadst_16x4_8bpc_avx2, inv_txfm_add_dc
 impl_16x4_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2, inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2_inner);
 impl_16x4_ffi_wrapper!(inv_txfm_add_adst_flipadst_16x4_8bpc_avx2, inv_txfm_add_adst_flipadst_16x4_8bpc_avx2_inner);
 impl_16x4_ffi_wrapper!(inv_txfm_add_flipadst_adst_16x4_8bpc_avx2, inv_txfm_add_flipadst_adst_16x4_8bpc_avx2_inner);
+
+// IDTX for 4x16 and 16x4
+impl_4x16_transform!(inv_txfm_add_identity_identity_4x16_8bpc_avx2_inner, identity4_1d, identity16_1d);
+impl_16x4_transform!(inv_txfm_add_identity_identity_16x4_8bpc_avx2_inner, identity16_1d, identity4_1d);
+impl_4x16_ffi_wrapper!(inv_txfm_add_identity_identity_4x16_8bpc_avx2, inv_txfm_add_identity_identity_4x16_8bpc_avx2_inner);
+impl_16x4_ffi_wrapper!(inv_txfm_add_identity_identity_16x4_8bpc_avx2, inv_txfm_add_identity_identity_16x4_8bpc_avx2_inner);
+
+// H_DCT and V_DCT for 4x16
+impl_4x16_transform!(inv_txfm_add_identity_dct_4x16_8bpc_avx2_inner, identity4_1d, dct16_1d);
+impl_4x16_transform!(inv_txfm_add_dct_identity_4x16_8bpc_avx2_inner, dct4_1d, identity16_1d);
+impl_4x16_ffi_wrapper!(inv_txfm_add_identity_dct_4x16_8bpc_avx2, inv_txfm_add_identity_dct_4x16_8bpc_avx2_inner);
+impl_4x16_ffi_wrapper!(inv_txfm_add_dct_identity_4x16_8bpc_avx2, inv_txfm_add_dct_identity_4x16_8bpc_avx2_inner);
+
+// H_DCT and V_DCT for 16x4
+impl_16x4_transform!(inv_txfm_add_identity_dct_16x4_8bpc_avx2_inner, identity16_1d, dct4_1d);
+impl_16x4_transform!(inv_txfm_add_dct_identity_16x4_8bpc_avx2_inner, dct16_1d, identity4_1d);
+impl_16x4_ffi_wrapper!(inv_txfm_add_identity_dct_16x4_8bpc_avx2, inv_txfm_add_identity_dct_16x4_8bpc_avx2_inner);
+impl_16x4_ffi_wrapper!(inv_txfm_add_dct_identity_16x4_8bpc_avx2, inv_txfm_add_dct_identity_16x4_8bpc_avx2_inner);
+
+// H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 4x16
+impl_4x16_transform!(inv_txfm_add_identity_adst_4x16_8bpc_avx2_inner, identity4_1d, adst16_1d);
+impl_4x16_transform!(inv_txfm_add_adst_identity_4x16_8bpc_avx2_inner, adst4_1d, identity16_1d);
+impl_4x16_transform!(inv_txfm_add_identity_flipadst_4x16_8bpc_avx2_inner, identity4_1d, flipadst16_1d);
+impl_4x16_transform!(inv_txfm_add_flipadst_identity_4x16_8bpc_avx2_inner, flipadst4_1d, identity16_1d);
+impl_4x16_ffi_wrapper!(inv_txfm_add_identity_adst_4x16_8bpc_avx2, inv_txfm_add_identity_adst_4x16_8bpc_avx2_inner);
+impl_4x16_ffi_wrapper!(inv_txfm_add_adst_identity_4x16_8bpc_avx2, inv_txfm_add_adst_identity_4x16_8bpc_avx2_inner);
+impl_4x16_ffi_wrapper!(inv_txfm_add_identity_flipadst_4x16_8bpc_avx2, inv_txfm_add_identity_flipadst_4x16_8bpc_avx2_inner);
+impl_4x16_ffi_wrapper!(inv_txfm_add_flipadst_identity_4x16_8bpc_avx2, inv_txfm_add_flipadst_identity_4x16_8bpc_avx2_inner);
+
+// H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 16x4
+impl_16x4_transform!(inv_txfm_add_identity_adst_16x4_8bpc_avx2_inner, identity16_1d, adst4_1d);
+impl_16x4_transform!(inv_txfm_add_adst_identity_16x4_8bpc_avx2_inner, adst16_1d, identity4_1d);
+impl_16x4_transform!(inv_txfm_add_identity_flipadst_16x4_8bpc_avx2_inner, identity16_1d, flipadst4_1d);
+impl_16x4_transform!(inv_txfm_add_flipadst_identity_16x4_8bpc_avx2_inner, flipadst16_1d, identity4_1d);
+impl_16x4_ffi_wrapper!(inv_txfm_add_identity_adst_16x4_8bpc_avx2, inv_txfm_add_identity_adst_16x4_8bpc_avx2_inner);
+impl_16x4_ffi_wrapper!(inv_txfm_add_adst_identity_16x4_8bpc_avx2, inv_txfm_add_adst_identity_16x4_8bpc_avx2_inner);
+impl_16x4_ffi_wrapper!(inv_txfm_add_identity_flipadst_16x4_8bpc_avx2, inv_txfm_add_identity_flipadst_16x4_8bpc_avx2_inner);
+impl_16x4_ffi_wrapper!(inv_txfm_add_flipadst_identity_16x4_8bpc_avx2, inv_txfm_add_flipadst_identity_16x4_8bpc_avx2_inner);
 
 /// Full 2D DCT_DCT 8x32 inverse transform
 #[cfg(target_arch = "x86_64")]
