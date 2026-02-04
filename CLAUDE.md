@@ -76,8 +76,10 @@ The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_si
 - [x] `mask_16bpc_avx2` - 16-bit masked blend (scalar)
 - [x] `blend_8bpc_avx2` - Pixel blend (true SIMD)
 - [x] `blend_16bpc_avx2` - 16-bit blend (scalar)
-- [x] `blend_v_8bpc/16bpc` - Vertical OBMC blend (scalar)
-- [x] `blend_h_8bpc/16bpc` - Horizontal OBMC blend (scalar)
+- [x] `blend_v_8bpc` - Vertical OBMC blend (true SIMD)
+- [x] `blend_v_16bpc` - Vertical OBMC blend (scalar)
+- [x] `blend_h_8bpc` - Horizontal OBMC blend (true SIMD)
+- [x] `blend_h_16bpc` - Horizontal OBMC blend (scalar)
 
 **Using Pure Rust Fallbacks:**
 - [ ] `mc` (8tap filters) - 10 filter variants per bitdepth
