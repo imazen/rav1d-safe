@@ -2350,6 +2350,188 @@ pub unsafe extern "C" fn prep_8tap_sharp_8bpc_avx2(
 // 16BPC 8-TAP FILTERS
 // =============================================================================
 
+/// Horizontal 8-tap filter for 16bpc using AVX2
+/// Processes 8 output pixels at a time
+/// Output is 32-bit to preserve precision for vertical pass
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn h_filter_8tap_16bpc_avx2(
+    dst: *mut i32,
+    src: *const u16,
+    w: usize,
+    filter: &[i8; 8],
+    sh: i32,
+) {
+    // SAFETY: AVX2 guaranteed by target_feature
+    unsafe {
+        // Convert filter coefficients from i8 to i16 for pmaddwd
+        let coeff0 = _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
+        let coeff2 = _mm256_set1_epi32(((filter[3] as i16 as i32) << 16) | (filter[2] as i16 as u16 as i32));
+        let coeff4 = _mm256_set1_epi32(((filter[5] as i16 as i32) << 16) | (filter[4] as i16 as u16 as i32));
+        let coeff6 = _mm256_set1_epi32(((filter[7] as i16 as i32) << 16) | (filter[6] as i16 as u16 as i32));
+
+        let rnd = _mm256_set1_epi32((1 << sh) >> 1);
+        let shift_count = _mm_cvtsi32_si128(sh);
+
+        let mut col = 0usize;
+
+        // Process 8 output pixels at a time
+        while col + 8 <= w {
+            let s = src.add(col);
+
+            // Load pairs of pixels for each filter tap
+            // For each output pixel x, we need src[x-3] through src[x+4]
+            let s0 = _mm256_loadu_si256(s.offset(-3) as *const __m256i); // pixels -3 to 12
+            let s1 = _mm256_loadu_si256(s.offset(-2) as *const __m256i); // pixels -2 to 13
+            let s2 = _mm256_loadu_si256(s.offset(-1) as *const __m256i); // pixels -1 to 14
+            let s3 = _mm256_loadu_si256(s as *const __m256i);            // pixels 0 to 15
+            let s4 = _mm256_loadu_si256(s.offset(1) as *const __m256i);  // pixels 1 to 16
+            let s5 = _mm256_loadu_si256(s.offset(2) as *const __m256i);  // pixels 2 to 17
+            let s6 = _mm256_loadu_si256(s.offset(3) as *const __m256i);  // pixels 3 to 18
+            let s7 = _mm256_loadu_si256(s.offset(4) as *const __m256i);  // pixels 4 to 19
+
+            // Interleave consecutive pixels for madd_epi16
+            // madd_epi16 does: (a[2i] * b[2i]) + (a[2i+1] * b[2i+1]) -> 32-bit
+            let p01 = _mm256_unpacklo_epi16(s0, s1); // [s0[0],s1[0], s0[1],s1[1], ...]
+            let p23 = _mm256_unpacklo_epi16(s2, s3);
+            let p45 = _mm256_unpacklo_epi16(s4, s5);
+            let p67 = _mm256_unpacklo_epi16(s6, s7);
+
+            // Multiply-add pairs: coeff0=[f0,f1], coeff2=[f2,f3], etc.
+            let ma01 = _mm256_madd_epi16(p01, coeff0);
+            let ma23 = _mm256_madd_epi16(p23, coeff2);
+            let ma45 = _mm256_madd_epi16(p45, coeff4);
+            let ma67 = _mm256_madd_epi16(p67, coeff6);
+
+            // Sum all contributions (32-bit)
+            let sum = _mm256_add_epi32(
+                _mm256_add_epi32(ma01, ma23),
+                _mm256_add_epi32(ma45, ma67),
+            );
+
+            // Add rounding and shift
+            let result = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+
+            // Store 8 32-bit results
+            _mm256_storeu_si256(dst.add(col) as *mut __m256i, result);
+
+            col += 8;
+        }
+
+        // Scalar fallback for remaining pixels
+        while col < w {
+            let s = src.add(col);
+            let mut sum = 0i32;
+            for i in 0..8 {
+                sum += filter[i] as i32 * *s.offset(i as isize - 3) as i32;
+            }
+            let r = (1 << sh) >> 1;
+            *dst.add(col) = (sum + r) >> sh;
+            col += 1;
+        }
+    }
+}
+
+/// Vertical 8-tap filter for 16bpc using AVX2
+/// Input is 32-bit intermediate, output is 16-bit clamped to [0, max]
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn v_filter_8tap_16bpc_avx2(
+    dst: *mut u16,
+    mid: &[[i32; MID_STRIDE]],
+    w: usize,
+    y: usize,
+    filter: &[i8; 8],
+    sh: i32,
+    max: i32,
+) {
+    // SAFETY: AVX2 guaranteed by target_feature
+    unsafe {
+        // Convert filter coefficients from i8 to i32 for multiplication
+        let coeff: [i32; 8] = [
+            filter[0] as i32, filter[1] as i32, filter[2] as i32, filter[3] as i32,
+            filter[4] as i32, filter[5] as i32, filter[6] as i32, filter[7] as i32,
+        ];
+
+        let rnd = _mm256_set1_epi32((1 << sh) >> 1);
+        let shift_count = _mm_cvtsi32_si128(sh);
+        let zero = _mm256_setzero_si256();
+        let max_val = _mm256_set1_epi32(max);
+
+        let mut col = 0usize;
+
+        // Process 8 pixels at a time
+        while col + 8 <= w {
+            // Load 8 intermediate values from each of the 8 tap rows
+            let r0 = _mm256_loadu_si256(mid[y + 0][col..].as_ptr() as *const __m256i);
+            let r1 = _mm256_loadu_si256(mid[y + 1][col..].as_ptr() as *const __m256i);
+            let r2 = _mm256_loadu_si256(mid[y + 2][col..].as_ptr() as *const __m256i);
+            let r3 = _mm256_loadu_si256(mid[y + 3][col..].as_ptr() as *const __m256i);
+            let r4 = _mm256_loadu_si256(mid[y + 4][col..].as_ptr() as *const __m256i);
+            let r5 = _mm256_loadu_si256(mid[y + 5][col..].as_ptr() as *const __m256i);
+            let r6 = _mm256_loadu_si256(mid[y + 6][col..].as_ptr() as *const __m256i);
+            let r7 = _mm256_loadu_si256(mid[y + 7][col..].as_ptr() as *const __m256i);
+
+            // Multiply each row by its coefficient and accumulate
+            let c0 = _mm256_set1_epi32(coeff[0]);
+            let c1 = _mm256_set1_epi32(coeff[1]);
+            let c2 = _mm256_set1_epi32(coeff[2]);
+            let c3 = _mm256_set1_epi32(coeff[3]);
+            let c4 = _mm256_set1_epi32(coeff[4]);
+            let c5 = _mm256_set1_epi32(coeff[5]);
+            let c6 = _mm256_set1_epi32(coeff[6]);
+            let c7 = _mm256_set1_epi32(coeff[7]);
+
+            let m0 = _mm256_mullo_epi32(r0, c0);
+            let m1 = _mm256_mullo_epi32(r1, c1);
+            let m2 = _mm256_mullo_epi32(r2, c2);
+            let m3 = _mm256_mullo_epi32(r3, c3);
+            let m4 = _mm256_mullo_epi32(r4, c4);
+            let m5 = _mm256_mullo_epi32(r5, c5);
+            let m6 = _mm256_mullo_epi32(r6, c6);
+            let m7 = _mm256_mullo_epi32(r7, c7);
+
+            // Sum all
+            let sum = _mm256_add_epi32(
+                _mm256_add_epi32(_mm256_add_epi32(m0, m1), _mm256_add_epi32(m2, m3)),
+                _mm256_add_epi32(_mm256_add_epi32(m4, m5), _mm256_add_epi32(m6, m7)),
+            );
+
+            // Add rounding, shift, and clamp
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+            let clamped_lo = _mm256_max_epi32(shifted, zero);
+            let clamped = _mm256_min_epi32(clamped_lo, max_val);
+
+            // Pack from 32-bit to 16-bit
+            // _mm256_packus_epi32 packs with unsigned saturation
+            // But we need to handle lane crossing...
+            // Pack low 4 and high 4 separately, then permute
+            let packed = _mm256_packus_epi32(clamped, zero);
+            // Permute to fix lane order: [0,1,2,3,x,x,x,x,4,5,6,7,x,x,x,x]
+            let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00); // [0,2,0,0]
+
+            // Store 8 16-bit results
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+
+            col += 8;
+        }
+
+        // Scalar fallback for remaining pixels
+        while col < w {
+            let mut sum = 0i32;
+            for i in 0..8 {
+                sum += coeff[i] * mid[y + i][col];
+            }
+            let r = (1 << sh) >> 1;
+            let val = ((sum + r) >> sh).clamp(0, max);
+            *dst.add(col) = val as u16;
+            col += 1;
+        }
+    }
+}
+
 /// Generic 8-tap put function for 16bpc
 ///
 /// Similar to 8bpc but handles 16-bit pixels and different intermediate scaling
@@ -2391,36 +2573,25 @@ unsafe fn put_8tap_16bpc_avx2_impl(
                 // Case 1: Both H and V filtering - two-pass through intermediate
                 let tmp_h = h + 7;
                 let mut mid = [[0i32; MID_STRIDE]; 135];
+                let h_sh = 6 - intermediate_bits; // = 2 for 16bpc
+                let v_sh = 6 + intermediate_bits; // = 10 for 16bpc
 
-                // Horizontal pass - output is i32 to preserve precision
+                // Horizontal pass using SIMD
                 for y in 0..tmp_h {
                     let src_row = src.offset((y as isize - 3) * src_stride_elems);
-                    let mid_row = &mut mid[y];
-                    for x in 0..w {
-                        let mut sum = 0i32;
-                        for i in 0..8 {
-                            let px = *src_row.offset(x as isize + i as isize - 3) as i32;
-                            sum += fh[i] as i32 * px;
-                        }
-                        // Round: (sum + rnd) >> (6 - intermediate_bits)
-                        let rnd = (1 << (6 - intermediate_bits)) >> 1;
-                        mid_row[x] = (sum + rnd) >> (6 - intermediate_bits);
-                    }
+                    h_filter_8tap_16bpc_avx2(
+                        mid[y].as_mut_ptr(),
+                        src_row.offset(3), // offset by +3 since helper offsets by -3 internally
+                        w,
+                        fh,
+                        h_sh,
+                    );
                 }
 
-                // Vertical pass - i32 -> u16
+                // Vertical pass using SIMD
                 for y in 0..h {
                     let dst_row = dst.offset(y as isize * dst_stride_elems);
-                    for x in 0..w {
-                        let mut sum = 0i32;
-                        for i in 0..8 {
-                            sum += fv[i] as i32 * mid[y + i][x];
-                        }
-                        // Round and clamp: (sum + rnd) >> (6 + intermediate_bits)
-                        let rnd = (1 << (6 + intermediate_bits)) >> 1;
-                        let val = ((sum + rnd) >> (6 + intermediate_bits)).clamp(0, max);
-                        *dst_row.add(x) = val as u16;
-                    }
+                    v_filter_8tap_16bpc_avx2(dst_row, &mid, w, y, fv, v_sh, max);
                 }
             }
             (Some(fh), None) => {
