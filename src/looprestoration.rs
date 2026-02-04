@@ -180,7 +180,7 @@ const REST_UNIT_STRIDE: usize = 256 * 3 / 2 + 3 + 3;
 // TODO Reuse p when no padding is needed (add and remove lpf pixels in p)
 // TODO Chroma only requires 2 rows of padding.
 #[inline(never)]
-fn padding<BD: BitDepth>(
+pub(crate) fn padding<BD: BitDepth>(
     dst: &mut [BD::Pixel; (64 + 3 + 3) * REST_UNIT_STRIDE],
     p: Rav1dPictureDataComponentOffset,
     left: &[LeftPixelRow<BD::Pixel>],
@@ -3527,6 +3527,32 @@ impl Rav1dLoopRestorationDSPContext {
 
         self
     }
+    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+    #[inline(always)]
+    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
+        use crate::include::common::bitdepth::BPC;
+        use crate::src::safe_simd::looprestoration as safe_lr;
+
+        if !flags.contains(CpuFlags::AVX2) {
+            return self;
+        }
+
+        // Only 8bpc implemented for now
+        match BD::BPC {
+            BPC::BPC8 => {
+                self.wiener[0] =
+                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter7_8bpc_avx2);
+                self.wiener[1] =
+                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter5_8bpc_avx2);
+                // SGR filters use Rust fallback for now
+            }
+            _ => {}
+        }
+
+        self
+    }
+
+
 
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags, bpc: u8) -> Self {
@@ -3540,6 +3566,12 @@ impl Rav1dLoopRestorationDSPContext {
             {
                 return self.init_arm::<BD>(flags, bpc);
             }
+        }
+
+        #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+        {
+            let _ = bpc;
+            return self.init_x86_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
