@@ -2620,6 +2620,359 @@ unsafe fn v_filter_8tap_16bpc_prep_avx2(
     }
 }
 
+/// Horizontal 8-tap filter for 16bpc put (H-only case)
+/// Input and output are both u16, shift=6, rnd=32, clamp to [0, max]
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn h_filter_8tap_16bpc_put_avx2(
+    dst: *mut u16,
+    src: *const u16,
+    w: usize,
+    filter: &[i8; 8],
+    max: i32,
+) {
+    // SAFETY: AVX2 guaranteed by target_feature
+    unsafe {
+        // Convert filter coefficients from i8 to i16 for pmaddwd
+        let coeff0 = _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
+        let coeff2 = _mm256_set1_epi32(((filter[3] as i16 as i32) << 16) | (filter[2] as i16 as u16 as i32));
+        let coeff4 = _mm256_set1_epi32(((filter[5] as i16 as i32) << 16) | (filter[4] as i16 as u16 as i32));
+        let coeff6 = _mm256_set1_epi32(((filter[7] as i16 as i32) << 16) | (filter[6] as i16 as u16 as i32));
+
+        let rnd = _mm256_set1_epi32(32); // (1 << 6) >> 1
+        let shift_count = _mm_cvtsi32_si128(6);
+        let zero = _mm256_setzero_si256();
+        let max_val = _mm256_set1_epi32(max);
+
+        let mut col = 0usize;
+
+        while col + 8 <= w {
+            let s = src.add(col);
+
+            // Load pairs of pixels for each filter tap
+            let s0 = _mm256_loadu_si256(s.offset(-3) as *const __m256i);
+            let s1 = _mm256_loadu_si256(s.offset(-2) as *const __m256i);
+            let s2 = _mm256_loadu_si256(s.offset(-1) as *const __m256i);
+            let s3 = _mm256_loadu_si256(s as *const __m256i);
+            let s4 = _mm256_loadu_si256(s.offset(1) as *const __m256i);
+            let s5 = _mm256_loadu_si256(s.offset(2) as *const __m256i);
+            let s6 = _mm256_loadu_si256(s.offset(3) as *const __m256i);
+            let s7 = _mm256_loadu_si256(s.offset(4) as *const __m256i);
+
+            // Interleave consecutive pixels for madd_epi16
+            let p01 = _mm256_unpacklo_epi16(s0, s1);
+            let p23 = _mm256_unpacklo_epi16(s2, s3);
+            let p45 = _mm256_unpacklo_epi16(s4, s5);
+            let p67 = _mm256_unpacklo_epi16(s6, s7);
+
+            // Multiply-add pairs
+            let ma01 = _mm256_madd_epi16(p01, coeff0);
+            let ma23 = _mm256_madd_epi16(p23, coeff2);
+            let ma45 = _mm256_madd_epi16(p45, coeff4);
+            let ma67 = _mm256_madd_epi16(p67, coeff6);
+
+            // Sum all contributions
+            let sum = _mm256_add_epi32(
+                _mm256_add_epi32(ma01, ma23),
+                _mm256_add_epi32(ma45, ma67),
+            );
+
+            // Add rounding, shift, and clamp
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+            let clamped_lo = _mm256_max_epi32(shifted, zero);
+            let clamped = _mm256_min_epi32(clamped_lo, max_val);
+
+            // Pack from 32-bit to 16-bit
+            let packed = _mm256_packus_epi32(clamped, zero);
+            let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
+
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let s = src.add(col);
+            let mut sum = 0i32;
+            for i in 0..8 {
+                sum += filter[i] as i32 * *s.offset(i as isize - 3) as i32;
+            }
+            let val = ((sum + 32) >> 6).clamp(0, max);
+            *dst.add(col) = val as u16;
+            col += 1;
+        }
+    }
+}
+
+/// Vertical 8-tap filter for 16bpc put (V-only case)
+/// Reads directly from u16 source with stride, outputs u16
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn v_filter_8tap_16bpc_direct_avx2(
+    dst: *mut u16,
+    src: *const u16,
+    src_stride: isize,
+    w: usize,
+    filter: &[i8; 8],
+    max: i32,
+) {
+    // SAFETY: AVX2 guaranteed by target_feature
+    unsafe {
+        let coeff: [i32; 8] = [
+            filter[0] as i32, filter[1] as i32, filter[2] as i32, filter[3] as i32,
+            filter[4] as i32, filter[5] as i32, filter[6] as i32, filter[7] as i32,
+        ];
+
+        let c0 = _mm256_set1_epi32(coeff[0]);
+        let c1 = _mm256_set1_epi32(coeff[1]);
+        let c2 = _mm256_set1_epi32(coeff[2]);
+        let c3 = _mm256_set1_epi32(coeff[3]);
+        let c4 = _mm256_set1_epi32(coeff[4]);
+        let c5 = _mm256_set1_epi32(coeff[5]);
+        let c6 = _mm256_set1_epi32(coeff[6]);
+        let c7 = _mm256_set1_epi32(coeff[7]);
+
+        let rnd = _mm256_set1_epi32(32);
+        let shift_count = _mm_cvtsi32_si128(6);
+        let zero = _mm256_setzero_si256();
+        let max_val = _mm256_set1_epi32(max);
+
+        let mut col = 0usize;
+
+        while col + 8 <= w {
+            // Load 8 pixels from each of 8 rows (at offsets -3 to +4)
+            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-3 * src_stride).add(col) as *const __m128i));
+            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-2 * src_stride).add(col) as *const __m128i));
+            let p2 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-1 * src_stride).add(col) as *const __m128i));
+            let p3 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
+            let p4 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(1 * src_stride).add(col) as *const __m128i));
+            let p5 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(2 * src_stride).add(col) as *const __m128i));
+            let p6 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(3 * src_stride).add(col) as *const __m128i));
+            let p7 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(4 * src_stride).add(col) as *const __m128i));
+
+            // Multiply and accumulate
+            let m0 = _mm256_mullo_epi32(p0, c0);
+            let m1 = _mm256_mullo_epi32(p1, c1);
+            let m2 = _mm256_mullo_epi32(p2, c2);
+            let m3 = _mm256_mullo_epi32(p3, c3);
+            let m4 = _mm256_mullo_epi32(p4, c4);
+            let m5 = _mm256_mullo_epi32(p5, c5);
+            let m6 = _mm256_mullo_epi32(p6, c6);
+            let m7 = _mm256_mullo_epi32(p7, c7);
+
+            let sum = _mm256_add_epi32(
+                _mm256_add_epi32(_mm256_add_epi32(m0, m1), _mm256_add_epi32(m2, m3)),
+                _mm256_add_epi32(_mm256_add_epi32(m4, m5), _mm256_add_epi32(m6, m7)),
+            );
+
+            // Add rounding, shift, and clamp
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+            let clamped_lo = _mm256_max_epi32(shifted, zero);
+            let clamped = _mm256_min_epi32(clamped_lo, max_val);
+
+            // Pack from 32-bit to 16-bit
+            let packed = _mm256_packus_epi32(clamped, zero);
+            let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
+
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let mut sum = 0i32;
+            for i in 0..8 {
+                let px = *src.offset((i as isize - 3) * src_stride).add(col) as i32;
+                sum += coeff[i] * px;
+            }
+            let val = ((sum + 32) >> 6).clamp(0, max);
+            *dst.add(col) = val as u16;
+            col += 1;
+        }
+    }
+}
+
+
+/// Horizontal 8-tap filter for 16bpc prep (H-only case)
+/// Input is u16, output is i16 with PREP_BIAS subtracted
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn h_filter_8tap_16bpc_prep_direct_avx2(
+    dst: *mut i16,
+    src: *const u16,
+    w: usize,
+    filter: &[i8; 8],
+    sh: i32,
+    prep_bias: i32,
+) {
+    // SAFETY: AVX2 guaranteed by target_feature
+    unsafe {
+        // Convert filter coefficients from i8 to i16 for pmaddwd
+        let coeff0 = _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
+        let coeff2 = _mm256_set1_epi32(((filter[3] as i16 as i32) << 16) | (filter[2] as i16 as u16 as i32));
+        let coeff4 = _mm256_set1_epi32(((filter[5] as i16 as i32) << 16) | (filter[4] as i16 as u16 as i32));
+        let coeff6 = _mm256_set1_epi32(((filter[7] as i16 as i32) << 16) | (filter[6] as i16 as u16 as i32));
+
+        let rnd = _mm256_set1_epi32((1 << sh) >> 1);
+        let shift_count = _mm_cvtsi32_si128(sh);
+        let bias = _mm256_set1_epi32(prep_bias);
+
+        let mut col = 0usize;
+
+        while col + 8 <= w {
+            let s = src.add(col);
+
+            // Load pairs of pixels for each filter tap
+            let s0 = _mm256_loadu_si256(s.offset(-3) as *const __m256i);
+            let s1 = _mm256_loadu_si256(s.offset(-2) as *const __m256i);
+            let s2 = _mm256_loadu_si256(s.offset(-1) as *const __m256i);
+            let s3 = _mm256_loadu_si256(s as *const __m256i);
+            let s4 = _mm256_loadu_si256(s.offset(1) as *const __m256i);
+            let s5 = _mm256_loadu_si256(s.offset(2) as *const __m256i);
+            let s6 = _mm256_loadu_si256(s.offset(3) as *const __m256i);
+            let s7 = _mm256_loadu_si256(s.offset(4) as *const __m256i);
+
+            // Interleave consecutive pixels for madd_epi16
+            let p01 = _mm256_unpacklo_epi16(s0, s1);
+            let p23 = _mm256_unpacklo_epi16(s2, s3);
+            let p45 = _mm256_unpacklo_epi16(s4, s5);
+            let p67 = _mm256_unpacklo_epi16(s6, s7);
+
+            // Multiply-add pairs
+            let ma01 = _mm256_madd_epi16(p01, coeff0);
+            let ma23 = _mm256_madd_epi16(p23, coeff2);
+            let ma45 = _mm256_madd_epi16(p45, coeff4);
+            let ma67 = _mm256_madd_epi16(p67, coeff6);
+
+            // Sum all contributions
+            let sum = _mm256_add_epi32(
+                _mm256_add_epi32(ma01, ma23),
+                _mm256_add_epi32(ma45, ma67),
+            );
+
+            // Add rounding, shift, and subtract bias
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+            let biased = _mm256_sub_epi32(shifted, bias);
+
+            // Pack from 32-bit to 16-bit (signed)
+            let packed = _mm256_packs_epi32(biased, biased);
+            let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
+
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let s = src.add(col);
+            let mut sum = 0i32;
+            for i in 0..8 {
+                sum += filter[i] as i32 * *s.offset(i as isize - 3) as i32;
+            }
+            let r = (1 << sh) >> 1;
+            let val = ((sum + r) >> sh) - prep_bias;
+            *dst.add(col) = val as i16;
+            col += 1;
+        }
+    }
+}
+
+/// Vertical 8-tap filter for 16bpc prep (V-only case)
+/// Reads directly from u16 source with stride, outputs i16 with bias
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn v_filter_8tap_16bpc_prep_direct_avx2(
+    dst: *mut i16,
+    src: *const u16,
+    src_stride: isize,
+    w: usize,
+    filter: &[i8; 8],
+    sh: i32,
+    prep_bias: i32,
+) {
+    // SAFETY: AVX2 guaranteed by target_feature
+    unsafe {
+        let coeff: [i32; 8] = [
+            filter[0] as i32, filter[1] as i32, filter[2] as i32, filter[3] as i32,
+            filter[4] as i32, filter[5] as i32, filter[6] as i32, filter[7] as i32,
+        ];
+
+        let c0 = _mm256_set1_epi32(coeff[0]);
+        let c1 = _mm256_set1_epi32(coeff[1]);
+        let c2 = _mm256_set1_epi32(coeff[2]);
+        let c3 = _mm256_set1_epi32(coeff[3]);
+        let c4 = _mm256_set1_epi32(coeff[4]);
+        let c5 = _mm256_set1_epi32(coeff[5]);
+        let c6 = _mm256_set1_epi32(coeff[6]);
+        let c7 = _mm256_set1_epi32(coeff[7]);
+
+        let rnd = _mm256_set1_epi32((1 << sh) >> 1);
+        let shift_count = _mm_cvtsi32_si128(sh);
+        let bias = _mm256_set1_epi32(prep_bias);
+
+        let mut col = 0usize;
+
+        while col + 8 <= w {
+            // Load 8 pixels from each of 8 rows
+            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-3 * src_stride).add(col) as *const __m128i));
+            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-2 * src_stride).add(col) as *const __m128i));
+            let p2 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-1 * src_stride).add(col) as *const __m128i));
+            let p3 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
+            let p4 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(1 * src_stride).add(col) as *const __m128i));
+            let p5 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(2 * src_stride).add(col) as *const __m128i));
+            let p6 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(3 * src_stride).add(col) as *const __m128i));
+            let p7 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(4 * src_stride).add(col) as *const __m128i));
+
+            // Multiply and accumulate
+            let m0 = _mm256_mullo_epi32(p0, c0);
+            let m1 = _mm256_mullo_epi32(p1, c1);
+            let m2 = _mm256_mullo_epi32(p2, c2);
+            let m3 = _mm256_mullo_epi32(p3, c3);
+            let m4 = _mm256_mullo_epi32(p4, c4);
+            let m5 = _mm256_mullo_epi32(p5, c5);
+            let m6 = _mm256_mullo_epi32(p6, c6);
+            let m7 = _mm256_mullo_epi32(p7, c7);
+
+            let sum = _mm256_add_epi32(
+                _mm256_add_epi32(_mm256_add_epi32(m0, m1), _mm256_add_epi32(m2, m3)),
+                _mm256_add_epi32(_mm256_add_epi32(m4, m5), _mm256_add_epi32(m6, m7)),
+            );
+
+            // Add rounding, shift, and subtract bias
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+            let biased = _mm256_sub_epi32(shifted, bias);
+
+            // Pack from 32-bit to 16-bit (signed)
+            let packed = _mm256_packs_epi32(biased, biased);
+            let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
+
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let mut sum = 0i32;
+            for i in 0..8 {
+                let px = *src.offset((i as isize - 3) * src_stride).add(col) as i32;
+                sum += coeff[i] * px;
+            }
+            let r = (1 << sh) >> 1;
+            let val = ((sum + r) >> sh) - prep_bias;
+            *dst.add(col) = val as i16;
+            col += 1;
+        }
+    }
+}
+
 /// Generic 8-tap put function for 16bpc
 ///
 /// Similar to 8bpc but handles 16-bit pixels and different intermediate scaling
@@ -2683,36 +3036,19 @@ unsafe fn put_8tap_16bpc_avx2_impl(
                 }
             }
             (Some(fh), None) => {
-                // Case 2: H-only filtering
+                // Case 2: H-only filtering (SIMD)
                 for y in 0..h {
                     let src_row = src.offset(y as isize * src_stride_elems);
                     let dst_row = dst.offset(y as isize * dst_stride_elems);
-                    for x in 0..w {
-                        let mut sum = 0i32;
-                        for i in 0..8 {
-                            let px = *src_row.offset(x as isize + i as isize - 3) as i32;
-                            sum += fh[i] as i32 * px;
-                        }
-                        let rnd = 32;
-                        let val = ((sum + rnd) >> 6).clamp(0, max);
-                        *dst_row.add(x) = val as u16;
-                    }
+                    h_filter_8tap_16bpc_put_avx2(dst_row, src_row, w, fh, max);
                 }
             }
             (None, Some(fv)) => {
-                // Case 3: V-only filtering
+                // Case 3: V-only filtering (SIMD)
                 for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride_elems);
                     let dst_row = dst.offset(y as isize * dst_stride_elems);
-                    for x in 0..w {
-                        let mut sum = 0i32;
-                        for i in 0..8 {
-                            let px = *src.offset((y as isize + i as isize - 3) * src_stride_elems + x as isize) as i32;
-                            sum += fv[i] as i32 * px;
-                        }
-                        let rnd = 32;
-                        let val = ((sum + rnd) >> 6).clamp(0, max);
-                        *dst_row.add(x) = val as u16;
-                    }
+                    v_filter_8tap_16bpc_direct_avx2(dst_row, src_row, src_stride_elems, w, fv, max);
                 }
             }
             (None, None) => {
@@ -2784,36 +3120,21 @@ unsafe fn prep_8tap_16bpc_avx2_impl(
                 }
             }
             (Some(fh), None) => {
-                // H-only filtering
+                // H-only filtering (SIMD)
+                let sh = 6 - intermediate_bits; // = 2 for 16bpc
                 for y in 0..h {
                     let src_row = src.offset(y as isize * src_stride_elems);
                     let out_row = tmp.add(y * w);
-                    for x in 0..w {
-                        let mut sum = 0i32;
-                        for i in 0..8 {
-                            let px = *src_row.offset(x as isize + i as isize - 3) as i32;
-                            sum += fh[i] as i32 * px;
-                        }
-                        let rnd = (1 << (6 - intermediate_bits)) >> 1;
-                        let val = ((sum + rnd) >> (6 - intermediate_bits)) - PREP_BIAS;
-                        *out_row.add(x) = val as i16;
-                    }
+                    h_filter_8tap_16bpc_prep_direct_avx2(out_row, src_row, w, fh, sh, PREP_BIAS);
                 }
             }
             (None, Some(fv)) => {
-                // V-only filtering
+                // V-only filtering (SIMD)
+                let sh = 6 - intermediate_bits; // = 2 for 16bpc
                 for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride_elems);
                     let out_row = tmp.add(y * w);
-                    for x in 0..w {
-                        let mut sum = 0i32;
-                        for i in 0..8 {
-                            let px = *src.offset((y as isize + i as isize - 3) * src_stride_elems + x as isize) as i32;
-                            sum += fv[i] as i32 * px;
-                        }
-                        let rnd = (1 << (6 - intermediate_bits)) >> 1;
-                        let val = ((sum + rnd) >> (6 - intermediate_bits)) - PREP_BIAS;
-                        *out_row.add(x) = val as i16;
-                    }
+                    v_filter_8tap_16bpc_prep_direct_avx2(out_row, src_row, src_stride_elems, w, fv, sh, PREP_BIAS);
                 }
             }
             (None, None) => {
