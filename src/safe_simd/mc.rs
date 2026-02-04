@@ -4253,6 +4253,231 @@ unsafe fn v_bilin_16bpc_prep_avx2(
     }
 }
 
+/// Horizontal bilinear filter for 16bpc put (H-only case)
+/// Outputs directly to u16 with shift and clamp
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn h_bilin_16bpc_put_avx2(
+    dst: *mut u16,
+    src: *const u16,
+    w: usize,
+    mx: i32,
+    bd_max: i32,
+) {
+    unsafe {
+        let w0 = _mm256_set1_epi32(16 - mx);
+        let w1 = _mm256_set1_epi32(mx);
+        let rnd = _mm256_set1_epi32(8);
+        let shift_count = _mm_cvtsi32_si128(4);
+        let zero = _mm256_setzero_si256();
+        let max_val = _mm256_set1_epi32(bd_max);
+
+        let mut col = 0usize;
+
+        while col + 8 <= w {
+            let s = src.add(col);
+            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(s as *const __m128i));
+            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(s.add(1) as *const __m128i));
+
+            // (16 - mx) * p0 + mx * p1
+            let term0 = _mm256_mullo_epi32(p0, w0);
+            let term1 = _mm256_mullo_epi32(p1, w1);
+            let sum = _mm256_add_epi32(term0, term1);
+
+            // (sum + 8) >> 4, clamp to [0, max]
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+            let clamped = _mm256_min_epi32(_mm256_max_epi32(shifted, zero), max_val);
+
+            // Pack to u16
+            let packed = _mm256_packus_epi32(clamped, zero);
+            let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
+
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let x0 = *src.add(col) as i32;
+            let x1 = *src.add(col + 1) as i32;
+            let pixel = (16 - mx) * x0 + mx * x1;
+            let result = ((pixel + 8) >> 4).clamp(0, bd_max);
+            *dst.add(col) = result as u16;
+            col += 1;
+        }
+    }
+}
+
+/// Vertical bilinear filter for 16bpc put (V-only case)
+/// Reads directly from u16 source, outputs u16
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn v_bilin_16bpc_direct_avx2(
+    dst: *mut u16,
+    src: *const u16,
+    src_stride: isize,
+    w: usize,
+    my: i32,
+    bd_max: i32,
+) {
+    unsafe {
+        let w0 = _mm256_set1_epi32(16 - my);
+        let w1 = _mm256_set1_epi32(my);
+        let rnd = _mm256_set1_epi32(8);
+        let shift_count = _mm_cvtsi32_si128(4);
+        let zero = _mm256_setzero_si256();
+        let max_val = _mm256_set1_epi32(bd_max);
+
+        let mut col = 0usize;
+
+        while col + 8 <= w {
+            // Load from row 0 and row 1
+            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
+            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(src_stride).add(col) as *const __m128i));
+
+            // (16 - my) * p0 + my * p1
+            let term0 = _mm256_mullo_epi32(p0, w0);
+            let term1 = _mm256_mullo_epi32(p1, w1);
+            let sum = _mm256_add_epi32(term0, term1);
+
+            // (sum + 8) >> 4, clamp to [0, max]
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+            let clamped = _mm256_min_epi32(_mm256_max_epi32(shifted, zero), max_val);
+
+            // Pack to u16
+            let packed = _mm256_packus_epi32(clamped, zero);
+            let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
+
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let x0 = *src.add(col) as i32;
+            let x1 = *src.offset(src_stride).add(col) as i32;
+            let pixel = (16 - my) * x0 + my * x1;
+            let result = ((pixel + 8) >> 4).clamp(0, bd_max);
+            *dst.add(col) = result as u16;
+            col += 1;
+        }
+    }
+}
+
+/// Horizontal bilinear filter for 16bpc prep (H-only case)
+/// Outputs i16 with PREP_BIAS subtracted
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn h_bilin_16bpc_prep_direct_avx2(
+    dst: *mut i16,
+    src: *const u16,
+    w: usize,
+    mx: i32,
+    prep_bias: i32,
+) {
+    unsafe {
+        let w0 = _mm256_set1_epi32(16 - mx);
+        let w1 = _mm256_set1_epi32(mx);
+        let rnd = _mm256_set1_epi32(8);
+        let shift_count = _mm_cvtsi32_si128(4);
+        let bias = _mm256_set1_epi32(prep_bias);
+
+        let mut col = 0usize;
+
+        while col + 8 <= w {
+            let s = src.add(col);
+            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(s as *const __m128i));
+            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(s.add(1) as *const __m128i));
+
+            // (16 - mx) * p0 + mx * p1
+            let term0 = _mm256_mullo_epi32(p0, w0);
+            let term1 = _mm256_mullo_epi32(p1, w1);
+            let sum = _mm256_add_epi32(term0, term1);
+
+            // (sum + 8) >> 4 - bias
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+            let biased = _mm256_sub_epi32(shifted, bias);
+
+            // Pack to i16
+            let packed = _mm256_packs_epi32(biased, biased);
+            let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
+
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let x0 = *src.add(col) as i32;
+            let x1 = *src.add(col + 1) as i32;
+            let pixel = (16 - mx) * x0 + mx * x1;
+            let result = ((pixel + 8) >> 4) - prep_bias;
+            *dst.add(col) = result as i16;
+            col += 1;
+        }
+    }
+}
+
+/// Vertical bilinear filter for 16bpc prep (V-only case)
+/// Reads directly from u16 source, outputs i16 with bias
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn v_bilin_16bpc_prep_direct_avx2(
+    dst: *mut i16,
+    src: *const u16,
+    src_stride: isize,
+    w: usize,
+    my: i32,
+    prep_bias: i32,
+) {
+    unsafe {
+        let w0 = _mm256_set1_epi32(16 - my);
+        let w1 = _mm256_set1_epi32(my);
+        let rnd = _mm256_set1_epi32(8);
+        let shift_count = _mm_cvtsi32_si128(4);
+        let bias = _mm256_set1_epi32(prep_bias);
+
+        let mut col = 0usize;
+
+        while col + 8 <= w {
+            // Load from row 0 and row 1
+            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
+            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(src_stride).add(col) as *const __m128i));
+
+            // (16 - my) * p0 + my * p1
+            let term0 = _mm256_mullo_epi32(p0, w0);
+            let term1 = _mm256_mullo_epi32(p1, w1);
+            let sum = _mm256_add_epi32(term0, term1);
+
+            // (sum + 8) >> 4 - bias
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+            let biased = _mm256_sub_epi32(shifted, bias);
+
+            // Pack to i16
+            let packed = _mm256_packs_epi32(biased, biased);
+            let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
+
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let x0 = *src.add(col) as i32;
+            let x1 = *src.offset(src_stride).add(col) as i32;
+            let pixel = (16 - my) * x0 + my * x1;
+            let result = ((pixel + 8) >> 4) - prep_bias;
+            *dst.add(col) = result as i16;
+            col += 1;
+        }
+    }
+}
+
+
 /// Bilinear put for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -4305,33 +4530,19 @@ pub unsafe extern "C" fn put_bilin_16bpc_avx2(
                     v_bilin_16bpc_avx2(dst_row, &mid, w, y, my as i32, v_pass_sh, bd_max);
                 }
             } else {
-                // H-only filtering - need both rounding passes
-                // First: rnd(4 - intermediate_bits) = rnd(0) = no shift
-                // Then: apply intermediate_rnd >> intermediate_bits
+                // H-only filtering (SIMD)
                 for y in 0..h {
                     let src_row = src.offset(y as isize * src_stride);
                     let dst_row = dst.offset(y as isize * dst_stride);
-                    for x in 0..w {
-                        let x0 = *src_row.add(x) as i32;
-                        let x1 = *src_row.add(x + 1) as i32;
-                        let pixel = 16 * x0 + mx as i32 * (x1 - x0);
-                        // rnd(0) does nothing, then rnd >> 4
-                        let result = (pixel + 8) >> 4;
-                        *dst_row.add(x) = result.clamp(0, bd_max) as u16;
-                    }
+                    h_bilin_16bpc_put_avx2(dst_row, src_row, w, mx as i32, bd_max);
                 }
             }
         } else if my != 0 {
-            // V-only filtering
+            // V-only filtering (SIMD)
             for y in 0..h {
+                let src_row = src.offset(y as isize * src_stride);
                 let dst_row = dst.offset(y as isize * dst_stride);
-                for x in 0..w {
-                    let x0 = *src.offset(y as isize * src_stride + x as isize) as i32;
-                    let x1 = *src.offset((y + 1) as isize * src_stride + x as isize) as i32;
-                    let pixel = 16 * x0 + my as i32 * (x1 - x0);
-                    let result = (pixel + 8) >> 4;
-                    *dst_row.add(x) = result.clamp(0, bd_max) as u16;
-                }
+                v_bilin_16bpc_direct_avx2(dst_row, src_row, src_stride, w, my as i32, bd_max);
             }
         } else {
             // Simple copy
@@ -4394,32 +4605,20 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
                     v_bilin_16bpc_prep_avx2(dst_row, &mid, w, y, my as i32, v_pass_sh, prep_bias);
                 }
             } else {
-                // H-only filtering
+                // H-only filtering (SIMD)
                 for y in 0..h {
                     let src_row = src.offset(y as isize * src_stride);
                     let dst_row = tmp.add(y * w);
-                    for x in 0..w {
-                        let x0 = *src_row.add(x) as i32;
-                        let x1 = *src_row.add(x + 1) as i32;
-                        let pixel = 16 * x0 + mx as i32 * (x1 - x0);
-                        let result = (pixel + 8) >> 4;
-                        *dst_row.add(x) = (result - prep_bias) as i16;
-                    }
+                    h_bilin_16bpc_prep_direct_avx2(dst_row, src_row, w, mx as i32, prep_bias);
                 }
             }
         } else if my != 0 {
-            // V-only filtering
+            // V-only filtering (SIMD)
             for y in 0..h {
+                let src_row = src.offset(y as isize * src_stride);
                 let dst_row = tmp.add(y * w);
-                for x in 0..w {
-                    let x0 = *src.offset(y as isize * src_stride + x as isize) as i32;
-                    let x1 = *src.offset((y + 1) as isize * src_stride + x as isize) as i32;
-                    let pixel = 16 * x0 + my as i32 * (x1 - x0);
-                    let result = (pixel + 8) >> 4;
-                    *dst_row.add(x) = (result - prep_bias) as i16;
-                }
+                v_bilin_16bpc_prep_direct_avx2(dst_row, src_row, src_stride, w, my as i32, prep_bias);
             }
-        } else {
             // Simple copy to prep format
             for y in 0..h {
                 let src_row = src.offset(y as isize * src_stride);
