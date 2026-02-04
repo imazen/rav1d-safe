@@ -2,12 +2,16 @@
 //!
 //! These replace the hand-written assembly in src/x86/mc_*.asm
 //!
-//! Note: These functions use `#[target_feature]` instead of archmage tokens
-//! because they must match the existing extern "C" signature from rav1d.
-//! The runtime CPU check happens at init time in the dispatch table setup.
+//! Uses archmage tokens for safe SIMD invocation:
+//! - Desktop64 (X64V3Token) for AVX2+FMA on x86-64
+//! - The runtime CPU check happens at init time in the dispatch table setup
+//! - extern "C" wrappers use forge_token_dangerously() since features are pre-verified
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
+
+#[cfg(target_arch = "x86_64")]
+use archmage::{arcane, Desktop64, SimdToken};
 
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::headers::Rav1dFilterMode;

@@ -2633,6 +2633,43 @@ impl Rav1dMCDSPContext {
         self
     }
 
+    #[cfg(all(feature = "safe-simd", not(feature = "asm"), target_arch = "aarch64"))]
+    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
+        use crate::include::common::bitdepth::BPC;
+        use crate::src::safe_simd::mc_arm as safe_mc_arm;
+
+        // NEON is always available on aarch64
+        self.avg = match BD::BPC {
+            BPC::BPC8 => avg::decl_fn_safe!(safe_mc_arm::avg_8bpc_neon),
+            BPC::BPC16 => avg::decl_fn_safe!(safe_mc_arm::avg_16bpc_neon),
+        };
+        self.w_avg = match BD::BPC {
+            BPC::BPC8 => w_avg::decl_fn_safe!(safe_mc_arm::w_avg_8bpc_neon),
+            BPC::BPC16 => w_avg::decl_fn_safe!(safe_mc_arm::w_avg_16bpc_neon),
+        };
+        self.mask = match BD::BPC {
+            BPC::BPC8 => mask::decl_fn_safe!(safe_mc_arm::mask_8bpc_neon),
+            BPC::BPC16 => mask::decl_fn_safe!(safe_mc_arm::mask_16bpc_neon),
+        };
+        self.blend = match BD::BPC {
+            BPC::BPC8 => blend::decl_fn_safe!(safe_mc_arm::blend_8bpc_neon),
+            BPC::BPC16 => blend::decl_fn_safe!(safe_mc_arm::blend_16bpc_neon),
+        };
+
+        self.blend_v = match BD::BPC {
+            BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_v_8bpc_neon),
+            BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_v_16bpc_neon),
+        };
+        self.blend_h = match BD::BPC {
+            BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_h_8bpc_neon),
+            BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_h_16bpc_neon),
+        };
+
+        // w_mask, mc, mct use pure Rust defaults for now
+
+        self
+    }
+
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -2654,6 +2691,15 @@ impl Rav1dMCDSPContext {
         ))]
         {
             return self.init_x86_safe_simd::<BD>(flags);
+        }
+
+        #[cfg(all(
+            feature = "safe-simd",
+            not(feature = "asm"),
+            target_arch = "aarch64"
+        ))]
+        {
+            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
