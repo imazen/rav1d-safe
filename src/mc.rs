@@ -2256,7 +2256,7 @@ impl Rav1dMCDSPContext {
                             SharpRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_regular_8bpc_avx2),
                             SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_smooth_8bpc_avx2),
                             Sharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_8bpc_avx2),
-                            Bilinear => bd_fn!(mc::decl_fn, BD, put_bilin, avx2),
+                            Bilinear => mc::decl_fn_safe!(safe_mc::put_bilin_8bpc_avx2),
                         });
                         self.mct = enum_map!(Filter2d => mct::Fn; match key {
                             Regular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_8bpc_avx2),
@@ -2268,7 +2268,7 @@ impl Rav1dMCDSPContext {
                             SharpRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_regular_8bpc_avx2),
                             SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_smooth_8bpc_avx2),
                             Sharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_8bpc_avx2),
-                            Bilinear => bd_fn!(mct::decl_fn, BD, prep_bilin, avx2),
+                            Bilinear => mct::decl_fn_safe!(safe_mc::prep_bilin_8bpc_avx2),
                         });
                     }
                     BPC::BPC16 => {
@@ -2282,7 +2282,7 @@ impl Rav1dMCDSPContext {
                             SharpRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_regular_16bpc_avx2),
                             SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_smooth_16bpc_avx2),
                             Sharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_16bpc_avx2),
-                            Bilinear => bd_fn!(mc::decl_fn, BD, put_bilin, avx2),
+                            Bilinear => mc::decl_fn_safe!(safe_mc::put_bilin_16bpc_avx2),
                         });
                         self.mct = enum_map!(Filter2d => mct::Fn; match key {
                             Regular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_16bpc_avx2),
@@ -2294,7 +2294,7 @@ impl Rav1dMCDSPContext {
                             SharpRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_regular_16bpc_avx2),
                             SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_smooth_16bpc_avx2),
                             Sharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_16bpc_avx2),
-                            Bilinear => bd_fn!(mct::decl_fn, BD, prep_bilin, avx2),
+                            Bilinear => mct::decl_fn_safe!(safe_mc::prep_bilin_16bpc_avx2),
                         });
                     }
                 }

@@ -2806,6 +2806,629 @@ pub unsafe extern "C" fn prep_8tap_sharp_16bpc_avx2(
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
 
+// ============================================================================
+// BILINEAR FILTER IMPLEMENTATIONS
+// ============================================================================
+//
+// Bilinear filtering uses a simple 2-tap filter:
+//   pixel = (16 - mxy) * x0 + mxy * x1
+// where mxy is 0-15 (4 bits of fractional precision)
+//
+// For H+V filtering:
+//   1. Horizontal pass: filter to intermediate buffer
+//   2. Vertical pass: filter intermediate to output
+//
+// The intermediate uses extra precision bits to avoid rounding errors.
+
+/// Horizontal bilinear filter for 8bpc using AVX2
+/// Processes 32 pixels at a time, outputs to i16 intermediate buffer
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn h_filter_bilin_8bpc_avx2(
+    dst: *mut i16,
+    src: *const u8,
+    w: usize,
+    mx: usize,
+    sh: u8,
+) {
+    // SAFETY: AVX2 is guaranteed by target_feature, caller ensures pointer validity
+    unsafe {
+        // Bilinear: pixel = (16 - mx) * src[x] + mx * src[x+1]
+        // Using maddubs: need pairs of [src[x], src[x+1]] with coeffs [16-mx, mx]
+        let mx = mx as i8;
+        let coeff0 = (16 - mx) as u8;
+        let coeff1 = mx as u8;
+
+        // Create coefficient vector for maddubs: [coeff0, coeff1] repeated
+        let coeffs = _mm256_set1_epi16(((coeff1 as i16) << 8) | (coeff0 as i16));
+
+        // Rounding value (handle sh=0 case)
+        let rnd = if sh > 0 {
+            _mm256_set1_epi16(1 << (sh - 1))
+        } else {
+            _mm256_setzero_si256()
+        };
+
+        // Shift count in register for variable shift
+        let sh_reg = _mm_cvtsi32_si128(sh as i32);
+
+        let mut x = 0;
+        while x + 32 <= w {
+            // Load 33 bytes to get 32 pairs of adjacent pixels
+            let src_lo = _mm256_loadu_si256(src.add(x) as *const __m256i);
+            let src_hi = _mm256_loadu_si256(src.add(x + 1) as *const __m256i);
+
+            // Interleave for maddubs: need [src[0],src[1]], [src[1],src[2]], ...
+            // unpacklo gives us pairs from low halves, unpackhi from high halves
+            let pairs_lo = _mm256_unpacklo_epi8(src_lo, src_hi);
+            let pairs_hi = _mm256_unpackhi_epi8(src_lo, src_hi);
+
+            // Apply bilinear filter using maddubs
+            let result_lo = _mm256_maddubs_epi16(pairs_lo, coeffs);
+            let result_hi = _mm256_maddubs_epi16(pairs_hi, coeffs);
+
+            // Add rounding and shift (using variable shift)
+            let result_lo = _mm256_sra_epi16(_mm256_add_epi16(result_lo, rnd), sh_reg);
+            let result_hi = _mm256_sra_epi16(_mm256_add_epi16(result_hi, rnd), sh_reg);
+
+            // Store results - need to handle the permutation from unpack
+            // unpack interleaves within 128-bit lanes, so we need to fix the order
+            let lo_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x20); // lo lanes
+            let hi_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x31); // hi lanes
+
+            _mm256_storeu_si256(dst.add(x) as *mut __m256i, lo_128);
+            _mm256_storeu_si256(dst.add(x + 16) as *mut __m256i, hi_128);
+            x += 32;
+        }
+
+        // Scalar fallback for remaining pixels
+        while x < w {
+            let x0 = *src.add(x) as i32;
+            let x1 = *src.add(x + 1) as i32;
+            let pixel = (16 - mx as i32) * x0 + mx as i32 * x1;
+            let result = if sh > 0 {
+                (pixel + (1 << (sh - 1))) >> sh
+            } else {
+                pixel
+            };
+            *dst.add(x) = result as i16;
+            x += 1;
+        }
+    }
+}
+
+/// Vertical bilinear filter for 8bpc using AVX2
+/// Reads from i16 intermediate buffer, outputs to u8
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn v_filter_bilin_8bpc_avx2(
+    dst: *mut u8,
+    mid: &[&[i16]],
+    w: usize,
+    my: usize,
+    sh: u8,
+    bd_max: i16,
+) {
+    // SAFETY: AVX2 is guaranteed by target_feature, caller ensures pointer validity
+    unsafe {
+        let my = my as i16;
+        let coeff0 = 16 - my;
+        let coeff1 = my;
+
+        let c0 = _mm256_set1_epi16(coeff0);
+        let c1 = _mm256_set1_epi16(coeff1);
+        let rnd = if sh > 0 {
+            _mm256_set1_epi16(1 << (sh - 1))
+        } else {
+            _mm256_setzero_si256()
+        };
+        let zero = _mm256_setzero_si256();
+        let max = _mm256_set1_epi16(bd_max);
+        let sh_reg = _mm_cvtsi32_si128(sh as i32);
+
+        let mut x = 0;
+        while x + 16 <= w {
+            // Load 16 i16 values from each row
+            let row0 = _mm256_loadu_si256(mid[0].as_ptr().add(x) as *const __m256i);
+            let row1 = _mm256_loadu_si256(mid[1].as_ptr().add(x) as *const __m256i);
+
+            // result = coeff0 * row0 + coeff1 * row1
+            let mul0 = _mm256_mullo_epi16(row0, c0);
+            let mul1 = _mm256_mullo_epi16(row1, c1);
+            let sum = _mm256_add_epi16(mul0, mul1);
+
+            // Add rounding and shift (using variable shift)
+            let result = _mm256_sra_epi16(_mm256_add_epi16(sum, rnd), sh_reg);
+
+            // Clamp to [0, bd_max]
+            let result = _mm256_max_epi16(result, zero);
+            let result = _mm256_min_epi16(result, max);
+
+            // Pack to 8-bit
+            let packed = _mm256_packus_epi16(result, result);
+            let packed = _mm256_permute4x64_epi64(packed, 0xD8); // Fix lane order
+
+            // Store 16 bytes
+            _mm_storeu_si128(dst.add(x) as *mut __m128i, _mm256_castsi256_si128(packed));
+            x += 16;
+        }
+
+        // Scalar fallback
+        while x < w {
+            let r0 = mid[0][x] as i32;
+            let r1 = mid[1][x] as i32;
+            let pixel = coeff0 as i32 * r0 + coeff1 as i32 * r1;
+            let result = if sh > 0 {
+                ((pixel + (1 << (sh - 1))) >> sh).clamp(0, bd_max as i32)
+            } else {
+                pixel.clamp(0, bd_max as i32)
+            };
+            *dst.add(x) = result as u8;
+            x += 1;
+        }
+    }
+}
+
+/// Core bilinear filter implementation for 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn put_bilin_8bpc_avx2_impl(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let mx = mx as usize;
+    let my = my as usize;
+    let dst = dst_ptr as *mut u8;
+    let src = src_ptr as *const u8;
+
+    // For 8bpc: intermediate_bits = 4
+    let intermediate_bits = 4u8;
+
+    unsafe {
+        match (mx != 0, my != 0) {
+            (true, true) => {
+                // Case 1: Both H and V filtering
+                // First pass: horizontal filter to intermediate buffer
+                let tmp_h = h + 1;
+                let mut mid = [[0i16; MID_STRIDE]; 130];
+
+                for y in 0..tmp_h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    h_filter_bilin_8bpc_avx2(
+                        mid[y].as_mut_ptr(),
+                        src_row,
+                        w,
+                        mx,
+                        4 - intermediate_bits, // sh = 0 for intermediate
+                    );
+                }
+
+                // Second pass: vertical filter to output
+                for y in 0..h {
+                    let dst_row = dst.offset(y as isize * dst_stride);
+                    let mid_refs: [&[i16]; 2] = [&mid[y], &mid[y + 1]];
+                    v_filter_bilin_8bpc_avx2(
+                        dst_row,
+                        &mid_refs,
+                        w,
+                        my,
+                        4 + intermediate_bits, // sh = 8 for final
+                        255,
+                    );
+                }
+            }
+            (true, false) => {
+                // Case 2: H-only filtering
+                for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    let dst_row = dst.offset(y as isize * dst_stride);
+
+                    // Direct horizontal filter to output
+                    // sh = 4 for 8bpc with no vertical pass
+                    let mut tmp = [0i16; MID_STRIDE];
+                    h_filter_bilin_8bpc_avx2(tmp.as_mut_ptr(), src_row, w, mx, 4);
+
+                    // Copy and clamp to output
+                    for x in 0..w {
+                        *dst_row.add(x) = tmp[x].clamp(0, 255) as u8;
+                    }
+                }
+            }
+            (false, true) => {
+                // Case 3: V-only filtering
+                for y in 0..h {
+                    let dst_row = dst.offset(y as isize * dst_stride);
+
+                    // Build intermediate buffer from 2 source rows
+                    let mut mid = [[0i16; MID_STRIDE]; 2];
+                    for i in 0..2 {
+                        let src_row = src.offset((y + i) as isize * src_stride);
+                        for x in 0..w {
+                            mid[i][x] = *src_row.add(x) as i16;
+                        }
+                    }
+
+                    let mid_refs: [&[i16]; 2] = [&mid[0], &mid[1]];
+                    v_filter_bilin_8bpc_avx2(dst_row, &mid_refs, w, my, 4, 255);
+                }
+            }
+            (false, false) => {
+                // Case 4: Simple copy
+                for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    let dst_row = dst.offset(y as isize * dst_stride);
+                    std::ptr::copy_nonoverlapping(src_row, dst_row, w);
+                }
+            }
+        }
+    }
+}
+
+/// Bilinear put for 8bpc - extern "C" wrapper
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_bilin_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    _bitdepth_max: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+        put_bilin_8bpc_avx2_impl(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my);
+    }
+}
+
+/// Core bilinear prep implementation for 8bpc
+/// Outputs to i16 intermediate buffer (prep format)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn prep_bilin_8bpc_avx2_impl(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let mx = mx as usize;
+    let my = my as usize;
+    let src = src_ptr as *const u8;
+
+    // For 8bpc: intermediate_bits = 4
+    let intermediate_bits = 4u8;
+
+    unsafe {
+        match (mx != 0, my != 0) {
+            (true, true) => {
+                // Case 1: Both H and V filtering
+                let tmp_h = h + 1;
+                let mut mid = [[0i16; MID_STRIDE]; 130];
+
+                for y in 0..tmp_h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    h_filter_bilin_8bpc_avx2(
+                        mid[y].as_mut_ptr(),
+                        src_row,
+                        w,
+                        mx,
+                        4 - intermediate_bits, // sh = 0 for first pass
+                    );
+                }
+
+                // Second pass: vertical filter to output i16 buffer
+                for y in 0..h {
+                    let dst_row = tmp.add(y * w);
+                    for x in 0..w {
+                        let r0 = mid[y][x] as i32;
+                        let r1 = mid[y + 1][x] as i32;
+                        let coeff0 = 16 - my as i32;
+                        let coeff1 = my as i32;
+                        let pixel = coeff0 * r0 + coeff1 * r1;
+                        // For prep, we keep intermediate precision
+                        let result = (pixel + (1 << (3 + intermediate_bits))) >> (4 + intermediate_bits);
+                        *dst_row.add(x) = ((result - 8192) << 4) as i16; // Apply PREP_BIAS adjustment
+                    }
+                }
+            }
+            (true, false) => {
+                // Case 2: H-only filtering
+                for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    let dst_row = tmp.add(y * w);
+
+                    let mut tmp_buf = [0i16; MID_STRIDE];
+                    h_filter_bilin_8bpc_avx2(tmp_buf.as_mut_ptr(), src_row, w, mx, 4);
+
+                    // Convert to prep format with bias
+                    for x in 0..w {
+                        *dst_row.add(x) = (tmp_buf[x] - 8192 / 16) << 4;
+                    }
+                }
+            }
+            (false, true) => {
+                // Case 3: V-only filtering
+                for y in 0..h {
+                    let dst_row = tmp.add(y * w);
+
+                    for x in 0..w {
+                        let r0 = *src.offset(y as isize * src_stride + x as isize) as i32;
+                        let r1 = *src.offset((y + 1) as isize * src_stride + x as isize) as i32;
+                        let coeff0 = 16 - my as i32;
+                        let coeff1 = my as i32;
+                        let pixel = coeff0 * r0 + coeff1 * r1;
+                        let result = (pixel + 8) >> 4; // sh = 4
+                        *dst_row.add(x) = ((result - 512) << 4) as i16;
+                    }
+                }
+            }
+            (false, false) => {
+                // Case 4: Simple copy to prep format
+                for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    let dst_row = tmp.add(y * w);
+                    for x in 0..w {
+                        let pixel = *src_row.add(x) as i16;
+                        *dst_row.add(x) = (pixel - 512) << 4; // Center around 0
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Bilinear prep for 8bpc - extern "C" wrapper
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_bilin_8bpc_avx2(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    _bitdepth_max: i32,
+    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    // SAFETY: Caller guarantees AVX2 is available and pointers are valid
+    unsafe {
+        prep_bilin_8bpc_avx2_impl(tmp, src_ptr, src_stride, w, h, mx, my);
+    }
+}
+
+// ============================================================================
+// BILINEAR 16BPC (scalar for now, SIMD can be added later)
+// ============================================================================
+
+/// Bilinear put for 16bpc (scalar implementation)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn put_bilin_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let mx = mx as usize;
+    let my = my as usize;
+    let dst = dst_ptr as *mut u16;
+    let src = src_ptr as *const u16;
+    let dst_stride = dst_stride / 2; // Convert byte stride to u16 stride
+    let src_stride = src_stride / 2;
+    let bd_max = bitdepth_max as i32;
+
+    // For 16bpc: intermediate_bits = 4
+    // H pass shift = 4 - intermediate_bits = 0 (no shift for intermediate)
+    // V pass shift = 4 + intermediate_bits = 8
+    let intermediate_bits = 4i32;
+    let h_pass_sh = 4 - intermediate_bits; // = 0
+    let v_pass_sh = 4 + intermediate_bits; // = 8
+
+    unsafe {
+        if mx != 0 {
+            if my != 0 {
+                // H+V filtering
+                let tmp_h = h + 1;
+                let mut mid = [[0i32; MID_STRIDE]; 130];
+
+                for y in 0..tmp_h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    for x in 0..w {
+                        let x0 = *src_row.add(x) as i32;
+                        let x1 = *src_row.add(x + 1) as i32;
+                        let pixel = 16 * x0 + mx as i32 * (x1 - x0);
+                        // For sh = 0, no rounding or shift needed
+                        mid[y][x] = if h_pass_sh > 0 {
+                            (pixel + (1 << (h_pass_sh - 1))) >> h_pass_sh
+                        } else {
+                            pixel
+                        };
+                    }
+                }
+
+                for y in 0..h {
+                    let dst_row = dst.offset(y as isize * dst_stride);
+                    for x in 0..w {
+                        let r0 = mid[y][x];
+                        let r1 = mid[y + 1][x];
+                        let pixel = 16 * r0 + my as i32 * (r1 - r0);
+                        let result = (pixel + (1 << (v_pass_sh - 1))) >> v_pass_sh;
+                        *dst_row.add(x) = result.clamp(0, bd_max) as u16;
+                    }
+                }
+            } else {
+                // H-only filtering - need both rounding passes
+                // First: rnd(4 - intermediate_bits) = rnd(0) = no shift
+                // Then: apply intermediate_rnd >> intermediate_bits
+                for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    let dst_row = dst.offset(y as isize * dst_stride);
+                    for x in 0..w {
+                        let x0 = *src_row.add(x) as i32;
+                        let x1 = *src_row.add(x + 1) as i32;
+                        let pixel = 16 * x0 + mx as i32 * (x1 - x0);
+                        // rnd(0) does nothing, then rnd >> 4
+                        let result = (pixel + 8) >> 4;
+                        *dst_row.add(x) = result.clamp(0, bd_max) as u16;
+                    }
+                }
+            }
+        } else if my != 0 {
+            // V-only filtering
+            for y in 0..h {
+                let dst_row = dst.offset(y as isize * dst_stride);
+                for x in 0..w {
+                    let x0 = *src.offset(y as isize * src_stride + x as isize) as i32;
+                    let x1 = *src.offset((y + 1) as isize * src_stride + x as isize) as i32;
+                    let pixel = 16 * x0 + my as i32 * (x1 - x0);
+                    let result = (pixel + 8) >> 4;
+                    *dst_row.add(x) = result.clamp(0, bd_max) as u16;
+                }
+            }
+        } else {
+            // Simple copy
+            for y in 0..h {
+                let src_row = src.offset(y as isize * src_stride);
+                let dst_row = dst.offset(y as isize * dst_stride);
+                std::ptr::copy_nonoverlapping(src_row, dst_row, w);
+            }
+        }
+    }
+}
+
+/// Bilinear prep for 16bpc (scalar implementation)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let mx = mx as usize;
+    let my = my as usize;
+    let src = src_ptr as *const u16;
+    let src_stride = src_stride / 2;
+
+    // For 16bpc prep: PREP_BIAS = 8192
+    let prep_bias = 8192i32;
+
+    // For 16bpc: intermediate_bits = 4
+    // H pass shift = 4 - intermediate_bits = 0 (no shift for intermediate)
+    // V pass shift = 4 + intermediate_bits = 8
+    let intermediate_bits = 4i32;
+    let h_pass_sh = 4 - intermediate_bits; // = 0
+    let v_pass_sh = 4 + intermediate_bits; // = 8
+
+    unsafe {
+        if mx != 0 {
+            if my != 0 {
+                // H+V filtering
+                let tmp_h = h + 1;
+                let mut mid = [[0i32; MID_STRIDE]; 130];
+
+                for y in 0..tmp_h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    for x in 0..w {
+                        let x0 = *src_row.add(x) as i32;
+                        let x1 = *src_row.add(x + 1) as i32;
+                        let pixel = 16 * x0 + mx as i32 * (x1 - x0);
+                        // For sh = 0, no rounding or shift needed
+                        mid[y][x] = if h_pass_sh > 0 {
+                            (pixel + (1 << (h_pass_sh - 1))) >> h_pass_sh
+                        } else {
+                            pixel
+                        };
+                    }
+                }
+
+                for y in 0..h {
+                    let dst_row = tmp.add(y * w);
+                    for x in 0..w {
+                        let r0 = mid[y][x];
+                        let r1 = mid[y + 1][x];
+                        let pixel = 16 * r0 + my as i32 * (r1 - r0);
+                        let result = (pixel + (1 << (v_pass_sh - 1))) >> v_pass_sh;
+                        *dst_row.add(x) = (result - prep_bias) as i16;
+                    }
+                }
+            } else {
+                // H-only filtering
+                for y in 0..h {
+                    let src_row = src.offset(y as isize * src_stride);
+                    let dst_row = tmp.add(y * w);
+                    for x in 0..w {
+                        let x0 = *src_row.add(x) as i32;
+                        let x1 = *src_row.add(x + 1) as i32;
+                        let pixel = 16 * x0 + mx as i32 * (x1 - x0);
+                        let result = (pixel + 8) >> 4;
+                        *dst_row.add(x) = (result - prep_bias) as i16;
+                    }
+                }
+            }
+        } else if my != 0 {
+            // V-only filtering
+            for y in 0..h {
+                let dst_row = tmp.add(y * w);
+                for x in 0..w {
+                    let x0 = *src.offset(y as isize * src_stride + x as isize) as i32;
+                    let x1 = *src.offset((y + 1) as isize * src_stride + x as isize) as i32;
+                    let pixel = 16 * x0 + my as i32 * (x1 - x0);
+                    let result = (pixel + 8) >> 4;
+                    *dst_row.add(x) = (result - prep_bias) as i16;
+                }
+            }
+        } else {
+            // Simple copy to prep format
+            for y in 0..h {
+                let src_row = src.offset(y as isize * src_stride);
+                let dst_row = tmp.add(y * w);
+                for x in 0..w {
+                    let pixel = *src_row.add(x) as i32;
+                    *dst_row.add(x) = (pixel - prep_bias) as i16;
+                }
+            }
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
