@@ -571,6 +571,88 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_avx2(
 }
 
 // ============================================================================
+// 8x8 IDTX (Identity)
+// ============================================================================
+
+/// 8x8 IDTX (identity transform)
+/// Identity8: out = in * 2
+/// For 8x8 IDTX: row pass * 2, col pass * 2 = * 4
+/// Plus final shift: (+ 8) >> 4
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_identity_add_8x8_8bpc_avx2(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
+) {
+    let c_ptr = coeff;
+    let zero = unsafe { _mm_setzero_si128() };
+    let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
+
+    for y in 0..8 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+
+        // Load 8 destination pixels
+        let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
+        let d16 = unsafe { _mm_unpacklo_epi8(d, zero) };
+
+        // Load 8 coefficients for this row (column-major: y, y+8, y+16, ...)
+        let mut coeffs = [0i16; 8];
+        for x in 0..8 {
+            coeffs[x] = unsafe { *c_ptr.add(y + x * 8) };
+        }
+
+        // Identity8 scale: * 2 for each dimension = * 4 total
+        // Final shift: (+ 8) >> 4
+        // Combined: (c * 4 + 8) >> 4 = (c + 2) >> 2
+        let c_vec = unsafe { _mm_loadu_si128(coeffs.as_ptr() as *const __m128i) };
+        let c_shifted = unsafe {
+            _mm_srai_epi16(_mm_add_epi16(_mm_slli_epi16(c_vec, 2), _mm_set1_epi16(8)), 4)
+        };
+
+        // Add to destination
+        let sum = unsafe { _mm_add_epi16(d16, c_shifted) };
+        let clamped = unsafe { _mm_max_epi16(_mm_min_epi16(sum, max_val), zero) };
+        let packed = unsafe { _mm_packus_epi16(clamped, clamped) };
+
+        unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
+    }
+
+    // Clear coefficients (8x8 = 64 i16 = 128 bytes = 8 x 16-byte stores)
+    unsafe {
+        let z = _mm_setzero_si128();
+        for i in 0..8 {
+            _mm_storeu_si128(coeff.add(i * 8) as *mut __m128i, z);
+        }
+    }
+}
+
+/// FFI wrapper for 8x8 IDTX 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_identity_add_8x8_8bpc_avx2(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
+
+// ============================================================================
 // 8x8 DCT_DCT
 // ============================================================================
 
