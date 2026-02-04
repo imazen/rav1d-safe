@@ -18,6 +18,9 @@ pub mod itx;
 #[cfg(target_arch = "x86_64")]
 pub mod loopfilter;
 
+#[cfg(target_arch = "x86_64")]
+pub mod looprestoration;
+
 // Re-export x86 implementations
 pub use mc::*;
 
