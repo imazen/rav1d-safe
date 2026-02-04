@@ -1255,3 +1255,137 @@ unsafe fn ipred_z2_scalar(
         }
     }
 }
+
+// ============================================================================
+// Z3 Prediction (angular prediction for angles > 180)
+// ============================================================================
+
+/// Z3 prediction: directional prediction using left edge only (angles > 180°)
+///
+/// Z3 is the mirror of Z1, using the left edge instead of top.
+/// Loop order is column-major (outer x, inner y) for better cache locality
+/// when accessing the left edge.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_z3_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as i32;
+    let dst = dst_ptr as *mut u8;
+    let tl = topleft as *const u8;
+
+    // Extract angle flags
+    let is_sm = (angle >> 9) & 1 != 0;
+    let enable_intra_edge_filter = (angle >> 10) != 0;
+    let angle = angle & 511;
+
+    // Get derivative for left edge traversal
+    let dy = dav1d_dr_intra_derivative[((270 - angle) >> 1) as usize] as usize;
+
+    // Check for upsampling - fall back to scalar
+    let upsample_left = enable_intra_edge_filter &&
+        (angle - 180) < 40 && (width as i32 + height) <= (16 >> is_sm as usize);
+
+    if upsample_left {
+        unsafe { ipred_z3_scalar(dst, stride, tl, width, height, dy, true) };
+        return;
+    }
+
+    // Check for edge filtering
+    let filter_strength = if enable_intra_edge_filter {
+        get_filter_strength_simple(width as i32 + height, angle - 180, is_sm)
+    } else {
+        0
+    };
+
+    if filter_strength != 0 {
+        unsafe { ipred_z3_scalar(dst, stride, tl, width, height, dy, false) };
+        return;
+    }
+
+    // No filtering - direct access to left edge
+    // left[0] = tl[-1], left[1] = tl[-2], etc.
+    let max_base_y = height as usize + std::cmp::min(width, height as usize) - 1;
+    let base_inc = 1usize;
+
+    // Z3 has column-major access pattern, so SIMD is tricky
+    // Process columns, each with different dy offset
+    unsafe {
+        for x in 0..width {
+            let ypos = dy * (x + 1);
+            let frac = (ypos & 0x3e) as i32;
+            let inv_frac = 64 - frac;
+
+            for y in 0..height {
+                let base = (ypos >> 6) + base_inc * y as usize;
+                let dst_pixel = dst.offset(y as isize * stride).add(x);
+
+                if base < max_base_y {
+                    // left[base] = tl[-(base+1)]
+                    let l0 = *tl.offset(-(base as isize + 1)) as i32;
+                    let l1 = *tl.offset(-(base as isize + 2)) as i32;
+                    let v = l0 * inv_frac + l1 * frac;
+                    *dst_pixel = ((v + 32) >> 6) as u8;
+                } else {
+                    // Fill rest of column with max value
+                    let fill_val = *tl.offset(-(max_base_y as isize + 1));
+                    for yy in y..height {
+                        *dst.offset(yy as isize * stride).add(x) = fill_val;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// Scalar fallback for Z3 with edge filtering/upsampling
+#[inline(never)]
+unsafe fn ipred_z3_scalar(
+    dst: *mut u8,
+    stride: ptrdiff_t,
+    tl: *const u8,
+    width: usize,
+    height: i32,
+    dy: usize,
+    upsample: bool,
+) {
+    let base_inc = if upsample { 2 } else { 1 };
+    let dy = if upsample { dy << 1 } else { dy };
+    let max_base_y = height as usize + std::cmp::min(width, height as usize) - 1;
+
+    for x in 0..width {
+        let ypos = dy * (x + 1);
+        let frac = (ypos & 0x3e) as i32;
+        let inv_frac = 64 - frac;
+
+        for y in 0..height {
+            let base = (ypos >> 6) + base_inc * y as usize;
+            let dst_pixel = unsafe { dst.offset(y as isize * stride).add(x) };
+
+            if base < max_base_y {
+                let l0 = unsafe { *tl.offset(-(base as isize + 1)) } as i32;
+                let l1 = unsafe { *tl.offset(-(base as isize + 2)) } as i32;
+                let v = l0 * inv_frac + l1 * frac;
+                unsafe { *dst_pixel = ((v + 32) >> 6) as u8 };
+            } else {
+                let fill_val = unsafe { *tl.offset(-(max_base_y as isize + 1)) };
+                for yy in y..height {
+                    unsafe { *dst.offset(yy as isize * stride).add(x) = fill_val };
+                }
+                break;
+            }
+        }
+    }
+}

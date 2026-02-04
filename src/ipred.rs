@@ -2279,6 +2279,8 @@ impl Rav1dIntraPredDSPContext {
             angular_ipred::Fn::new(safe_ipred::ipred_z1_8bpc_avx2);
         self.intra_pred[Z2_PRED as usize] =
             angular_ipred::Fn::new(safe_ipred::ipred_z2_8bpc_avx2);
+        self.intra_pred[Z3_PRED as usize] =
+            angular_ipred::Fn::new(safe_ipred::ipred_z3_8bpc_avx2);
 
         self
     }
