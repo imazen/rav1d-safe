@@ -1634,3 +1634,564 @@ mod tests {
         assert!(coeff.iter().all(|&c| c == 0));
     }
 }
+
+// ============================================================================
+// ADST 4x4 TRANSFORMS
+// ============================================================================
+
+/// ADST4 coefficients (derived from spec)
+/// The ADST4 uses these key values:
+/// - 1321, 3803, 2482, 3344
+/// The code uses (val - 4096) trick to avoid overflow
+
+/// ADST4 1D transform applied to a single 4-element vector (returns 4 outputs)
+#[inline(always)]
+fn adst4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32) -> (i32, i32, i32, i32) {
+    // These formulas match the reference:
+    // out0 = (1321*in0 + (3803-4096)*in2 + (2482-4096)*in3 + (3344-4096)*in1 + 2048) >> 12 + in2 + in3 + in1
+    // out1 = ((2482-4096)*in0 - 1321*in2 - (3803-4096)*in3 + (3344-4096)*in1 + 2048) >> 12 + in0 - in3 + in1
+    // out2 = (209 * (in0 - in2 + in3) + 128) >> 8
+    // out3 = ((3803-4096)*in0 + (2482-4096)*in2 - 1321*in3 - (3344-4096)*in1 + 2048) >> 12 + in0 + in2 - in1
+
+    let out0 = ((1321 * in0 + (3803 - 4096) * in2 + (2482 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
+        + in2 + in3 + in1;
+    let out1 = (((2482 - 4096) * in0 - 1321 * in2 - (3803 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
+        + in0 - in3 + in1;
+    let out2 = (209 * (in0 - in2 + in3) + 128) >> 8;
+    let out3 = (((3803 - 4096) * in0 + (2482 - 4096) * in2 - 1321 * in3 - (3344 - 4096) * in1 + 2048) >> 12)
+        + in0 + in2 - in1;
+
+    (out0, out1, out2, out3)
+}
+
+/// DCT4 1D transform (scalar, for combining with ADST)
+#[inline(always)]
+fn dct4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32) -> (i32, i32, i32, i32) {
+    let t0 = (in0 + in2) * 181 + 128 >> 8;
+    let t1 = (in0 - in2) * 181 + 128 >> 8;
+    let t2 = ((in1 * 1567 - in3 * (3784 - 4096) + 2048) >> 12) - in3;
+    let t3 = ((in1 * (3784 - 4096) + in3 * 1567 + 2048) >> 12) + in1;
+
+    (t0 + t3, t1 + t2, t1 - t2, t0 - t3)
+}
+
+/// ADST_DCT 4x4: ADST on rows, DCT on columns
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    _bitdepth_max: i32,
+) {
+    // Load coefficients into a 4x4 matrix
+    let mut c = [[0i32; 4]; 4];
+    for y in 0..4 {
+        for x in 0..4 {
+            c[y][x] = unsafe { *coeff.add(y * 4 + x) } as i32;
+        }
+    }
+
+    // First pass: ADST on rows
+    let mut tmp = [[0i32; 4]; 4];
+    for y in 0..4 {
+        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
+    }
+
+    // Second pass: DCT on columns
+    let mut out = [[0i32; 4]; 4];
+    for x in 0..4 {
+        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
+    }
+
+    // Add to destination with rounding and clipping
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let pixel = unsafe { *dst_row.add(x) } as i32;
+            let val = pixel + ((out[y][x] + 8) >> 4);
+            unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
+        }
+    }
+
+    // Clear coefficients
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
+}
+
+/// DCT_ADST 4x4: DCT on rows, ADST on columns
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    _bitdepth_max: i32,
+) {
+    // Load coefficients into a 4x4 matrix
+    let mut c = [[0i32; 4]; 4];
+    for y in 0..4 {
+        for x in 0..4 {
+            c[y][x] = unsafe { *coeff.add(y * 4 + x) } as i32;
+        }
+    }
+
+    // First pass: DCT on rows
+    let mut tmp = [[0i32; 4]; 4];
+    for y in 0..4 {
+        let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
+    }
+
+    // Second pass: ADST on columns
+    let mut out = [[0i32; 4]; 4];
+    for x in 0..4 {
+        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
+    }
+
+    // Add to destination with rounding and clipping
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let pixel = unsafe { *dst_row.add(x) } as i32;
+            let val = pixel + ((out[y][x] + 8) >> 4);
+            unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
+        }
+    }
+
+    // Clear coefficients
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
+}
+
+/// ADST_ADST 4x4: ADST on both rows and columns
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    _bitdepth_max: i32,
+) {
+    // Load coefficients
+    let mut c = [[0i32; 4]; 4];
+    for y in 0..4 {
+        for x in 0..4 {
+            c[y][x] = unsafe { *coeff.add(y * 4 + x) } as i32;
+        }
+    }
+
+    // First pass: ADST on rows
+    let mut tmp = [[0i32; 4]; 4];
+    for y in 0..4 {
+        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
+    }
+
+    // Second pass: ADST on columns
+    let mut out = [[0i32; 4]; 4];
+    for x in 0..4 {
+        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
+    }
+
+    // Add to destination
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let pixel = unsafe { *dst_row.add(x) } as i32;
+            let val = pixel + ((out[y][x] + 8) >> 4);
+            unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
+        }
+    }
+
+    // Clear coefficients
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
+}
+
+// ============================================================================
+// ADST FFI WRAPPERS
+// ============================================================================
+
+/// FFI wrapper for ADST_DCT 4x4 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
+
+/// FFI wrapper for DCT_ADST 4x4 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
+
+/// FFI wrapper for ADST_ADST 4x4 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
+
+// ============================================================================
+// FLIPADST TRANSFORMS (reverse order output)
+// ============================================================================
+
+/// FlipADST4 1D transform - same as ADST but output in reverse order
+#[inline(always)]
+fn flipadst4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32) -> (i32, i32, i32, i32) {
+    let (o0, o1, o2, o3) = adst4_1d_scalar(in0, in1, in2, in3);
+    (o3, o2, o1, o0) // Flip the output order
+}
+
+/// FLIPADST_DCT 4x4: FlipADST on rows, DCT on columns
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    _bitdepth_max: i32,
+) {
+    let mut c = [[0i32; 4]; 4];
+    for y in 0..4 {
+        for x in 0..4 {
+            c[y][x] = unsafe { *coeff.add(y * 4 + x) } as i32;
+        }
+    }
+
+    // First pass: FlipADST on rows
+    let mut tmp = [[0i32; 4]; 4];
+    for y in 0..4 {
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
+    }
+
+    // Second pass: DCT on columns
+    let mut out = [[0i32; 4]; 4];
+    for x in 0..4 {
+        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
+    }
+
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let pixel = unsafe { *dst_row.add(x) } as i32;
+            let val = pixel + ((out[y][x] + 8) >> 4);
+            unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
+        }
+    }
+
+    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+}
+
+/// DCT_FLIPADST 4x4: DCT on rows, FlipADST on columns
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    _bitdepth_max: i32,
+) {
+    let mut c = [[0i32; 4]; 4];
+    for y in 0..4 {
+        for x in 0..4 {
+            c[y][x] = unsafe { *coeff.add(y * 4 + x) } as i32;
+        }
+    }
+
+    // First pass: DCT on rows
+    let mut tmp = [[0i32; 4]; 4];
+    for y in 0..4 {
+        let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
+    }
+
+    // Second pass: FlipADST on columns
+    let mut out = [[0i32; 4]; 4];
+    for x in 0..4 {
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
+    }
+
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let pixel = unsafe { *dst_row.add(x) } as i32;
+            let val = pixel + ((out[y][x] + 8) >> 4);
+            unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
+        }
+    }
+
+    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+}
+
+/// ADST_FLIPADST 4x4
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    _bitdepth_max: i32,
+) {
+    let mut c = [[0i32; 4]; 4];
+    for y in 0..4 {
+        for x in 0..4 {
+            c[y][x] = unsafe { *coeff.add(y * 4 + x) } as i32;
+        }
+    }
+
+    let mut tmp = [[0i32; 4]; 4];
+    for y in 0..4 {
+        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+    }
+
+    let mut out = [[0i32; 4]; 4];
+    for x in 0..4 {
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+    }
+
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let pixel = unsafe { *dst_row.add(x) } as i32;
+            let val = pixel + ((out[y][x] + 8) >> 4);
+            unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
+        }
+    }
+    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+}
+
+/// FLIPADST_ADST 4x4
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    _bitdepth_max: i32,
+) {
+    let mut c = [[0i32; 4]; 4];
+    for y in 0..4 {
+        for x in 0..4 {
+            c[y][x] = unsafe { *coeff.add(y * 4 + x) } as i32;
+        }
+    }
+
+    let mut tmp = [[0i32; 4]; 4];
+    for y in 0..4 {
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+    }
+
+    let mut out = [[0i32; 4]; 4];
+    for x in 0..4 {
+        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+    }
+
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let pixel = unsafe { *dst_row.add(x) } as i32;
+            let val = pixel + ((out[y][x] + 8) >> 4);
+            unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
+        }
+    }
+    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+}
+
+/// FLIPADST_FLIPADST 4x4
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    _bitdepth_max: i32,
+) {
+    let mut c = [[0i32; 4]; 4];
+    for y in 0..4 {
+        for x in 0..4 {
+            c[y][x] = unsafe { *coeff.add(y * 4 + x) } as i32;
+        }
+    }
+
+    let mut tmp = [[0i32; 4]; 4];
+    for y in 0..4 {
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+    }
+
+    let mut out = [[0i32; 4]; 4];
+    for x in 0..4 {
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+    }
+
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let pixel = unsafe { *dst_row.add(x) } as i32;
+            let val = pixel + ((out[y][x] + 8) >> 4);
+            unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
+        }
+    }
+    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+}
+
+// FFI wrappers for FlipADST variants
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe { inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe { inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe { inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe { inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe { inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+}
