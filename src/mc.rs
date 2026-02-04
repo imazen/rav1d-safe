@@ -2208,11 +2208,32 @@ impl Rav1dMCDSPContext {
                 self.mask = bd_fn!(mask::decl_fn, BD, mask, avx2);
             }
 
-            self.w_mask = enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                I420 => bd_fn!(w_mask::decl_fn, BD, w_mask_420, avx2),
-                I422 => bd_fn!(w_mask::decl_fn, BD, w_mask_422, avx2),
-                I444 => bd_fn!(w_mask::decl_fn, BD, w_mask_444, avx2),
-            });
+            // w_mask safe SIMD
+            #[cfg(feature = "safe-simd")]
+            {
+                use crate::include::common::bitdepth::BPC;
+                use crate::src::safe_simd::mc as safe_mc;
+                self.w_mask = match BD::BPC {
+                    BPC::BPC8 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                        I420 => w_mask::decl_fn_safe!(safe_mc::w_mask_420_8bpc_avx2),
+                        I422 => w_mask::decl_fn_safe!(safe_mc::w_mask_422_8bpc_avx2),
+                        I444 => w_mask::decl_fn_safe!(safe_mc::w_mask_444_8bpc_avx2),
+                    }),
+                    BPC::BPC16 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                        I420 => w_mask::decl_fn_safe!(safe_mc::w_mask_420_16bpc_avx2),
+                        I422 => w_mask::decl_fn_safe!(safe_mc::w_mask_422_16bpc_avx2),
+                        I444 => w_mask::decl_fn_safe!(safe_mc::w_mask_444_16bpc_avx2),
+                    }),
+                };
+            }
+            #[cfg(not(feature = "safe-simd"))]
+            {
+                self.w_mask = enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                    I420 => bd_fn!(w_mask::decl_fn, BD, w_mask_420, avx2),
+                    I422 => bd_fn!(w_mask::decl_fn, BD, w_mask_422, avx2),
+                    I444 => bd_fn!(w_mask::decl_fn, BD, w_mask_444, avx2),
+                });
+            }
 
             // blend safe SIMD
             #[cfg(feature = "safe-simd")]
