@@ -1905,3 +1905,581 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
         }
     }
 }
+
+// ============================================================================
+// Z1 Prediction 16bpc (angular prediction for angles < 90)
+// ============================================================================
+
+/// Z1 prediction for 16bpc: directional prediction using top edge only (angles < 90°)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_z1_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as i32;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+
+    // Extract angle flags
+    let is_sm = (angle >> 9) & 1 != 0;
+    let enable_intra_edge_filter = (angle >> 10) != 0;
+    let angle = angle & 511;
+
+    // Get derivative
+    let dx = dav1d_dr_intra_derivative[(angle >> 1) as usize] as i32;
+
+    // Determine if we need edge filtering/upsampling
+    let upsample_above = enable_intra_edge_filter &&
+        (90 - angle) < 40 && (width as i32 + height) <= (16 >> is_sm as usize);
+
+    if upsample_above {
+        // Upsampling case - use scalar fallback
+        unsafe { ipred_z1_16bpc_scalar(dst, stride_u16, tl, width, height, dx, true) };
+        return;
+    }
+
+    let filter_strength = if enable_intra_edge_filter {
+        get_filter_strength_simple(width as i32 + height, 90 - angle, is_sm)
+    } else {
+        0
+    };
+
+    if filter_strength != 0 {
+        // Filtered case - use scalar fallback
+        unsafe { ipred_z1_16bpc_scalar(dst, stride_u16, tl, width, height, dx, false) };
+        return;
+    }
+
+    // No filtering needed - direct access to top pixels
+    let top = unsafe { tl.add(1) };
+    let max_base_x = width + std::cmp::min(width, height as usize) - 1;
+    let base_inc = 1usize;
+
+    unsafe {
+        let rounding = _mm256_set1_epi32(32);
+
+        for y in 0..height {
+            let xpos = (y + 1) * dx;
+            let frac = (xpos & 0x3e) as i32;
+            let inv_frac = 64 - frac;
+
+            let frac_vec = _mm256_set1_epi32(frac);
+            let inv_frac_vec = _mm256_set1_epi32(inv_frac);
+
+            let dst_row = dst.offset(y as isize * stride_u16);
+            let base0 = (xpos >> 6) as usize;
+
+            let mut x = 0usize;
+
+            // Process 8 pixels at a time (256-bit / 32-bit intermediate = 8 pixels)
+            while x + 8 <= width && base0 + x + 8 < max_base_x {
+                let base = base0 + base_inc * x;
+
+                // Load 9 consecutive top pixels (need pairs for interpolation)
+                let t0 = _mm_loadu_si128(top.add(base) as *const __m128i);
+                let t1 = _mm_loadu_si128(top.add(base + 1) as *const __m128i);
+
+                // Zero-extend to 32-bit for precise multiply
+                let t0_lo = _mm256_cvtepu16_epi32(t0);
+                let t1_lo = _mm256_cvtepu16_epi32(t1);
+
+                // Interpolate: (t0 * inv_frac + t1 * frac + 32) >> 6
+                let prod0 = _mm256_mullo_epi32(t0_lo, inv_frac_vec);
+                let prod1 = _mm256_mullo_epi32(t1_lo, frac_vec);
+                let sum = _mm256_add_epi32(_mm256_add_epi32(prod0, prod1), rounding);
+                let result = _mm256_srai_epi32::<6>(sum);
+
+                // Pack back to 16-bit
+                let packed = _mm256_packus_epi32(result, result);
+                let lo = _mm256_castsi256_si128(packed);
+                let hi = _mm256_extracti128_si256::<1>(packed);
+                let combined = _mm_unpacklo_epi64(lo, hi);
+                _mm_storeu_si128(dst_row.add(x) as *mut __m128i, combined);
+
+                x += 8;
+            }
+
+            // Process remaining pixels with scalar
+            while x < width {
+                let base = base0 + base_inc * x;
+                if base < max_base_x {
+                    let t0 = *top.add(base) as i32;
+                    let t1 = *top.add(base + 1) as i32;
+                    let v = t0 * inv_frac + t1 * frac;
+                    *dst_row.add(x) = ((v + 32) >> 6) as u16;
+                } else {
+                    // Fill remaining with max value
+                    let fill_val = *top.add(max_base_x);
+                    for xx in x..width {
+                        *dst_row.add(xx) = fill_val;
+                    }
+                    break;
+                }
+                x += 1;
+            }
+        }
+    }
+}
+
+/// Scalar fallback for Z1 16bpc with edge filtering
+#[inline(never)]
+unsafe fn ipred_z1_16bpc_scalar(
+    dst: *mut u16,
+    stride_u16: isize,
+    tl: *const u16,
+    width: usize,
+    height: i32,
+    dx: i32,
+    upsample: bool,
+) {
+    let top = unsafe { tl.add(1) };
+    let max_base_x = width + std::cmp::min(width, height as usize) - 1;
+    let base_inc = if upsample { 2 } else { 1 };
+    let dx = if upsample { dx << 1 } else { dx };
+
+    for y in 0..height {
+        let xpos = (y + 1) * dx;
+        let frac = xpos & 0x3e;
+        let inv_frac = 64 - frac;
+
+        let dst_row = unsafe { dst.offset(y as isize * stride_u16) };
+        let base0 = (xpos >> 6) as usize;
+
+        for x in 0..width {
+            let base = base0 + base_inc * x;
+            if base < max_base_x {
+                let t0 = unsafe { *top.add(base) } as i32;
+                let t1 = unsafe { *top.add(base + 1) } as i32;
+                let v = t0 * inv_frac + t1 * frac;
+                unsafe { *dst_row.add(x) = ((v + 32) >> 6) as u16 };
+            } else {
+                let fill_val = unsafe { *top.add(max_base_x) };
+                for xx in x..width {
+                    unsafe { *dst_row.add(xx) = fill_val };
+                }
+                break;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Z2 Prediction 16bpc (angular prediction for angles 90-180)
+// ============================================================================
+
+/// Z2 prediction for 16bpc: directional prediction using both top AND left edges (angles 90-180°)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_z2_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    max_width: c_int,
+    max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as i32;
+    let height = height as i32;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+
+    // Extract angle flags
+    let is_sm = (angle >> 9) & 1 != 0;
+    let enable_intra_edge_filter = (angle >> 10) != 0;
+    let angle = angle & 511;
+
+    // Z2: angle is between 90 and 180
+    let dy = dav1d_dr_intra_derivative[((angle - 90) >> 1) as usize] as i32;
+    let dx = dav1d_dr_intra_derivative[((180 - angle) >> 1) as usize] as i32;
+
+    // Check for upsampling - fall back to scalar for these complex cases
+    let upsample_left = enable_intra_edge_filter &&
+        (180 - angle) < 40 && (width + height) <= (16 >> is_sm as usize);
+    let upsample_above = enable_intra_edge_filter &&
+        (angle - 90) < 40 && (width + height) <= (16 >> is_sm as usize);
+
+    if upsample_left || upsample_above {
+        unsafe {
+            ipred_z2_16bpc_scalar(dst, stride_u16, tl, width, height, dx, dy,
+                                  max_width, max_height, is_sm, enable_intra_edge_filter);
+        }
+        return;
+    }
+
+    // Check for edge filtering
+    let filter_strength_above = if enable_intra_edge_filter {
+        get_filter_strength_simple(width + height, angle - 90, is_sm)
+    } else {
+        0
+    };
+    let filter_strength_left = if enable_intra_edge_filter {
+        get_filter_strength_simple(width + height, 180 - angle, is_sm)
+    } else {
+        0
+    };
+
+    if filter_strength_above != 0 || filter_strength_left != 0 {
+        unsafe {
+            ipred_z2_16bpc_scalar(dst, stride_u16, tl, width, height, dx, dy,
+                                  max_width, max_height, is_sm, enable_intra_edge_filter);
+        }
+        return;
+    }
+
+    // No filtering - direct edge access
+    let top = unsafe { tl.add(1) };
+
+    unsafe {
+        let rounding = _mm256_set1_epi32(32);
+
+        for y in 0..height {
+            let xpos = (1 << 6) - dx * (y + 1);
+            let base_x0 = xpos >> 6;
+            let frac_x = (xpos & 0x3e) as i32;
+            let inv_frac_x = 64 - frac_x;
+
+            let dst_row = dst.offset(y as isize * stride_u16);
+
+            // Find transition point where we switch from top to left
+            let switch_x = if base_x0 < 0 { 0 } else { (-base_x0) as usize };
+            let switch_x = std::cmp::min(switch_x, width as usize);
+
+            // Process pixels using top edge (base_x >= 0)
+            let mut x = 0usize;
+
+            // SIMD path for top edge pixels - process 8 at a time
+            while x + 8 <= switch_x {
+                let base = (base_x0 + x as i32) as usize;
+
+                let t0 = _mm_loadu_si128(top.add(base) as *const __m128i);
+                let t1 = _mm_loadu_si128(top.add(base + 1) as *const __m128i);
+
+                let t0_lo = _mm256_cvtepu16_epi32(t0);
+                let t1_lo = _mm256_cvtepu16_epi32(t1);
+
+                let frac_vec = _mm256_set1_epi32(frac_x);
+                let inv_frac_vec = _mm256_set1_epi32(inv_frac_x);
+
+                let prod0 = _mm256_mullo_epi32(t0_lo, inv_frac_vec);
+                let prod1 = _mm256_mullo_epi32(t1_lo, frac_vec);
+                let sum = _mm256_add_epi32(_mm256_add_epi32(prod0, prod1), rounding);
+                let result = _mm256_srai_epi32::<6>(sum);
+
+                let packed = _mm256_packus_epi32(result, result);
+                let lo = _mm256_castsi256_si128(packed);
+                let hi = _mm256_extracti128_si256::<1>(packed);
+                let combined = _mm_unpacklo_epi64(lo, hi);
+                _mm_storeu_si128(dst_row.add(x) as *mut __m128i, combined);
+
+                x += 8;
+            }
+
+            // Scalar for remaining top edge pixels
+            while x < switch_x {
+                let base = (base_x0 + x as i32) as usize;
+                let t0 = *top.add(base) as i32;
+                let t1 = *top.add(base + 1) as i32;
+                let v = t0 * inv_frac_x + t1 * frac_x;
+                *dst_row.add(x) = ((v + 32) >> 6) as u16;
+                x += 1;
+            }
+
+            // Now process pixels using left edge (base_x < 0)
+            while x < width as usize {
+                let ypos = (y << 6) - dy * (x as i32 + 1);
+                let base_y = ypos >> 6;
+                let frac_y = ypos & 0x3e;
+                let inv_frac_y = 64 - frac_y;
+
+                let l0 = *tl.offset(-1 - base_y as isize) as i32;
+                let l1 = *tl.offset(-2 - base_y as isize) as i32;
+                let v = l0 * inv_frac_y + l1 * frac_y;
+                *dst_row.add(x) = ((v + 32) >> 6) as u16;
+                x += 1;
+            }
+        }
+    }
+}
+
+/// Scalar fallback for Z2 16bpc with edge filtering/upsampling
+#[inline(never)]
+unsafe fn ipred_z2_16bpc_scalar(
+    dst: *mut u16,
+    stride_u16: isize,
+    tl: *const u16,
+    width: i32,
+    height: i32,
+    dx: i32,
+    dy: i32,
+    _max_width: i32,
+    _max_height: i32,
+    _is_sm: bool,
+    _enable_filter: bool,
+) {
+    let top = unsafe { tl.add(1) };
+
+    for y in 0..height {
+        let xpos = (1 << 6) - dx * (y + 1);
+        let base_x0 = xpos >> 6;
+        let frac_x = xpos & 0x3e;
+        let inv_frac_x = 64 - frac_x;
+
+        let dst_row = unsafe { dst.offset(y as isize * stride_u16) };
+
+        for x in 0..width as usize {
+            let base_x = base_x0 + x as i32;
+
+            let v = if base_x >= 0 {
+                let t0 = unsafe { *top.add(base_x as usize) } as i32;
+                let t1 = unsafe { *top.add(base_x as usize + 1) } as i32;
+                t0 * inv_frac_x + t1 * frac_x
+            } else {
+                let ypos = (y << 6) - dy * (x as i32 + 1);
+                let base_y = ypos >> 6;
+                let frac_y = ypos & 0x3e;
+                let inv_frac_y = 64 - frac_y;
+
+                let l0 = unsafe { *tl.offset(-1 - base_y as isize) } as i32;
+                let l1 = unsafe { *tl.offset(-2 - base_y as isize) } as i32;
+                l0 * inv_frac_y + l1 * frac_y
+            };
+            unsafe { *dst_row.add(x) = ((v + 32) >> 6) as u16 };
+        }
+    }
+}
+
+// ============================================================================
+// Z3 Prediction 16bpc (angular prediction for angles > 180)
+// ============================================================================
+
+/// Z3 prediction for 16bpc: directional prediction using left edge only (angles > 180°)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_z3_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as i32;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+
+    // Extract angle flags
+    let is_sm = (angle >> 9) & 1 != 0;
+    let enable_intra_edge_filter = (angle >> 10) != 0;
+    let angle = angle & 511;
+
+    // Get derivative for left edge traversal
+    let dy = dav1d_dr_intra_derivative[((270 - angle) >> 1) as usize] as usize;
+
+    // Check for upsampling - fall back to scalar
+    let upsample_left = enable_intra_edge_filter &&
+        (angle - 180) < 40 && (width as i32 + height) <= (16 >> is_sm as usize);
+
+    if upsample_left {
+        unsafe { ipred_z3_16bpc_scalar(dst, stride_u16, tl, width, height, dy, true) };
+        return;
+    }
+
+    // Check for edge filtering
+    let filter_strength = if enable_intra_edge_filter {
+        get_filter_strength_simple(width as i32 + height, angle - 180, is_sm)
+    } else {
+        0
+    };
+
+    if filter_strength != 0 {
+        unsafe { ipred_z3_16bpc_scalar(dst, stride_u16, tl, width, height, dy, false) };
+        return;
+    }
+
+    // No filtering - direct access to left edge
+    let max_base_y = height as usize + std::cmp::min(width, height as usize) - 1;
+    let base_inc = 1usize;
+
+    // Z3 has column-major access pattern
+    unsafe {
+        for x in 0..width {
+            let ypos = dy * (x + 1);
+            let frac = (ypos & 0x3e) as i32;
+            let inv_frac = 64 - frac;
+
+            for y in 0..height {
+                let base = (ypos >> 6) + base_inc * y as usize;
+                let dst_pixel = dst.offset(y as isize * stride_u16).add(x);
+
+                if base < max_base_y {
+                    let l0 = *tl.offset(-(base as isize + 1)) as i32;
+                    let l1 = *tl.offset(-(base as isize + 2)) as i32;
+                    let v = l0 * inv_frac + l1 * frac;
+                    *dst_pixel = ((v + 32) >> 6) as u16;
+                } else {
+                    let fill_val = *tl.offset(-(max_base_y as isize + 1));
+                    for yy in y..height {
+                        *dst.offset(yy as isize * stride_u16).add(x) = fill_val;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// Scalar fallback for Z3 16bpc with edge filtering/upsampling
+#[inline(never)]
+unsafe fn ipred_z3_16bpc_scalar(
+    dst: *mut u16,
+    stride_u16: isize,
+    tl: *const u16,
+    width: usize,
+    height: i32,
+    dy: usize,
+    upsample: bool,
+) {
+    let base_inc = if upsample { 2 } else { 1 };
+    let dy = if upsample { dy << 1 } else { dy };
+    let max_base_y = height as usize + std::cmp::min(width, height as usize) - 1;
+
+    for x in 0..width {
+        let ypos = dy * (x + 1);
+        let frac = (ypos & 0x3e) as i32;
+        let inv_frac = 64 - frac;
+
+        for y in 0..height {
+            let base = (ypos >> 6) + base_inc * y as usize;
+            let dst_pixel = unsafe { dst.offset(y as isize * stride_u16).add(x) };
+
+            if base < max_base_y {
+                let l0 = unsafe { *tl.offset(-(base as isize + 1)) } as i32;
+                let l1 = unsafe { *tl.offset(-(base as isize + 2)) } as i32;
+                let v = l0 * inv_frac + l1 * frac;
+                unsafe { *dst_pixel = ((v + 32) >> 6) as u16 };
+            } else {
+                let fill_val = unsafe { *tl.offset(-(max_base_y as isize + 1)) };
+                for yy in y..height {
+                    unsafe { *dst.offset(yy as isize * stride_u16).add(x) = fill_val };
+                }
+                break;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// FILTER Prediction 16bpc
+// ============================================================================
+
+/// FILTER prediction for 16bpc: uses 7-tap filter for intra prediction
+///
+/// Processes in 4x2 blocks. Each output pixel uses 7 input samples.
+/// Input pixels: p0 = topleft, p1-p4 = top row (4 pixels), p5-p6 = left column (2 pixels)
+/// For 16bpc: out = (sum + 8) >> 4, clamped to [0, bitdepth_max]
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_filter_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    filt_idx: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    bitdepth_max: c_int,
+    topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = (width as usize / 4) * 4; // Round down to multiple of 4
+    let height = height as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+    let filt_idx = (filt_idx as usize) & 511;
+
+    let filter = &dav1d_filter_intra_taps[filt_idx];
+
+    unsafe {
+        // Process in 4x2 blocks
+        for y in (0..height).step_by(2) {
+            let tl_off = topleft_off - y;
+            let mut tl_pixel = *tl.wrapping_add(tl_off) as i32;
+
+            for x in (0..width).step_by(4) {
+                // Get top 4 pixels (p1-p4)
+                let top_ptr = tl.wrapping_add(topleft_off + 1 + x);
+                let p1 = *top_ptr as i32;
+                let p2 = *top_ptr.add(1) as i32;
+                let p3 = *top_ptr.add(2) as i32;
+                let p4 = *top_ptr.add(3) as i32;
+
+                // Get left 2 pixels (p5, p6)
+                let (p5, p6) = if x == 0 {
+                    // From original topleft buffer
+                    let left_ptr = tl.wrapping_sub(tl_off.wrapping_sub(topleft_off) + 1);
+                    (*left_ptr as i32, *left_ptr.wrapping_sub(1) as i32)
+                } else {
+                    // From previously computed output
+                    let dst_row0 = dst.offset(y as isize * stride_u16);
+                    let dst_row1 = dst.offset((y + 1) as isize * stride_u16);
+                    (*dst_row0.add(x - 1) as i32, *dst_row1.add(x - 1) as i32)
+                };
+
+                let p0 = tl_pixel;
+                let p = [p0, p1, p2, p3, p4, p5, p6];
+
+                // Process 4x2 = 8 output pixels using filter taps
+                let flt = filter.0.as_slice();
+                let mut flt_offset = 0;
+
+                // Row 0 (4 pixels)
+                let dst_row0 = dst.offset(y as isize * stride_u16);
+                for xx in 0..4 {
+                    let acc = filter_fn(&flt[flt_offset..], p);
+                    let val = ((acc + 8) >> 4).clamp(0, bitdepth_max as i32) as u16;
+                    *dst_row0.add(x + xx) = val;
+                    flt_offset += FLT_INCR;
+                }
+
+                // Row 1 (4 pixels)
+                let dst_row1 = dst.offset((y + 1) as isize * stride_u16);
+                for xx in 0..4 {
+                    let acc = filter_fn(&flt[flt_offset..], p);
+                    let val = ((acc + 8) >> 4).clamp(0, bitdepth_max as i32) as u16;
+                    *dst_row1.add(x + xx) = val;
+                    flt_offset += FLT_INCR;
+                }
+
+                // Update topleft for next 4x2 block
+                tl_pixel = p4;
+            }
+        }
+    }
+}
