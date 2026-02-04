@@ -52,7 +52,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | mc | `src/safe_simd/mc.rs` | **Complete** - 8bpc+16bpc, x86 AVX2 |
 | mc_arm | `src/safe_simd/mc_arm.rs` | **Partial** - 8bpc NEON (avg, w_avg, mask, blend) |
 | itx | `src/safe_simd/itx.rs` | **Complete** - All square 4/8/16/32/64 + rect DCT (4x8,8x4,8x16,16x8) |
-| loopfilter | `src/safe_simd/loopfilter.rs` | **8bpc only** - lpf_h/v_sb_y/uv |
+| loopfilter | `src/safe_simd/loopfilter.rs` | **Complete** - 8bpc + 16bpc |
 | cdef | `src/safe_simd/cdef.rs` | **8bpc only** - filter 8x8/4x8/4x4, find_dir |
 | looprestoration | `src/safe_simd/looprestoration.rs` | **8bpc+16bpc** - Wiener + SGR 5x5/3x3/mix (8bpc) |
 | ipred | `src/safe_simd/ipred.rs` | **Complete** - All 14 modes for both 8bpc and 16bpc |
@@ -76,9 +76,9 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 
 **Using Rust fallbacks (PORT THESE NEXT):**
 - filmgrain: Inner loops need proper SIMD (~13k lines)
-- Rectangular ITX (8x4, 4x8, 16x8, etc.)
+- Rectangular ITX (larger sizes: 16x32, 32x16, etc.)
 - 16bpc SGR filters
-- 16bpc loopfilter/CDEF
+- 16bpc CDEF
 - 16bpc SGR filters
 - 16bpc variants of loopfilter/CDEF
 
