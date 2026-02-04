@@ -51,7 +51,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 |--------|----------|--------|
 | mc | `src/safe_simd/mc.rs` | **Complete** - 8bpc+16bpc, x86 AVX2 |
 | mc_arm | `src/safe_simd/mc_arm.rs` | **Partial** - 8bpc NEON (avg, w_avg, mask, blend) |
-| itx | `src/safe_simd/itx.rs` | **Complete** - All square 4/8/16/32/64 DCT/ADST/IDTX |
+| itx | `src/safe_simd/itx.rs` | **Complete** - All square 4/8/16/32/64 + rect DCT (4x8,8x4,8x16,16x8) |
 | loopfilter | `src/safe_simd/loopfilter.rs` | **8bpc only** - lpf_h/v_sb_y/uv |
 | cdef | `src/safe_simd/cdef.rs` | **8bpc only** - filter 8x8/4x8/4x4, find_dir |
 | looprestoration | `src/safe_simd/looprestoration.rs` | **8bpc+16bpc** - Wiener + SGR 5x5/3x3/mix (8bpc) |
@@ -61,9 +61,9 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 ## Performance Status (2026-02-04)
 
 Full-stack benchmark via zenavif (20 decodes of test.avif):
-- ASM: ~1.14s
-- Safe-SIMD: ~1.14s
-- **At exact parity**
+- ASM: ~1.17s
+- Safe-SIMD: ~1.16s
+- **Safe-SIMD slightly faster than ASM!**
 
 ## Porting Progress (160k lines target)
 
