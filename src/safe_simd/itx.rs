@@ -718,6 +718,178 @@ fn dct8_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
     c[7 * stride] = clip(t0 - t7);
 }
 
+/// ADST4 1D transform (strided version for rectangular transforms)
+#[inline]
+fn adst4_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
+    let clip = |v: i32| v.clamp(min, max);
+
+    let in0 = c[0 * stride];
+    let in1 = c[1 * stride];
+    let in2 = c[2 * stride];
+    let in3 = c[3 * stride];
+
+    let out0 = ((1321 * in0 + (3803 - 4096) * in2 + (2482 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
+        + in2 + in3 + in1;
+    let out1 = (((2482 - 4096) * in0 - 1321 * in2 - (3803 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
+        + in0 - in3 + in1;
+    let out2 = (209 * (in0 - in2 + in3) + 128) >> 8;
+    let out3 = (((3803 - 4096) * in0 + (2482 - 4096) * in2 - 1321 * in3 - (3344 - 4096) * in1 + 2048) >> 12)
+        + in0 + in2 - in1;
+
+    c[0 * stride] = clip(out0);
+    c[1 * stride] = clip(out1);
+    c[2 * stride] = clip(out2);
+    c[3 * stride] = clip(out3);
+}
+
+/// FlipADST4 1D transform (strided version)
+#[inline]
+fn flipadst4_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
+    let clip = |v: i32| v.clamp(min, max);
+
+    let in0 = c[0 * stride];
+    let in1 = c[1 * stride];
+    let in2 = c[2 * stride];
+    let in3 = c[3 * stride];
+
+    let out0 = ((1321 * in0 + (3803 - 4096) * in2 + (2482 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
+        + in2 + in3 + in1;
+    let out1 = (((2482 - 4096) * in0 - 1321 * in2 - (3803 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
+        + in0 - in3 + in1;
+    let out2 = (209 * (in0 - in2 + in3) + 128) >> 8;
+    let out3 = (((3803 - 4096) * in0 + (2482 - 4096) * in2 - 1321 * in3 - (3344 - 4096) * in1 + 2048) >> 12)
+        + in0 + in2 - in1;
+
+    // Flip output
+    c[0 * stride] = clip(out3);
+    c[1 * stride] = clip(out2);
+    c[2 * stride] = clip(out1);
+    c[3 * stride] = clip(out0);
+}
+
+/// ADST8 1D transform (strided version for rectangular transforms)
+#[inline]
+fn adst8_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
+    let clip = |v: i32| v.clamp(min, max);
+
+    let in0 = c[0 * stride];
+    let in1 = c[1 * stride];
+    let in2 = c[2 * stride];
+    let in3 = c[3 * stride];
+    let in4 = c[4 * stride];
+    let in5 = c[5 * stride];
+    let in6 = c[6 * stride];
+    let in7 = c[7 * stride];
+
+    let t0a = (((4076 - 4096) * in7 + 401 * in0 + 2048) >> 12) + in7;
+    let t1a = ((401 * in7 - (4076 - 4096) * in0 + 2048) >> 12) - in0;
+    let t2a = (((3612 - 4096) * in5 + 1931 * in2 + 2048) >> 12) + in5;
+    let t3a = ((1931 * in5 - (3612 - 4096) * in2 + 2048) >> 12) - in2;
+    let t4a = (1299 * in3 + 1583 * in4 + 1024) >> 11;
+    let t5a = (1583 * in3 - 1299 * in4 + 1024) >> 11;
+    let t6a = ((1189 * in1 + (3920 - 4096) * in6 + 2048) >> 12) + in6;
+    let t7a = (((3920 - 4096) * in1 - 1189 * in6 + 2048) >> 12) + in1;
+
+    let t0 = clip(t0a + t4a);
+    let t1 = clip(t1a + t5a);
+    let t2 = clip(t2a + t6a);
+    let t3 = clip(t3a + t7a);
+    let t4 = clip(t0a - t4a);
+    let t5 = clip(t1a - t5a);
+    let t6 = clip(t2a - t6a);
+    let t7 = clip(t3a - t7a);
+
+    let t4a = (((3784 - 4096) * t4 + 1567 * t5 + 2048) >> 12) + t4;
+    let t5a = ((1567 * t4 - (3784 - 4096) * t5 + 2048) >> 12) - t5;
+    let t6a = (((3784 - 4096) * t7 - 1567 * t6 + 2048) >> 12) + t7;
+    let t7a = ((1567 * t7 + (3784 - 4096) * t6 + 2048) >> 12) + t6;
+
+    let out0 = clip(t0 + t2);
+    let out7 = -clip(t1 + t3);
+    let t2_final = clip(t0 - t2);
+    let t3_final = clip(t1 - t3);
+    let out1 = -clip(t4a + t6a);
+    let out6 = clip(t5a + t7a);
+    let t6_final = clip(t4a - t6a);
+    let t7_final = clip(t5a - t7a);
+
+    let out3 = -(((t2_final + t3_final) * 181 + 128) >> 8);
+    let out4 = ((t2_final - t3_final) * 181 + 128) >> 8;
+    let out2 = ((t6_final + t7_final) * 181 + 128) >> 8;
+    let out5 = -(((t6_final - t7_final) * 181 + 128) >> 8);
+
+    c[0 * stride] = out0;
+    c[1 * stride] = out1;
+    c[2 * stride] = out2;
+    c[3 * stride] = out3;
+    c[4 * stride] = out4;
+    c[5 * stride] = out5;
+    c[6 * stride] = out6;
+    c[7 * stride] = out7;
+}
+
+/// FlipADST8 1D transform (strided version)
+#[inline]
+fn flipadst8_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
+    let clip = |v: i32| v.clamp(min, max);
+
+    let in0 = c[0 * stride];
+    let in1 = c[1 * stride];
+    let in2 = c[2 * stride];
+    let in3 = c[3 * stride];
+    let in4 = c[4 * stride];
+    let in5 = c[5 * stride];
+    let in6 = c[6 * stride];
+    let in7 = c[7 * stride];
+
+    let t0a = (((4076 - 4096) * in7 + 401 * in0 + 2048) >> 12) + in7;
+    let t1a = ((401 * in7 - (4076 - 4096) * in0 + 2048) >> 12) - in0;
+    let t2a = (((3612 - 4096) * in5 + 1931 * in2 + 2048) >> 12) + in5;
+    let t3a = ((1931 * in5 - (3612 - 4096) * in2 + 2048) >> 12) - in2;
+    let t4a = (1299 * in3 + 1583 * in4 + 1024) >> 11;
+    let t5a = (1583 * in3 - 1299 * in4 + 1024) >> 11;
+    let t6a = ((1189 * in1 + (3920 - 4096) * in6 + 2048) >> 12) + in6;
+    let t7a = (((3920 - 4096) * in1 - 1189 * in6 + 2048) >> 12) + in1;
+
+    let t0 = clip(t0a + t4a);
+    let t1 = clip(t1a + t5a);
+    let t2 = clip(t2a + t6a);
+    let t3 = clip(t3a + t7a);
+    let t4 = clip(t0a - t4a);
+    let t5 = clip(t1a - t5a);
+    let t6 = clip(t2a - t6a);
+    let t7 = clip(t3a - t7a);
+
+    let t4a = (((3784 - 4096) * t4 + 1567 * t5 + 2048) >> 12) + t4;
+    let t5a = ((1567 * t4 - (3784 - 4096) * t5 + 2048) >> 12) - t5;
+    let t6a = (((3784 - 4096) * t7 - 1567 * t6 + 2048) >> 12) + t7;
+    let t7a = ((1567 * t7 + (3784 - 4096) * t6 + 2048) >> 12) + t6;
+
+    let out0 = clip(t0 + t2);
+    let out7 = -clip(t1 + t3);
+    let t2_final = clip(t0 - t2);
+    let t3_final = clip(t1 - t3);
+    let out1 = -clip(t4a + t6a);
+    let out6 = clip(t5a + t7a);
+    let t6_final = clip(t4a - t6a);
+    let t7_final = clip(t5a - t7a);
+
+    let out3 = -(((t2_final + t3_final) * 181 + 128) >> 8);
+    let out4 = ((t2_final - t3_final) * 181 + 128) >> 8;
+    let out2 = ((t6_final + t7_final) * 181 + 128) >> 8;
+    let out5 = -(((t6_final - t7_final) * 181 + 128) >> 8);
+
+    // Flip output
+    c[0 * stride] = out7;
+    c[1 * stride] = out6;
+    c[2 * stride] = out5;
+    c[3 * stride] = out4;
+    c[4 * stride] = out3;
+    c[5 * stride] = out2;
+    c[6 * stride] = out1;
+    c[7 * stride] = out0;
+}
+
 /// Full 2D DCT_DCT 8x8 inverse transform with add-to-destination
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -1692,6 +1864,496 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_avx2(
         );
     }
 }
+
+// ============================================================================
+// ADST VARIANTS FOR 4x8 and 8x4
+// ============================================================================
+
+/// Helper macro for 4x8 transforms with configurable row/col transforms
+macro_rules! impl_4x8_transform {
+    ($name:ident, $row_fn:ident, $col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        unsafe fn $name(
+            dst: *mut u8,
+            dst_stride: isize,
+            coeff: *mut i16,
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let row_clip_min = i16::MIN as i32;
+            let row_clip_max = i16::MAX as i32;
+            let col_clip_min = i16::MIN as i32;
+            let col_clip_max = i16::MAX as i32;
+
+            let c_ptr = coeff;
+            let mut tmp = [0i32; 32];
+
+            let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
+
+            // Row transform (4 elements each, 8 rows)
+            for y in 0..8 {
+                for x in 0..4 {
+                    tmp[x] = rect2_scale(unsafe { *c_ptr.add(y + x * 8) as i32 });
+                }
+                $row_fn(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+                for x in 0..4 {
+                    tmp[y * 4 + x] = iclip(tmp[x], col_clip_min, col_clip_max);
+                }
+            }
+
+            // Column transform (8 elements each, 4 columns)
+            for x in 0..4 {
+                $col_fn(&mut tmp[x..], 4, col_clip_min, col_clip_max);
+            }
+
+            // Add to destination
+            let zero = unsafe { _mm_setzero_si128() };
+            let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
+
+            for y in 0..8 {
+                let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+                let d = unsafe { _mm_cvtsi32_si128(*(dst_row as *const i32)) };
+                let d16 = unsafe { _mm_unpacklo_epi8(d, zero) };
+                let d32 = unsafe { _mm_cvtepi16_epi32(d16) };
+
+                let c = unsafe {
+                    _mm_set_epi32(
+                        (tmp[y * 4 + 3] + 8) >> 4,
+                        (tmp[y * 4 + 2] + 8) >> 4,
+                        (tmp[y * 4 + 1] + 8) >> 4,
+                        (tmp[y * 4 + 0] + 8) >> 4
+                    )
+                };
+
+                let sum = unsafe { _mm_add_epi32(d32, c) };
+                let sum16 = unsafe { _mm_packs_epi32(sum, sum) };
+                let clamped = unsafe { _mm_max_epi16(_mm_min_epi16(sum16, max_val), zero) };
+                let packed = unsafe { _mm_packus_epi16(clamped, clamped) };
+                unsafe { *(dst_row as *mut i32) = _mm_cvtsi128_si32(packed) };
+            }
+
+            unsafe {
+                _mm256_storeu_si256(coeff as *mut __m256i, _mm256_setzero_si256());
+                _mm256_storeu_si256((coeff as *mut __m256i).add(1), _mm256_setzero_si256());
+            }
+        }
+    };
+}
+
+/// Helper macro for 8x4 transforms with configurable row/col transforms
+macro_rules! impl_8x4_transform {
+    ($name:ident, $row_fn:ident, $col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        unsafe fn $name(
+            dst: *mut u8,
+            dst_stride: isize,
+            coeff: *mut i16,
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let row_clip_min = i16::MIN as i32;
+            let row_clip_max = i16::MAX as i32;
+            let col_clip_min = i16::MIN as i32;
+            let col_clip_max = i16::MAX as i32;
+
+            let c_ptr = coeff;
+            let mut tmp = [0i32; 32];
+
+            let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
+
+            // Row transform (8 elements each, 4 rows)
+            for y in 0..4 {
+                for x in 0..8 {
+                    tmp[x] = rect2_scale(unsafe { *c_ptr.add(y + x * 4) as i32 });
+                }
+                $row_fn(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+                for x in 0..8 {
+                    tmp[y * 8 + x] = iclip(tmp[x], col_clip_min, col_clip_max);
+                }
+            }
+
+            // Column transform (4 elements each, 8 columns)
+            for x in 0..8 {
+                $col_fn(&mut tmp[x..], 8, col_clip_min, col_clip_max);
+            }
+
+            // Add to destination
+            for y in 0..4 {
+                let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+                for x in 0..8 {
+                    let d = unsafe { *dst_row.add(x) } as i32;
+                    let c = (tmp[y * 8 + x] + 8) >> 4;
+                    let result = iclip(d + c, 0, bitdepth_max);
+                    unsafe { *dst_row.add(x) = result as u8 };
+                }
+            }
+
+            unsafe {
+                _mm256_storeu_si256(coeff as *mut __m256i, _mm256_setzero_si256());
+                _mm256_storeu_si256((coeff as *mut __m256i).add(1), _mm256_setzero_si256());
+            }
+        }
+    };
+}
+
+// Generate 4x8 ADST variants
+impl_4x8_transform!(inv_txfm_add_adst_dct_4x8_8bpc_avx2_inner, adst4_1d, dct8_1d);
+impl_4x8_transform!(inv_txfm_add_dct_adst_4x8_8bpc_avx2_inner, dct4_1d, adst8_1d);
+impl_4x8_transform!(inv_txfm_add_adst_adst_4x8_8bpc_avx2_inner, adst4_1d, adst8_1d);
+impl_4x8_transform!(inv_txfm_add_flipadst_dct_4x8_8bpc_avx2_inner, flipadst4_1d, dct8_1d);
+impl_4x8_transform!(inv_txfm_add_dct_flipadst_4x8_8bpc_avx2_inner, dct4_1d, flipadst8_1d);
+impl_4x8_transform!(inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2_inner, flipadst4_1d, flipadst8_1d);
+impl_4x8_transform!(inv_txfm_add_adst_flipadst_4x8_8bpc_avx2_inner, adst4_1d, flipadst8_1d);
+impl_4x8_transform!(inv_txfm_add_flipadst_adst_4x8_8bpc_avx2_inner, flipadst4_1d, adst8_1d);
+
+// Generate 8x4 ADST variants
+impl_8x4_transform!(inv_txfm_add_adst_dct_8x4_8bpc_avx2_inner, adst8_1d, dct4_1d);
+impl_8x4_transform!(inv_txfm_add_dct_adst_8x4_8bpc_avx2_inner, dct8_1d, adst4_1d);
+impl_8x4_transform!(inv_txfm_add_adst_adst_8x4_8bpc_avx2_inner, adst8_1d, adst4_1d);
+impl_8x4_transform!(inv_txfm_add_flipadst_dct_8x4_8bpc_avx2_inner, flipadst8_1d, dct4_1d);
+impl_8x4_transform!(inv_txfm_add_dct_flipadst_8x4_8bpc_avx2_inner, dct8_1d, flipadst4_1d);
+impl_8x4_transform!(inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2_inner, flipadst8_1d, flipadst4_1d);
+impl_8x4_transform!(inv_txfm_add_adst_flipadst_8x4_8bpc_avx2_inner, adst8_1d, flipadst4_1d);
+impl_8x4_transform!(inv_txfm_add_flipadst_adst_8x4_8bpc_avx2_inner, flipadst8_1d, adst4_1d);
+
+// FFI wrappers for 4x8 ADST variants
+macro_rules! impl_4x8_ffi_wrapper {
+    ($name:ident, $inner:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        pub unsafe extern "C" fn $name(
+            dst_ptr: *mut DynPixel,
+            dst_stride: isize,
+            coeff: *mut DynCoef,
+            eob: c_int,
+            bitdepth_max: c_int,
+            _coeff_len: u16,
+            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+        }
+    };
+}
+
+impl_4x8_ffi_wrapper!(inv_txfm_add_adst_dct_4x8_8bpc_avx2, inv_txfm_add_adst_dct_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(inv_txfm_add_dct_adst_4x8_8bpc_avx2, inv_txfm_add_dct_adst_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(inv_txfm_add_adst_adst_4x8_8bpc_avx2, inv_txfm_add_adst_adst_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(inv_txfm_add_flipadst_dct_4x8_8bpc_avx2, inv_txfm_add_flipadst_dct_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(inv_txfm_add_dct_flipadst_4x8_8bpc_avx2, inv_txfm_add_dct_flipadst_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2, inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(inv_txfm_add_adst_flipadst_4x8_8bpc_avx2, inv_txfm_add_adst_flipadst_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(inv_txfm_add_flipadst_adst_4x8_8bpc_avx2, inv_txfm_add_flipadst_adst_4x8_8bpc_avx2_inner);
+
+// FFI wrappers for 8x4 ADST variants
+macro_rules! impl_8x4_ffi_wrapper {
+    ($name:ident, $inner:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        pub unsafe extern "C" fn $name(
+            dst_ptr: *mut DynPixel,
+            dst_stride: isize,
+            coeff: *mut DynCoef,
+            eob: c_int,
+            bitdepth_max: c_int,
+            _coeff_len: u16,
+            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+        }
+    };
+}
+
+impl_8x4_ffi_wrapper!(inv_txfm_add_adst_dct_8x4_8bpc_avx2, inv_txfm_add_adst_dct_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_dct_adst_8x4_8bpc_avx2, inv_txfm_add_dct_adst_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_adst_adst_8x4_8bpc_avx2, inv_txfm_add_adst_adst_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_flipadst_dct_8x4_8bpc_avx2, inv_txfm_add_flipadst_dct_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_dct_flipadst_8x4_8bpc_avx2, inv_txfm_add_dct_flipadst_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2, inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_adst_flipadst_8x4_8bpc_avx2, inv_txfm_add_adst_flipadst_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(inv_txfm_add_flipadst_adst_8x4_8bpc_avx2, inv_txfm_add_flipadst_adst_8x4_8bpc_avx2_inner);
+
+// ============================================================================
+// 8x16 and 16x8 ADST/FLIPADST variants
+// ============================================================================
+
+/// Helper macro for 8x16 transforms with configurable row/col transforms
+macro_rules! impl_8x16_transform {
+    ($name:ident, $row_fn:ident, $col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        unsafe fn $name(
+            dst: *mut u8,
+            dst_stride: isize,
+            coeff: *mut i16,
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let row_clip_min = i16::MIN as i32;
+            let row_clip_max = i16::MAX as i32;
+            let col_clip_min = i16::MIN as i32;
+            let col_clip_max = i16::MAX as i32;
+
+            let c_ptr = coeff;
+            let mut tmp = [0i32; 128];
+
+            let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
+
+            // Row transform (8 elements each, 16 rows)
+            let rnd = 1;
+            let shift = 1;
+            for y in 0..16 {
+                for x in 0..8 {
+                    tmp[x] = rect2_scale(unsafe { *c_ptr.add(y + x * 16) as i32 });
+                }
+                $row_fn(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+                for x in 0..8 {
+                    tmp[y * 8 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+                }
+            }
+
+            // Column transform (16 elements each, 8 columns)
+            for x in 0..8 {
+                $col_fn(&mut tmp[x..], 8, col_clip_min, col_clip_max);
+            }
+
+            // Add to destination
+            let zero = unsafe { _mm_setzero_si128() };
+            let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
+            let rnd_final = unsafe { _mm256_set1_epi32(8) };
+
+            for y in 0..16 {
+                let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+
+                let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
+                let d16 = unsafe { _mm_unpacklo_epi8(d, zero) };
+
+                let c_lo = unsafe {
+                    _mm_set_epi32(
+                        tmp[y * 8 + 3], tmp[y * 8 + 2],
+                        tmp[y * 8 + 1], tmp[y * 8 + 0]
+                    )
+                };
+                let c_hi = unsafe {
+                    _mm_set_epi32(
+                        tmp[y * 8 + 7], tmp[y * 8 + 6],
+                        tmp[y * 8 + 5], tmp[y * 8 + 4]
+                    )
+                };
+
+                let c_lo_256 = unsafe { _mm256_set_m128i(c_hi, c_lo) };
+                let c_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4) };
+
+                let c_lo_scaled = unsafe { _mm256_castsi256_si128(c_scaled) };
+                let c_hi_scaled = unsafe { _mm256_extracti128_si256(c_scaled, 1) };
+                let c16 = unsafe { _mm_packs_epi32(c_lo_scaled, c_hi_scaled) };
+
+                let sum = unsafe { _mm_add_epi16(d16, c16) };
+                let clamped = unsafe { _mm_max_epi16(_mm_min_epi16(sum, max_val), zero) };
+                let packed = unsafe { _mm_packus_epi16(clamped, clamped) };
+
+                unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
+            }
+
+            // Clear coefficients
+            unsafe {
+                let zero256 = _mm256_setzero_si256();
+                for i in 0..8 {
+                    _mm256_storeu_si256((coeff as *mut __m256i).add(i), zero256);
+                }
+            }
+        }
+    };
+}
+
+/// Helper macro for 16x8 transforms with configurable row/col transforms
+macro_rules! impl_16x8_transform {
+    ($name:ident, $row_fn:ident, $col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        unsafe fn $name(
+            dst: *mut u8,
+            dst_stride: isize,
+            coeff: *mut i16,
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let row_clip_min = i16::MIN as i32;
+            let row_clip_max = i16::MAX as i32;
+            let col_clip_min = i16::MIN as i32;
+            let col_clip_max = i16::MAX as i32;
+
+            let c_ptr = coeff;
+            let mut tmp = [0i32; 128];
+
+            let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
+
+            // Row transform (16 elements each, 8 rows)
+            let rnd = 1;
+            let shift = 1;
+            for y in 0..8 {
+                for x in 0..16 {
+                    tmp[x] = rect2_scale(unsafe { *c_ptr.add(y + x * 8) as i32 });
+                }
+                $row_fn(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+                for x in 0..16 {
+                    tmp[y * 16 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+                }
+            }
+
+            // Column transform (8 elements each, 16 columns)
+            for x in 0..16 {
+                $col_fn(&mut tmp[x..], 16, col_clip_min, col_clip_max);
+            }
+
+            // Add to destination
+            let zero = unsafe { _mm256_setzero_si256() };
+            let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
+            let rnd_final = unsafe { _mm256_set1_epi32(8) };
+
+            for y in 0..8 {
+                let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+
+                let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
+                let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+
+                let c0 = unsafe {
+                    _mm256_set_epi32(
+                        tmp[y * 16 + 7], tmp[y * 16 + 6],
+                        tmp[y * 16 + 5], tmp[y * 16 + 4],
+                        tmp[y * 16 + 3], tmp[y * 16 + 2],
+                        tmp[y * 16 + 1], tmp[y * 16 + 0]
+                    )
+                };
+                let c1 = unsafe {
+                    _mm256_set_epi32(
+                        tmp[y * 16 + 15], tmp[y * 16 + 14],
+                        tmp[y * 16 + 13], tmp[y * 16 + 12],
+                        tmp[y * 16 + 11], tmp[y * 16 + 10],
+                        tmp[y * 16 + 9], tmp[y * 16 + 8]
+                    )
+                };
+
+                let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
+                let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+
+                let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
+                let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+
+                let sum = unsafe { _mm256_add_epi16(d16, c16) };
+                let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+
+                let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
+                let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+
+                unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
+            }
+
+            // Clear coefficients
+            unsafe {
+                let zero256 = _mm256_setzero_si256();
+                for i in 0..8 {
+                    _mm256_storeu_si256((coeff as *mut __m256i).add(i), zero256);
+                }
+            }
+        }
+    };
+}
+
+// Generate 8x16 ADST inner functions
+impl_8x16_transform!(inv_txfm_add_adst_dct_8x16_8bpc_avx2_inner, adst8_1d, dct16_1d);
+impl_8x16_transform!(inv_txfm_add_dct_adst_8x16_8bpc_avx2_inner, dct8_1d, adst16_1d);
+impl_8x16_transform!(inv_txfm_add_adst_adst_8x16_8bpc_avx2_inner, adst8_1d, adst16_1d);
+impl_8x16_transform!(inv_txfm_add_flipadst_dct_8x16_8bpc_avx2_inner, flipadst8_1d, dct16_1d);
+impl_8x16_transform!(inv_txfm_add_dct_flipadst_8x16_8bpc_avx2_inner, dct8_1d, flipadst16_1d);
+impl_8x16_transform!(inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2_inner, flipadst8_1d, flipadst16_1d);
+impl_8x16_transform!(inv_txfm_add_adst_flipadst_8x16_8bpc_avx2_inner, adst8_1d, flipadst16_1d);
+impl_8x16_transform!(inv_txfm_add_flipadst_adst_8x16_8bpc_avx2_inner, flipadst8_1d, adst16_1d);
+
+// Generate 16x8 ADST inner functions
+impl_16x8_transform!(inv_txfm_add_adst_dct_16x8_8bpc_avx2_inner, adst16_1d, dct8_1d);
+impl_16x8_transform!(inv_txfm_add_dct_adst_16x8_8bpc_avx2_inner, dct16_1d, adst8_1d);
+impl_16x8_transform!(inv_txfm_add_adst_adst_16x8_8bpc_avx2_inner, adst16_1d, adst8_1d);
+impl_16x8_transform!(inv_txfm_add_flipadst_dct_16x8_8bpc_avx2_inner, flipadst16_1d, dct8_1d);
+impl_16x8_transform!(inv_txfm_add_dct_flipadst_16x8_8bpc_avx2_inner, dct16_1d, flipadst8_1d);
+impl_16x8_transform!(inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2_inner, flipadst16_1d, flipadst8_1d);
+impl_16x8_transform!(inv_txfm_add_adst_flipadst_16x8_8bpc_avx2_inner, adst16_1d, flipadst8_1d);
+impl_16x8_transform!(inv_txfm_add_flipadst_adst_16x8_8bpc_avx2_inner, flipadst16_1d, adst8_1d);
+
+/// FFI wrapper macro for 8x16 transforms
+macro_rules! impl_8x16_ffi_wrapper {
+    ($name:ident, $inner:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        pub unsafe extern "C" fn $name(
+            dst_ptr: *mut DynPixel,
+            dst_stride: isize,
+            coeff: *mut DynCoef,
+            eob: c_int,
+            bitdepth_max: c_int,
+            _coeff_len: u16,
+            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            unsafe {
+                $inner(
+                    dst_ptr as *mut u8,
+                    dst_stride,
+                    coeff as *mut i16,
+                    eob,
+                    bitdepth_max,
+                );
+            }
+        }
+    };
+}
+
+/// FFI wrapper macro for 16x8 transforms
+macro_rules! impl_16x8_ffi_wrapper {
+    ($name:ident, $inner:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        pub unsafe extern "C" fn $name(
+            dst_ptr: *mut DynPixel,
+            dst_stride: isize,
+            coeff: *mut DynCoef,
+            eob: c_int,
+            bitdepth_max: c_int,
+            _coeff_len: u16,
+            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            unsafe {
+                $inner(
+                    dst_ptr as *mut u8,
+                    dst_stride,
+                    coeff as *mut i16,
+                    eob,
+                    bitdepth_max,
+                );
+            }
+        }
+    };
+}
+
+// Generate 8x16 FFI wrappers
+impl_8x16_ffi_wrapper!(inv_txfm_add_adst_dct_8x16_8bpc_avx2, inv_txfm_add_adst_dct_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(inv_txfm_add_dct_adst_8x16_8bpc_avx2, inv_txfm_add_dct_adst_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(inv_txfm_add_adst_adst_8x16_8bpc_avx2, inv_txfm_add_adst_adst_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(inv_txfm_add_flipadst_dct_8x16_8bpc_avx2, inv_txfm_add_flipadst_dct_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(inv_txfm_add_dct_flipadst_8x16_8bpc_avx2, inv_txfm_add_dct_flipadst_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2, inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(inv_txfm_add_adst_flipadst_8x16_8bpc_avx2, inv_txfm_add_adst_flipadst_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(inv_txfm_add_flipadst_adst_8x16_8bpc_avx2, inv_txfm_add_flipadst_adst_8x16_8bpc_avx2_inner);
+
+// Generate 16x8 FFI wrappers
+impl_16x8_ffi_wrapper!(inv_txfm_add_adst_dct_16x8_8bpc_avx2, inv_txfm_add_adst_dct_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_dct_adst_16x8_8bpc_avx2, inv_txfm_add_dct_adst_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_adst_adst_16x8_8bpc_avx2, inv_txfm_add_adst_adst_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_flipadst_dct_16x8_8bpc_avx2, inv_txfm_add_flipadst_dct_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_dct_flipadst_16x8_8bpc_avx2, inv_txfm_add_dct_flipadst_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2, inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_adst_flipadst_16x8_8bpc_avx2, inv_txfm_add_adst_flipadst_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(inv_txfm_add_flipadst_adst_16x8_8bpc_avx2, inv_txfm_add_flipadst_adst_16x8_8bpc_avx2_inner);
 
 /// Full 2D DCT_DCT 8x8 inverse transform
 #[cfg(target_arch = "x86_64")]
