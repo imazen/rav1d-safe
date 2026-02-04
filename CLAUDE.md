@@ -140,7 +140,7 @@ The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_si
 
 | Module | ASM Lines | Status |
 |--------|-----------|--------|
-| itx | ~42k | Pure Rust fallback (`itx_1d.rs` + `itx.rs`) |
+| itx | ~42k | Partial SIMD (DCT_DCT 4x4/8x8/16x16, WHT 4x4, IDTX 4x4) |
 | ipred | ~26k | Pure Rust fallback |
 | looprestoration | ~17k | Pure Rust fallback |
 | filmgrain | ~13k | Pure Rust fallback |
@@ -184,8 +184,23 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 MC is fully optimized with AVX2 SIMD for all 8-tap and bilinear cases.
 ARM NEON implementations added for: avg, w_avg, mask, blend, blend_v, blend_h.
 
+### ITX (Inverse Transforms) - Partial SIMD
+
+SIMD implementations added for common square transforms (8bpc):
+- DCT_DCT 4x4, 8x8, 16x16: Full 2D SIMD with scalar 1D transforms + SIMD add-to-dst
+- WHT_WHT 4x4: Walsh-Hadamard for lossless mode
+- IDTX 4x4: Identity transform
+
+Rectangular transforms (4x8, 8x4, 8x16, 16x8) implemented but NOT wired - slower than
+Rust fallbacks due to inefficient coefficient loading via _mm_set_epi32.
+
+Remaining ITX work:
+- Larger square sizes (32x32, 64x64)
+- ADST variants (ADST_DCT, DCT_ADST, etc.)
+- Remaining rectangular sizes
+- 16bpc implementations
+
 Remaining DSP modules using Rust fallbacks:
-- ITX (inverse transforms) - ~42k asm lines
 - Loopfilter - ~9k asm lines
 - CDEF - ~7k asm lines
 - Looprestoration - ~17k asm lines
