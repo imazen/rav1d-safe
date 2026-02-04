@@ -32,6 +32,9 @@ use crate::include::common::bitdepth::bd_fn;
 #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]
 use crate::include::common::bitdepth::{bpc_fn, BPC};
 
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+use crate::include::common::bitdepth::BPC;
+
 bitflags! {
     #[repr(transparent)]
     #[derive(Clone, Copy)]
@@ -746,6 +749,29 @@ impl Rav1dCdefDSPContext {
         self
     }
 
+    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+    #[inline(always)]
+    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
+        use crate::src::safe_simd::cdef as safe_cdef;
+
+        if !flags.contains(CpuFlags::AVX2) {
+            return self;
+        }
+
+        // Only 8bpc implemented for now
+        match BD::BPC {
+            BPC::BPC8 => {
+                self.dir = cdef_dir::decl_fn_safe!(safe_cdef::cdef_find_dir_8bpc_avx2);
+                self.fb[0] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_8x8_8bpc_avx2);
+                self.fb[1] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x8_8bpc_avx2);
+                self.fb[2] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x4_8bpc_avx2);
+            }
+            _ => {}
+        }
+
+        self
+    }
+
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -758,6 +784,11 @@ impl Rav1dCdefDSPContext {
             {
                 return self.init_arm::<BD>(flags);
             }
+        }
+
+        #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+        {
+            return self.init_x86_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
