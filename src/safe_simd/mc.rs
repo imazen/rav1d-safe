@@ -951,6 +951,7 @@ pub unsafe extern "C" fn blend_16bpc_avx2(
 // BLEND_V / BLEND_H (Directional blend for OBMC)
 // =============================================================================
 
+use crate::src::tables::dav1d_mc_subpel_filters;
 use crate::src::tables::dav1d_obmc_masks;
 
 /// Vertical blend (overlapped block motion compensation)
@@ -1254,6 +1255,225 @@ pub unsafe extern "C" fn blend_h_16bpc_avx2(
                 let val = (a * (64 - m) + b * m + 32) >> 6;
                 *dst_row.add(col) = val as u16;
             }
+            col += 1;
+        }
+    }
+}
+
+// =============================================================================
+// 8-TAP FILTERS (MC/MCT)
+// =============================================================================
+
+/// Stride for intermediate buffer in 8-tap filtering
+const MID_STRIDE: usize = 128;
+
+/// Get filter coefficients for a given subpixel position and filter type
+#[inline]
+fn get_filter(m: usize, d: usize, filter_idx: usize) -> Option<&'static [i8; 8]> {
+    if m == 0 {
+        return None;
+    }
+    let m = m - 1;
+    let i = if d > 4 {
+        filter_idx
+    } else {
+        3 + (filter_idx & 1)
+    };
+    Some(&dav1d_mc_subpel_filters.0[i][m])
+}
+
+/// Horizontal 8-tap filter for a row of 8bpc pixels
+///
+/// Processes `w` pixels starting at `src`, writing to `dst` (i16 intermediate)
+/// Formula: sum(coeff[i] * src[x + i - 3]) for i in 0..8, then round and shift
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn h_filter_8tap_8bpc_avx2(
+    dst: *mut i16,
+    src: *const u8,
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
+    // SAFETY: All operations inside this block require AVX2 which is guaranteed
+    // by the target_feature attribute, and pointer operations are valid per caller contract.
+    unsafe {
+        // For horizontal filtering, we need to load 8 consecutive pixels for each output
+        // The source pointer is already offset by -3 (pointing to tap 0)
+
+        // Broadcast filter coefficients
+        // We'll use _mm256_maddubs_epi16 which does a[0]*b[0]+a[1]*b[1] for pairs
+        // So we need to arrange coefficients for this: [c0,c1,c2,c3,c4,c5,c6,c7] repeated
+        let coeff_01 =
+            _mm256_set1_epi16(((filter[1] as u8 as i16) << 8) | (filter[0] as u8 as i16));
+        let coeff_23 =
+            _mm256_set1_epi16(((filter[3] as u8 as i16) << 8) | (filter[2] as u8 as i16));
+        let coeff_45 =
+            _mm256_set1_epi16(((filter[5] as u8 as i16) << 8) | (filter[4] as u8 as i16));
+        let coeff_67 =
+            _mm256_set1_epi16(((filter[7] as u8 as i16) << 8) | (filter[6] as u8 as i16));
+
+        let rnd = _mm256_set1_epi16((1i16 << sh) >> 1);
+
+        let mut col = 0usize;
+
+        // Process 16 pixels at a time
+        while col + 16 <= w {
+            // Load source bytes - we need 8 bytes for each output pixel, offset by tap position
+            let s = src.add(col);
+
+            // Load bytes at various offsets for the 8-tap filter
+            let src_0_15 = _mm_loadu_si128(s as *const __m128i);
+            let src_1_16 = _mm_loadu_si128(s.add(1) as *const __m128i);
+            let src_2_17 = _mm_loadu_si128(s.add(2) as *const __m128i);
+            let src_3_18 = _mm_loadu_si128(s.add(3) as *const __m128i);
+            let src_4_19 = _mm_loadu_si128(s.add(4) as *const __m128i);
+            let src_5_20 = _mm_loadu_si128(s.add(5) as *const __m128i);
+            let src_6_21 = _mm_loadu_si128(s.add(6) as *const __m128i);
+            let src_7_22 = _mm_loadu_si128(s.add(7) as *const __m128i);
+
+            // Interleave bytes for maddubs
+            let p01_lo = _mm_unpacklo_epi8(src_0_15, src_1_16);
+            let p01_hi = _mm_unpackhi_epi8(src_0_15, src_1_16);
+            let p01 = _mm256_set_m128i(p01_hi, p01_lo);
+
+            let p23_lo = _mm_unpacklo_epi8(src_2_17, src_3_18);
+            let p23_hi = _mm_unpackhi_epi8(src_2_17, src_3_18);
+            let p23 = _mm256_set_m128i(p23_hi, p23_lo);
+
+            let p45_lo = _mm_unpacklo_epi8(src_4_19, src_5_20);
+            let p45_hi = _mm_unpackhi_epi8(src_4_19, src_5_20);
+            let p45 = _mm256_set_m128i(p45_hi, p45_lo);
+
+            let p67_lo = _mm_unpacklo_epi8(src_6_21, src_7_22);
+            let p67_hi = _mm_unpackhi_epi8(src_6_21, src_7_22);
+            let p67 = _mm256_set_m128i(p67_hi, p67_lo);
+
+            // Multiply-add pairs
+            let ma01 = _mm256_maddubs_epi16(p01, coeff_01);
+            let ma23 = _mm256_maddubs_epi16(p23, coeff_23);
+            let ma45 = _mm256_maddubs_epi16(p45, coeff_45);
+            let ma67 = _mm256_maddubs_epi16(p67, coeff_67);
+
+            // Sum all contributions
+            let mut sum = _mm256_add_epi16(ma01, ma23);
+            sum = _mm256_add_epi16(sum, ma45);
+            sum = _mm256_add_epi16(sum, ma67);
+
+            // Add rounding and shift
+            let shift_count = _mm_cvtsi32_si128(sh as i32);
+            let result = _mm256_sra_epi16(_mm256_add_epi16(sum, rnd), shift_count);
+
+            // Store 16 i16 values
+            _mm256_storeu_si256(dst.add(col) as *mut __m256i, result);
+
+            col += 16;
+        }
+
+        // Scalar fallback for remaining pixels
+        while col < w {
+            let s = src.add(col);
+            let mut sum = 0i32;
+            for i in 0..8 {
+                sum += filter[i] as i32 * (*s.add(i)) as i32;
+            }
+            *dst.add(col) = ((sum + ((1 << sh) >> 1)) >> sh) as i16;
+            col += 1;
+        }
+    }
+}
+
+/// Vertical 8-tap filter from intermediate buffer to output
+///
+/// Processes `w` pixels for one row, reading from `mid` (8 rows), writing to `dst`
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn v_filter_8tap_8bpc_avx2(
+    dst: *mut u8,
+    mid: &[[i16; MID_STRIDE]],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+    max: i32,
+) {
+    // SAFETY: All operations inside this block require AVX2 which is guaranteed
+    // by the target_feature attribute, and pointer operations are valid per caller contract.
+    unsafe {
+        let rnd = _mm256_set1_epi32((1i32 << sh) >> 1);
+        let zero = _mm256_setzero_si256();
+        let _max_vec = _mm256_set1_epi16(max as i16);
+
+        // Broadcast filter coefficients to 32-bit for multiplication
+        let c0 = _mm256_set1_epi32(filter[0] as i32);
+        let c1 = _mm256_set1_epi32(filter[1] as i32);
+        let c2 = _mm256_set1_epi32(filter[2] as i32);
+        let c3 = _mm256_set1_epi32(filter[3] as i32);
+        let c4 = _mm256_set1_epi32(filter[4] as i32);
+        let c5 = _mm256_set1_epi32(filter[5] as i32);
+        let c6 = _mm256_set1_epi32(filter[6] as i32);
+        let c7 = _mm256_set1_epi32(filter[7] as i32);
+
+        let mut col = 0usize;
+
+        // Process 8 pixels at a time using 32-bit arithmetic
+        while col + 8 <= w {
+            // Load 8 i16 values from each of 8 rows and convert to i32
+            let m0 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[0][col..].as_ptr() as *const __m128i));
+            let m1 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[1][col..].as_ptr() as *const __m128i));
+            let m2 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[2][col..].as_ptr() as *const __m128i));
+            let m3 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[3][col..].as_ptr() as *const __m128i));
+            let m4 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[4][col..].as_ptr() as *const __m128i));
+            let m5 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[5][col..].as_ptr() as *const __m128i));
+            let m6 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[6][col..].as_ptr() as *const __m128i));
+            let m7 =
+                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[7][col..].as_ptr() as *const __m128i));
+
+            // Multiply each row by its coefficient and accumulate
+            let mut sum = _mm256_mullo_epi32(m0, c0);
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m1, c1));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m2, c2));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m3, c3));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m4, c4));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m5, c5));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m6, c6));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m7, c7));
+
+            // Add rounding and shift
+            let shift_count = _mm_cvtsi32_si128(sh as i32);
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+
+            // Clamp to [0, max] and pack to 16-bit
+            let clamped = _mm256_min_epi32(_mm256_max_epi32(shifted, zero), _mm256_set1_epi32(max));
+
+            // Pack 32-bit to 16-bit, then 16-bit to 8-bit
+            let packed16 = _mm256_packs_epi32(clamped, clamped);
+            let packed16 = _mm256_permute4x64_epi64(packed16, 0b11011000);
+            let packed8 = _mm256_packus_epi16(packed16, packed16);
+
+            // Store 8 bytes
+            let result_64 = _mm256_extract_epi64(packed8, 0);
+            std::ptr::copy_nonoverlapping(&result_64 as *const i64 as *const u8, dst.add(col), 8);
+
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let mut sum = 0i32;
+            for i in 0..8 {
+                sum += filter[i] as i32 * mid[i][col] as i32;
+            }
+            let val = ((sum + ((1 << sh) >> 1)) >> sh).clamp(0, max);
+            *dst.add(col) = val as u8;
             col += 1;
         }
     }
