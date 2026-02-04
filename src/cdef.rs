@@ -758,7 +758,6 @@ impl Rav1dCdefDSPContext {
             return self;
         }
 
-        // Only 8bpc implemented for now
         match BD::BPC {
             BPC::BPC8 => {
                 self.dir = cdef_dir::decl_fn_safe!(safe_cdef::cdef_find_dir_8bpc_avx2);
@@ -766,7 +765,12 @@ impl Rav1dCdefDSPContext {
                 self.fb[1] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x8_8bpc_avx2);
                 self.fb[2] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x4_8bpc_avx2);
             }
-            _ => {}
+            BPC::BPC16 => {
+                self.dir = cdef_dir::decl_fn_safe!(safe_cdef::cdef_find_dir_16bpc_avx2);
+                self.fb[0] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_8x8_16bpc_avx2);
+                self.fb[1] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x8_16bpc_avx2);
+                self.fb[2] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x4_16bpc_avx2);
+            }
         }
 
         self
