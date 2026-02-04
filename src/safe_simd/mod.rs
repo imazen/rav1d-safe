@@ -6,6 +6,7 @@
 //! Enable with `--features safe-simd` to use these instead of asm.
 
 pub mod mc;
+pub mod cdef;
 
 // Re-export for convenience
 pub use mc::*;
