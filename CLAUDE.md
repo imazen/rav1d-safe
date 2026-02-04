@@ -14,9 +14,9 @@
 **DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
 
 Pick the next unfinished module and port it. Priority order:
-1. ITX 16x16 ADST variants + 32x32/64x64 DCT
-2. ipred (~26k lines)  
-3. filmgrain (~13k lines)
+1. ipred (~26k lines)
+2. filmgrain (~13k lines)
+3. Rectangular ITX transforms (8x4, 4x8, 16x8, etc.)
 4. 16bpc SGR filters
 5. 16bpc loopfilter/CDEF
 
@@ -51,7 +51,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 |--------|----------|--------|
 | mc | `src/safe_simd/mc.rs` | **Complete** - 8bpc+16bpc, x86 AVX2 |
 | mc_arm | `src/safe_simd/mc_arm.rs` | **Partial** - 8bpc NEON (avg, w_avg, mask, blend) |
-| itx | `src/safe_simd/itx.rs` | **Expanded** - All 4x4, all 8x8 ADST, DCT 16x16, IDTX 4/8/16 |
+| itx | `src/safe_simd/itx.rs` | **Complete** - All square 4/8/16/32/64 DCT/ADST/IDTX |
 | loopfilter | `src/safe_simd/loopfilter.rs` | **8bpc only** - lpf_h/v_sb_y/uv |
 | cdef | `src/safe_simd/cdef.rs` | **8bpc only** - filter 8x8/4x8/4x4, find_dir |
 | looprestoration | `src/safe_simd/looprestoration.rs` | **8bpc+16bpc** - Wiener + SGR 5x5/3x3/mix (8bpc) |
@@ -67,16 +67,16 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 
 **SIMD optimized:**
 - MC module (~7k lines): Complete
-- ITX module (~42k lines): ~25% complete (all 4x4, all 8x8 ADST, DCT 16x16)
+- ITX module (~42k lines): ~60% complete (all square 4/8/16/32/64, all ADST variants)
 - Loopfilter (~9k lines): 8bpc complete
 - CDEF (~7k lines): 8bpc complete
 - Looprestoration (~17k lines): Wiener + SGR 8bpc complete
 
 **Using Rust fallbacks (PORT THESE NEXT):**
-- 16bpc SGR filters
 - ipred (~26k lines)
 - filmgrain (~13k lines)
-- More ITX transforms (ADST, 32x32, 64x64)
+- Rectangular ITX (8x4, 4x8, 16x8, etc.)
+- 16bpc SGR filters
 - 16bpc variants of loopfilter/CDEF
 
 ## Architecture
