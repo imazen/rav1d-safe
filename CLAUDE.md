@@ -47,33 +47,61 @@ For safe-simd:
 - `src/mc.rs` - Dispatch table (modified to use safe-simd when enabled)
 - `src/wrap_fn_ptr.rs` - Added `decl_fn_safe!` macro
 
+## How safe-simd Works
+
+When built with `--features safe-simd` (without `asm`):
+
+1. **SIMD-optimized functions** (in `src/safe_simd/mc.rs`):
+   - avg, w_avg, mask, blend, blend_v, blend_h
+   - These use AVX2 intrinsics via `#[target_feature(enable = "avx2")]`
+
+2. **Pure Rust fallbacks** (in respective DSP files):
+   - mc/mct 8tap filters → `put_8tap_rust`, `prep_8tap_rust`
+   - itx → `inv_txfm_add_rust` (uses `itx_1d.rs` 1D transforms)
+   - ipred → `ipred_*_rust` functions
+   - loopfilter, looprestoration, cdef, filmgrain → all have Rust fallbacks
+
+The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_simd()` (for safe-simd)
+
 ## Porting Progress
 
-### Motion Compensation (mc)
-- [x] `avg_8bpc_avx2` - Average two buffers (8-bit)
-- [x] `avg_16bpc_avx2` - Average two buffers (16-bit, scalar impl)
-- [x] `avg_8bpc_sse4` - SSE4 fallback (uses scalar)
-- [x] `w_avg_8bpc_avx2` - Weighted average (8-bit)
-- [x] `w_avg_16bpc_avx2` - Weighted average (16-bit, scalar impl)
-- [x] `mask_8bpc_avx2` - Per-pixel masked blend (8-bit, scalar impl)
-- [x] `mask_16bpc_avx2` - Per-pixel masked blend (16-bit, scalar impl)
-- [x] `blend_8bpc_avx2` - Pixel blend with per-pixel mask (scalar impl)
-- [x] `blend_16bpc_avx2` - Pixel blend (16-bit, scalar impl)
-- [x] `blend_v_8bpc_avx2` - Vertical OBMC blend (scalar impl)
-- [x] `blend_v_16bpc_avx2` - Vertical OBMC blend (16-bit, scalar impl)
-- [x] `blend_h_8bpc_avx2` - Horizontal OBMC blend (scalar impl)
-- [x] `blend_h_16bpc_avx2` - Horizontal OBMC blend (16-bit, scalar impl)
-- [ ] `mc` (8tap filters) - 10 filter variants
-- [ ] `mct` (prep) - 10 filter variants
-- ... (45k lines total)
+### Motion Compensation (mc) - src/safe_simd/mc.rs
 
-### Other Categories
-- [ ] itx - Inverse transforms (42k lines)
-- [ ] ipred - Intra prediction (26k lines)
-- [ ] looprestoration - SGR/Wiener (17k lines)
-- [ ] filmgrain - Film grain synthesis (13k lines)
-- [ ] loopfilter - Deblocking (9k lines)
-- [ ] cdef - Directional enhancement (7k lines)
+**SIMD Optimized (using AVX2 intrinsics):**
+- [x] `avg_8bpc_avx2` - Average two buffers (true SIMD)
+- [x] `avg_16bpc_avx2` - 16-bit average (scalar, TODO: SIMD)
+- [x] `w_avg_8bpc_avx2` - Weighted average (true SIMD)
+- [x] `w_avg_16bpc_avx2` - 16-bit weighted average (scalar)
+- [x] `mask_8bpc_avx2` - Per-pixel masked blend (scalar, TODO: SIMD)
+- [x] `mask_16bpc_avx2` - 16-bit masked blend (scalar)
+- [x] `blend_8bpc_avx2` - Pixel blend (scalar)
+- [x] `blend_16bpc_avx2` - 16-bit blend (scalar)
+- [x] `blend_v_8bpc/16bpc` - Vertical OBMC blend (scalar)
+- [x] `blend_h_8bpc/16bpc` - Horizontal OBMC blend (scalar)
+
+**Using Pure Rust Fallbacks:**
+- [ ] `mc` (8tap filters) - 10 filter variants per bitdepth
+- [ ] `mct` (prep) - 10 filter variants per bitdepth
+- [ ] `mc_scaled` - 10 scaled variants per bitdepth
+- [ ] `mct_scaled` - 10 scaled prep variants per bitdepth
+- [ ] `w_mask` - 3 variants (420/422/444)
+- [ ] `warp8x8` / `warp8x8t` - Affine warping
+- [ ] `emu_edge` - Edge extension
+- [ ] `resize` - Resampling
+
+### Other DSP Categories (all use pure Rust fallbacks)
+
+| Module | ASM Lines | Status |
+|--------|-----------|--------|
+| itx | ~42k | Pure Rust fallback (`itx_1d.rs` + `itx.rs`) |
+| ipred | ~26k | Pure Rust fallback |
+| looprestoration | ~17k | Pure Rust fallback |
+| filmgrain | ~13k | Pure Rust fallback |
+| loopfilter | ~9k | Pure Rust fallback |
+| cdef | ~7k | Pure Rust fallback |
+
+**Note:** The pure Rust fallbacks produce correct output (byte-for-byte identical to asm).
+They're just slower than SIMD-optimized versions.
 
 ## Testing Strategy
 
