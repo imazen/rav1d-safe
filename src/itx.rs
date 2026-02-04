@@ -933,6 +933,13 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_32x32][IDTX as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x32_8bpc_avx2);
 
+        // 64x64 transforms
+        let tx_64x64 = TxfmSize::from_wh(64, 64) as usize;
+
+        // DCT_DCT 64x64
+        self.itxfm_add[tx_64x64][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x64_8bpc_avx2);
+
         self
     }
 
