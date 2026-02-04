@@ -865,6 +865,19 @@ impl Rav1dInvTxfmDSPContext {
             itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_8x8_8bpc_avx2);
         self.itxfm_add[tx_8x8][FLIPADST_ADST as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_8x8_8bpc_avx2);
+        // V/H ADST/DCT 8x8
+        self.itxfm_add[tx_8x8][H_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_8x8_8bpc_avx2);
+        self.itxfm_add[tx_8x8][V_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_8x8_8bpc_avx2);
+        self.itxfm_add[tx_8x8][H_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_8x8_8bpc_avx2);
+        self.itxfm_add[tx_8x8][V_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_8x8_8bpc_avx2);
+        self.itxfm_add[tx_8x8][H_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_8x8_8bpc_avx2);
+        self.itxfm_add[tx_8x8][V_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_8x8_8bpc_avx2);
 
         // 16x16 transforms
         let tx_16x16 = TxfmSize::from_wh(16, 16) as usize;

@@ -2739,3 +2739,35 @@ pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_avx2(
 ) {
     unsafe { inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
+
+// ============================================================================
+// V/H ADST/DCT 8x8 TRANSFORMS  
+// ============================================================================
+
+/// Identity transform 8x8
+#[inline(always)]
+fn identity8_1d_scalar(
+    in0: i32, in1: i32, in2: i32, in3: i32,
+    in4: i32, in5: i32, in6: i32, in7: i32,
+    _min: i32, _max: i32,
+) -> (i32, i32, i32, i32, i32, i32, i32, i32) {
+    // For 8x8 identity: out = in * 2
+    (in0 * 2, in1 * 2, in2 * 2, in3 * 2, in4 * 2, in5 * 2, in6 * 2, in7 * 2)
+}
+
+
+// Use the macro to generate V/H transforms for 8x8
+impl_8x8_transform!(inv_txfm_add_identity_adst_8x8_8bpc_avx2_inner, identity8_1d_scalar, adst8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_adst_identity_8x8_8bpc_avx2_inner, adst8_1d_scalar, identity8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_identity_flipadst_8x8_8bpc_avx2_inner, identity8_1d_scalar, flipadst8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_flipadst_identity_8x8_8bpc_avx2_inner, flipadst8_1d_scalar, identity8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_identity_dct_8x8_8bpc_avx2_inner, identity8_1d_scalar, dct8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_dct_identity_8x8_8bpc_avx2_inner, dct8_1d_scalar, identity8_1d_scalar);
+
+// FFI wrappers
+impl_8x8_ffi_wrapper!(inv_txfm_add_identity_adst_8x8_8bpc_avx2, inv_txfm_add_identity_adst_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_adst_identity_8x8_8bpc_avx2, inv_txfm_add_adst_identity_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_identity_flipadst_8x8_8bpc_avx2, inv_txfm_add_identity_flipadst_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_flipadst_identity_8x8_8bpc_avx2, inv_txfm_add_flipadst_identity_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_identity_dct_8x8_8bpc_avx2, inv_txfm_add_identity_dct_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_dct_identity_8x8_8bpc_avx2, inv_txfm_add_dct_identity_8x8_8bpc_avx2_inner);
