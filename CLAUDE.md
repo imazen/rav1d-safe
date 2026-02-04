@@ -55,6 +55,8 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | loopfilter | `src/safe_simd/loopfilter.rs` | **8bpc only** - lpf_h/v_sb_y/uv |
 | cdef | `src/safe_simd/cdef.rs` | **8bpc only** - filter 8x8/4x8/4x4, find_dir |
 | looprestoration | `src/safe_simd/looprestoration.rs` | **8bpc+16bpc** - Wiener + SGR 5x5/3x3/mix (8bpc) |
+| ipred | `src/safe_simd/ipred.rs` | **10/14 modes (8bpc)** - DC*, VERT, HOR, PAETH, SMOOTH* |
+| filmgrain | `src/safe_simd/filmgrain.rs` | **Scaffolding** - Not wired (slower than fallback) |
 
 ## Performance Status (2026-02-04)
 
@@ -73,8 +75,8 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 - Looprestoration (~17k lines): Wiener + SGR 8bpc complete
 
 **Using Rust fallbacks (PORT THESE NEXT):**
-- ipred (~26k lines)
-- filmgrain (~13k lines)
+- ipred: Z1/Z2/Z3/FILTER modes (~10k lines remaining)
+- filmgrain: Inner loops need proper SIMD (~13k lines)
 - Rectangular ITX (8x4, 4x8, 16x8, etc.)
 - 16bpc SGR filters
 - 16bpc variants of loopfilter/CDEF
