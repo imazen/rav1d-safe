@@ -3877,6 +3877,61 @@ unsafe fn v_bilin_16bpc_avx2(
     }
 }
 
+/// Vertical bilinear filter for 16bpc prep - outputs i16 with bias subtraction
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn v_bilin_16bpc_prep_avx2(
+    dst: *mut i16,
+    mid: &[[i32; MID_STRIDE]],
+    w: usize,
+    y: usize,
+    my: i32,
+    sh: i32,
+    prep_bias: i32,
+) {
+    unsafe {
+        let w0 = _mm256_set1_epi32(16 - my);
+        let w1 = _mm256_set1_epi32(my);
+        let rnd = _mm256_set1_epi32((1 << sh) >> 1);
+        let shift_count = _mm_cvtsi32_si128(sh);
+        let bias = _mm256_set1_epi32(prep_bias);
+
+        let mut col = 0usize;
+
+        while col + 8 <= w {
+            let r0 = _mm256_loadu_si256(mid[y][col..].as_ptr() as *const __m256i);
+            let r1 = _mm256_loadu_si256(mid[y + 1][col..].as_ptr() as *const __m256i);
+
+            let term0 = _mm256_mullo_epi32(r0, w0);
+            let term1 = _mm256_mullo_epi32(r1, w1);
+            let sum = _mm256_add_epi32(term0, term1);
+
+            // Round, shift, subtract bias
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+            let biased = _mm256_sub_epi32(shifted, bias);
+
+            // Pack to signed 16-bit
+            let packed = _mm256_packs_epi32(biased, biased);
+            let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
+
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let r0 = mid[y][col];
+            let r1 = mid[y + 1][col];
+            let pixel = 16 * r0 + my * (r1 - r0);
+            let r = (1 << sh) >> 1;
+            let val = ((pixel + r) >> sh) - prep_bias;
+            *dst.add(col) = val as i16;
+            col += 1;
+        }
+    }
+}
+
 /// Bilinear put for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -4002,34 +4057,20 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
     unsafe {
         if mx != 0 {
             if my != 0 {
-                // H+V filtering
+                // H+V filtering using SIMD
                 let tmp_h = h + 1;
                 let mut mid = [[0i32; MID_STRIDE]; 130];
 
+                // Horizontal pass using SIMD
                 for y in 0..tmp_h {
                     let src_row = src.offset(y as isize * src_stride);
-                    for x in 0..w {
-                        let x0 = *src_row.add(x) as i32;
-                        let x1 = *src_row.add(x + 1) as i32;
-                        let pixel = 16 * x0 + mx as i32 * (x1 - x0);
-                        // For sh = 0, no rounding or shift needed
-                        mid[y][x] = if h_pass_sh > 0 {
-                            (pixel + (1 << (h_pass_sh - 1))) >> h_pass_sh
-                        } else {
-                            pixel
-                        };
-                    }
+                    h_bilin_16bpc_avx2(mid[y].as_mut_ptr(), src_row, w, mx as i32);
                 }
 
+                // Vertical pass using SIMD (with bias subtraction)
                 for y in 0..h {
                     let dst_row = tmp.add(y * w);
-                    for x in 0..w {
-                        let r0 = mid[y][x];
-                        let r1 = mid[y + 1][x];
-                        let pixel = 16 * r0 + my as i32 * (r1 - r0);
-                        let result = (pixel + (1 << (v_pass_sh - 1))) >> v_pass_sh;
-                        *dst_row.add(x) = (result - prep_bias) as i16;
-                    }
+                    v_bilin_16bpc_prep_avx2(dst_row, &mid, w, y, my as i32, v_pass_sh, prep_bias);
                 }
             } else {
                 // H-only filtering
