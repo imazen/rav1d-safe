@@ -2432,6 +2432,55 @@ impl Rav1dMCDSPContext {
         self
     }
 
+    /// Safe SIMD initialization for x86/x86_64 without hand-written assembly.
+    /// Uses Rust intrinsics via archmage/safe_unaligned_simd instead.
+    #[cfg(all(
+        feature = "safe-simd",
+        not(feature = "asm"),
+        any(target_arch = "x86", target_arch = "x86_64")
+    ))]
+    #[inline(always)]
+    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
+        use crate::include::common::bitdepth::BPC;
+        use crate::src::safe_simd::mc as safe_mc;
+
+        if !flags.contains(CpuFlags::AVX2) {
+            // For now, require AVX2. Could add SSE4/SSSE3 paths later.
+            return self;
+        }
+
+        // Motion compensation blend functions
+        self.avg = match BD::BPC {
+            BPC::BPC8 => avg::decl_fn_safe!(safe_mc::avg_8bpc_avx2),
+            BPC::BPC16 => avg::decl_fn_safe!(safe_mc::avg_16bpc_avx2),
+        };
+        self.w_avg = match BD::BPC {
+            BPC::BPC8 => w_avg::decl_fn_safe!(safe_mc::w_avg_8bpc_avx2),
+            BPC::BPC16 => w_avg::decl_fn_safe!(safe_mc::w_avg_16bpc_avx2),
+        };
+        self.mask = match BD::BPC {
+            BPC::BPC8 => mask::decl_fn_safe!(safe_mc::mask_8bpc_avx2),
+            BPC::BPC16 => mask::decl_fn_safe!(safe_mc::mask_16bpc_avx2),
+        };
+        self.blend = match BD::BPC {
+            BPC::BPC8 => blend::decl_fn_safe!(safe_mc::blend_8bpc_avx2),
+            BPC::BPC16 => blend::decl_fn_safe!(safe_mc::blend_16bpc_avx2),
+        };
+        self.blend_v = match BD::BPC {
+            BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc::blend_v_8bpc_avx2),
+            BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_v_16bpc_avx2),
+        };
+        self.blend_h = match BD::BPC {
+            BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc::blend_h_8bpc_avx2),
+            BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_h_16bpc_avx2),
+        };
+
+        // mc/mct/mc_scaled/mct_scaled use the pure Rust defaults (put_c_erased, etc.)
+        // TODO: Optimize with SIMD later
+
+        self
+    }
+
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -2444,6 +2493,15 @@ impl Rav1dMCDSPContext {
             {
                 return self.init_arm::<BD>(flags);
             }
+        }
+
+        #[cfg(all(
+            feature = "safe-simd",
+            not(feature = "asm"),
+            any(target_arch = "x86", target_arch = "x86_64")
+        ))]
+        {
+            return self.init_x86_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
