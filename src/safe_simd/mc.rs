@@ -788,20 +788,61 @@ pub unsafe extern "C" fn blend_v_8bpc_avx2(
     let h = h as usize;
     let dst = dst_ptr as *mut u8;
     let tmp = tmp as *const u8;
-    let mask = &dav1d_obmc_masks.0[h..];
+    let obmc_mask = &dav1d_obmc_masks.0[h..];
+
+    // SAFETY: AVX2 is available
+    let rnd = unsafe { _mm256_set1_epi16(32) };
+    let sixty_four = unsafe { _mm256_set1_epi16(64) };
 
     for row in 0..h {
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
-        };
-        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
-        let m = mask[row] as u32;
+        // SAFETY: pointers valid for row * stride + w
+        let dst_row = unsafe { dst.offset(row as isize * dst_stride) };
+        let tmp_row = unsafe { tmp.add(row * w) };
+        let m = obmc_mask[row];
 
-        for col in 0..w {
-            let a = dst_row[col] as u32;
-            let b = tmp_row[col] as u32;
-            let val = (a * (64 - m) + b * m + 32) >> 6;
-            dst_row[col] = val as u8;
+        // Broadcast mask value for the whole row
+        // SAFETY: AVX2 is available
+        let mask_16 = unsafe { _mm256_set1_epi16(m as i16) };
+        let inv_mask = unsafe { _mm256_sub_epi16(sixty_four, mask_16) };
+
+        let mut col = 0usize;
+
+        // Process 16 pixels at a time
+        while col + 16 <= w {
+            // SAFETY: AVX2 intrinsics with valid pointers
+            unsafe {
+                let dst_bytes = _mm_loadu_si128(dst_row.add(col) as *const __m128i);
+                let tmp_bytes = _mm_loadu_si128(tmp_row.add(col) as *const __m128i);
+
+                let dst_16 = _mm256_cvtepu8_epi16(dst_bytes);
+                let tmp_16 = _mm256_cvtepu8_epi16(tmp_bytes);
+
+                let term1 = _mm256_mullo_epi16(dst_16, inv_mask);
+                let term2 = _mm256_mullo_epi16(tmp_16, mask_16);
+                let sum = _mm256_add_epi16(_mm256_add_epi16(term1, term2), rnd);
+                let result_16 = _mm256_srli_epi16(sum, 6);
+
+                let result_8 = _mm256_packus_epi16(result_16, result_16);
+                let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
+
+                _mm_storeu_si128(
+                    dst_row.add(col) as *mut __m128i,
+                    _mm256_castsi256_si128(result_8),
+                );
+            }
+            col += 16;
+        }
+
+        // Handle remaining pixels
+        while col < w {
+            // SAFETY: pointers valid
+            unsafe {
+                let a = *dst_row.add(col) as u32;
+                let b = *tmp_row.add(col) as u32;
+                let val = (a * (64 - m as u32) + b * m as u32 + 32) >> 6;
+                *dst_row.add(col) = val as u8;
+            }
+            col += 1;
         }
     }
 }
@@ -821,20 +862,61 @@ pub unsafe extern "C" fn blend_h_8bpc_avx2(
     let h = h as usize;
     let dst = dst_ptr as *mut u8;
     let tmp = tmp as *const u8;
-    let mask = &dav1d_obmc_masks.0[w..];
+    let obmc_mask = &dav1d_obmc_masks.0[w..];
+
+    // SAFETY: AVX2 is available
+    let rnd = unsafe { _mm256_set1_epi16(32) };
+    let sixty_four = unsafe { _mm256_set1_epi16(64) };
 
     for row in 0..h {
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
-        };
-        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
+        // SAFETY: pointers valid for row * stride + w
+        let dst_row = unsafe { dst.offset(row as isize * dst_stride) };
+        let tmp_row = unsafe { tmp.add(row * w) };
 
-        for col in 0..w {
-            let a = dst_row[col] as u32;
-            let b = tmp_row[col] as u32;
-            let m = mask[col] as u32;
-            let val = (a * (64 - m) + b * m + 32) >> 6;
-            dst_row[col] = val as u8;
+        let mut col = 0usize;
+
+        // Process 16 pixels at a time
+        while col + 16 <= w {
+            // SAFETY: AVX2 intrinsics with valid pointers
+            unsafe {
+                let dst_bytes = _mm_loadu_si128(dst_row.add(col) as *const __m128i);
+                let tmp_bytes = _mm_loadu_si128(tmp_row.add(col) as *const __m128i);
+
+                // Load mask bytes for these columns
+                let mask_bytes = _mm_loadu_si128(obmc_mask[col..].as_ptr() as *const __m128i);
+
+                let dst_16 = _mm256_cvtepu8_epi16(dst_bytes);
+                let tmp_16 = _mm256_cvtepu8_epi16(tmp_bytes);
+                let mask_16 = _mm256_cvtepu8_epi16(mask_bytes);
+                let inv_mask = _mm256_sub_epi16(sixty_four, mask_16);
+
+                let term1 = _mm256_mullo_epi16(dst_16, inv_mask);
+                let term2 = _mm256_mullo_epi16(tmp_16, mask_16);
+                let sum = _mm256_add_epi16(_mm256_add_epi16(term1, term2), rnd);
+                let result_16 = _mm256_srli_epi16(sum, 6);
+
+                let result_8 = _mm256_packus_epi16(result_16, result_16);
+                let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
+
+                _mm_storeu_si128(
+                    dst_row.add(col) as *mut __m128i,
+                    _mm256_castsi256_si128(result_8),
+                );
+            }
+            col += 16;
+        }
+
+        // Handle remaining pixels
+        while col < w {
+            // SAFETY: pointers valid
+            unsafe {
+                let a = *dst_row.add(col) as u32;
+                let b = *tmp_row.add(col) as u32;
+                let m = obmc_mask[col] as u32;
+                let val = (a * (64 - m) + b * m + 32) >> 6;
+                *dst_row.add(col) = val as u8;
+            }
+            col += 1;
         }
     }
 }
