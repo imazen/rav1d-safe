@@ -57,7 +57,12 @@ For safe-simd:
 - [x] `w_avg_16bpc_avx2` - Weighted average (16-bit, scalar impl)
 - [x] `mask_8bpc_avx2` - Per-pixel masked blend (8-bit, scalar impl)
 - [x] `mask_16bpc_avx2` - Per-pixel masked blend (16-bit, scalar impl)
-- [ ] `blend` - Alpha blend
+- [x] `blend_8bpc_avx2` - Pixel blend with per-pixel mask (scalar impl)
+- [x] `blend_16bpc_avx2` - Pixel blend (16-bit, scalar impl)
+- [x] `blend_v_8bpc_avx2` - Vertical OBMC blend (scalar impl)
+- [x] `blend_v_16bpc_avx2` - Vertical OBMC blend (16-bit, scalar impl)
+- [x] `blend_h_8bpc_avx2` - Horizontal OBMC blend (scalar impl)
+- [x] `blend_h_16bpc_avx2` - Horizontal OBMC blend (16-bit, scalar impl)
 - [ ] `mc` (8tap filters) - 10 filter variants
 - [ ] `mct` (prep) - 10 filter variants
 - ... (45k lines total)
