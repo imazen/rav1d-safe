@@ -3091,3 +3091,380 @@ impl_8x8_ffi_wrapper!(inv_txfm_add_identity_flipadst_8x8_8bpc_avx2, inv_txfm_add
 impl_8x8_ffi_wrapper!(inv_txfm_add_flipadst_identity_8x8_8bpc_avx2, inv_txfm_add_flipadst_identity_8x8_8bpc_avx2_inner);
 impl_8x8_ffi_wrapper!(inv_txfm_add_identity_dct_8x8_8bpc_avx2, inv_txfm_add_identity_dct_8x8_8bpc_avx2_inner);
 impl_8x8_ffi_wrapper!(inv_txfm_add_dct_identity_8x8_8bpc_avx2, inv_txfm_add_dct_identity_8x8_8bpc_avx2_inner);
+
+// ============================================================================
+// 32x32 DCT TRANSFORMS
+// ============================================================================
+
+/// DCT32 1D transform (in-place)
+#[inline]
+fn dct32_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
+    let clip = |v: i32| v.clamp(min, max);
+
+    // First apply DCT16 to even positions
+    dct16_1d(c, stride * 2, min, max);
+
+    let in1 = c[1 * stride];
+    let in3 = c[3 * stride];
+    let in5 = c[5 * stride];
+    let in7 = c[7 * stride];
+    let in9 = c[9 * stride];
+    let in11 = c[11 * stride];
+    let in13 = c[13 * stride];
+    let in15 = c[15 * stride];
+    let in17 = c[17 * stride];
+    let in19 = c[19 * stride];
+    let in21 = c[21 * stride];
+    let in23 = c[23 * stride];
+    let in25 = c[25 * stride];
+    let in27 = c[27 * stride];
+    let in29 = c[29 * stride];
+    let in31 = c[31 * stride];
+
+    let t16a = ((in1 * 201 - in31 * (4091 - 4096) + 2048) >> 12) - in31;
+    let t17a = ((in17 * (3035 - 4096) - in15 * 2751 + 2048) >> 12) + in17;
+    let t18a = ((in9 * 1751 - in23 * (3703 - 4096) + 2048) >> 12) - in23;
+    let t19a = ((in25 * (3857 - 4096) - in7 * 1380 + 2048) >> 12) + in25;
+    let t20a = ((in5 * 995 - in27 * (3973 - 4096) + 2048) >> 12) - in27;
+    let t21a = ((in21 * (3513 - 4096) - in11 * 2106 + 2048) >> 12) + in21;
+    let t22a = (in13 * 1220 - in19 * 1645 + 1024) >> 11;
+    let t23a = ((in29 * (4052 - 4096) - in3 * 601 + 2048) >> 12) + in29;
+    let t24a = ((in29 * 601 + in3 * (4052 - 4096) + 2048) >> 12) + in3;
+    let t25a = (in13 * 1645 + in19 * 1220 + 1024) >> 11;
+    let t26a = ((in21 * 2106 + in11 * (3513 - 4096) + 2048) >> 12) + in11;
+    let t27a = ((in5 * (3973 - 4096) + in27 * 995 + 2048) >> 12) + in5;
+    let t28a = ((in25 * 1380 + in7 * (3857 - 4096) + 2048) >> 12) + in7;
+    let t29a = ((in9 * (3703 - 4096) + in23 * 1751 + 2048) >> 12) + in9;
+    let t30a = ((in17 * 2751 + in15 * (3035 - 4096) + 2048) >> 12) + in15;
+    let t31a = ((in1 * (4091 - 4096) + in31 * 201 + 2048) >> 12) + in1;
+
+    let mut t16 = clip(t16a + t17a);
+    let mut t17 = clip(t16a - t17a);
+    let mut t18 = clip(t19a - t18a);
+    let mut t19 = clip(t19a + t18a);
+    let mut t20 = clip(t20a + t21a);
+    let mut t21 = clip(t20a - t21a);
+    let mut t22 = clip(t23a - t22a);
+    let mut t23 = clip(t23a + t22a);
+    let mut t24 = clip(t24a + t25a);
+    let mut t25 = clip(t24a - t25a);
+    let mut t26 = clip(t27a - t26a);
+    let mut t27 = clip(t27a + t26a);
+    let mut t28 = clip(t28a + t29a);
+    let mut t29 = clip(t28a - t29a);
+    let mut t30 = clip(t31a - t30a);
+    let mut t31 = clip(t31a + t30a);
+
+    let t17a = ((t30 * 799 - t17 * (4017 - 4096) + 2048) >> 12) - t17;
+    let t30a = ((t30 * (4017 - 4096) + t17 * 799 + 2048) >> 12) + t30;
+    let t18a = ((-(t29 * (4017 - 4096) + t18 * 799) + 2048) >> 12) - t29;
+    let t29a = ((t29 * 799 - t18 * (4017 - 4096) + 2048) >> 12) - t18;
+    let t21a = (t26 * 1703 - t21 * 1138 + 1024) >> 11;
+    let t26a = (t26 * 1138 + t21 * 1703 + 1024) >> 11;
+    let t22a = (-(t25 * 1138 + t22 * 1703) + 1024) >> 11;
+    let t25a = (t25 * 1703 - t22 * 1138 + 1024) >> 11;
+
+    let t16a = clip(t16 + t19);
+    t17 = clip(t17a + t18a);
+    t18 = clip(t17a - t18a);
+    let t19a = clip(t16 - t19);
+    let t20a = clip(t23 - t20);
+    t21 = clip(t22a - t21a);
+    t22 = clip(t22a + t21a);
+    let t23a = clip(t23 + t20);
+    let t24a = clip(t24 + t27);
+    t25 = clip(t25a + t26a);
+    t26 = clip(t25a - t26a);
+    let t27a = clip(t24 - t27);
+    let t28a = clip(t31 - t28);
+    t29 = clip(t30a - t29a);
+    t30 = clip(t30a + t29a);
+    let t31a = clip(t31 + t28);
+
+    let t18a = ((t29 * 1567 - t18 * (3784 - 4096) + 2048) >> 12) - t18;
+    let t29a = ((t29 * (3784 - 4096) + t18 * 1567 + 2048) >> 12) + t29;
+    let t19 = ((t28a * 1567 - t19a * (3784 - 4096) + 2048) >> 12) - t19a;
+    let t28 = ((t28a * (3784 - 4096) + t19a * 1567 + 2048) >> 12) + t28a;
+    let t20 = ((-(t27a * (3784 - 4096) + t20a * 1567) + 2048) >> 12) - t27a;
+    let t27 = ((t27a * 1567 - t20a * (3784 - 4096) + 2048) >> 12) - t20a;
+    let t21a = ((-(t26 * (3784 - 4096) + t21 * 1567) + 2048) >> 12) - t26;
+    let t26a = ((t26 * 1567 - t21 * (3784 - 4096) + 2048) >> 12) - t21;
+
+    t16 = clip(t16a + t23a);
+    let t17a = clip(t17 + t22);
+    t18 = clip(t18a + t21a);
+    let t19a = clip(t19 + t20);
+    let t20a = clip(t19 - t20);
+    t21 = clip(t18a - t21a);
+    let t22a = clip(t17 - t22);
+    t23 = clip(t16a - t23a);
+    t24 = clip(t31a - t24a);
+    let t25a = clip(t30 - t25);
+    t26 = clip(t29a - t26a);
+    let t27a = clip(t28 - t27);
+    let t28a = clip(t28 + t27);
+    t29 = clip(t29a + t26a);
+    let t30a = clip(t30 + t25);
+    t31 = clip(t31a + t24a);
+
+    let t20_final = ((t27a - t20a) * 181 + 128) >> 8;
+    let t27_final = ((t27a + t20a) * 181 + 128) >> 8;
+    let t21a_final = ((t26 - t21) * 181 + 128) >> 8;
+    let t26a_final = ((t26 + t21) * 181 + 128) >> 8;
+    let t22_final = ((t25a - t22a) * 181 + 128) >> 8;
+    let t25_final = ((t25a + t22a) * 181 + 128) >> 8;
+    let t23a = ((t24 - t23) * 181 + 128) >> 8;
+    let t24a = ((t24 + t23) * 181 + 128) >> 8;
+
+    let t0 = c[0 * stride];
+    let t1 = c[2 * stride];
+    let t2 = c[4 * stride];
+    let t3 = c[6 * stride];
+    let t4 = c[8 * stride];
+    let t5 = c[10 * stride];
+    let t6 = c[12 * stride];
+    let t7 = c[14 * stride];
+    let t8 = c[16 * stride];
+    let t9 = c[18 * stride];
+    let t10 = c[20 * stride];
+    let t11 = c[22 * stride];
+    let t12 = c[24 * stride];
+    let t13 = c[26 * stride];
+    let t14 = c[28 * stride];
+    let t15 = c[30 * stride];
+
+    c[0 * stride] = clip(t0 + t31);
+    c[1 * stride] = clip(t1 + t30a);
+    c[2 * stride] = clip(t2 + t29);
+    c[3 * stride] = clip(t3 + t28a);
+    c[4 * stride] = clip(t4 + t27_final);
+    c[5 * stride] = clip(t5 + t26a_final);
+    c[6 * stride] = clip(t6 + t25_final);
+    c[7 * stride] = clip(t7 + t24a);
+    c[8 * stride] = clip(t8 + t23a);
+    c[9 * stride] = clip(t9 + t22_final);
+    c[10 * stride] = clip(t10 + t21a_final);
+    c[11 * stride] = clip(t11 + t20_final);
+    c[12 * stride] = clip(t12 + t19a);
+    c[13 * stride] = clip(t13 + t18);
+    c[14 * stride] = clip(t14 + t17a);
+    c[15 * stride] = clip(t15 + t16);
+    c[16 * stride] = clip(t15 - t16);
+    c[17 * stride] = clip(t14 - t17a);
+    c[18 * stride] = clip(t13 - t18);
+    c[19 * stride] = clip(t12 - t19a);
+    c[20 * stride] = clip(t11 - t20_final);
+    c[21 * stride] = clip(t10 - t21a_final);
+    c[22 * stride] = clip(t9 - t22_final);
+    c[23 * stride] = clip(t8 - t23a);
+    c[24 * stride] = clip(t7 - t24a);
+    c[25 * stride] = clip(t6 - t25_final);
+    c[26 * stride] = clip(t5 - t26a_final);
+    c[27 * stride] = clip(t4 - t27_final);
+    c[28 * stride] = clip(t3 - t28a);
+    c[29 * stride] = clip(t2 - t29);
+    c[30 * stride] = clip(t1 - t30a);
+    c[31 * stride] = clip(t0 - t31);
+}
+
+/// Identity32 1D transform (in-place)
+#[inline]
+fn identity32_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
+    // For 32x32 identity: out = in * 4
+    for i in 0..32 {
+        c[i * stride] *= 4;
+    }
+}
+
+/// Generic 32x32 transform function
+#[inline]
+fn inv_txfm_32x32_inner(
+    tmp: &mut [i32; 1024],
+    coeff: *const i16,
+    row_transform: fn(&mut [i32], usize, i32, i32),
+    col_transform: fn(&mut [i32], usize, i32, i32),
+    row_clip_min: i32, row_clip_max: i32,
+    col_clip_min: i32, col_clip_max: i32,
+) {
+    // For 32x32: row_shift = 2, col_shift = 4 (total 6)
+    let rnd = 1;
+    let shift = 1;
+
+    // Row transform
+    for y in 0..32 {
+        // Load row from column-major
+        for x in 0..32 {
+            tmp[x] = unsafe { *coeff.add(y + x * 32) as i32 };
+        }
+        row_transform(&mut tmp[..32], 1, row_clip_min, row_clip_max);
+        // Apply intermediate shift and store row-major
+        for x in 0..32 {
+            tmp[y * 32 + x] = ((tmp[x] + rnd) >> shift).clamp(col_clip_min, col_clip_max);
+        }
+    }
+
+    // Column transform (in-place, row-major with stride 32)
+    for x in 0..32 {
+        col_transform(&mut tmp[x..], 32, col_clip_min, col_clip_max);
+    }
+}
+
+/// Add transformed coefficients to destination with SIMD (32x32)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn add_32x32_to_dst(
+    dst: *mut u8,
+    dst_stride: isize,
+    tmp: &[i32; 1024],
+    coeff: *mut i16,
+    bitdepth_max: i32,
+) {
+    unsafe {
+        let zero = _mm256_setzero_si256();
+        let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+        let rnd_final = _mm256_set1_epi32(4);  // (+ 4) >> 3 for 32x32
+
+        for y in 0..32 {
+            let dst_row = dst.offset(y as isize * dst_stride);
+
+            // Process 32 pixels in two 16-pixel chunks
+            for chunk in 0..2 {
+                let x_base = chunk * 16;
+                let dst_chunk = dst_row.add(x_base);
+
+                // Load destination pixels (16 bytes)
+                let d = _mm_loadu_si128(dst_chunk as *const __m128i);
+                let d16 = _mm256_cvtepu8_epi16(d);
+
+                // Load coefficients
+                let c0 = _mm256_set_epi32(
+                    tmp[y * 32 + x_base + 7], tmp[y * 32 + x_base + 6],
+                    tmp[y * 32 + x_base + 5], tmp[y * 32 + x_base + 4],
+                    tmp[y * 32 + x_base + 3], tmp[y * 32 + x_base + 2],
+                    tmp[y * 32 + x_base + 1], tmp[y * 32 + x_base + 0]
+                );
+                let c1 = _mm256_set_epi32(
+                    tmp[y * 32 + x_base + 15], tmp[y * 32 + x_base + 14],
+                    tmp[y * 32 + x_base + 13], tmp[y * 32 + x_base + 12],
+                    tmp[y * 32 + x_base + 11], tmp[y * 32 + x_base + 10],
+                    tmp[y * 32 + x_base + 9], tmp[y * 32 + x_base + 8]
+                );
+
+                // Final scaling: (c + 4) >> 3
+                let c0_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c0, rnd_final));
+                let c1_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c1, rnd_final));
+
+                let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+                let c16 = _mm256_permute4x64_epi64::<0b11_01_10_00>(c16);
+
+                let sum = _mm256_add_epi16(d16, c16);
+                let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
+
+                let packed = _mm256_packus_epi16(clamped, clamped);
+                let packed = _mm256_permute4x64_epi64::<0b11_01_10_00>(packed);
+
+                _mm_storeu_si128(dst_chunk as *mut __m128i, _mm256_castsi256_si128(packed));
+            }
+        }
+
+        // Clear coefficients (1024 * 2 = 2048 bytes = 64 * 32 bytes)
+        let zero256 = _mm256_setzero_si256();
+        for i in 0..64 {
+            _mm256_storeu_si256((coeff as *mut __m256i).add(i), zero256);
+        }
+    }
+}
+
+/// 32x32 DCT_DCT inner function
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
+) {
+    let row_clip_min = i16::MIN as i32;
+    let row_clip_max = i16::MAX as i32;
+    let col_clip_min = i16::MIN as i32;
+    let col_clip_max = i16::MAX as i32;
+
+    let mut tmp = [0i32; 1024];
+    inv_txfm_32x32_inner(
+        &mut tmp, coeff, dct32_1d, dct32_1d,
+        row_clip_min, row_clip_max,
+        col_clip_min, col_clip_max,
+    );
+    unsafe { add_32x32_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max); }
+}
+
+/// 32x32 IDTX inner function
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
+) {
+    let row_clip_min = i16::MIN as i32;
+    let row_clip_max = i16::MAX as i32;
+    let col_clip_min = i16::MIN as i32;
+    let col_clip_max = i16::MAX as i32;
+
+    let mut tmp = [0i32; 1024];
+    inv_txfm_32x32_inner(
+        &mut tmp, coeff, identity32_1d, identity32_1d,
+        row_clip_min, row_clip_max,
+        col_clip_min, col_clip_max,
+    );
+    unsafe { add_32x32_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max); }
+}
+
+/// FFI wrapper for 32x32 DCT_DCT 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
+
+/// FFI wrapper for 32x32 IDTX 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}

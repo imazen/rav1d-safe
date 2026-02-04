@@ -922,6 +922,17 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_16x16][V_FLIPADST as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_16x16_8bpc_avx2);
 
+        // 32x32 transforms
+        let tx_32x32 = TxfmSize::from_wh(32, 32) as usize;
+
+        // DCT_DCT 32x32
+        self.itxfm_add[tx_32x32][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x32_8bpc_avx2);
+
+        // IDTX 32x32
+        self.itxfm_add[tx_32x32][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x32_8bpc_avx2);
+
         self
     }
 
