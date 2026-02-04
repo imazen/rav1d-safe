@@ -2242,18 +2242,43 @@ impl Rav1dIntraPredDSPContext {
         self
     }
 
+    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
     #[inline(always)]
+    const fn init_x86_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
+        use crate::src::safe_simd::ipred as safe_ipred;
+
+        // Only wire up 8bpc for now (use match instead of == for const context)
+        match BD::BPC {
+            BPC::BPC8 => {}
+            _ => return self,
+        }
+
+        self.intra_pred[DC_128_PRED as usize] =
+            angular_ipred::Fn::new(safe_ipred::ipred_dc_128_8bpc_avx2);
+        self.intra_pred[VERT_PRED as usize] =
+            angular_ipred::Fn::new(safe_ipred::ipred_v_8bpc_avx2);
+        self.intra_pred[HOR_PRED as usize] =
+            angular_ipred::Fn::new(safe_ipred::ipred_h_8bpc_avx2);
+        self.intra_pred[DC_PRED as usize] =
+            angular_ipred::Fn::new(safe_ipred::ipred_dc_8bpc_avx2);
+        self.intra_pred[TOP_DC_PRED as usize] =
+            angular_ipred::Fn::new(safe_ipred::ipred_dc_top_8bpc_avx2);
+        self.intra_pred[LEFT_DC_PRED as usize] =
+            angular_ipred::Fn::new(safe_ipred::ipred_dc_left_8bpc_avx2);
+
+        self
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "asm")]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
-        #[cfg(feature = "asm")]
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
-            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-            {
-                return self.init_x86::<BD>(flags);
-            }
-            #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
-            {
-                return self.init_arm::<BD>(flags);
-            }
+            return self.init_x86::<BD>(flags);
+        }
+        #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
+        {
+            return self.init_arm::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
@@ -2263,6 +2288,27 @@ impl Rav1dIntraPredDSPContext {
         }
     }
 
+    #[inline(always)]
+    #[cfg(not(feature = "asm"))]
+    const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
+        #[cfg(target_arch = "x86_64")]
+        {
+            return self.init_x86_safe_simd::<BD>(flags);
+        }
+
+        #[allow(unreachable_code)] // Reachable on some #[cfg]s.
+        {
+            let _ = flags;
+            self
+        }
+    }
+
+    #[cfg(feature = "asm")]
+    pub const fn new<BD: BitDepth>(flags: CpuFlags) -> Self {
+        Self::default::<BD>().init::<BD>(flags)
+    }
+
+    #[cfg(not(feature = "asm"))]
     pub const fn new<BD: BitDepth>(flags: CpuFlags) -> Self {
         Self::default::<BD>().init::<BD>(flags)
     }
