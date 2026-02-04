@@ -154,11 +154,14 @@ All bilinear filter variants now use AVX2 SIMD:
 
 ### Performance Notes (2026-02-04)
 Full-stack benchmark via zenavif (20 decodes of test.avif):
-- asm: ~1.29s (64.5ms per decode)
-- safe-simd: ~1.28s (64ms per decode)
-- safe-simd is now ~1% FASTER than asm!
+- asm: ~1.35s (67.5ms per decode)
+- safe-simd: ~1.35s (67.5ms per decode)
+- safe-simd at parity with asm
+
+**ARM NEON support added:** Using archmage tokens for safe SIMD invocation.
 
 MC is fully optimized with AVX2 SIMD for all 8-tap and bilinear cases.
+ARM NEON implementations added for: avg, w_avg, mask, blend, blend_v, blend_h.
 
 Remaining DSP modules using Rust fallbacks:
 - ITX (inverse transforms) - ~42k asm lines
@@ -173,7 +176,7 @@ Remaining DSP modules using Rust fallbacks:
 - `warp8x8`/`warp8x8t` - Per-pixel filter selection
 - `emu_edge` - Edge extension
 - `resize` - 8-tap resampling with variable phase
-- `w_mask_16bpc` - Still scalar (8bpc has SIMD)
+- `w_mask_16bpc` - AVX2 SIMD implemented
 
 ### Next Targets
 
