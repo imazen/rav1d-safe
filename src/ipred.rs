@@ -2247,40 +2247,49 @@ impl Rav1dIntraPredDSPContext {
     const fn init_x86_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::src::safe_simd::ipred as safe_ipred;
 
-        // Only wire up 8bpc for now (use match instead of == for const context)
         match BD::BPC {
-            BPC::BPC8 => {}
-            _ => return self,
+            BPC::BPC8 => {
+                // 8bpc implementations
+                self.intra_pred[DC_128_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_128_8bpc_avx2);
+                self.intra_pred[VERT_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_v_8bpc_avx2);
+                self.intra_pred[HOR_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_h_8bpc_avx2);
+                self.intra_pred[DC_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_8bpc_avx2);
+                self.intra_pred[TOP_DC_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_top_8bpc_avx2);
+                self.intra_pred[LEFT_DC_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_left_8bpc_avx2);
+                self.intra_pred[PAETH_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_paeth_8bpc_avx2);
+                self.intra_pred[SMOOTH_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_8bpc_avx2);
+                self.intra_pred[SMOOTH_V_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_v_8bpc_avx2);
+                self.intra_pred[SMOOTH_H_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_h_8bpc_avx2);
+                self.intra_pred[FILTER_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_filter_8bpc_avx2);
+                self.intra_pred[Z1_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_z1_8bpc_avx2);
+                self.intra_pred[Z2_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_z2_8bpc_avx2);
+                self.intra_pred[Z3_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_z3_8bpc_avx2);
+            }
+            BPC::BPC16 => {
+                // 16bpc implementations (10/12-bit)
+                self.intra_pred[DC_128_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_128_16bpc_avx2);
+                self.intra_pred[VERT_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_v_16bpc_avx2);
+                self.intra_pred[HOR_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_h_16bpc_avx2);
+                // Other 16bpc modes still use Rust fallback
+            }
         }
-
-        self.intra_pred[DC_128_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_dc_128_8bpc_avx2);
-        self.intra_pred[VERT_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_v_8bpc_avx2);
-        self.intra_pred[HOR_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_h_8bpc_avx2);
-        self.intra_pred[DC_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_dc_8bpc_avx2);
-        self.intra_pred[TOP_DC_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_dc_top_8bpc_avx2);
-        self.intra_pred[LEFT_DC_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_dc_left_8bpc_avx2);
-        self.intra_pred[PAETH_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_paeth_8bpc_avx2);
-        self.intra_pred[SMOOTH_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_smooth_8bpc_avx2);
-        self.intra_pred[SMOOTH_V_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_smooth_v_8bpc_avx2);
-        self.intra_pred[SMOOTH_H_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_smooth_h_8bpc_avx2);
-        self.intra_pred[FILTER_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_filter_8bpc_avx2);
-        self.intra_pred[Z1_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_z1_8bpc_avx2);
-        self.intra_pred[Z2_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_z2_8bpc_avx2);
-        self.intra_pred[Z3_PRED as usize] =
-            angular_ipred::Fn::new(safe_ipred::ipred_z3_8bpc_avx2);
 
         self
     }

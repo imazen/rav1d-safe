@@ -1389,3 +1389,167 @@ unsafe fn ipred_z3_scalar(
         }
     }
 }
+
+// ============================================================================
+// 16bpc IMPLEMENTATIONS
+// ============================================================================
+
+/// DC_128 prediction for 16bpc: fill block with mid-value
+///
+/// For 10bpc: fill with 512 (1 << 9)
+/// For 12bpc: fill with 2048 (1 << 11)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_dc_128_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    _topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u16;
+    let stride_u16 = stride / 2; // stride is in bytes, we need u16 stride
+
+    // Mid-value is (bitdepth_max + 1) / 2
+    let mid_val = ((bitdepth_max + 1) / 2) as i16;
+
+    unsafe {
+        let fill_val = _mm256_set1_epi16(mid_val);
+
+        for y in 0..height {
+            let row = dst.offset(y as isize * stride_u16);
+            let mut x = 0usize;
+
+            // Process 16 pixels at a time (256-bit / 16-bit = 16 pixels)
+            while x + 16 <= width {
+                _mm256_storeu_si256(row.add(x) as *mut __m256i, fill_val);
+                x += 16;
+            }
+
+            // Process 8 pixels at a time
+            while x + 8 <= width {
+                _mm_storeu_si128(row.add(x) as *mut __m128i, _mm256_castsi256_si128(fill_val));
+                x += 8;
+            }
+
+            // Remaining pixels
+            while x < width {
+                *row.add(x) = mid_val as u16;
+                x += 1;
+            }
+        }
+    }
+}
+
+/// Vertical prediction for 16bpc: copy top row to all rows
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_v_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u16;
+    let top = unsafe { (topleft as *const u16).add(1) };
+    let stride_u16 = stride / 2;
+
+    unsafe {
+        // Load top row pixels that we'll copy to all rows
+        // We need to handle variable widths
+
+        for y in 0..height {
+            let row = dst.offset(y as isize * stride_u16);
+            let mut x = 0usize;
+
+            // Process 16 pixels at a time
+            while x + 16 <= width {
+                let top_vals = _mm256_loadu_si256(top.add(x) as *const __m256i);
+                _mm256_storeu_si256(row.add(x) as *mut __m256i, top_vals);
+                x += 16;
+            }
+
+            // Process 8 pixels at a time
+            while x + 8 <= width {
+                let top_vals = _mm_loadu_si128(top.add(x) as *const __m128i);
+                _mm_storeu_si128(row.add(x) as *mut __m128i, top_vals);
+                x += 8;
+            }
+
+            // Remaining pixels
+            while x < width {
+                *row.add(x) = *top.add(x);
+                x += 1;
+            }
+        }
+    }
+}
+
+/// Horizontal prediction for 16bpc: fill each row with its left pixel
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_h_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+
+    unsafe {
+        for y in 0..height {
+            // Left pixel for this row: topleft[-1-y]
+            let left_val = *tl.offset(-(y as isize + 1));
+            let fill_val = _mm256_set1_epi16(left_val as i16);
+
+            let row = dst.offset(y as isize * stride_u16);
+            let mut x = 0usize;
+
+            // Process 16 pixels at a time
+            while x + 16 <= width {
+                _mm256_storeu_si256(row.add(x) as *mut __m256i, fill_val);
+                x += 16;
+            }
+
+            // Process 8 pixels at a time
+            while x + 8 <= width {
+                _mm_storeu_si128(row.add(x) as *mut __m128i, _mm256_castsi256_si128(fill_val));
+                x += 8;
+            }
+
+            // Remaining pixels
+            while x < width {
+                *row.add(x) = left_val;
+                x += 1;
+            }
+        }
+    }
+}
