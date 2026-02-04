@@ -81,16 +81,16 @@ The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_si
 - [x] `blend_h_8bpc` - Horizontal OBMC blend (true SIMD)
 - [x] `blend_h_16bpc` - Horizontal OBMC blend (true SIMD)
 
-**8-tap Filter (mc/mct) - SIMD for 8bpc:**
-- [x] `put_8tap_*_8bpc_avx2` - All 9 filter variants for 8bpc (true SIMD)
-- [x] `prep_8tap_*_8bpc_avx2` - All 9 filter variants for 8bpc (true SIMD)
+**8-tap Filter (mc/mct):**
+- [x] `put_8tap_*_8bpc_avx2` - All 9 filter variants for 8bpc (SIMD)
+- [x] `prep_8tap_*_8bpc_avx2` - All 9 filter variants for 8bpc (SIMD)
+- [x] `put_8tap_*_16bpc_avx2` - All 9 filter variants for 16bpc (scalar, not SIMD yet)
+- [x] `prep_8tap_*_16bpc_avx2` - All 9 filter variants for 16bpc (scalar, not SIMD yet)
 - [x] `h_filter_8tap_8bpc_avx2` - Horizontal 8-tap filter using maddubs
 - [x] `v_filter_8tap_8bpc_avx2` - Vertical 8-tap filter with 32-bit arithmetic
 - [x] `get_filter_coeff()` - Access filter coefficients from tables
 
 **Using Pure Rust Fallbacks:**
-- [ ] `mc` 16bpc (8tap filters) - 10 filter variants
-- [ ] `mct` 16bpc (prep) - 10 filter variants
 - [ ] `mc_scaled` - 10 scaled variants per bitdepth
 - [ ] `mct_scaled` - 10 scaled prep variants per bitdepth
 - [ ] `w_mask` - 3 variants (420/422/444)
