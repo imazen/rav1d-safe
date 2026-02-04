@@ -1252,6 +1252,12 @@ impl Rav1dInvTxfmDSPContext {
         let tx_16x4 = TxfmSize::from_wh(16, 4) as usize;
         let tx_16x32 = TxfmSize::from_wh(16, 32) as usize;
         let tx_32x16 = TxfmSize::from_wh(32, 16) as usize;
+        let tx_8x32 = TxfmSize::from_wh(8, 32) as usize;
+        let tx_32x8 = TxfmSize::from_wh(32, 8) as usize;
+        let tx_32x64 = TxfmSize::from_wh(32, 64) as usize;
+        let tx_64x32 = TxfmSize::from_wh(64, 32) as usize;
+        let tx_16x64 = TxfmSize::from_wh(16, 64) as usize;
+        let tx_64x16 = TxfmSize::from_wh(64, 16) as usize;
 
         // DCT_DCT square transforms 16bpc
         self.itxfm_add[tx_4x4][DCT_DCT as usize] =
@@ -1282,6 +1288,18 @@ impl Rav1dInvTxfmDSPContext {
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x32_16bpc_avx2);
         self.itxfm_add[tx_32x16][DCT_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x16_16bpc_avx2);
+        self.itxfm_add[tx_8x32][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x32_16bpc_avx2);
+        self.itxfm_add[tx_32x8][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x8_16bpc_avx2);
+        self.itxfm_add[tx_32x64][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x64_16bpc_avx2);
+        self.itxfm_add[tx_64x32][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x32_16bpc_avx2);
+        self.itxfm_add[tx_16x64][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x64_16bpc_avx2);
+        self.itxfm_add[tx_64x16][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x16_16bpc_avx2);
 
         self
     }
