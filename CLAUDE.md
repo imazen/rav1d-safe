@@ -14,11 +14,11 @@
 **DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
 
 Pick the next unfinished module and port it. Priority order:
-1. SGR filters (looprestoration) - ~17k lines remaining
-2. More ITX transforms (ADST, 32x32, 64x64) - ~38k lines remaining  
-3. ipred (~26k lines)
-4. filmgrain (~13k lines)
-5. 16bpc variants of loopfilter/CDEF
+1. ITX 16x16 ADST variants + 32x32/64x64 DCT
+2. ipred (~26k lines)  
+3. filmgrain (~13k lines)
+4. 16bpc SGR filters
+5. 16bpc loopfilter/CDEF
 
 Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with safe Rust intrinsics.
 
@@ -51,10 +51,10 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 |--------|----------|--------|
 | mc | `src/safe_simd/mc.rs` | **Complete** - 8bpc+16bpc, x86 AVX2 |
 | mc_arm | `src/safe_simd/mc_arm.rs` | **Partial** - 8bpc NEON (avg, w_avg, mask, blend) |
-| itx | `src/safe_simd/itx.rs` | **Partial** - DCT 4x4/8x8/16x16, WHT 4x4, IDTX 4x4/8x8/16x16 (8bpc) |
+| itx | `src/safe_simd/itx.rs` | **Expanded** - All 4x4, all 8x8 ADST, DCT 16x16, IDTX 4/8/16 |
 | loopfilter | `src/safe_simd/loopfilter.rs` | **8bpc only** - lpf_h/v_sb_y/uv |
 | cdef | `src/safe_simd/cdef.rs` | **8bpc only** - filter 8x8/4x8/4x4, find_dir |
-| looprestoration | `src/safe_simd/looprestoration.rs` | **8bpc+16bpc** - Wiener 7/5 tap (vertical SIMD) |
+| looprestoration | `src/safe_simd/looprestoration.rs` | **8bpc+16bpc** - Wiener + SGR 5x5/3x3/mix (8bpc) |
 
 ## Performance Status (2026-02-04)
 
@@ -67,13 +67,13 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 
 **SIMD optimized:**
 - MC module (~7k lines): Complete
-- ITX module (~42k lines): ~10% complete (square transforms, IDTX)
+- ITX module (~42k lines): ~25% complete (all 4x4, all 8x8 ADST, DCT 16x16)
 - Loopfilter (~9k lines): 8bpc complete
 - CDEF (~7k lines): 8bpc complete
-- Looprestoration (~17k lines): Wiener complete, SGR using fallback
+- Looprestoration (~17k lines): Wiener + SGR 8bpc complete
 
 **Using Rust fallbacks (PORT THESE NEXT):**
-- SGR filters (looprestoration)
+- 16bpc SGR filters
 - ipred (~26k lines)
 - filmgrain (~13k lines)
 - More ITX transforms (ADST, 32x32, 64x64)
