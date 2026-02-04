@@ -72,7 +72,7 @@ The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_si
 - [x] `avg_16bpc_avx2` - 16-bit average (scalar, TODO: SIMD)
 - [x] `w_avg_8bpc_avx2` - Weighted average (true SIMD)
 - [x] `w_avg_16bpc_avx2` - 16-bit weighted average (scalar)
-- [x] `mask_8bpc_avx2` - Per-pixel masked blend (scalar, TODO: SIMD)
+- [x] `mask_8bpc_avx2` - Per-pixel masked blend (true SIMD)
 - [x] `mask_16bpc_avx2` - 16-bit masked blend (scalar)
 - [x] `blend_8bpc_avx2` - Pixel blend (scalar)
 - [x] `blend_16bpc_avx2` - 16-bit blend (scalar)
