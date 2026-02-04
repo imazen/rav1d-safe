@@ -1355,6 +1355,14 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_16x16][FLIPADST_ADST as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_16x16_16bpc_avx2);
 
+        // IDTX (identity) transforms 16bpc
+        self.itxfm_add[tx_4x4][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x4_16bpc_avx2);
+        self.itxfm_add[tx_8x8][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x8_16bpc_avx2);
+        self.itxfm_add[tx_16x16][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x16_16bpc_avx2);
+
         self
     }
 

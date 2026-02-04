@@ -9289,3 +9289,278 @@ impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_16x16_16bpc_avx2, inv_tx
 impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2, inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2_inner);
 impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_16x16_16bpc_avx2, inv_txfm_add_adst_flipadst_16x16_16bpc_avx2_inner);
 impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_16x16_16bpc_avx2, inv_txfm_add_flipadst_adst_16x16_16bpc_avx2_inner);
+
+// ============================================================================
+// IDENTITY TRANSFORMS 16bpc
+// ============================================================================
+
+/// 4x4 IDTX (identity transform) for 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_identity_add_4x4_16bpc_avx2(
+    dst: *mut u16,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
+) {
+    let stride_u16 = (dst_stride / 2) as usize;
+    let c_ptr = coeff;
+    let zero = unsafe { _mm_setzero_si128() };
+    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+
+    for y in 0..4 {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
+
+        // Load destination (4 u16)
+        let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
+        let d32 = unsafe { _mm_unpacklo_epi16(d, zero) };
+
+        // Load coeffs (column-major: y, y+4, y+8, y+12)
+        let c0 = unsafe { *c_ptr.add(y) as i32 };
+        let c1 = unsafe { *c_ptr.add(y + 4) as i32 };
+        let c2 = unsafe { *c_ptr.add(y + 8) as i32 };
+        let c3 = unsafe { *c_ptr.add(y + 12) as i32 };
+
+        // Identity4 scale: (c * 181 + 128) >> 8, twice (row + col)
+        let scale = |v: i32| -> i32 {
+            let t = (v * 181 + 128) >> 8;
+            (t * 181 + 128) >> 8
+        };
+
+        // Final shift: (+ 8) >> 4
+        let r0 = (scale(c0) + 8) >> 4;
+        let r1 = (scale(c1) + 8) >> 4;
+        let r2 = (scale(c2) + 8) >> 4;
+        let r3 = (scale(c3) + 8) >> 4;
+
+        // Add to destination
+        let result = unsafe { _mm_set_epi32(r3, r2, r1, r0) };
+        let sum = unsafe { _mm_add_epi32(d32, result) };
+        let clamped = unsafe { _mm_max_epi32(_mm_min_epi32(sum, max_val), zero) };
+        let packed = unsafe { _mm_packus_epi32(clamped, clamped) };
+
+        unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
+    }
+
+    // Clear coefficients
+    unsafe {
+        _mm_storeu_si128(coeff as *mut __m128i, _mm_setzero_si128());
+        _mm_storeu_si128(coeff.add(8) as *mut __m128i, _mm_setzero_si128());
+    }
+}
+
+/// FFI wrapper for 4x4 IDTX 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_identity_add_4x4_16bpc_avx2(
+            dst_ptr as *mut u16,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
+
+/// 8x8 IDTX (identity transform) for 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_identity_add_8x8_16bpc_avx2(
+    dst: *mut u16,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
+) {
+    let stride_u16 = (dst_stride / 2) as usize;
+    let c_ptr = coeff;
+    let zero = unsafe { _mm_setzero_si128() };
+    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+
+    for y in 0..8 {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
+
+        // Load destination (8 u16)
+        let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
+        let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
+        let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+
+        // Load coefficients (column-major: y, y+8, ...)
+        let mut coeffs = [0i32; 8];
+        for x in 0..8 {
+            coeffs[x] = unsafe { *c_ptr.add(y + x * 8) as i32 };
+        }
+
+        // Identity8 scale: * 2 for each dimension = * 4 total
+        // Final shift: (+ 8) >> 4
+        // Combined: (c * 4 + 8) >> 4 = (c + 2) >> 2
+        let mut results = [0i32; 8];
+        for x in 0..8 {
+            results[x] = (coeffs[x] * 4 + 8) >> 4;
+        }
+
+        let c_lo = unsafe { _mm_set_epi32(results[3], results[2], results[1], results[0]) };
+        let c_hi = unsafe { _mm_set_epi32(results[7], results[6], results[5], results[4]) };
+
+        // Add to destination
+        let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
+        let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
+        let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
+        let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
+        let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+
+        unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
+    }
+
+    // Clear coefficients
+    unsafe {
+        let z = _mm_setzero_si128();
+        for i in 0..8 {
+            _mm_storeu_si128(coeff.add(i * 8) as *mut __m128i, z);
+        }
+    }
+}
+
+/// FFI wrapper for 8x8 IDTX 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_identity_add_8x8_16bpc_avx2(
+            dst_ptr as *mut u16,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
+
+/// 16x16 IDTX (identity transform) for 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn inv_identity_add_16x16_16bpc_avx2(
+    dst: *mut u16,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
+) {
+    let stride_u16 = (dst_stride / 2) as usize;
+    let c_ptr = coeff;
+
+    // Identity16 scale factor: f(x) = 2*x + (x*1697 + 1024) >> 11
+    // For 16x16, applied twice (row + col), then final (+ 8) >> 4
+    let identity16_scale = |v: i32| -> i32 {
+        2 * v + ((v * 1697 + 1024) >> 11)
+    };
+
+    // First, transform all coefficients in-place
+    let mut tmp = [[0i32; 16]; 16];
+    for y in 0..16 {
+        for x in 0..16 {
+            let c = unsafe { *c_ptr.add(y + x * 16) as i32 };
+            // Row pass: identity16
+            let r = identity16_scale(c);
+            tmp[y][x] = r;
+        }
+    }
+
+    // Column pass
+    for x in 0..16 {
+        for y in 0..16 {
+            tmp[y][x] = identity16_scale(tmp[y][x]);
+        }
+    }
+
+    // Add to destination
+    let zero = unsafe { _mm256_setzero_si256() };
+    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
+    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+
+    for y in 0..16 {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
+
+        let d = unsafe { _mm256_loadu_si256(dst_row as *const __m256i) };
+        let d_lo = unsafe { _mm256_unpacklo_epi16(d, _mm256_setzero_si256()) };
+        let d_hi = unsafe { _mm256_unpackhi_epi16(d, _mm256_setzero_si256()) };
+        let d_0_4 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x20) };
+        let d_4_8 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x31) };
+
+        let c0 = unsafe {
+            _mm256_set_epi32(
+                tmp[y][3], tmp[y][2], tmp[y][1], tmp[y][0],
+                tmp[y][11], tmp[y][10], tmp[y][9], tmp[y][8]
+            )
+        };
+        let c1 = unsafe {
+            _mm256_set_epi32(
+                tmp[y][7], tmp[y][6], tmp[y][5], tmp[y][4],
+                tmp[y][15], tmp[y][14], tmp[y][13], tmp[y][12]
+            )
+        };
+
+        let c0_scaled = unsafe { _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final)) };
+        let c1_scaled = unsafe { _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final)) };
+
+        let sum0 = unsafe { _mm256_add_epi32(d_0_4, c0_scaled) };
+        let sum1 = unsafe { _mm256_add_epi32(d_4_8, c1_scaled) };
+
+        let clamped0 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero) };
+        let clamped1 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero) };
+
+        let packed = unsafe { _mm256_packus_epi32(clamped0, clamped1) };
+        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        unsafe { _mm256_storeu_si256(dst_row as *mut __m256i, packed) };
+    }
+
+    // Clear coefficients
+    unsafe {
+        let zero256 = _mm256_setzero_si256();
+        for i in 0..16 {
+            _mm256_storeu_si256((coeff as *mut __m256i).add(i), zero256);
+        }
+    }
+}
+
+/// FFI wrapper for 16x16 IDTX 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_identity_add_16x16_16bpc_avx2(
+            dst_ptr as *mut u16,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
