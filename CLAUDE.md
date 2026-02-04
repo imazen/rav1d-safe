@@ -90,6 +90,12 @@ The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_si
 - [x] `v_filter_8tap_8bpc_avx2` - Vertical 8-tap filter with 32-bit arithmetic
 - [x] `get_filter_coeff()` - Access filter coefficients from tables
 
+**Bilinear Filter (mc/mct):**
+- [x] `put_bilin_8bpc_avx2` - Bilinear put for 8bpc (AVX2 SIMD with maddubs)
+- [x] `prep_bilin_8bpc_avx2` - Bilinear prep for 8bpc (AVX2 SIMD)
+- [x] `put_bilin_16bpc_avx2` - Bilinear put for 16bpc (scalar, not SIMD yet)
+- [x] `prep_bilin_16bpc_avx2` - Bilinear prep for 16bpc (scalar, not SIMD yet)
+
 **Using Pure Rust Fallbacks:**
 - [ ] `mc_scaled` - 10 scaled variants per bitdepth
 - [ ] `mct_scaled` - 10 scaled prep variants per bitdepth
