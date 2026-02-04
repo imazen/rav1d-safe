@@ -833,6 +833,11 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_4x4][V_FLIPADST as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_4x4_8bpc_avx2);
 
+        // V_DCT, H_DCT 4x4
+        self.itxfm_add[tx_4x4][H_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_4x4_8bpc_avx2);
+        self.itxfm_add[tx_4x4][V_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_4x4_8bpc_avx2);
         // 8x8 transforms
         let tx_8x8 = TxfmSize::from_wh(8, 8) as usize;
 
