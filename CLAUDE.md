@@ -96,10 +96,15 @@ The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_si
 - [x] `put_bilin_16bpc_avx2` - Bilinear put for 16bpc (scalar, not SIMD yet)
 - [x] `prep_bilin_16bpc_avx2` - Bilinear prep for 16bpc (scalar, not SIMD yet)
 
+**Weighted Mask (w_mask):**
+- [x] `w_mask_444_8bpc_avx2` - 4:4:4 (no subsampling)
+- [x] `w_mask_422_8bpc_avx2` - 4:2:2 (horizontal subsampling)
+- [x] `w_mask_420_8bpc_avx2` - 4:2:0 (horizontal + vertical subsampling)
+- [x] `w_mask_*_16bpc_avx2` - All 3 variants for 16bpc (scalar, not SIMD yet)
+
 **Using Pure Rust Fallbacks:**
 - [ ] `mc_scaled` - 10 scaled variants per bitdepth
 - [ ] `mct_scaled` - 10 scaled prep variants per bitdepth
-- [ ] `w_mask` - 3 variants (420/422/444)
 - [ ] `warp8x8` / `warp8x8t` - Affine warping
 - [ ] `emu_edge` - Edge extension
 - [ ] `resize` - Resampling
