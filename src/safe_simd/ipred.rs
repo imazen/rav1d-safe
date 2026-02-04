@@ -1553,3 +1553,175 @@ pub unsafe extern "C" fn ipred_h_16bpc_avx2(
         }
     }
 }
+
+/// DC prediction for 16bpc: average of top and left edge pixels
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_dc_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+
+    // Calculate average of top row and left column
+    let mut sum = 0u32;
+
+    // Sum top row: tl[1..=width]
+    for i in 1..=width {
+        sum += unsafe { *tl.add(i) } as u32;
+    }
+
+    // Sum left column: tl[-1..-height]
+    for i in 1..=height {
+        sum += unsafe { *tl.offset(-(i as isize)) } as u32;
+    }
+
+    // Average with rounding
+    let count = (width + height) as u32;
+    let avg = ((sum + count / 2) / count) as u16;
+
+    unsafe {
+        let fill_val = _mm256_set1_epi16(avg as i16);
+
+        for y in 0..height {
+            let row = dst.offset(y as isize * stride_u16);
+            let mut x = 0usize;
+
+            while x + 16 <= width {
+                _mm256_storeu_si256(row.add(x) as *mut __m256i, fill_val);
+                x += 16;
+            }
+
+            while x + 8 <= width {
+                _mm_storeu_si128(row.add(x) as *mut __m128i, _mm256_castsi256_si128(fill_val));
+                x += 8;
+            }
+
+            while x < width {
+                *row.add(x) = avg;
+                x += 1;
+            }
+        }
+    }
+}
+
+/// DC_TOP prediction for 16bpc: average of top edge pixels
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_dc_top_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+
+    // Calculate average of top row
+    let mut sum = 0u32;
+    for i in 1..=width {
+        sum += unsafe { *tl.add(i) } as u32;
+    }
+    let avg = ((sum + width as u32 / 2) / width as u32) as u16;
+
+    unsafe {
+        let fill_val = _mm256_set1_epi16(avg as i16);
+
+        for y in 0..height {
+            let row = dst.offset(y as isize * stride_u16);
+            let mut x = 0usize;
+
+            while x + 16 <= width {
+                _mm256_storeu_si256(row.add(x) as *mut __m256i, fill_val);
+                x += 16;
+            }
+
+            while x + 8 <= width {
+                _mm_storeu_si128(row.add(x) as *mut __m128i, _mm256_castsi256_si128(fill_val));
+                x += 8;
+            }
+
+            while x < width {
+                *row.add(x) = avg;
+                x += 1;
+            }
+        }
+    }
+}
+
+/// DC_LEFT prediction for 16bpc: average of left edge pixels
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+
+    // Calculate average of left column
+    let mut sum = 0u32;
+    for i in 1..=height {
+        sum += unsafe { *tl.offset(-(i as isize)) } as u32;
+    }
+    let avg = ((sum + height as u32 / 2) / height as u32) as u16;
+
+    unsafe {
+        let fill_val = _mm256_set1_epi16(avg as i16);
+
+        for y in 0..height {
+            let row = dst.offset(y as isize * stride_u16);
+            let mut x = 0usize;
+
+            while x + 16 <= width {
+                _mm256_storeu_si256(row.add(x) as *mut __m256i, fill_val);
+                x += 16;
+            }
+
+            while x + 8 <= width {
+                _mm_storeu_si128(row.add(x) as *mut __m128i, _mm256_castsi256_si128(fill_val));
+                x += 8;
+            }
+
+            while x < width {
+                *row.add(x) = avg;
+                x += 1;
+            }
+        }
+    }
+}
