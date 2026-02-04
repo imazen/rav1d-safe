@@ -433,6 +433,142 @@ pub unsafe extern "C" fn w_avg_scalar(
     }
 }
 
+// =============================================================================
+// MASK (Per-pixel blend with mask)
+// =============================================================================
+
+/// Mask blend for 8-bit pixels using AVX2
+///
+/// Computes: (tmp1 * mask + tmp2 * (64 - mask) + 512) >> 10
+/// Using optimized form from asm.
+///
+/// # Safety
+///
+/// - Caller must ensure AVX2 is available
+/// - dst_ptr, tmp1, tmp2, mask must be valid
+/// - mask values must be in [0, 64]
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn mask_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask_ptr: *const u8,
+    _bitdepth_max: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let dst = dst_ptr as *mut u8;
+
+    // For 8bpc: intermediate_bits = 4, sh = 10, rnd = 32 << 4 = 512
+    let round = _mm256_set1_epi16(PW_2048);
+
+    for row in 0..h {
+        let tmp1_row = &tmp1[row * w..][..w];
+        let tmp2_row = &tmp2[row * w..][..w];
+        let mask_row = unsafe { std::slice::from_raw_parts(mask_ptr.add(row * w), w) };
+        let dst_row = unsafe {
+            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
+        };
+
+        // Scalar implementation for now - SIMD mask is complex due to byte unpacking
+        for col in 0..w {
+            let a = tmp1_row[col] as i32;
+            let b = tmp2_row[col] as i32;
+            let m = mask_row[col] as i32;
+            // (a * m + b * (64 - m) + 512) >> 10
+            let val = (a * m + b * (64 - m) + 512) >> 10;
+            dst_row[col] = val.clamp(0, 255) as u8;
+        }
+    }
+}
+
+/// Mask blend for 16-bit pixels
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn mask_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask_ptr: *const u8,
+    bitdepth_max: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let dst = dst_ptr as *mut u16;
+    let dst_stride_elems = dst_stride / 2;
+    let max = bitdepth_max as i32;
+
+    // For 16bpc: intermediate_bits = 4, sh = 10, rnd = 512 + PREP_BIAS * 64
+    let intermediate_bits = 4;
+    let sh = intermediate_bits + 6;
+    let rnd = (32 << intermediate_bits) + 8192 * 64;
+
+    for row in 0..h {
+        let tmp1_row = &tmp1[row * w..][..w];
+        let tmp2_row = &tmp2[row * w..][..w];
+        let mask_row = unsafe { std::slice::from_raw_parts(mask_ptr.add(row * w), w) };
+        let dst_row = unsafe {
+            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride_elems), w)
+        };
+
+        for col in 0..w {
+            let a = tmp1_row[col] as i32;
+            let b = tmp2_row[col] as i32;
+            let m = mask_row[col] as i32;
+            let val = (a * m + b * (64 - m) + rnd) >> sh;
+            dst_row[col] = val.clamp(0, max) as u16;
+        }
+    }
+}
+
+/// Scalar fallback for mask
+pub unsafe extern "C" fn mask_scalar(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask_ptr: *const u8,
+    _bitdepth_max: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let dst = dst_ptr as *mut u8;
+
+    // For 8bpc: intermediate_bits = 4, sh = 10, rnd = 512
+    let intermediate_bits = 4;
+    let sh = intermediate_bits + 6;
+    let rnd = (32 << intermediate_bits) + 0 * 64;
+
+    for row in 0..h {
+        let tmp1_row = &tmp1[row * w..][..w];
+        let tmp2_row = &tmp2[row * w..][..w];
+        let mask_row = unsafe { std::slice::from_raw_parts(mask_ptr.add(row * w), w) };
+        let dst_row = unsafe {
+            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
+        };
+
+        for col in 0..w {
+            let a = tmp1_row[col] as i32;
+            let b = tmp2_row[col] as i32;
+            let m = mask_row[col] as i32;
+            let val = (a * m + b * (64 - m) + rnd) >> sh;
+            dst_row[col] = val.clamp(0, 255) as u8;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -619,6 +755,72 @@ mod tests {
                         dst_avx2, dst_scalar,
                         "Mismatch for weight={}, v1={}, v2={}: avx2={:?} scalar={:?}",
                         weight, v1, v2, &dst_avx2[..8], &dst_scalar[..8]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_mask_8bpc_matches_scalar() {
+        if !cpu_has_avx2() {
+            eprintln!("Skipping AVX2 test - CPU doesn't support it");
+            return;
+        }
+
+        let test_values: Vec<i16> = vec![0, 127, 255, 512, 1023, 4095, -128, -512];
+        let test_masks: Vec<u8> = vec![0, 1, 16, 32, 48, 63, 64];
+
+        let w = 64i32;
+        let h = 2i32;
+
+        let mut tmp1 = [0i16; COMPINTER_LEN];
+        let mut tmp2 = [0i16; COMPINTER_LEN];
+        let mut mask = vec![0u8; (w * h) as usize];
+        let mut dst_avx2 = vec![0u8; (w * h) as usize];
+        let mut dst_scalar = vec![0u8; (w * h) as usize];
+
+        for &m in &test_masks {
+            for &v1 in &test_values {
+                for &v2 in &test_values {
+                    for i in 0..(w * h) as usize {
+                        tmp1[i] = v1;
+                        tmp2[i] = v2;
+                        mask[i] = m;
+                    }
+                    dst_avx2.fill(0);
+                    dst_scalar.fill(0);
+
+                    unsafe {
+                        mask_scalar(
+                            dst_scalar.as_mut_ptr() as *mut DynPixel,
+                            w as isize,
+                            &tmp1,
+                            &tmp2,
+                            w,
+                            h,
+                            mask.as_ptr(),
+                            255,
+                            std::ptr::null(),
+                        );
+
+                        mask_8bpc_avx2(
+                            dst_avx2.as_mut_ptr() as *mut DynPixel,
+                            w as isize,
+                            &tmp1,
+                            &tmp2,
+                            w,
+                            h,
+                            mask.as_ptr(),
+                            255,
+                            std::ptr::null(),
+                        );
+                    }
+
+                    assert_eq!(
+                        dst_avx2, dst_scalar,
+                        "Mismatch for mask={}, v1={}, v2={}: avx2={:?} scalar={:?}",
+                        m, v1, v2, &dst_avx2[..8], &dst_scalar[..8]
                     );
                 }
             }

@@ -53,7 +53,8 @@ For safe-simd:
 - [x] `avg_8bpc_avx2` - Average two buffers (8-bit)
 - [x] `avg_16bpc_avx2` - Average two buffers (16-bit, scalar impl)
 - [x] `avg_8bpc_sse4` - SSE4 fallback (uses scalar)
-- [ ] `w_avg` - Weighted average
+- [x] `w_avg_8bpc_avx2` - Weighted average (8-bit)
+- [x] `w_avg_16bpc_avx2` - Weighted average (16-bit, scalar impl)
 - [ ] `mask` - Masked blend
 - [ ] `blend` - Alpha blend
 - [ ] `mc` (8tap filters) - 10 filter variants
