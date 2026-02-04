@@ -2177,7 +2177,21 @@ impl Rav1dMCDSPContext {
             {
                 self.avg = bd_fn!(avg::decl_fn, BD, avg, avx2);
             }
-            self.w_avg = bd_fn!(w_avg::decl_fn, BD, w_avg, avx2);
+
+            // w_avg safe SIMD
+            #[cfg(feature = "safe-simd")]
+            {
+                use crate::src::safe_simd::mc as safe_mc;
+                use crate::include::common::bitdepth::BPC;
+                self.w_avg = match BD::BPC {
+                    BPC::BPC8 => w_avg::decl_fn_safe!(safe_mc::w_avg_8bpc_avx2),
+                    BPC::BPC16 => w_avg::decl_fn_safe!(safe_mc::w_avg_16bpc_avx2),
+                };
+            }
+            #[cfg(not(feature = "safe-simd"))]
+            {
+                self.w_avg = bd_fn!(w_avg::decl_fn, BD, w_avg, avx2);
+            }
             self.mask = bd_fn!(mask::decl_fn, BD, mask, avx2);
 
             self.w_mask = enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
