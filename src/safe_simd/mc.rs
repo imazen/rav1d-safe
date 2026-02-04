@@ -3767,10 +3767,117 @@ pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
 }
 
 // ============================================================================
-// BILINEAR 16BPC (scalar for now, SIMD can be added later)
+// BILINEAR 16BPC
 // ============================================================================
 
-/// Bilinear put for 16bpc (scalar implementation)
+/// Horizontal bilinear filter for 16bpc using AVX2
+/// Formula: pixel = 16 * x0 + mx * (x1 - x0) = (16 - mx) * x0 + mx * x1
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn h_bilin_16bpc_avx2(
+    dst: *mut i32,
+    src: *const u16,
+    w: usize,
+    mx: i32,
+) {
+    unsafe {
+        // Bilinear weights: w0 = (16 - mx), w1 = mx
+        let w0 = _mm256_set1_epi32(16 - mx);
+        let w1 = _mm256_set1_epi32(mx);
+
+        let mut col = 0usize;
+
+        // Process 8 pixels at a time
+        while col + 8 <= w {
+            // Load 9 consecutive 16-bit pixels (8 output pixels need pixels 0..8)
+            let s = src.add(col);
+            let p0_7 = _mm_loadu_si128(s as *const __m128i);           // pixels 0-7
+            let p1_8 = _mm_loadu_si128(s.add(1) as *const __m128i);    // pixels 1-8
+
+            // Zero-extend to 32-bit
+            let p0_lo = _mm256_cvtepu16_epi32(p0_7);
+            let p1_lo = _mm256_cvtepu16_epi32(p1_8);
+
+            // Compute: w0 * p0 + w1 * p1
+            let term0 = _mm256_mullo_epi32(p0_lo, w0);
+            let term1 = _mm256_mullo_epi32(p1_lo, w1);
+            let result = _mm256_add_epi32(term0, term1);
+
+            _mm256_storeu_si256(dst.add(col) as *mut __m256i, result);
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let x0 = *src.add(col) as i32;
+            let x1 = *src.add(col + 1) as i32;
+            *dst.add(col) = 16 * x0 + mx * (x1 - x0);
+            col += 1;
+        }
+    }
+}
+
+/// Vertical bilinear filter for 16bpc using AVX2
+/// Applies vertical filter to 32-bit intermediate, outputs clamped u16
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn v_bilin_16bpc_avx2(
+    dst: *mut u16,
+    mid: &[[i32; MID_STRIDE]],
+    w: usize,
+    y: usize,
+    my: i32,
+    sh: i32,
+    max: i32,
+) {
+    unsafe {
+        let w0 = _mm256_set1_epi32(16 - my);
+        let w1 = _mm256_set1_epi32(my);
+        let rnd = _mm256_set1_epi32((1 << sh) >> 1);
+        let shift_count = _mm_cvtsi32_si128(sh);
+        let zero = _mm256_setzero_si256();
+        let max_val = _mm256_set1_epi32(max);
+
+        let mut col = 0usize;
+
+        while col + 8 <= w {
+            // Load 8 intermediate values from rows y and y+1
+            let r0 = _mm256_loadu_si256(mid[y][col..].as_ptr() as *const __m256i);
+            let r1 = _mm256_loadu_si256(mid[y + 1][col..].as_ptr() as *const __m256i);
+
+            // Compute: w0 * r0 + w1 * r1
+            let term0 = _mm256_mullo_epi32(r0, w0);
+            let term1 = _mm256_mullo_epi32(r1, w1);
+            let sum = _mm256_add_epi32(term0, term1);
+
+            // Round, shift, clamp
+            let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+            let clamped = _mm256_min_epi32(_mm256_max_epi32(shifted, zero), max_val);
+
+            // Pack to 16-bit
+            let packed = _mm256_packus_epi32(clamped, zero);
+            let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
+
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let r0 = mid[y][col];
+            let r1 = mid[y + 1][col];
+            let pixel = 16 * r0 + my * (r1 - r0);
+            let r = (1 << sh) >> 1;
+            let val = ((pixel + r) >> sh).clamp(0, max);
+            *dst.add(col) = val as u16;
+            col += 1;
+        }
+    }
+}
+
+/// Bilinear put for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn put_bilin_16bpc_avx2(
@@ -3806,34 +3913,20 @@ pub unsafe extern "C" fn put_bilin_16bpc_avx2(
     unsafe {
         if mx != 0 {
             if my != 0 {
-                // H+V filtering
+                // H+V filtering using SIMD
                 let tmp_h = h + 1;
                 let mut mid = [[0i32; MID_STRIDE]; 130];
 
+                // Horizontal pass using SIMD (output unshifted)
                 for y in 0..tmp_h {
                     let src_row = src.offset(y as isize * src_stride);
-                    for x in 0..w {
-                        let x0 = *src_row.add(x) as i32;
-                        let x1 = *src_row.add(x + 1) as i32;
-                        let pixel = 16 * x0 + mx as i32 * (x1 - x0);
-                        // For sh = 0, no rounding or shift needed
-                        mid[y][x] = if h_pass_sh > 0 {
-                            (pixel + (1 << (h_pass_sh - 1))) >> h_pass_sh
-                        } else {
-                            pixel
-                        };
-                    }
+                    h_bilin_16bpc_avx2(mid[y].as_mut_ptr(), src_row, w, mx as i32);
                 }
 
+                // Vertical pass using SIMD
                 for y in 0..h {
                     let dst_row = dst.offset(y as isize * dst_stride);
-                    for x in 0..w {
-                        let r0 = mid[y][x];
-                        let r1 = mid[y + 1][x];
-                        let pixel = 16 * r0 + my as i32 * (r1 - r0);
-                        let result = (pixel + (1 << (v_pass_sh - 1))) >> v_pass_sh;
-                        *dst_row.add(x) = result.clamp(0, bd_max) as u16;
-                    }
+                    v_bilin_16bpc_avx2(dst_row, &mid, w, y, my as i32, v_pass_sh, bd_max);
                 }
             } else {
                 // H-only filtering - need both rounding passes
