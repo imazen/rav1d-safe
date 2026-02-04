@@ -464,25 +464,90 @@ pub unsafe extern "C" fn mask_8bpc_avx2(
     let h = h as usize;
     let dst = dst_ptr as *mut u8;
 
-    // For 8bpc: intermediate_bits = 4, sh = 10, rnd = 32 << 4 = 512
-    let round = _mm256_set1_epi16(PW_2048);
+    // For 8bpc: intermediate_bits = 4, sh = 10, rnd = 512
+    // Formula: (tmp1 * m + tmp2 * (64-m) + 512) >> 10
+    // Rewrite: ((tmp1 - tmp2) * m + tmp2 * 64 + 512) >> 10
+    // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
+    let rnd = unsafe { _mm256_set1_epi32(512) };
 
     for row in 0..h {
-        let tmp1_row = &tmp1[row * w..][..w];
-        let tmp2_row = &tmp2[row * w..][..w];
-        let mask_row = unsafe { std::slice::from_raw_parts(mask_ptr.add(row * w), w) };
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
-        };
+        let tmp1_ptr = tmp1[row * w..].as_ptr();
+        let tmp2_ptr = tmp2[row * w..].as_ptr();
+        // SAFETY: mask_ptr is valid for row * w + w elements
+        let mask_row_ptr = unsafe { mask_ptr.add(row * w) };
+        // SAFETY: dst is valid for row * stride + w elements
+        let dst_row = unsafe { dst.offset(row as isize * dst_stride) };
 
-        // Scalar implementation for now - SIMD mask is complex due to byte unpacking
-        for col in 0..w {
-            let a = tmp1_row[col] as i32;
-            let b = tmp2_row[col] as i32;
-            let m = mask_row[col] as i32;
-            // (a * m + b * (64 - m) + 512) >> 10
-            let val = (a * m + b * (64 - m) + 512) >> 10;
-            dst_row[col] = val.clamp(0, 255) as u8;
+        let mut col = 0usize;
+
+        // Process 16 pixels at a time with AVX2
+        while col + 16 <= w {
+            // SAFETY: AVX2 intrinsics are safe with valid pointers, feature is enabled
+            unsafe {
+                // Load 16x i16 tmp values
+                let t1_lo = _mm256_loadu_si256(tmp1_ptr.add(col) as *const __m256i);
+                let t2_lo = _mm256_loadu_si256(tmp2_ptr.add(col) as *const __m256i);
+
+                // Load 16 bytes of mask and zero-extend to 16x i16
+                let mask_bytes = _mm_loadu_si128(mask_row_ptr.add(col) as *const __m128i);
+                let mask_lo = _mm256_cvtepu8_epi16(mask_bytes);
+
+                // Compute (tmp1 - tmp2)
+                let diff = _mm256_sub_epi16(t1_lo, t2_lo);
+
+                // Process low 8 elements (need 32-bit for tmp2*64 which can overflow 16-bit)
+                let diff_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(diff));
+                let mask_lo_32 = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(mask_lo));
+                let t2_lo_32 = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t2_lo));
+
+                // Compute (tmp1-tmp2)*mask + tmp2*64 + rnd
+                let prod_lo = _mm256_mullo_epi32(diff_lo, mask_lo_32);
+                let t2_64_lo = _mm256_slli_epi32(t2_lo_32, 6); // tmp2 * 64 in 32-bit
+                let sum_lo = _mm256_add_epi32(_mm256_add_epi32(prod_lo, t2_64_lo), rnd);
+
+                // Process high 8 elements
+                let diff_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(diff, 1));
+                let mask_hi_32 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(mask_lo, 1));
+                let t2_hi_32 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t2_lo, 1));
+
+                let prod_hi = _mm256_mullo_epi32(diff_hi, mask_hi_32);
+                let t2_64_hi = _mm256_slli_epi32(t2_hi_32, 6);
+                let sum_hi = _mm256_add_epi32(_mm256_add_epi32(prod_hi, t2_64_hi), rnd);
+
+                // Shift right by 10
+                let result_lo = _mm256_srai_epi32(sum_lo, 10);
+                let result_hi = _mm256_srai_epi32(sum_hi, 10);
+
+                // Pack back to 16-bit
+                let result_16 = _mm256_packs_epi32(result_lo, result_hi);
+                // Fix lane ordering after packs
+                let result_16 = _mm256_permute4x64_epi64(result_16, 0b11011000);
+
+                // Pack to 8-bit with unsigned saturation
+                let result_8 = _mm256_packus_epi16(result_16, result_16);
+                let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
+
+                // Store 16 bytes
+                _mm_storeu_si128(
+                    dst_row.add(col) as *mut __m128i,
+                    _mm256_castsi256_si128(result_8),
+                );
+            }
+
+            col += 16;
+        }
+
+        // Handle remaining pixels with scalar
+        while col < w {
+            // SAFETY: pointers are valid within bounds
+            unsafe {
+                let a = *tmp1_ptr.add(col) as i32;
+                let b = *tmp2_ptr.add(col) as i32;
+                let m = *mask_row_ptr.add(col) as i32;
+                let val = (a * m + b * (64 - m) + 512) >> 10;
+                *dst_row.add(col) = val.clamp(0, 255) as u8;
+            }
+            col += 1;
         }
     }
 }
