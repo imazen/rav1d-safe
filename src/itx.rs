@@ -762,6 +762,41 @@ impl Rav1dInvTxfmDSPContext {
         assign::<BD>(self)
     }
 
+    /// Safe SIMD initialization for x86_64 without hand-written assembly.
+    /// Uses Rust intrinsics instead.
+    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+    #[inline(always)]
+    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
+        use crate::include::common::bitdepth::BPC;
+        use crate::src::safe_simd::itx as safe_itx;
+
+        if !flags.contains(CpuFlags::AVX2) {
+            return self;
+        }
+
+        // Only 8bpc for now (use match instead of != for const context)
+        match BD::BPC {
+            BPC::BPC8 => {}
+            _ => return self,
+        }
+
+        let tx_4x4 = TxfmSize::from_wh(4, 4) as usize;
+
+        // DCT_DCT 4x4
+        self.itxfm_add[tx_4x4][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x4_8bpc_avx2);
+
+        // WHT_WHT 4x4
+        self.itxfm_add[tx_4x4][WHT_WHT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_wht_wht_4x4_8bpc_avx2);
+
+        // IDTX 4x4
+        self.itxfm_add[tx_4x4][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x4_8bpc_avx2);
+
+        self
+    }
+
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags, bpc: u8) -> Self {
         #[cfg(feature = "asm")]
@@ -774,6 +809,12 @@ impl Rav1dInvTxfmDSPContext {
             {
                 return self.init_arm::<BD>(flags, bpc);
             }
+        }
+
+        #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+        {
+            let _ = bpc;
+            return self.init_x86_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.

@@ -100,7 +100,7 @@ macro_rules! wrap_fn_ptr {
             /// This is similar to `decl_fn!` but takes a Rust function
             /// directly instead of declaring an extern "C" block.
             /// Used when `safe-simd` feature is enabled.
-            #[cfg(feature = "safe-simd")]
+            #[cfg(not(feature = "asm"))]
             #[allow(unused_macros)]
             macro_rules! decl_fn_safe {
                 ($fn_path:path) => {{
@@ -108,7 +108,7 @@ macro_rules! wrap_fn_ptr {
                 }};
             }
 
-            #[cfg(feature = "safe-simd")]
+            #[cfg(not(feature = "asm"))]
             #[allow(unused_imports)]
             pub(crate) use decl_fn_safe;
         }

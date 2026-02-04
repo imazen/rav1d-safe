@@ -2518,7 +2518,7 @@ impl Rav1dMCDSPContext {
     /// Safe SIMD initialization for x86/x86_64 without hand-written assembly.
     /// Uses Rust intrinsics via archmage/safe_unaligned_simd instead.
     #[cfg(all(
-        feature = "safe-simd",
+        not(feature = "asm"),
         not(feature = "asm"),
         any(target_arch = "x86", target_arch = "x86_64")
     ))]
@@ -2699,7 +2699,7 @@ impl Rav1dMCDSPContext {
         }
 
         #[cfg(all(
-            feature = "safe-simd",
+            not(feature = "asm"),
             not(feature = "asm"),
             any(target_arch = "x86", target_arch = "x86_64")
         ))]
@@ -2708,7 +2708,7 @@ impl Rav1dMCDSPContext {
         }
 
         #[cfg(all(
-            feature = "safe-simd",
+            not(feature = "asm"),
             not(feature = "asm"),
             target_arch = "aarch64"
         ))]

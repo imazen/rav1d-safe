@@ -87,7 +87,7 @@ pub mod src {
     mod qm;
     mod recon;
     mod refmvs;
-    #[cfg(feature = "safe-simd")]
+    #[cfg(not(feature = "asm"))]
     pub mod safe_simd;
     mod scan;
     mod tables;
