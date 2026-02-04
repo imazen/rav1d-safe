@@ -61,48 +61,124 @@ unsafe fn wiener_filter7_8bpc_avx2_inner(
     let mut hor = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
 
     let filter = &params.filter;
-    let round_bits_h = 3i32; // 3 for 8bpc
+    let round_bits_h = 3i32;
     let rounding_off_h = 1i32 << (round_bits_h - 1);
-    let clip_limit = 1i32 << (8 + 1 + 7 - round_bits_h); // = 8192 for 8bpc
+    let clip_limit = 1i32 << (8 + 1 + 7 - round_bits_h); // = 8192
 
     // -------------------------------------------------------------------------
-    // Horizontal filter pass - scalar for correctness
+    // Horizontal filter pass
+    // For 8bpc: sum = (1 << 14) + pixel[center] * 128 + sum(pixel[i] * filter[i])
     // -------------------------------------------------------------------------
+
+    // AVX2 horizontal filter using maddubs
+    // We need to handle the asymmetric 7-tap filter with DC offset
+    // For now, use scalar for correctness
     for row in 0..(h + 6) {
         let tmp_row = &tmp[row * REST_UNIT_STRIDE..];
         let hor_row = &mut hor[row * REST_UNIT_STRIDE..row * REST_UNIT_STRIDE + w];
 
         for x in 0..w {
-            let mut sum = 1i32 << 14; // bias for 8bpc: 1 << (8 + 6)
-            sum += tmp_row[x + 3] as i32 * 128; // DC offset for center pixel (8bpc only)
-
+            let mut sum = 1i32 << 14;
+            sum += tmp_row[x + 3] as i32 * 128;
             for k in 0..7 {
                 sum += tmp_row[x + k] as i32 * filter[0][k] as i32;
             }
-
             hor_row[x] = iclip((sum + rounding_off_h) >> round_bits_h, 0, clip_limit - 1) as u16;
         }
     }
 
     // -------------------------------------------------------------------------
-    // Vertical filter pass - scalar for correctness
+    // Vertical filter pass with AVX2 SIMD
+    // Process 16 pixels at a time using AVX2
     // -------------------------------------------------------------------------
-    let round_bits_v = 11i32; // for 8bpc
+    let round_bits_v = 11i32;
     let rounding_off_v = 1i32 << (round_bits_v - 1);
-    let round_offset = 1i32 << (8 + round_bits_v - 1); // = 1 << 18 for 8bpc
+    let round_offset = 1i32 << (8 + round_bits_v - 1); // = 1 << 18
     let stride = p.pixel_stride::<BitDepth8>();
+
+    // Load filter coefficients into AVX2 registers (broadcast to all lanes)
+    let vf0 = unsafe { _mm256_set1_epi32(filter[1][0] as i32) };
+    let vf1 = unsafe { _mm256_set1_epi32(filter[1][1] as i32) };
+    let vf2 = unsafe { _mm256_set1_epi32(filter[1][2] as i32) };
+    let vf3 = unsafe { _mm256_set1_epi32(filter[1][3] as i32) };
+    let vf4 = unsafe { _mm256_set1_epi32(filter[1][4] as i32) };
+    let vf5 = unsafe { _mm256_set1_epi32(filter[1][5] as i32) };
+    let vf6 = unsafe { _mm256_set1_epi32(filter[1][6] as i32) };
+    let v_round_offset = unsafe { _mm256_set1_epi32(-round_offset) };
+    let v_rounding = unsafe { _mm256_set1_epi32(rounding_off_v) };
 
     for j in 0..h {
         let mut dst_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);
+        let mut i = 0usize;
 
-        for i in 0..w {
+        // Process 8 pixels at a time with AVX2
+        while i + 8 <= w {
+            unsafe {
+                // Load 8 u16 values from each of the 7 rows and convert to i32
+                // We need to process low and high halves separately
+                let row0 = &hor[(j + 0) * REST_UNIT_STRIDE + i..];
+                let row1 = &hor[(j + 1) * REST_UNIT_STRIDE + i..];
+                let row2 = &hor[(j + 2) * REST_UNIT_STRIDE + i..];
+                let row3 = &hor[(j + 3) * REST_UNIT_STRIDE + i..];
+                let row4 = &hor[(j + 4) * REST_UNIT_STRIDE + i..];
+                let row5 = &hor[(j + 5) * REST_UNIT_STRIDE + i..];
+                let row6 = &hor[(j + 6) * REST_UNIT_STRIDE + i..];
+
+                // Load 8 u16 values as __m128i
+                let r0 = _mm_loadu_si128(row0.as_ptr() as *const __m128i);
+                let r1 = _mm_loadu_si128(row1.as_ptr() as *const __m128i);
+                let r2 = _mm_loadu_si128(row2.as_ptr() as *const __m128i);
+                let r3 = _mm_loadu_si128(row3.as_ptr() as *const __m128i);
+                let r4 = _mm_loadu_si128(row4.as_ptr() as *const __m128i);
+                let r5 = _mm_loadu_si128(row5.as_ptr() as *const __m128i);
+                let r6 = _mm_loadu_si128(row6.as_ptr() as *const __m128i);
+
+                // Process low 4 pixels (expand u16 to i32)
+                let r0_lo = _mm256_cvtepu16_epi32(r0);
+                let r1_lo = _mm256_cvtepu16_epi32(r1);
+                let r2_lo = _mm256_cvtepu16_epi32(r2);
+                let r3_lo = _mm256_cvtepu16_epi32(r3);
+                let r4_lo = _mm256_cvtepu16_epi32(r4);
+                let r5_lo = _mm256_cvtepu16_epi32(r5);
+                let r6_lo = _mm256_cvtepu16_epi32(r6);
+
+                // sum = -round_offset + sum(row[k] * filter[k])
+                let mut sum = v_round_offset;
+                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r0_lo, vf0));
+                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r1_lo, vf1));
+                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r2_lo, vf2));
+                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r3_lo, vf3));
+                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r4_lo, vf4));
+                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r5_lo, vf5));
+                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r6_lo, vf6));
+
+                // Add rounding and shift
+                sum = _mm256_add_epi32(sum, v_rounding);
+                sum = _mm256_srai_epi32::<11>(sum); // round_bits_v = 11 for 8bpc
+
+                // Clip to 0-255 and pack to bytes
+                // packus_epi32 saturates to 0-65535, then packus_epi16 saturates to 0-255
+                let sum16 = _mm256_packus_epi32(sum, sum); // i32 -> u16, gives [0-7][0-7]
+                let sum16_lo = _mm256_castsi256_si128(sum16);
+                let sum16_hi = _mm256_extracti128_si256(sum16, 1);
+                let sum16_combined = _mm_unpacklo_epi64(sum16_lo, sum16_hi);
+                let sum8 = _mm_packus_epi16(sum16_combined, sum16_combined); // u16 -> u8
+
+                // Store 8 bytes
+                let dst_ptr = dst_row.as_mut_ptr().add(i);
+                _mm_storel_epi64(dst_ptr as *mut __m128i, sum8);
+            }
+            i += 8;
+        }
+
+        // Handle remaining pixels with scalar
+        while i < w {
             let mut sum = -round_offset;
-
             for k in 0..7 {
                 sum += hor[(j + k) * REST_UNIT_STRIDE + i] as i32 * filter[1][k] as i32;
             }
-
             dst_row[i] = iclip((sum + rounding_off_v) >> round_bits_v, 0, 255) as u8;
+            i += 1;
         }
     }
 }
