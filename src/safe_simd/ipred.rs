@@ -1778,3 +1778,130 @@ pub unsafe extern "C" fn ipred_paeth_16bpc_avx2(
         }
     }
 }
+
+/// SMOOTH prediction for 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_smooth_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+
+    unsafe {
+        let weights_hor = &dav1d_sm_weights.0[width..][..width];
+        let weights_ver = &dav1d_sm_weights.0[height..][..height];
+        let right_val = *tl.add(width) as i32;
+        let bottom_val = *tl.offset(-(height as isize)) as i32;
+
+        for y in 0..height {
+            let dst_row = dst.offset(y as isize * stride_u16);
+            let left_val = *tl.offset(-(y as isize) - 1) as i32;
+            let w_v = weights_ver[y] as i32;
+
+            for x in 0..width {
+                let top_val = *tl.add(1 + x) as i32;
+                let w_h = weights_hor[x] as i32;
+
+                // Vertical component: w_v * top + (256 - w_v) * bottom
+                let vert = w_v * top_val + (256 - w_v) * bottom_val;
+                // Horizontal component: w_h * left + (256 - w_h) * right
+                let horz = w_h * left_val + (256 - w_h) * right_val;
+                // Combine with rounding
+                let pred = (vert + horz + 256) >> 9;
+                *dst_row.add(x) = pred as u16;
+            }
+        }
+    }
+}
+
+/// SMOOTH_V prediction for 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_smooth_v_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+
+    unsafe {
+        let weights_ver = &dav1d_sm_weights.0[height..][..height];
+        let bottom_val = *tl.offset(-(height as isize)) as i32;
+
+        for y in 0..height {
+            let dst_row = dst.offset(y as isize * stride_u16);
+            let w_v = weights_ver[y] as i32;
+
+            for x in 0..width {
+                let top_val = *tl.add(1 + x) as i32;
+                let pred = (w_v * top_val + (256 - w_v) * bottom_val + 128) >> 8;
+                *dst_row.add(x) = pred as u16;
+            }
+        }
+    }
+}
+
+/// SMOOTH_H prediction for 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+
+    unsafe {
+        let weights_hor = &dav1d_sm_weights.0[width..][..width];
+        let right_val = *tl.add(width) as i32;
+
+        for y in 0..height {
+            let dst_row = dst.offset(y as isize * stride_u16);
+            let left_val = *tl.offset(-(y as isize) - 1) as i32;
+
+            for x in 0..width {
+                let w_h = weights_hor[x] as i32;
+                let pred = (w_h * left_val + (256 - w_h) * right_val + 128) >> 8;
+                *dst_row.add(x) = pred as u16;
+            }
+        }
+    }
+}

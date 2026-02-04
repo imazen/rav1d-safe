@@ -2295,7 +2295,13 @@ impl Rav1dIntraPredDSPContext {
                     angular_ipred::Fn::new(safe_ipred::ipred_dc_left_16bpc_avx2);
                 self.intra_pred[PAETH_PRED as usize] =
                     angular_ipred::Fn::new(safe_ipred::ipred_paeth_16bpc_avx2);
-                // Other 16bpc modes still use Rust fallback
+                self.intra_pred[SMOOTH_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_16bpc_avx2);
+                self.intra_pred[SMOOTH_V_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_v_16bpc_avx2);
+                self.intra_pred[SMOOTH_H_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_h_16bpc_avx2);
+                // Remaining 16bpc modes still use Rust fallback: FILTER, Z1/Z2/Z3
             }
         }
 
