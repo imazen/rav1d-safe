@@ -367,3 +367,392 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
         }
     }
 }
+
+// ============================================================================
+// PAETH Prediction
+// ============================================================================
+
+/// PAETH prediction: each pixel is closest of left, top, or topleft to (left + top - topleft)
+///
+/// For each pixel at (x, y):
+///   base = left + top - topleft
+///   ldiff = |left - base|
+///   tdiff = |top - base|
+///   tldiff = |topleft - base|
+///   pick whichever of left/top/topleft has smallest diff
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_paeth_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u8;
+    let tl = topleft as *const u8;
+
+    unsafe {
+        let topleft_val = *tl as i32;
+        let topleft_vec = _mm256_set1_epi32(topleft_val);
+
+        for y in 0..height {
+            let dst_row = dst.offset(y as isize * stride);
+            let left_val = *tl.offset(-(y as isize) - 1) as i32;
+            let left_vec = _mm256_set1_epi32(left_val);
+
+            // Process 8 pixels at a time with AVX2
+            let mut x = 0;
+            while x + 8 <= width {
+                // Load 8 top pixels and zero-extend to 32-bit
+                let top_bytes = _mm_loadl_epi64(tl.add(1 + x) as *const __m128i);
+                let top_lo = _mm256_cvtepu8_epi32(top_bytes);
+
+                // base = left + top - topleft
+                let base = _mm256_sub_epi32(_mm256_add_epi32(left_vec, top_lo), topleft_vec);
+
+                // ldiff = |left - base|
+                let ldiff = _mm256_abs_epi32(_mm256_sub_epi32(left_vec, base));
+                // tdiff = |top - base|
+                let tdiff = _mm256_abs_epi32(_mm256_sub_epi32(top_lo, base));
+                // tldiff = |topleft - base|
+                let tldiff = _mm256_abs_epi32(_mm256_sub_epi32(topleft_vec, base));
+
+                // Comparison: ldiff <= tdiff
+                let ld_le_td = _mm256_or_si256(
+                    _mm256_cmpgt_epi32(tdiff, ldiff),
+                    _mm256_cmpeq_epi32(ldiff, tdiff),
+                );
+                // Comparison: ldiff <= tldiff
+                let ld_le_tld = _mm256_or_si256(
+                    _mm256_cmpgt_epi32(tldiff, ldiff),
+                    _mm256_cmpeq_epi32(ldiff, tldiff),
+                );
+                // Comparison: tdiff <= tldiff
+                let td_le_tld = _mm256_or_si256(
+                    _mm256_cmpgt_epi32(tldiff, tdiff),
+                    _mm256_cmpeq_epi32(tdiff, tldiff),
+                );
+
+                // if ldiff <= tdiff && ldiff <= tldiff: left
+                // else if tdiff <= tldiff: top
+                // else: topleft
+                let use_left = _mm256_and_si256(ld_le_td, ld_le_tld);
+                let use_top = _mm256_andnot_si256(use_left, td_le_tld);
+
+                // Select: start with topleft, blend top if use_top, blend left if use_left
+                let result = _mm256_blendv_epi8(
+                    _mm256_blendv_epi8(topleft_vec, top_lo, use_top),
+                    left_vec,
+                    use_left,
+                );
+
+                // Pack 32-bit to 8-bit
+                let packed = _mm256_shuffle_epi8(
+                    result,
+                    _mm256_setr_epi8(
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                    ),
+                );
+                let lo = _mm256_castsi256_si128(packed);
+                let hi = _mm256_extracti128_si256::<1>(packed);
+                let combined = _mm_unpacklo_epi32(lo, hi);
+                _mm_storel_epi64(dst_row.add(x) as *mut __m128i, combined);
+
+                x += 8;
+            }
+
+            // Scalar fallback for remaining pixels
+            while x < width {
+                let top_val = *tl.add(1 + x) as i32;
+                let base = left_val + top_val - topleft_val;
+                let ldiff = (left_val - base).abs();
+                let tdiff = (top_val - base).abs();
+                let tldiff = (topleft_val - base).abs();
+
+                let result = if ldiff <= tdiff && ldiff <= tldiff {
+                    left_val
+                } else if tdiff <= tldiff {
+                    top_val
+                } else {
+                    topleft_val
+                };
+                *dst_row.add(x) = result as u8;
+                x += 1;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// SMOOTH Predictions (using weight tables)
+// ============================================================================
+
+use crate::src::tables::dav1d_sm_weights;
+
+/// SMOOTH prediction: weighted blend of top/bottom and left/right edges
+///
+/// pred = w_v[y] * top + (256 - w_v[y]) * bottom + w_h[x] * left + (256 - w_h[x]) * right
+/// dst = (pred + 256) >> 9
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_smooth_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u8;
+    let tl = topleft as *const u8;
+
+    unsafe {
+        let weights_hor = &dav1d_sm_weights.0[width..][..width];
+        let weights_ver = &dav1d_sm_weights.0[height..][..height];
+        let right_val = *tl.add(width) as i32;
+        let bottom_val = *tl.offset(-(height as isize)) as i32;
+        let right_vec = _mm256_set1_epi32(right_val);
+        let bottom_vec = _mm256_set1_epi32(bottom_val);
+        let rounding = _mm256_set1_epi32(256);
+        let c256 = _mm256_set1_epi32(256);
+
+        for y in 0..height {
+            let dst_row = dst.offset(y as isize * stride);
+            let left_val = *tl.offset(-(y as isize) - 1) as i32;
+            let left_vec = _mm256_set1_epi32(left_val);
+            let w_v = weights_ver[y] as i32;
+            let w_v_vec = _mm256_set1_epi32(w_v);
+            let w_v_inv = _mm256_sub_epi32(c256, w_v_vec);
+
+            let mut x = 0;
+            while x + 8 <= width {
+                // Load 8 top pixels
+                let top_bytes = _mm_loadl_epi64(tl.add(1 + x) as *const __m128i);
+                let top = _mm256_cvtepu8_epi32(top_bytes);
+
+                // Load 8 horizontal weights
+                let w_h_bytes = _mm_loadl_epi64(weights_hor.as_ptr().add(x) as *const __m128i);
+                let w_h = _mm256_cvtepu8_epi32(w_h_bytes);
+                let w_h_inv = _mm256_sub_epi32(c256, w_h);
+
+                // Vertical component: w_v * top + (256 - w_v) * bottom
+                let vert = _mm256_add_epi32(
+                    _mm256_mullo_epi32(w_v_vec, top),
+                    _mm256_mullo_epi32(w_v_inv, bottom_vec),
+                );
+
+                // Horizontal component: w_h * left + (256 - w_h) * right
+                let hor = _mm256_add_epi32(
+                    _mm256_mullo_epi32(w_h, left_vec),
+                    _mm256_mullo_epi32(w_h_inv, right_vec),
+                );
+
+                // pred = vert + hor, result = (pred + 256) >> 9
+                let pred = _mm256_add_epi32(vert, hor);
+                let result = _mm256_srai_epi32::<9>(_mm256_add_epi32(pred, rounding));
+
+                // Pack to 8-bit
+                let packed = _mm256_shuffle_epi8(
+                    result,
+                    _mm256_setr_epi8(
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                    ),
+                );
+                let lo = _mm256_castsi256_si128(packed);
+                let hi = _mm256_extracti128_si256::<1>(packed);
+                let combined = _mm_unpacklo_epi32(lo, hi);
+                _mm_storel_epi64(dst_row.add(x) as *mut __m128i, combined);
+
+                x += 8;
+            }
+
+            // Scalar fallback
+            while x < width {
+                let top_val = *tl.add(1 + x) as i32;
+                let w_h = weights_hor[x] as i32;
+                let pred = w_v * top_val
+                    + (256 - w_v) * bottom_val
+                    + w_h * left_val
+                    + (256 - w_h) * right_val;
+                *dst_row.add(x) = ((pred + 256) >> 9) as u8;
+                x += 1;
+            }
+        }
+    }
+}
+
+/// SMOOTH_V prediction: vertical-only weighted blend (top/bottom)
+///
+/// pred = w_v[y] * top + (256 - w_v[y]) * bottom
+/// dst = (pred + 128) >> 8
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_smooth_v_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u8;
+    let tl = topleft as *const u8;
+
+    unsafe {
+        let weights_ver = &dav1d_sm_weights.0[height..][..height];
+        let bottom_val = *tl.offset(-(height as isize)) as i32;
+        let bottom_vec = _mm256_set1_epi32(bottom_val);
+        let rounding = _mm256_set1_epi32(128);
+        let c256 = _mm256_set1_epi32(256);
+
+        for y in 0..height {
+            let dst_row = dst.offset(y as isize * stride);
+            let w_v = weights_ver[y] as i32;
+            let w_v_vec = _mm256_set1_epi32(w_v);
+            let w_v_inv = _mm256_sub_epi32(c256, w_v_vec);
+
+            let mut x = 0;
+            while x + 8 <= width {
+                // Load 8 top pixels
+                let top_bytes = _mm_loadl_epi64(tl.add(1 + x) as *const __m128i);
+                let top = _mm256_cvtepu8_epi32(top_bytes);
+
+                // pred = w_v * top + (256 - w_v) * bottom
+                let pred = _mm256_add_epi32(
+                    _mm256_mullo_epi32(w_v_vec, top),
+                    _mm256_mullo_epi32(w_v_inv, bottom_vec),
+                );
+
+                // result = (pred + 128) >> 8
+                let result = _mm256_srai_epi32::<8>(_mm256_add_epi32(pred, rounding));
+
+                // Pack to 8-bit
+                let packed = _mm256_shuffle_epi8(
+                    result,
+                    _mm256_setr_epi8(
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                    ),
+                );
+                let lo = _mm256_castsi256_si128(packed);
+                let hi = _mm256_extracti128_si256::<1>(packed);
+                let combined = _mm_unpacklo_epi32(lo, hi);
+                _mm_storel_epi64(dst_row.add(x) as *mut __m128i, combined);
+
+                x += 8;
+            }
+
+            // Scalar fallback
+            while x < width {
+                let top_val = *tl.add(1 + x) as i32;
+                let pred = w_v * top_val + (256 - w_v) * bottom_val;
+                *dst_row.add(x) = ((pred + 128) >> 8) as u8;
+                x += 1;
+            }
+        }
+    }
+}
+
+/// SMOOTH_H prediction: horizontal-only weighted blend (left/right)
+///
+/// pred = w_h[x] * left + (256 - w_h[x]) * right
+/// dst = (pred + 128) >> 8
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u8;
+    let tl = topleft as *const u8;
+
+    unsafe {
+        let weights_hor = &dav1d_sm_weights.0[width..][..width];
+        let right_val = *tl.add(width) as i32;
+        let right_vec = _mm256_set1_epi32(right_val);
+        let rounding = _mm256_set1_epi32(128);
+        let c256 = _mm256_set1_epi32(256);
+
+        for y in 0..height {
+            let dst_row = dst.offset(y as isize * stride);
+            let left_val = *tl.offset(-(y as isize) - 1) as i32;
+            let left_vec = _mm256_set1_epi32(left_val);
+
+            let mut x = 0;
+            while x + 8 <= width {
+                // Load 8 horizontal weights
+                let w_h_bytes = _mm_loadl_epi64(weights_hor.as_ptr().add(x) as *const __m128i);
+                let w_h = _mm256_cvtepu8_epi32(w_h_bytes);
+                let w_h_inv = _mm256_sub_epi32(c256, w_h);
+
+                // pred = w_h * left + (256 - w_h) * right
+                let pred = _mm256_add_epi32(
+                    _mm256_mullo_epi32(w_h, left_vec),
+                    _mm256_mullo_epi32(w_h_inv, right_vec),
+                );
+
+                // result = (pred + 128) >> 8
+                let result = _mm256_srai_epi32::<8>(_mm256_add_epi32(pred, rounding));
+
+                // Pack to 8-bit
+                let packed = _mm256_shuffle_epi8(
+                    result,
+                    _mm256_setr_epi8(
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                    ),
+                );
+                let lo = _mm256_castsi256_si128(packed);
+                let hi = _mm256_extracti128_si256::<1>(packed);
+                let combined = _mm_unpacklo_epi32(lo, hi);
+                _mm_storel_epi64(dst_row.add(x) as *mut __m128i, combined);
+
+                x += 8;
+            }
+
+            // Scalar fallback
+            while x < width {
+                let w_h = weights_hor[x] as i32;
+                let pred = w_h * left_val + (256 - w_h) * right_val;
+                *dst_row.add(x) = ((pred + 128) >> 8) as u8;
+                x += 1;
+            }
+        }
+    }
+}
