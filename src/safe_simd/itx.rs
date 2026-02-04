@@ -373,6 +373,167 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_avx2(
 }
 
 // ============================================================================
+// 4x4 DCT_DCT 16bpc
+// ============================================================================
+
+/// Full 2D DCT_DCT 4x4 inverse transform with add-to-destination (16bpc)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
+    dst: *mut u16,
+    dst_stride: isize, // stride in bytes
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
+) {
+    // For 16bpc, stride is in bytes but we access u16, so stride_u16 = stride / 2
+    let stride_u16 = (dst_stride / 2) as usize;
+
+    // Load coefficients (column-major storage)
+    let c_ptr = coeff;
+    let row0 = unsafe {
+        _mm_set_epi32(
+            *c_ptr.add(12) as i32, *c_ptr.add(8) as i32,
+            *c_ptr.add(4) as i32, *c_ptr.add(0) as i32
+        )
+    };
+    let row1 = unsafe {
+        _mm_set_epi32(
+            *c_ptr.add(13) as i32, *c_ptr.add(9) as i32,
+            *c_ptr.add(5) as i32, *c_ptr.add(1) as i32
+        )
+    };
+    let row2 = unsafe {
+        _mm_set_epi32(
+            *c_ptr.add(14) as i32, *c_ptr.add(10) as i32,
+            *c_ptr.add(6) as i32, *c_ptr.add(2) as i32
+        )
+    };
+    let row3 = unsafe {
+        _mm_set_epi32(
+            *c_ptr.add(15) as i32, *c_ptr.add(11) as i32,
+            *c_ptr.add(7) as i32, *c_ptr.add(3) as i32
+        )
+    };
+
+    // Pack rows into 256-bit vectors
+    let rows01 = unsafe { _mm256_set_m128i(row1, row0) };
+    let rows23 = unsafe { _mm256_set_m128i(row3, row2) };
+
+    // DCT4 butterfly on rows
+    let (rows01_out, rows23_out) = unsafe { dct4_2rows_avx2(rows01, rows23) };
+
+    // Transpose for column pass
+    let r0 = unsafe { _mm256_castsi256_si128(rows01_out) };
+    let r1 = unsafe { _mm256_extracti128_si256(rows01_out, 1) };
+    let r2 = unsafe { _mm256_castsi256_si128(rows23_out) };
+    let r3 = unsafe { _mm256_extracti128_si256(rows23_out, 1) };
+
+    // Transpose 4x4 using unpack
+    let t01_lo = unsafe { _mm_unpacklo_epi32(r0, r1) };
+    let t01_hi = unsafe { _mm_unpackhi_epi32(r0, r1) };
+    let t23_lo = unsafe { _mm_unpacklo_epi32(r2, r3) };
+    let t23_hi = unsafe { _mm_unpackhi_epi32(r2, r3) };
+
+    let c0 = unsafe { _mm_unpacklo_epi64(t01_lo, t23_lo) };
+    let c1 = unsafe { _mm_unpackhi_epi64(t01_lo, t23_lo) };
+    let c2 = unsafe { _mm_unpacklo_epi64(t01_hi, t23_hi) };
+    let c3 = unsafe { _mm_unpackhi_epi64(t01_hi, t23_hi) };
+
+    // DCT4 on columns
+    let cols01 = unsafe { _mm256_set_m128i(c1, c0) };
+    let cols23 = unsafe { _mm256_set_m128i(c3, c2) };
+    let (cols01_out, cols23_out) = unsafe { dct4_2rows_avx2(cols01, cols23) };
+
+    // Extract final columns
+    let col0 = unsafe { _mm256_castsi256_si128(cols01_out) };
+    let col1 = unsafe { _mm256_extracti128_si256(cols01_out, 1) };
+    let col2 = unsafe { _mm256_castsi256_si128(cols23_out) };
+    let col3 = unsafe { _mm256_extracti128_si256(cols23_out, 1) };
+
+    // Transpose back to rows for output
+    let t01_lo = unsafe { _mm_unpacklo_epi32(col0, col1) };
+    let t01_hi = unsafe { _mm_unpackhi_epi32(col0, col1) };
+    let t23_lo = unsafe { _mm_unpacklo_epi32(col2, col3) };
+    let t23_hi = unsafe { _mm_unpackhi_epi32(col2, col3) };
+
+    let out0 = unsafe { _mm_unpacklo_epi64(t01_lo, t23_lo) };
+    let out1 = unsafe { _mm_unpackhi_epi64(t01_lo, t23_lo) };
+    let out2 = unsafe { _mm_unpacklo_epi64(t01_hi, t23_hi) };
+    let out3 = unsafe { _mm_unpackhi_epi64(t01_hi, t23_hi) };
+
+    // Add to destination: shift by 4, clamp to [0, bitdepth_max]
+    let rnd = unsafe { _mm_set1_epi32(8) };
+    let zero = unsafe { _mm_setzero_si128() };
+    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+
+    // Row 0
+    let dst0 = unsafe { _mm_loadl_epi64(dst as *const __m128i) };
+    let dst0_32 = unsafe { _mm_unpacklo_epi16(dst0, zero) };
+    let scaled0 = unsafe { _mm_srai_epi32(_mm_add_epi32(out0, rnd), 4) };
+    let sum0 = unsafe { _mm_add_epi32(dst0_32, scaled0) };
+    let clamped0 = unsafe { _mm_max_epi32(_mm_min_epi32(sum0, max_val), zero) };
+    let packed0 = unsafe { _mm_packus_epi32(clamped0, clamped0) };
+    unsafe { _mm_storel_epi64(dst as *mut __m128i, packed0) };
+
+    // Row 1
+    let dst_row1 = unsafe { dst.add(stride_u16) };
+    let dst1 = unsafe { _mm_loadl_epi64(dst_row1 as *const __m128i) };
+    let dst1_32 = unsafe { _mm_unpacklo_epi16(dst1, zero) };
+    let scaled1 = unsafe { _mm_srai_epi32(_mm_add_epi32(out1, rnd), 4) };
+    let sum1 = unsafe { _mm_add_epi32(dst1_32, scaled1) };
+    let clamped1 = unsafe { _mm_max_epi32(_mm_min_epi32(sum1, max_val), zero) };
+    let packed1 = unsafe { _mm_packus_epi32(clamped1, clamped1) };
+    unsafe { _mm_storel_epi64(dst_row1 as *mut __m128i, packed1) };
+
+    // Row 2
+    let dst_row2 = unsafe { dst.add(stride_u16 * 2) };
+    let dst2 = unsafe { _mm_loadl_epi64(dst_row2 as *const __m128i) };
+    let dst2_32 = unsafe { _mm_unpacklo_epi16(dst2, zero) };
+    let scaled2 = unsafe { _mm_srai_epi32(_mm_add_epi32(out2, rnd), 4) };
+    let sum2 = unsafe { _mm_add_epi32(dst2_32, scaled2) };
+    let clamped2 = unsafe { _mm_max_epi32(_mm_min_epi32(sum2, max_val), zero) };
+    let packed2 = unsafe { _mm_packus_epi32(clamped2, clamped2) };
+    unsafe { _mm_storel_epi64(dst_row2 as *mut __m128i, packed2) };
+
+    // Row 3
+    let dst_row3 = unsafe { dst.add(stride_u16 * 3) };
+    let dst3 = unsafe { _mm_loadl_epi64(dst_row3 as *const __m128i) };
+    let dst3_32 = unsafe { _mm_unpacklo_epi16(dst3, zero) };
+    let scaled3 = unsafe { _mm_srai_epi32(_mm_add_epi32(out3, rnd), 4) };
+    let sum3 = unsafe { _mm_add_epi32(dst3_32, scaled3) };
+    let clamped3 = unsafe { _mm_max_epi32(_mm_min_epi32(sum3, max_val), zero) };
+    let packed3 = unsafe { _mm_packus_epi32(clamped3, clamped3) };
+    unsafe { _mm_storel_epi64(dst_row3 as *mut __m128i, packed3) };
+
+    // Clear coefficients
+    unsafe { _mm256_storeu_si256(coeff as *mut __m256i, _mm256_setzero_si256()) };
+}
+
+/// FFI wrapper for 4x4 DCT_DCT 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
+            dst_ptr as *mut u16,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
+
+// ============================================================================
 // 4x4 WHT (Walsh-Hadamard Transform)
 // ============================================================================
 

@@ -774,11 +774,18 @@ impl Rav1dInvTxfmDSPContext {
             return self;
         }
 
-        // Only 8bpc for now (use match instead of != for const context)
+        // Handle 8bpc and 16bpc separately
         match BD::BPC {
-            BPC::BPC8 => {}
-            _ => return self,
+            BPC::BPC8 => return self.init_x86_safe_simd_8bpc(flags),
+            BPC::BPC16 => return self.init_x86_safe_simd_16bpc(flags),
         }
+    }
+
+    /// Safe SIMD 8bpc initialization
+    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+    #[inline(always)]
+    const fn init_x86_safe_simd_8bpc(mut self, _flags: CpuFlags) -> Self {
+        use crate::src::safe_simd::itx as safe_itx;
 
         let tx_4x4 = TxfmSize::from_wh(4, 4) as usize;
 
@@ -1219,6 +1226,21 @@ impl Rav1dInvTxfmDSPContext {
         // DCT_DCT 64x16
         self.itxfm_add[tx_64x16][DCT_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x16_8bpc_avx2);
+
+        self
+    }
+
+    /// Safe SIMD 16bpc initialization
+    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+    #[inline(always)]
+    const fn init_x86_safe_simd_16bpc(mut self, _flags: CpuFlags) -> Self {
+        use crate::src::safe_simd::itx as safe_itx;
+
+        let tx_4x4 = TxfmSize::from_wh(4, 4) as usize;
+
+        // DCT_DCT 4x4 16bpc
+        self.itxfm_add[tx_4x4][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x4_16bpc_avx2);
 
         self
     }
