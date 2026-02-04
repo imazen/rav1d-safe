@@ -16,6 +16,7 @@ use std::slice;
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::BitDepth8;
+use crate::include::common::bitdepth::BitDepth16;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::bitdepth::LeftPixelRow;
 use crate::include::common::intops::iclip;
@@ -206,6 +207,108 @@ unsafe fn wiener_filter5_8bpc_avx2_inner(
 }
 
 // ============================================================================
+// WIENER FILTER - 16bpc AVX2 IMPLEMENTATION
+// ============================================================================
+
+/// Wiener filter 7-tap for 16bpc using AVX2
+///
+/// Similar to 8bpc but:
+/// - No DC offset in horizontal pass
+/// - Different shift amounts based on 10bpc vs 12bpc
+/// - 16-bit pixel values
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn wiener_filter7_16bpc_avx2_inner(
+    p: Rav1dPictureDataComponentOffset,
+    left: &[LeftPixelRow<u16>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bitdepth_max: c_int,
+) {
+    // Determine bitdepth (10 or 12)
+    let bitdepth = if bitdepth_max == 1023 { 10 } else { 12 };
+
+    // Temporary buffer for padded input
+    let mut tmp = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
+
+    // Use the existing padding function
+    padding::<BitDepth16>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+
+    // Intermediate buffer for horizontal filter output (16-bit values, but may exceed u16 range)
+    // Use u32 for intermediate storage to avoid overflow
+    let mut hor = [0i32; (64 + 3 + 3) * REST_UNIT_STRIDE];
+
+    let filter = &params.filter;
+
+    // Different shift amounts for 10bpc vs 12bpc
+    let round_bits_h = if bitdepth == 12 { 5 } else { 3 };
+    let rounding_off_h = 1i32 << (round_bits_h - 1);
+    let clip_limit = 1i32 << (bitdepth + 1 + 7 - round_bits_h);
+
+    // -------------------------------------------------------------------------
+    // Horizontal filter pass (no DC offset for 16bpc)
+    // -------------------------------------------------------------------------
+    for row in 0..(h + 6) {
+        let tmp_row = &tmp[row * REST_UNIT_STRIDE..];
+        let hor_row = &mut hor[row * REST_UNIT_STRIDE..row * REST_UNIT_STRIDE + w];
+
+        for x in 0..w {
+            let mut sum = 1i32 << (bitdepth + 6);
+            // No DC offset for 16bpc
+            for k in 0..7 {
+                sum += tmp_row[x + k] as i32 * filter[0][k] as i32;
+            }
+            hor_row[x] = iclip((sum + rounding_off_h) >> round_bits_h, 0, clip_limit - 1);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Vertical filter pass
+    // -------------------------------------------------------------------------
+    let round_bits_v = if bitdepth == 12 { 9 } else { 11 };
+    let rounding_off_v = 1i32 << (round_bits_v - 1);
+    let round_offset = 1i32 << (bitdepth + round_bits_v - 1);
+    let stride = p.pixel_stride::<BitDepth16>();
+
+    for j in 0..h {
+        let mut dst_row = (p + (j as isize * stride)).slice_mut::<BitDepth16>(w);
+
+        for i in 0..w {
+            let mut sum = -round_offset;
+
+            for k in 0..7 {
+                sum += hor[(j + k) * REST_UNIT_STRIDE + i] * filter[1][k] as i32;
+            }
+
+            dst_row[i] = iclip((sum + rounding_off_v) >> round_bits_v, 0, bitdepth_max) as u16;
+        }
+    }
+}
+
+/// Wiener filter 5-tap for 16bpc using AVX2
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn wiener_filter5_16bpc_avx2_inner(
+    p: Rav1dPictureDataComponentOffset,
+    left: &[LeftPixelRow<u16>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bitdepth_max: c_int,
+) {
+    unsafe {
+        wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
+    }
+}
+
+// ============================================================================
 // FFI WRAPPERS
 // ============================================================================
 
@@ -278,6 +381,72 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
     // SAFETY: All parameters validated, target_feature enabled
     unsafe {
         wiener_filter5_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
+    }
+}
+
+/// Reconstructs lpf offset from pointer for 16bpc
+fn reconstruct_lpf_offset_16bpc(lpf: &DisjointMut<AlignedVec64<u8>>, ptr: *const u16) -> isize {
+    let base = lpf.as_mut_ptr().cast::<u16>();
+    (ptr as isize - base as isize) / 2 // Divide by sizeof(u16)
+}
+
+/// FFI wrapper for Wiener filter 7-tap 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
+    _p_ptr: *mut DynPixel,
+    _stride: ptrdiff_t,
+    left: *const LeftPixelRow<DynPixel>,
+    lpf_ptr: *const DynPixel,
+    w: c_int,
+    h: c_int,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bitdepth_max: c_int,
+    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
+) {
+    let p = unsafe { *FFISafe::get(p) };
+    let left = left.cast::<LeftPixelRow<u16>>();
+    let lpf = unsafe { FFISafe::get(lpf) };
+    let lpf_ptr = lpf_ptr.cast::<u16>();
+    let lpf_off = reconstruct_lpf_offset_16bpc(lpf, lpf_ptr);
+    let w = w as usize;
+    let h = h as usize;
+    let left = unsafe { slice::from_raw_parts(left, h) };
+
+    unsafe {
+        wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
+    }
+}
+
+/// FFI wrapper for Wiener filter 5-tap 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
+    _p_ptr: *mut DynPixel,
+    _stride: ptrdiff_t,
+    left: *const LeftPixelRow<DynPixel>,
+    lpf_ptr: *const DynPixel,
+    w: c_int,
+    h: c_int,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bitdepth_max: c_int,
+    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
+) {
+    let p = unsafe { *FFISafe::get(p) };
+    let left = left.cast::<LeftPixelRow<u16>>();
+    let lpf = unsafe { FFISafe::get(lpf) };
+    let lpf_ptr = lpf_ptr.cast::<u16>();
+    let lpf_off = reconstruct_lpf_offset_16bpc(lpf, lpf_ptr);
+    let w = w as usize;
+    let h = h as usize;
+    let left = unsafe { slice::from_raw_parts(left, h) };
+
+    unsafe {
+        wiener_filter5_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
     }
 }
 

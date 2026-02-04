@@ -3537,17 +3537,21 @@ impl Rav1dLoopRestorationDSPContext {
             return self;
         }
 
-        // Only 8bpc implemented for now
         match BD::BPC {
             BPC::BPC8 => {
                 self.wiener[0] =
                     loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter7_8bpc_avx2);
                 self.wiener[1] =
                     loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter5_8bpc_avx2);
-                // SGR filters use Rust fallback for now
             }
-            _ => {}
+            BPC::BPC16 => {
+                self.wiener[0] =
+                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter7_16bpc_avx2);
+                self.wiener[1] =
+                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter5_16bpc_avx2);
+            }
         }
+        // SGR filters use Rust fallback for now
 
         self
     }
