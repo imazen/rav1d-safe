@@ -55,7 +55,8 @@ For safe-simd:
 - [x] `avg_8bpc_sse4` - SSE4 fallback (uses scalar)
 - [x] `w_avg_8bpc_avx2` - Weighted average (8-bit)
 - [x] `w_avg_16bpc_avx2` - Weighted average (16-bit, scalar impl)
-- [ ] `mask` - Masked blend
+- [x] `mask_8bpc_avx2` - Per-pixel masked blend (8-bit, scalar impl)
+- [x] `mask_16bpc_avx2` - Per-pixel masked blend (16-bit, scalar impl)
 - [ ] `blend` - Alpha blend
 - [ ] `mc` (8tap filters) - 10 filter variants
 - [ ] `mct` (prep) - 10 filter variants

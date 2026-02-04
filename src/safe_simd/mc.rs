@@ -569,6 +569,231 @@ pub unsafe extern "C" fn mask_scalar(
     }
 }
 
+// =============================================================================
+// BLEND (Pixel-level blend with mask)
+// =============================================================================
+
+use crate::src::internal::{SCRATCH_INTER_INTRA_BUF_LEN, SCRATCH_LAP_LEN};
+
+/// Blend pixels using per-pixel mask
+///
+/// Computes: dst = (dst * (64 - mask) + tmp * mask + 32) >> 6
+///
+/// # Safety
+///
+/// - dst_ptr must be valid for reading and writing w*h pixels
+/// - tmp and mask must be valid for reading w*h elements
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn blend_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN],
+    w: i32,
+    h: i32,
+    mask_ptr: *const u8,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let dst = dst_ptr as *mut u8;
+    let tmp = tmp as *const u8;
+
+    for row in 0..h {
+        let dst_row = unsafe {
+            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
+        };
+        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
+        let mask_row = unsafe { std::slice::from_raw_parts(mask_ptr.add(row * w), w) };
+
+        for col in 0..w {
+            let a = dst_row[col] as u32;
+            let b = tmp_row[col] as u32;
+            let m = mask_row[col] as u32;
+            // (a * (64 - m) + b * m + 32) >> 6
+            let val = (a * (64 - m) + b * m + 32) >> 6;
+            dst_row[col] = val as u8;
+        }
+    }
+}
+
+/// Blend pixels for 16-bit
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn blend_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN],
+    w: i32,
+    h: i32,
+    mask_ptr: *const u8,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let dst = dst_ptr as *mut u16;
+    let dst_stride_elems = dst_stride / 2;
+    let tmp = tmp as *const u16;
+
+    for row in 0..h {
+        let dst_row = unsafe {
+            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride_elems), w)
+        };
+        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
+        let mask_row = unsafe { std::slice::from_raw_parts(mask_ptr.add(row * w), w) };
+
+        for col in 0..w {
+            let a = dst_row[col] as u32;
+            let b = tmp_row[col] as u32;
+            let m = mask_row[col] as u32;
+            let val = (a * (64 - m) + b * m + 32) >> 6;
+            dst_row[col] = val as u16;
+        }
+    }
+}
+
+// =============================================================================
+// BLEND_V / BLEND_H (Directional blend for OBMC)
+// =============================================================================
+
+use crate::src::tables::dav1d_obmc_masks;
+
+/// Vertical blend (overlapped block motion compensation)
+///
+/// Uses predefined obmc_masks table for blend weights.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn blend_v_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let dst = dst_ptr as *mut u8;
+    let tmp = tmp as *const u8;
+    let mask = &dav1d_obmc_masks.0[h..];
+
+    for row in 0..h {
+        let dst_row = unsafe {
+            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
+        };
+        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
+        let m = mask[row] as u32;
+
+        for col in 0..w {
+            let a = dst_row[col] as u32;
+            let b = tmp_row[col] as u32;
+            let val = (a * (64 - m) + b * m + 32) >> 6;
+            dst_row[col] = val as u8;
+        }
+    }
+}
+
+/// Horizontal blend (overlapped block motion compensation)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn blend_h_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let dst = dst_ptr as *mut u8;
+    let tmp = tmp as *const u8;
+    let mask = &dav1d_obmc_masks.0[w..];
+
+    for row in 0..h {
+        let dst_row = unsafe {
+            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
+        };
+        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
+
+        for col in 0..w {
+            let a = dst_row[col] as u32;
+            let b = tmp_row[col] as u32;
+            let m = mask[col] as u32;
+            let val = (a * (64 - m) + b * m + 32) >> 6;
+            dst_row[col] = val as u8;
+        }
+    }
+}
+
+/// 16-bit blend_v
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn blend_v_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let dst = dst_ptr as *mut u16;
+    let dst_stride_elems = dst_stride / 2;
+    let tmp = tmp as *const u16;
+    let mask = &dav1d_obmc_masks.0[h..];
+
+    for row in 0..h {
+        let dst_row = unsafe {
+            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride_elems), w)
+        };
+        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
+        let m = mask[row] as u32;
+
+        for col in 0..w {
+            let a = dst_row[col] as u32;
+            let b = tmp_row[col] as u32;
+            let val = (a * (64 - m) + b * m + 32) >> 6;
+            dst_row[col] = val as u16;
+        }
+    }
+}
+
+/// 16-bit blend_h
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn blend_h_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let dst = dst_ptr as *mut u16;
+    let dst_stride_elems = dst_stride / 2;
+    let tmp = tmp as *const u16;
+    let mask = &dav1d_obmc_masks.0[w..];
+
+    for row in 0..h {
+        let dst_row = unsafe {
+            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride_elems), w)
+        };
+        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
+
+        for col in 0..w {
+            let a = dst_row[col] as u32;
+            let b = tmp_row[col] as u32;
+            let m = mask[col] as u32;
+            let val = (a * (64 - m) + b * m + 32) >> 6;
+            dst_row[col] = val as u16;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
