@@ -54,7 +54,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | itx | `src/safe_simd/itx.rs` | **Complete** - All square 4/8/16/32/64 + rect DCT (4x8,8x4,8x16,16x8) |
 | loopfilter | `src/safe_simd/loopfilter.rs` | **Complete** - 8bpc + 16bpc |
 | cdef | `src/safe_simd/cdef.rs` | **Complete** - 8bpc + 16bpc |
-| looprestoration | `src/safe_simd/looprestoration.rs` | **8bpc+16bpc** - Wiener + SGR 5x5/3x3/mix (8bpc) |
+| looprestoration | `src/safe_simd/looprestoration.rs` | **Complete** - Wiener + SGR 5x5/3x3/mix (8bpc + 16bpc) |
 | ipred | `src/safe_simd/ipred.rs` | **Complete** - All 14 modes for both 8bpc and 16bpc |
 | filmgrain | `src/safe_simd/filmgrain.rs` | **Scaffolding** - Not wired (slower than fallback) |
 
@@ -68,18 +68,17 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 ## Porting Progress (160k lines target)
 
 **SIMD optimized:**
-- MC module (~7k lines): Complete
+- MC module (~7k lines): Complete (8bpc + 16bpc)
 - ITX module (~42k lines): ~60% complete (all square 4/8/16/32/64, all ADST variants)
-- Loopfilter (~9k lines): 8bpc complete
-- CDEF (~7k lines): 8bpc complete
-- Looprestoration (~17k lines): Wiener + SGR 8bpc complete
+- Loopfilter (~9k lines): Complete (8bpc + 16bpc)
+- CDEF (~7k lines): Complete (8bpc + 16bpc)
+- Looprestoration (~17k lines): Complete (Wiener + SGR 8bpc + 16bpc)
+- ipred (~26k lines): Complete (all 14 modes, 8bpc + 16bpc)
 
 **Using Rust fallbacks (PORT THESE NEXT):**
-- filmgrain: Inner loops need proper SIMD (~13k lines)
+- filmgrain (~13k lines): Scaffolding exists but fallback is faster
 - Rectangular ITX (larger sizes: 16x32, 32x16, etc.)
-- 16bpc SGR filters
-- 16bpc SGR filters
-- 16bpc variants of loopfilter/CDEF
+- ITX: Remaining ADST combinations for rectangular transforms
 
 ## Architecture
 
