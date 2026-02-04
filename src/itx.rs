@@ -1051,6 +1051,12 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_64x32][DCT_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x32_8bpc_avx2);
 
+        // IDTX 16x32 and 32x16
+        self.itxfm_add[tx_16x32][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x32_8bpc_avx2);
+        self.itxfm_add[tx_32x16][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x16_8bpc_avx2);
+
         // 4:1 aspect ratio rectangles: 4x16, 16x4, 8x32, 32x8
         let tx_4x16 = TxfmSize::from_wh(4, 16) as usize;
         let tx_16x4 = TxfmSize::from_wh(16, 4) as usize;

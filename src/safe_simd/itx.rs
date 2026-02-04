@@ -2839,6 +2839,200 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_avx2(
     }
 }
 
+// ============================================================================
+// 16x32 and 32x16 IDTX transforms
+// ============================================================================
+
+/// 16x32 IDTX inverse transform
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
+) {
+    let clip_min = i16::MIN as i32;
+    let clip_max = i16::MAX as i32;
+
+    let c_ptr = coeff;
+    let mut tmp = [0i32; 16 * 32];
+
+    let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
+
+    // Row transform (16 elements each, 32 rows)
+    let rnd = 2;
+    let shift = 2;
+    for y in 0..32 {
+        for x in 0..16 {
+            tmp[x] = rect2_scale(unsafe { *c_ptr.add(y + x * 32) as i32 });
+        }
+        identity16_1d(&mut tmp[..16], 1, clip_min, clip_max);
+        for x in 0..16 {
+            tmp[y * 16 + x] = iclip((tmp[x] + rnd) >> shift, clip_min, clip_max);
+        }
+    }
+
+    // Column transform (32 elements each, 16 columns)
+    for x in 0..16 {
+        identity32_1d(&mut tmp[x..], 16, clip_min, clip_max);
+    }
+
+    // Add to destination
+    let zero = unsafe { _mm256_setzero_si256() };
+    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
+    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+
+    for y in 0..32 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+
+        let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
+        let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+
+        let c0 = unsafe {
+            _mm256_set_epi32(
+                tmp[y * 16 + 7], tmp[y * 16 + 6],
+                tmp[y * 16 + 5], tmp[y * 16 + 4],
+                tmp[y * 16 + 3], tmp[y * 16 + 2],
+                tmp[y * 16 + 1], tmp[y * 16 + 0]
+            )
+        };
+        let c1 = unsafe {
+            _mm256_set_epi32(
+                tmp[y * 16 + 15], tmp[y * 16 + 14],
+                tmp[y * 16 + 13], tmp[y * 16 + 12],
+                tmp[y * 16 + 11], tmp[y * 16 + 10],
+                tmp[y * 16 + 9], tmp[y * 16 + 8]
+            )
+        };
+
+        let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
+        let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+
+        let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
+        let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+
+        let sum = unsafe { _mm256_add_epi16(d16, c16) };
+        let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+
+        let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
+        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+
+        unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
+    }
+
+    // Clear coefficients
+    unsafe {
+        let zero256 = _mm256_setzero_si256();
+        for i in 0..32 {
+            _mm256_storeu_si256((coeff as *mut __m256i).add(i), zero256);
+        }
+    }
+}
+
+/// FFI wrapper for 16x32 IDTX 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
+
+/// 32x16 IDTX inverse transform
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
+) {
+    let clip_min = i16::MIN as i32;
+    let clip_max = i16::MAX as i32;
+
+    let c_ptr = coeff;
+    let mut tmp = [0i32; 32 * 16];
+
+    let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
+
+    // Row transform (32 elements each, 16 rows)
+    let rnd = 2;
+    let shift = 2;
+    for y in 0..16 {
+        for x in 0..32 {
+            tmp[x] = rect2_scale(unsafe { *c_ptr.add(y + x * 16) as i32 });
+        }
+        identity32_1d(&mut tmp[..32], 1, clip_min, clip_max);
+        for x in 0..32 {
+            tmp[y * 32 + x] = iclip((tmp[x] + rnd) >> shift, clip_min, clip_max);
+        }
+    }
+
+    // Column transform (16 elements each, 32 columns)
+    for x in 0..32 {
+        identity16_1d(&mut tmp[x..], 32, clip_min, clip_max);
+    }
+
+    // Add to destination
+    for y in 0..16 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..32 {
+            let d = unsafe { *dst_row.add(x) } as i32;
+            let c = (tmp[y * 32 + x] + 8) >> 4;
+            let result = iclip(d + c, 0, bitdepth_max);
+            unsafe { *dst_row.add(x) = result as u8 };
+        }
+    }
+
+    // Clear coefficients
+    unsafe {
+        let zero256 = _mm256_setzero_si256();
+        for i in 0..32 {
+            _mm256_storeu_si256((coeff as *mut __m256i).add(i), zero256);
+        }
+    }
+}
+
+/// FFI wrapper for 32x16 IDTX 8bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    unsafe {
+        inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
+}
+
 /// Full 2D DCT_DCT 32x64 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
