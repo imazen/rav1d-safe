@@ -462,7 +462,6 @@ impl Rav1dLoopFilterDSPContext {
             return self;
         }
 
-        // Only 8bpc implemented for now
         match BD::BPC {
             BPC::BPC8 => {
                 self.loop_filter_sb.y.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_y_8bpc_avx2);
@@ -470,7 +469,12 @@ impl Rav1dLoopFilterDSPContext {
                 self.loop_filter_sb.uv.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_uv_8bpc_avx2);
                 self.loop_filter_sb.uv.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_uv_8bpc_avx2);
             }
-            _ => {}
+            BPC::BPC16 => {
+                self.loop_filter_sb.y.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_y_16bpc_avx2);
+                self.loop_filter_sb.y.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_y_16bpc_avx2);
+                self.loop_filter_sb.uv.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_uv_16bpc_avx2);
+                self.loop_filter_sb.uv.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_uv_16bpc_avx2);
+            }
         }
 
         self
