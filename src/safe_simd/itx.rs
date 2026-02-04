@@ -2195,3 +2195,214 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2(
 ) {
     unsafe { inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
+
+// ============================================================================
+// ADST 8x8 TRANSFORMS
+// ============================================================================
+
+/// ADST8 1D transform (scalar)
+#[inline(always)]
+fn adst8_1d_scalar(
+    in0: i32, in1: i32, in2: i32, in3: i32,
+    in4: i32, in5: i32, in6: i32, in7: i32,
+    min: i32, max: i32,
+) -> (i32, i32, i32, i32, i32, i32, i32, i32) {
+    let clip = |v: i32| v.clamp(min, max);
+
+    let t0a = (((4076 - 4096) * in7 + 401 * in0 + 2048) >> 12) + in7;
+    let t1a = ((401 * in7 - (4076 - 4096) * in0 + 2048) >> 12) - in0;
+    let t2a = (((3612 - 4096) * in5 + 1931 * in2 + 2048) >> 12) + in5;
+    let t3a = ((1931 * in5 - (3612 - 4096) * in2 + 2048) >> 12) - in2;
+    let t4a = (1299 * in3 + 1583 * in4 + 1024) >> 11;
+    let t5a = (1583 * in3 - 1299 * in4 + 1024) >> 11;
+    let t6a = ((1189 * in1 + (3920 - 4096) * in6 + 2048) >> 12) + in6;
+    let t7a = (((3920 - 4096) * in1 - 1189 * in6 + 2048) >> 12) + in1;
+
+    let t0 = clip(t0a + t4a);
+    let t1 = clip(t1a + t5a);
+    let t2 = clip(t2a + t6a);
+    let t3 = clip(t3a + t7a);
+    let t4 = clip(t0a - t4a);
+    let t5 = clip(t1a - t5a);
+    let t6 = clip(t2a - t6a);
+    let t7 = clip(t3a - t7a);
+
+    let t4a = (((3784 - 4096) * t4 + 1567 * t5 + 2048) >> 12) + t4;
+    let t5a = ((1567 * t4 - (3784 - 4096) * t5 + 2048) >> 12) - t5;
+    let t6a = (((3784 - 4096) * t7 - 1567 * t6 + 2048) >> 12) + t7;
+    let t7a = ((1567 * t7 + (3784 - 4096) * t6 + 2048) >> 12) + t6;
+
+    let out0 = clip(t0 + t2);
+    let out7 = -clip(t1 + t3);
+    let t2_final = clip(t0 - t2);
+    let t3_final = clip(t1 - t3);
+    let out1 = -clip(t4a + t6a);
+    let out6 = clip(t5a + t7a);
+    let t6_final = clip(t4a - t6a);
+    let t7_final = clip(t5a - t7a);
+
+    let out3 = -(((t2_final + t3_final) * 181 + 128) >> 8);
+    let out4 = ((t2_final - t3_final) * 181 + 128) >> 8;
+    let out2 = ((t6_final + t7_final) * 181 + 128) >> 8;
+    let out5 = -(((t6_final - t7_final) * 181 + 128) >> 8);
+
+    (out0, out1, out2, out3, out4, out5, out6, out7)
+}
+
+/// FlipADST8 1D transform - ADST8 with reversed output
+#[inline(always)]
+fn flipadst8_1d_scalar(
+    in0: i32, in1: i32, in2: i32, in3: i32,
+    in4: i32, in5: i32, in6: i32, in7: i32,
+    min: i32, max: i32,
+) -> (i32, i32, i32, i32, i32, i32, i32, i32) {
+    let (o0, o1, o2, o3, o4, o5, o6, o7) = adst8_1d_scalar(in0, in1, in2, in3, in4, in5, in6, in7, min, max);
+    (o7, o6, o5, o4, o3, o2, o1, o0)
+}
+
+/// DCT8 1D transform (scalar)
+#[inline(always)]
+fn dct8_1d_scalar(
+    in0: i32, in1: i32, in2: i32, in3: i32,
+    in4: i32, in5: i32, in6: i32, in7: i32,
+    min: i32, max: i32,
+) -> (i32, i32, i32, i32, i32, i32, i32, i32) {
+    let clip = |v: i32| v.clamp(min, max);
+
+    // First do DCT4 on even samples
+    let t0 = ((in0 + in4) * 181 + 128) >> 8;
+    let t1 = ((in0 - in4) * 181 + 128) >> 8;
+    let t2 = (((in2 * 1567 - in6 * (3784 - 4096) + 2048) >> 12) - in6);
+    let t3 = (((in2 * (3784 - 4096) + in6 * 1567 + 2048) >> 12) + in2);
+
+    let t0a = clip(t0 + t3);
+    let t1a = clip(t1 + t2);
+    let t2a = clip(t1 - t2);
+    let t3a = clip(t0 - t3);
+
+    // Then do the 8-point specific part
+    let t4a = (((in1 * 799 - in7 * (4017 - 4096) + 2048) >> 12) - in7);
+    let t5a = ((in5 * 1703 - in3 * 1138 + 1024) >> 11);
+    let t6a = ((in5 * 1138 + in3 * 1703 + 1024) >> 11);
+    let t7a = (((in1 * (4017 - 4096) + in7 * 799 + 2048) >> 12) + in1);
+
+    let t4 = clip(t4a + t5a);
+    let t5 = clip(t4a - t5a);
+    let t7 = clip(t7a + t6a);
+    let t6 = clip(t7a - t6a);
+
+    let t5b = (((t6 - t5) * 181 + 128) >> 8);
+    let t6b = (((t6 + t5) * 181 + 128) >> 8);
+
+    (
+        clip(t0a + t7),
+        clip(t1a + t6b),
+        clip(t2a + t5b),
+        clip(t3a + t4),
+        clip(t3a - t4),
+        clip(t2a - t5b),
+        clip(t1a - t6b),
+        clip(t0a - t7),
+    )
+}
+
+/// Helper macro for 8x8 transform implementations
+macro_rules! impl_8x8_transform {
+    ($name:ident, $row_fn:ident, $col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        pub unsafe fn $name(
+            dst: *mut u8,
+            dst_stride: isize,
+            coeff: *mut i16,
+            _eob: i32,
+            _bitdepth_max: i32,
+        ) {
+            const MIN: i32 = i16::MIN as i32;
+            const MAX: i32 = i16::MAX as i32;
+
+            // Load coefficients
+            let mut c = [[0i32; 8]; 8];
+            for y in 0..8 {
+                for x in 0..8 {
+                    c[y][x] = unsafe { *coeff.add(y * 8 + x) } as i32;
+                }
+            }
+
+            // First pass: transform on rows
+            let mut tmp = [[0i32; 8]; 8];
+            for y in 0..8 {
+                let (o0, o1, o2, o3, o4, o5, o6, o7) = $row_fn(
+                    c[y][0], c[y][1], c[y][2], c[y][3],
+                    c[y][4], c[y][5], c[y][6], c[y][7],
+                    MIN, MAX
+                );
+                tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+                tmp[y][4] = o4; tmp[y][5] = o5; tmp[y][6] = o6; tmp[y][7] = o7;
+            }
+
+            // Second pass: transform on columns
+            let mut out = [[0i32; 8]; 8];
+            for x in 0..8 {
+                let (o0, o1, o2, o3, o4, o5, o6, o7) = $col_fn(
+                    tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x],
+                    tmp[4][x], tmp[5][x], tmp[6][x], tmp[7][x],
+                    MIN, MAX
+                );
+                out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+                out[4][x] = o4; out[5][x] = o5; out[6][x] = o6; out[7][x] = o7;
+            }
+
+            // Add to destination with rounding
+            for y in 0..8 {
+                let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+                for x in 0..8 {
+                    let pixel = unsafe { *dst_row.add(x) } as i32;
+                    let val = pixel + ((out[y][x] + 8) >> 4);
+                    unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
+                }
+            }
+
+            // Clear coefficients
+            unsafe {
+                for i in 0..64 {
+                    *coeff.add(i) = 0;
+                }
+            }
+        }
+    };
+}
+
+// Generate all 8x8 ADST/FlipADST combinations
+impl_8x8_transform!(inv_txfm_add_adst_dct_8x8_8bpc_avx2_inner, adst8_1d_scalar, dct8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_dct_adst_8x8_8bpc_avx2_inner, dct8_1d_scalar, adst8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_adst_adst_8x8_8bpc_avx2_inner, adst8_1d_scalar, adst8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_flipadst_dct_8x8_8bpc_avx2_inner, flipadst8_1d_scalar, dct8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_dct_flipadst_8x8_8bpc_avx2_inner, dct8_1d_scalar, flipadst8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2_inner, flipadst8_1d_scalar, flipadst8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_adst_flipadst_8x8_8bpc_avx2_inner, adst8_1d_scalar, flipadst8_1d_scalar);
+impl_8x8_transform!(inv_txfm_add_flipadst_adst_8x8_8bpc_avx2_inner, flipadst8_1d_scalar, adst8_1d_scalar);
+
+// FFI wrappers for 8x8 transforms
+macro_rules! impl_8x8_ffi_wrapper {
+    ($wrapper:ident, $inner:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        pub unsafe extern "C" fn $wrapper(
+            dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+            eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+        }
+    };
+}
+
+impl_8x8_ffi_wrapper!(inv_txfm_add_adst_dct_8x8_8bpc_avx2, inv_txfm_add_adst_dct_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_dct_adst_8x8_8bpc_avx2, inv_txfm_add_dct_adst_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_adst_adst_8x8_8bpc_avx2, inv_txfm_add_adst_adst_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_flipadst_dct_8x8_8bpc_avx2, inv_txfm_add_flipadst_dct_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_dct_flipadst_8x8_8bpc_avx2, inv_txfm_add_dct_flipadst_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2, inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_adst_flipadst_8x8_8bpc_avx2, inv_txfm_add_adst_flipadst_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(inv_txfm_add_flipadst_adst_8x8_8bpc_avx2, inv_txfm_add_flipadst_adst_8x8_8bpc_avx2_inner);
