@@ -143,7 +143,7 @@ The dispatch path: `Rav1dMCDSPContext::new()` → `init()` → `init_x86_safe_si
 | itx | ~42k | Partial SIMD (DCT_DCT 4x4/8x8/16x16, WHT 4x4, IDTX 4x4) |
 | loopfilter | ~9k | **SIMD 8bpc** (lpf_h/v_sb_y/uv) |
 | cdef | ~7k | **SIMD 8bpc** (cdef_filter 8x8/4x8/4x4, cdef_find_dir) |
-| looprestoration | ~17k | Started (stub module, not wired) |
+| looprestoration | ~17k | Wiener filter helpers (not wired), SGR uses fallback |
 | ipred | ~26k | Pure Rust fallback |
 | looprestoration | ~17k | Pure Rust fallback |
 | filmgrain | ~13k | Pure Rust fallback |
