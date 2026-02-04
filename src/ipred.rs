@@ -2293,6 +2293,8 @@ impl Rav1dIntraPredDSPContext {
                     angular_ipred::Fn::new(safe_ipred::ipred_dc_top_16bpc_avx2);
                 self.intra_pred[LEFT_DC_PRED as usize] =
                     angular_ipred::Fn::new(safe_ipred::ipred_dc_left_16bpc_avx2);
+                self.intra_pred[PAETH_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_paeth_16bpc_avx2);
                 // Other 16bpc modes still use Rust fallback
             }
         }

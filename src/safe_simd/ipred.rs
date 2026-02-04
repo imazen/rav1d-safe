@@ -1725,3 +1725,56 @@ pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
         }
     }
 }
+
+/// PAETH prediction for 16bpc
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_paeth_16bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    let stride_u16 = stride / 2;
+
+    unsafe {
+        let topleft_val = *tl as i32;
+
+        for y in 0..height {
+            let left_val = *tl.offset(-(y as isize + 1)) as i32;
+            let dst_row = dst.offset(y as isize * stride_u16);
+
+            // Process each pixel - PAETH is complex so use scalar
+            for x in 0..width {
+                let top_val = *tl.add(x + 1) as i32;
+
+                // PAETH: pick closest of left, top, topleft to (left + top - topleft)
+                let base = left_val + top_val - topleft_val;
+                let l_diff = (left_val - base).abs();
+                let t_diff = (top_val - base).abs();
+                let tl_diff = (topleft_val - base).abs();
+
+                let pred = if l_diff <= t_diff && l_diff <= tl_diff {
+                    left_val
+                } else if t_diff <= tl_diff {
+                    top_val
+                } else {
+                    topleft_val
+                };
+
+                *dst_row.add(x) = pred as u16;
+            }
+        }
+    }
+}
