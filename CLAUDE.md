@@ -55,7 +55,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | loopfilter | `src/safe_simd/loopfilter.rs` | **8bpc only** - lpf_h/v_sb_y/uv |
 | cdef | `src/safe_simd/cdef.rs` | **8bpc only** - filter 8x8/4x8/4x4, find_dir |
 | looprestoration | `src/safe_simd/looprestoration.rs` | **8bpc+16bpc** - Wiener + SGR 5x5/3x3/mix (8bpc) |
-| ipred | `src/safe_simd/ipred.rs` | **Complete 8bpc** - All 14 modes (DC*, VERT, HOR, PAETH, SMOOTH*, FILTER, Z1/Z2/Z3) |
+| ipred | `src/safe_simd/ipred.rs` | **Complete 8bpc + 6/14 16bpc** - All 14 modes 8bpc, DC*/VERT/HOR 16bpc |
 | filmgrain | `src/safe_simd/filmgrain.rs` | **Scaffolding** - Not wired (slower than fallback) |
 
 ## Performance Status (2026-02-04)
