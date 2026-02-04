@@ -997,6 +997,17 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_32x8][DCT_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x8_8bpc_avx2);
 
+        // Largest rectangular transforms: 16x64, 64x16
+        let tx_16x64 = TxfmSize::from_wh(16, 64) as usize;
+        let tx_64x16 = TxfmSize::from_wh(64, 16) as usize;
+
+        // DCT_DCT 16x64
+        self.itxfm_add[tx_16x64][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x64_8bpc_avx2);
+        // DCT_DCT 64x16
+        self.itxfm_add[tx_64x16][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x16_8bpc_avx2);
+
         self
     }
 
