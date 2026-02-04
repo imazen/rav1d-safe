@@ -940,6 +940,25 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_64x64][DCT_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x64_8bpc_avx2);
 
+        // Rectangular transforms: 4x8, 8x4, 8x16, 16x8
+        let tx_4x8 = TxfmSize::from_wh(4, 8) as usize;
+        let tx_8x4 = TxfmSize::from_wh(8, 4) as usize;
+        let tx_8x16 = TxfmSize::from_wh(8, 16) as usize;
+        let tx_16x8 = TxfmSize::from_wh(16, 8) as usize;
+
+        // DCT_DCT 4x8
+        self.itxfm_add[tx_4x8][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x8_8bpc_avx2);
+        // DCT_DCT 8x4
+        self.itxfm_add[tx_8x4][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x4_8bpc_avx2);
+        // DCT_DCT 8x16
+        self.itxfm_add[tx_8x16][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x16_8bpc_avx2);
+        // DCT_DCT 16x8
+        self.itxfm_add[tx_16x8][DCT_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x8_8bpc_avx2);
+
         self
     }
 
