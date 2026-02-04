@@ -140,34 +140,36 @@ They're just slower than SIMD-optimized versions.
 (none yet)
 
 ## Investigation Notes
-
 ### 8-tap Filter - COMPLETED
 
 All 8-tap filter variants are now implemented with AVX2 SIMD:
 - 8bpc: Full SIMD for H+V, H-only, V-only, and copy cases
-- 16bpc: SIMD for H+V case, scalar for H-only and V-only (can be optimized later)
+- 16bpc: Full SIMD for H+V, H-only, V-only cases (all using AVX2 intrinsics)
 
-Bilinear filters similarly have SIMD for H+V case in both bitdepths.
+### Bilinear Filter - COMPLETED
+
+All bilinear filter variants now use AVX2 SIMD:
+- 8bpc: H+V, H-only, V-only, copy
+- 16bpc: H+V, H-only, V-only, copy
 
 ### Performance Notes (2026-02-04)
 
-Previous benchmark (before 8-tap SIMD):
-- asm: ~1.17s
-- safe-simd: ~1.30s (~11% slower)
+Current benchmark (20 decodes of test.avif):
+- asm: ~13.3ms (0.66ms per decode)
+- safe-simd: ~13.3ms (0.66ms per decode)
+- Performance is now essentially identical between asm and safe-simd
 
-With 8-tap/bilinear SIMD now wired in, performance should be improved.
-Most remaining time is in pure Rust fallbacks (itx, ipred, loopfilter, cdef).
+### Remaining MC Functions (using Rust fallbacks)
 
-### Remaining MC Functions
-
-- `mc_scaled`/`mct_scaled` - Variable dx/dy strides per sample, complex SIMD
-- `warp8x8`/`warp8x8t` - Per-pixel filter selection, complex SIMD
-- `emu_edge` - Edge extension, mostly memory ops
+- `mc_scaled`/`mct_scaled` - Variable dx/dy strides per sample
+- `warp8x8`/`warp8x8t` - Per-pixel filter selection
+- `emu_edge` - Edge extension
 - `resize` - 8-tap resampling with variable phase
+- `w_mask_16bpc` - Still scalar (8bpc has SIMD)
 
 ### Next Targets
 
 Other DSP modules for SIMD optimization:
-- CDEF (~7k asm lines) - direction-based filtering
+- CDEF (~7k asm lines) - direction-based filtering, started constrain helper
 - Loopfilter (~9k asm lines) - deblocking filter
 - ITX (~42k asm lines) - inverse transforms (largest)
