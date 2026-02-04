@@ -154,10 +154,18 @@ All bilinear filter variants now use AVX2 SIMD:
 
 ### Performance Notes (2026-02-04)
 
-Current benchmark (20 decodes of test.avif):
-- asm: ~13.3ms (0.66ms per decode)
-- safe-simd: ~13.3ms (0.66ms per decode)
-- Performance is now essentially identical between asm and safe-simd
+Full-stack benchmark via zenavif (20 decodes of test.avif):
+- asm: ~1.30s (65ms per decode)
+- safe-simd: ~1.40s (70ms per decode)
+- safe-simd is ~8-10% slower than asm
+
+The remaining gap is from non-SIMD fallbacks in:
+- ITX (inverse transforms) - ~42k asm lines
+- Loopfilter - ~9k asm lines
+- CDEF - ~7k asm lines
+- Looprestoration - ~17k asm lines
+
+MC is now fully optimized with AVX2 SIMD for all cases.
 
 ### Remaining MC Functions (using Rust fallbacks)
 
