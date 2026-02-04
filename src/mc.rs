@@ -2164,7 +2164,7 @@ impl Rav1dMCDSPContext {
             });
 
             // Use safe SIMD implementations when safe-simd feature is enabled
-            #[cfg(feature = "safe-simd")]
+            #[cfg(not(feature = "asm"))]
             {
                 use crate::include::common::bitdepth::BPC;
                 use crate::src::safe_simd::mc as safe_mc;
@@ -2173,13 +2173,13 @@ impl Rav1dMCDSPContext {
                     BPC::BPC16 => avg::decl_fn_safe!(safe_mc::avg_16bpc_avx2),
                 };
             }
-            #[cfg(not(feature = "safe-simd"))]
+            #[cfg(feature = "asm")]
             {
                 self.avg = bd_fn!(avg::decl_fn, BD, avg, avx2);
             }
 
             // w_avg safe SIMD
-            #[cfg(feature = "safe-simd")]
+            #[cfg(not(feature = "asm"))]
             {
                 use crate::include::common::bitdepth::BPC;
                 use crate::src::safe_simd::mc as safe_mc;
@@ -2188,13 +2188,13 @@ impl Rav1dMCDSPContext {
                     BPC::BPC16 => w_avg::decl_fn_safe!(safe_mc::w_avg_16bpc_avx2),
                 };
             }
-            #[cfg(not(feature = "safe-simd"))]
+            #[cfg(feature = "asm")]
             {
                 self.w_avg = bd_fn!(w_avg::decl_fn, BD, w_avg, avx2);
             }
 
             // mask safe SIMD
-            #[cfg(feature = "safe-simd")]
+            #[cfg(not(feature = "asm"))]
             {
                 use crate::include::common::bitdepth::BPC;
                 use crate::src::safe_simd::mc as safe_mc;
@@ -2203,13 +2203,13 @@ impl Rav1dMCDSPContext {
                     BPC::BPC16 => mask::decl_fn_safe!(safe_mc::mask_16bpc_avx2),
                 };
             }
-            #[cfg(not(feature = "safe-simd"))]
+            #[cfg(feature = "asm")]
             {
                 self.mask = bd_fn!(mask::decl_fn, BD, mask, avx2);
             }
 
             // w_mask safe SIMD
-            #[cfg(feature = "safe-simd")]
+            #[cfg(not(feature = "asm"))]
             {
                 use crate::include::common::bitdepth::BPC;
                 use crate::src::safe_simd::mc as safe_mc;
@@ -2226,7 +2226,7 @@ impl Rav1dMCDSPContext {
                     }),
                 };
             }
-            #[cfg(not(feature = "safe-simd"))]
+            #[cfg(feature = "asm")]
             {
                 self.w_mask = enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
                     I420 => bd_fn!(w_mask::decl_fn, BD, w_mask_420, avx2),
@@ -2236,7 +2236,7 @@ impl Rav1dMCDSPContext {
             }
 
             // blend safe SIMD
-            #[cfg(feature = "safe-simd")]
+            #[cfg(not(feature = "asm"))]
             {
                 use crate::include::common::bitdepth::BPC;
                 use crate::src::safe_simd::mc as safe_mc;
@@ -2253,7 +2253,7 @@ impl Rav1dMCDSPContext {
                     BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_h_16bpc_avx2),
                 };
             }
-            #[cfg(not(feature = "safe-simd"))]
+            #[cfg(feature = "asm")]
             {
                 self.blend = bd_fn!(blend::decl_fn, BD, blend, avx2);
                 self.blend_v = bd_fn!(blend_dir::decl_fn, BD, blend_v, avx2);
@@ -2261,7 +2261,7 @@ impl Rav1dMCDSPContext {
             }
 
             // mc (put_8tap) safe SIMD
-            #[cfg(feature = "safe-simd")]
+            #[cfg(not(feature = "asm"))]
             {
                 use crate::include::common::bitdepth::BPC;
                 use crate::src::safe_simd::mc as safe_mc;
@@ -2633,7 +2633,7 @@ impl Rav1dMCDSPContext {
         self
     }
 
-    #[cfg(all(feature = "safe-simd", not(feature = "asm"), target_arch = "aarch64"))]
+    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
     const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
         use crate::src::safe_simd::mc_arm as safe_mc_arm;
@@ -2665,7 +2665,21 @@ impl Rav1dMCDSPContext {
             BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_h_16bpc_neon),
         };
 
-        // w_mask, mc, mct use pure Rust defaults for now
+        // w_mask for 8bpc
+        match BD::BPC {
+            BPC::BPC8 => {
+                self.w_mask = enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                    I420 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_420_8bpc_neon),
+                    I422 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_422_8bpc_neon),
+                    I444 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_444_8bpc_neon),
+                });
+            }
+            BPC::BPC16 => {
+                // 16bpc w_mask uses Rust fallback for now
+            }
+        }
+
+        // mc, mct use pure Rust defaults for now
 
         self
     }

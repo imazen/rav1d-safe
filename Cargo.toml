@@ -46,8 +46,6 @@ asm_arm64_dotprod = ["asm"]
 asm_arm64_i8mm = ["asm"]
 asm_arm64_sve2 = ["asm"]
 
-# Safe SIMD feature - uses archmage intrinsics instead of asm
-safe-simd = []
 
 bitdepth_8 = []
 bitdepth_16 = []

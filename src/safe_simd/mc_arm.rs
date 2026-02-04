@@ -1143,3 +1143,266 @@ pub unsafe extern "C" fn blend_h_16bpc_neon(
 
     blend_h_16bpc_inner(token, dst, dst_stride_u16, tmp.as_slice(), w, h, obmc, bitdepth_max);
 }
+
+// ============================================================================
+// W_MASK - Weighted mask blend (compound prediction with per-pixel masking)
+// ============================================================================
+
+use crate::src::internal::SEG_MASK_LEN;
+
+/// Core w_mask implementation for 8bpc
+/// SS_HOR and SS_VER control subsampling: 444=(false,false), 422=(true,false), 420=(true,true)
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
+    _token: Arm64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp1: &[i16],
+    tmp2: &[i16],
+    w: usize,
+    h: usize,
+    mask: &mut [u8],
+    sign: u8,
+) {
+    // For 8bpc: intermediate_bits = 4, bitdepth = 8
+    let intermediate_bits = 4i32;
+    let sh = intermediate_bits + 6;
+    let rnd = (32 << intermediate_bits) + 8192 * 64; // PREP_BIAS = 8192 for 8bpc in compound
+    let mask_sh = 8 + intermediate_bits - 4; // bitdepth + intermediate_bits - 4
+    let mask_rnd = 1i32 << (mask_sh - 5);
+
+    // Mask output dimensions depend on subsampling
+    let mask_w = if SS_HOR { w >> 1 } else { w };
+
+    for y in 0..h {
+        let tmp1_row = &tmp1[y * w..][..w];
+        let tmp2_row = &tmp2[y * w..][..w];
+        let dst_row = &mut dst[y * dst_stride..][..w];
+        let mask_row = if SS_VER && (y & 1) != 0 {
+            None
+        } else {
+            let mask_y = if SS_VER { y >> 1 } else { y };
+            Some(&mut mask[mask_y * mask_w..][..mask_w])
+        };
+
+        let mut col = 0;
+
+        // SIMD: process 8 pixels at a time
+        while col + 8 <= w {
+            unsafe {
+                let t1 = vld1q_s16(tmp1_row[col..].as_ptr());
+                let t2 = vld1q_s16(tmp2_row[col..].as_ptr());
+
+                // Compute diff and mask value
+                // abs_diff = |tmp1 - tmp2|
+                let diff = vsubq_s16(t1, t2);
+                let abs_diff = vabsq_s16(diff);
+
+                // mask = min(38 + (abs_diff + mask_rnd) >> mask_sh, 64)
+                let abs_32_lo = vmovl_s16(vget_low_s16(abs_diff));
+                let abs_32_hi = vmovl_s16(vget_high_s16(abs_diff));
+
+                let mask_rnd_vec = vdupq_n_s32(mask_rnd);
+                let m_lo = vaddq_s32(abs_32_lo, mask_rnd_vec);
+                let m_hi = vaddq_s32(abs_32_hi, mask_rnd_vec);
+
+                // Shift by mask_sh (= 8)
+                let m_shifted_lo = vshrq_n_s32::<8>(m_lo);
+                let m_shifted_hi = vshrq_n_s32::<8>(m_hi);
+
+                // Add 38 and clamp to 64
+                let m_lo = vaddq_s32(m_shifted_lo, vdupq_n_s32(38));
+                let m_hi = vaddq_s32(m_shifted_hi, vdupq_n_s32(38));
+                let m_lo = vminq_s32(m_lo, vdupq_n_s32(64));
+                let m_hi = vminq_s32(m_hi, vdupq_n_s32(64));
+
+                // Narrow to 16-bit for blending
+                let m_16 = vcombine_s16(vmovn_s32(m_lo), vmovn_s32(m_hi));
+
+                // Apply sign: if sign, swap effective weights
+                let m_final = if sign != 0 {
+                    vsubq_s16(vdupq_n_s16(64), m_16)
+                } else {
+                    m_16
+                };
+                let inv_m = vsubq_s16(vdupq_n_s16(64), m_final);
+
+                // Widen tmp values to 32-bit for multiply
+                let t1_lo = vmovl_s16(vget_low_s16(t1));
+                let t1_hi = vmovl_s16(vget_high_s16(t1));
+                let t2_lo = vmovl_s16(vget_low_s16(t2));
+                let t2_hi = vmovl_s16(vget_high_s16(t2));
+                let m_lo_32 = vmovl_s16(vget_low_s16(m_final));
+                let m_hi_32 = vmovl_s16(vget_high_s16(m_final));
+                let inv_m_lo_32 = vmovl_s16(vget_low_s16(inv_m));
+                let inv_m_hi_32 = vmovl_s16(vget_high_s16(inv_m));
+
+                // blend = (tmp1 * m + tmp2 * (64-m) + rnd) >> sh
+                let rnd_vec = vdupq_n_s32(rnd);
+                let blend_lo = vaddq_s32(
+                    vaddq_s32(vmulq_s32(t1_lo, m_lo_32), vmulq_s32(t2_lo, inv_m_lo_32)),
+                    rnd_vec
+                );
+                let blend_hi = vaddq_s32(
+                    vaddq_s32(vmulq_s32(t1_hi, m_hi_32), vmulq_s32(t2_hi, inv_m_hi_32)),
+                    rnd_vec
+                );
+
+                // Shift by sh (= 10)
+                let result_lo = vshrq_n_s32::<10>(blend_lo);
+                let result_hi = vshrq_n_s32::<10>(blend_hi);
+
+                // Clamp to [0, 255]
+                let zero = vdupq_n_s32(0);
+                let max_val = vdupq_n_s32(255);
+                let result_lo = vmaxq_s32(vminq_s32(result_lo, max_val), zero);
+                let result_hi = vmaxq_s32(vminq_s32(result_hi, max_val), zero);
+
+                // Narrow to u8
+                let narrow_lo = vmovn_s32(result_lo);
+                let narrow_hi = vmovn_s32(result_hi);
+                let narrow_16 = vcombine_s16(narrow_lo, narrow_hi);
+                let result_u8 = vqmovun_s16(narrow_16);
+
+                vst1_u8(dst_row[col..].as_mut_ptr(), result_u8);
+
+                // Store mask if needed
+                if let Some(ref mut mask_row) = mask_row {
+                    // For 444: 1:1 mask storage
+                    // For 422: horizontal averaging (2 pixels -> 1 mask)
+                    // For 420: also horizontal averaging
+                    if !SS_HOR {
+                        // 444: store all mask values
+                        let m_narrow = vqmovun_s16(m_16);
+                        vst1_u8(mask_row[col..].as_mut_ptr(), m_narrow);
+                    } else {
+                        // 422/420: average pairs horizontally
+                        let mask_idx = col >> 1;
+                        for i in 0..4 {
+                            let m0 = vgetq_lane_s16(m_16, (i * 2) as i32) as i32;
+                            let m1 = vgetq_lane_s16(m_16, (i * 2 + 1) as i32) as i32;
+                            mask_row[mask_idx + i] = ((m0 + m1 + 1) >> 1) as u8;
+                        }
+                    }
+                }
+            }
+            col += 8;
+        }
+
+        // Scalar fallback
+        while col < w {
+            let t1 = tmp1_row[col] as i32;
+            let t2 = tmp2_row[col] as i32;
+            let diff = t1 - t2;
+            let abs_diff = diff.abs();
+
+            // Compute mask
+            let mut m = 38 + ((abs_diff + mask_rnd) >> mask_sh);
+            m = m.min(64);
+
+            let m_final = if sign != 0 { 64 - m } else { m };
+            let inv_m = 64 - m_final;
+
+            // Blend
+            let blend = (t1 * m_final + t2 * inv_m + rnd) >> sh;
+            dst_row[col] = blend.clamp(0, 255) as u8;
+
+            // Store mask with subsampling
+            if let Some(ref mut mask_row) = mask_row {
+                if !SS_HOR {
+                    mask_row[col] = m as u8;
+                } else if (col & 1) == 0 {
+                    // For 422/420, store averaged pairs
+                    let mask_idx = col >> 1;
+                    if col + 1 < w {
+                        let t1_next = tmp1_row[col + 1] as i32;
+                        let t2_next = tmp2_row[col + 1] as i32;
+                        let diff_next = (t1_next - t2_next).abs();
+                        let m_next = (38 + ((diff_next + mask_rnd) >> mask_sh)).min(64);
+                        mask_row[mask_idx] = ((m + m_next + 1) >> 1) as u8;
+                    } else {
+                        mask_row[mask_idx] = m as u8;
+                    }
+                }
+            }
+
+            col += 1;
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn w_mask_444_8bpc_neon(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+    _bitdepth_max: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let token = unsafe { Arm64::forge_token_dangerously() };
+    let w = w as usize;
+    let h = h as usize;
+    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+
+    w_mask_8bpc_inner::<false, false>(
+        token, dst, dst_stride as usize,
+        tmp1.as_slice(), tmp2.as_slice(),
+        w, h, mask.as_mut_slice(), sign as u8
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn w_mask_422_8bpc_neon(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+    _bitdepth_max: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let token = unsafe { Arm64::forge_token_dangerously() };
+    let w = w as usize;
+    let h = h as usize;
+    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+
+    w_mask_8bpc_inner::<true, false>(
+        token, dst, dst_stride as usize,
+        tmp1.as_slice(), tmp2.as_slice(),
+        w, h, mask.as_mut_slice(), sign as u8
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn w_mask_420_8bpc_neon(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+    _bitdepth_max: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let token = unsafe { Arm64::forge_token_dangerously() };
+    let w = w as usize;
+    let h = h as usize;
+    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+
+    w_mask_8bpc_inner::<true, true>(
+        token, dst, dst_stride as usize,
+        tmp1.as_slice(), tmp2.as_slice(),
+        w, h, mask.as_mut_slice(), sign as u8
+    );
+}
