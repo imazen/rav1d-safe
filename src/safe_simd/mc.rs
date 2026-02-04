@@ -3687,6 +3687,123 @@ unsafe fn v_filter_bilin_8bpc_avx2(
         }
     }
 }
+/// Horizontal bilinear filter for 8bpc put (H-only)
+/// Outputs directly to u8 with shift=4 and clamp to [0,255]
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn h_bilin_8bpc_put_avx2(
+    dst: *mut u8,
+    src: *const u8,
+    w: usize,
+    mx: usize,
+) {
+    unsafe {
+        let mx = mx as i8;
+        let coeff0 = (16 - mx) as u8;
+        let coeff1 = mx as u8;
+        let coeffs = _mm256_set1_epi16(((coeff1 as i16) << 8) | (coeff0 as i16));
+        let rnd = _mm256_set1_epi16(8); // (1 << 4) >> 1
+        let zero = _mm256_setzero_si256();
+        let max = _mm256_set1_epi16(255);
+
+        let mut x = 0;
+        while x + 32 <= w {
+            let src_lo = _mm256_loadu_si256(src.add(x) as *const __m256i);
+            let src_hi = _mm256_loadu_si256(src.add(x + 1) as *const __m256i);
+
+            let pairs_lo = _mm256_unpacklo_epi8(src_lo, src_hi);
+            let pairs_hi = _mm256_unpackhi_epi8(src_lo, src_hi);
+
+            let result_lo = _mm256_maddubs_epi16(pairs_lo, coeffs);
+            let result_hi = _mm256_maddubs_epi16(pairs_hi, coeffs);
+
+            // Add rounding, shift by 4, clamp
+            let sh_reg = _mm_cvtsi32_si128(4);
+            let result_lo = _mm256_sra_epi16(_mm256_add_epi16(result_lo, rnd), sh_reg);
+            let result_hi = _mm256_sra_epi16(_mm256_add_epi16(result_hi, rnd), sh_reg);
+
+            let result_lo = _mm256_max_epi16(_mm256_min_epi16(result_lo, max), zero);
+            let result_hi = _mm256_max_epi16(_mm256_min_epi16(result_hi, max), zero);
+
+            // Fix lane order and pack to u8
+            let lo_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x20);
+            let hi_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x31);
+            let packed = _mm256_packus_epi16(lo_128, hi_128);
+
+            _mm256_storeu_si256(dst.add(x) as *mut __m256i, packed);
+            x += 32;
+        }
+
+        while x < w {
+            let x0 = *src.add(x) as i32;
+            let x1 = *src.add(x + 1) as i32;
+            let pixel = (16 - mx as i32) * x0 + mx as i32 * x1;
+            let result = ((pixel + 8) >> 4).clamp(0, 255);
+            *dst.add(x) = result as u8;
+            x += 1;
+        }
+    }
+}
+
+/// Vertical bilinear filter for 8bpc put (V-only)
+/// Reads directly from u8 source, outputs u8
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn v_bilin_8bpc_direct_avx2(
+    dst: *mut u8,
+    src0: *const u8,
+    src1: *const u8,
+    w: usize,
+    my: usize,
+) {
+    unsafe {
+        let my = my as i8;
+        let coeff0 = (16 - my) as u8;
+        let coeff1 = my as u8;
+        let coeffs = _mm256_set1_epi16(((coeff1 as i16) << 8) | (coeff0 as i16));
+        let rnd = _mm256_set1_epi16(8);
+        let zero = _mm256_setzero_si256();
+        let max = _mm256_set1_epi16(255);
+        let sh_reg = _mm_cvtsi32_si128(4);
+
+        let mut x = 0;
+        while x + 32 <= w {
+            let s0 = _mm256_loadu_si256(src0.add(x) as *const __m256i);
+            let s1 = _mm256_loadu_si256(src1.add(x) as *const __m256i);
+
+            let pairs_lo = _mm256_unpacklo_epi8(s0, s1);
+            let pairs_hi = _mm256_unpackhi_epi8(s0, s1);
+
+            let result_lo = _mm256_maddubs_epi16(pairs_lo, coeffs);
+            let result_hi = _mm256_maddubs_epi16(pairs_hi, coeffs);
+
+            let result_lo = _mm256_sra_epi16(_mm256_add_epi16(result_lo, rnd), sh_reg);
+            let result_hi = _mm256_sra_epi16(_mm256_add_epi16(result_hi, rnd), sh_reg);
+
+            let result_lo = _mm256_max_epi16(_mm256_min_epi16(result_lo, max), zero);
+            let result_hi = _mm256_max_epi16(_mm256_min_epi16(result_hi, max), zero);
+
+            let lo_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x20);
+            let hi_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x31);
+            let packed = _mm256_packus_epi16(lo_128, hi_128);
+
+            _mm256_storeu_si256(dst.add(x) as *mut __m256i, packed);
+            x += 32;
+        }
+
+        while x < w {
+            let x0 = *src0.add(x) as i32;
+            let x1 = *src1.add(x) as i32;
+            let pixel = (16 - my as i32) * x0 + my as i32 * x1;
+            let result = ((pixel + 8) >> 4).clamp(0, 255);
+            *dst.add(x) = result as u8;
+            x += 1;
+        }
+    }
+}
+
 
 /// Core bilinear filter implementation for 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -3745,38 +3862,20 @@ unsafe fn put_bilin_8bpc_avx2_impl(
                 }
             }
             (true, false) => {
-                // Case 2: H-only filtering
+                // Case 2: H-only filtering (full SIMD)
                 for y in 0..h {
                     let src_row = src.offset(y as isize * src_stride);
                     let dst_row = dst.offset(y as isize * dst_stride);
-
-                    // Direct horizontal filter to output
-                    // sh = 4 for 8bpc with no vertical pass
-                    let mut tmp = [0i16; MID_STRIDE];
-                    h_filter_bilin_8bpc_avx2(tmp.as_mut_ptr(), src_row, w, mx, 4);
-
-                    // Copy and clamp to output
-                    for x in 0..w {
-                        *dst_row.add(x) = tmp[x].clamp(0, 255) as u8;
-                    }
+                    h_bilin_8bpc_put_avx2(dst_row, src_row, w, mx);
                 }
             }
             (false, true) => {
-                // Case 3: V-only filtering
+                // Case 3: V-only filtering (full SIMD)
                 for y in 0..h {
+                    let src_row0 = src.offset(y as isize * src_stride);
+                    let src_row1 = src.offset((y + 1) as isize * src_stride);
                     let dst_row = dst.offset(y as isize * dst_stride);
-
-                    // Build intermediate buffer from 2 source rows
-                    let mut mid = [[0i16; MID_STRIDE]; 2];
-                    for i in 0..2 {
-                        let src_row = src.offset((y + i) as isize * src_stride);
-                        for x in 0..w {
-                            mid[i][x] = *src_row.add(x) as i16;
-                        }
-                    }
-
-                    let mid_refs: [&[i16]; 2] = [&mid[0], &mid[1]];
-                    v_filter_bilin_8bpc_avx2(dst_row, &mid_refs, w, my, 4, 255);
+                    v_bilin_8bpc_direct_avx2(dst_row, src_row0, src_row1, w, my);
                 }
             }
             (false, false) => {
