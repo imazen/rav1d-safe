@@ -24,6 +24,9 @@ pub mod looprestoration;
 #[cfg(target_arch = "x86_64")]
 pub mod ipred;
 
+#[cfg(target_arch = "x86_64")]
+pub mod filmgrain;
+
 // Re-export x86 implementations
 pub use mc::*;
 

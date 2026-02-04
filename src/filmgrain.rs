@@ -1363,6 +1363,15 @@ impl Rav1dFilmGrainDSPContext {
         self
     }
 
+    // Disabled temporarily - my implementation is slower than Rust fallback
+    // TODO: Need to properly SIMD-optimize the inner loops
+    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+    #[inline(always)]
+    const fn init_x86_safe_simd<BD: BitDepth>(self, _flags: CpuFlags) -> Self {
+        // Don't wire up filmgrain yet - fallback is faster
+        self
+    }
+
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -1374,6 +1383,14 @@ impl Rav1dFilmGrainDSPContext {
             #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
             {
                 return self.init_arm::<BD>(flags);
+            }
+        }
+
+        #[cfg(not(feature = "asm"))]
+        {
+            #[cfg(target_arch = "x86_64")]
+            {
+                return self.init_x86_safe_simd::<BD>(flags);
             }
         }
 
