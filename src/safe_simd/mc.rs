@@ -664,20 +664,68 @@ pub unsafe extern "C" fn blend_8bpc_avx2(
     let dst = dst_ptr as *mut u8;
     let tmp = tmp as *const u8;
 
-    for row in 0..h {
-        let dst_row = unsafe {
-            std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w)
-        };
-        let tmp_row = unsafe { std::slice::from_raw_parts(tmp.add(row * w), w) };
-        let mask_row = unsafe { std::slice::from_raw_parts(mask_ptr.add(row * w), w) };
+    // Constants for blend formula: (dst * (64-m) + tmp * m + 32) >> 6
+    // SAFETY: AVX2 is available
+    let sixty_four = unsafe { _mm256_set1_epi16(64) };
+    let rnd = unsafe { _mm256_set1_epi16(32) };
 
-        for col in 0..w {
-            let a = dst_row[col] as u32;
-            let b = tmp_row[col] as u32;
-            let m = mask_row[col] as u32;
-            // (a * (64 - m) + b * m + 32) >> 6
-            let val = (a * (64 - m) + b * m + 32) >> 6;
-            dst_row[col] = val as u8;
+    for row in 0..h {
+        // SAFETY: pointers valid for row * stride + w
+        let dst_row = unsafe { dst.offset(row as isize * dst_stride) };
+        let tmp_row = unsafe { tmp.add(row * w) };
+        let mask_row = unsafe { mask_ptr.add(row * w) };
+
+        let mut col = 0usize;
+
+        // Process 16 pixels at a time with AVX2
+        while col + 16 <= w {
+            // SAFETY: AVX2 intrinsics with valid pointers
+            unsafe {
+                // Load 16 bytes of dst, tmp, mask
+                let dst_bytes = _mm_loadu_si128(dst_row.add(col) as *const __m128i);
+                let tmp_bytes = _mm_loadu_si128(tmp_row.add(col) as *const __m128i);
+                let mask_bytes = _mm_loadu_si128(mask_row.add(col) as *const __m128i);
+
+                // Zero-extend to 16-bit (max value 255 * 64 = 16320 fits in 16-bit)
+                let dst_16 = _mm256_cvtepu8_epi16(dst_bytes);
+                let tmp_16 = _mm256_cvtepu8_epi16(tmp_bytes);
+                let mask_16 = _mm256_cvtepu8_epi16(mask_bytes);
+
+                // Compute (64 - mask)
+                let inv_mask = _mm256_sub_epi16(sixty_four, mask_16);
+
+                // dst * (64-m) + tmp * m + 32
+                let term1 = _mm256_mullo_epi16(dst_16, inv_mask);
+                let term2 = _mm256_mullo_epi16(tmp_16, mask_16);
+                let sum = _mm256_add_epi16(_mm256_add_epi16(term1, term2), rnd);
+
+                // >> 6
+                let result_16 = _mm256_srli_epi16(sum, 6);
+
+                // Pack to 8-bit with unsigned saturation
+                let result_8 = _mm256_packus_epi16(result_16, result_16);
+                let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
+
+                // Store 16 bytes
+                _mm_storeu_si128(
+                    dst_row.add(col) as *mut __m128i,
+                    _mm256_castsi256_si128(result_8),
+                );
+            }
+            col += 16;
+        }
+
+        // Handle remaining pixels with scalar
+        while col < w {
+            // SAFETY: pointers valid
+            unsafe {
+                let a = *dst_row.add(col) as u32;
+                let b = *tmp_row.add(col) as u32;
+                let m = *mask_row.add(col) as u32;
+                let val = (a * (64 - m) + b * m + 32) >> 6;
+                *dst_row.add(col) = val as u8;
+            }
+            col += 1;
         }
     }
 }
