@@ -1875,6 +1875,258 @@ pub unsafe extern "C" fn prep_bilin_8bpc_neon(
 }
 
 // ============================================================================
+// BILINEAR FILTER 16bpc - Motion compensation with bilinear interpolation
+// ============================================================================
+
+/// Bilinear put for 16bpc
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn put_bilin_16bpc_inner(
+    _token: Arm64,
+    dst: &mut [u16],
+    dst_stride: usize,
+    src: &[u16],
+    src_stride: usize,
+    w: usize,
+    h: usize,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+) {
+    match (mx, my) {
+        (0, 0) => {
+            // Simple copy
+            for y in 0..h {
+                let src_row = &src[y * src_stride..][..w];
+                let dst_row = &mut dst[y * dst_stride..][..w];
+                dst_row.copy_from_slice(src_row);
+            }
+        }
+        (0, _) => {
+            // Vertical-only bilinear
+            let coeff0 = 16 - my;
+            let coeff1 = my;
+
+            for y in 0..h {
+                let src_row0 = &src[y * src_stride..][..w];
+                let src_row1 = &src[(y + 1) * src_stride..][..w];
+                let dst_row = &mut dst[y * dst_stride..][..w];
+
+                for x in 0..w {
+                    let r0 = src_row0[x] as i32;
+                    let r1 = src_row1[x] as i32;
+                    let pixel = coeff0 * r0 + coeff1 * r1;
+                    dst_row[x] = ((pixel + 8) >> 4).clamp(0, bitdepth_max) as u16;
+                }
+            }
+        }
+        (_, 0) => {
+            // Horizontal-only bilinear
+            let coeff0 = 16 - mx;
+            let coeff1 = mx;
+
+            for y in 0..h {
+                let src_row = &src[y * src_stride..][..w + 1];
+                let dst_row = &mut dst[y * dst_stride..][..w];
+
+                for x in 0..w {
+                    let s0 = src_row[x] as i32;
+                    let s1 = src_row[x + 1] as i32;
+                    let pixel = coeff0 * s0 + coeff1 * s1;
+                    dst_row[x] = ((pixel + 8) >> 4).clamp(0, bitdepth_max) as u16;
+                }
+            }
+        }
+        (_, _) => {
+            // Both H+V bilinear
+            let h_coeff0 = 16 - mx;
+            let h_coeff1 = mx;
+            let v_coeff0 = 16 - my;
+            let v_coeff1 = my;
+
+            // Intermediate buffer
+            let mid_stride = w + 16;
+            let mut mid = vec![0i32; mid_stride * (h + 1)];
+
+            // Horizontal pass
+            for y in 0..h + 1 {
+                let src_row = &src[y * src_stride..];
+                let mid_row = &mut mid[y * mid_stride..][..w];
+
+                for x in 0..w {
+                    let s0 = src_row[x] as i32;
+                    let s1 = src_row[x + 1] as i32;
+                    mid_row[x] = h_coeff0 * s0 + h_coeff1 * s1;
+                }
+            }
+
+            // Vertical pass
+            for y in 0..h {
+                let mid_row0 = &mid[y * mid_stride..][..w];
+                let mid_row1 = &mid[(y + 1) * mid_stride..][..w];
+                let dst_row = &mut dst[y * dst_stride..][..w];
+
+                for x in 0..w {
+                    let r0 = mid_row0[x];
+                    let r1 = mid_row1[x];
+                    let pixel = v_coeff0 * r0 + v_coeff1 * r1;
+                    // Double shift: (pixel + 128) >> 8
+                    dst_row[x] = ((pixel + 128) >> 8).clamp(0, bitdepth_max) as u16;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn put_bilin_16bpc_neon(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let token = unsafe { Arm64::forge_token_dangerously() };
+    let w = w as usize;
+    let h = h as usize;
+    let dst_stride_u16 = (dst_stride / 2) as usize;
+    let src_stride_u16 = (src_stride / 2) as usize;
+    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+    let src = std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
+
+    put_bilin_16bpc_inner(token, dst, dst_stride_u16, src, src_stride_u16, w, h, mx, my, bitdepth_max);
+}
+
+const PREP_BIAS_16BPC: i32 = 8192;
+
+/// Bilinear prep for 16bpc
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn prep_bilin_16bpc_inner(
+    _token: Arm64,
+    tmp: &mut [i16],
+    src: &[u16],
+    src_stride: usize,
+    w: usize,
+    h: usize,
+    mx: i32,
+    my: i32,
+) {
+    match (mx, my) {
+        (0, 0) => {
+            // Simple copy with bias
+            for y in 0..h {
+                let src_row = &src[y * src_stride..][..w];
+                let tmp_row = &mut tmp[y * w..][..w];
+                for x in 0..w {
+                    tmp_row[x] = (src_row[x] as i32 - PREP_BIAS_16BPC) as i16;
+                }
+            }
+        }
+        (0, _) => {
+            // Vertical-only bilinear
+            let coeff0 = 16 - my;
+            let coeff1 = my;
+
+            for y in 0..h {
+                let src_row0 = &src[y * src_stride..][..w];
+                let src_row1 = &src[(y + 1) * src_stride..][..w];
+                let tmp_row = &mut tmp[y * w..][..w];
+
+                for x in 0..w {
+                    let r0 = src_row0[x] as i32;
+                    let r1 = src_row1[x] as i32;
+                    let pixel = coeff0 * r0 + coeff1 * r1;
+                    tmp_row[x] = ((pixel >> 4) - PREP_BIAS_16BPC) as i16;
+                }
+            }
+        }
+        (_, 0) => {
+            // Horizontal-only bilinear
+            let coeff0 = 16 - mx;
+            let coeff1 = mx;
+
+            for y in 0..h {
+                let src_row = &src[y * src_stride..][..w + 1];
+                let tmp_row = &mut tmp[y * w..][..w];
+
+                for x in 0..w {
+                    let s0 = src_row[x] as i32;
+                    let s1 = src_row[x + 1] as i32;
+                    let pixel = coeff0 * s0 + coeff1 * s1;
+                    tmp_row[x] = ((pixel >> 4) - PREP_BIAS_16BPC) as i16;
+                }
+            }
+        }
+        (_, _) => {
+            // Both H+V bilinear
+            let h_coeff0 = 16 - mx;
+            let h_coeff1 = mx;
+            let v_coeff0 = 16 - my;
+            let v_coeff1 = my;
+
+            // Intermediate buffer
+            let mid_stride = w + 16;
+            let mut mid = vec![0i32; mid_stride * (h + 1)];
+
+            // Horizontal pass
+            for y in 0..h + 1 {
+                let src_row = &src[y * src_stride..];
+                let mid_row = &mut mid[y * mid_stride..][..w];
+
+                for x in 0..w {
+                    let s0 = src_row[x] as i32;
+                    let s1 = src_row[x + 1] as i32;
+                    mid_row[x] = h_coeff0 * s0 + h_coeff1 * s1;
+                }
+            }
+
+            // Vertical pass
+            for y in 0..h {
+                let mid_row0 = &mid[y * mid_stride..][..w];
+                let mid_row1 = &mid[(y + 1) * mid_stride..][..w];
+                let tmp_row = &mut tmp[y * w..][..w];
+
+                for x in 0..w {
+                    let r0 = mid_row0[x];
+                    let r1 = mid_row1[x];
+                    let pixel = v_coeff0 * r0 + v_coeff1 * r1;
+                    tmp_row[x] = ((pixel >> 8) - PREP_BIAS_16BPC) as i16;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn prep_bilin_16bpc_neon(
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    _bitdepth_max: i32,
+    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let token = unsafe { Arm64::forge_token_dangerously() };
+    let w = w as usize;
+    let h = h as usize;
+    let src_stride_u16 = (src_stride / 2) as usize;
+    let src = std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
+    let tmp_slice = std::slice::from_raw_parts_mut(tmp, h * w);
+
+    prep_bilin_16bpc_inner(token, tmp_slice, src, src_stride_u16, w, h, mx, my);
+}
+
+// ============================================================================
 // W_MASK 16bpc - Weighted mask blend for 16-bit pixels
 // ============================================================================
 
