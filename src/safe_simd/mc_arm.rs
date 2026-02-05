@@ -11,6 +11,12 @@ use core::arch::aarch64::*;
 #[cfg(target_arch = "aarch64")]
 use archmage::{arcane, Arm64, SimdToken};
 
+#[cfg(target_arch = "aarch64")]
+use safe_unaligned_simd::aarch64 as safe_simd;
+
+#[cfg(target_arch = "aarch64")]
+use super::partial_simd;
+
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
@@ -46,44 +52,43 @@ fn avg_8bpc_inner(
 
         // Process 16 pixels at a time
         while col + 16 <= w {
-            unsafe {
-                // Load 16 i16 values
-                let t1_lo = vld1q_s16(tmp1_row[col..].as_ptr());
-                let t1_hi = vld1q_s16(tmp1_row[col + 8..].as_ptr());
-                let t2_lo = vld1q_s16(tmp2_row[col..].as_ptr());
-                let t2_hi = vld1q_s16(tmp2_row[col + 8..].as_ptr());
+            // Load 16 i16 values using safe_simd
+            let t1_lo = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
+            let t1_hi = safe_simd::vld1q_s16(tmp1_row[col + 8..][..8].try_into().unwrap());
+            let t2_lo = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
+            let t2_hi = safe_simd::vld1q_s16(tmp2_row[col + 8..][..8].try_into().unwrap());
 
-                // Add: tmp1 + tmp2
-                let sum_lo = vaddq_s16(t1_lo, t2_lo);
-                let sum_hi = vaddq_s16(t1_hi, t2_hi);
+            // Add: tmp1 + tmp2 (safe in #[arcane])
+            let sum_lo = vaddq_s16(t1_lo, t2_lo);
+            let sum_hi = vaddq_s16(t1_hi, t2_hi);
 
-                // vqrdmulhq_n_s16(a, 2048) = (2 * a * 2048 + 0x8000) >> 16
-                // = (a * 4096 + 32768) >> 16 = (a * 1024 + 8192) >> 14
-                // We want (a * 1024 + 16384) >> 15 = pmulhrsw equivalent
-                // Using vqrshrn for rounding shift: (sum + 1024) >> 11 maps to pmulhrsw(sum, 1024)
-                let avg_lo = vqrdmulhq_n_s16(sum_lo, 2048);
-                let avg_hi = vqrdmulhq_n_s16(sum_hi, 2048);
+            // vqrdmulhq_n_s16(a, 2048) = (2 * a * 2048 + 0x8000) >> 16
+            // = (a * 4096 + 32768) >> 16 = (a * 1024 + 8192) >> 14
+            // We want (a * 1024 + 16384) >> 15 = pmulhrsw equivalent
+            let avg_lo = vqrdmulhq_n_s16(sum_lo, 2048);
+            let avg_hi = vqrdmulhq_n_s16(sum_hi, 2048);
 
-                // Pack to u8 with saturation
-                let packed_lo = vqmovun_s16(avg_lo);
-                let packed_hi = vqmovun_s16(avg_hi);
-                let result = vcombine_u8(packed_lo, packed_hi);
+            // Pack to u8 with saturation (safe in #[arcane])
+            let packed_lo = vqmovun_s16(avg_lo);
+            let packed_hi = vqmovun_s16(avg_hi);
+            let result = vcombine_u8(packed_lo, packed_hi);
 
-                vst1q_u8(dst_row[col..].as_mut_ptr(), result);
-            }
+            // Store using safe_simd
+            let dst_arr: &mut [u8; 16] = (&mut dst_row[col..col + 16]).try_into().unwrap();
+            safe_simd::vst1q_u8(dst_arr, result);
             col += 16;
         }
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            unsafe {
-                let t1 = vld1q_s16(tmp1_row[col..].as_ptr());
-                let t2 = vld1q_s16(tmp2_row[col..].as_ptr());
-                let sum = vaddq_s16(t1, t2);
-                let avg = vqrdmulhq_n_s16(sum, 2048);
-                let packed = vqmovun_s16(avg);
-                vst1_u8(dst_row[col..].as_mut_ptr(), packed);
-            }
+            let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
+            let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
+            let sum = vaddq_s16(t1, t2);
+            let avg = vqrdmulhq_n_s16(sum, 2048);
+            let packed = vqmovun_s16(avg);
+            // Store 8 bytes using partial_simd
+            let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
+            partial_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -143,40 +148,39 @@ fn avg_16bpc_inner(
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            unsafe {
-                let t1 = vld1q_s16(tmp1_row[col..].as_ptr());
-                let t2 = vld1q_s16(tmp2_row[col..].as_ptr());
+            let t1 = partial_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
+            let t2 = partial_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
-                // Widen to 32-bit
-                let t1_lo = vmovl_s16(vget_low_s16(t1));
-                let t1_hi = vmovl_s16(vget_high_s16(t1));
-                let t2_lo = vmovl_s16(vget_low_s16(t2));
-                let t2_hi = vmovl_s16(vget_high_s16(t2));
+            // Widen to 32-bit
+            let t1_lo = vmovl_s16(vget_low_s16(t1));
+            let t1_hi = vmovl_s16(vget_high_s16(t1));
+            let t2_lo = vmovl_s16(vget_low_s16(t2));
+            let t2_hi = vmovl_s16(vget_high_s16(t2));
 
-                // Add
-                let sum_lo = vaddq_s32(t1_lo, t2_lo);
-                let sum_hi = vaddq_s32(t1_hi, t2_hi);
+            // Add
+            let sum_lo = vaddq_s32(t1_lo, t2_lo);
+            let sum_hi = vaddq_s32(t1_hi, t2_hi);
 
-                // Round and shift: (sum + (1 << intermediate_bits)) >> (intermediate_bits + 1)
-                let rnd = vdupq_n_s32(1 << intermediate_bits);
-                let sum_lo_rnd = vaddq_s32(sum_lo, rnd);
-                let sum_hi_rnd = vaddq_s32(sum_hi, rnd);
+            // Round and shift: (sum + (1 << intermediate_bits)) >> (intermediate_bits + 1)
+            let rnd = vdupq_n_s32(1 << intermediate_bits);
+            let sum_lo_rnd = vaddq_s32(sum_lo, rnd);
+            let sum_hi_rnd = vaddq_s32(sum_hi, rnd);
 
-                let avg_lo = vshrq_n_s32::<5>(sum_lo_rnd);
-                let avg_hi = vshrq_n_s32::<5>(sum_hi_rnd);
+            let avg_lo = vshrq_n_s32::<5>(sum_lo_rnd);
+            let avg_hi = vshrq_n_s32::<5>(sum_hi_rnd);
 
-                // Narrow to 16-bit
-                let avg_narrow_lo = vqmovn_s32(avg_lo);
-                let avg_narrow_hi = vqmovn_s32(avg_hi);
-                let avg_16 = vcombine_s16(avg_narrow_lo, avg_narrow_hi);
+            // Narrow to 16-bit
+            let avg_narrow_lo = vqmovn_s32(avg_lo);
+            let avg_narrow_hi = vqmovn_s32(avg_hi);
+            let avg_16 = vcombine_s16(avg_narrow_lo, avg_narrow_hi);
 
-                // Clamp
-                let zero = vdupq_n_s16(0);
-                let max = vdupq_n_s16(bitdepth_max as i16);
-                let clamped = vmaxq_s16(vminq_s16(avg_16, max), zero);
+            // Clamp
+            let zero = vdupq_n_s16(0);
+            let max = vdupq_n_s16(bitdepth_max as i16);
+            let clamped = vmaxq_s16(vminq_s16(avg_16, max), zero);
 
-                vst1q_u16(dst_row[col..].as_mut_ptr(), vreinterpretq_u16_s16(clamped));
-            }
+            let dst_arr: &mut [u16; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
+            partial_simd::vst1q_u16(dst_arr, vreinterpretq_u16_s16(clamped));
             col += 8;
         }
 
@@ -237,36 +241,35 @@ fn w_avg_8bpc_inner(
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            unsafe {
-                let t1 = vld1q_s16(tmp1_row[col..].as_ptr());
-                let t2 = vld1q_s16(tmp2_row[col..].as_ptr());
+            let t1 = partial_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
+            let t2 = partial_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
-                // diff = tmp1 - tmp2
-                let diff = vsubq_s16(t1, t2);
+            // diff = tmp1 - tmp2
+            let diff = vsubq_s16(t1, t2);
 
-                // Widen for multiply
-                let diff_lo = vmovl_s16(vget_low_s16(diff));
-                let diff_hi = vmovl_s16(vget_high_s16(diff));
-                let weight_vec = vdupq_n_s32(weight);
+            // Widen for multiply
+            let diff_lo = vmovl_s16(vget_low_s16(diff));
+            let diff_hi = vmovl_s16(vget_high_s16(diff));
+            let weight_vec = vdupq_n_s32(weight);
 
-                let weighted_lo = vmulq_s32(diff_lo, weight_vec);
-                let weighted_hi = vmulq_s32(diff_hi, weight_vec);
+            let weighted_lo = vmulq_s32(diff_lo, weight_vec);
+            let weighted_hi = vmulq_s32(diff_hi, weight_vec);
 
-                // (weighted + 8) >> 4
-                let rnd = vdupq_n_s32(8);
-                let shifted_lo = vshrq_n_s32::<4>(vaddq_s32(weighted_lo, rnd));
-                let shifted_hi = vshrq_n_s32::<4>(vaddq_s32(weighted_hi, rnd));
+            // (weighted + 8) >> 4
+            let rnd = vdupq_n_s32(8);
+            let shifted_lo = vshrq_n_s32::<4>(vaddq_s32(weighted_lo, rnd));
+            let shifted_hi = vshrq_n_s32::<4>(vaddq_s32(weighted_hi, rnd));
 
-                // Narrow back to 16-bit
-                let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
+            // Narrow back to 16-bit
+            let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
 
-                // Add tmp2 and apply final scaling
-                let sum = vaddq_s16(shifted_16, t2);
-                let scaled = vqrdmulhq_n_s16(sum, 2048);
-                let packed = vqmovun_s16(scaled);
+            // Add tmp2 and apply final scaling
+            let sum = vaddq_s16(shifted_16, t2);
+            let scaled = vqrdmulhq_n_s16(sum, 2048);
+            let packed = vqmovun_s16(scaled);
 
-                vst1_u8(dst_row[col..].as_mut_ptr(), packed);
-            }
+            let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
+            partial_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -325,30 +328,29 @@ fn w_avg_16bpc_inner(
 
         // Process 4 pixels at a time
         while col + 4 <= w {
-            unsafe {
-                let t1_16 = vld1_s16(tmp1_row[col..].as_ptr());
-                let t2_16 = vld1_s16(tmp2_row[col..].as_ptr());
-                let t1 = vmovl_s16(t1_16);
-                let t2 = vmovl_s16(t2_16);
+            let t1_16 = partial_simd::vld1_s16(tmp1_row[col..][..4].try_into().unwrap());
+            let t2_16 = partial_simd::vld1_s16(tmp2_row[col..][..4].try_into().unwrap());
+            let t1 = vmovl_s16(t1_16);
+            let t2 = vmovl_s16(t2_16);
 
-                let diff = vsubq_s32(t1, t2);
-                let weight_vec = vdupq_n_s32(weight);
-                let weighted = vmulq_s32(diff, weight_vec);
+            let diff = vsubq_s32(t1, t2);
+            let weight_vec = vdupq_n_s32(weight);
+            let weighted = vmulq_s32(diff, weight_vec);
 
-                let rnd = vdupq_n_s32(8);
-                let shifted = vshrq_n_s32::<4>(vaddq_s32(weighted, rnd));
-                let sum = vaddq_s32(shifted, t2);
+            let rnd = vdupq_n_s32(8);
+            let shifted = vshrq_n_s32::<4>(vaddq_s32(weighted, rnd));
+            let sum = vaddq_s32(shifted, t2);
 
-                let rnd2 = vdupq_n_s32(1 << intermediate_bits);
-                let result = vshrq_n_s32::<5>(vaddq_s32(sum, rnd2));
+            let rnd2 = vdupq_n_s32(1 << intermediate_bits);
+            let result = vshrq_n_s32::<5>(vaddq_s32(sum, rnd2));
 
-                let zero = vdupq_n_s32(0);
-                let max = vdupq_n_s32(bitdepth_max);
-                let clamped = vmaxq_s32(vminq_s32(result, max), zero);
+            let zero = vdupq_n_s32(0);
+            let max = vdupq_n_s32(bitdepth_max);
+            let clamped = vmaxq_s32(vminq_s32(result, max), zero);
 
-                let narrow = vmovn_s32(clamped);
-                vst1_u16(dst_row[col..].as_mut_ptr(), vreinterpret_u16_s16(narrow));
-            }
+            let narrow = vmovn_s32(clamped);
+            let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
+            partial_simd::vst1_u16(dst_arr, vreinterpret_u16_s16(narrow));
             col += 4;
         }
 
@@ -411,40 +413,39 @@ fn mask_8bpc_inner(
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            unsafe {
-                let t1 = vld1q_s16(tmp1_row[col..].as_ptr());
-                let t2 = vld1q_s16(tmp2_row[col..].as_ptr());
-                let m = vld1_u8(mask_row[col..].as_ptr());
+            let t1 = partial_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
+            let t2 = partial_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
+            let m = partial_simd::vld1_u8(mask_row[col..][..8].try_into().unwrap());
 
-                // Widen mask to 16-bit
-                let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
+            // Widen mask to 16-bit
+            let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
 
-                // diff = tmp1 - tmp2
-                let diff = vsubq_s16(t1, t2);
+            // diff = tmp1 - tmp2
+            let diff = vsubq_s16(t1, t2);
 
-                // Widen for multiply
-                let diff_lo = vmovl_s16(vget_low_s16(diff));
-                let diff_hi = vmovl_s16(vget_high_s16(diff));
-                let m_lo = vmovl_s16(vget_low_s16(m16));
-                let m_hi = vmovl_s16(vget_high_s16(m16));
+            // Widen for multiply
+            let diff_lo = vmovl_s16(vget_low_s16(diff));
+            let diff_hi = vmovl_s16(vget_high_s16(diff));
+            let m_lo = vmovl_s16(vget_low_s16(m16));
+            let m_hi = vmovl_s16(vget_high_s16(m16));
 
-                // weighted = diff * mask
-                let weighted_lo = vmulq_s32(diff_lo, m_lo);
-                let weighted_hi = vmulq_s32(diff_hi, m_hi);
+            // weighted = diff * mask
+            let weighted_lo = vmulq_s32(diff_lo, m_lo);
+            let weighted_hi = vmulq_s32(diff_hi, m_hi);
 
-                // (weighted + 32) >> 6
-                let rnd = vdupq_n_s32(32);
-                let shifted_lo = vshrq_n_s32::<6>(vaddq_s32(weighted_lo, rnd));
-                let shifted_hi = vshrq_n_s32::<6>(vaddq_s32(weighted_hi, rnd));
+            // (weighted + 32) >> 6
+            let rnd = vdupq_n_s32(32);
+            let shifted_lo = vshrq_n_s32::<6>(vaddq_s32(weighted_lo, rnd));
+            let shifted_hi = vshrq_n_s32::<6>(vaddq_s32(weighted_hi, rnd));
 
-                // Narrow and add tmp2
-                let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
-                let sum = vaddq_s16(shifted_16, t2);
-                let scaled = vqrdmulhq_n_s16(sum, 2048);
-                let packed = vqmovun_s16(scaled);
+            // Narrow and add tmp2
+            let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
+            let sum = vaddq_s16(shifted_16, t2);
+            let scaled = vqrdmulhq_n_s16(sum, 2048);
+            let packed = vqmovun_s16(scaled);
 
-                vst1_u8(dst_row[col..].as_mut_ptr(), packed);
-            }
+            let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
+            partial_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -506,38 +507,37 @@ fn mask_16bpc_inner(
 
         // Process 4 pixels at a time
         while col + 4 <= w {
-            unsafe {
-                let t1_16 = vld1_s16(tmp1_row[col..].as_ptr());
-                let t2_16 = vld1_s16(tmp2_row[col..].as_ptr());
-                let t1 = vmovl_s16(t1_16);
-                let t2 = vmovl_s16(t2_16);
+            let t1_16 = partial_simd::vld1_s16(tmp1_row[col..][..4].try_into().unwrap());
+            let t2_16 = partial_simd::vld1_s16(tmp2_row[col..][..4].try_into().unwrap());
+            let t1 = vmovl_s16(t1_16);
+            let t2 = vmovl_s16(t2_16);
 
-                // Load 4 mask bytes
-                let m_bytes: [u8; 8] = [
-                    mask_row[col], mask_row[col+1], mask_row[col+2], mask_row[col+3],
-                    0, 0, 0, 0
-                ];
-                let m8 = vld1_u8(m_bytes.as_ptr());
-                let m16 = vmovl_u8(m8);
-                let m32 = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(m16)));
+            // Load 4 mask bytes
+            let m_bytes: [u8; 8] = [
+                mask_row[col], mask_row[col+1], mask_row[col+2], mask_row[col+3],
+                0, 0, 0, 0
+            ];
+            let m8 = partial_simd::vld1_u8(&m_bytes);
+            let m16 = vmovl_u8(m8);
+            let m32 = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(m16)));
 
-                let diff = vsubq_s32(t1, t2);
-                let weighted = vmulq_s32(diff, m32);
+            let diff = vsubq_s32(t1, t2);
+            let weighted = vmulq_s32(diff, m32);
 
-                let rnd = vdupq_n_s32(32);
-                let shifted = vshrq_n_s32::<6>(vaddq_s32(weighted, rnd));
-                let sum = vaddq_s32(shifted, t2);
+            let rnd = vdupq_n_s32(32);
+            let shifted = vshrq_n_s32::<6>(vaddq_s32(weighted, rnd));
+            let sum = vaddq_s32(shifted, t2);
 
-                let rnd2 = vdupq_n_s32(1 << intermediate_bits);
-                let result = vshrq_n_s32::<5>(vaddq_s32(sum, rnd2));
+            let rnd2 = vdupq_n_s32(1 << intermediate_bits);
+            let result = vshrq_n_s32::<5>(vaddq_s32(sum, rnd2));
 
-                let zero = vdupq_n_s32(0);
-                let max = vdupq_n_s32(bitdepth_max);
-                let clamped = vmaxq_s32(vminq_s32(result, max), zero);
+            let zero = vdupq_n_s32(0);
+            let max = vdupq_n_s32(bitdepth_max);
+            let clamped = vmaxq_s32(vminq_s32(result, max), zero);
 
-                let narrow = vmovn_s32(clamped);
-                vst1_u16(dst_row[col..].as_mut_ptr(), vreinterpret_u16_s16(narrow));
-            }
+            let narrow = vmovn_s32(clamped);
+            let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
+            partial_simd::vst1_u16(dst_arr, vreinterpret_u16_s16(narrow));
             col += 4;
         }
 
@@ -600,43 +600,42 @@ fn blend_8bpc_inner(
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            unsafe {
-                let d = vld1_u8(dst_row[col..].as_ptr());
-                let d16 = vreinterpretq_s16_u16(vmovl_u8(d));
-                let t = vld1q_s16(tmp_row[col..].as_ptr());
-                let m = vld1_u8(mask_row[col..].as_ptr());
-                let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
+            let d = partial_simd::vld1_u8(dst_row[col..][..8].try_into().unwrap());
+            let d16 = vreinterpretq_s16_u16(vmovl_u8(d));
+            let t = partial_simd::vld1q_s16(tmp_row[col..][..8].try_into().unwrap());
+            let m = partial_simd::vld1_u8(mask_row[col..][..8].try_into().unwrap());
+            let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
 
-                // diff = tmp - (dst << 4)
-                let d_scaled = vshlq_n_s16::<4>(d16);
-                let diff = vsubq_s16(t, d_scaled);
+            // diff = tmp - (dst << 4)
+            let d_scaled = vshlq_n_s16::<4>(d16);
+            let diff = vsubq_s16(t, d_scaled);
 
-                // Widen for multiply
-                let diff_lo = vmovl_s16(vget_low_s16(diff));
-                let diff_hi = vmovl_s16(vget_high_s16(diff));
-                let m_lo = vmovl_s16(vget_low_s16(m16));
-                let m_hi = vmovl_s16(vget_high_s16(m16));
+            // Widen for multiply
+            let diff_lo = vmovl_s16(vget_low_s16(diff));
+            let diff_hi = vmovl_s16(vget_high_s16(diff));
+            let m_lo = vmovl_s16(vget_low_s16(m16));
+            let m_hi = vmovl_s16(vget_high_s16(m16));
 
-                // weighted = diff * mask
-                let weighted_lo = vmulq_s32(diff_lo, m_lo);
-                let weighted_hi = vmulq_s32(diff_hi, m_hi);
+            // weighted = diff * mask
+            let weighted_lo = vmulq_s32(diff_lo, m_lo);
+            let weighted_hi = vmulq_s32(diff_hi, m_hi);
 
-                // (weighted + 32) >> 6
-                let rnd = vdupq_n_s32(32);
-                let shifted_lo = vshrq_n_s32::<6>(vaddq_s32(weighted_lo, rnd));
-                let shifted_hi = vshrq_n_s32::<6>(vaddq_s32(weighted_hi, rnd));
+            // (weighted + 32) >> 6
+            let rnd = vdupq_n_s32(32);
+            let shifted_lo = vshrq_n_s32::<6>(vaddq_s32(weighted_lo, rnd));
+            let shifted_hi = vshrq_n_s32::<6>(vaddq_s32(weighted_hi, rnd));
 
-                // Narrow to 16-bit
-                let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
+            // Narrow to 16-bit
+            let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
 
-                // Add d_scaled and shift right by 4
-                let sum = vaddq_s16(shifted_16, d_scaled);
-                let result = vshrq_n_s16::<4>(vaddq_s16(sum, vdupq_n_s16(8)));
+            // Add d_scaled and shift right by 4
+            let sum = vaddq_s16(shifted_16, d_scaled);
+            let result = vshrq_n_s16::<4>(vaddq_s16(sum, vdupq_n_s16(8)));
 
-                // Pack to u8
-                let packed = vqmovun_s16(result);
-                vst1_u8(dst_row[col..].as_mut_ptr(), packed);
-            }
+            // Pack to u8
+            let packed = vqmovun_s16(result);
+            let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
+            partial_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -705,38 +704,37 @@ fn blend_16bpc_inner(
 
         // Process 4 pixels at a time
         while col + 4 <= w {
-            unsafe {
-                let d_u16 = vld1_u16(dst_row[col..].as_ptr());
-                let d = vreinterpretq_s32_u32(vmovl_u16(d_u16));
-                let t_16 = vld1_s16(tmp_row[col..].as_ptr());
-                let t = vmovl_s16(t_16);
+            let d_u16 = partial_simd::vld1_u16(dst_row[col..][..4].try_into().unwrap());
+            let d = vreinterpretq_s32_u32(vmovl_u16(d_u16));
+            let t_16 = partial_simd::vld1_s16(tmp_row[col..][..4].try_into().unwrap());
+            let t = vmovl_s16(t_16);
 
-                // Load 4 mask bytes
-                let m_bytes: [u8; 8] = [
-                    mask_row[col], mask_row[col+1], mask_row[col+2], mask_row[col+3],
-                    0, 0, 0, 0
-                ];
-                let m8 = vld1_u8(m_bytes.as_ptr());
-                let m16 = vmovl_u8(m8);
-                let m = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(m16)));
+            // Load 4 mask bytes
+            let m_bytes: [u8; 8] = [
+                mask_row[col], mask_row[col+1], mask_row[col+2], mask_row[col+3],
+                0, 0, 0, 0
+            ];
+            let m8 = partial_simd::vld1_u8(&m_bytes);
+            let m16 = vmovl_u8(m8);
+            let m = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(m16)));
 
-                // diff = tmp - dst
-                let diff = vsubq_s32(t, d);
-                let weighted = vmulq_s32(diff, m);
+            // diff = tmp - dst
+            let diff = vsubq_s32(t, d);
+            let weighted = vmulq_s32(diff, m);
 
-                // (weighted + 32) >> 6
-                let rnd = vdupq_n_s32(32);
-                let shifted = vshrq_n_s32::<6>(vaddq_s32(weighted, rnd));
-                let result = vaddq_s32(shifted, d);
+            // (weighted + 32) >> 6
+            let rnd = vdupq_n_s32(32);
+            let shifted = vshrq_n_s32::<6>(vaddq_s32(weighted, rnd));
+            let result = vaddq_s32(shifted, d);
 
-                // Clamp
-                let zero = vdupq_n_s32(0);
-                let max = vdupq_n_s32(65535);
-                let clamped = vmaxq_s32(vminq_s32(result, max), zero);
+            // Clamp
+            let zero = vdupq_n_s32(0);
+            let max = vdupq_n_s32(65535);
+            let clamped = vmaxq_s32(vminq_s32(result, max), zero);
 
-                let narrow = vmovn_u32(vreinterpretq_u32_s32(clamped));
-                vst1_u16(dst_row[col..].as_mut_ptr(), narrow);
-            }
+            let narrow = vmovn_u32(vreinterpretq_u32_s32(clamped));
+            let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
+            partial_simd::vst1_u16(dst_arr, narrow);
             col += 4;
         }
 
@@ -826,42 +824,41 @@ fn blend_v_8bpc_inner(
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            unsafe {
-                let d = vld1_u8(dst_row[col..].as_ptr());
-                let d16 = vreinterpretq_s16_u16(vmovl_u8(d));
-                let t = vld1q_s16(tmp_row[col..].as_ptr());
-                let m16 = vdupq_n_s16(mask as i16);
+            let d = partial_simd::vld1_u8(dst_row[col..][..8].try_into().unwrap());
+            let d16 = vreinterpretq_s16_u16(vmovl_u8(d));
+            let t = partial_simd::vld1q_s16(tmp_row[col..][..8].try_into().unwrap());
+            let m16 = vdupq_n_s16(mask as i16);
 
-                // diff = tmp - (dst << 4)
-                let d_scaled = vshlq_n_s16::<4>(d16);
-                let diff = vsubq_s16(t, d_scaled);
+            // diff = tmp - (dst << 4)
+            let d_scaled = vshlq_n_s16::<4>(d16);
+            let diff = vsubq_s16(t, d_scaled);
 
-                // Widen for multiply
-                let diff_lo = vmovl_s16(vget_low_s16(diff));
-                let diff_hi = vmovl_s16(vget_high_s16(diff));
-                let m_lo = vmovl_s16(vget_low_s16(m16));
-                let m_hi = vmovl_s16(vget_high_s16(m16));
+            // Widen for multiply
+            let diff_lo = vmovl_s16(vget_low_s16(diff));
+            let diff_hi = vmovl_s16(vget_high_s16(diff));
+            let m_lo = vmovl_s16(vget_low_s16(m16));
+            let m_hi = vmovl_s16(vget_high_s16(m16));
 
-                // weighted = diff * mask
-                let weighted_lo = vmulq_s32(diff_lo, m_lo);
-                let weighted_hi = vmulq_s32(diff_hi, m_hi);
+            // weighted = diff * mask
+            let weighted_lo = vmulq_s32(diff_lo, m_lo);
+            let weighted_hi = vmulq_s32(diff_hi, m_hi);
 
-                // (weighted + 32) >> 6
-                let rnd = vdupq_n_s32(32);
-                let shifted_lo = vshrq_n_s32::<6>(vaddq_s32(weighted_lo, rnd));
-                let shifted_hi = vshrq_n_s32::<6>(vaddq_s32(weighted_hi, rnd));
+            // (weighted + 32) >> 6
+            let rnd = vdupq_n_s32(32);
+            let shifted_lo = vshrq_n_s32::<6>(vaddq_s32(weighted_lo, rnd));
+            let shifted_hi = vshrq_n_s32::<6>(vaddq_s32(weighted_hi, rnd));
 
-                // Narrow to 16-bit
-                let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
+            // Narrow to 16-bit
+            let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
 
-                // Add d_scaled and shift right by 4
-                let sum = vaddq_s16(shifted_16, d_scaled);
-                let result = vshrq_n_s16::<4>(vaddq_s16(sum, vdupq_n_s16(8)));
+            // Add d_scaled and shift right by 4
+            let sum = vaddq_s16(shifted_16, d_scaled);
+            let result = vshrq_n_s16::<4>(vaddq_s16(sum, vdupq_n_s16(8)));
 
-                // Pack to u8
-                let packed = vqmovun_s16(result);
-                vst1_u8(dst_row[col..].as_mut_ptr(), packed);
-            }
+            // Pack to u8
+            let packed = vqmovun_s16(result);
+            let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
+            partial_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -932,30 +929,29 @@ fn blend_v_16bpc_inner(
 
         // Process 4 pixels at a time
         while col + 4 <= w {
-            unsafe {
-                let d_u16 = vld1_u16(dst_row[col..].as_ptr());
-                let d = vreinterpretq_s32_u32(vmovl_u16(d_u16));
-                let t_16 = vld1_s16(tmp_row[col..].as_ptr());
-                let t = vmovl_s16(t_16);
-                let m = vdupq_n_s32(mask as i32);
+            let d_u16 = partial_simd::vld1_u16(dst_row[col..][..4].try_into().unwrap());
+            let d = vreinterpretq_s32_u32(vmovl_u16(d_u16));
+            let t_16 = partial_simd::vld1_s16(tmp_row[col..][..4].try_into().unwrap());
+            let t = vmovl_s16(t_16);
+            let m = vdupq_n_s32(mask as i32);
 
-                // diff = tmp - dst
-                let diff = vsubq_s32(t, d);
-                let weighted = vmulq_s32(diff, m);
+            // diff = tmp - dst
+            let diff = vsubq_s32(t, d);
+            let weighted = vmulq_s32(diff, m);
 
-                // (weighted + 32) >> 6
-                let rnd = vdupq_n_s32(32);
-                let shifted = vshrq_n_s32::<6>(vaddq_s32(weighted, rnd));
-                let result = vaddq_s32(shifted, d);
+            // (weighted + 32) >> 6
+            let rnd = vdupq_n_s32(32);
+            let shifted = vshrq_n_s32::<6>(vaddq_s32(weighted, rnd));
+            let result = vaddq_s32(shifted, d);
 
-                // Clamp
-                let zero = vdupq_n_s32(0);
-                let max = vdupq_n_s32(bitdepth_max);
-                let clamped = vmaxq_s32(vminq_s32(result, max), zero);
+            // Clamp
+            let zero = vdupq_n_s32(0);
+            let max = vdupq_n_s32(bitdepth_max);
+            let clamped = vmaxq_s32(vminq_s32(result, max), zero);
 
-                let narrow = vmovn_u32(vreinterpretq_u32_s32(clamped));
-                vst1_u16(dst_row[col..].as_mut_ptr(), narrow);
-            }
+            let narrow = vmovn_u32(vreinterpretq_u32_s32(clamped));
+            let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
+            partial_simd::vst1_u16(dst_arr, narrow);
             col += 4;
         }
 
@@ -1028,45 +1024,44 @@ fn blend_h_8bpc_inner(
 
         // Process pixels, mask varies by column
         while col + 8 <= w {
-            unsafe {
-                let d = vld1_u8(dst_row[col..].as_ptr());
-                let d16 = vreinterpretq_s16_u16(vmovl_u8(d));
-                let t = vld1q_s16(tmp_row[col..].as_ptr());
+            let d = partial_simd::vld1_u8(dst_row[col..][..8].try_into().unwrap());
+            let d16 = vreinterpretq_s16_u16(vmovl_u8(d));
+            let t = partial_simd::vld1q_s16(tmp_row[col..][..8].try_into().unwrap());
 
-                // Load 8 mask values
-                let m = vld1_u8(obmc_masks[col..].as_ptr());
-                let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
+            // Load 8 mask values
+            let m = partial_simd::vld1_u8(obmc_masks[col..][..8].try_into().unwrap());
+            let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
 
-                // diff = tmp - (dst << 4)
-                let d_scaled = vshlq_n_s16::<4>(d16);
-                let diff = vsubq_s16(t, d_scaled);
+            // diff = tmp - (dst << 4)
+            let d_scaled = vshlq_n_s16::<4>(d16);
+            let diff = vsubq_s16(t, d_scaled);
 
-                // Widen for multiply
-                let diff_lo = vmovl_s16(vget_low_s16(diff));
-                let diff_hi = vmovl_s16(vget_high_s16(diff));
-                let m_lo = vmovl_s16(vget_low_s16(m16));
-                let m_hi = vmovl_s16(vget_high_s16(m16));
+            // Widen for multiply
+            let diff_lo = vmovl_s16(vget_low_s16(diff));
+            let diff_hi = vmovl_s16(vget_high_s16(diff));
+            let m_lo = vmovl_s16(vget_low_s16(m16));
+            let m_hi = vmovl_s16(vget_high_s16(m16));
 
-                // weighted = diff * mask
-                let weighted_lo = vmulq_s32(diff_lo, m_lo);
-                let weighted_hi = vmulq_s32(diff_hi, m_hi);
+            // weighted = diff * mask
+            let weighted_lo = vmulq_s32(diff_lo, m_lo);
+            let weighted_hi = vmulq_s32(diff_hi, m_hi);
 
-                // (weighted + 32) >> 6
-                let rnd = vdupq_n_s32(32);
-                let shifted_lo = vshrq_n_s32::<6>(vaddq_s32(weighted_lo, rnd));
-                let shifted_hi = vshrq_n_s32::<6>(vaddq_s32(weighted_hi, rnd));
+            // (weighted + 32) >> 6
+            let rnd = vdupq_n_s32(32);
+            let shifted_lo = vshrq_n_s32::<6>(vaddq_s32(weighted_lo, rnd));
+            let shifted_hi = vshrq_n_s32::<6>(vaddq_s32(weighted_hi, rnd));
 
-                // Narrow to 16-bit
-                let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
+            // Narrow to 16-bit
+            let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
 
-                // Add d_scaled and shift right by 4
-                let sum = vaddq_s16(shifted_16, d_scaled);
-                let result = vshrq_n_s16::<4>(vaddq_s16(sum, vdupq_n_s16(8)));
+            // Add d_scaled and shift right by 4
+            let sum = vaddq_s16(shifted_16, d_scaled);
+            let result = vshrq_n_s16::<4>(vaddq_s16(sum, vdupq_n_s16(8)));
 
-                // Pack to u8
-                let packed = vqmovun_s16(result);
-                vst1_u8(dst_row[col..].as_mut_ptr(), packed);
-            }
+            // Pack to u8
+            let packed = vqmovun_s16(result);
+            let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
+            partial_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -1136,38 +1131,37 @@ fn blend_h_16bpc_inner(
 
         // Process 4 pixels at a time
         while col + 4 <= w {
-            unsafe {
-                let d_u16 = vld1_u16(dst_row[col..].as_ptr());
-                let d = vreinterpretq_s32_u32(vmovl_u16(d_u16));
-                let t_16 = vld1_s16(tmp_row[col..].as_ptr());
-                let t = vmovl_s16(t_16);
+            let d_u16 = partial_simd::vld1_u16(dst_row[col..][..4].try_into().unwrap());
+            let d = vreinterpretq_s32_u32(vmovl_u16(d_u16));
+            let t_16 = partial_simd::vld1_s16(tmp_row[col..][..4].try_into().unwrap());
+            let t = vmovl_s16(t_16);
 
-                // Load 4 mask bytes
-                let m_bytes: [u8; 8] = [
-                    obmc_masks[col], obmc_masks[col+1], obmc_masks[col+2], obmc_masks[col+3],
-                    0, 0, 0, 0
-                ];
-                let m8 = vld1_u8(m_bytes.as_ptr());
-                let m16 = vmovl_u8(m8);
-                let m = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(m16)));
+            // Load 4 mask bytes
+            let m_bytes: [u8; 8] = [
+                obmc_masks[col], obmc_masks[col+1], obmc_masks[col+2], obmc_masks[col+3],
+                0, 0, 0, 0
+            ];
+            let m8 = partial_simd::vld1_u8(&m_bytes);
+            let m16 = vmovl_u8(m8);
+            let m = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(m16)));
 
-                // diff = tmp - dst
-                let diff = vsubq_s32(t, d);
-                let weighted = vmulq_s32(diff, m);
+            // diff = tmp - dst
+            let diff = vsubq_s32(t, d);
+            let weighted = vmulq_s32(diff, m);
 
-                // (weighted + 32) >> 6
-                let rnd = vdupq_n_s32(32);
-                let shifted = vshrq_n_s32::<6>(vaddq_s32(weighted, rnd));
-                let result = vaddq_s32(shifted, d);
+            // (weighted + 32) >> 6
+            let rnd = vdupq_n_s32(32);
+            let shifted = vshrq_n_s32::<6>(vaddq_s32(weighted, rnd));
+            let result = vaddq_s32(shifted, d);
 
-                // Clamp
-                let zero = vdupq_n_s32(0);
-                let max = vdupq_n_s32(bitdepth_max);
-                let clamped = vmaxq_s32(vminq_s32(result, max), zero);
+            // Clamp
+            let zero = vdupq_n_s32(0);
+            let max = vdupq_n_s32(bitdepth_max);
+            let clamped = vmaxq_s32(vminq_s32(result, max), zero);
 
-                let narrow = vmovn_u32(vreinterpretq_u32_s32(clamped));
-                vst1_u16(dst_row[col..].as_mut_ptr(), narrow);
-            }
+            let narrow = vmovn_u32(vreinterpretq_u32_s32(clamped));
+            let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
+            partial_simd::vst1_u16(dst_arr, narrow);
             col += 4;
         }
 
@@ -1262,108 +1256,108 @@ unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
 
         // SIMD: process 8 pixels at a time
         while col + 8 <= w {
-            unsafe {
-                let t1 = vld1q_s16(tmp1_row[col..].as_ptr());
-                let t2 = vld1q_s16(tmp2_row[col..].as_ptr());
+            let t1 = partial_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
+            let t2 = partial_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
-                // Compute diff and mask value
-                // abs_diff = |tmp1 - tmp2|
-                let diff = vsubq_s16(t1, t2);
-                let abs_diff = vabsq_s16(diff);
+            // Compute diff and mask value
+            // abs_diff = |tmp1 - tmp2|
+            let diff = vsubq_s16(t1, t2);
+            let abs_diff = vabsq_s16(diff);
 
-                // mask = min(38 + (abs_diff + mask_rnd) >> mask_sh, 64)
-                let abs_32_lo = vmovl_s16(vget_low_s16(abs_diff));
-                let abs_32_hi = vmovl_s16(vget_high_s16(abs_diff));
+            // mask = min(38 + (abs_diff + mask_rnd) >> mask_sh, 64)
+            let abs_32_lo = vmovl_s16(vget_low_s16(abs_diff));
+            let abs_32_hi = vmovl_s16(vget_high_s16(abs_diff));
 
-                let mask_rnd_vec = vdupq_n_s32(mask_rnd);
-                let m_lo = vaddq_s32(abs_32_lo, mask_rnd_vec);
-                let m_hi = vaddq_s32(abs_32_hi, mask_rnd_vec);
+            let mask_rnd_vec = vdupq_n_s32(mask_rnd);
+            let m_lo = vaddq_s32(abs_32_lo, mask_rnd_vec);
+            let m_hi = vaddq_s32(abs_32_hi, mask_rnd_vec);
 
-                // Shift by mask_sh (= 8)
-                let m_shifted_lo = vshrq_n_s32::<8>(m_lo);
-                let m_shifted_hi = vshrq_n_s32::<8>(m_hi);
+            // Shift by mask_sh (= 8)
+            let m_shifted_lo = vshrq_n_s32::<8>(m_lo);
+            let m_shifted_hi = vshrq_n_s32::<8>(m_hi);
 
-                // Add 38 and clamp to 64
-                let m_lo = vaddq_s32(m_shifted_lo, vdupq_n_s32(38));
-                let m_hi = vaddq_s32(m_shifted_hi, vdupq_n_s32(38));
-                let m_lo = vminq_s32(m_lo, vdupq_n_s32(64));
-                let m_hi = vminq_s32(m_hi, vdupq_n_s32(64));
+            // Add 38 and clamp to 64
+            let m_lo = vaddq_s32(m_shifted_lo, vdupq_n_s32(38));
+            let m_hi = vaddq_s32(m_shifted_hi, vdupq_n_s32(38));
+            let m_lo = vminq_s32(m_lo, vdupq_n_s32(64));
+            let m_hi = vminq_s32(m_hi, vdupq_n_s32(64));
 
-                // Narrow to 16-bit for blending
-                let m_16 = vcombine_s16(vmovn_s32(m_lo), vmovn_s32(m_hi));
+            // Narrow to 16-bit for blending
+            let m_16 = vcombine_s16(vmovn_s32(m_lo), vmovn_s32(m_hi));
 
-                // Apply sign: if sign, swap effective weights
-                let m_final = if sign != 0 {
-                    vsubq_s16(vdupq_n_s16(64), m_16)
+            // Apply sign: if sign, swap effective weights
+            let m_final = if sign != 0 {
+                vsubq_s16(vdupq_n_s16(64), m_16)
+            } else {
+                m_16
+            };
+            let inv_m = vsubq_s16(vdupq_n_s16(64), m_final);
+
+            // Widen tmp values to 32-bit for multiply
+            let t1_lo = vmovl_s16(vget_low_s16(t1));
+            let t1_hi = vmovl_s16(vget_high_s16(t1));
+            let t2_lo = vmovl_s16(vget_low_s16(t2));
+            let t2_hi = vmovl_s16(vget_high_s16(t2));
+            let m_lo_32 = vmovl_s16(vget_low_s16(m_final));
+            let m_hi_32 = vmovl_s16(vget_high_s16(m_final));
+            let inv_m_lo_32 = vmovl_s16(vget_low_s16(inv_m));
+            let inv_m_hi_32 = vmovl_s16(vget_high_s16(inv_m));
+
+            // blend = (tmp1 * m + tmp2 * (64-m) + rnd) >> sh
+            let rnd_vec = vdupq_n_s32(rnd);
+            let blend_lo = vaddq_s32(
+                vaddq_s32(vmulq_s32(t1_lo, m_lo_32), vmulq_s32(t2_lo, inv_m_lo_32)),
+                rnd_vec
+            );
+            let blend_hi = vaddq_s32(
+                vaddq_s32(vmulq_s32(t1_hi, m_hi_32), vmulq_s32(t2_hi, inv_m_hi_32)),
+                rnd_vec
+            );
+
+            // Shift by sh (= 10)
+            let result_lo = vshrq_n_s32::<10>(blend_lo);
+            let result_hi = vshrq_n_s32::<10>(blend_hi);
+
+            // Clamp to [0, 255]
+            let zero = vdupq_n_s32(0);
+            let max_val = vdupq_n_s32(255);
+            let result_lo = vmaxq_s32(vminq_s32(result_lo, max_val), zero);
+            let result_hi = vmaxq_s32(vminq_s32(result_hi, max_val), zero);
+
+            // Narrow to u8
+            let narrow_lo = vmovn_s32(result_lo);
+            let narrow_hi = vmovn_s32(result_hi);
+            let narrow_16 = vcombine_s16(narrow_lo, narrow_hi);
+            let result_u8 = vqmovun_s16(narrow_16);
+
+            let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
+            partial_simd::vst1_u8(dst_arr, result_u8);
+
+            // Store mask if needed
+            if let Some(ref mut mask_row) = mask_row {
+                // For 444: 1:1 mask storage
+                // For 422: horizontal averaging (2 pixels -> 1 mask)
+                // For 420: also horizontal averaging
+                if !SS_HOR {
+                    // 444: store all mask values
+                    let m_narrow = vqmovun_s16(m_16);
+                    let mask_arr: &mut [u8; 8] = (&mut mask_row[col..col + 8]).try_into().unwrap();
+                    partial_simd::vst1_u8(mask_arr, m_narrow);
                 } else {
-                    m_16
-                };
-                let inv_m = vsubq_s16(vdupq_n_s16(64), m_final);
-
-                // Widen tmp values to 32-bit for multiply
-                let t1_lo = vmovl_s16(vget_low_s16(t1));
-                let t1_hi = vmovl_s16(vget_high_s16(t1));
-                let t2_lo = vmovl_s16(vget_low_s16(t2));
-                let t2_hi = vmovl_s16(vget_high_s16(t2));
-                let m_lo_32 = vmovl_s16(vget_low_s16(m_final));
-                let m_hi_32 = vmovl_s16(vget_high_s16(m_final));
-                let inv_m_lo_32 = vmovl_s16(vget_low_s16(inv_m));
-                let inv_m_hi_32 = vmovl_s16(vget_high_s16(inv_m));
-
-                // blend = (tmp1 * m + tmp2 * (64-m) + rnd) >> sh
-                let rnd_vec = vdupq_n_s32(rnd);
-                let blend_lo = vaddq_s32(
-                    vaddq_s32(vmulq_s32(t1_lo, m_lo_32), vmulq_s32(t2_lo, inv_m_lo_32)),
-                    rnd_vec
-                );
-                let blend_hi = vaddq_s32(
-                    vaddq_s32(vmulq_s32(t1_hi, m_hi_32), vmulq_s32(t2_hi, inv_m_hi_32)),
-                    rnd_vec
-                );
-
-                // Shift by sh (= 10)
-                let result_lo = vshrq_n_s32::<10>(blend_lo);
-                let result_hi = vshrq_n_s32::<10>(blend_hi);
-
-                // Clamp to [0, 255]
-                let zero = vdupq_n_s32(0);
-                let max_val = vdupq_n_s32(255);
-                let result_lo = vmaxq_s32(vminq_s32(result_lo, max_val), zero);
-                let result_hi = vmaxq_s32(vminq_s32(result_hi, max_val), zero);
-
-                // Narrow to u8
-                let narrow_lo = vmovn_s32(result_lo);
-                let narrow_hi = vmovn_s32(result_hi);
-                let narrow_16 = vcombine_s16(narrow_lo, narrow_hi);
-                let result_u8 = vqmovun_s16(narrow_16);
-
-                vst1_u8(dst_row[col..].as_mut_ptr(), result_u8);
-
-                // Store mask if needed
-                if let Some(ref mut mask_row) = mask_row {
-                    // For 444: 1:1 mask storage
-                    // For 422: horizontal averaging (2 pixels -> 1 mask)
-                    // For 420: also horizontal averaging
-                    if !SS_HOR {
-                        // 444: store all mask values
-                        let m_narrow = vqmovun_s16(m_16);
-                        vst1_u8(mask_row[col..].as_mut_ptr(), m_narrow);
-                    } else {
-                        // 422/420: average pairs horizontally (unrolled - vgetq_lane requires const)
-                        let mask_idx = col >> 1;
-                        let m0 = vgetq_lane_s16::<0>(m_16) as i32;
-                        let m1 = vgetq_lane_s16::<1>(m_16) as i32;
-                        mask_row[mask_idx] = ((m0 + m1 + 1) >> 1) as u8;
-                        let m2 = vgetq_lane_s16::<2>(m_16) as i32;
-                        let m3 = vgetq_lane_s16::<3>(m_16) as i32;
-                        mask_row[mask_idx + 1] = ((m2 + m3 + 1) >> 1) as u8;
-                        let m4 = vgetq_lane_s16::<4>(m_16) as i32;
-                        let m5 = vgetq_lane_s16::<5>(m_16) as i32;
-                        mask_row[mask_idx + 2] = ((m4 + m5 + 1) >> 1) as u8;
-                        let m6 = vgetq_lane_s16::<6>(m_16) as i32;
-                        let m7 = vgetq_lane_s16::<7>(m_16) as i32;
-                        mask_row[mask_idx + 3] = ((m6 + m7 + 1) >> 1) as u8;
-                    }
+                    // 422/420: average pairs horizontally (unrolled - vgetq_lane requires const)
+                    let mask_idx = col >> 1;
+                    let m0 = vgetq_lane_s16::<0>(m_16) as i32;
+                    let m1 = vgetq_lane_s16::<1>(m_16) as i32;
+                    mask_row[mask_idx] = ((m0 + m1 + 1) >> 1) as u8;
+                    let m2 = vgetq_lane_s16::<2>(m_16) as i32;
+                    let m3 = vgetq_lane_s16::<3>(m_16) as i32;
+                    mask_row[mask_idx + 1] = ((m2 + m3 + 1) >> 1) as u8;
+                    let m4 = vgetq_lane_s16::<4>(m_16) as i32;
+                    let m5 = vgetq_lane_s16::<5>(m_16) as i32;
+                    mask_row[mask_idx + 2] = ((m4 + m5 + 1) >> 1) as u8;
+                    let m6 = vgetq_lane_s16::<6>(m_16) as i32;
+                    let m7 = vgetq_lane_s16::<7>(m_16) as i32;
+                    mask_row[mask_idx + 3] = ((m6 + m7 + 1) >> 1) as u8;
                 }
             }
             col += 8;
@@ -1523,29 +1517,28 @@ fn put_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    unsafe {
-                        let r0 = vld1_u8(src_row0[x..].as_ptr());
-                        let r1 = vld1_u8(src_row1[x..].as_ptr());
+                    let r0 = partial_simd::vld1_u8(src_row0[x..][..8].try_into().unwrap());
+                    let r1 = partial_simd::vld1_u8(src_row1[x..][..8].try_into().unwrap());
 
-                        // Widen to 16-bit
-                        let r0_16 = vreinterpretq_s16_u16(vmovl_u8(r0));
-                        let r1_16 = vreinterpretq_s16_u16(vmovl_u8(r1));
+                    // Widen to 16-bit
+                    let r0_16 = vreinterpretq_s16_u16(vmovl_u8(r0));
+                    let r1_16 = vreinterpretq_s16_u16(vmovl_u8(r1));
 
-                        // Multiply by coefficients
-                        let c0 = vdupq_n_s16(coeff0);
-                        let c1 = vdupq_n_s16(coeff1);
-                        let mul0 = vmulq_s16(r0_16, c0);
-                        let mul1 = vmulq_s16(r1_16, c1);
-                        let sum = vaddq_s16(mul0, mul1);
+                    // Multiply by coefficients
+                    let c0 = vdupq_n_s16(coeff0);
+                    let c1 = vdupq_n_s16(coeff1);
+                    let mul0 = vmulq_s16(r0_16, c0);
+                    let mul1 = vmulq_s16(r1_16, c1);
+                    let sum = vaddq_s16(mul0, mul1);
 
-                        // Round and shift: (sum + 8) >> 4
-                        let rnd = vdupq_n_s16(8);
-                        let result = vshrq_n_s16::<4>(vaddq_s16(sum, rnd));
+                    // Round and shift: (sum + 8) >> 4
+                    let rnd = vdupq_n_s16(8);
+                    let result = vshrq_n_s16::<4>(vaddq_s16(sum, rnd));
 
-                        // Pack to u8 with saturation
-                        let packed = vqmovun_s16(result);
-                        vst1_u8(dst_row[x..].as_mut_ptr(), packed);
-                    }
+                    // Pack to u8 with saturation
+                    let packed = vqmovun_s16(result);
+                    let dst_arr: &mut [u8; 8] = (&mut dst_row[x..x + 8]).try_into().unwrap();
+                    partial_simd::vst1_u8(dst_arr, packed);
                     x += 8;
                 }
 
@@ -1571,29 +1564,28 @@ fn put_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    unsafe {
-                        let s0 = vld1_u8(src_row[x..].as_ptr());
-                        let s1 = vld1_u8(src_row[x + 1..].as_ptr());
+                    let s0 = partial_simd::vld1_u8(src_row[x..][..8].try_into().unwrap());
+                    let s1 = partial_simd::vld1_u8(src_row[x + 1..][..8].try_into().unwrap());
 
-                        // Widen to 16-bit
-                        let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
-                        let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
+                    // Widen to 16-bit
+                    let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
+                    let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
 
-                        // Multiply and add
-                        let c0 = vdupq_n_s16(coeff0);
-                        let c1 = vdupq_n_s16(coeff1);
-                        let mul0 = vmulq_s16(s0_16, c0);
-                        let mul1 = vmulq_s16(s1_16, c1);
-                        let sum = vaddq_s16(mul0, mul1);
+                    // Multiply and add
+                    let c0 = vdupq_n_s16(coeff0);
+                    let c1 = vdupq_n_s16(coeff1);
+                    let mul0 = vmulq_s16(s0_16, c0);
+                    let mul1 = vmulq_s16(s1_16, c1);
+                    let sum = vaddq_s16(mul0, mul1);
 
-                        // Round and shift: (sum + 8) >> 4
-                        let rnd = vdupq_n_s16(8);
-                        let result = vshrq_n_s16::<4>(vaddq_s16(sum, rnd));
+                    // Round and shift: (sum + 8) >> 4
+                    let rnd = vdupq_n_s16(8);
+                    let result = vshrq_n_s16::<4>(vaddq_s16(sum, rnd));
 
-                        // Pack to u8
-                        let packed = vqmovun_s16(result);
-                        vst1_u8(dst_row[x..].as_mut_ptr(), packed);
-                    }
+                    // Pack to u8
+                    let packed = vqmovun_s16(result);
+                    let dst_arr: &mut [u8; 8] = (&mut dst_row[x..x + 8]).try_into().unwrap();
+                    partial_simd::vst1_u8(dst_arr, packed);
                     x += 8;
                 }
 
@@ -1642,41 +1634,40 @@ fn put_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    unsafe {
-                        let r0 = vld1q_s16(mid_row0[x..].as_ptr());
-                        let r1 = vld1q_s16(mid_row1[x..].as_ptr());
+                    let r0 = partial_simd::vld1q_s16(mid_row0[x..][..8].try_into().unwrap());
+                    let r1 = partial_simd::vld1q_s16(mid_row1[x..][..8].try_into().unwrap());
 
-                        // Widen to 32-bit for multiply
-                        let r0_lo = vmovl_s16(vget_low_s16(r0));
-                        let r0_hi = vmovl_s16(vget_high_s16(r0));
-                        let r1_lo = vmovl_s16(vget_low_s16(r1));
-                        let r1_hi = vmovl_s16(vget_high_s16(r1));
+                    // Widen to 32-bit for multiply
+                    let r0_lo = vmovl_s16(vget_low_s16(r0));
+                    let r0_hi = vmovl_s16(vget_high_s16(r0));
+                    let r1_lo = vmovl_s16(vget_low_s16(r1));
+                    let r1_hi = vmovl_s16(vget_high_s16(r1));
 
-                        let c0 = vdupq_n_s32(v_coeff0 as i32);
-                        let c1 = vdupq_n_s32(v_coeff1 as i32);
+                    let c0 = vdupq_n_s32(v_coeff0 as i32);
+                    let c1 = vdupq_n_s32(v_coeff1 as i32);
 
-                        let sum_lo = vaddq_s32(vmulq_s32(r0_lo, c0), vmulq_s32(r1_lo, c1));
-                        let sum_hi = vaddq_s32(vmulq_s32(r0_hi, c0), vmulq_s32(r1_hi, c1));
+                    let sum_lo = vaddq_s32(vmulq_s32(r0_lo, c0), vmulq_s32(r1_lo, c1));
+                    let sum_hi = vaddq_s32(vmulq_s32(r0_hi, c0), vmulq_s32(r1_hi, c1));
 
-                        // Round and shift: (sum + 128) >> 8 for combined H+V
-                        let rnd = vdupq_n_s32(128);
-                        let result_lo = vshrq_n_s32::<8>(vaddq_s32(sum_lo, rnd));
-                        let result_hi = vshrq_n_s32::<8>(vaddq_s32(sum_hi, rnd));
+                    // Round and shift: (sum + 128) >> 8 for combined H+V
+                    let rnd = vdupq_n_s32(128);
+                    let result_lo = vshrq_n_s32::<8>(vaddq_s32(sum_lo, rnd));
+                    let result_hi = vshrq_n_s32::<8>(vaddq_s32(sum_hi, rnd));
 
-                        // Clamp and narrow
-                        let zero = vdupq_n_s32(0);
-                        let max_val = vdupq_n_s32(255);
-                        let result_lo = vmaxq_s32(vminq_s32(result_lo, max_val), zero);
-                        let result_hi = vmaxq_s32(vminq_s32(result_hi, max_val), zero);
+                    // Clamp and narrow
+                    let zero = vdupq_n_s32(0);
+                    let max_val = vdupq_n_s32(255);
+                    let result_lo = vmaxq_s32(vminq_s32(result_lo, max_val), zero);
+                    let result_hi = vmaxq_s32(vminq_s32(result_hi, max_val), zero);
 
-                        // Narrow to 16-bit then 8-bit
-                        let narrow_lo = vmovn_s32(result_lo);
-                        let narrow_hi = vmovn_s32(result_hi);
-                        let narrow_16 = vcombine_s16(narrow_lo, narrow_hi);
-                        let result_u8 = vqmovun_s16(narrow_16);
+                    // Narrow to 16-bit then 8-bit
+                    let narrow_lo = vmovn_s32(result_lo);
+                    let narrow_hi = vmovn_s32(result_hi);
+                    let narrow_16 = vcombine_s16(narrow_lo, narrow_hi);
+                    let result_u8 = vqmovun_s16(narrow_16);
 
-                        vst1_u8(dst_row[x..].as_mut_ptr(), result_u8);
-                    }
+                    let dst_arr: &mut [u8; 8] = (&mut dst_row[x..x + 8]).try_into().unwrap();
+                    partial_simd::vst1_u8(dst_arr, result_u8);
                     x += 8;
                 }
 
@@ -1741,17 +1732,16 @@ fn prep_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    unsafe {
-                        let s = vld1_u8(src_row[x..].as_ptr());
-                        let s16 = vreinterpretq_s16_u16(vmovl_u8(s));
+                    let s = partial_simd::vld1_u8(src_row[x..][..8].try_into().unwrap());
+                    let s16 = vreinterpretq_s16_u16(vmovl_u8(s));
 
-                        // Scale: (pixel - 512) << 4 for intermediate format
-                        // Actually for 8bpc: pixel << 4 with PREP_BIAS offset
-                        let scaled = vshlq_n_s16::<4>(s16);
-                        let biased = vsubq_s16(scaled, vdupq_n_s16(PREP_BIAS));
+                    // Scale: (pixel - 512) << 4 for intermediate format
+                    // Actually for 8bpc: pixel << 4 with PREP_BIAS offset
+                    let scaled = vshlq_n_s16::<4>(s16);
+                    let biased = vsubq_s16(scaled, vdupq_n_s16(PREP_BIAS));
 
-                        vst1q_s16(tmp_row[x..].as_mut_ptr(), biased);
-                    }
+                    let tmp_arr: &mut [i16; 8] = (&mut tmp_row[x..x + 8]).try_into().unwrap();
+                    partial_simd::vst1q_s16(tmp_arr, biased);
                     x += 8;
                 }
 
@@ -1776,24 +1766,23 @@ fn prep_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    unsafe {
-                        let r0 = vld1_u8(src_row0[x..].as_ptr());
-                        let r1 = vld1_u8(src_row1[x..].as_ptr());
+                    let r0 = partial_simd::vld1_u8(src_row0[x..][..8].try_into().unwrap());
+                    let r1 = partial_simd::vld1_u8(src_row1[x..][..8].try_into().unwrap());
 
-                        let r0_16 = vreinterpretq_s16_u16(vmovl_u8(r0));
-                        let r1_16 = vreinterpretq_s16_u16(vmovl_u8(r1));
+                    let r0_16 = vreinterpretq_s16_u16(vmovl_u8(r0));
+                    let r1_16 = vreinterpretq_s16_u16(vmovl_u8(r1));
 
-                        let c0 = vdupq_n_s16(coeff0);
-                        let c1 = vdupq_n_s16(coeff1);
-                        let mul0 = vmulq_s16(r0_16, c0);
-                        let mul1 = vmulq_s16(r1_16, c1);
-                        let sum = vaddq_s16(mul0, mul1);
+                    let c0 = vdupq_n_s16(coeff0);
+                    let c1 = vdupq_n_s16(coeff1);
+                    let mul0 = vmulq_s16(r0_16, c0);
+                    let mul1 = vmulq_s16(r1_16, c1);
+                    let sum = vaddq_s16(mul0, mul1);
 
-                        // For prep: no shift, just apply bias
-                        let biased = vsubq_s16(sum, vdupq_n_s16(PREP_BIAS));
+                    // For prep: no shift, just apply bias
+                    let biased = vsubq_s16(sum, vdupq_n_s16(PREP_BIAS));
 
-                        vst1q_s16(tmp_row[x..].as_mut_ptr(), biased);
-                    }
+                    let tmp_arr: &mut [i16; 8] = (&mut tmp_row[x..x + 8]).try_into().unwrap();
+                    partial_simd::vst1q_s16(tmp_arr, biased);
                     x += 8;
                 }
 
@@ -1819,23 +1808,22 @@ fn prep_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    unsafe {
-                        let s0 = vld1_u8(src_row[x..].as_ptr());
-                        let s1 = vld1_u8(src_row[x + 1..].as_ptr());
+                    let s0 = partial_simd::vld1_u8(src_row[x..][..8].try_into().unwrap());
+                    let s1 = partial_simd::vld1_u8(src_row[x + 1..][..8].try_into().unwrap());
 
-                        let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
-                        let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
+                    let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
+                    let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
 
-                        let c0 = vdupq_n_s16(coeff0);
-                        let c1 = vdupq_n_s16(coeff1);
-                        let mul0 = vmulq_s16(s0_16, c0);
-                        let mul1 = vmulq_s16(s1_16, c1);
-                        let sum = vaddq_s16(mul0, mul1);
+                    let c0 = vdupq_n_s16(coeff0);
+                    let c1 = vdupq_n_s16(coeff1);
+                    let mul0 = vmulq_s16(s0_16, c0);
+                    let mul1 = vmulq_s16(s1_16, c1);
+                    let sum = vaddq_s16(mul0, mul1);
 
-                        let biased = vsubq_s16(sum, vdupq_n_s16(PREP_BIAS));
+                    let biased = vsubq_s16(sum, vdupq_n_s16(PREP_BIAS));
 
-                        vst1q_s16(tmp_row[x..].as_mut_ptr(), biased);
-                    }
+                    let tmp_arr: &mut [i16; 8] = (&mut tmp_row[x..x + 8]).try_into().unwrap();
+                    partial_simd::vst1q_s16(tmp_arr, biased);
                     x += 8;
                 }
 
@@ -1883,36 +1871,35 @@ fn prep_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    unsafe {
-                        let r0 = vld1q_s16(mid_row0[x..].as_ptr());
-                        let r1 = vld1q_s16(mid_row1[x..].as_ptr());
+                    let r0 = partial_simd::vld1q_s16(mid_row0[x..][..8].try_into().unwrap());
+                    let r1 = partial_simd::vld1q_s16(mid_row1[x..][..8].try_into().unwrap());
 
-                        // Widen to 32-bit
-                        let r0_lo = vmovl_s16(vget_low_s16(r0));
-                        let r0_hi = vmovl_s16(vget_high_s16(r0));
-                        let r1_lo = vmovl_s16(vget_low_s16(r1));
-                        let r1_hi = vmovl_s16(vget_high_s16(r1));
+                    // Widen to 32-bit
+                    let r0_lo = vmovl_s16(vget_low_s16(r0));
+                    let r0_hi = vmovl_s16(vget_high_s16(r0));
+                    let r1_lo = vmovl_s16(vget_low_s16(r1));
+                    let r1_hi = vmovl_s16(vget_high_s16(r1));
 
-                        let c0 = vdupq_n_s32(v_coeff0 as i32);
-                        let c1 = vdupq_n_s32(v_coeff1 as i32);
+                    let c0 = vdupq_n_s32(v_coeff0 as i32);
+                    let c1 = vdupq_n_s32(v_coeff1 as i32);
 
-                        let sum_lo = vaddq_s32(vmulq_s32(r0_lo, c0), vmulq_s32(r1_lo, c1));
-                        let sum_hi = vaddq_s32(vmulq_s32(r0_hi, c0), vmulq_s32(r1_hi, c1));
+                    let sum_lo = vaddq_s32(vmulq_s32(r0_lo, c0), vmulq_s32(r1_lo, c1));
+                    let sum_hi = vaddq_s32(vmulq_s32(r0_hi, c0), vmulq_s32(r1_hi, c1));
 
-                        // Shift by 4 for prep format
-                        let result_lo = vshrq_n_s32::<4>(sum_lo);
-                        let result_hi = vshrq_n_s32::<4>(sum_hi);
+                    // Shift by 4 for prep format
+                    let result_lo = vshrq_n_s32::<4>(sum_lo);
+                    let result_hi = vshrq_n_s32::<4>(sum_hi);
 
-                        // Narrow to 16-bit
-                        let narrow_lo = vmovn_s32(result_lo);
-                        let narrow_hi = vmovn_s32(result_hi);
-                        let narrow_16 = vcombine_s16(narrow_lo, narrow_hi);
+                    // Narrow to 16-bit
+                    let narrow_lo = vmovn_s32(result_lo);
+                    let narrow_hi = vmovn_s32(result_hi);
+                    let narrow_16 = vcombine_s16(narrow_lo, narrow_hi);
 
-                        // Apply bias
-                        let biased = vsubq_s16(narrow_16, vdupq_n_s16(PREP_BIAS));
+                    // Apply bias
+                    let biased = vsubq_s16(narrow_16, vdupq_n_s16(PREP_BIAS));
 
-                        vst1q_s16(tmp_row[x..].as_mut_ptr(), biased);
-                    }
+                    let tmp_arr: &mut [i16; 8] = (&mut tmp_row[x..x + 8]).try_into().unwrap();
+                    partial_simd::vst1q_s16(tmp_arr, biased);
                     x += 8;
                 }
 

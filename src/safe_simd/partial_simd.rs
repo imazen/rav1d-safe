@@ -1,8 +1,17 @@
 //! Safe wrappers for partial (64-bit) SIMD load/store operations.
 //!
-//! These are NOT provided by safe_unaligned_simd because it lacks an Is64BitsUnaligned trait.
-//! The wrappers are safe functions with #[target_feature], callable from #[arcane] contexts
-//! without needing unsafe blocks.
+//! These fill a gap in safe_unaligned_simd which lacks Is64BitsUnaligned trait.
+//! When/if safe_unaligned_simd adds these, this module can re-export from there.
+//!
+//! The wrappers are safe functions with #[target_feature], callable from #[arcane]
+//! contexts without needing unsafe blocks.
+//!
+//! # Future compatibility
+//! ```ignore
+//! // When safe_unaligned_simd adds 64-bit support, change this module to:
+//! #[cfg(target_arch = "x86_64")]
+//! pub use safe_unaligned_simd::x86_64::{mm_loadl_epi64, mm_storel_epi64, ...};
+//! ```
 //!
 //! # Example
 //! ```ignore
@@ -194,5 +203,139 @@ mod aarch64 {
     pub fn vst1_s32(dst: &mut [i32; 2], val: int32x2_t) {
         // SAFETY: dst is valid for 8 bytes (2 * 4)
         unsafe { core::arch::aarch64::vst1_s32(dst.as_mut_ptr(), val) }
+    }
+
+    // ========================================================================
+    // 128-bit (quad-word) NEON operations
+    // ========================================================================
+
+    /// Load 16 bytes as uint8x16_t.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vld1q_u8(src: &[u8; 16]) -> uint8x16_t {
+        unsafe { core::arch::aarch64::vld1q_u8(src.as_ptr()) }
+    }
+
+    /// Store uint8x16_t (16 bytes) to memory.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vst1q_u8(dst: &mut [u8; 16], val: uint8x16_t) {
+        unsafe { core::arch::aarch64::vst1q_u8(dst.as_mut_ptr(), val) }
+    }
+
+    /// Load 8 i16 values as int16x8_t.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vld1q_s16(src: &[i16; 8]) -> int16x8_t {
+        unsafe { core::arch::aarch64::vld1q_s16(src.as_ptr()) }
+    }
+
+    /// Store int16x8_t (8 i16 values) to memory.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vst1q_s16(dst: &mut [i16; 8], val: int16x8_t) {
+        unsafe { core::arch::aarch64::vst1q_s16(dst.as_mut_ptr(), val) }
+    }
+
+    /// Load 8 u16 values as uint16x8_t.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vld1q_u16(src: &[u16; 8]) -> uint16x8_t {
+        unsafe { core::arch::aarch64::vld1q_u16(src.as_ptr()) }
+    }
+
+    /// Store uint16x8_t (8 u16 values) to memory.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vst1q_u16(dst: &mut [u16; 8], val: uint16x8_t) {
+        unsafe { core::arch::aarch64::vst1q_u16(dst.as_mut_ptr(), val) }
+    }
+
+    /// Load 4 i32 values as int32x4_t.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vld1q_s32(src: &[i32; 4]) -> int32x4_t {
+        unsafe { core::arch::aarch64::vld1q_s32(src.as_ptr()) }
+    }
+
+    /// Store int32x4_t (4 i32 values) to memory.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vst1q_s32(dst: &mut [i32; 4], val: int32x4_t) {
+        unsafe { core::arch::aarch64::vst1q_s32(dst.as_mut_ptr(), val) }
+    }
+
+    /// Load 4 u32 values as uint32x4_t.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vld1q_u32(src: &[u32; 4]) -> uint32x4_t {
+        unsafe { core::arch::aarch64::vld1q_u32(src.as_ptr()) }
+    }
+
+    /// Store uint32x4_t (4 u32 values) to memory.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vst1q_u32(dst: &mut [u32; 4], val: uint32x4_t) {
+        unsafe { core::arch::aarch64::vst1q_u32(dst.as_mut_ptr(), val) }
+    }
+
+    /// Load 2 u64 values as uint64x2_t.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vld1q_u64(src: &[u64; 2]) -> uint64x2_t {
+        unsafe { core::arch::aarch64::vld1q_u64(src.as_ptr()) }
+    }
+
+    /// Store uint64x2_t (2 u64 values) to memory.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vst1q_u64(dst: &mut [u64; 2], val: uint64x2_t) {
+        unsafe { core::arch::aarch64::vst1q_u64(dst.as_mut_ptr(), val) }
+    }
+
+    // ========================================================================
+    // Additional 64-bit variants needed by mc_arm
+    // ========================================================================
+
+    /// Load 4 u16 values as uint16x4_t.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vld1_u16(src: &[u16; 4]) -> uint16x4_t {
+        unsafe { core::arch::aarch64::vld1_u16(src.as_ptr()) }
+    }
+
+    /// Store uint16x4_t (4 u16 values) to memory.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vst1_u16(dst: &mut [u16; 4], val: uint16x4_t) {
+        unsafe { core::arch::aarch64::vst1_u16(dst.as_mut_ptr(), val) }
+    }
+
+    /// Load 2 u32 values as uint32x2_t.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vld1_u32(src: &[u32; 2]) -> uint32x2_t {
+        unsafe { core::arch::aarch64::vld1_u32(src.as_ptr()) }
+    }
+
+    /// Store uint32x2_t (2 u32 values) to memory.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vst1_u32(dst: &mut [u32; 2], val: uint32x2_t) {
+        unsafe { core::arch::aarch64::vst1_u32(dst.as_mut_ptr(), val) }
+    }
+
+    /// Load 1 u64 value as uint64x1_t.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vld1_u64(src: &[u64; 1]) -> uint64x1_t {
+        unsafe { core::arch::aarch64::vld1_u64(src.as_ptr()) }
+    }
+
+    /// Store uint64x1_t (1 u64 value) to memory.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub fn vst1_u64(dst: &mut [u64; 1], val: uint64x1_t) {
+        unsafe { core::arch::aarch64::vst1_u64(dst.as_mut_ptr(), val) }
     }
 }
