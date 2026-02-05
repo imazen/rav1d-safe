@@ -863,6 +863,439 @@ fn blend_direct<BD: BitDepth>(
     blend_rust::<BD>(dst, tmp, w as usize, h as usize, mask);
 }
 
+/// Direct dispatch for mc (put) - bypasses function pointer table.
+///
+/// Selects optimal SIMD implementation at runtime based on CPU features and Filter2d variant.
+/// Used when `feature = "asm"` is disabled for zero-overhead direct calls.
+#[cfg(not(feature = "asm"))]
+fn mc_put_direct<BD: BitDepth>(
+    filter: Filter2d,
+    dst: Rav1dPictureDataComponentOffset,
+    src: Rav1dPictureDataComponentOffset,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bd: BD,
+) {
+    use crate::include::common::bitdepth::BPC;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+            let dst_stride = dst.stride();
+            let src_ptr = src.as_ptr::<BD>().cast();
+            let src_stride = src.stride();
+            let bd_c = bd.into_c();
+            let dst_ffi = FFISafe::new(&dst);
+            let src_ffi = FFISafe::new(&src);
+            use crate::src::safe_simd::mc as safe_mc;
+            use Filter2d::*;
+            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid dst/src.
+            unsafe {
+                match (BD::BPC, filter) {
+                    (BPC::BPC8, Regular8Tap) => safe_mc::put_8tap_regular_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC8, RegularSmooth8Tap) => safe_mc::put_8tap_regular_smooth_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC8, RegularSharp8Tap) => safe_mc::put_8tap_regular_sharp_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC8, SmoothRegular8Tap) => safe_mc::put_8tap_smooth_regular_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC8, Smooth8Tap) => safe_mc::put_8tap_smooth_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC8, SmoothSharp8Tap) => safe_mc::put_8tap_smooth_sharp_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC8, SharpRegular8Tap) => safe_mc::put_8tap_sharp_regular_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC8, SharpSmooth8Tap) => safe_mc::put_8tap_sharp_smooth_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC8, Sharp8Tap) => safe_mc::put_8tap_sharp_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC8, Bilinear) => safe_mc::put_bilin_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC16, Regular8Tap) => safe_mc::put_8tap_regular_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC16, RegularSmooth8Tap) => safe_mc::put_8tap_regular_smooth_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC16, RegularSharp8Tap) => safe_mc::put_8tap_regular_sharp_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC16, SmoothRegular8Tap) => safe_mc::put_8tap_smooth_regular_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC16, Smooth8Tap) => safe_mc::put_8tap_smooth_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC16, SmoothSharp8Tap) => safe_mc::put_8tap_smooth_sharp_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC16, SharpRegular8Tap) => safe_mc::put_8tap_sharp_regular_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC16, SharpSmooth8Tap) => safe_mc::put_8tap_sharp_smooth_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC16, Sharp8Tap) => safe_mc::put_8tap_sharp_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                    (BPC::BPC16, Bilinear) => safe_mc::put_bilin_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                }
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+        let dst_stride = dst.stride();
+        let src_ptr = src.as_ptr::<BD>().cast();
+        let src_stride = src.stride();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+        let src_ffi = FFISafe::new(&src);
+        use crate::src::safe_simd::mc_arm as safe_mc_arm;
+        use Filter2d::*;
+        // SAFETY: NEON always available on aarch64. Pointers from valid dst/src.
+        unsafe {
+            match (BD::BPC, filter) {
+                (BPC::BPC8, Regular8Tap) => safe_mc_arm::put_8tap_regular_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC8, RegularSmooth8Tap) => safe_mc_arm::put_8tap_regular_smooth_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC8, RegularSharp8Tap) => safe_mc_arm::put_8tap_regular_sharp_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC8, SmoothRegular8Tap) => safe_mc_arm::put_8tap_smooth_regular_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC8, Smooth8Tap) => safe_mc_arm::put_8tap_smooth_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC8, SmoothSharp8Tap) => safe_mc_arm::put_8tap_smooth_sharp_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC8, SharpRegular8Tap) => safe_mc_arm::put_8tap_sharp_regular_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC8, SharpSmooth8Tap) => safe_mc_arm::put_8tap_sharp_smooth_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC8, Sharp8Tap) => safe_mc_arm::put_8tap_sharp_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC8, Bilinear) => safe_mc_arm::put_bilin_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC16, Regular8Tap) => safe_mc_arm::put_8tap_regular_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC16, RegularSmooth8Tap) => safe_mc_arm::put_8tap_regular_smooth_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC16, RegularSharp8Tap) => safe_mc_arm::put_8tap_regular_sharp_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC16, SmoothRegular8Tap) => safe_mc_arm::put_8tap_smooth_regular_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC16, Smooth8Tap) => safe_mc_arm::put_8tap_smooth_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC16, SmoothSharp8Tap) => safe_mc_arm::put_8tap_smooth_sharp_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC16, SharpRegular8Tap) => safe_mc_arm::put_8tap_sharp_regular_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC16, SharpSmooth8Tap) => safe_mc_arm::put_8tap_sharp_smooth_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC16, Sharp8Tap) => safe_mc_arm::put_8tap_sharp_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+                (BPC::BPC16, Bilinear) => safe_mc_arm::put_bilin_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            }
+        }
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    {
+        let w = w as usize;
+        let h = h as usize;
+        let mx = mx as usize;
+        let my = my as usize;
+        match filter {
+            Filter2d::Bilinear => put_bilin_rust(dst, src, w, h, mx, my, bd),
+            _ => put_8tap_rust(dst, src, w, h, mx, my, filter.hv(), bd),
+        }
+    }
+}
+
+/// Direct dispatch for mct (prep) - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn mct_prep_direct<BD: BitDepth>(
+    filter: Filter2d,
+    tmp: &mut [i16],
+    src: Rav1dPictureDataComponentOffset,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bd: BD,
+) {
+    use crate::include::common::bitdepth::BPC;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
+            let src_ptr = src.as_ptr::<BD>().cast();
+            let src_stride = src.stride();
+            let bd_c = bd.into_c();
+            let src_ffi = FFISafe::new(&src);
+            use crate::src::safe_simd::mc as safe_mc;
+            use Filter2d::*;
+            unsafe {
+                match (BD::BPC, filter) {
+                    (BPC::BPC8, Regular8Tap) => safe_mc::prep_8tap_regular_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC8, RegularSmooth8Tap) => safe_mc::prep_8tap_regular_smooth_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC8, RegularSharp8Tap) => safe_mc::prep_8tap_regular_sharp_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC8, SmoothRegular8Tap) => safe_mc::prep_8tap_smooth_regular_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC8, Smooth8Tap) => safe_mc::prep_8tap_smooth_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC8, SmoothSharp8Tap) => safe_mc::prep_8tap_smooth_sharp_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC8, SharpRegular8Tap) => safe_mc::prep_8tap_sharp_regular_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC8, SharpSmooth8Tap) => safe_mc::prep_8tap_sharp_smooth_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC8, Sharp8Tap) => safe_mc::prep_8tap_sharp_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC8, Bilinear) => safe_mc::prep_bilin_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC16, Regular8Tap) => safe_mc::prep_8tap_regular_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC16, RegularSmooth8Tap) => safe_mc::prep_8tap_regular_smooth_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC16, RegularSharp8Tap) => safe_mc::prep_8tap_regular_sharp_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC16, SmoothRegular8Tap) => safe_mc::prep_8tap_smooth_regular_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC16, Smooth8Tap) => safe_mc::prep_8tap_smooth_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC16, SmoothSharp8Tap) => safe_mc::prep_8tap_smooth_sharp_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC16, SharpRegular8Tap) => safe_mc::prep_8tap_sharp_regular_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC16, SharpSmooth8Tap) => safe_mc::prep_8tap_sharp_smooth_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC16, Sharp8Tap) => safe_mc::prep_8tap_sharp_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                    (BPC::BPC16, Bilinear) => safe_mc::prep_bilin_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                }
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
+        let src_ptr = src.as_ptr::<BD>().cast();
+        let src_stride = src.stride();
+        let bd_c = bd.into_c();
+        let src_ffi = FFISafe::new(&src);
+        use crate::src::safe_simd::mc_arm as safe_mc_arm;
+        use Filter2d::*;
+        unsafe {
+            match (BD::BPC, filter) {
+                (BPC::BPC8, Regular8Tap) => safe_mc_arm::prep_8tap_regular_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC8, RegularSmooth8Tap) => safe_mc_arm::prep_8tap_regular_smooth_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC8, RegularSharp8Tap) => safe_mc_arm::prep_8tap_regular_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC8, SmoothRegular8Tap) => safe_mc_arm::prep_8tap_smooth_regular_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC8, Smooth8Tap) => safe_mc_arm::prep_8tap_smooth_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC8, SmoothSharp8Tap) => safe_mc_arm::prep_8tap_smooth_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC8, SharpRegular8Tap) => safe_mc_arm::prep_8tap_sharp_regular_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC8, SharpSmooth8Tap) => safe_mc_arm::prep_8tap_sharp_smooth_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC8, Sharp8Tap) => safe_mc_arm::prep_8tap_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC8, Bilinear) => safe_mc_arm::prep_bilin_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC16, Regular8Tap) => safe_mc_arm::prep_8tap_regular_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC16, RegularSmooth8Tap) => safe_mc_arm::prep_8tap_regular_smooth_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC16, RegularSharp8Tap) => safe_mc_arm::prep_8tap_regular_sharp_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC16, SmoothRegular8Tap) => safe_mc_arm::prep_8tap_smooth_regular_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC16, Smooth8Tap) => safe_mc_arm::prep_8tap_smooth_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC16, SmoothSharp8Tap) => safe_mc_arm::prep_8tap_smooth_sharp_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC16, SharpRegular8Tap) => safe_mc_arm::prep_8tap_sharp_regular_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC16, SharpSmooth8Tap) => safe_mc_arm::prep_8tap_sharp_smooth_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC16, Sharp8Tap) => safe_mc_arm::prep_8tap_sharp_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+                (BPC::BPC16, Bilinear) => safe_mc_arm::prep_bilin_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            }
+        }
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    {
+        let w = w as usize;
+        let h = h as usize;
+        let mx = mx as usize;
+        let my = my as usize;
+        let tmp = &mut tmp[..w * h];
+        match filter {
+            Filter2d::Bilinear => prep_bilin_rust(tmp, src, w, h, mx, my, bd),
+            _ => prep_8tap_rust(tmp, src, w, h, mx, my, filter.hv(), bd),
+        }
+    }
+}
+
+/// Direct dispatch for mc_scaled (put_scaled) - bypasses function pointer table.
+/// No SIMD implementations exist for scaled variants; calls scalar Rust fallback directly.
+#[cfg(not(feature = "asm"))]
+fn mc_scaled_direct<BD: BitDepth>(
+    filter: Filter2d,
+    dst: Rav1dPictureDataComponentOffset,
+    src: Rav1dPictureDataComponentOffset,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    dx: i32,
+    dy: i32,
+    bd: BD,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let mx = mx as usize;
+    let my = my as usize;
+    let dx = dx as usize;
+    let dy = dy as usize;
+    match filter {
+        Filter2d::Bilinear => put_bilin_scaled_rust(dst, src, w, h, mx, my, dx, dy, bd),
+        _ => put_8tap_scaled_rust(dst, src, w, h, mx, my, dx, dy, filter.hv(), bd),
+    }
+}
+
+/// Direct dispatch for mct_scaled (prep_scaled) - bypasses function pointer table.
+/// No SIMD implementations exist for scaled variants; calls scalar Rust fallback directly.
+#[cfg(not(feature = "asm"))]
+fn mct_scaled_direct<BD: BitDepth>(
+    filter: Filter2d,
+    tmp: &mut [i16],
+    src: Rav1dPictureDataComponentOffset,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    dx: i32,
+    dy: i32,
+    bd: BD,
+) {
+    let w = w as usize;
+    let h = h as usize;
+    let mx = mx as usize;
+    let my = my as usize;
+    let dx = dx as usize;
+    let dy = dy as usize;
+    let tmp = &mut tmp[..w * h];
+    match filter {
+        Filter2d::Bilinear => prep_bilin_scaled_rust(tmp, src, w, h, mx, my, dx, dy, bd),
+        _ => prep_8tap_scaled_rust(tmp, src, w, h, mx, my, dx, dy, filter.hv(), bd),
+    }
+}
+
+/// Direct dispatch for blend_dir (blend_h/blend_v) - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn blend_dir_direct<BD: BitDepth>(
+    is_h: bool,
+    dst: Rav1dPictureDataComponentOffset,
+    tmp: &[BD::Pixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+) {
+    use crate::include::common::bitdepth::BPC;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+            let dst_stride = dst.stride();
+            let tmp_ptr = ptr::from_ref(tmp).cast();
+            let dst_ffi = FFISafe::new(&dst);
+            use crate::src::safe_simd::mc as safe_mc;
+            unsafe {
+                match (BD::BPC, is_h) {
+                    (BPC::BPC8, true) => safe_mc::blend_h_8bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                    (BPC::BPC8, false) => safe_mc::blend_v_8bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                    (BPC::BPC16, true) => safe_mc::blend_h_16bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                    (BPC::BPC16, false) => safe_mc::blend_v_16bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                }
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+        let dst_stride = dst.stride();
+        let tmp_ptr = ptr::from_ref(tmp).cast();
+        let dst_ffi = FFISafe::new(&dst);
+        use crate::src::safe_simd::mc_arm as safe_mc_arm;
+        unsafe {
+            match (BD::BPC, is_h) {
+                (BPC::BPC8, true) => safe_mc_arm::blend_h_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                (BPC::BPC8, false) => safe_mc_arm::blend_v_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                (BPC::BPC16, true) => safe_mc_arm::blend_h_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                (BPC::BPC16, false) => safe_mc_arm::blend_v_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+            }
+        }
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    if is_h {
+        blend_h_rust::<BD>(dst, tmp, w as usize, h as usize);
+    } else {
+        blend_v_rust::<BD>(dst, tmp, w as usize, h as usize);
+    }
+}
+
+/// Direct dispatch for w_mask - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn w_mask_direct<BD: BitDepth>(
+    layout: Rav1dPixelLayoutSubSampled,
+    dst: Rav1dPictureDataComponentOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+    bd: BD,
+) {
+    use crate::include::common::bitdepth::BPC;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+            let dst_stride = dst.stride();
+            let bd_c = bd.into_c();
+            let dst_ffi = FFISafe::new(&dst);
+            use crate::src::safe_simd::mc as safe_mc;
+            unsafe {
+                match (BD::BPC, layout) {
+                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => safe_mc::w_mask_420_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => safe_mc::w_mask_422_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => safe_mc::w_mask_444_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => safe_mc::w_mask_420_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => safe_mc::w_mask_422_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => safe_mc::w_mask_444_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+                }
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+        let dst_stride = dst.stride();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+        use crate::src::safe_simd::mc_arm as safe_mc_arm;
+        unsafe {
+            match (BD::BPC, layout) {
+                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => safe_mc_arm::w_mask_420_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => safe_mc_arm::w_mask_422_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => safe_mc_arm::w_mask_444_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => safe_mc_arm::w_mask_420_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => safe_mc_arm::w_mask_422_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => safe_mc_arm::w_mask_444_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+            }
+        }
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    {
+        let w = w as usize;
+        let h = h as usize;
+        debug_assert!(sign == 1 || sign == 0);
+        let sign = sign != 0;
+        let (ss_hor, ss_ver) = match layout {
+            Rav1dPixelLayoutSubSampled::I420 => (true, true),
+            Rav1dPixelLayoutSubSampled::I422 => (true, false),
+            Rav1dPixelLayoutSubSampled::I444 => (false, false),
+        };
+        w_mask_rust(dst, tmp1, tmp2, w, h, mask, sign, ss_hor, ss_ver, bd);
+    }
+}
+
+/// Direct dispatch for warp8x8 - bypasses function pointer table.
+/// No safe SIMD implementation available; calls scalar Rust fallback directly.
+#[cfg(not(feature = "asm"))]
+fn warp8x8_direct<BD: BitDepth>(
+    dst: Rav1dPictureDataComponentOffset,
+    src: Rav1dPictureDataComponentOffset,
+    abcd: &[i16; 4],
+    mx: i32,
+    my: i32,
+    bd: BD,
+) {
+    warp_affine_8x8_rust(dst, src, abcd, mx, my, bd);
+}
+
+/// Direct dispatch for warp8x8t - bypasses function pointer table.
+/// No safe SIMD implementation available; calls scalar Rust fallback directly.
+#[cfg(not(feature = "asm"))]
+fn warp8x8t_direct<BD: BitDepth>(
+    tmp: &mut [i16],
+    tmp_stride: usize,
+    src: Rav1dPictureDataComponentOffset,
+    abcd: &[i16; 4],
+    mx: i32,
+    my: i32,
+    bd: BD,
+) {
+    warp_affine_8x8t_rust(tmp, tmp_stride, src, abcd, mx, my, bd);
+}
+
 /// Direct dispatch for emu_edge - bypasses function pointer table.
 /// No SIMD implementation available; calls scalar Rust fallback directly.
 #[cfg(not(feature = "asm"))]
@@ -1327,6 +1760,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mc(
 impl mc::Fn {
     pub fn call<BD: BitDepth>(
         &self,
+        filter: Filter2d,
         dst: Rav1dPictureDataComponentOffset,
         src: Rav1dPictureDataComponentOffset,
         w: i32,
@@ -1335,18 +1769,26 @@ impl mc::Fn {
         my: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallbacks `fn put_{8tpap,bilin}_rust` are safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd, dst, src,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = filter;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallbacks `fn put_{8tpap,bilin}_rust` are safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd, dst, src,
+                    )
+                }
+            } else {
+                // Direct dispatch: no function pointers, no extern "C" ABI overhead
+                mc_put_direct::<BD>(filter, dst, src, w, h, mx, my, bd)
+            }
         }
     }
 }
@@ -1370,6 +1812,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mc_scaled(
 impl mc_scaled::Fn {
     pub fn call<BD: BitDepth>(
         &self,
+        filter: Filter2d,
         dst: Rav1dPictureDataComponentOffset,
         src: Rav1dPictureDataComponentOffset,
         w: i32,
@@ -1380,18 +1823,25 @@ impl mc_scaled::Fn {
         dy: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallbacks `fn put_{8tpap,bilin}_scaled_rust` are safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, dx, dy, bd, dst, src,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = filter;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallbacks `fn put_{8tpap,bilin}_scaled_rust` are safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, dx, dy, bd, dst, src,
+                    )
+                }
+            } else {
+                mc_scaled_direct::<BD>(filter, dst, src, w, h, mx, my, dx, dy, bd)
+            }
         }
     }
 }
@@ -1419,18 +1869,24 @@ impl warp8x8::Fn {
         my: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallback `fn prep_c_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr, dst_stride, src_ptr, src_stride, abcd, mx, my, bd, dst, src,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallback `fn warp_affine_8x8_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr, dst_stride, src_ptr, src_stride, abcd, mx, my, bd, dst, src,
+                    )
+                }
+            } else {
+                warp8x8_direct::<BD>(dst, src, abcd, mx, my, bd)
+            }
         }
     }
 }
@@ -1450,6 +1906,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mct(
 impl mct::Fn {
     pub fn call<BD: BitDepth>(
         &self,
+        filter: Filter2d,
         tmp: &mut [i16],
         src: Rav1dPictureDataComponentOffset,
         w: i32,
@@ -1458,13 +1915,20 @@ impl mct::Fn {
         my: i32,
         bd: BD,
     ) {
-        let tmp = tmp[..(w * h) as usize].as_mut_ptr();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallbacks `fn prep_{8tpap,bilin}_rust` are safe; asm is supposed to do the same.
-        unsafe { self.get()(tmp, src_ptr, src_stride, w, h, mx, my, bd, src) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = filter;
+                let tmp = tmp[..(w * h) as usize].as_mut_ptr();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallbacks `fn prep_{8tpap,bilin}_rust` are safe; asm is supposed to do the same.
+                unsafe { self.get()(tmp, src_ptr, src_stride, w, h, mx, my, bd, src) }
+            } else {
+                mct_prep_direct::<BD>(filter, tmp, src, w, h, mx, my, bd)
+            }
+        }
     }
 }
 
@@ -1485,6 +1949,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mct_scaled(
 impl mct_scaled::Fn {
     pub fn call<BD: BitDepth>(
         &self,
+        filter: Filter2d,
         tmp: &mut [i16],
         src: Rav1dPictureDataComponentOffset,
         w: i32,
@@ -1495,13 +1960,20 @@ impl mct_scaled::Fn {
         dy: i32,
         bd: BD,
     ) {
-        let tmp = tmp[..(w * h) as usize].as_mut_ptr();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallbacks `fn prep_{8tpap,bilin}_scaled_rust` are safe; asm is supposed to do the same.
-        unsafe { self.get()(tmp, src_ptr, src_stride, w, h, mx, my, dx, dy, bd, src) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = filter;
+                let tmp = tmp[..(w * h) as usize].as_mut_ptr();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallbacks `fn prep_{8tpap,bilin}_scaled_rust` are safe; asm is supposed to do the same.
+                unsafe { self.get()(tmp, src_ptr, src_stride, w, h, mx, my, dx, dy, bd, src) }
+            } else {
+                mct_scaled_direct::<BD>(filter, tmp, src, w, h, mx, my, dx, dy, bd)
+            }
+        }
     }
 }
 
@@ -1529,17 +2001,23 @@ impl warp8x8t::Fn {
         my: i32,
         bd: BD,
     ) {
-        let tmp_len = tmp.len();
-        let tmp = tmp.as_mut_ptr();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallback `fn warp_affine_8x8t_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                tmp, tmp_stride, src_ptr, src_stride, abcd, mx, my, bd, tmp_len, src,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let tmp_len = tmp.len();
+                let tmp = tmp.as_mut_ptr();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallback `fn warp_affine_8x8t_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        tmp, tmp_stride, src_ptr, src_stride, abcd, mx, my, bd, tmp_len, src,
+                    )
+                }
+            } else {
+                warp8x8t_direct::<BD>(tmp, tmp_stride, src, abcd, mx, my, bd)
+            }
         }
     }
 }
@@ -1674,6 +2152,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn w_mask(
 impl w_mask::Fn {
     pub fn call<BD: BitDepth>(
         &self,
+        layout: Rav1dPixelLayoutSubSampled,
         dst: Rav1dPictureDataComponentOffset,
         tmp1: &[i16; COMPINTER_LEN],
         tmp2: &[i16; COMPINTER_LEN],
@@ -1683,12 +2162,19 @@ impl w_mask::Fn {
         sign: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn w_mask_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = layout;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn w_mask_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd, dst) }
+            } else {
+                w_mask_direct::<BD>(layout, dst, tmp1, tmp2, w, h, mask, sign, bd)
+            }
+        }
     }
 }
 
@@ -1739,17 +2225,25 @@ wrap_fn_ptr!(pub unsafe extern "C" fn blend_dir(
 impl blend_dir::Fn {
     pub fn call<BD: BitDepth>(
         &self,
+        is_h: bool,
         dst: Rav1dPictureDataComponentOffset,
         tmp: &[BD::Pixel; SCRATCH_LAP_LEN],
         w: i32,
         h: i32,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let tmp = ptr::from_ref(tmp).cast();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn blend_{h,v}_rust` are safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp, w, h, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = is_h;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let tmp = ptr::from_ref(tmp).cast();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn blend_{h,v}_rust` are safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp, w, h, dst) }
+            } else {
+                blend_dir_direct::<BD>(is_h, dst, tmp, w, h)
+            }
+        }
     }
 }
 

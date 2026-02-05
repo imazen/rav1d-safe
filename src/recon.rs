@@ -1780,10 +1780,10 @@ fn mc<BD: BitDepth>(
         let my = my << (ss_ver == 0) as u8;
         match dst {
             MaybeTempPixels::NonTemp { dst } => {
-                f.dsp.mc.mc[filter_2d].call::<BD>(dst, r#ref, w, h, mx, my, bd);
+                f.dsp.mc.mc[filter_2d].call::<BD>(filter_2d, dst, r#ref, w, h, mx, my, bd);
             }
             MaybeTempPixels::Temp { tmp, tmp_stride: _ } => {
-                f.dsp.mc.mct[filter_2d].call::<BD>(tmp, r#ref, w, h, mx, my, bd);
+                f.dsp.mc.mct[filter_2d].call::<BD>(filter_2d, tmp, r#ref, w, h, mx, my, bd);
             }
         }
     } else {
@@ -1855,10 +1855,10 @@ fn mc<BD: BitDepth>(
         let dy = f.svc[refidx][1].step;
         match dst {
             MaybeTempPixels::NonTemp { dst } => {
-                f.dsp.mc.mc_scaled[filter_2d].call::<BD>(dst, r#ref, w, h, mx, my, dx, dy, bd);
+                f.dsp.mc.mc_scaled[filter_2d].call::<BD>(filter_2d, dst, r#ref, w, h, mx, my, dx, dy, bd);
             }
             MaybeTempPixels::Temp { tmp, tmp_stride: _ } => {
-                f.dsp.mc.mct_scaled[filter_2d].call::<BD>(tmp, r#ref, w, h, mx, my, dx, dy, bd);
+                f.dsp.mc.mct_scaled[filter_2d].call::<BD>(filter_2d, tmp, r#ref, w, h, mx, my, dx, dy, bd);
             }
         }
     }
@@ -1926,6 +1926,7 @@ fn obmc<BD: BitDepth>(
                         [*f.a[t.a].filter[0].index((bx4 + x + 1) as usize) as usize],
                 )?;
                 f.dsp.mc.blend_h.call::<BD>(
+                    true,
                     dst + (x * h_mul) as usize,
                     lap,
                     h_mul * ow4 as c_int,
@@ -1974,6 +1975,7 @@ fn obmc<BD: BitDepth>(
                         [*t.l.filter[0].index((by4 + y + 1) as usize) as usize],
                 )?;
                 f.dsp.mc.blend_v.call::<BD>(
+                    false,
                     dst + (y * v_mul) as isize * dst.pixel_stride::<BD>(),
                     lap,
                     h_mul * ow4 as c_int,
@@ -2917,6 +2919,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
             }
             CompInterType::Seg => {
                 f.dsp.mc.w_mask[chr_layout_idx_w_mask].call(
+                    chr_layout_idx_w_mask,
                     y_dst,
                     &tmp[inter.nd.one_d.mask_sign() as usize],
                     &tmp[!inter.nd.one_d.mask_sign() as usize],
