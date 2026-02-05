@@ -1,6 +1,12 @@
 # Handoff: Refactor to Fully Safe Intrinsics
 
-## Goal
+## Ultimate Goal
+
+**Pure Rust API** - FFI should be feature-gated, not the default. The end state:
+- `default` = Pure Rust SIMD with safe intrinsics
+- `feature = "ffi"` = extern "C" wrappers for C/rav1d interop
+
+## Phase 1 Goal
 
 Eliminate most `unsafe` blocks in safe_simd modules by using:
 1. **`#[arcane]` from archmage** - Makes value-based intrinsics safe (Rust 1.85+)
@@ -163,9 +169,44 @@ pub unsafe extern "C" fn avg_8bpc_neon(...) {
 }
 ```
 
+## Phase 2: FFI Feature Gate
+
+After safe intrinsics refactor, restructure so FFI is optional:
+
+```rust
+// Inner function - always safe, pure Rust API
+#[arcane]
+pub fn avg_8bpc(token: Desktop64, dst: &mut [u8], src1: &[i16], src2: &[i16], w: usize, h: usize) {
+    // Safe SIMD implementation
+}
+
+// FFI wrapper - only compiled with feature = "ffi"
+#[cfg(feature = "ffi")]
+pub unsafe extern "C" fn avg_8bpc_avx2(
+    dst: *mut DynPixel, dst_stride: isize, ...
+) {
+    let token = Desktop64::forge_token_dangerously();
+    // Convert pointers to slices, call safe inner
+    avg_8bpc(token, dst_slice, src1_slice, src2_slice, w, h);
+}
+```
+
+### Cargo.toml changes needed:
+```toml
+[features]
+default = ["bitdepth_8", "bitdepth_16"]  # Pure Rust by default
+ffi = []  # Enable extern "C" wrappers for rav1d interop
+asm = ["ffi"]  # Original ASM (implies ffi)
+```
+
+### Benefits:
+- Pure Rust users get fully safe API with zero unsafe
+- C interop users enable `ffi` feature
+- Original rav1d behavior with `asm` feature
+
 ## Notes
 
-1. **Don't change FFI signatures** - They must match rav1d's dispatch system
+1. **Phase 1: Don't change FFI signatures** - They must match rav1d's dispatch system
 2. **Keep `#![allow(unsafe_op_in_unsafe_fn)]`** at module top for FFI wrappers
 3. **Use `forge_token_dangerously()`** in FFI wrappers - we know features are available because dispatch already checked
 4. **Benchmark after each module** to ensure no performance regression
