@@ -15,6 +15,14 @@ use std::ops::Range;
 use std::ptr;
 use std::slice;
 
+// x86_64 SIMD intrinsics for safe_simd implementations
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+use std::arch::x86_64::*;
+
+// aarch64 SIMD intrinsics for safe_simd implementations
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+use std::arch::aarch64::*;
+
 #[cfg(all(feature = "asm", target_feature = "sse2"))]
 extern "C" {
     fn dav1d_msac_decode_hi_tok_sse2(s: *mut MsacAsmContext, cdf: *mut u16) -> c_uint;
@@ -502,6 +510,212 @@ fn rav1d_msac_decode_hi_tok_rust(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 
     tok
 }
 
+// ============================================================================
+// Safe SIMD implementations (used when asm feature is disabled)
+// ============================================================================
+
+/// min_prob table: EC_MIN_PROB * (n - i - 1) for symbol_adapt functions
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+static MIN_PROB_16: [u16; 16] = [60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16, 12, 8, 4, 0];
+
+/// AVX2 implementation of symbol_adapt16
+/// Uses parallel CDF probability calculation and comparison
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+    let c = (s.dif >> (EC_WIN_SIZE - 16)) as u32;
+    let n = n_symbols as usize;
+
+    // Load CDF values (16 values = 256 bits)
+    let cdf_vec = unsafe { _mm256_loadu_si256(cdf.as_ptr() as *const __m256i) };
+
+    // Broadcast rng masked with 0xff00
+    let rng_masked = (s.rng & 0xff00) as i16;
+    let rng_vec = unsafe { _mm256_set1_epi16(rng_masked) };
+
+    // Calculate (cdf >> 6) << 7 then pmulhuw
+    // This computes: ((cdf >> 6) * (rng >> 8)) >> 1
+    let cdf_shifted = unsafe { _mm256_slli_epi16(_mm256_srli_epi16(cdf_vec, 6), 7) };
+    let prod = unsafe { _mm256_mulhi_epu16(cdf_shifted, rng_vec) };
+
+    // Load min_prob values offset by (15 - n_symbols)
+    let min_prob_offset = 15 - n;
+    let min_prob = unsafe {
+        _mm256_loadu_si256(MIN_PROB_16.as_ptr().add(min_prob_offset) as *const __m256i)
+    };
+
+    // v = prod + min_prob
+    let v = unsafe { _mm256_add_epi16(prod, min_prob) };
+
+    // Store v for indexed access
+    let mut v_arr = [0u16; 16];
+    unsafe { _mm256_storeu_si256(v_arr.as_mut_ptr() as *mut __m256i, v) };
+
+    // Compare using pmaxuw then equality: c >= v[i] iff max(c, v) == c
+    let c_vec = unsafe { _mm256_set1_epi16(c as i16) };
+    let max_cv = unsafe { _mm256_max_epu16(c_vec, v) };
+    let cmp = unsafe { _mm256_cmpeq_epi16(max_cv, c_vec) };
+
+    // Get mask and count trailing zeros to find first symbol where c < v
+    let mask = unsafe { _mm256_movemask_epi8(cmp) as u32 };
+    let val = (mask.trailing_zeros() >> 1) as u8;
+
+    // Get u (previous v) and current v values for renormalization
+    let u = if val == 0 { s.rng } else { v_arr[val as usize - 1] as u32 };
+    let v_val = v_arr[val as usize] as u32;
+
+    // Update CDF if enabled
+    if s.allow_update_cdf() {
+        let count = cdf[n];
+        let rate = 4 + (count >> 4) + 1; // n_symbols > 2 always true for adapt16
+        let val_usize = val as usize;
+
+        for i in 0..val_usize {
+            cdf[i] = cdf[i].wrapping_add(((1u16 << 15).wrapping_sub(cdf[i])) >> rate);
+        }
+        for i in val_usize..n {
+            cdf[i] = cdf[i].wrapping_sub(cdf[i] >> rate);
+        }
+        cdf[n] = count + (count < 32) as u16;
+    }
+
+    // Renormalize
+    ctx_norm(
+        s,
+        s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+        u - v_val,
+    );
+
+    val
+}
+
+/// SSE2 implementation of symbol_adapt8
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+#[target_feature(enable = "sse2")]
+unsafe fn rav1d_msac_decode_symbol_adapt8_sse2(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+    // For 8 symbols, SSE2 is sufficient
+    // The overhead of SIMD setup may not be worth it for small n, use scalar
+    rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
+}
+
+/// SSE2 implementation of symbol_adapt4
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+#[target_feature(enable = "sse2")]
+unsafe fn rav1d_msac_decode_symbol_adapt4_sse2(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+    // For 4 symbols, scalar is likely faster due to SIMD setup overhead
+    rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
+}
+
+// NEON implementations for aarch64
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+static MIN_PROB_16_ARM: [u16; 16] = [60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16, 12, 8, 4, 0];
+
+/// NEON implementation of symbol_adapt16
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+unsafe fn rav1d_msac_decode_symbol_adapt16_neon(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+    let c = (s.dif >> (EC_WIN_SIZE - 16)) as u16;
+    let n = n_symbols as usize;
+
+    // Load CDF (16 values = 2 x uint16x8)
+    let cdf_lo = unsafe { vld1q_u16(cdf.as_ptr()) };
+    let cdf_hi = unsafe { vld1q_u16(cdf.as_ptr().add(8)) };
+
+    // rng masked and broadcast
+    let rng_masked = (s.rng & 0xff00) as u16;
+    let rng_vec = unsafe { vdupq_n_u16(rng_masked) };
+
+    // Process (cdf >> 6) << 7 for both halves
+    let cdf_shifted_lo = unsafe { vshlq_n_u16(vshrq_n_u16(cdf_lo, 6), 7) };
+    let cdf_shifted_hi = unsafe { vshlq_n_u16(vshrq_n_u16(cdf_hi, 6), 7) };
+
+    // High multiply using vmull + shrn
+    let rng_lo = unsafe { vget_low_u16(rng_vec) };
+    let rng_hi = unsafe { vget_high_u16(rng_vec) };
+
+    // Low 8
+    let prod_lo_a = unsafe { vshrn_n_u32(vmull_u16(vget_low_u16(cdf_shifted_lo), rng_lo), 16) };
+    let prod_lo_b = unsafe { vshrn_n_u32(vmull_u16(vget_high_u16(cdf_shifted_lo), rng_hi), 16) };
+    let prod_lo = unsafe { vcombine_u16(prod_lo_a, prod_lo_b) };
+
+    // High 8
+    let prod_hi_a = unsafe { vshrn_n_u32(vmull_u16(vget_low_u16(cdf_shifted_hi), rng_lo), 16) };
+    let prod_hi_b = unsafe { vshrn_n_u32(vmull_u16(vget_high_u16(cdf_shifted_hi), rng_hi), 16) };
+    let prod_hi = unsafe { vcombine_u16(prod_hi_a, prod_hi_b) };
+
+    // Load min_prob
+    let min_prob_offset = 15 - n;
+    let min_prob_lo = unsafe { vld1q_u16(MIN_PROB_16_ARM.as_ptr().add(min_prob_offset)) };
+    let min_prob_hi = unsafe { vld1q_u16(MIN_PROB_16_ARM.as_ptr().add(min_prob_offset + 8)) };
+
+    // v = prod + min_prob
+    let v_lo = unsafe { vaddq_u16(prod_lo, min_prob_lo) };
+    let v_hi = unsafe { vaddq_u16(prod_hi, min_prob_hi) };
+
+    // Store v
+    let mut v_arr = [0u16; 16];
+    unsafe { vst1q_u16(v_arr.as_mut_ptr(), v_lo) };
+    unsafe { vst1q_u16(v_arr.as_mut_ptr().add(8), v_hi) };
+
+    // Compare c >= v[i]
+    let c_vec = unsafe { vdupq_n_u16(c) };
+    let cmp_lo = unsafe { vcgeq_u16(c_vec, v_lo) };
+    let cmp_hi = unsafe { vcgeq_u16(c_vec, v_hi) };
+
+    // Find symbol by counting consecutive true comparisons
+    let mut mask_arr = [0u16; 16];
+    unsafe { vst1q_u16(mask_arr.as_mut_ptr(), cmp_lo) };
+    unsafe { vst1q_u16(mask_arr.as_mut_ptr().add(8), cmp_hi) };
+
+    let mut val = 0u8;
+    for i in 0..n {
+        if mask_arr[i] != 0 {
+            val = (i + 1) as u8;
+        } else {
+            break;
+        }
+    }
+
+    // Get u and v values
+    let u = if val == 0 { s.rng } else { v_arr[val as usize - 1] as u32 };
+    let v_val = v_arr[val as usize] as u32;
+
+    // Update CDF if enabled
+    if s.allow_update_cdf() {
+        let count = cdf[n];
+        let rate = 4 + (count >> 4) + 1;
+        let val_usize = val as usize;
+
+        for i in 0..val_usize {
+            cdf[i] = cdf[i].wrapping_add(((1u16 << 15).wrapping_sub(cdf[i])) >> rate);
+        }
+        for i in val_usize..n {
+            cdf[i] = cdf[i].wrapping_sub(cdf[i] >> rate);
+        }
+        cdf[n] = count + (count < 32) as u16;
+    }
+
+    // Renormalize
+    ctx_norm(
+        s,
+        s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+        u - v_val,
+    );
+
+    val
+}
+
+/// NEON implementation of symbol_adapt8 - uses scalar for simplicity
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+unsafe fn rav1d_msac_decode_symbol_adapt8_neon(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+    rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
+}
+
+/// NEON implementation of symbol_adapt4 - uses scalar for simplicity
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+unsafe fn rav1d_msac_decode_symbol_adapt4_neon(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+    rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
+}
+
 impl MsacContext {
     pub fn new(data: CArc<[u8]>, disable_cdf_update_flag: bool, dsp: &Rav1dMsacDSPContext) -> Self {
         let asm = MsacAsmContext {
@@ -598,6 +812,16 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt16_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
+        } else if #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))] {
+            // Safe SIMD AVX2 implementation
+            ret = unsafe {
+                rav1d_msac_decode_symbol_adapt16_avx2(s, cdf, n_symbols)
+            } as c_uint;
+        } else if #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))] {
+            // Safe SIMD NEON implementation
+            ret = unsafe {
+                rav1d_msac_decode_symbol_adapt16_neon(s, cdf, n_symbols)
+            } as c_uint;
         } else {
             ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols);
         }
