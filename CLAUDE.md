@@ -68,8 +68,9 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 
 ## Porting Progress (160k lines target)
 
-**SIMD optimized (~24k lines in safe_simd/):**
-- MC module (~7k lines): Complete (8bpc + 16bpc)
+**SIMD optimized (~26k lines in safe_simd/):**
+- MC x86 module (~5k lines): Complete (8bpc + 16bpc)
+- MC ARM module (~2.3k lines): Basic ops (8bpc + 16bpc avg/w_avg/mask/blend/w_mask/bilin)
 - ITX module (~12k lines): **100% complete** (160 transforms for both 8bpc and 16bpc)
   - All square DCT (4x4 to 64x64) - 8bpc + 16bpc
   - All square ADST/FLIPADST (4x4, 8x8, 16x16) - 8bpc + 16bpc
