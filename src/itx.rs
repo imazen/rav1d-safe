@@ -1547,6 +1547,20 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_16x4][H_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_16x4_16bpc_avx2);
 
+        // Hybrid identity transforms 16bpc - 8x8 square
+        self.itxfm_add[tx_8x8][V_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_8x8_16bpc_avx2);
+        self.itxfm_add[tx_8x8][H_DCT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_8x8_16bpc_avx2);
+        self.itxfm_add[tx_8x8][V_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_8x8_16bpc_avx2);
+        self.itxfm_add[tx_8x8][H_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_8x8_16bpc_avx2);
+        self.itxfm_add[tx_8x8][V_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_8x8_16bpc_avx2);
+        self.itxfm_add[tx_8x8][H_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_8x8_16bpc_avx2);
+
         self
     }
 

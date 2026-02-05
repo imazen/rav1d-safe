@@ -11408,3 +11408,108 @@ impl_16x4_transform_16bpc!(inv_txfm_add_dct_identity_16x4_16bpc_avx2_inner, dct1
 
 impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_dct_16x4_16bpc_avx2, inv_txfm_add_identity_dct_16x4_16bpc_avx2_inner);
 impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_identity_16x4_16bpc_avx2, inv_txfm_add_dct_identity_16x4_16bpc_avx2_inner);
+
+// ============================================================================
+// Square hybrid identity transforms for 16bpc
+// ============================================================================
+
+/// Macro for 8x8 transform variants 16bpc
+macro_rules! impl_8x8_transform_16bpc {
+    ($name:ident, $row_fn:ident, $col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[target_feature(enable = "avx2")]
+        unsafe fn $name(
+            dst: *mut u16,
+            dst_stride: isize,
+            coeff: *mut i16,
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let stride_u16 = (dst_stride / 2) as usize;
+            let row_clip_min = i32::MIN;
+            let row_clip_max = i32::MAX;
+            let col_clip_min = i32::MIN;
+            let col_clip_max = i32::MAX;
+
+            let c_ptr = coeff;
+            let mut tmp = [0i32; 64];
+
+            // No rect2_scale for square transforms
+
+            // Row transform (8 elements each, 8 rows)
+            for y in 0..8 {
+                for x in 0..8 {
+                    tmp[x] = unsafe { *c_ptr.add(y + x * 8) as i32 };
+                }
+                $row_fn(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+                for x in 0..8 {
+                    tmp[y * 8 + x] = tmp[x];
+                }
+            }
+
+            // Column transform
+            for x in 0..8 {
+                $col_fn(&mut tmp[x..], 8, col_clip_min, col_clip_max);
+            }
+
+            // Add to destination
+            let zero = unsafe { _mm_setzero_si128() };
+            let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+
+            for y in 0..8 {
+                let dst_row = unsafe { dst.add(y * stride_u16) };
+
+                let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
+                let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
+                let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+
+                let c_lo = unsafe {
+                    _mm_set_epi32(
+                        (tmp[y * 8 + 3] + 8) >> 4,
+                        (tmp[y * 8 + 2] + 8) >> 4,
+                        (tmp[y * 8 + 1] + 8) >> 4,
+                        (tmp[y * 8 + 0] + 8) >> 4
+                    )
+                };
+                let c_hi = unsafe {
+                    _mm_set_epi32(
+                        (tmp[y * 8 + 7] + 8) >> 4,
+                        (tmp[y * 8 + 6] + 8) >> 4,
+                        (tmp[y * 8 + 5] + 8) >> 4,
+                        (tmp[y * 8 + 4] + 8) >> 4
+                    )
+                };
+
+                let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
+                let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
+                let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
+                let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
+                let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+
+                unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
+            }
+
+            // Clear coefficients
+            unsafe {
+                for i in 0..4 {
+                    _mm256_storeu_si256((coeff as *mut __m256i).add(i), _mm256_setzero_si256());
+                }
+            }
+        }
+    };
+}
+
+// 8x8 hybrid identity transforms 16bpc
+impl_8x8_transform_16bpc!(inv_txfm_add_identity_dct_8x8_16bpc_avx2_inner, identity8_1d, dct8_1d);
+impl_8x8_transform_16bpc!(inv_txfm_add_dct_identity_8x8_16bpc_avx2_inner, dct8_1d, identity8_1d);
+impl_8x8_transform_16bpc!(inv_txfm_add_identity_adst_8x8_16bpc_avx2_inner, identity8_1d, adst8_1d);
+impl_8x8_transform_16bpc!(inv_txfm_add_adst_identity_8x8_16bpc_avx2_inner, adst8_1d, identity8_1d);
+impl_8x8_transform_16bpc!(inv_txfm_add_identity_flipadst_8x8_16bpc_avx2_inner, identity8_1d, flipadst8_1d);
+impl_8x8_transform_16bpc!(inv_txfm_add_flipadst_identity_8x8_16bpc_avx2_inner, flipadst8_1d, identity8_1d);
+
+impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_dct_8x8_16bpc_avx2, inv_txfm_add_identity_dct_8x8_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_identity_8x8_16bpc_avx2, inv_txfm_add_dct_identity_8x8_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_adst_8x8_16bpc_avx2, inv_txfm_add_identity_adst_8x8_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_identity_8x8_16bpc_avx2, inv_txfm_add_adst_identity_8x8_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_flipadst_8x8_16bpc_avx2, inv_txfm_add_identity_flipadst_8x8_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_identity_8x8_16bpc_avx2, inv_txfm_add_flipadst_identity_8x8_16bpc_avx2_inner);
