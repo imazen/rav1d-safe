@@ -3218,51 +3218,50 @@ fn h_filter_8tap_16bpc_neon(
     let mut col = 0;
     
     while col + 4 <= w {
-        unsafe {
-            let c0 = filter[0] as i32;
-            let c1 = filter[1] as i32;
-            let c2 = filter[2] as i32;
-            let c3 = filter[3] as i32;
-            let c4 = filter[4] as i32;
-            let c5 = filter[5] as i32;
-            let c6 = filter[6] as i32;
-            let c7 = filter[7] as i32;
-            
-            // Load 4 source u16 values at each tap position
-            let s0 = vld1_u16(src[col..].as_ptr());
-            let s1 = vld1_u16(src[col + 1..].as_ptr());
-            let s2 = vld1_u16(src[col + 2..].as_ptr());
-            let s3 = vld1_u16(src[col + 3..].as_ptr());
-            let s4 = vld1_u16(src[col + 4..].as_ptr());
-            let s5 = vld1_u16(src[col + 5..].as_ptr());
-            let s6 = vld1_u16(src[col + 6..].as_ptr());
-            let s7 = vld1_u16(src[col + 7..].as_ptr());
-            
-            // Widen to i32
-            let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
-            let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
-            let s2_32 = vreinterpretq_s32_u32(vmovl_u16(s2));
-            let s3_32 = vreinterpretq_s32_u32(vmovl_u16(s3));
-            let s4_32 = vreinterpretq_s32_u32(vmovl_u16(s4));
-            let s5_32 = vreinterpretq_s32_u32(vmovl_u16(s5));
-            let s6_32 = vreinterpretq_s32_u32(vmovl_u16(s6));
-            let s7_32 = vreinterpretq_s32_u32(vmovl_u16(s7));
-            
-            let mut sum = vmulq_n_s32(s0_32, c0);
-            sum = vmlaq_n_s32(sum, s1_32, c1);
-            sum = vmlaq_n_s32(sum, s2_32, c2);
-            sum = vmlaq_n_s32(sum, s3_32, c3);
-            sum = vmlaq_n_s32(sum, s4_32, c4);
-            sum = vmlaq_n_s32(sum, s5_32, c5);
-            sum = vmlaq_n_s32(sum, s6_32, c6);
-            sum = vmlaq_n_s32(sum, s7_32, c7);
-            
-            // Add rounding and shift
-            let rnd_vec = vdupq_n_s32(rnd);
-            let result = vshrq_n_s32::<4>(vaddq_s32(sum, rnd_vec)); // sh typically 4 for 16bpc intermediate
-            
-            vst1q_s32(dst[col..].as_mut_ptr(), result);
-        }
+        let c0 = filter[0] as i32;
+        let c1 = filter[1] as i32;
+        let c2 = filter[2] as i32;
+        let c3 = filter[3] as i32;
+        let c4 = filter[4] as i32;
+        let c5 = filter[5] as i32;
+        let c6 = filter[6] as i32;
+        let c7 = filter[7] as i32;
+
+        // Load 4 source u16 values at each tap position
+        let s0 = partial_simd::vld1_u16(src[col..][..4].try_into().unwrap());
+        let s1 = partial_simd::vld1_u16(src[col + 1..][..4].try_into().unwrap());
+        let s2 = partial_simd::vld1_u16(src[col + 2..][..4].try_into().unwrap());
+        let s3 = partial_simd::vld1_u16(src[col + 3..][..4].try_into().unwrap());
+        let s4 = partial_simd::vld1_u16(src[col + 4..][..4].try_into().unwrap());
+        let s5 = partial_simd::vld1_u16(src[col + 5..][..4].try_into().unwrap());
+        let s6 = partial_simd::vld1_u16(src[col + 6..][..4].try_into().unwrap());
+        let s7 = partial_simd::vld1_u16(src[col + 7..][..4].try_into().unwrap());
+
+        // Widen to i32
+        let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
+        let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
+        let s2_32 = vreinterpretq_s32_u32(vmovl_u16(s2));
+        let s3_32 = vreinterpretq_s32_u32(vmovl_u16(s3));
+        let s4_32 = vreinterpretq_s32_u32(vmovl_u16(s4));
+        let s5_32 = vreinterpretq_s32_u32(vmovl_u16(s5));
+        let s6_32 = vreinterpretq_s32_u32(vmovl_u16(s6));
+        let s7_32 = vreinterpretq_s32_u32(vmovl_u16(s7));
+
+        let mut sum = vmulq_n_s32(s0_32, c0);
+        sum = vmlaq_n_s32(sum, s1_32, c1);
+        sum = vmlaq_n_s32(sum, s2_32, c2);
+        sum = vmlaq_n_s32(sum, s3_32, c3);
+        sum = vmlaq_n_s32(sum, s4_32, c4);
+        sum = vmlaq_n_s32(sum, s5_32, c5);
+        sum = vmlaq_n_s32(sum, s6_32, c6);
+        sum = vmlaq_n_s32(sum, s7_32, c7);
+
+        // Add rounding and shift
+        let rnd_vec = vdupq_n_s32(rnd);
+        let result = vshrq_n_s32::<4>(vaddq_s32(sum, rnd_vec)); // sh typically 4 for 16bpc intermediate
+
+        let dst_arr: &mut [i32; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
+        partial_simd::vst1q_s32(dst_arr, result);
         col += 4;
     }
     
@@ -3295,50 +3294,49 @@ fn v_filter_8tap_16bpc_neon(
     let mut col = 0;
     
     while col + 4 <= w {
-        unsafe {
-            let c0 = filter[0] as i32;
-            let c1 = filter[1] as i32;
-            let c2 = filter[2] as i32;
-            let c3 = filter[3] as i32;
-            let c4 = filter[4] as i32;
-            let c5 = filter[5] as i32;
-            let c6 = filter[6] as i32;
-            let c7 = filter[7] as i32;
-            
-            let r0 = vld1q_s32(mid[0][col..].as_ptr());
-            let r1 = vld1q_s32(mid[1][col..].as_ptr());
-            let r2 = vld1q_s32(mid[2][col..].as_ptr());
-            let r3 = vld1q_s32(mid[3][col..].as_ptr());
-            let r4 = vld1q_s32(mid[4][col..].as_ptr());
-            let r5 = vld1q_s32(mid[5][col..].as_ptr());
-            let r6 = vld1q_s32(mid[6][col..].as_ptr());
-            let r7 = vld1q_s32(mid[7][col..].as_ptr());
-            
-            let mut sum = vmulq_n_s32(r0, c0);
-            sum = vmlaq_n_s32(sum, r1, c1);
-            sum = vmlaq_n_s32(sum, r2, c2);
-            sum = vmlaq_n_s32(sum, r3, c3);
-            sum = vmlaq_n_s32(sum, r4, c4);
-            sum = vmlaq_n_s32(sum, r5, c5);
-            sum = vmlaq_n_s32(sum, r6, c6);
-            sum = vmlaq_n_s32(sum, r7, c7);
-            
-            // Add rounding
-            let rnd_vec = vdupq_n_s32(rnd);
-            sum = vaddq_s32(sum, rnd_vec);
-            
-            // Shift - typically sh = 8 for 16bpc (4 + 4)
-            let result = vshrq_n_s32::<8>(sum);
-            
-            // Clamp to [0, max]
-            let max_vec = vdupq_n_s32(max as i32);
-            let zero = vdupq_n_s32(0);
-            let clamped = vminq_s32(vmaxq_s32(result, zero), max_vec);
-            
-            // Narrow to u16
-            let narrow = vqmovun_s32(clamped);
-            vst1_u16(dst[col..].as_mut_ptr(), narrow);
-        }
+        let c0 = filter[0] as i32;
+        let c1 = filter[1] as i32;
+        let c2 = filter[2] as i32;
+        let c3 = filter[3] as i32;
+        let c4 = filter[4] as i32;
+        let c5 = filter[5] as i32;
+        let c6 = filter[6] as i32;
+        let c7 = filter[7] as i32;
+
+        let r0 = partial_simd::vld1q_s32(mid[0][col..][..4].try_into().unwrap());
+        let r1 = partial_simd::vld1q_s32(mid[1][col..][..4].try_into().unwrap());
+        let r2 = partial_simd::vld1q_s32(mid[2][col..][..4].try_into().unwrap());
+        let r3 = partial_simd::vld1q_s32(mid[3][col..][..4].try_into().unwrap());
+        let r4 = partial_simd::vld1q_s32(mid[4][col..][..4].try_into().unwrap());
+        let r5 = partial_simd::vld1q_s32(mid[5][col..][..4].try_into().unwrap());
+        let r6 = partial_simd::vld1q_s32(mid[6][col..][..4].try_into().unwrap());
+        let r7 = partial_simd::vld1q_s32(mid[7][col..][..4].try_into().unwrap());
+
+        let mut sum = vmulq_n_s32(r0, c0);
+        sum = vmlaq_n_s32(sum, r1, c1);
+        sum = vmlaq_n_s32(sum, r2, c2);
+        sum = vmlaq_n_s32(sum, r3, c3);
+        sum = vmlaq_n_s32(sum, r4, c4);
+        sum = vmlaq_n_s32(sum, r5, c5);
+        sum = vmlaq_n_s32(sum, r6, c6);
+        sum = vmlaq_n_s32(sum, r7, c7);
+
+        // Add rounding
+        let rnd_vec = vdupq_n_s32(rnd);
+        sum = vaddq_s32(sum, rnd_vec);
+
+        // Shift - typically sh = 8 for 16bpc (4 + 4)
+        let result = vshrq_n_s32::<8>(sum);
+
+        // Clamp to [0, max]
+        let max_vec = vdupq_n_s32(max as i32);
+        let zero = vdupq_n_s32(0);
+        let clamped = vminq_s32(vmaxq_s32(result, zero), max_vec);
+
+        // Narrow to u16
+        let narrow = vqmovun_s32(clamped);
+        let dst_arr: &mut [u16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
+        partial_simd::vst1_u16(dst_arr, narrow);
         col += 4;
     }
     
@@ -3368,58 +3366,57 @@ fn h_filter_8tap_16bpc_put_neon(
     let mut col = 0;
     
     while col + 4 <= w {
-        unsafe {
-            let c0 = filter[0] as i32;
-            let c1 = filter[1] as i32;
-            let c2 = filter[2] as i32;
-            let c3 = filter[3] as i32;
-            let c4 = filter[4] as i32;
-            let c5 = filter[5] as i32;
-            let c6 = filter[6] as i32;
-            let c7 = filter[7] as i32;
-            
-            let s0 = vld1_u16(src[col..].as_ptr());
-            let s1 = vld1_u16(src[col + 1..].as_ptr());
-            let s2 = vld1_u16(src[col + 2..].as_ptr());
-            let s3 = vld1_u16(src[col + 3..].as_ptr());
-            let s4 = vld1_u16(src[col + 4..].as_ptr());
-            let s5 = vld1_u16(src[col + 5..].as_ptr());
-            let s6 = vld1_u16(src[col + 6..].as_ptr());
-            let s7 = vld1_u16(src[col + 7..].as_ptr());
-            
-            let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
-            let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
-            let s2_32 = vreinterpretq_s32_u32(vmovl_u16(s2));
-            let s3_32 = vreinterpretq_s32_u32(vmovl_u16(s3));
-            let s4_32 = vreinterpretq_s32_u32(vmovl_u16(s4));
-            let s5_32 = vreinterpretq_s32_u32(vmovl_u16(s5));
-            let s6_32 = vreinterpretq_s32_u32(vmovl_u16(s6));
-            let s7_32 = vreinterpretq_s32_u32(vmovl_u16(s7));
-            
-            let mut sum = vmulq_n_s32(s0_32, c0);
-            sum = vmlaq_n_s32(sum, s1_32, c1);
-            sum = vmlaq_n_s32(sum, s2_32, c2);
-            sum = vmlaq_n_s32(sum, s3_32, c3);
-            sum = vmlaq_n_s32(sum, s4_32, c4);
-            sum = vmlaq_n_s32(sum, s5_32, c5);
-            sum = vmlaq_n_s32(sum, s6_32, c6);
-            sum = vmlaq_n_s32(sum, s7_32, c7);
-            
-            // Round and shift: (sum + 32) >> 6
-            let rnd_vec = vdupq_n_s32(32);
-            let result = vshrq_n_s32::<6>(vaddq_s32(sum, rnd_vec));
-            
-            // Clamp
-            let max_vec = vdupq_n_s32(max as i32);
-            let zero = vdupq_n_s32(0);
-            let clamped = vminq_s32(vmaxq_s32(result, zero), max_vec);
-            
-            let narrow = vqmovun_s32(clamped);
-            vst1_u16(dst[col..].as_mut_ptr(), narrow);
-        }
+        let c0 = filter[0] as i32;
+        let c1 = filter[1] as i32;
+        let c2 = filter[2] as i32;
+        let c3 = filter[3] as i32;
+        let c4 = filter[4] as i32;
+        let c5 = filter[5] as i32;
+        let c6 = filter[6] as i32;
+        let c7 = filter[7] as i32;
+
+        let s0 = partial_simd::vld1_u16(src[col..][..4].try_into().unwrap());
+        let s1 = partial_simd::vld1_u16(src[col + 1..][..4].try_into().unwrap());
+        let s2 = partial_simd::vld1_u16(src[col + 2..][..4].try_into().unwrap());
+        let s3 = partial_simd::vld1_u16(src[col + 3..][..4].try_into().unwrap());
+        let s4 = partial_simd::vld1_u16(src[col + 4..][..4].try_into().unwrap());
+        let s5 = partial_simd::vld1_u16(src[col + 5..][..4].try_into().unwrap());
+        let s6 = partial_simd::vld1_u16(src[col + 6..][..4].try_into().unwrap());
+        let s7 = partial_simd::vld1_u16(src[col + 7..][..4].try_into().unwrap());
+
+        let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
+        let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
+        let s2_32 = vreinterpretq_s32_u32(vmovl_u16(s2));
+        let s3_32 = vreinterpretq_s32_u32(vmovl_u16(s3));
+        let s4_32 = vreinterpretq_s32_u32(vmovl_u16(s4));
+        let s5_32 = vreinterpretq_s32_u32(vmovl_u16(s5));
+        let s6_32 = vreinterpretq_s32_u32(vmovl_u16(s6));
+        let s7_32 = vreinterpretq_s32_u32(vmovl_u16(s7));
+
+        let mut sum = vmulq_n_s32(s0_32, c0);
+        sum = vmlaq_n_s32(sum, s1_32, c1);
+        sum = vmlaq_n_s32(sum, s2_32, c2);
+        sum = vmlaq_n_s32(sum, s3_32, c3);
+        sum = vmlaq_n_s32(sum, s4_32, c4);
+        sum = vmlaq_n_s32(sum, s5_32, c5);
+        sum = vmlaq_n_s32(sum, s6_32, c6);
+        sum = vmlaq_n_s32(sum, s7_32, c7);
+
+        // Round and shift: (sum + 32) >> 6
+        let rnd_vec = vdupq_n_s32(32);
+        let result = vshrq_n_s32::<6>(vaddq_s32(sum, rnd_vec));
+
+        // Clamp
+        let max_vec = vdupq_n_s32(max as i32);
+        let zero = vdupq_n_s32(0);
+        let clamped = vminq_s32(vmaxq_s32(result, zero), max_vec);
+
+        let narrow = vqmovun_s32(clamped);
+        let dst_arr: &mut [u16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
+        partial_simd::vst1_u16(dst_arr, narrow);
         col += 4;
     }
-    
+
     // Scalar fallback
     while col < w {
         let mut sum = 0i32;
@@ -3447,58 +3444,57 @@ fn v_filter_8tap_16bpc_direct_neon(
     let mut col = 0;
     
     while col + 4 <= w {
-        unsafe {
-            let c0 = filter[0] as i32;
-            let c1 = filter[1] as i32;
-            let c2 = filter[2] as i32;
-            let c3 = filter[3] as i32;
-            let c4 = filter[4] as i32;
-            let c5 = filter[5] as i32;
-            let c6 = filter[6] as i32;
-            let c7 = filter[7] as i32;
-            
-            let r0 = vld1_u16(src[col..].as_ptr());
-            let r1 = vld1_u16(src[col + src_stride..].as_ptr());
-            let r2 = vld1_u16(src[col + 2 * src_stride..].as_ptr());
-            let r3 = vld1_u16(src[col + 3 * src_stride..].as_ptr());
-            let r4 = vld1_u16(src[col + 4 * src_stride..].as_ptr());
-            let r5 = vld1_u16(src[col + 5 * src_stride..].as_ptr());
-            let r6 = vld1_u16(src[col + 6 * src_stride..].as_ptr());
-            let r7 = vld1_u16(src[col + 7 * src_stride..].as_ptr());
-            
-            let r0_32 = vreinterpretq_s32_u32(vmovl_u16(r0));
-            let r1_32 = vreinterpretq_s32_u32(vmovl_u16(r1));
-            let r2_32 = vreinterpretq_s32_u32(vmovl_u16(r2));
-            let r3_32 = vreinterpretq_s32_u32(vmovl_u16(r3));
-            let r4_32 = vreinterpretq_s32_u32(vmovl_u16(r4));
-            let r5_32 = vreinterpretq_s32_u32(vmovl_u16(r5));
-            let r6_32 = vreinterpretq_s32_u32(vmovl_u16(r6));
-            let r7_32 = vreinterpretq_s32_u32(vmovl_u16(r7));
-            
-            let mut sum = vmulq_n_s32(r0_32, c0);
-            sum = vmlaq_n_s32(sum, r1_32, c1);
-            sum = vmlaq_n_s32(sum, r2_32, c2);
-            sum = vmlaq_n_s32(sum, r3_32, c3);
-            sum = vmlaq_n_s32(sum, r4_32, c4);
-            sum = vmlaq_n_s32(sum, r5_32, c5);
-            sum = vmlaq_n_s32(sum, r6_32, c6);
-            sum = vmlaq_n_s32(sum, r7_32, c7);
-            
-            // Round and shift
-            let rnd_vec = vdupq_n_s32(32);
-            sum = vshrq_n_s32::<6>(vaddq_s32(sum, rnd_vec));
-            
-            // Clamp
-            let max_vec = vdupq_n_s32(max as i32);
-            let zero = vdupq_n_s32(0);
-            let clamped = vminq_s32(vmaxq_s32(sum, zero), max_vec);
-            
-            let narrow = vqmovun_s32(clamped);
-            vst1_u16(dst[col..].as_mut_ptr(), narrow);
-        }
+        let c0 = filter[0] as i32;
+        let c1 = filter[1] as i32;
+        let c2 = filter[2] as i32;
+        let c3 = filter[3] as i32;
+        let c4 = filter[4] as i32;
+        let c5 = filter[5] as i32;
+        let c6 = filter[6] as i32;
+        let c7 = filter[7] as i32;
+
+        let r0 = partial_simd::vld1_u16(src[col..][..4].try_into().unwrap());
+        let r1 = partial_simd::vld1_u16(src[col + src_stride..][..4].try_into().unwrap());
+        let r2 = partial_simd::vld1_u16(src[col + 2 * src_stride..][..4].try_into().unwrap());
+        let r3 = partial_simd::vld1_u16(src[col + 3 * src_stride..][..4].try_into().unwrap());
+        let r4 = partial_simd::vld1_u16(src[col + 4 * src_stride..][..4].try_into().unwrap());
+        let r5 = partial_simd::vld1_u16(src[col + 5 * src_stride..][..4].try_into().unwrap());
+        let r6 = partial_simd::vld1_u16(src[col + 6 * src_stride..][..4].try_into().unwrap());
+        let r7 = partial_simd::vld1_u16(src[col + 7 * src_stride..][..4].try_into().unwrap());
+
+        let r0_32 = vreinterpretq_s32_u32(vmovl_u16(r0));
+        let r1_32 = vreinterpretq_s32_u32(vmovl_u16(r1));
+        let r2_32 = vreinterpretq_s32_u32(vmovl_u16(r2));
+        let r3_32 = vreinterpretq_s32_u32(vmovl_u16(r3));
+        let r4_32 = vreinterpretq_s32_u32(vmovl_u16(r4));
+        let r5_32 = vreinterpretq_s32_u32(vmovl_u16(r5));
+        let r6_32 = vreinterpretq_s32_u32(vmovl_u16(r6));
+        let r7_32 = vreinterpretq_s32_u32(vmovl_u16(r7));
+
+        let mut sum = vmulq_n_s32(r0_32, c0);
+        sum = vmlaq_n_s32(sum, r1_32, c1);
+        sum = vmlaq_n_s32(sum, r2_32, c2);
+        sum = vmlaq_n_s32(sum, r3_32, c3);
+        sum = vmlaq_n_s32(sum, r4_32, c4);
+        sum = vmlaq_n_s32(sum, r5_32, c5);
+        sum = vmlaq_n_s32(sum, r6_32, c6);
+        sum = vmlaq_n_s32(sum, r7_32, c7);
+
+        // Round and shift
+        let rnd_vec = vdupq_n_s32(32);
+        sum = vshrq_n_s32::<6>(vaddq_s32(sum, rnd_vec));
+
+        // Clamp
+        let max_vec = vdupq_n_s32(max as i32);
+        let zero = vdupq_n_s32(0);
+        let clamped = vminq_s32(vmaxq_s32(sum, zero), max_vec);
+
+        let narrow = vqmovun_s32(clamped);
+        let dst_arr: &mut [u16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
+        partial_simd::vst1_u16(dst_arr, narrow);
         col += 4;
     }
-    
+
     // Scalar fallback
     while col < w {
         let mut sum = 0i32;
@@ -3680,43 +3676,42 @@ fn v_filter_8tap_16bpc_to_i16_neon(
     let mut col = 0;
     
     while col + 4 <= w {
-        unsafe {
-            let c0 = filter[0] as i32;
-            let c1 = filter[1] as i32;
-            let c2 = filter[2] as i32;
-            let c3 = filter[3] as i32;
-            let c4 = filter[4] as i32;
-            let c5 = filter[5] as i32;
-            let c6 = filter[6] as i32;
-            let c7 = filter[7] as i32;
-            
-            let r0 = vld1q_s32(mid[0][col..].as_ptr());
-            let r1 = vld1q_s32(mid[1][col..].as_ptr());
-            let r2 = vld1q_s32(mid[2][col..].as_ptr());
-            let r3 = vld1q_s32(mid[3][col..].as_ptr());
-            let r4 = vld1q_s32(mid[4][col..].as_ptr());
-            let r5 = vld1q_s32(mid[5][col..].as_ptr());
-            let r6 = vld1q_s32(mid[6][col..].as_ptr());
-            let r7 = vld1q_s32(mid[7][col..].as_ptr());
-            
-            let mut sum = vmulq_n_s32(r0, c0);
-            sum = vmlaq_n_s32(sum, r1, c1);
-            sum = vmlaq_n_s32(sum, r2, c2);
-            sum = vmlaq_n_s32(sum, r3, c3);
-            sum = vmlaq_n_s32(sum, r4, c4);
-            sum = vmlaq_n_s32(sum, r5, c5);
-            sum = vmlaq_n_s32(sum, r6, c6);
-            sum = vmlaq_n_s32(sum, r7, c7);
-            
-            let rnd_vec = vdupq_n_s32(rnd);
-            sum = vshrq_n_s32::<8>(vaddq_s32(sum, rnd_vec));
-            
-            let result = vqmovn_s32(sum);
-            vst1_s16(dst[col..].as_mut_ptr(), result);
-        }
+        let c0 = filter[0] as i32;
+        let c1 = filter[1] as i32;
+        let c2 = filter[2] as i32;
+        let c3 = filter[3] as i32;
+        let c4 = filter[4] as i32;
+        let c5 = filter[5] as i32;
+        let c6 = filter[6] as i32;
+        let c7 = filter[7] as i32;
+
+        let r0 = partial_simd::vld1q_s32(mid[0][col..][..4].try_into().unwrap());
+        let r1 = partial_simd::vld1q_s32(mid[1][col..][..4].try_into().unwrap());
+        let r2 = partial_simd::vld1q_s32(mid[2][col..][..4].try_into().unwrap());
+        let r3 = partial_simd::vld1q_s32(mid[3][col..][..4].try_into().unwrap());
+        let r4 = partial_simd::vld1q_s32(mid[4][col..][..4].try_into().unwrap());
+        let r5 = partial_simd::vld1q_s32(mid[5][col..][..4].try_into().unwrap());
+        let r6 = partial_simd::vld1q_s32(mid[6][col..][..4].try_into().unwrap());
+        let r7 = partial_simd::vld1q_s32(mid[7][col..][..4].try_into().unwrap());
+
+        let mut sum = vmulq_n_s32(r0, c0);
+        sum = vmlaq_n_s32(sum, r1, c1);
+        sum = vmlaq_n_s32(sum, r2, c2);
+        sum = vmlaq_n_s32(sum, r3, c3);
+        sum = vmlaq_n_s32(sum, r4, c4);
+        sum = vmlaq_n_s32(sum, r5, c5);
+        sum = vmlaq_n_s32(sum, r6, c6);
+        sum = vmlaq_n_s32(sum, r7, c7);
+
+        let rnd_vec = vdupq_n_s32(rnd);
+        sum = vshrq_n_s32::<8>(vaddq_s32(sum, rnd_vec));
+
+        let result = vqmovn_s32(sum);
+        let dst_arr: &mut [i16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
+        partial_simd::vst1_s16(dst_arr, result);
         col += 4;
     }
-    
+
     // Scalar fallback
     while col < w {
         let mut sum = 0i64;
@@ -3782,50 +3777,49 @@ fn prep_8tap_16bpc_inner(
                 let out_row = &mut tmp[y * w..][..w];
                 let mut col = 0;
                 while col + 4 <= w {
-                    unsafe {
-                        let c0 = fh[0] as i32;
-                        let c1 = fh[1] as i32;
-                        let c2 = fh[2] as i32;
-                        let c3 = fh[3] as i32;
-                        let c4 = fh[4] as i32;
-                        let c5 = fh[5] as i32;
-                        let c6 = fh[6] as i32;
-                        let c7 = fh[7] as i32;
-                        
-                        let s0 = vld1_u16(src_row[col..].as_ptr());
-                        let s1 = vld1_u16(src_row[col + 1..].as_ptr());
-                        let s2 = vld1_u16(src_row[col + 2..].as_ptr());
-                        let s3 = vld1_u16(src_row[col + 3..].as_ptr());
-                        let s4 = vld1_u16(src_row[col + 4..].as_ptr());
-                        let s5 = vld1_u16(src_row[col + 5..].as_ptr());
-                        let s6 = vld1_u16(src_row[col + 6..].as_ptr());
-                        let s7 = vld1_u16(src_row[col + 7..].as_ptr());
-                        
-                        let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
-                        let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
-                        let s2_32 = vreinterpretq_s32_u32(vmovl_u16(s2));
-                        let s3_32 = vreinterpretq_s32_u32(vmovl_u16(s3));
-                        let s4_32 = vreinterpretq_s32_u32(vmovl_u16(s4));
-                        let s5_32 = vreinterpretq_s32_u32(vmovl_u16(s5));
-                        let s6_32 = vreinterpretq_s32_u32(vmovl_u16(s6));
-                        let s7_32 = vreinterpretq_s32_u32(vmovl_u16(s7));
-                        
-                        let mut sum = vmulq_n_s32(s0_32, c0);
-                        sum = vmlaq_n_s32(sum, s1_32, c1);
-                        sum = vmlaq_n_s32(sum, s2_32, c2);
-                        sum = vmlaq_n_s32(sum, s3_32, c3);
-                        sum = vmlaq_n_s32(sum, s4_32, c4);
-                        sum = vmlaq_n_s32(sum, s5_32, c5);
-                        sum = vmlaq_n_s32(sum, s6_32, c6);
-                        sum = vmlaq_n_s32(sum, s7_32, c7);
-                        
-                        // Shift for intermediate
-                        let rnd_vec = vdupq_n_s32(8);
-                        let result = vshrq_n_s32::<4>(vaddq_s32(sum, rnd_vec));
-                        
-                        let narrow = vqmovn_s32(result);
-                        vst1_s16(out_row[col..].as_mut_ptr(), narrow);
-                    }
+                    let c0 = fh[0] as i32;
+                    let c1 = fh[1] as i32;
+                    let c2 = fh[2] as i32;
+                    let c3 = fh[3] as i32;
+                    let c4 = fh[4] as i32;
+                    let c5 = fh[5] as i32;
+                    let c6 = fh[6] as i32;
+                    let c7 = fh[7] as i32;
+
+                    let s0 = partial_simd::vld1_u16(src_row[col..][..4].try_into().unwrap());
+                    let s1 = partial_simd::vld1_u16(src_row[col + 1..][..4].try_into().unwrap());
+                    let s2 = partial_simd::vld1_u16(src_row[col + 2..][..4].try_into().unwrap());
+                    let s3 = partial_simd::vld1_u16(src_row[col + 3..][..4].try_into().unwrap());
+                    let s4 = partial_simd::vld1_u16(src_row[col + 4..][..4].try_into().unwrap());
+                    let s5 = partial_simd::vld1_u16(src_row[col + 5..][..4].try_into().unwrap());
+                    let s6 = partial_simd::vld1_u16(src_row[col + 6..][..4].try_into().unwrap());
+                    let s7 = partial_simd::vld1_u16(src_row[col + 7..][..4].try_into().unwrap());
+
+                    let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
+                    let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
+                    let s2_32 = vreinterpretq_s32_u32(vmovl_u16(s2));
+                    let s3_32 = vreinterpretq_s32_u32(vmovl_u16(s3));
+                    let s4_32 = vreinterpretq_s32_u32(vmovl_u16(s4));
+                    let s5_32 = vreinterpretq_s32_u32(vmovl_u16(s5));
+                    let s6_32 = vreinterpretq_s32_u32(vmovl_u16(s6));
+                    let s7_32 = vreinterpretq_s32_u32(vmovl_u16(s7));
+
+                    let mut sum = vmulq_n_s32(s0_32, c0);
+                    sum = vmlaq_n_s32(sum, s1_32, c1);
+                    sum = vmlaq_n_s32(sum, s2_32, c2);
+                    sum = vmlaq_n_s32(sum, s3_32, c3);
+                    sum = vmlaq_n_s32(sum, s4_32, c4);
+                    sum = vmlaq_n_s32(sum, s5_32, c5);
+                    sum = vmlaq_n_s32(sum, s6_32, c6);
+                    sum = vmlaq_n_s32(sum, s7_32, c7);
+
+                    // Shift for intermediate
+                    let rnd_vec = vdupq_n_s32(8);
+                    let result = vshrq_n_s32::<4>(vaddq_s32(sum, rnd_vec));
+
+                    let narrow = vqmovn_s32(result);
+                    let out_arr: &mut [i16; 4] = (&mut out_row[col..col + 4]).try_into().unwrap();
+                    partial_simd::vst1_s16(out_arr, narrow);
                     col += 4;
                 }
                 while col < w {
