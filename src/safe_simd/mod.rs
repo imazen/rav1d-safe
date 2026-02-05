@@ -10,6 +10,9 @@ pub mod mc;
 #[cfg(target_arch = "aarch64")]
 pub mod mc_arm;
 
+#[cfg(target_arch = "aarch64")]
+pub mod ipred_arm;
+
 pub mod cdef;
 
 #[cfg(target_arch = "x86_64")]

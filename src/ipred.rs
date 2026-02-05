@@ -2315,6 +2315,47 @@ impl Rav1dIntraPredDSPContext {
         self
     }
 
+    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+    #[inline(always)]
+    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
+        use crate::include::common::bitdepth::BPC;
+        use crate::src::safe_simd::ipred_arm as safe_ipred;
+
+        // Wire up ARM NEON implementations
+        match BD::BPC {
+            BPC::BPC8 => {
+                self.intra_pred[DC_128_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_128_8bpc_neon);
+                self.intra_pred[VERT_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_v_8bpc_neon);
+                self.intra_pred[HOR_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_h_8bpc_neon);
+                self.intra_pred[DC_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_8bpc_neon);
+                self.intra_pred[TOP_DC_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_top_8bpc_neon);
+                self.intra_pred[LEFT_DC_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_left_8bpc_neon);
+            }
+            BPC::BPC16 => {
+                self.intra_pred[DC_128_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_128_16bpc_neon);
+                self.intra_pred[VERT_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_v_16bpc_neon);
+                self.intra_pred[HOR_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_h_16bpc_neon);
+                self.intra_pred[DC_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_16bpc_neon);
+                self.intra_pred[TOP_DC_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_top_16bpc_neon);
+                self.intra_pred[LEFT_DC_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_dc_left_16bpc_neon);
+            }
+        }
+
+        self
+    }
+
     #[inline(always)]
     #[cfg(feature = "asm")]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
@@ -2340,6 +2381,11 @@ impl Rav1dIntraPredDSPContext {
         #[cfg(target_arch = "x86_64")]
         {
             return self.init_x86_safe_simd::<BD>(flags);
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
