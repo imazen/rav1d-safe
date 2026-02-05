@@ -2691,7 +2691,55 @@ impl Rav1dMCDSPContext {
             }
         }
 
-        // Other 8tap filters use pure Rust defaults for now
+        // 8tap filters for 8bpc
+        match BD::BPC {
+            BPC::BPC8 => {
+                // put 8tap
+                self.mc[Filter2d::Regular8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_8bpc_neon);
+                self.mc[Filter2d::RegularSmooth8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_smooth_8bpc_neon);
+                self.mc[Filter2d::RegularSharp8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_sharp_8bpc_neon);
+                self.mc[Filter2d::SmoothRegular8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_regular_8bpc_neon);
+                self.mc[Filter2d::Smooth8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_8bpc_neon);
+                self.mc[Filter2d::SmoothSharp8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_sharp_8bpc_neon);
+                self.mc[Filter2d::SharpRegular8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_regular_8bpc_neon);
+                self.mc[Filter2d::SharpSmooth8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_smooth_8bpc_neon);
+                self.mc[Filter2d::Sharp8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_8bpc_neon);
+
+                // prep 8tap
+                self.mct[Filter2d::Regular8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_8bpc_neon);
+                self.mct[Filter2d::RegularSmooth8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_smooth_8bpc_neon);
+                self.mct[Filter2d::RegularSharp8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_sharp_8bpc_neon);
+                self.mct[Filter2d::SmoothRegular8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_regular_8bpc_neon);
+                self.mct[Filter2d::Smooth8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_8bpc_neon);
+                self.mct[Filter2d::SmoothSharp8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_sharp_8bpc_neon);
+                self.mct[Filter2d::SharpRegular8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_regular_8bpc_neon);
+                self.mct[Filter2d::SharpSmooth8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_smooth_8bpc_neon);
+                self.mct[Filter2d::Sharp8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_8bpc_neon);
+            }
+            BPC::BPC16 => {
+                // put 8tap 16bpc
+                self.mc[Filter2d::Regular8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_16bpc_neon);
+                self.mc[Filter2d::RegularSmooth8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_smooth_16bpc_neon);
+                self.mc[Filter2d::RegularSharp8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_sharp_16bpc_neon);
+                self.mc[Filter2d::SmoothRegular8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_regular_16bpc_neon);
+                self.mc[Filter2d::Smooth8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_16bpc_neon);
+                self.mc[Filter2d::SmoothSharp8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_sharp_16bpc_neon);
+                self.mc[Filter2d::SharpRegular8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_regular_16bpc_neon);
+                self.mc[Filter2d::SharpSmooth8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_smooth_16bpc_neon);
+                self.mc[Filter2d::Sharp8Tap as usize] = mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_16bpc_neon);
+
+                // prep 8tap 16bpc
+                self.mct[Filter2d::Regular8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_16bpc_neon);
+                self.mct[Filter2d::RegularSmooth8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_smooth_16bpc_neon);
+                self.mct[Filter2d::RegularSharp8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_sharp_16bpc_neon);
+                self.mct[Filter2d::SmoothRegular8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_regular_16bpc_neon);
+                self.mct[Filter2d::Smooth8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_16bpc_neon);
+                self.mct[Filter2d::SmoothSharp8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_sharp_16bpc_neon);
+                self.mct[Filter2d::SharpRegular8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_regular_16bpc_neon);
+                self.mct[Filter2d::SharpSmooth8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_smooth_16bpc_neon);
+                self.mct[Filter2d::Sharp8Tap as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_16bpc_neon);
+            }
+        }
 
         self
     }

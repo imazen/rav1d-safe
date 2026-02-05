@@ -10,9 +10,12 @@ use core::arch::aarch64::*;
 use archmage::{arcane, Arm64, SimdToken};
 
 use crate::include::common::bitdepth::DynPixel;
+use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::COMPINTER_LEN;
+use crate::src::levels::Filter2d;
+use crate::src::tables::dav1d_mc_subpel_filters;
 
 // ============================================================================
 // AVG - Average two buffers
@@ -2280,3 +2283,1595 @@ pub unsafe extern "C" fn w_mask_420_16bpc_neon(
         w, h, mask.as_mut_slice(), sign as u8, bitdepth_max
     );
 }
+
+// ============================================================================
+// 8-TAP FILTERS - Subpixel interpolation
+// ============================================================================
+
+const MID_STRIDE: usize = 128 + 16;
+
+/// Get filter coefficients for subpixel position
+/// Returns None if m is 0 (no subpixel offset)
+fn get_filter_coeff(m: usize, d: usize, filter_type: Rav1dFilterMode) -> Option<&'static [i8; 8]> {
+    let m = m.checked_sub(1)?;
+    let i = if d > 4 {
+        filter_type as u8
+    } else {
+        3 + (filter_type as u8 & 1)
+    };
+    Some(&dav1d_mc_subpel_filters.0[i as usize][m])
+}
+
+/// Horizontal 8-tap filter to intermediate buffer (i16)
+/// For ARM NEON: uses multiply-accumulate with 8 coefficients
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn h_filter_8tap_8bpc_neon(
+    _token: Arm64,
+    dst: &mut [i16],
+    src: &[u8],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
+    let rnd = (1i16 << sh) >> 1;
+    
+    let mut col = 0;
+    
+    // Process 8 pixels at a time with NEON
+    while col + 8 <= w {
+        unsafe {
+            // Load coefficients as i16
+            let c0 = filter[0] as i16;
+            let c1 = filter[1] as i16;
+            let c2 = filter[2] as i16;
+            let c3 = filter[3] as i16;
+            let c4 = filter[4] as i16;
+            let c5 = filter[5] as i16;
+            let c6 = filter[6] as i16;
+            let c7 = filter[7] as i16;
+            
+            // Load 8 source bytes at each tap position
+            // src is already offset by -3 for tap 0
+            let s0 = vld1_u8(src[col..].as_ptr());
+            let s1 = vld1_u8(src[col + 1..].as_ptr());
+            let s2 = vld1_u8(src[col + 2..].as_ptr());
+            let s3 = vld1_u8(src[col + 3..].as_ptr());
+            let s4 = vld1_u8(src[col + 4..].as_ptr());
+            let s5 = vld1_u8(src[col + 5..].as_ptr());
+            let s6 = vld1_u8(src[col + 6..].as_ptr());
+            let s7 = vld1_u8(src[col + 7..].as_ptr());
+            
+            // Widen to i16
+            let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
+            let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
+            let s2_16 = vreinterpretq_s16_u16(vmovl_u8(s2));
+            let s3_16 = vreinterpretq_s16_u16(vmovl_u8(s3));
+            let s4_16 = vreinterpretq_s16_u16(vmovl_u8(s4));
+            let s5_16 = vreinterpretq_s16_u16(vmovl_u8(s5));
+            let s6_16 = vreinterpretq_s16_u16(vmovl_u8(s6));
+            let s7_16 = vreinterpretq_s16_u16(vmovl_u8(s7));
+            
+            // Multiply-accumulate each tap
+            let mut sum = vmulq_n_s16(s0_16, c0);
+            sum = vmlaq_n_s16(sum, s1_16, c1);
+            sum = vmlaq_n_s16(sum, s2_16, c2);
+            sum = vmlaq_n_s16(sum, s3_16, c3);
+            sum = vmlaq_n_s16(sum, s4_16, c4);
+            sum = vmlaq_n_s16(sum, s5_16, c5);
+            sum = vmlaq_n_s16(sum, s6_16, c6);
+            sum = vmlaq_n_s16(sum, s7_16, c7);
+            
+            // Add rounding and shift
+            let rnd_vec = vdupq_n_s16(rnd);
+            let result = vshrq_n_s16::<2>(vaddq_s16(sum, rnd_vec)); // sh = 2 for intermediate_bits = 4
+            
+            // Store to intermediate buffer
+            vst1q_s16(dst[col..].as_mut_ptr(), result);
+        }
+        col += 8;
+    }
+    
+    // Scalar fallback for remaining pixels
+    while col < w {
+        let mut sum = 0i32;
+        for i in 0..8 {
+            sum += filter[i] as i32 * src[col + i] as i32;
+        }
+        dst[col] = ((sum + (rnd as i32)) >> sh) as i16;
+        col += 1;
+    }
+}
+
+/// Vertical 8-tap filter from intermediate buffer to output (u8)
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn v_filter_8tap_8bpc_neon(
+    _token: Arm64,
+    dst: &mut [u8],
+    mid: &[[i16; MID_STRIDE]],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+    max: u16,
+) {
+    let rnd = (1i32 << sh) >> 1;
+    let _ = max; // Unused for 8bpc, always 255
+    
+    let mut col = 0;
+    
+    // Process 8 pixels at a time with NEON
+    while col + 8 <= w {
+        unsafe {
+            // Load coefficients as i32 for wider accumulation
+            let c0 = filter[0] as i32;
+            let c1 = filter[1] as i32;
+            let c2 = filter[2] as i32;
+            let c3 = filter[3] as i32;
+            let c4 = filter[4] as i32;
+            let c5 = filter[5] as i32;
+            let c6 = filter[6] as i32;
+            let c7 = filter[7] as i32;
+            
+            // Load 8 rows from intermediate buffer
+            let r0 = vld1q_s16(mid[0][col..].as_ptr());
+            let r1 = vld1q_s16(mid[1][col..].as_ptr());
+            let r2 = vld1q_s16(mid[2][col..].as_ptr());
+            let r3 = vld1q_s16(mid[3][col..].as_ptr());
+            let r4 = vld1q_s16(mid[4][col..].as_ptr());
+            let r5 = vld1q_s16(mid[5][col..].as_ptr());
+            let r6 = vld1q_s16(mid[6][col..].as_ptr());
+            let r7 = vld1q_s16(mid[7][col..].as_ptr());
+            
+            // Process low 4 and high 4 separately for i32 accumulation
+            let r0_lo = vmovl_s16(vget_low_s16(r0));
+            let r0_hi = vmovl_s16(vget_high_s16(r0));
+            let r1_lo = vmovl_s16(vget_low_s16(r1));
+            let r1_hi = vmovl_s16(vget_high_s16(r1));
+            let r2_lo = vmovl_s16(vget_low_s16(r2));
+            let r2_hi = vmovl_s16(vget_high_s16(r2));
+            let r3_lo = vmovl_s16(vget_low_s16(r3));
+            let r3_hi = vmovl_s16(vget_high_s16(r3));
+            let r4_lo = vmovl_s16(vget_low_s16(r4));
+            let r4_hi = vmovl_s16(vget_high_s16(r4));
+            let r5_lo = vmovl_s16(vget_low_s16(r5));
+            let r5_hi = vmovl_s16(vget_high_s16(r5));
+            let r6_lo = vmovl_s16(vget_low_s16(r6));
+            let r6_hi = vmovl_s16(vget_high_s16(r6));
+            let r7_lo = vmovl_s16(vget_low_s16(r7));
+            let r7_hi = vmovl_s16(vget_high_s16(r7));
+            
+            // Multiply-accumulate each tap
+            let mut sum_lo = vmulq_n_s32(r0_lo, c0);
+            sum_lo = vmlaq_n_s32(sum_lo, r1_lo, c1);
+            sum_lo = vmlaq_n_s32(sum_lo, r2_lo, c2);
+            sum_lo = vmlaq_n_s32(sum_lo, r3_lo, c3);
+            sum_lo = vmlaq_n_s32(sum_lo, r4_lo, c4);
+            sum_lo = vmlaq_n_s32(sum_lo, r5_lo, c5);
+            sum_lo = vmlaq_n_s32(sum_lo, r6_lo, c6);
+            sum_lo = vmlaq_n_s32(sum_lo, r7_lo, c7);
+            
+            let mut sum_hi = vmulq_n_s32(r0_hi, c0);
+            sum_hi = vmlaq_n_s32(sum_hi, r1_hi, c1);
+            sum_hi = vmlaq_n_s32(sum_hi, r2_hi, c2);
+            sum_hi = vmlaq_n_s32(sum_hi, r3_hi, c3);
+            sum_hi = vmlaq_n_s32(sum_hi, r4_hi, c4);
+            sum_hi = vmlaq_n_s32(sum_hi, r5_hi, c5);
+            sum_hi = vmlaq_n_s32(sum_hi, r6_hi, c6);
+            sum_hi = vmlaq_n_s32(sum_hi, r7_hi, c7);
+            
+            // Add rounding
+            let rnd_vec = vdupq_n_s32(rnd);
+            sum_lo = vaddq_s32(sum_lo, rnd_vec);
+            sum_hi = vaddq_s32(sum_hi, rnd_vec);
+            
+            // Shift right (sh = 10 = 6 + intermediate_bits)
+            let result_lo = vshrq_n_s32::<10>(sum_lo);
+            let result_hi = vshrq_n_s32::<10>(sum_hi);
+            
+            // Narrow to i16
+            let result_16 = vcombine_s16(vqmovn_s32(result_lo), vqmovn_s32(result_hi));
+            
+            // Narrow to u8 with saturation
+            let result_8 = vqmovun_s16(result_16);
+            
+            // Store
+            vst1_u8(dst[col..].as_mut_ptr(), result_8);
+        }
+        col += 8;
+    }
+    
+    // Scalar fallback
+    while col < w {
+        let mut sum = 0i32;
+        for i in 0..8 {
+            sum += filter[i] as i32 * mid[i][col] as i32;
+        }
+        dst[col] = ((sum + rnd) >> sh).clamp(0, 255) as u8;
+        col += 1;
+    }
+}
+
+/// Horizontal 8-tap filter directly to output (H-only case)
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn h_filter_8tap_8bpc_put_neon(
+    _token: Arm64,
+    dst: &mut [u8],
+    src: &[u8],
+    w: usize,
+    filter: &[i8; 8],
+) {
+    let mut col = 0;
+    
+    while col + 8 <= w {
+        unsafe {
+            let c0 = filter[0] as i16;
+            let c1 = filter[1] as i16;
+            let c2 = filter[2] as i16;
+            let c3 = filter[3] as i16;
+            let c4 = filter[4] as i16;
+            let c5 = filter[5] as i16;
+            let c6 = filter[6] as i16;
+            let c7 = filter[7] as i16;
+            
+            let s0 = vld1_u8(src[col..].as_ptr());
+            let s1 = vld1_u8(src[col + 1..].as_ptr());
+            let s2 = vld1_u8(src[col + 2..].as_ptr());
+            let s3 = vld1_u8(src[col + 3..].as_ptr());
+            let s4 = vld1_u8(src[col + 4..].as_ptr());
+            let s5 = vld1_u8(src[col + 5..].as_ptr());
+            let s6 = vld1_u8(src[col + 6..].as_ptr());
+            let s7 = vld1_u8(src[col + 7..].as_ptr());
+            
+            let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
+            let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
+            let s2_16 = vreinterpretq_s16_u16(vmovl_u8(s2));
+            let s3_16 = vreinterpretq_s16_u16(vmovl_u8(s3));
+            let s4_16 = vreinterpretq_s16_u16(vmovl_u8(s4));
+            let s5_16 = vreinterpretq_s16_u16(vmovl_u8(s5));
+            let s6_16 = vreinterpretq_s16_u16(vmovl_u8(s6));
+            let s7_16 = vreinterpretq_s16_u16(vmovl_u8(s7));
+            
+            let mut sum = vmulq_n_s16(s0_16, c0);
+            sum = vmlaq_n_s16(sum, s1_16, c1);
+            sum = vmlaq_n_s16(sum, s2_16, c2);
+            sum = vmlaq_n_s16(sum, s3_16, c3);
+            sum = vmlaq_n_s16(sum, s4_16, c4);
+            sum = vmlaq_n_s16(sum, s5_16, c5);
+            sum = vmlaq_n_s16(sum, s6_16, c6);
+            sum = vmlaq_n_s16(sum, s7_16, c7);
+            
+            // Round and shift for direct output: (sum + 32) >> 6
+            let rnd_vec = vdupq_n_s16(32);
+            let result = vshrq_n_s16::<6>(vaddq_s16(sum, rnd_vec));
+            
+            let result_8 = vqmovun_s16(result);
+            vst1_u8(dst[col..].as_mut_ptr(), result_8);
+        }
+        col += 8;
+    }
+    
+    // Scalar fallback
+    while col < w {
+        let mut sum = 0i32;
+        for i in 0..8 {
+            sum += filter[i] as i32 * src[col + i] as i32;
+        }
+        dst[col] = ((sum + 32) >> 6).clamp(0, 255) as u8;
+        col += 1;
+    }
+}
+
+/// Vertical 8-tap filter directly from source (V-only case)
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn v_filter_8tap_8bpc_direct_neon(
+    _token: Arm64,
+    dst: &mut [u8],
+    src: &[u8],
+    src_stride: usize,
+    w: usize,
+    filter: &[i8; 8],
+) {
+    let mut col = 0;
+    
+    while col + 8 <= w {
+        unsafe {
+            let c0 = filter[0] as i32;
+            let c1 = filter[1] as i32;
+            let c2 = filter[2] as i32;
+            let c3 = filter[3] as i32;
+            let c4 = filter[4] as i32;
+            let c5 = filter[5] as i32;
+            let c6 = filter[6] as i32;
+            let c7 = filter[7] as i32;
+            
+            // Load 8 source rows (src is already offset by -3 rows)
+            let r0 = vld1_u8(src[col..].as_ptr());
+            let r1 = vld1_u8(src[col + src_stride..].as_ptr());
+            let r2 = vld1_u8(src[col + 2 * src_stride..].as_ptr());
+            let r3 = vld1_u8(src[col + 3 * src_stride..].as_ptr());
+            let r4 = vld1_u8(src[col + 4 * src_stride..].as_ptr());
+            let r5 = vld1_u8(src[col + 5 * src_stride..].as_ptr());
+            let r6 = vld1_u8(src[col + 6 * src_stride..].as_ptr());
+            let r7 = vld1_u8(src[col + 7 * src_stride..].as_ptr());
+            
+            // Widen to i32 for accumulation
+            let r0_16 = vreinterpretq_s16_u16(vmovl_u8(r0));
+            let r1_16 = vreinterpretq_s16_u16(vmovl_u8(r1));
+            let r2_16 = vreinterpretq_s16_u16(vmovl_u8(r2));
+            let r3_16 = vreinterpretq_s16_u16(vmovl_u8(r3));
+            let r4_16 = vreinterpretq_s16_u16(vmovl_u8(r4));
+            let r5_16 = vreinterpretq_s16_u16(vmovl_u8(r5));
+            let r6_16 = vreinterpretq_s16_u16(vmovl_u8(r6));
+            let r7_16 = vreinterpretq_s16_u16(vmovl_u8(r7));
+            
+            // Low 4 pixels
+            let r0_lo = vmovl_s16(vget_low_s16(r0_16));
+            let r1_lo = vmovl_s16(vget_low_s16(r1_16));
+            let r2_lo = vmovl_s16(vget_low_s16(r2_16));
+            let r3_lo = vmovl_s16(vget_low_s16(r3_16));
+            let r4_lo = vmovl_s16(vget_low_s16(r4_16));
+            let r5_lo = vmovl_s16(vget_low_s16(r5_16));
+            let r6_lo = vmovl_s16(vget_low_s16(r6_16));
+            let r7_lo = vmovl_s16(vget_low_s16(r7_16));
+            
+            // High 4 pixels
+            let r0_hi = vmovl_s16(vget_high_s16(r0_16));
+            let r1_hi = vmovl_s16(vget_high_s16(r1_16));
+            let r2_hi = vmovl_s16(vget_high_s16(r2_16));
+            let r3_hi = vmovl_s16(vget_high_s16(r3_16));
+            let r4_hi = vmovl_s16(vget_high_s16(r4_16));
+            let r5_hi = vmovl_s16(vget_high_s16(r5_16));
+            let r6_hi = vmovl_s16(vget_high_s16(r6_16));
+            let r7_hi = vmovl_s16(vget_high_s16(r7_16));
+            
+            let mut sum_lo = vmulq_n_s32(r0_lo, c0);
+            sum_lo = vmlaq_n_s32(sum_lo, r1_lo, c1);
+            sum_lo = vmlaq_n_s32(sum_lo, r2_lo, c2);
+            sum_lo = vmlaq_n_s32(sum_lo, r3_lo, c3);
+            sum_lo = vmlaq_n_s32(sum_lo, r4_lo, c4);
+            sum_lo = vmlaq_n_s32(sum_lo, r5_lo, c5);
+            sum_lo = vmlaq_n_s32(sum_lo, r6_lo, c6);
+            sum_lo = vmlaq_n_s32(sum_lo, r7_lo, c7);
+            
+            let mut sum_hi = vmulq_n_s32(r0_hi, c0);
+            sum_hi = vmlaq_n_s32(sum_hi, r1_hi, c1);
+            sum_hi = vmlaq_n_s32(sum_hi, r2_hi, c2);
+            sum_hi = vmlaq_n_s32(sum_hi, r3_hi, c3);
+            sum_hi = vmlaq_n_s32(sum_hi, r4_hi, c4);
+            sum_hi = vmlaq_n_s32(sum_hi, r5_hi, c5);
+            sum_hi = vmlaq_n_s32(sum_hi, r6_hi, c6);
+            sum_hi = vmlaq_n_s32(sum_hi, r7_hi, c7);
+            
+            // Round and shift: (sum + 32) >> 6
+            let rnd_vec = vdupq_n_s32(32);
+            sum_lo = vshrq_n_s32::<6>(vaddq_s32(sum_lo, rnd_vec));
+            sum_hi = vshrq_n_s32::<6>(vaddq_s32(sum_hi, rnd_vec));
+            
+            let result_16 = vcombine_s16(vqmovn_s32(sum_lo), vqmovn_s32(sum_hi));
+            let result_8 = vqmovun_s16(result_16);
+            vst1_u8(dst[col..].as_mut_ptr(), result_8);
+        }
+        col += 8;
+    }
+    
+    // Scalar fallback
+    while col < w {
+        let mut sum = 0i32;
+        for i in 0..8 {
+            sum += filter[i] as i32 * src[col + i * src_stride] as i32;
+        }
+        dst[col] = ((sum + 32) >> 6).clamp(0, 255) as u8;
+        col += 1;
+    }
+}
+
+/// Main 8-tap put function for 8bpc
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn put_8tap_8bpc_inner(
+    token: Arm64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    src: &[u8],
+    src_stride: usize,
+    w: usize,
+    h: usize,
+    mx: usize,
+    my: usize,
+    h_filter_type: Rav1dFilterMode,
+    v_filter_type: Rav1dFilterMode,
+) {
+    let intermediate_bits = 4u8;
+    
+    let fh = get_filter_coeff(mx, w, h_filter_type);
+    let fv = get_filter_coeff(my, h, v_filter_type);
+    
+    match (fh, fv) {
+        (Some(fh), Some(fv)) => {
+            // Case 1: Both H and V filtering
+            let tmp_h = h + 7;
+            let mut mid = [[0i16; MID_STRIDE]; 135];
+            
+            for y in 0..tmp_h {
+                let src_offset = if y >= 3 {
+                    (y - 3) * src_stride
+                } else {
+                    0usize.wrapping_sub((3 - y) * src_stride)
+                };
+                let src_row = &src[src_offset..];
+                h_filter_8tap_8bpc_neon(
+                    token,
+                    &mut mid[y][..w],
+                    src_row,
+                    w,
+                    fh,
+                    6 - intermediate_bits,
+                );
+            }
+            
+            for y in 0..h {
+                let dst_row = &mut dst[y * dst_stride..][..w];
+                v_filter_8tap_8bpc_neon(
+                    token,
+                    dst_row,
+                    &mid[y..],
+                    w,
+                    fv,
+                    6 + intermediate_bits,
+                    255,
+                );
+            }
+        }
+        (Some(fh), None) => {
+            // Case 2: H-only filtering
+            for y in 0..h {
+                let src_row = &src[y * src_stride..];
+                let dst_row = &mut dst[y * dst_stride..][..w];
+                h_filter_8tap_8bpc_put_neon(token, dst_row, src_row, w, fh);
+            }
+        }
+        (None, Some(fv)) => {
+            // Case 3: V-only filtering
+            for y in 0..h {
+                let src_offset = if y >= 3 {
+                    (y - 3) * src_stride
+                } else {
+                    0usize.wrapping_sub((3 - y) * src_stride)
+                };
+                let src_row = &src[src_offset..];
+                let dst_row = &mut dst[y * dst_stride..][..w];
+                v_filter_8tap_8bpc_direct_neon(token, dst_row, src_row, src_stride, w, fv);
+            }
+        }
+        (None, None) => {
+            // Case 4: Simple copy
+            for y in 0..h {
+                let src_row = &src[y * src_stride..][..w];
+                let dst_row = &mut dst[y * dst_stride..][..w];
+                dst_row.copy_from_slice(src_row);
+            }
+        }
+    }
+}
+
+// ============================================================================
+// 8-TAP FFI WRAPPERS
+// ============================================================================
+
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn get_h_filter_type(filter: Filter2d) -> Rav1dFilterMode {
+    match filter {
+        Filter2d::Regular8Tap | Filter2d::RegularSmooth8Tap | Filter2d::RegularSharp8Tap => {
+            Rav1dFilterMode::Regular
+        }
+        Filter2d::Smooth8Tap | Filter2d::SmoothRegular8Tap | Filter2d::SmoothSharp8Tap => {
+            Rav1dFilterMode::Smooth
+        }
+        Filter2d::Sharp8Tap | Filter2d::SharpRegular8Tap | Filter2d::SharpSmooth8Tap => {
+            Rav1dFilterMode::Sharp
+        }
+        Filter2d::Bilinear => Rav1dFilterMode::Regular, // fallback
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn get_v_filter_type(filter: Filter2d) -> Rav1dFilterMode {
+    match filter {
+        Filter2d::Regular8Tap | Filter2d::SmoothRegular8Tap | Filter2d::SharpRegular8Tap => {
+            Rav1dFilterMode::Regular
+        }
+        Filter2d::Smooth8Tap | Filter2d::RegularSmooth8Tap | Filter2d::SharpSmooth8Tap => {
+            Rav1dFilterMode::Smooth
+        }
+        Filter2d::Sharp8Tap | Filter2d::RegularSharp8Tap | Filter2d::SmoothSharp8Tap => {
+            Rav1dFilterMode::Sharp
+        }
+        Filter2d::Bilinear => Rav1dFilterMode::Regular, // fallback
+    }
+}
+
+macro_rules! define_put_8tap_8bpc {
+    ($name:ident, $filter:expr) => {
+        #[cfg(target_arch = "aarch64")]
+        pub unsafe extern "C" fn $name(
+            dst_ptr: *mut DynPixel,
+            dst_stride: isize,
+            src_ptr: *const DynPixel,
+            src_stride: isize,
+            w: i32,
+            h: i32,
+            mx: i32,
+            my: i32,
+            _bitdepth_max: i32,
+            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            let token = Arm64::forge_token_dangerously();
+            let w = w as usize;
+            let h = h as usize;
+            let mx = mx as usize;
+            let my = my as usize;
+            let dst_stride_u = dst_stride as usize;
+            let src_stride_u = src_stride as usize;
+            
+            // Offset source pointer back by 3 pixels and 3 rows for filter taps
+            let src_base = (src_ptr as *const u8).offset(-3 * src_stride - 3);
+            
+            // Create slices
+            let src_len = (h + 7) * src_stride_u + w + 7;
+            let src = std::slice::from_raw_parts(src_base, src_len);
+            
+            let dst_len = h * dst_stride_u + w;
+            let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, dst_len);
+            
+            // Adjust source slice to account for the -3,-3 offset we added
+            let src_adjusted = &src[3 * src_stride_u + 3..];
+            
+            put_8tap_8bpc_inner(
+                token,
+                dst,
+                dst_stride_u,
+                src_adjusted,
+                src_stride_u,
+                w,
+                h,
+                mx,
+                my,
+                get_h_filter_type($filter),
+                get_v_filter_type($filter),
+            );
+        }
+    };
+}
+
+define_put_8tap_8bpc!(put_8tap_regular_8bpc_neon, Filter2d::Regular8Tap);
+define_put_8tap_8bpc!(put_8tap_regular_smooth_8bpc_neon, Filter2d::RegularSmooth8Tap);
+define_put_8tap_8bpc!(put_8tap_regular_sharp_8bpc_neon, Filter2d::RegularSharp8Tap);
+define_put_8tap_8bpc!(put_8tap_smooth_regular_8bpc_neon, Filter2d::SmoothRegular8Tap);
+define_put_8tap_8bpc!(put_8tap_smooth_8bpc_neon, Filter2d::Smooth8Tap);
+define_put_8tap_8bpc!(put_8tap_smooth_sharp_8bpc_neon, Filter2d::SmoothSharp8Tap);
+define_put_8tap_8bpc!(put_8tap_sharp_regular_8bpc_neon, Filter2d::SharpRegular8Tap);
+define_put_8tap_8bpc!(put_8tap_sharp_smooth_8bpc_neon, Filter2d::SharpSmooth8Tap);
+define_put_8tap_8bpc!(put_8tap_sharp_8bpc_neon, Filter2d::Sharp8Tap);
+
+// ============================================================================
+// 8-TAP PREP (to intermediate i16 buffer)
+// ============================================================================
+
+/// Vertical 8-tap filter from intermediate buffer to i16 output
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn v_filter_8tap_to_i16_neon(
+    _token: Arm64,
+    dst: &mut [i16],
+    mid: &[[i16; MID_STRIDE]],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
+    let rnd = (1i32 << sh) >> 1;
+    
+    let mut col = 0;
+    
+    while col + 4 <= w {
+        unsafe {
+            let c0 = filter[0] as i32;
+            let c1 = filter[1] as i32;
+            let c2 = filter[2] as i32;
+            let c3 = filter[3] as i32;
+            let c4 = filter[4] as i32;
+            let c5 = filter[5] as i32;
+            let c6 = filter[6] as i32;
+            let c7 = filter[7] as i32;
+            
+            // Load 4 values from each of 8 rows
+            let r0 = vld1_s16(mid[0][col..].as_ptr());
+            let r1 = vld1_s16(mid[1][col..].as_ptr());
+            let r2 = vld1_s16(mid[2][col..].as_ptr());
+            let r3 = vld1_s16(mid[3][col..].as_ptr());
+            let r4 = vld1_s16(mid[4][col..].as_ptr());
+            let r5 = vld1_s16(mid[5][col..].as_ptr());
+            let r6 = vld1_s16(mid[6][col..].as_ptr());
+            let r7 = vld1_s16(mid[7][col..].as_ptr());
+            
+            // Widen to i32
+            let r0_32 = vmovl_s16(r0);
+            let r1_32 = vmovl_s16(r1);
+            let r2_32 = vmovl_s16(r2);
+            let r3_32 = vmovl_s16(r3);
+            let r4_32 = vmovl_s16(r4);
+            let r5_32 = vmovl_s16(r5);
+            let r6_32 = vmovl_s16(r6);
+            let r7_32 = vmovl_s16(r7);
+            
+            let mut sum = vmulq_n_s32(r0_32, c0);
+            sum = vmlaq_n_s32(sum, r1_32, c1);
+            sum = vmlaq_n_s32(sum, r2_32, c2);
+            sum = vmlaq_n_s32(sum, r3_32, c3);
+            sum = vmlaq_n_s32(sum, r4_32, c4);
+            sum = vmlaq_n_s32(sum, r5_32, c5);
+            sum = vmlaq_n_s32(sum, r6_32, c6);
+            sum = vmlaq_n_s32(sum, r7_32, c7);
+            
+            let rnd_vec = vdupq_n_s32(rnd);
+            sum = vshrq_n_s32::<10>(vaddq_s32(sum, rnd_vec));
+            
+            // Narrow to i16
+            let result = vqmovn_s32(sum);
+            vst1_s16(dst[col..].as_mut_ptr(), result);
+        }
+        col += 4;
+    }
+    
+    // Scalar fallback
+    while col < w {
+        let mut sum = 0i32;
+        for i in 0..8 {
+            sum += filter[i] as i32 * mid[i][col] as i32;
+        }
+        dst[col] = ((sum + rnd) >> sh) as i16;
+        col += 1;
+    }
+}
+
+/// Main 8-tap prep function for 8bpc
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn prep_8tap_8bpc_inner(
+    token: Arm64,
+    tmp: &mut [i16],
+    src: &[u8],
+    src_stride: usize,
+    w: usize,
+    h: usize,
+    mx: usize,
+    my: usize,
+    h_filter_type: Rav1dFilterMode,
+    v_filter_type: Rav1dFilterMode,
+) {
+    let intermediate_bits = 4u8;
+    
+    let fh = get_filter_coeff(mx, w, h_filter_type);
+    let fv = get_filter_coeff(my, h, v_filter_type);
+    
+    match (fh, fv) {
+        (Some(fh), Some(fv)) => {
+            // Case 1: Both H and V filtering
+            let tmp_h = h + 7;
+            let mut mid = [[0i16; MID_STRIDE]; 135];
+            
+            for y in 0..tmp_h {
+                let src_offset = if y >= 3 {
+                    (y - 3) * src_stride
+                } else {
+                    0usize.wrapping_sub((3 - y) * src_stride)
+                };
+                let src_row = &src[src_offset..];
+                h_filter_8tap_8bpc_neon(
+                    token,
+                    &mut mid[y][..w],
+                    src_row,
+                    w,
+                    fh,
+                    6 - intermediate_bits,
+                );
+            }
+            
+            for y in 0..h {
+                let out_row = &mut tmp[y * w..][..w];
+                v_filter_8tap_to_i16_neon(token, out_row, &mid[y..], w, fv, 6 + intermediate_bits);
+            }
+        }
+        (Some(fh), None) => {
+            // Case 2: H-only filtering
+            for y in 0..h {
+                let src_row = &src[y * src_stride..];
+                let out_row = &mut tmp[y * w..][..w];
+                // Output to i16 with intermediate_bits shift
+                let mut col = 0;
+                while col + 8 <= w {
+                    unsafe {
+                        let c0 = fh[0] as i16;
+                        let c1 = fh[1] as i16;
+                        let c2 = fh[2] as i16;
+                        let c3 = fh[3] as i16;
+                        let c4 = fh[4] as i16;
+                        let c5 = fh[5] as i16;
+                        let c6 = fh[6] as i16;
+                        let c7 = fh[7] as i16;
+                        
+                        let s0 = vld1_u8(src_row[col..].as_ptr());
+                        let s1 = vld1_u8(src_row[col + 1..].as_ptr());
+                        let s2 = vld1_u8(src_row[col + 2..].as_ptr());
+                        let s3 = vld1_u8(src_row[col + 3..].as_ptr());
+                        let s4 = vld1_u8(src_row[col + 4..].as_ptr());
+                        let s5 = vld1_u8(src_row[col + 5..].as_ptr());
+                        let s6 = vld1_u8(src_row[col + 6..].as_ptr());
+                        let s7 = vld1_u8(src_row[col + 7..].as_ptr());
+                        
+                        let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
+                        let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
+                        let s2_16 = vreinterpretq_s16_u16(vmovl_u8(s2));
+                        let s3_16 = vreinterpretq_s16_u16(vmovl_u8(s3));
+                        let s4_16 = vreinterpretq_s16_u16(vmovl_u8(s4));
+                        let s5_16 = vreinterpretq_s16_u16(vmovl_u8(s5));
+                        let s6_16 = vreinterpretq_s16_u16(vmovl_u8(s6));
+                        let s7_16 = vreinterpretq_s16_u16(vmovl_u8(s7));
+                        
+                        let mut sum = vmulq_n_s16(s0_16, c0);
+                        sum = vmlaq_n_s16(sum, s1_16, c1);
+                        sum = vmlaq_n_s16(sum, s2_16, c2);
+                        sum = vmlaq_n_s16(sum, s3_16, c3);
+                        sum = vmlaq_n_s16(sum, s4_16, c4);
+                        sum = vmlaq_n_s16(sum, s5_16, c5);
+                        sum = vmlaq_n_s16(sum, s6_16, c6);
+                        sum = vmlaq_n_s16(sum, s7_16, c7);
+                        
+                        // Shift for intermediate: (sum + 8) >> 4
+                        let rnd_vec = vdupq_n_s16(8);
+                        let result = vshrq_n_s16::<4>(vaddq_s16(sum, rnd_vec));
+                        
+                        vst1q_s16(out_row[col..].as_mut_ptr(), result);
+                    }
+                    col += 8;
+                }
+                while col < w {
+                    let mut sum = 0i32;
+                    for i in 0..8 {
+                        sum += fh[i] as i32 * src_row[col + i] as i32;
+                    }
+                    out_row[col] = ((sum + 8) >> intermediate_bits) as i16;
+                    col += 1;
+                }
+            }
+        }
+        (None, Some(fv)) => {
+            // Case 3: V-only filtering
+            for y in 0..h {
+                let out_row = &mut tmp[y * w..][..w];
+                
+                let mut mid = [[0i16; MID_STRIDE]; 8];
+                for i in 0..8 {
+                    let src_offset = if y + i >= 3 {
+                        (y + i - 3) * src_stride
+                    } else {
+                        0usize.wrapping_sub((3 - y - i) * src_stride)
+                    };
+                    for x in 0..w {
+                        mid[i][x] = (src[src_offset + x] as i16) << intermediate_bits;
+                    }
+                }
+                
+                v_filter_8tap_to_i16_neon(token, out_row, &mid, w, fv, 6);
+            }
+        }
+        (None, None) => {
+            // Case 4: Simple copy with intermediate scaling
+            for y in 0..h {
+                let src_row = &src[y * src_stride..][..w];
+                let out_row = &mut tmp[y * w..][..w];
+                for x in 0..w {
+                    out_row[x] = (src_row[x] as i16) << intermediate_bits;
+                }
+            }
+        }
+    }
+}
+
+macro_rules! define_prep_8tap_8bpc {
+    ($name:ident, $filter:expr) => {
+        #[cfg(target_arch = "aarch64")]
+        pub unsafe extern "C" fn $name(
+            tmp: *mut i16,
+            src_ptr: *const DynPixel,
+            src_stride: isize,
+            w: i32,
+            h: i32,
+            mx: i32,
+            my: i32,
+            _bitdepth_max: i32,
+            _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            let token = Arm64::forge_token_dangerously();
+            let w = w as usize;
+            let h = h as usize;
+            let mx = mx as usize;
+            let my = my as usize;
+            let src_stride_u = src_stride as usize;
+            
+            // Offset source pointer back by 3 pixels and 3 rows
+            let src_base = (src_ptr as *const u8).offset(-3 * src_stride - 3);
+            
+            let src_len = (h + 7) * src_stride_u + w + 7;
+            let src = std::slice::from_raw_parts(src_base, src_len);
+            
+            let tmp_len = h * w;
+            let tmp_slice = std::slice::from_raw_parts_mut(tmp, tmp_len);
+            
+            let src_adjusted = &src[3 * src_stride_u + 3..];
+            
+            prep_8tap_8bpc_inner(
+                token,
+                tmp_slice,
+                src_adjusted,
+                src_stride_u,
+                w,
+                h,
+                mx,
+                my,
+                get_h_filter_type($filter),
+                get_v_filter_type($filter),
+            );
+        }
+    };
+}
+
+define_prep_8tap_8bpc!(prep_8tap_regular_8bpc_neon, Filter2d::Regular8Tap);
+define_prep_8tap_8bpc!(prep_8tap_regular_smooth_8bpc_neon, Filter2d::RegularSmooth8Tap);
+define_prep_8tap_8bpc!(prep_8tap_regular_sharp_8bpc_neon, Filter2d::RegularSharp8Tap);
+define_prep_8tap_8bpc!(prep_8tap_smooth_regular_8bpc_neon, Filter2d::SmoothRegular8Tap);
+define_prep_8tap_8bpc!(prep_8tap_smooth_8bpc_neon, Filter2d::Smooth8Tap);
+define_prep_8tap_8bpc!(prep_8tap_smooth_sharp_8bpc_neon, Filter2d::SmoothSharp8Tap);
+define_prep_8tap_8bpc!(prep_8tap_sharp_regular_8bpc_neon, Filter2d::SharpRegular8Tap);
+define_prep_8tap_8bpc!(prep_8tap_sharp_smooth_8bpc_neon, Filter2d::SharpSmooth8Tap);
+define_prep_8tap_8bpc!(prep_8tap_sharp_8bpc_neon, Filter2d::Sharp8Tap);
+
+// ============================================================================
+// 8-TAP FILTERS 16BPC
+// ============================================================================
+
+/// Horizontal 8-tap filter to intermediate buffer (i32) for 16bpc
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn h_filter_8tap_16bpc_neon(
+    _token: Arm64,
+    dst: &mut [i32],
+    src: &[u16],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
+    let rnd = (1i32 << sh) >> 1;
+    
+    let mut col = 0;
+    
+    while col + 4 <= w {
+        unsafe {
+            let c0 = filter[0] as i32;
+            let c1 = filter[1] as i32;
+            let c2 = filter[2] as i32;
+            let c3 = filter[3] as i32;
+            let c4 = filter[4] as i32;
+            let c5 = filter[5] as i32;
+            let c6 = filter[6] as i32;
+            let c7 = filter[7] as i32;
+            
+            // Load 4 source u16 values at each tap position
+            let s0 = vld1_u16(src[col..].as_ptr());
+            let s1 = vld1_u16(src[col + 1..].as_ptr());
+            let s2 = vld1_u16(src[col + 2..].as_ptr());
+            let s3 = vld1_u16(src[col + 3..].as_ptr());
+            let s4 = vld1_u16(src[col + 4..].as_ptr());
+            let s5 = vld1_u16(src[col + 5..].as_ptr());
+            let s6 = vld1_u16(src[col + 6..].as_ptr());
+            let s7 = vld1_u16(src[col + 7..].as_ptr());
+            
+            // Widen to i32
+            let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
+            let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
+            let s2_32 = vreinterpretq_s32_u32(vmovl_u16(s2));
+            let s3_32 = vreinterpretq_s32_u32(vmovl_u16(s3));
+            let s4_32 = vreinterpretq_s32_u32(vmovl_u16(s4));
+            let s5_32 = vreinterpretq_s32_u32(vmovl_u16(s5));
+            let s6_32 = vreinterpretq_s32_u32(vmovl_u16(s6));
+            let s7_32 = vreinterpretq_s32_u32(vmovl_u16(s7));
+            
+            let mut sum = vmulq_n_s32(s0_32, c0);
+            sum = vmlaq_n_s32(sum, s1_32, c1);
+            sum = vmlaq_n_s32(sum, s2_32, c2);
+            sum = vmlaq_n_s32(sum, s3_32, c3);
+            sum = vmlaq_n_s32(sum, s4_32, c4);
+            sum = vmlaq_n_s32(sum, s5_32, c5);
+            sum = vmlaq_n_s32(sum, s6_32, c6);
+            sum = vmlaq_n_s32(sum, s7_32, c7);
+            
+            // Add rounding and shift
+            let rnd_vec = vdupq_n_s32(rnd);
+            let result = vshrq_n_s32::<4>(vaddq_s32(sum, rnd_vec)); // sh typically 4 for 16bpc intermediate
+            
+            vst1q_s32(dst[col..].as_mut_ptr(), result);
+        }
+        col += 4;
+    }
+    
+    // Scalar fallback
+    while col < w {
+        let mut sum = 0i32;
+        for i in 0..8 {
+            sum += filter[i] as i32 * src[col + i] as i32;
+        }
+        dst[col] = (sum + rnd) >> sh;
+        col += 1;
+    }
+}
+
+/// Vertical 8-tap filter from i32 intermediate to u16 output for 16bpc
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn v_filter_8tap_16bpc_neon(
+    _token: Arm64,
+    dst: &mut [u16],
+    mid: &[[i32; MID_STRIDE]],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+    max: u16,
+) {
+    let rnd = (1i32 << sh) >> 1;
+    
+    let mut col = 0;
+    
+    while col + 4 <= w {
+        unsafe {
+            let c0 = filter[0] as i32;
+            let c1 = filter[1] as i32;
+            let c2 = filter[2] as i32;
+            let c3 = filter[3] as i32;
+            let c4 = filter[4] as i32;
+            let c5 = filter[5] as i32;
+            let c6 = filter[6] as i32;
+            let c7 = filter[7] as i32;
+            
+            let r0 = vld1q_s32(mid[0][col..].as_ptr());
+            let r1 = vld1q_s32(mid[1][col..].as_ptr());
+            let r2 = vld1q_s32(mid[2][col..].as_ptr());
+            let r3 = vld1q_s32(mid[3][col..].as_ptr());
+            let r4 = vld1q_s32(mid[4][col..].as_ptr());
+            let r5 = vld1q_s32(mid[5][col..].as_ptr());
+            let r6 = vld1q_s32(mid[6][col..].as_ptr());
+            let r7 = vld1q_s32(mid[7][col..].as_ptr());
+            
+            let mut sum = vmulq_n_s32(r0, c0);
+            sum = vmlaq_n_s32(sum, r1, c1);
+            sum = vmlaq_n_s32(sum, r2, c2);
+            sum = vmlaq_n_s32(sum, r3, c3);
+            sum = vmlaq_n_s32(sum, r4, c4);
+            sum = vmlaq_n_s32(sum, r5, c5);
+            sum = vmlaq_n_s32(sum, r6, c6);
+            sum = vmlaq_n_s32(sum, r7, c7);
+            
+            // Add rounding
+            let rnd_vec = vdupq_n_s32(rnd);
+            sum = vaddq_s32(sum, rnd_vec);
+            
+            // Shift - typically sh = 8 for 16bpc (4 + 4)
+            let result = vshrq_n_s32::<8>(sum);
+            
+            // Clamp to [0, max]
+            let max_vec = vdupq_n_s32(max as i32);
+            let zero = vdupq_n_s32(0);
+            let clamped = vminq_s32(vmaxq_s32(result, zero), max_vec);
+            
+            // Narrow to u16
+            let narrow = vqmovun_s32(clamped);
+            vst1_u16(dst[col..].as_mut_ptr(), narrow);
+        }
+        col += 4;
+    }
+    
+    // Scalar fallback
+    while col < w {
+        let mut sum = 0i64;
+        for i in 0..8 {
+            sum += filter[i] as i64 * mid[i][col] as i64;
+        }
+        dst[col] = (((sum + rnd as i64) >> sh) as i32).clamp(0, max as i32) as u16;
+        col += 1;
+    }
+}
+
+/// Horizontal 8-tap filter directly to output for 16bpc (H-only case)
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn h_filter_8tap_16bpc_put_neon(
+    _token: Arm64,
+    dst: &mut [u16],
+    src: &[u16],
+    w: usize,
+    filter: &[i8; 8],
+    max: u16,
+) {
+    let mut col = 0;
+    
+    while col + 4 <= w {
+        unsafe {
+            let c0 = filter[0] as i32;
+            let c1 = filter[1] as i32;
+            let c2 = filter[2] as i32;
+            let c3 = filter[3] as i32;
+            let c4 = filter[4] as i32;
+            let c5 = filter[5] as i32;
+            let c6 = filter[6] as i32;
+            let c7 = filter[7] as i32;
+            
+            let s0 = vld1_u16(src[col..].as_ptr());
+            let s1 = vld1_u16(src[col + 1..].as_ptr());
+            let s2 = vld1_u16(src[col + 2..].as_ptr());
+            let s3 = vld1_u16(src[col + 3..].as_ptr());
+            let s4 = vld1_u16(src[col + 4..].as_ptr());
+            let s5 = vld1_u16(src[col + 5..].as_ptr());
+            let s6 = vld1_u16(src[col + 6..].as_ptr());
+            let s7 = vld1_u16(src[col + 7..].as_ptr());
+            
+            let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
+            let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
+            let s2_32 = vreinterpretq_s32_u32(vmovl_u16(s2));
+            let s3_32 = vreinterpretq_s32_u32(vmovl_u16(s3));
+            let s4_32 = vreinterpretq_s32_u32(vmovl_u16(s4));
+            let s5_32 = vreinterpretq_s32_u32(vmovl_u16(s5));
+            let s6_32 = vreinterpretq_s32_u32(vmovl_u16(s6));
+            let s7_32 = vreinterpretq_s32_u32(vmovl_u16(s7));
+            
+            let mut sum = vmulq_n_s32(s0_32, c0);
+            sum = vmlaq_n_s32(sum, s1_32, c1);
+            sum = vmlaq_n_s32(sum, s2_32, c2);
+            sum = vmlaq_n_s32(sum, s3_32, c3);
+            sum = vmlaq_n_s32(sum, s4_32, c4);
+            sum = vmlaq_n_s32(sum, s5_32, c5);
+            sum = vmlaq_n_s32(sum, s6_32, c6);
+            sum = vmlaq_n_s32(sum, s7_32, c7);
+            
+            // Round and shift: (sum + 32) >> 6
+            let rnd_vec = vdupq_n_s32(32);
+            let result = vshrq_n_s32::<6>(vaddq_s32(sum, rnd_vec));
+            
+            // Clamp
+            let max_vec = vdupq_n_s32(max as i32);
+            let zero = vdupq_n_s32(0);
+            let clamped = vminq_s32(vmaxq_s32(result, zero), max_vec);
+            
+            let narrow = vqmovun_s32(clamped);
+            vst1_u16(dst[col..].as_mut_ptr(), narrow);
+        }
+        col += 4;
+    }
+    
+    // Scalar fallback
+    while col < w {
+        let mut sum = 0i32;
+        for i in 0..8 {
+            sum += filter[i] as i32 * src[col + i] as i32;
+        }
+        dst[col] = ((sum + 32) >> 6).clamp(0, max as i32) as u16;
+        col += 1;
+    }
+}
+
+/// Vertical 8-tap filter directly from source for 16bpc (V-only case)
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn v_filter_8tap_16bpc_direct_neon(
+    _token: Arm64,
+    dst: &mut [u16],
+    src: &[u16],
+    src_stride: usize,
+    w: usize,
+    filter: &[i8; 8],
+    max: u16,
+) {
+    let mut col = 0;
+    
+    while col + 4 <= w {
+        unsafe {
+            let c0 = filter[0] as i32;
+            let c1 = filter[1] as i32;
+            let c2 = filter[2] as i32;
+            let c3 = filter[3] as i32;
+            let c4 = filter[4] as i32;
+            let c5 = filter[5] as i32;
+            let c6 = filter[6] as i32;
+            let c7 = filter[7] as i32;
+            
+            let r0 = vld1_u16(src[col..].as_ptr());
+            let r1 = vld1_u16(src[col + src_stride..].as_ptr());
+            let r2 = vld1_u16(src[col + 2 * src_stride..].as_ptr());
+            let r3 = vld1_u16(src[col + 3 * src_stride..].as_ptr());
+            let r4 = vld1_u16(src[col + 4 * src_stride..].as_ptr());
+            let r5 = vld1_u16(src[col + 5 * src_stride..].as_ptr());
+            let r6 = vld1_u16(src[col + 6 * src_stride..].as_ptr());
+            let r7 = vld1_u16(src[col + 7 * src_stride..].as_ptr());
+            
+            let r0_32 = vreinterpretq_s32_u32(vmovl_u16(r0));
+            let r1_32 = vreinterpretq_s32_u32(vmovl_u16(r1));
+            let r2_32 = vreinterpretq_s32_u32(vmovl_u16(r2));
+            let r3_32 = vreinterpretq_s32_u32(vmovl_u16(r3));
+            let r4_32 = vreinterpretq_s32_u32(vmovl_u16(r4));
+            let r5_32 = vreinterpretq_s32_u32(vmovl_u16(r5));
+            let r6_32 = vreinterpretq_s32_u32(vmovl_u16(r6));
+            let r7_32 = vreinterpretq_s32_u32(vmovl_u16(r7));
+            
+            let mut sum = vmulq_n_s32(r0_32, c0);
+            sum = vmlaq_n_s32(sum, r1_32, c1);
+            sum = vmlaq_n_s32(sum, r2_32, c2);
+            sum = vmlaq_n_s32(sum, r3_32, c3);
+            sum = vmlaq_n_s32(sum, r4_32, c4);
+            sum = vmlaq_n_s32(sum, r5_32, c5);
+            sum = vmlaq_n_s32(sum, r6_32, c6);
+            sum = vmlaq_n_s32(sum, r7_32, c7);
+            
+            // Round and shift
+            let rnd_vec = vdupq_n_s32(32);
+            sum = vshrq_n_s32::<6>(vaddq_s32(sum, rnd_vec));
+            
+            // Clamp
+            let max_vec = vdupq_n_s32(max as i32);
+            let zero = vdupq_n_s32(0);
+            let clamped = vminq_s32(vmaxq_s32(sum, zero), max_vec);
+            
+            let narrow = vqmovun_s32(clamped);
+            vst1_u16(dst[col..].as_mut_ptr(), narrow);
+        }
+        col += 4;
+    }
+    
+    // Scalar fallback
+    while col < w {
+        let mut sum = 0i32;
+        for i in 0..8 {
+            sum += filter[i] as i32 * src[col + i * src_stride] as i32;
+        }
+        dst[col] = ((sum + 32) >> 6).clamp(0, max as i32) as u16;
+        col += 1;
+    }
+}
+
+/// Main 8-tap put function for 16bpc
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn put_8tap_16bpc_inner(
+    token: Arm64,
+    dst: &mut [u16],
+    dst_stride: usize,
+    src: &[u16],
+    src_stride: usize,
+    w: usize,
+    h: usize,
+    mx: usize,
+    my: usize,
+    h_filter_type: Rav1dFilterMode,
+    v_filter_type: Rav1dFilterMode,
+    bitdepth_max: u16,
+) {
+    let intermediate_bits = 4u8;
+    
+    let fh = get_filter_coeff(mx, w, h_filter_type);
+    let fv = get_filter_coeff(my, h, v_filter_type);
+    
+    match (fh, fv) {
+        (Some(fh), Some(fv)) => {
+            let tmp_h = h + 7;
+            let mut mid = [[0i32; MID_STRIDE]; 135];
+            
+            for y in 0..tmp_h {
+                let src_offset = if y >= 3 {
+                    (y - 3) * src_stride
+                } else {
+                    0usize.wrapping_sub((3 - y) * src_stride)
+                };
+                let src_row = &src[src_offset..];
+                h_filter_8tap_16bpc_neon(
+                    token,
+                    &mut mid[y][..w],
+                    src_row,
+                    w,
+                    fh,
+                    6 - intermediate_bits,
+                );
+            }
+            
+            for y in 0..h {
+                let dst_row = &mut dst[y * dst_stride..][..w];
+                v_filter_8tap_16bpc_neon(
+                    token,
+                    dst_row,
+                    &mid[y..],
+                    w,
+                    fv,
+                    6 + intermediate_bits,
+                    bitdepth_max,
+                );
+            }
+        }
+        (Some(fh), None) => {
+            for y in 0..h {
+                let src_row = &src[y * src_stride..];
+                let dst_row = &mut dst[y * dst_stride..][..w];
+                h_filter_8tap_16bpc_put_neon(token, dst_row, src_row, w, fh, bitdepth_max);
+            }
+        }
+        (None, Some(fv)) => {
+            for y in 0..h {
+                let src_offset = if y >= 3 {
+                    (y - 3) * src_stride
+                } else {
+                    0usize.wrapping_sub((3 - y) * src_stride)
+                };
+                let src_row = &src[src_offset..];
+                let dst_row = &mut dst[y * dst_stride..][..w];
+                v_filter_8tap_16bpc_direct_neon(token, dst_row, src_row, src_stride, w, fv, bitdepth_max);
+            }
+        }
+        (None, None) => {
+            for y in 0..h {
+                let src_row = &src[y * src_stride..][..w];
+                let dst_row = &mut dst[y * dst_stride..][..w];
+                dst_row.copy_from_slice(src_row);
+            }
+        }
+    }
+}
+
+macro_rules! define_put_8tap_16bpc {
+    ($name:ident, $filter:expr) => {
+        #[cfg(target_arch = "aarch64")]
+        pub unsafe extern "C" fn $name(
+            dst_ptr: *mut DynPixel,
+            dst_stride: isize,
+            src_ptr: *const DynPixel,
+            src_stride: isize,
+            w: i32,
+            h: i32,
+            mx: i32,
+            my: i32,
+            bitdepth_max: i32,
+            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            let token = Arm64::forge_token_dangerously();
+            let w = w as usize;
+            let h = h as usize;
+            let mx = mx as usize;
+            let my = my as usize;
+            let dst_stride_u16 = (dst_stride / 2) as usize;
+            let src_stride_u16 = (src_stride / 2) as usize;
+            
+            let src_base = (src_ptr as *const u16).offset(-3 * src_stride_u16 as isize - 3);
+            
+            let src_len = (h + 7) * src_stride_u16 + w + 7;
+            let src = std::slice::from_raw_parts(src_base, src_len);
+            
+            let dst_len = h * dst_stride_u16 + w;
+            let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, dst_len);
+            
+            let src_adjusted = &src[3 * src_stride_u16 + 3..];
+            
+            put_8tap_16bpc_inner(
+                token,
+                dst,
+                dst_stride_u16,
+                src_adjusted,
+                src_stride_u16,
+                w,
+                h,
+                mx,
+                my,
+                get_h_filter_type($filter),
+                get_v_filter_type($filter),
+                bitdepth_max as u16,
+            );
+        }
+    };
+}
+
+define_put_8tap_16bpc!(put_8tap_regular_16bpc_neon, Filter2d::Regular8Tap);
+define_put_8tap_16bpc!(put_8tap_regular_smooth_16bpc_neon, Filter2d::RegularSmooth8Tap);
+define_put_8tap_16bpc!(put_8tap_regular_sharp_16bpc_neon, Filter2d::RegularSharp8Tap);
+define_put_8tap_16bpc!(put_8tap_smooth_regular_16bpc_neon, Filter2d::SmoothRegular8Tap);
+define_put_8tap_16bpc!(put_8tap_smooth_16bpc_neon, Filter2d::Smooth8Tap);
+define_put_8tap_16bpc!(put_8tap_smooth_sharp_16bpc_neon, Filter2d::SmoothSharp8Tap);
+define_put_8tap_16bpc!(put_8tap_sharp_regular_16bpc_neon, Filter2d::SharpRegular8Tap);
+define_put_8tap_16bpc!(put_8tap_sharp_smooth_16bpc_neon, Filter2d::SharpSmooth8Tap);
+define_put_8tap_16bpc!(put_8tap_sharp_16bpc_neon, Filter2d::Sharp8Tap);
+
+// ============================================================================
+// 8-TAP PREP 16BPC
+// ============================================================================
+
+/// Vertical 8-tap filter from i32 intermediate to i16 output for 16bpc prep
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn v_filter_8tap_16bpc_to_i16_neon(
+    _token: Arm64,
+    dst: &mut [i16],
+    mid: &[[i32; MID_STRIDE]],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
+    let rnd = (1i32 << sh) >> 1;
+    
+    let mut col = 0;
+    
+    while col + 4 <= w {
+        unsafe {
+            let c0 = filter[0] as i32;
+            let c1 = filter[1] as i32;
+            let c2 = filter[2] as i32;
+            let c3 = filter[3] as i32;
+            let c4 = filter[4] as i32;
+            let c5 = filter[5] as i32;
+            let c6 = filter[6] as i32;
+            let c7 = filter[7] as i32;
+            
+            let r0 = vld1q_s32(mid[0][col..].as_ptr());
+            let r1 = vld1q_s32(mid[1][col..].as_ptr());
+            let r2 = vld1q_s32(mid[2][col..].as_ptr());
+            let r3 = vld1q_s32(mid[3][col..].as_ptr());
+            let r4 = vld1q_s32(mid[4][col..].as_ptr());
+            let r5 = vld1q_s32(mid[5][col..].as_ptr());
+            let r6 = vld1q_s32(mid[6][col..].as_ptr());
+            let r7 = vld1q_s32(mid[7][col..].as_ptr());
+            
+            let mut sum = vmulq_n_s32(r0, c0);
+            sum = vmlaq_n_s32(sum, r1, c1);
+            sum = vmlaq_n_s32(sum, r2, c2);
+            sum = vmlaq_n_s32(sum, r3, c3);
+            sum = vmlaq_n_s32(sum, r4, c4);
+            sum = vmlaq_n_s32(sum, r5, c5);
+            sum = vmlaq_n_s32(sum, r6, c6);
+            sum = vmlaq_n_s32(sum, r7, c7);
+            
+            let rnd_vec = vdupq_n_s32(rnd);
+            sum = vshrq_n_s32::<8>(vaddq_s32(sum, rnd_vec));
+            
+            let result = vqmovn_s32(sum);
+            vst1_s16(dst[col..].as_mut_ptr(), result);
+        }
+        col += 4;
+    }
+    
+    // Scalar fallback
+    while col < w {
+        let mut sum = 0i64;
+        for i in 0..8 {
+            sum += filter[i] as i64 * mid[i][col] as i64;
+        }
+        dst[col] = ((sum + rnd as i64) >> sh) as i16;
+        col += 1;
+    }
+}
+
+/// Main 8-tap prep function for 16bpc
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn prep_8tap_16bpc_inner(
+    token: Arm64,
+    tmp: &mut [i16],
+    src: &[u16],
+    src_stride: usize,
+    w: usize,
+    h: usize,
+    mx: usize,
+    my: usize,
+    h_filter_type: Rav1dFilterMode,
+    v_filter_type: Rav1dFilterMode,
+) {
+    let intermediate_bits = 4u8;
+    
+    let fh = get_filter_coeff(mx, w, h_filter_type);
+    let fv = get_filter_coeff(my, h, v_filter_type);
+    
+    match (fh, fv) {
+        (Some(fh), Some(fv)) => {
+            let tmp_h = h + 7;
+            let mut mid = [[0i32; MID_STRIDE]; 135];
+            
+            for y in 0..tmp_h {
+                let src_offset = if y >= 3 {
+                    (y - 3) * src_stride
+                } else {
+                    0usize.wrapping_sub((3 - y) * src_stride)
+                };
+                let src_row = &src[src_offset..];
+                h_filter_8tap_16bpc_neon(
+                    token,
+                    &mut mid[y][..w],
+                    src_row,
+                    w,
+                    fh,
+                    6 - intermediate_bits,
+                );
+            }
+            
+            for y in 0..h {
+                let out_row = &mut tmp[y * w..][..w];
+                v_filter_8tap_16bpc_to_i16_neon(token, out_row, &mid[y..], w, fv, 6 + intermediate_bits);
+            }
+        }
+        (Some(fh), None) => {
+            for y in 0..h {
+                let src_row = &src[y * src_stride..];
+                let out_row = &mut tmp[y * w..][..w];
+                let mut col = 0;
+                while col + 4 <= w {
+                    unsafe {
+                        let c0 = fh[0] as i32;
+                        let c1 = fh[1] as i32;
+                        let c2 = fh[2] as i32;
+                        let c3 = fh[3] as i32;
+                        let c4 = fh[4] as i32;
+                        let c5 = fh[5] as i32;
+                        let c6 = fh[6] as i32;
+                        let c7 = fh[7] as i32;
+                        
+                        let s0 = vld1_u16(src_row[col..].as_ptr());
+                        let s1 = vld1_u16(src_row[col + 1..].as_ptr());
+                        let s2 = vld1_u16(src_row[col + 2..].as_ptr());
+                        let s3 = vld1_u16(src_row[col + 3..].as_ptr());
+                        let s4 = vld1_u16(src_row[col + 4..].as_ptr());
+                        let s5 = vld1_u16(src_row[col + 5..].as_ptr());
+                        let s6 = vld1_u16(src_row[col + 6..].as_ptr());
+                        let s7 = vld1_u16(src_row[col + 7..].as_ptr());
+                        
+                        let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
+                        let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
+                        let s2_32 = vreinterpretq_s32_u32(vmovl_u16(s2));
+                        let s3_32 = vreinterpretq_s32_u32(vmovl_u16(s3));
+                        let s4_32 = vreinterpretq_s32_u32(vmovl_u16(s4));
+                        let s5_32 = vreinterpretq_s32_u32(vmovl_u16(s5));
+                        let s6_32 = vreinterpretq_s32_u32(vmovl_u16(s6));
+                        let s7_32 = vreinterpretq_s32_u32(vmovl_u16(s7));
+                        
+                        let mut sum = vmulq_n_s32(s0_32, c0);
+                        sum = vmlaq_n_s32(sum, s1_32, c1);
+                        sum = vmlaq_n_s32(sum, s2_32, c2);
+                        sum = vmlaq_n_s32(sum, s3_32, c3);
+                        sum = vmlaq_n_s32(sum, s4_32, c4);
+                        sum = vmlaq_n_s32(sum, s5_32, c5);
+                        sum = vmlaq_n_s32(sum, s6_32, c6);
+                        sum = vmlaq_n_s32(sum, s7_32, c7);
+                        
+                        // Shift for intermediate
+                        let rnd_vec = vdupq_n_s32(8);
+                        let result = vshrq_n_s32::<4>(vaddq_s32(sum, rnd_vec));
+                        
+                        let narrow = vqmovn_s32(result);
+                        vst1_s16(out_row[col..].as_mut_ptr(), narrow);
+                    }
+                    col += 4;
+                }
+                while col < w {
+                    let mut sum = 0i32;
+                    for i in 0..8 {
+                        sum += fh[i] as i32 * src_row[col + i] as i32;
+                    }
+                    out_row[col] = ((sum + 8) >> intermediate_bits) as i16;
+                    col += 1;
+                }
+            }
+        }
+        (None, Some(fv)) => {
+            for y in 0..h {
+                let out_row = &mut tmp[y * w..][..w];
+                
+                let mut mid = [[0i32; MID_STRIDE]; 8];
+                for i in 0..8 {
+                    let src_offset = if y + i >= 3 {
+                        (y + i - 3) * src_stride
+                    } else {
+                        0usize.wrapping_sub((3 - y - i) * src_stride)
+                    };
+                    for x in 0..w {
+                        mid[i][x] = (src[src_offset + x] as i32) << intermediate_bits;
+                    }
+                }
+                
+                v_filter_8tap_16bpc_to_i16_neon(token, out_row, &mid, w, fv, 6);
+            }
+        }
+        (None, None) => {
+            for y in 0..h {
+                let src_row = &src[y * src_stride..][..w];
+                let out_row = &mut tmp[y * w..][..w];
+                for x in 0..w {
+                    out_row[x] = (src_row[x] as i32 >> (10 - intermediate_bits)) as i16;
+                }
+            }
+        }
+    }
+}
+
+macro_rules! define_prep_8tap_16bpc {
+    ($name:ident, $filter:expr) => {
+        #[cfg(target_arch = "aarch64")]
+        pub unsafe extern "C" fn $name(
+            tmp: *mut i16,
+            src_ptr: *const DynPixel,
+            src_stride: isize,
+            w: i32,
+            h: i32,
+            mx: i32,
+            my: i32,
+            _bitdepth_max: i32,
+            _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        ) {
+            let token = Arm64::forge_token_dangerously();
+            let w = w as usize;
+            let h = h as usize;
+            let mx = mx as usize;
+            let my = my as usize;
+            let src_stride_u16 = (src_stride / 2) as usize;
+            
+            let src_base = (src_ptr as *const u16).offset(-3 * src_stride_u16 as isize - 3);
+            
+            let src_len = (h + 7) * src_stride_u16 + w + 7;
+            let src = std::slice::from_raw_parts(src_base, src_len);
+            
+            let tmp_len = h * w;
+            let tmp_slice = std::slice::from_raw_parts_mut(tmp, tmp_len);
+            
+            let src_adjusted = &src[3 * src_stride_u16 + 3..];
+            
+            prep_8tap_16bpc_inner(
+                token,
+                tmp_slice,
+                src_adjusted,
+                src_stride_u16,
+                w,
+                h,
+                mx,
+                my,
+                get_h_filter_type($filter),
+                get_v_filter_type($filter),
+            );
+        }
+    };
+}
+
+define_prep_8tap_16bpc!(prep_8tap_regular_16bpc_neon, Filter2d::Regular8Tap);
+define_prep_8tap_16bpc!(prep_8tap_regular_smooth_16bpc_neon, Filter2d::RegularSmooth8Tap);
+define_prep_8tap_16bpc!(prep_8tap_regular_sharp_16bpc_neon, Filter2d::RegularSharp8Tap);
+define_prep_8tap_16bpc!(prep_8tap_smooth_regular_16bpc_neon, Filter2d::SmoothRegular8Tap);
+define_prep_8tap_16bpc!(prep_8tap_smooth_16bpc_neon, Filter2d::Smooth8Tap);
+define_prep_8tap_16bpc!(prep_8tap_smooth_sharp_16bpc_neon, Filter2d::SmoothSharp8Tap);
+define_prep_8tap_16bpc!(prep_8tap_sharp_regular_16bpc_neon, Filter2d::SharpRegular8Tap);
+define_prep_8tap_16bpc!(prep_8tap_sharp_smooth_16bpc_neon, Filter2d::SharpSmooth8Tap);
+define_prep_8tap_16bpc!(prep_8tap_sharp_16bpc_neon, Filter2d::Sharp8Tap);
