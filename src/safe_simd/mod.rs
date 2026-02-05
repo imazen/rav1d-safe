@@ -22,6 +22,9 @@ pub mod loopfilter_arm;
 #[cfg(target_arch = "aarch64")]
 pub mod looprestoration_arm;
 
+#[cfg(target_arch = "aarch64")]
+pub mod itx_arm;
+
 pub mod cdef;
 
 #[cfg(target_arch = "x86_64")]

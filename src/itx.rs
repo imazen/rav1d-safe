@@ -1627,6 +1627,37 @@ impl Rav1dInvTxfmDSPContext {
         self
     }
 
+    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+    #[inline(always)]
+    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
+        use crate::include::common::bitdepth::BPC;
+        use crate::src::safe_simd::itx_arm as safe_itx;
+
+        let tx_4x4 = TxfmSize::from_wh(4, 4) as usize;
+
+        match BD::BPC {
+            BPC::BPC8 => {
+                // WHT_WHT 4x4
+                self.itxfm_add[tx_4x4][WHT_WHT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_wht_wht_4x4_8bpc_neon);
+                // DCT_DCT 4x4
+                self.itxfm_add[tx_4x4][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x4_8bpc_neon);
+            }
+            BPC::BPC16 => {
+                // WHT_WHT 4x4
+                self.itxfm_add[tx_4x4][WHT_WHT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_wht_wht_4x4_16bpc_neon);
+                // DCT_DCT 4x4
+                self.itxfm_add[tx_4x4][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x4_16bpc_neon);
+            }
+        }
+        // All other transforms use the C fallback
+
+        self
+    }
+
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags, bpc: u8) -> Self {
         #[cfg(feature = "asm")]
@@ -1645,6 +1676,12 @@ impl Rav1dInvTxfmDSPContext {
         {
             let _ = bpc;
             return self.init_x86_safe_simd::<BD>(flags);
+        }
+
+        #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+        {
+            let _ = bpc;
+            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
