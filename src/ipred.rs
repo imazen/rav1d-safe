@@ -2336,6 +2336,14 @@ impl Rav1dIntraPredDSPContext {
                     angular_ipred::Fn::new(safe_ipred::ipred_dc_top_8bpc_neon);
                 self.intra_pred[LEFT_DC_PRED as usize] =
                     angular_ipred::Fn::new(safe_ipred::ipred_dc_left_8bpc_neon);
+                self.intra_pred[PAETH_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_paeth_8bpc_neon);
+                self.intra_pred[SMOOTH_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_8bpc_neon);
+                self.intra_pred[SMOOTH_V_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_v_8bpc_neon);
+                self.intra_pred[SMOOTH_H_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_h_8bpc_neon);
             }
             BPC::BPC16 => {
                 self.intra_pred[DC_128_PRED as usize] =
@@ -2350,6 +2358,14 @@ impl Rav1dIntraPredDSPContext {
                     angular_ipred::Fn::new(safe_ipred::ipred_dc_top_16bpc_neon);
                 self.intra_pred[LEFT_DC_PRED as usize] =
                     angular_ipred::Fn::new(safe_ipred::ipred_dc_left_16bpc_neon);
+                self.intra_pred[PAETH_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_paeth_16bpc_neon);
+                self.intra_pred[SMOOTH_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_16bpc_neon);
+                self.intra_pred[SMOOTH_V_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_v_16bpc_neon);
+                self.intra_pred[SMOOTH_H_PRED as usize] =
+                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_h_16bpc_neon);
             }
         }
 

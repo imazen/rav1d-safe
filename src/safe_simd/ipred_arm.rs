@@ -601,3 +601,332 @@ pub unsafe extern "C" fn ipred_dc_left_16bpc_neon(
         }
     }
 }
+
+// ============================================================================
+// Paeth Prediction
+// ============================================================================
+
+use crate::src::tables::dav1d_sm_weights;
+
+/// Helper: Paeth predictor
+#[inline(always)]
+fn paeth(left: i32, top: i32, topleft: i32) -> i32 {
+    let base = left + top - topleft;
+    let p_left = (base - left).abs();
+    let p_top = (base - top).abs();
+    let p_tl = (base - topleft).abs();
+    
+    if p_left <= p_top && p_left <= p_tl {
+        left
+    } else if p_top <= p_tl {
+        top
+    } else {
+        topleft
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn ipred_paeth_8bpc_neon(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u8;
+    let tl = topleft as *const u8;
+    
+    // topleft pixel is at offset 0
+    let topleft_val = unsafe { *tl } as i32;
+    
+    for y in 0..height {
+        let dst_row = unsafe { dst.offset(y as isize * stride) };
+        let left_val = unsafe { *tl.offset(-(y as isize) - 1) } as i32;
+        
+        for x in 0..width {
+            let top_val = unsafe { *tl.add(x + 1) } as i32;
+            let pred = paeth(left_val, top_val, topleft_val);
+            unsafe { *dst_row.add(x) = pred as u8; }
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn ipred_paeth_16bpc_neon(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let stride_u16 = (stride / 2) as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    
+    let topleft_val = unsafe { *tl } as i32;
+    
+    for y in 0..height {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
+        let left_val = unsafe { *tl.offset(-(y as isize) - 1) } as i32;
+        
+        for x in 0..width {
+            let top_val = unsafe { *tl.add(x + 1) } as i32;
+            let pred = paeth(left_val, top_val, topleft_val);
+            unsafe { *dst_row.add(x) = pred as u16; }
+        }
+    }
+}
+
+// ============================================================================
+// Smooth Prediction
+// ============================================================================
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn ipred_smooth_8bpc_neon(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u8;
+    let tl = topleft as *const u8;
+    
+    let weights_hor = &dav1d_sm_weights.0[width..][..width];
+    let weights_ver = &dav1d_sm_weights.0[height..][..height];
+    let right_val = unsafe { *tl.add(width) } as i32;
+    let bottom_val = unsafe { *tl.offset(-(height as isize)) } as i32;
+    
+    for y in 0..height {
+        let dst_row = unsafe { dst.offset(y as isize * stride) };
+        let left_val = unsafe { *tl.offset(-(y as isize) - 1) } as i32;
+        let w_v = weights_ver[y] as i32;
+        
+        for x in 0..width {
+            let top_val = unsafe { *tl.add(x + 1) } as i32;
+            let w_h = weights_hor[x] as i32;
+            
+            // Vertical: w_v * top + (256 - w_v) * bottom
+            let vert = w_v * top_val + (256 - w_v) * bottom_val;
+            
+            // Horizontal: w_h * left + (256 - w_h) * right
+            let hor = w_h * left_val + (256 - w_h) * right_val;
+            
+            // Result: (vert + hor + 256) >> 9
+            let pred = (vert + hor + 256) >> 9;
+            unsafe { *dst_row.add(x) = pred as u8; }
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn ipred_smooth_16bpc_neon(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let stride_u16 = (stride / 2) as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    
+    let weights_hor = &dav1d_sm_weights.0[width..][..width];
+    let weights_ver = &dav1d_sm_weights.0[height..][..height];
+    let right_val = unsafe { *tl.add(width) } as i32;
+    let bottom_val = unsafe { *tl.offset(-(height as isize)) } as i32;
+    
+    for y in 0..height {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
+        let left_val = unsafe { *tl.offset(-(y as isize) - 1) } as i32;
+        let w_v = weights_ver[y] as i32;
+        
+        for x in 0..width {
+            let top_val = unsafe { *tl.add(x + 1) } as i32;
+            let w_h = weights_hor[x] as i32;
+            
+            let vert = w_v * top_val + (256 - w_v) * bottom_val;
+            let hor = w_h * left_val + (256 - w_h) * right_val;
+            let pred = (vert + hor + 256) >> 9;
+            unsafe { *dst_row.add(x) = pred as u16; }
+        }
+    }
+}
+
+// ============================================================================
+// Smooth V Prediction (vertical only)
+// ============================================================================
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn ipred_smooth_v_8bpc_neon(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u8;
+    let tl = topleft as *const u8;
+    
+    let weights_ver = &dav1d_sm_weights.0[height..][..height];
+    let bottom_val = unsafe { *tl.offset(-(height as isize)) } as i32;
+    
+    for y in 0..height {
+        let dst_row = unsafe { dst.offset(y as isize * stride) };
+        let w_v = weights_ver[y] as i32;
+        
+        for x in 0..width {
+            let top_val = unsafe { *tl.add(x + 1) } as i32;
+            let pred = (w_v * top_val + (256 - w_v) * bottom_val + 128) >> 8;
+            unsafe { *dst_row.add(x) = pred as u8; }
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn ipred_smooth_v_16bpc_neon(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let stride_u16 = (stride / 2) as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    
+    let weights_ver = &dav1d_sm_weights.0[height..][..height];
+    let bottom_val = unsafe { *tl.offset(-(height as isize)) } as i32;
+    
+    for y in 0..height {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
+        let w_v = weights_ver[y] as i32;
+        
+        for x in 0..width {
+            let top_val = unsafe { *tl.add(x + 1) } as i32;
+            let pred = (w_v * top_val + (256 - w_v) * bottom_val + 128) >> 8;
+            unsafe { *dst_row.add(x) = pred as u16; }
+        }
+    }
+}
+
+// ============================================================================
+// Smooth H Prediction (horizontal only)
+// ============================================================================
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn ipred_smooth_h_8bpc_neon(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let dst = dst_ptr as *mut u8;
+    let tl = topleft as *const u8;
+    
+    let weights_hor = &dav1d_sm_weights.0[width..][..width];
+    let right_val = unsafe { *tl.add(width) } as i32;
+    
+    for y in 0..height {
+        let dst_row = unsafe { dst.offset(y as isize * stride) };
+        let left_val = unsafe { *tl.offset(-(y as isize) - 1) } as i32;
+        
+        for x in 0..width {
+            let w_h = weights_hor[x] as i32;
+            let pred = (w_h * left_val + (256 - w_h) * right_val + 128) >> 8;
+            unsafe { *dst_row.add(x) = pred as u8; }
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn ipred_smooth_h_16bpc_neon(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    let width = width as usize;
+    let height = height as usize;
+    let stride_u16 = (stride / 2) as usize;
+    let dst = dst_ptr as *mut u16;
+    let tl = topleft as *const u16;
+    
+    let weights_hor = &dav1d_sm_weights.0[width..][..width];
+    let right_val = unsafe { *tl.add(width) } as i32;
+    
+    for y in 0..height {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
+        let left_val = unsafe { *tl.offset(-(y as isize) - 1) } as i32;
+        
+        for x in 0..width {
+            let w_h = weights_hor[x] as i32;
+            let pred = (w_h * left_val + (256 - w_h) * right_val + 128) >> 8;
+            unsafe { *dst_row.add(x) = pred as u16; }
+        }
+    }
+}
