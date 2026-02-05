@@ -621,6 +621,281 @@ fn prep_bilin_scaled_rust<BD: BitDepth>(
     }
 }
 
+/// Direct dispatch for avg - bypasses function pointer table.
+///
+/// Selects optimal SIMD implementation at runtime based on CPU features.
+/// Used when `feature = "asm"` is disabled for zero-overhead direct calls.
+#[cfg(not(feature = "asm"))]
+fn avg_direct<BD: BitDepth>(
+    dst: Rav1dPictureDataComponentOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    bd: BD,
+) {
+    use crate::include::common::bitdepth::BPC;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+            let dst_stride = dst.stride();
+            let bd_c = bd.into_c();
+            let dst_ffi = FFISafe::new(&dst);
+            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid dst.
+            unsafe {
+                match BD::BPC {
+                    BPC::BPC8 => crate::src::safe_simd::mc::avg_8bpc_avx2(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi,
+                    ),
+                    BPC::BPC16 => crate::src::safe_simd::mc::avg_16bpc_avx2(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi,
+                    ),
+                }
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+        let dst_stride = dst.stride();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+        // SAFETY: NEON always available on aarch64. Pointers from valid dst.
+        unsafe {
+            match BD::BPC {
+                BPC::BPC8 => crate::src::safe_simd::mc_arm::avg_8bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi,
+                ),
+                BPC::BPC16 => crate::src::safe_simd::mc_arm::avg_16bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi,
+                ),
+            }
+        }
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    avg_rust(dst, tmp1, tmp2, w as usize, h as usize, bd);
+}
+
+/// Direct dispatch for w_avg - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn w_avg_direct<BD: BitDepth>(
+    dst: Rav1dPictureDataComponentOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    weight: i32,
+    bd: BD,
+) {
+    use crate::include::common::bitdepth::BPC;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+            let dst_stride = dst.stride();
+            let bd_c = bd.into_c();
+            let dst_ffi = FFISafe::new(&dst);
+            unsafe {
+                match BD::BPC {
+                    BPC::BPC8 => crate::src::safe_simd::mc::w_avg_8bpc_avx2(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi,
+                    ),
+                    BPC::BPC16 => crate::src::safe_simd::mc::w_avg_16bpc_avx2(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi,
+                    ),
+                }
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+        let dst_stride = dst.stride();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+        unsafe {
+            match BD::BPC {
+                BPC::BPC8 => crate::src::safe_simd::mc_arm::w_avg_8bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi,
+                ),
+                BPC::BPC16 => crate::src::safe_simd::mc_arm::w_avg_16bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi,
+                ),
+            }
+        }
+        return;
+    }
+
+    #[allow(unreachable_code)]
+    w_avg_rust(dst, tmp1, tmp2, w as usize, h as usize, weight, bd);
+}
+
+/// Direct dispatch for mask - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn mask_direct<BD: BitDepth>(
+    dst: Rav1dPictureDataComponentOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &[u8],
+    bd: BD,
+) {
+    use crate::include::common::bitdepth::BPC;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+            let dst_stride = dst.stride();
+            let mask_ptr = mask[..(w * h) as usize].as_ptr();
+            let bd_c = bd.into_c();
+            let dst_ffi = FFISafe::new(&dst);
+            unsafe {
+                match BD::BPC {
+                    BPC::BPC8 => crate::src::safe_simd::mc::mask_8bpc_avx2(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
+                    ),
+                    BPC::BPC16 => crate::src::safe_simd::mc::mask_16bpc_avx2(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
+                    ),
+                }
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+        let dst_stride = dst.stride();
+        let mask_ptr = mask[..(w * h) as usize].as_ptr();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+        unsafe {
+            match BD::BPC {
+                BPC::BPC8 => crate::src::safe_simd::mc_arm::mask_8bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
+                ),
+                BPC::BPC16 => crate::src::safe_simd::mc_arm::mask_16bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
+                ),
+            }
+        }
+        return;
+    }
+
+    #[allow(unreachable_code)]
+    mask_rust(dst, tmp1, tmp2, w as usize, h as usize, mask, bd);
+}
+
+/// Direct dispatch for blend - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn blend_direct<BD: BitDepth>(
+    dst: Rav1dPictureDataComponentOffset,
+    tmp: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN],
+    w: i32,
+    h: i32,
+    mask: &[u8],
+) {
+    use crate::include::common::bitdepth::BPC;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+            let dst_stride = dst.stride();
+            let tmp_ptr = ptr::from_ref(tmp).cast();
+            let mask_ptr = mask[..(w * h) as usize].as_ptr();
+            let dst_ffi = FFISafe::new(&dst);
+            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid dst.
+            unsafe {
+                match BD::BPC {
+                    BPC::BPC8 => crate::src::safe_simd::mc::blend_8bpc_avx2(
+                        dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi,
+                    ),
+                    BPC::BPC16 => crate::src::safe_simd::mc::blend_16bpc_avx2(
+                        dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi,
+                    ),
+                }
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+        let dst_stride = dst.stride();
+        let tmp_ptr = ptr::from_ref(tmp).cast();
+        let mask_ptr = mask[..(w * h) as usize].as_ptr();
+        let dst_ffi = FFISafe::new(&dst);
+        // SAFETY: NEON always available on aarch64. Pointers from valid dst.
+        unsafe {
+            match BD::BPC {
+                BPC::BPC8 => crate::src::safe_simd::mc_arm::blend_8bpc_neon(
+                    dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi,
+                ),
+                BPC::BPC16 => crate::src::safe_simd::mc_arm::blend_16bpc_neon(
+                    dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi,
+                ),
+            }
+        }
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    blend_rust::<BD>(dst, tmp, w as usize, h as usize, mask);
+}
+
+/// Direct dispatch for emu_edge - bypasses function pointer table.
+/// No SIMD implementation available; calls scalar Rust fallback directly.
+#[cfg(not(feature = "asm"))]
+fn emu_edge_direct<BD: BitDepth>(
+    bw: isize,
+    bh: isize,
+    iw: isize,
+    ih: isize,
+    x: isize,
+    y: isize,
+    dst: &mut [BD::Pixel; EMU_EDGE_LEN],
+    dst_stride: usize,
+    src: &Rav1dPictureDataComponent,
+) {
+    emu_edge_rust::<BD>(bw, bh, iw, ih, x, y, dst, dst_stride, src);
+}
+
+/// Direct dispatch for resize - bypasses function pointer table.
+/// No SIMD implementation available; calls scalar Rust fallback directly.
+#[cfg(not(feature = "asm"))]
+fn resize_direct<BD: BitDepth>(
+    dst: WithOffset<PicOrBuf<AlignedVec64<u8>>>,
+    src: Rav1dPictureDataComponentOffset,
+    dst_w: usize,
+    h: usize,
+    src_w: usize,
+    dx: i32,
+    mx: i32,
+    bd: BD,
+) {
+    resize_rust::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd);
+}
+
 fn avg_rust<BD: BitDepth>(
     dst: Rav1dPictureDataComponentOffset,
     tmp1: &[i16; COMPINTER_LEN],
@@ -1290,12 +1565,19 @@ impl avg::Fn {
         h: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn avg_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn avg_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd, dst) }
+            } else {
+                // Direct dispatch: no function pointers, no extern "C" ABI overhead
+                avg_direct::<BD>(dst, tmp1, tmp2, w, h, bd)
+            }
+        }
     }
 }
 
@@ -1322,12 +1604,18 @@ impl w_avg::Fn {
         weight: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn w_avg_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn w_avg_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd, dst) }
+            } else {
+                w_avg_direct::<BD>(dst, tmp1, tmp2, w, h, weight, bd)
+            }
+        }
     }
 }
 
@@ -1354,13 +1642,19 @@ impl mask::Fn {
         mask: &[u8],
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let mask = mask[..(w * h) as usize].as_ptr();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn mask_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, bd, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let mask = mask[..(w * h) as usize].as_ptr();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn mask_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, bd, dst) }
+            } else {
+                mask_direct::<BD>(dst, tmp1, tmp2, w, h, mask, bd)
+            }
+        }
     }
 }
 
@@ -1417,13 +1711,19 @@ impl blend::Fn {
         h: i32,
         mask: &[u8],
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let tmp = ptr::from_ref(tmp).cast();
-        let mask = mask[..(w * h) as usize].as_ptr();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn blend_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp, w, h, mask, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let tmp = ptr::from_ref(tmp).cast();
+                let mask = mask[..(w * h) as usize].as_ptr();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn blend_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp, w, h, mask, dst) }
+            } else {
+                blend_direct::<BD>(dst, tmp, w, h, mask)
+            }
+        }
     }
 }
 
@@ -1480,16 +1780,22 @@ impl emu_edge::Fn {
         dst_pxstride: usize,
         src: &Rav1dPictureDataComponent,
     ) {
-        let dst = dst.as_mut_ptr().cast();
-        let dst_stride = (dst_pxstride * mem::size_of::<BD::Pixel>()) as isize;
-        let src_ptr = src.as_strided_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let src = FFISafe::new(src);
-        // SAFETY: Fallback `fn emu_edge_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                bw, bh, iw, ih, x, y, dst, dst_stride, src_ptr, src_stride, src,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst = dst.as_mut_ptr().cast();
+                let dst_stride = (dst_pxstride * mem::size_of::<BD::Pixel>()) as isize;
+                let src_ptr = src.as_strided_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let src = FFISafe::new(src);
+                // SAFETY: Fallback `fn emu_edge_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        bw, bh, iw, ih, x, y, dst, dst_stride, src_ptr, src_stride, src,
+                    )
+                }
+            } else {
+                emu_edge_direct::<BD>(bw, bh, iw, ih, x, y, dst, dst_pxstride, src)
+            }
         }
     }
 }
@@ -1521,21 +1827,27 @@ impl resize::Fn {
         mx: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let dst_w = dst_w as c_int;
-        let h = h as c_int;
-        let src_w = src_w as c_int;
-        let bd = bd.into_c();
-        let src = FFISafe::new(&src);
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn resize_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr, dst_stride, src_ptr, src_stride, dst_w, h, src_w, dx, mx, bd, src, dst,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let dst_w = dst_w as c_int;
+                let h = h as c_int;
+                let src_w = src_w as c_int;
+                let bd = bd.into_c();
+                let src = FFISafe::new(&src);
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn resize_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr, dst_stride, src_ptr, src_stride, dst_w, h, src_w, dx, mx, bd, src, dst,
+                    )
+                }
+            } else {
+                resize_direct::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd)
+            }
         }
     }
 }
