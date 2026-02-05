@@ -23,7 +23,7 @@ Pick the next unfinished module and port it. Priority order:
 7. ~~pal~~ **COMPLETE** (x86 AVX2, ARM uses fallback)
 8. ~~refmvs~~ **COMPLETE** (x86 AVX2 + ARM NEON)
 
-**ALL MAJOR MODULES COMPLETE!** Only msac (compile-time dispatch) remains unported.
+**ALL MODULES COMPLETE!** msac symbol_adapt16 now has inline safe_simd (AVX2/NEON).
 
 Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with safe Rust intrinsics.
 
@@ -65,6 +65,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | filmgrain | `src/safe_simd/filmgrain.rs` | **Complete** - 8bpc + 16bpc |
 | pal | `src/safe_simd/pal.rs` | **Complete** - pal_idx_finish AVX2 |
 | refmvs | `src/safe_simd/refmvs.rs` | **Complete** - splat_mv AVX2 |
+| msac | `src/msac.rs` (inline) | **Complete** - symbol_adapt16 AVX2 |
 
 ### ARM aarch64 (NEON)
 
@@ -78,6 +79,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | itx_arm | `src/safe_simd/itx_arm.rs` | **Complete** - 334 FFI functions, 320 dispatch entries |
 | filmgrain_arm | `src/safe_simd/filmgrain_arm.rs` | **Complete** - 8bpc + 16bpc |
 | refmvs_arm | `src/safe_simd/refmvs_arm.rs` | **Complete** - splat_mv NEON |
+| msac | `src/msac.rs` (inline) | **Complete** - symbol_adapt16 NEON |
 
 ## Performance Status (2026-02-05)
 
@@ -101,8 +103,12 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 - pal x86 (~150 lines): Complete (AVX2 pal_idx_finish)
 - refmvs x86 (~60 lines) + ARM (~50 lines): Complete (splat_mv)
 
+**msac (inline in src/msac.rs):**
+- symbol_adapt16: AVX2 (x86_64) and NEON (aarch64) - parallelized CDF probability calc and comparison
+- symbol_adapt4/8: Use scalar Rust fallback (SIMD overhead not worth it for small n_symbols)
+- bool functions: Use scalar Rust fallback
+
 **Using Rust fallbacks (SIMD not beneficial):**
-- msac (symbol_adapt4/8/16, bool functions): Uses compile-time cfg_if dispatch, not function pointers. Scalar Rust fallback is already performant.
 - refmvs save_tmvs/load_tmvs: Complex conditional logic, not SIMD-friendly
 
 **Cross-compilation:**
