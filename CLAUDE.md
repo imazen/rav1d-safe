@@ -15,10 +15,11 @@
 
 Pick the next unfinished module and port it. Priority order:
 1. ~~ipred (~26k lines)~~ **COMPLETE** (all 14 modes, 8bpc + 16bpc)
-2. filmgrain (~13k lines)
-3. Rectangular ITX transforms (8x4, 4x8, 16x8, etc.)
-4. 16bpc SGR filters
-5. 16bpc loopfilter/CDEF
+2. ~~ITX (~11k lines)~~ **COMPLETE** (160 transforms each for 8bpc/16bpc)
+3. ~~loopfilter/CDEF~~ **COMPLETE** (8bpc + 16bpc)
+4. ~~looprestoration~~ **COMPLETE** (Wiener + SGR 8bpc + 16bpc)
+5. filmgrain (~13k lines) - scaffolding exists but fallback is faster
+6. ARM NEON mc variants (8bpc partial, 16bpc missing)
 
 Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with safe Rust intrinsics.
 
@@ -51,7 +52,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 |--------|----------|--------|
 | mc | `src/safe_simd/mc.rs` | **Complete** - 8bpc+16bpc, x86 AVX2 |
 | mc_arm | `src/safe_simd/mc_arm.rs` | **Partial** - 8bpc NEON (avg, w_avg, mask, blend) |
-| itx | `src/safe_simd/itx.rs` | **Complete** - All square + ALL rect (DCT, ADST, IDTX, etc.) |
+| itx | `src/safe_simd/itx.rs` | **Complete** - 160 transforms each for 8bpc/16bpc (full parity) |
 | loopfilter | `src/safe_simd/loopfilter.rs` | **Complete** - 8bpc + 16bpc |
 | cdef | `src/safe_simd/cdef.rs` | **Complete** - 8bpc + 16bpc |
 | looprestoration | `src/safe_simd/looprestoration.rs` | **Complete** - Wiener + SGR 5x5/3x3/mix (8bpc + 16bpc) |
@@ -69,13 +70,14 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 
 **SIMD optimized (~24k lines in safe_simd/):**
 - MC module (~7k lines): Complete (8bpc + 16bpc)
-- ITX module (~11.3k lines): ~99% complete (243 16bpc + 363 8bpc FFI wrappers)
+- ITX module (~12k lines): **100% complete** (160 transforms for both 8bpc and 16bpc)
   - All square DCT (4x4 to 64x64) - 8bpc + 16bpc
   - All square ADST/FLIPADST (4x4, 8x8, 16x16) - 8bpc + 16bpc
   - All rectangular DCT_DCT (4x8 to 64x16) - 8bpc + 16bpc
   - All rectangular ADST/FLIPADST for 4x8, 8x4, 8x16, 16x8, 4x16, 16x4 - 8bpc + 16bpc
   - All IDTX (4x4 to 32x32, plus rect 4x8 to 32x8) - 8bpc + 16bpc
-  - All hybrid identity transforms (H_DCT, V_DCT, H_ADST, V_ADST, etc.) - 8bpc only
+  - All hybrid identity transforms (H_DCT, V_DCT, H_ADST, V_ADST, etc.) - 8bpc + 16bpc
+  - WHT_WHT 4x4 - 8bpc + 16bpc
 - Loopfilter (~9k lines): Complete (8bpc + 16bpc)
 - CDEF (~7k lines): Complete (8bpc + 16bpc)
 - Looprestoration (~17k lines): Complete (Wiener + SGR 8bpc + 16bpc)
@@ -83,7 +85,6 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 
 **Using Rust fallbacks:**
 - filmgrain (~13k lines): Scaffolding exists but fallback is faster
-- ITX: hybrid identity 16bpc variants (H_DCT, V_DCT, etc.)
 
 ## Architecture
 
