@@ -67,14 +67,15 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 
 ## Porting Progress (160k lines target)
 
-**SIMD optimized (23,129 lines in safe_simd/):**
+**SIMD optimized (~24k lines in safe_simd/):**
 - MC module (~7k lines): Complete (8bpc + 16bpc)
-- ITX module (~42k lines): ~98% complete
+- ITX module (~11.3k lines): ~99% complete (243 16bpc + 363 8bpc FFI wrappers)
   - All square DCT (4x4 to 64x64) - 8bpc + 16bpc
   - All square ADST/FLIPADST (4x4, 8x8, 16x16) - 8bpc + 16bpc
   - All rectangular DCT_DCT (4x8 to 64x16) - 8bpc + 16bpc
-  - All rectangular ADST/FLIPADST for 4x8, 8x4, 8x16, 16x8, 4x16, 16x4 - 8bpc
-  - All identity-based transforms (IDTX, H_DCT, V_DCT, H_ADST, V_ADST, etc.) - 8bpc
+  - All rectangular ADST/FLIPADST for 4x8, 8x4, 8x16, 16x8, 4x16, 16x4 - 8bpc + 16bpc
+  - All IDTX (4x4 to 32x32, plus rect 4x8 to 32x8) - 8bpc + 16bpc
+  - All hybrid identity transforms (H_DCT, V_DCT, H_ADST, V_ADST, etc.) - 8bpc only
 - Loopfilter (~9k lines): Complete (8bpc + 16bpc)
 - CDEF (~7k lines): Complete (8bpc + 16bpc)
 - Looprestoration (~17k lines): Complete (Wiener + SGR 8bpc + 16bpc)
@@ -82,7 +83,7 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 
 **Using Rust fallbacks:**
 - filmgrain (~13k lines): Scaffolding exists but fallback is faster
-- ITX: identity/hybrid 16bpc variants, rectangular ADST 16bpc variants
+- ITX: hybrid identity 16bpc variants (H_DCT, V_DCT, etc.)
 
 ## Architecture
 
