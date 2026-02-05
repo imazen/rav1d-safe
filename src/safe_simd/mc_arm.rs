@@ -14,9 +14,6 @@ use archmage::{arcane, Arm64, SimdToken};
 #[cfg(target_arch = "aarch64")]
 use safe_unaligned_simd::aarch64 as safe_simd;
 
-#[cfg(target_arch = "aarch64")]
-use super::partial_simd;
-
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
@@ -88,7 +85,7 @@ fn avg_8bpc_inner(
             let packed = vqmovun_s16(avg);
             // Store 8 bytes using partial_simd
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            partial_simd::vst1_u8(dst_arr, packed);
+            safe_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -148,8 +145,8 @@ fn avg_16bpc_inner(
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            let t1 = partial_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
-            let t2 = partial_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
+            let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
+            let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
             // Widen to 32-bit
             let t1_lo = vmovl_s16(vget_low_s16(t1));
@@ -180,7 +177,7 @@ fn avg_16bpc_inner(
             let clamped = vmaxq_s16(vminq_s16(avg_16, max), zero);
 
             let dst_arr: &mut [u16; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            partial_simd::vst1q_u16(dst_arr, vreinterpretq_u16_s16(clamped));
+            safe_simd::vst1q_u16(dst_arr, vreinterpretq_u16_s16(clamped));
             col += 8;
         }
 
@@ -241,8 +238,8 @@ fn w_avg_8bpc_inner(
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            let t1 = partial_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
-            let t2 = partial_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
+            let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
+            let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
             // diff = tmp1 - tmp2
             let diff = vsubq_s16(t1, t2);
@@ -269,7 +266,7 @@ fn w_avg_8bpc_inner(
             let packed = vqmovun_s16(scaled);
 
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            partial_simd::vst1_u8(dst_arr, packed);
+            safe_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -328,8 +325,8 @@ fn w_avg_16bpc_inner(
 
         // Process 4 pixels at a time
         while col + 4 <= w {
-            let t1_16 = partial_simd::vld1_s16(tmp1_row[col..][..4].try_into().unwrap());
-            let t2_16 = partial_simd::vld1_s16(tmp2_row[col..][..4].try_into().unwrap());
+            let t1_16 = safe_simd::vld1_s16(tmp1_row[col..][..4].try_into().unwrap());
+            let t2_16 = safe_simd::vld1_s16(tmp2_row[col..][..4].try_into().unwrap());
             let t1 = vmovl_s16(t1_16);
             let t2 = vmovl_s16(t2_16);
 
@@ -350,7 +347,7 @@ fn w_avg_16bpc_inner(
 
             let narrow = vmovn_s32(clamped);
             let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
-            partial_simd::vst1_u16(dst_arr, vreinterpret_u16_s16(narrow));
+            safe_simd::vst1_u16(dst_arr, vreinterpret_u16_s16(narrow));
             col += 4;
         }
 
@@ -413,9 +410,9 @@ fn mask_8bpc_inner(
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            let t1 = partial_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
-            let t2 = partial_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
-            let m = partial_simd::vld1_u8(mask_row[col..][..8].try_into().unwrap());
+            let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
+            let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
+            let m = safe_simd::vld1_u8(mask_row[col..][..8].try_into().unwrap());
 
             // Widen mask to 16-bit
             let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
@@ -445,7 +442,7 @@ fn mask_8bpc_inner(
             let packed = vqmovun_s16(scaled);
 
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            partial_simd::vst1_u8(dst_arr, packed);
+            safe_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -507,8 +504,8 @@ fn mask_16bpc_inner(
 
         // Process 4 pixels at a time
         while col + 4 <= w {
-            let t1_16 = partial_simd::vld1_s16(tmp1_row[col..][..4].try_into().unwrap());
-            let t2_16 = partial_simd::vld1_s16(tmp2_row[col..][..4].try_into().unwrap());
+            let t1_16 = safe_simd::vld1_s16(tmp1_row[col..][..4].try_into().unwrap());
+            let t2_16 = safe_simd::vld1_s16(tmp2_row[col..][..4].try_into().unwrap());
             let t1 = vmovl_s16(t1_16);
             let t2 = vmovl_s16(t2_16);
 
@@ -517,7 +514,7 @@ fn mask_16bpc_inner(
                 mask_row[col], mask_row[col+1], mask_row[col+2], mask_row[col+3],
                 0, 0, 0, 0
             ];
-            let m8 = partial_simd::vld1_u8(&m_bytes);
+            let m8 = safe_simd::vld1_u8(&m_bytes);
             let m16 = vmovl_u8(m8);
             let m32 = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(m16)));
 
@@ -537,7 +534,7 @@ fn mask_16bpc_inner(
 
             let narrow = vmovn_s32(clamped);
             let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
-            partial_simd::vst1_u16(dst_arr, vreinterpret_u16_s16(narrow));
+            safe_simd::vst1_u16(dst_arr, vreinterpret_u16_s16(narrow));
             col += 4;
         }
 
@@ -600,10 +597,10 @@ fn blend_8bpc_inner(
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            let d = partial_simd::vld1_u8(dst_row[col..][..8].try_into().unwrap());
+            let d = safe_simd::vld1_u8(dst_row[col..][..8].try_into().unwrap());
             let d16 = vreinterpretq_s16_u16(vmovl_u8(d));
-            let t = partial_simd::vld1q_s16(tmp_row[col..][..8].try_into().unwrap());
-            let m = partial_simd::vld1_u8(mask_row[col..][..8].try_into().unwrap());
+            let t = safe_simd::vld1q_s16(tmp_row[col..][..8].try_into().unwrap());
+            let m = safe_simd::vld1_u8(mask_row[col..][..8].try_into().unwrap());
             let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
 
             // diff = tmp - (dst << 4)
@@ -635,7 +632,7 @@ fn blend_8bpc_inner(
             // Pack to u8
             let packed = vqmovun_s16(result);
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            partial_simd::vst1_u8(dst_arr, packed);
+            safe_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -704,9 +701,9 @@ fn blend_16bpc_inner(
 
         // Process 4 pixels at a time
         while col + 4 <= w {
-            let d_u16 = partial_simd::vld1_u16(dst_row[col..][..4].try_into().unwrap());
+            let d_u16 = safe_simd::vld1_u16(dst_row[col..][..4].try_into().unwrap());
             let d = vreinterpretq_s32_u32(vmovl_u16(d_u16));
-            let t_16 = partial_simd::vld1_s16(tmp_row[col..][..4].try_into().unwrap());
+            let t_16 = safe_simd::vld1_s16(tmp_row[col..][..4].try_into().unwrap());
             let t = vmovl_s16(t_16);
 
             // Load 4 mask bytes
@@ -714,7 +711,7 @@ fn blend_16bpc_inner(
                 mask_row[col], mask_row[col+1], mask_row[col+2], mask_row[col+3],
                 0, 0, 0, 0
             ];
-            let m8 = partial_simd::vld1_u8(&m_bytes);
+            let m8 = safe_simd::vld1_u8(&m_bytes);
             let m16 = vmovl_u8(m8);
             let m = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(m16)));
 
@@ -734,7 +731,7 @@ fn blend_16bpc_inner(
 
             let narrow = vmovn_u32(vreinterpretq_u32_s32(clamped));
             let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
-            partial_simd::vst1_u16(dst_arr, narrow);
+            safe_simd::vst1_u16(dst_arr, narrow);
             col += 4;
         }
 
@@ -824,9 +821,9 @@ fn blend_v_8bpc_inner(
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            let d = partial_simd::vld1_u8(dst_row[col..][..8].try_into().unwrap());
+            let d = safe_simd::vld1_u8(dst_row[col..][..8].try_into().unwrap());
             let d16 = vreinterpretq_s16_u16(vmovl_u8(d));
-            let t = partial_simd::vld1q_s16(tmp_row[col..][..8].try_into().unwrap());
+            let t = safe_simd::vld1q_s16(tmp_row[col..][..8].try_into().unwrap());
             let m16 = vdupq_n_s16(mask as i16);
 
             // diff = tmp - (dst << 4)
@@ -858,7 +855,7 @@ fn blend_v_8bpc_inner(
             // Pack to u8
             let packed = vqmovun_s16(result);
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            partial_simd::vst1_u8(dst_arr, packed);
+            safe_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -929,9 +926,9 @@ fn blend_v_16bpc_inner(
 
         // Process 4 pixels at a time
         while col + 4 <= w {
-            let d_u16 = partial_simd::vld1_u16(dst_row[col..][..4].try_into().unwrap());
+            let d_u16 = safe_simd::vld1_u16(dst_row[col..][..4].try_into().unwrap());
             let d = vreinterpretq_s32_u32(vmovl_u16(d_u16));
-            let t_16 = partial_simd::vld1_s16(tmp_row[col..][..4].try_into().unwrap());
+            let t_16 = safe_simd::vld1_s16(tmp_row[col..][..4].try_into().unwrap());
             let t = vmovl_s16(t_16);
             let m = vdupq_n_s32(mask as i32);
 
@@ -951,7 +948,7 @@ fn blend_v_16bpc_inner(
 
             let narrow = vmovn_u32(vreinterpretq_u32_s32(clamped));
             let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
-            partial_simd::vst1_u16(dst_arr, narrow);
+            safe_simd::vst1_u16(dst_arr, narrow);
             col += 4;
         }
 
@@ -1024,12 +1021,12 @@ fn blend_h_8bpc_inner(
 
         // Process pixels, mask varies by column
         while col + 8 <= w {
-            let d = partial_simd::vld1_u8(dst_row[col..][..8].try_into().unwrap());
+            let d = safe_simd::vld1_u8(dst_row[col..][..8].try_into().unwrap());
             let d16 = vreinterpretq_s16_u16(vmovl_u8(d));
-            let t = partial_simd::vld1q_s16(tmp_row[col..][..8].try_into().unwrap());
+            let t = safe_simd::vld1q_s16(tmp_row[col..][..8].try_into().unwrap());
 
             // Load 8 mask values
-            let m = partial_simd::vld1_u8(obmc_masks[col..][..8].try_into().unwrap());
+            let m = safe_simd::vld1_u8(obmc_masks[col..][..8].try_into().unwrap());
             let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
 
             // diff = tmp - (dst << 4)
@@ -1061,7 +1058,7 @@ fn blend_h_8bpc_inner(
             // Pack to u8
             let packed = vqmovun_s16(result);
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            partial_simd::vst1_u8(dst_arr, packed);
+            safe_simd::vst1_u8(dst_arr, packed);
             col += 8;
         }
 
@@ -1131,9 +1128,9 @@ fn blend_h_16bpc_inner(
 
         // Process 4 pixels at a time
         while col + 4 <= w {
-            let d_u16 = partial_simd::vld1_u16(dst_row[col..][..4].try_into().unwrap());
+            let d_u16 = safe_simd::vld1_u16(dst_row[col..][..4].try_into().unwrap());
             let d = vreinterpretq_s32_u32(vmovl_u16(d_u16));
-            let t_16 = partial_simd::vld1_s16(tmp_row[col..][..4].try_into().unwrap());
+            let t_16 = safe_simd::vld1_s16(tmp_row[col..][..4].try_into().unwrap());
             let t = vmovl_s16(t_16);
 
             // Load 4 mask bytes
@@ -1141,7 +1138,7 @@ fn blend_h_16bpc_inner(
                 obmc_masks[col], obmc_masks[col+1], obmc_masks[col+2], obmc_masks[col+3],
                 0, 0, 0, 0
             ];
-            let m8 = partial_simd::vld1_u8(&m_bytes);
+            let m8 = safe_simd::vld1_u8(&m_bytes);
             let m16 = vmovl_u8(m8);
             let m = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(m16)));
 
@@ -1161,7 +1158,7 @@ fn blend_h_16bpc_inner(
 
             let narrow = vmovn_u32(vreinterpretq_u32_s32(clamped));
             let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
-            partial_simd::vst1_u16(dst_arr, narrow);
+            safe_simd::vst1_u16(dst_arr, narrow);
             col += 4;
         }
 
@@ -1256,8 +1253,8 @@ unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
 
         // SIMD: process 8 pixels at a time
         while col + 8 <= w {
-            let t1 = partial_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
-            let t2 = partial_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
+            let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
+            let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
             // Compute diff and mask value
             // abs_diff = |tmp1 - tmp2|
@@ -1331,7 +1328,7 @@ unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
             let result_u8 = vqmovun_s16(narrow_16);
 
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            partial_simd::vst1_u8(dst_arr, result_u8);
+            safe_simd::vst1_u8(dst_arr, result_u8);
 
             // Store mask if needed
             if let Some(ref mut mask_row) = mask_row {
@@ -1342,7 +1339,7 @@ unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
                     // 444: store all mask values
                     let m_narrow = vqmovun_s16(m_16);
                     let mask_arr: &mut [u8; 8] = (&mut mask_row[col..col + 8]).try_into().unwrap();
-                    partial_simd::vst1_u8(mask_arr, m_narrow);
+                    safe_simd::vst1_u8(mask_arr, m_narrow);
                 } else {
                     // 422/420: average pairs horizontally (unrolled - vgetq_lane requires const)
                     let mask_idx = col >> 1;
@@ -1517,8 +1514,8 @@ fn put_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    let r0 = partial_simd::vld1_u8(src_row0[x..][..8].try_into().unwrap());
-                    let r1 = partial_simd::vld1_u8(src_row1[x..][..8].try_into().unwrap());
+                    let r0 = safe_simd::vld1_u8(src_row0[x..][..8].try_into().unwrap());
+                    let r1 = safe_simd::vld1_u8(src_row1[x..][..8].try_into().unwrap());
 
                     // Widen to 16-bit
                     let r0_16 = vreinterpretq_s16_u16(vmovl_u8(r0));
@@ -1538,7 +1535,7 @@ fn put_bilin_8bpc_inner(
                     // Pack to u8 with saturation
                     let packed = vqmovun_s16(result);
                     let dst_arr: &mut [u8; 8] = (&mut dst_row[x..x + 8]).try_into().unwrap();
-                    partial_simd::vst1_u8(dst_arr, packed);
+                    safe_simd::vst1_u8(dst_arr, packed);
                     x += 8;
                 }
 
@@ -1564,8 +1561,8 @@ fn put_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    let s0 = partial_simd::vld1_u8(src_row[x..][..8].try_into().unwrap());
-                    let s1 = partial_simd::vld1_u8(src_row[x + 1..][..8].try_into().unwrap());
+                    let s0 = safe_simd::vld1_u8(src_row[x..][..8].try_into().unwrap());
+                    let s1 = safe_simd::vld1_u8(src_row[x + 1..][..8].try_into().unwrap());
 
                     // Widen to 16-bit
                     let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
@@ -1585,7 +1582,7 @@ fn put_bilin_8bpc_inner(
                     // Pack to u8
                     let packed = vqmovun_s16(result);
                     let dst_arr: &mut [u8; 8] = (&mut dst_row[x..x + 8]).try_into().unwrap();
-                    partial_simd::vst1_u8(dst_arr, packed);
+                    safe_simd::vst1_u8(dst_arr, packed);
                     x += 8;
                 }
 
@@ -1634,8 +1631,8 @@ fn put_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    let r0 = partial_simd::vld1q_s16(mid_row0[x..][..8].try_into().unwrap());
-                    let r1 = partial_simd::vld1q_s16(mid_row1[x..][..8].try_into().unwrap());
+                    let r0 = safe_simd::vld1q_s16(mid_row0[x..][..8].try_into().unwrap());
+                    let r1 = safe_simd::vld1q_s16(mid_row1[x..][..8].try_into().unwrap());
 
                     // Widen to 32-bit for multiply
                     let r0_lo = vmovl_s16(vget_low_s16(r0));
@@ -1667,7 +1664,7 @@ fn put_bilin_8bpc_inner(
                     let result_u8 = vqmovun_s16(narrow_16);
 
                     let dst_arr: &mut [u8; 8] = (&mut dst_row[x..x + 8]).try_into().unwrap();
-                    partial_simd::vst1_u8(dst_arr, result_u8);
+                    safe_simd::vst1_u8(dst_arr, result_u8);
                     x += 8;
                 }
 
@@ -1732,7 +1729,7 @@ fn prep_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    let s = partial_simd::vld1_u8(src_row[x..][..8].try_into().unwrap());
+                    let s = safe_simd::vld1_u8(src_row[x..][..8].try_into().unwrap());
                     let s16 = vreinterpretq_s16_u16(vmovl_u8(s));
 
                     // Scale: (pixel - 512) << 4 for intermediate format
@@ -1741,7 +1738,7 @@ fn prep_bilin_8bpc_inner(
                     let biased = vsubq_s16(scaled, vdupq_n_s16(PREP_BIAS));
 
                     let tmp_arr: &mut [i16; 8] = (&mut tmp_row[x..x + 8]).try_into().unwrap();
-                    partial_simd::vst1q_s16(tmp_arr, biased);
+                    safe_simd::vst1q_s16(tmp_arr, biased);
                     x += 8;
                 }
 
@@ -1766,8 +1763,8 @@ fn prep_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    let r0 = partial_simd::vld1_u8(src_row0[x..][..8].try_into().unwrap());
-                    let r1 = partial_simd::vld1_u8(src_row1[x..][..8].try_into().unwrap());
+                    let r0 = safe_simd::vld1_u8(src_row0[x..][..8].try_into().unwrap());
+                    let r1 = safe_simd::vld1_u8(src_row1[x..][..8].try_into().unwrap());
 
                     let r0_16 = vreinterpretq_s16_u16(vmovl_u8(r0));
                     let r1_16 = vreinterpretq_s16_u16(vmovl_u8(r1));
@@ -1782,7 +1779,7 @@ fn prep_bilin_8bpc_inner(
                     let biased = vsubq_s16(sum, vdupq_n_s16(PREP_BIAS));
 
                     let tmp_arr: &mut [i16; 8] = (&mut tmp_row[x..x + 8]).try_into().unwrap();
-                    partial_simd::vst1q_s16(tmp_arr, biased);
+                    safe_simd::vst1q_s16(tmp_arr, biased);
                     x += 8;
                 }
 
@@ -1808,8 +1805,8 @@ fn prep_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    let s0 = partial_simd::vld1_u8(src_row[x..][..8].try_into().unwrap());
-                    let s1 = partial_simd::vld1_u8(src_row[x + 1..][..8].try_into().unwrap());
+                    let s0 = safe_simd::vld1_u8(src_row[x..][..8].try_into().unwrap());
+                    let s1 = safe_simd::vld1_u8(src_row[x + 1..][..8].try_into().unwrap());
 
                     let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
                     let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
@@ -1823,7 +1820,7 @@ fn prep_bilin_8bpc_inner(
                     let biased = vsubq_s16(sum, vdupq_n_s16(PREP_BIAS));
 
                     let tmp_arr: &mut [i16; 8] = (&mut tmp_row[x..x + 8]).try_into().unwrap();
-                    partial_simd::vst1q_s16(tmp_arr, biased);
+                    safe_simd::vst1q_s16(tmp_arr, biased);
                     x += 8;
                 }
 
@@ -1871,8 +1868,8 @@ fn prep_bilin_8bpc_inner(
 
                 let mut x = 0;
                 while x + 8 <= w {
-                    let r0 = partial_simd::vld1q_s16(mid_row0[x..][..8].try_into().unwrap());
-                    let r1 = partial_simd::vld1q_s16(mid_row1[x..][..8].try_into().unwrap());
+                    let r0 = safe_simd::vld1q_s16(mid_row0[x..][..8].try_into().unwrap());
+                    let r1 = safe_simd::vld1q_s16(mid_row1[x..][..8].try_into().unwrap());
 
                     // Widen to 32-bit
                     let r0_lo = vmovl_s16(vget_low_s16(r0));
@@ -1899,7 +1896,7 @@ fn prep_bilin_8bpc_inner(
                     let biased = vsubq_s16(narrow_16, vdupq_n_s16(PREP_BIAS));
 
                     let tmp_arr: &mut [i16; 8] = (&mut tmp_row[x..x + 8]).try_into().unwrap();
-                    partial_simd::vst1q_s16(tmp_arr, biased);
+                    safe_simd::vst1q_s16(tmp_arr, biased);
                     x += 8;
                 }
 
@@ -2389,14 +2386,14 @@ fn h_filter_8tap_8bpc_neon(
 
         // Load 8 source bytes at each tap position
         // src is already offset by -3 for tap 0
-        let s0 = partial_simd::vld1_u8(src[col..][..8].try_into().unwrap());
-        let s1 = partial_simd::vld1_u8(src[col + 1..][..8].try_into().unwrap());
-        let s2 = partial_simd::vld1_u8(src[col + 2..][..8].try_into().unwrap());
-        let s3 = partial_simd::vld1_u8(src[col + 3..][..8].try_into().unwrap());
-        let s4 = partial_simd::vld1_u8(src[col + 4..][..8].try_into().unwrap());
-        let s5 = partial_simd::vld1_u8(src[col + 5..][..8].try_into().unwrap());
-        let s6 = partial_simd::vld1_u8(src[col + 6..][..8].try_into().unwrap());
-        let s7 = partial_simd::vld1_u8(src[col + 7..][..8].try_into().unwrap());
+        let s0 = safe_simd::vld1_u8(src[col..][..8].try_into().unwrap());
+        let s1 = safe_simd::vld1_u8(src[col + 1..][..8].try_into().unwrap());
+        let s2 = safe_simd::vld1_u8(src[col + 2..][..8].try_into().unwrap());
+        let s3 = safe_simd::vld1_u8(src[col + 3..][..8].try_into().unwrap());
+        let s4 = safe_simd::vld1_u8(src[col + 4..][..8].try_into().unwrap());
+        let s5 = safe_simd::vld1_u8(src[col + 5..][..8].try_into().unwrap());
+        let s6 = safe_simd::vld1_u8(src[col + 6..][..8].try_into().unwrap());
+        let s7 = safe_simd::vld1_u8(src[col + 7..][..8].try_into().unwrap());
 
         // Widen to i16
         let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
@@ -2424,7 +2421,7 @@ fn h_filter_8tap_8bpc_neon(
 
         // Store to intermediate buffer
         let dst_arr: &mut [i16; 8] = (&mut dst[col..col + 8]).try_into().unwrap();
-        partial_simd::vst1q_s16(dst_arr, result);
+        safe_simd::vst1q_s16(dst_arr, result);
         col += 8;
     }
     
@@ -2470,14 +2467,14 @@ fn v_filter_8tap_8bpc_neon(
         let c7 = filter[7] as i32;
 
         // Load 8 rows from intermediate buffer
-        let r0 = partial_simd::vld1q_s16(mid[0][col..][..8].try_into().unwrap());
-        let r1 = partial_simd::vld1q_s16(mid[1][col..][..8].try_into().unwrap());
-        let r2 = partial_simd::vld1q_s16(mid[2][col..][..8].try_into().unwrap());
-        let r3 = partial_simd::vld1q_s16(mid[3][col..][..8].try_into().unwrap());
-        let r4 = partial_simd::vld1q_s16(mid[4][col..][..8].try_into().unwrap());
-        let r5 = partial_simd::vld1q_s16(mid[5][col..][..8].try_into().unwrap());
-        let r6 = partial_simd::vld1q_s16(mid[6][col..][..8].try_into().unwrap());
-        let r7 = partial_simd::vld1q_s16(mid[7][col..][..8].try_into().unwrap());
+        let r0 = safe_simd::vld1q_s16(mid[0][col..][..8].try_into().unwrap());
+        let r1 = safe_simd::vld1q_s16(mid[1][col..][..8].try_into().unwrap());
+        let r2 = safe_simd::vld1q_s16(mid[2][col..][..8].try_into().unwrap());
+        let r3 = safe_simd::vld1q_s16(mid[3][col..][..8].try_into().unwrap());
+        let r4 = safe_simd::vld1q_s16(mid[4][col..][..8].try_into().unwrap());
+        let r5 = safe_simd::vld1q_s16(mid[5][col..][..8].try_into().unwrap());
+        let r6 = safe_simd::vld1q_s16(mid[6][col..][..8].try_into().unwrap());
+        let r7 = safe_simd::vld1q_s16(mid[7][col..][..8].try_into().unwrap());
 
         // Process low 4 and high 4 separately for i32 accumulation
         let r0_lo = vmovl_s16(vget_low_s16(r0));
@@ -2533,7 +2530,7 @@ fn v_filter_8tap_8bpc_neon(
 
         // Store
         let dst_arr: &mut [u8; 8] = (&mut dst[col..col + 8]).try_into().unwrap();
-        partial_simd::vst1_u8(dst_arr, result_8);
+        safe_simd::vst1_u8(dst_arr, result_8);
         col += 8;
     }
     
@@ -2570,14 +2567,14 @@ fn h_filter_8tap_8bpc_put_neon(
         let c6 = filter[6] as i16;
         let c7 = filter[7] as i16;
 
-        let s0 = partial_simd::vld1_u8(src[col..][..8].try_into().unwrap());
-        let s1 = partial_simd::vld1_u8(src[col + 1..][..8].try_into().unwrap());
-        let s2 = partial_simd::vld1_u8(src[col + 2..][..8].try_into().unwrap());
-        let s3 = partial_simd::vld1_u8(src[col + 3..][..8].try_into().unwrap());
-        let s4 = partial_simd::vld1_u8(src[col + 4..][..8].try_into().unwrap());
-        let s5 = partial_simd::vld1_u8(src[col + 5..][..8].try_into().unwrap());
-        let s6 = partial_simd::vld1_u8(src[col + 6..][..8].try_into().unwrap());
-        let s7 = partial_simd::vld1_u8(src[col + 7..][..8].try_into().unwrap());
+        let s0 = safe_simd::vld1_u8(src[col..][..8].try_into().unwrap());
+        let s1 = safe_simd::vld1_u8(src[col + 1..][..8].try_into().unwrap());
+        let s2 = safe_simd::vld1_u8(src[col + 2..][..8].try_into().unwrap());
+        let s3 = safe_simd::vld1_u8(src[col + 3..][..8].try_into().unwrap());
+        let s4 = safe_simd::vld1_u8(src[col + 4..][..8].try_into().unwrap());
+        let s5 = safe_simd::vld1_u8(src[col + 5..][..8].try_into().unwrap());
+        let s6 = safe_simd::vld1_u8(src[col + 6..][..8].try_into().unwrap());
+        let s7 = safe_simd::vld1_u8(src[col + 7..][..8].try_into().unwrap());
 
         let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
         let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
@@ -2603,7 +2600,7 @@ fn h_filter_8tap_8bpc_put_neon(
 
         let result_8 = vqmovun_s16(result);
         let dst_arr: &mut [u8; 8] = (&mut dst[col..col + 8]).try_into().unwrap();
-        partial_simd::vst1_u8(dst_arr, result_8);
+        safe_simd::vst1_u8(dst_arr, result_8);
         col += 8;
     }
     
@@ -2643,14 +2640,14 @@ fn v_filter_8tap_8bpc_direct_neon(
         let c7 = filter[7] as i32;
 
         // Load 8 source rows (src is already offset by -3 rows)
-        let r0 = partial_simd::vld1_u8(src[col..][..8].try_into().unwrap());
-        let r1 = partial_simd::vld1_u8(src[col + src_stride..][..8].try_into().unwrap());
-        let r2 = partial_simd::vld1_u8(src[col + 2 * src_stride..][..8].try_into().unwrap());
-        let r3 = partial_simd::vld1_u8(src[col + 3 * src_stride..][..8].try_into().unwrap());
-        let r4 = partial_simd::vld1_u8(src[col + 4 * src_stride..][..8].try_into().unwrap());
-        let r5 = partial_simd::vld1_u8(src[col + 5 * src_stride..][..8].try_into().unwrap());
-        let r6 = partial_simd::vld1_u8(src[col + 6 * src_stride..][..8].try_into().unwrap());
-        let r7 = partial_simd::vld1_u8(src[col + 7 * src_stride..][..8].try_into().unwrap());
+        let r0 = safe_simd::vld1_u8(src[col..][..8].try_into().unwrap());
+        let r1 = safe_simd::vld1_u8(src[col + src_stride..][..8].try_into().unwrap());
+        let r2 = safe_simd::vld1_u8(src[col + 2 * src_stride..][..8].try_into().unwrap());
+        let r3 = safe_simd::vld1_u8(src[col + 3 * src_stride..][..8].try_into().unwrap());
+        let r4 = safe_simd::vld1_u8(src[col + 4 * src_stride..][..8].try_into().unwrap());
+        let r5 = safe_simd::vld1_u8(src[col + 5 * src_stride..][..8].try_into().unwrap());
+        let r6 = safe_simd::vld1_u8(src[col + 6 * src_stride..][..8].try_into().unwrap());
+        let r7 = safe_simd::vld1_u8(src[col + 7 * src_stride..][..8].try_into().unwrap());
 
         // Widen to i32 for accumulation
         let r0_16 = vreinterpretq_s16_u16(vmovl_u8(r0));
@@ -2708,7 +2705,7 @@ fn v_filter_8tap_8bpc_direct_neon(
         let result_16 = vcombine_s16(vqmovn_s32(sum_lo), vqmovn_s32(sum_hi));
         let result_8 = vqmovun_s16(result_16);
         let dst_arr: &mut [u8; 8] = (&mut dst[col..col + 8]).try_into().unwrap();
-        partial_simd::vst1_u8(dst_arr, result_8);
+        safe_simd::vst1_u8(dst_arr, result_8);
         col += 8;
     }
     
@@ -2946,14 +2943,14 @@ fn v_filter_8tap_to_i16_neon(
         let c7 = filter[7] as i32;
 
         // Load 4 values from each of 8 rows
-        let r0 = partial_simd::vld1_s16(mid[0][col..][..4].try_into().unwrap());
-        let r1 = partial_simd::vld1_s16(mid[1][col..][..4].try_into().unwrap());
-        let r2 = partial_simd::vld1_s16(mid[2][col..][..4].try_into().unwrap());
-        let r3 = partial_simd::vld1_s16(mid[3][col..][..4].try_into().unwrap());
-        let r4 = partial_simd::vld1_s16(mid[4][col..][..4].try_into().unwrap());
-        let r5 = partial_simd::vld1_s16(mid[5][col..][..4].try_into().unwrap());
-        let r6 = partial_simd::vld1_s16(mid[6][col..][..4].try_into().unwrap());
-        let r7 = partial_simd::vld1_s16(mid[7][col..][..4].try_into().unwrap());
+        let r0 = safe_simd::vld1_s16(mid[0][col..][..4].try_into().unwrap());
+        let r1 = safe_simd::vld1_s16(mid[1][col..][..4].try_into().unwrap());
+        let r2 = safe_simd::vld1_s16(mid[2][col..][..4].try_into().unwrap());
+        let r3 = safe_simd::vld1_s16(mid[3][col..][..4].try_into().unwrap());
+        let r4 = safe_simd::vld1_s16(mid[4][col..][..4].try_into().unwrap());
+        let r5 = safe_simd::vld1_s16(mid[5][col..][..4].try_into().unwrap());
+        let r6 = safe_simd::vld1_s16(mid[6][col..][..4].try_into().unwrap());
+        let r7 = safe_simd::vld1_s16(mid[7][col..][..4].try_into().unwrap());
 
         // Widen to i32
         let r0_32 = vmovl_s16(r0);
@@ -2980,7 +2977,7 @@ fn v_filter_8tap_to_i16_neon(
         // Narrow to i16
         let result = vqmovn_s32(sum);
         let dst_arr: &mut [i16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
-        partial_simd::vst1_s16(dst_arr, result);
+        safe_simd::vst1_s16(dst_arr, result);
         col += 4;
     }
     
@@ -3061,14 +3058,14 @@ fn prep_8tap_8bpc_inner(
                     let c6 = fh[6] as i16;
                     let c7 = fh[7] as i16;
 
-                    let s0 = partial_simd::vld1_u8(src_row[col..][..8].try_into().unwrap());
-                    let s1 = partial_simd::vld1_u8(src_row[col + 1..][..8].try_into().unwrap());
-                    let s2 = partial_simd::vld1_u8(src_row[col + 2..][..8].try_into().unwrap());
-                    let s3 = partial_simd::vld1_u8(src_row[col + 3..][..8].try_into().unwrap());
-                    let s4 = partial_simd::vld1_u8(src_row[col + 4..][..8].try_into().unwrap());
-                    let s5 = partial_simd::vld1_u8(src_row[col + 5..][..8].try_into().unwrap());
-                    let s6 = partial_simd::vld1_u8(src_row[col + 6..][..8].try_into().unwrap());
-                    let s7 = partial_simd::vld1_u8(src_row[col + 7..][..8].try_into().unwrap());
+                    let s0 = safe_simd::vld1_u8(src_row[col..][..8].try_into().unwrap());
+                    let s1 = safe_simd::vld1_u8(src_row[col + 1..][..8].try_into().unwrap());
+                    let s2 = safe_simd::vld1_u8(src_row[col + 2..][..8].try_into().unwrap());
+                    let s3 = safe_simd::vld1_u8(src_row[col + 3..][..8].try_into().unwrap());
+                    let s4 = safe_simd::vld1_u8(src_row[col + 4..][..8].try_into().unwrap());
+                    let s5 = safe_simd::vld1_u8(src_row[col + 5..][..8].try_into().unwrap());
+                    let s6 = safe_simd::vld1_u8(src_row[col + 6..][..8].try_into().unwrap());
+                    let s7 = safe_simd::vld1_u8(src_row[col + 7..][..8].try_into().unwrap());
 
                     let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
                     let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
@@ -3093,7 +3090,7 @@ fn prep_8tap_8bpc_inner(
                     let result = vshrq_n_s16::<4>(vaddq_s16(sum, rnd_vec));
 
                     let out_arr: &mut [i16; 8] = (&mut out_row[col..col + 8]).try_into().unwrap();
-                    partial_simd::vst1q_s16(out_arr, result);
+                    safe_simd::vst1q_s16(out_arr, result);
                     col += 8;
                 }
                 while col < w {
@@ -3228,14 +3225,14 @@ fn h_filter_8tap_16bpc_neon(
         let c7 = filter[7] as i32;
 
         // Load 4 source u16 values at each tap position
-        let s0 = partial_simd::vld1_u16(src[col..][..4].try_into().unwrap());
-        let s1 = partial_simd::vld1_u16(src[col + 1..][..4].try_into().unwrap());
-        let s2 = partial_simd::vld1_u16(src[col + 2..][..4].try_into().unwrap());
-        let s3 = partial_simd::vld1_u16(src[col + 3..][..4].try_into().unwrap());
-        let s4 = partial_simd::vld1_u16(src[col + 4..][..4].try_into().unwrap());
-        let s5 = partial_simd::vld1_u16(src[col + 5..][..4].try_into().unwrap());
-        let s6 = partial_simd::vld1_u16(src[col + 6..][..4].try_into().unwrap());
-        let s7 = partial_simd::vld1_u16(src[col + 7..][..4].try_into().unwrap());
+        let s0 = safe_simd::vld1_u16(src[col..][..4].try_into().unwrap());
+        let s1 = safe_simd::vld1_u16(src[col + 1..][..4].try_into().unwrap());
+        let s2 = safe_simd::vld1_u16(src[col + 2..][..4].try_into().unwrap());
+        let s3 = safe_simd::vld1_u16(src[col + 3..][..4].try_into().unwrap());
+        let s4 = safe_simd::vld1_u16(src[col + 4..][..4].try_into().unwrap());
+        let s5 = safe_simd::vld1_u16(src[col + 5..][..4].try_into().unwrap());
+        let s6 = safe_simd::vld1_u16(src[col + 6..][..4].try_into().unwrap());
+        let s7 = safe_simd::vld1_u16(src[col + 7..][..4].try_into().unwrap());
 
         // Widen to i32
         let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
@@ -3261,7 +3258,7 @@ fn h_filter_8tap_16bpc_neon(
         let result = vshrq_n_s32::<4>(vaddq_s32(sum, rnd_vec)); // sh typically 4 for 16bpc intermediate
 
         let dst_arr: &mut [i32; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
-        partial_simd::vst1q_s32(dst_arr, result);
+        safe_simd::vst1q_s32(dst_arr, result);
         col += 4;
     }
     
@@ -3303,14 +3300,14 @@ fn v_filter_8tap_16bpc_neon(
         let c6 = filter[6] as i32;
         let c7 = filter[7] as i32;
 
-        let r0 = partial_simd::vld1q_s32(mid[0][col..][..4].try_into().unwrap());
-        let r1 = partial_simd::vld1q_s32(mid[1][col..][..4].try_into().unwrap());
-        let r2 = partial_simd::vld1q_s32(mid[2][col..][..4].try_into().unwrap());
-        let r3 = partial_simd::vld1q_s32(mid[3][col..][..4].try_into().unwrap());
-        let r4 = partial_simd::vld1q_s32(mid[4][col..][..4].try_into().unwrap());
-        let r5 = partial_simd::vld1q_s32(mid[5][col..][..4].try_into().unwrap());
-        let r6 = partial_simd::vld1q_s32(mid[6][col..][..4].try_into().unwrap());
-        let r7 = partial_simd::vld1q_s32(mid[7][col..][..4].try_into().unwrap());
+        let r0 = safe_simd::vld1q_s32(mid[0][col..][..4].try_into().unwrap());
+        let r1 = safe_simd::vld1q_s32(mid[1][col..][..4].try_into().unwrap());
+        let r2 = safe_simd::vld1q_s32(mid[2][col..][..4].try_into().unwrap());
+        let r3 = safe_simd::vld1q_s32(mid[3][col..][..4].try_into().unwrap());
+        let r4 = safe_simd::vld1q_s32(mid[4][col..][..4].try_into().unwrap());
+        let r5 = safe_simd::vld1q_s32(mid[5][col..][..4].try_into().unwrap());
+        let r6 = safe_simd::vld1q_s32(mid[6][col..][..4].try_into().unwrap());
+        let r7 = safe_simd::vld1q_s32(mid[7][col..][..4].try_into().unwrap());
 
         let mut sum = vmulq_n_s32(r0, c0);
         sum = vmlaq_n_s32(sum, r1, c1);
@@ -3336,7 +3333,7 @@ fn v_filter_8tap_16bpc_neon(
         // Narrow to u16
         let narrow = vqmovun_s32(clamped);
         let dst_arr: &mut [u16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
-        partial_simd::vst1_u16(dst_arr, narrow);
+        safe_simd::vst1_u16(dst_arr, narrow);
         col += 4;
     }
     
@@ -3375,14 +3372,14 @@ fn h_filter_8tap_16bpc_put_neon(
         let c6 = filter[6] as i32;
         let c7 = filter[7] as i32;
 
-        let s0 = partial_simd::vld1_u16(src[col..][..4].try_into().unwrap());
-        let s1 = partial_simd::vld1_u16(src[col + 1..][..4].try_into().unwrap());
-        let s2 = partial_simd::vld1_u16(src[col + 2..][..4].try_into().unwrap());
-        let s3 = partial_simd::vld1_u16(src[col + 3..][..4].try_into().unwrap());
-        let s4 = partial_simd::vld1_u16(src[col + 4..][..4].try_into().unwrap());
-        let s5 = partial_simd::vld1_u16(src[col + 5..][..4].try_into().unwrap());
-        let s6 = partial_simd::vld1_u16(src[col + 6..][..4].try_into().unwrap());
-        let s7 = partial_simd::vld1_u16(src[col + 7..][..4].try_into().unwrap());
+        let s0 = safe_simd::vld1_u16(src[col..][..4].try_into().unwrap());
+        let s1 = safe_simd::vld1_u16(src[col + 1..][..4].try_into().unwrap());
+        let s2 = safe_simd::vld1_u16(src[col + 2..][..4].try_into().unwrap());
+        let s3 = safe_simd::vld1_u16(src[col + 3..][..4].try_into().unwrap());
+        let s4 = safe_simd::vld1_u16(src[col + 4..][..4].try_into().unwrap());
+        let s5 = safe_simd::vld1_u16(src[col + 5..][..4].try_into().unwrap());
+        let s6 = safe_simd::vld1_u16(src[col + 6..][..4].try_into().unwrap());
+        let s7 = safe_simd::vld1_u16(src[col + 7..][..4].try_into().unwrap());
 
         let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
         let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
@@ -3413,7 +3410,7 @@ fn h_filter_8tap_16bpc_put_neon(
 
         let narrow = vqmovun_s32(clamped);
         let dst_arr: &mut [u16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
-        partial_simd::vst1_u16(dst_arr, narrow);
+        safe_simd::vst1_u16(dst_arr, narrow);
         col += 4;
     }
 
@@ -3453,14 +3450,14 @@ fn v_filter_8tap_16bpc_direct_neon(
         let c6 = filter[6] as i32;
         let c7 = filter[7] as i32;
 
-        let r0 = partial_simd::vld1_u16(src[col..][..4].try_into().unwrap());
-        let r1 = partial_simd::vld1_u16(src[col + src_stride..][..4].try_into().unwrap());
-        let r2 = partial_simd::vld1_u16(src[col + 2 * src_stride..][..4].try_into().unwrap());
-        let r3 = partial_simd::vld1_u16(src[col + 3 * src_stride..][..4].try_into().unwrap());
-        let r4 = partial_simd::vld1_u16(src[col + 4 * src_stride..][..4].try_into().unwrap());
-        let r5 = partial_simd::vld1_u16(src[col + 5 * src_stride..][..4].try_into().unwrap());
-        let r6 = partial_simd::vld1_u16(src[col + 6 * src_stride..][..4].try_into().unwrap());
-        let r7 = partial_simd::vld1_u16(src[col + 7 * src_stride..][..4].try_into().unwrap());
+        let r0 = safe_simd::vld1_u16(src[col..][..4].try_into().unwrap());
+        let r1 = safe_simd::vld1_u16(src[col + src_stride..][..4].try_into().unwrap());
+        let r2 = safe_simd::vld1_u16(src[col + 2 * src_stride..][..4].try_into().unwrap());
+        let r3 = safe_simd::vld1_u16(src[col + 3 * src_stride..][..4].try_into().unwrap());
+        let r4 = safe_simd::vld1_u16(src[col + 4 * src_stride..][..4].try_into().unwrap());
+        let r5 = safe_simd::vld1_u16(src[col + 5 * src_stride..][..4].try_into().unwrap());
+        let r6 = safe_simd::vld1_u16(src[col + 6 * src_stride..][..4].try_into().unwrap());
+        let r7 = safe_simd::vld1_u16(src[col + 7 * src_stride..][..4].try_into().unwrap());
 
         let r0_32 = vreinterpretq_s32_u32(vmovl_u16(r0));
         let r1_32 = vreinterpretq_s32_u32(vmovl_u16(r1));
@@ -3491,7 +3488,7 @@ fn v_filter_8tap_16bpc_direct_neon(
 
         let narrow = vqmovun_s32(clamped);
         let dst_arr: &mut [u16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
-        partial_simd::vst1_u16(dst_arr, narrow);
+        safe_simd::vst1_u16(dst_arr, narrow);
         col += 4;
     }
 
@@ -3685,14 +3682,14 @@ fn v_filter_8tap_16bpc_to_i16_neon(
         let c6 = filter[6] as i32;
         let c7 = filter[7] as i32;
 
-        let r0 = partial_simd::vld1q_s32(mid[0][col..][..4].try_into().unwrap());
-        let r1 = partial_simd::vld1q_s32(mid[1][col..][..4].try_into().unwrap());
-        let r2 = partial_simd::vld1q_s32(mid[2][col..][..4].try_into().unwrap());
-        let r3 = partial_simd::vld1q_s32(mid[3][col..][..4].try_into().unwrap());
-        let r4 = partial_simd::vld1q_s32(mid[4][col..][..4].try_into().unwrap());
-        let r5 = partial_simd::vld1q_s32(mid[5][col..][..4].try_into().unwrap());
-        let r6 = partial_simd::vld1q_s32(mid[6][col..][..4].try_into().unwrap());
-        let r7 = partial_simd::vld1q_s32(mid[7][col..][..4].try_into().unwrap());
+        let r0 = safe_simd::vld1q_s32(mid[0][col..][..4].try_into().unwrap());
+        let r1 = safe_simd::vld1q_s32(mid[1][col..][..4].try_into().unwrap());
+        let r2 = safe_simd::vld1q_s32(mid[2][col..][..4].try_into().unwrap());
+        let r3 = safe_simd::vld1q_s32(mid[3][col..][..4].try_into().unwrap());
+        let r4 = safe_simd::vld1q_s32(mid[4][col..][..4].try_into().unwrap());
+        let r5 = safe_simd::vld1q_s32(mid[5][col..][..4].try_into().unwrap());
+        let r6 = safe_simd::vld1q_s32(mid[6][col..][..4].try_into().unwrap());
+        let r7 = safe_simd::vld1q_s32(mid[7][col..][..4].try_into().unwrap());
 
         let mut sum = vmulq_n_s32(r0, c0);
         sum = vmlaq_n_s32(sum, r1, c1);
@@ -3708,7 +3705,7 @@ fn v_filter_8tap_16bpc_to_i16_neon(
 
         let result = vqmovn_s32(sum);
         let dst_arr: &mut [i16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
-        partial_simd::vst1_s16(dst_arr, result);
+        safe_simd::vst1_s16(dst_arr, result);
         col += 4;
     }
 
@@ -3786,14 +3783,14 @@ fn prep_8tap_16bpc_inner(
                     let c6 = fh[6] as i32;
                     let c7 = fh[7] as i32;
 
-                    let s0 = partial_simd::vld1_u16(src_row[col..][..4].try_into().unwrap());
-                    let s1 = partial_simd::vld1_u16(src_row[col + 1..][..4].try_into().unwrap());
-                    let s2 = partial_simd::vld1_u16(src_row[col + 2..][..4].try_into().unwrap());
-                    let s3 = partial_simd::vld1_u16(src_row[col + 3..][..4].try_into().unwrap());
-                    let s4 = partial_simd::vld1_u16(src_row[col + 4..][..4].try_into().unwrap());
-                    let s5 = partial_simd::vld1_u16(src_row[col + 5..][..4].try_into().unwrap());
-                    let s6 = partial_simd::vld1_u16(src_row[col + 6..][..4].try_into().unwrap());
-                    let s7 = partial_simd::vld1_u16(src_row[col + 7..][..4].try_into().unwrap());
+                    let s0 = safe_simd::vld1_u16(src_row[col..][..4].try_into().unwrap());
+                    let s1 = safe_simd::vld1_u16(src_row[col + 1..][..4].try_into().unwrap());
+                    let s2 = safe_simd::vld1_u16(src_row[col + 2..][..4].try_into().unwrap());
+                    let s3 = safe_simd::vld1_u16(src_row[col + 3..][..4].try_into().unwrap());
+                    let s4 = safe_simd::vld1_u16(src_row[col + 4..][..4].try_into().unwrap());
+                    let s5 = safe_simd::vld1_u16(src_row[col + 5..][..4].try_into().unwrap());
+                    let s6 = safe_simd::vld1_u16(src_row[col + 6..][..4].try_into().unwrap());
+                    let s7 = safe_simd::vld1_u16(src_row[col + 7..][..4].try_into().unwrap());
 
                     let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
                     let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
@@ -3819,7 +3816,7 @@ fn prep_8tap_16bpc_inner(
 
                     let narrow = vqmovn_s32(result);
                     let out_arr: &mut [i16; 4] = (&mut out_row[col..col + 4]).try_into().unwrap();
-                    partial_simd::vst1_s16(out_arr, narrow);
+                    safe_simd::vst1_s16(out_arr, narrow);
                     col += 4;
                 }
                 while col < w {
