@@ -69,6 +69,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | cdef_arm | `src/safe_simd/cdef_arm.rs` | **Complete** - All filter sizes (8bpc + 16bpc) |
 | loopfilter_arm | `src/safe_simd/loopfilter_arm.rs` | **Complete** - Y/UV H/V filters (8bpc + 16bpc) |
 | looprestoration_arm | `src/safe_simd/looprestoration_arm.rs` | **Partial** - Wiener filters only (SGR uses fallback) |
+| itx_arm | `src/safe_simd/itx_arm.rs` | **Partial** - WHT/DCT 4x4 only, other sizes use fallback |
 
 ## Performance Status (2026-02-04)
 
