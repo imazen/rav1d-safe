@@ -1791,6 +1791,14 @@ impl Rav1dRefmvsDSPContext {
         self
     }
 
+    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+    #[inline(always)]
+    const fn init_x86_safe_simd(mut self, _flags: CpuFlags) -> Self {
+        self.splat_mv =
+            splat_mv::Fn::new(crate::src::safe_simd::refmvs::splat_mv_avx2);
+        self
+    }
+
     #[inline(always)]
     const fn init(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -1802,6 +1810,14 @@ impl Rav1dRefmvsDSPContext {
             #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
             {
                 return self.init_arm(flags);
+            }
+        }
+
+        #[cfg(not(feature = "asm"))]
+        {
+            #[cfg(target_arch = "x86_64")]
+            {
+                return self.init_x86_safe_simd(flags);
             }
         }
 

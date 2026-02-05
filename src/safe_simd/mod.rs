@@ -42,6 +42,12 @@ pub mod ipred;
 #[cfg(target_arch = "x86_64")]
 pub mod filmgrain;
 
+#[cfg(target_arch = "x86_64")]
+pub mod pal;
+
+#[cfg(target_arch = "x86_64")]
+pub mod refmvs;
+
 // Re-export x86 implementations
 pub use mc::*;
 
