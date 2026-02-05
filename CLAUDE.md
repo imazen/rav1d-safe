@@ -51,7 +51,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | Module | Location | Status |
 |--------|----------|--------|
 | mc | `src/safe_simd/mc.rs` | **Complete** - 8bpc+16bpc, x86 AVX2 |
-| mc_arm | `src/safe_simd/mc_arm.rs` | **Partial** - 8bpc NEON (avg, w_avg, mask, blend) |
+| mc_arm | `src/safe_simd/mc_arm.rs` | **Partial** - 8bpc+16bpc NEON (avg, w_avg, mask, blend, w_mask, bilin) |
 | itx | `src/safe_simd/itx.rs` | **Complete** - 160 transforms each for 8bpc/16bpc (full parity) |
 | loopfilter | `src/safe_simd/loopfilter.rs` | **Complete** - 8bpc + 16bpc |
 | cdef | `src/safe_simd/cdef.rs` | **Complete** - 8bpc + 16bpc |
