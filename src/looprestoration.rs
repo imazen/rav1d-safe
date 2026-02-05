@@ -3573,7 +3573,31 @@ impl Rav1dLoopRestorationDSPContext {
         self
     }
 
+    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+    #[inline(always)]
+    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
+        use crate::include::common::bitdepth::BPC;
+        use crate::src::safe_simd::looprestoration_arm as safe_lr;
 
+        // Wire up Wiener filters - SGR uses fallback
+        match BD::BPC {
+            BPC::BPC8 => {
+                self.wiener[0] =
+                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter7_8bpc_neon);
+                self.wiener[1] =
+                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter5_8bpc_neon);
+            }
+            BPC::BPC16 => {
+                self.wiener[0] =
+                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter7_16bpc_neon);
+                self.wiener[1] =
+                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter5_16bpc_neon);
+            }
+        }
+        // SGR filters use the default C fallback
+
+        self
+    }
 
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags, bpc: u8) -> Self {
@@ -3593,6 +3617,12 @@ impl Rav1dLoopRestorationDSPContext {
         {
             let _ = bpc;
             return self.init_x86_safe_simd::<BD>(flags);
+        }
+
+        #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+        {
+            let _ = bpc;
+            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
