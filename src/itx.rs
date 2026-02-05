@@ -1262,6 +1262,9 @@ impl Rav1dInvTxfmDSPContext {
         // DCT_DCT square transforms 16bpc
         self.itxfm_add[tx_4x4][DCT_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x4_16bpc_avx2);
+        // WHT_WHT 4x4 16bpc
+        self.itxfm_add[tx_4x4][WHT_WHT as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_wht_wht_4x4_16bpc_avx2);
         self.itxfm_add[tx_8x8][DCT_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x8_16bpc_avx2);
         self.itxfm_add[tx_16x16][DCT_DCT as usize] =
@@ -1528,24 +1531,56 @@ impl Rav1dInvTxfmDSPContext {
             itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_8x16_16bpc_avx2);
         self.itxfm_add[tx_8x16][H_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_8x16_16bpc_avx2);
+        self.itxfm_add[tx_8x16][V_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_8x16_16bpc_avx2);
+        self.itxfm_add[tx_8x16][H_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_8x16_16bpc_avx2);
+        self.itxfm_add[tx_8x16][V_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_8x16_16bpc_avx2);
+        self.itxfm_add[tx_8x16][H_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_8x16_16bpc_avx2);
 
         // Hybrid identity transforms 16bpc - 16x8
         self.itxfm_add[tx_16x8][V_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_16x8_16bpc_avx2);
         self.itxfm_add[tx_16x8][H_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_16x8_16bpc_avx2);
+        self.itxfm_add[tx_16x8][V_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_16x8_16bpc_avx2);
+        self.itxfm_add[tx_16x8][H_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_16x8_16bpc_avx2);
+        self.itxfm_add[tx_16x8][V_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_16x8_16bpc_avx2);
+        self.itxfm_add[tx_16x8][H_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_16x8_16bpc_avx2);
 
         // Hybrid identity transforms 16bpc - 4x16
         self.itxfm_add[tx_4x16][V_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_4x16_16bpc_avx2);
         self.itxfm_add[tx_4x16][H_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_4x16_16bpc_avx2);
+        self.itxfm_add[tx_4x16][V_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_4x16_16bpc_avx2);
+        self.itxfm_add[tx_4x16][H_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_4x16_16bpc_avx2);
+        self.itxfm_add[tx_4x16][V_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_4x16_16bpc_avx2);
+        self.itxfm_add[tx_4x16][H_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_4x16_16bpc_avx2);
 
         // Hybrid identity transforms 16bpc - 16x4
         self.itxfm_add[tx_16x4][V_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_16x4_16bpc_avx2);
         self.itxfm_add[tx_16x4][H_DCT as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_16x4_16bpc_avx2);
+        self.itxfm_add[tx_16x4][V_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_16x4_16bpc_avx2);
+        self.itxfm_add[tx_16x4][H_ADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_16x4_16bpc_avx2);
+        self.itxfm_add[tx_16x4][V_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_16x4_16bpc_avx2);
+        self.itxfm_add[tx_16x4][H_FLIPADST as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_16x4_16bpc_avx2);
 
         // Hybrid identity transforms 16bpc - 8x8 square
         self.itxfm_add[tx_8x8][V_DCT as usize] =
