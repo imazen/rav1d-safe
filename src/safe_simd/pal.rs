@@ -9,6 +9,8 @@ use archmage::{arcane, Desktop64, SimdToken};
 use core::arch::x86_64::*;
 #[cfg(target_arch = "x86_64")]
 use safe_unaligned_simd::x86_64 as safe_simd;
+#[cfg(target_arch = "x86_64")]
+use super::partial_simd;
 use std::ffi::c_int;
 
 /// Inner implementation using archmage for safe SIMD.
@@ -83,19 +85,17 @@ fn pal_idx_finish_inner(
             let a16 = _mm_maddubs_epi16(a, coeff128);
             let zero = _mm_setzero_si128();
             let packed = _mm_packus_epi16(a16, zero);
-            // Store lower 8 bytes (no safe wrapper for partial store)
-            // SAFETY: dst_row[x..x+8] is within bounds, checked by loop condition
-            unsafe {
-                _mm_storel_epi64(dst_row[x..].as_mut_ptr() as *mut __m128i, packed);
-            }
+            // Store lower 8 bytes using safe partial_simd wrapper
+            let dst_arr: &mut [u8; 8] = (&mut dst_row[x..x + 8]).try_into().unwrap();
+            partial_simd::mm_storel_epi64(dst_arr, packed);
             x += 8;
         }
 
         // Process 8 source bytes → 4 dst bytes (SSE, partial)
         if x + 4 <= dst_w {
-            // Load 8 bytes (no safe wrapper for partial load)
-            // SAFETY: src_row[x*2..] has at least 8 bytes, checked by loop condition
-            let a = unsafe { _mm_loadl_epi64(src_row[x * 2..].as_ptr() as *const __m128i) };
+            // Load 8 bytes using safe partial_simd wrapper
+            let src_a: &[u8; 8] = src_row[x * 2..][..8].try_into().unwrap();
+            let a = partial_simd::mm_loadl_epi64(src_a);
             let a16 = _mm_maddubs_epi16(a, coeff128);
             let zero = _mm_setzero_si128();
             let packed = _mm_packus_epi16(a16, zero);
