@@ -2665,21 +2665,33 @@ impl Rav1dMCDSPContext {
             BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_h_16bpc_neon),
         };
 
-        // w_mask for 8bpc
+        // w_mask for 8bpc and 16bpc
+        self.w_mask = match BD::BPC {
+            BPC::BPC8 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                I420 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_420_8bpc_neon),
+                I422 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_422_8bpc_neon),
+                I444 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_444_8bpc_neon),
+            }),
+            BPC::BPC16 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                I420 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_420_16bpc_neon),
+                I422 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_422_16bpc_neon),
+                I444 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_444_16bpc_neon),
+            }),
+        };
+
+        // bilin (mc Bilinear filter and mct prep_bilin)
         match BD::BPC {
             BPC::BPC8 => {
-                self.w_mask = enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                    I420 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_420_8bpc_neon),
-                    I422 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_422_8bpc_neon),
-                    I444 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_444_8bpc_neon),
-                });
+                self.mc[Filter2d::Bilinear as usize] = mc::decl_fn_safe!(safe_mc_arm::put_bilin_8bpc_neon);
+                self.mct[Filter2d::Bilinear as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_bilin_8bpc_neon);
             }
             BPC::BPC16 => {
-                // 16bpc w_mask uses Rust fallback for now
+                self.mc[Filter2d::Bilinear as usize] = mc::decl_fn_safe!(safe_mc_arm::put_bilin_16bpc_neon);
+                self.mct[Filter2d::Bilinear as usize] = mct::decl_fn_safe!(safe_mc_arm::prep_bilin_16bpc_neon);
             }
         }
 
-        // mc, mct use pure Rust defaults for now
+        // Other 8tap filters use pure Rust defaults for now
 
         self
     }
