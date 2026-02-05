@@ -5,6 +5,7 @@
 
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -742,15 +743,14 @@ pub unsafe extern "C" fn cdef_filter_4x4_8bpc_neon(
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn cdef_find_dir_8bpc_neon(
-    img_ptr: *const DynPixel,
-    stride: ptrdiff_t,
-    var: *mut c_uint,
+    _dst_ptr: *const DynPixel,
+    _dst_stride: ptrdiff_t,
+    variance: &mut c_uint,
     _bitdepth_max: c_int,
-    img: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) -> c_int {
-    let img = unsafe { *FFISafe::get(img) };
-    let var = unsafe { &mut *var };
-    cdef_find_dir_8bpc_inner(img, var)
+    let img = *FFISafe::get(dst);
+    cdef_find_dir_8bpc_inner(img, variance)
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -842,13 +842,12 @@ pub unsafe extern "C" fn cdef_filter_4x4_16bpc_neon(
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn cdef_find_dir_16bpc_neon(
-    img_ptr: *const DynPixel,
-    stride: ptrdiff_t,
-    var: *mut c_uint,
+    _dst_ptr: *const DynPixel,
+    _dst_stride: ptrdiff_t,
+    variance: &mut c_uint,
     bitdepth_max: c_int,
-    img: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) -> c_int {
-    let img = unsafe { *FFISafe::get(img) };
-    let var = unsafe { &mut *var };
-    cdef_find_dir_16bpc_inner(img, var, bitdepth_max)
+    let img = *FFISafe::get(dst);
+    cdef_find_dir_16bpc_inner(img, variance, bitdepth_max)
 }

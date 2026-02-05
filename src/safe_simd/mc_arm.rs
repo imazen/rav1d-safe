@@ -3,6 +3,8 @@
 //! These use archmage tokens to safely invoke NEON intrinsics.
 //! The extern "C" wrappers are used for FFI compatibility with rav1d's dispatch system.
 
+#![allow(unsafe_op_in_unsafe_fn)]
+
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
@@ -14,6 +16,8 @@ use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::COMPINTER_LEN;
+use crate::src::internal::SCRATCH_INTER_INTRA_BUF_LEN;
+use crate::src::internal::SCRATCH_LAP_LEN;
 use crate::src::levels::Filter2d;
 use crate::src::tables::dav1d_mc_subpel_filters;
 
@@ -464,14 +468,15 @@ pub unsafe extern "C" fn mask_8bpc_neon(
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
     h: i32,
-    mask: &[u8],
+    mask_ptr: *const u8,
     _bitdepth_max: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
+    let token = Arm64::forge_token_dangerously();
     let w = w as usize;
     let h = h as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+    let mask = std::slice::from_raw_parts(mask_ptr, w * h);
 
     mask_8bpc_inner(token, dst, dst_stride as usize, tmp1.as_slice(), tmp2.as_slice(), w, h, mask);
 }
@@ -557,15 +562,16 @@ pub unsafe extern "C" fn mask_16bpc_neon(
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
     h: i32,
-    mask: &[u8],
+    mask_ptr: *const u8,
     bitdepth_max: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
+    let token = Arm64::forge_token_dangerously();
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+    let mask = std::slice::from_raw_parts(mask_ptr, w * h);
 
     mask_16bpc_inner(token, dst, dst_stride_u16, tmp1.as_slice(), tmp2.as_slice(), w, h, mask, bitdepth_max);
 }
@@ -653,18 +659,30 @@ fn blend_8bpc_inner(
 pub unsafe extern "C" fn blend_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
-    tmp: &[i16; COMPINTER_LEN],
+    tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN],
     w: i32,
     h: i32,
-    mask: &[u8],
+    mask_ptr: *const u8,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+    let tmp = std::slice::from_raw_parts(tmp as *const u8, w * h);
+    let mask = std::slice::from_raw_parts(mask_ptr, w * h);
 
-    blend_8bpc_inner(token, dst, dst_stride as usize, tmp.as_slice(), w, h, mask);
+    // blend formula: (dst * (64-m) + tmp * m + 32) >> 6
+    for row in 0..h {
+        let dst_row = &mut dst[row * dst_stride.unsigned_abs()..][..w];
+        let tmp_row = &tmp[row * w..][..w];
+        let mask_row = &mask[row * w..][..w];
+        for col in 0..w {
+            let d = dst_row[col] as u32;
+            let t = tmp_row[col] as u32;
+            let m = mask_row[col] as u32;
+            dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u8;
+        }
+    }
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -740,19 +758,31 @@ fn blend_16bpc_inner(
 pub unsafe extern "C" fn blend_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
-    tmp: &[i16; COMPINTER_LEN],
+    tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN],
     w: i32,
     h: i32,
-    mask: &[u8],
+    mask_ptr: *const u8,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+    let tmp = std::slice::from_raw_parts(tmp as *const u16, w * h);
+    let mask = std::slice::from_raw_parts(mask_ptr, w * h);
 
-    blend_16bpc_inner(token, dst, dst_stride_u16, tmp.as_slice(), w, h, mask);
+    // blend formula: (dst * (64-m) + tmp * m + 32) >> 6
+    for row in 0..h {
+        let dst_row = &mut dst[row * dst_stride_u16..][..w];
+        let tmp_row = &tmp[row * w..][..w];
+        let mask_row = &mask[row * w..][..w];
+        for col in 0..w {
+            let d = dst_row[col] as u32;
+            let t = tmp_row[col] as u32;
+            let m = mask_row[col] as u32;
+            dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u16;
+        }
+    }
 }
 
 // ============================================================================
@@ -854,20 +884,31 @@ fn blend_v_8bpc_inner(
 pub unsafe extern "C" fn blend_v_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
-    tmp: &[i16; COMPINTER_LEN],
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
     use crate::src::tables::dav1d_obmc_masks;
 
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
-    let obmc = &dav1d_obmc_masks.0[h..];
+    let tmp = std::slice::from_raw_parts(tmp as *const u8, w * h);
+    let mask = &dav1d_obmc_masks.0[w..];
+    let dst_w = w * 3 >> 2;
 
-    blend_v_8bpc_inner(token, dst, dst_stride as usize, tmp.as_slice(), w, h, obmc);
+    // blend_v formula: (dst * (64-m) + tmp * m + 32) >> 6
+    for row in 0..h {
+        let dst_row = &mut dst[row * dst_stride.unsigned_abs()..][..dst_w];
+        let tmp_row = &tmp[row * w..][..dst_w];
+        for col in 0..dst_w {
+            let d = dst_row[col] as u32;
+            let t = tmp_row[col] as u32;
+            let m = mask[col] as u32;
+            dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u8;
+        }
+    }
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -936,24 +977,32 @@ fn blend_v_16bpc_inner(
 pub unsafe extern "C" fn blend_v_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
-    tmp: &[i16; COMPINTER_LEN],
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
     use crate::src::tables::dav1d_obmc_masks;
 
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
-    let obmc = &dav1d_obmc_masks.0[h..];
-    // Note: For 16bpc we'd need bitdepth_max, but blend_v/blend_h don't pass it
-    // Using 1023 (10-bit max) as default - this may need adjustment
-    let bitdepth_max = 1023;
+    let tmp = std::slice::from_raw_parts(tmp as *const u16, w * h);
+    let mask = &dav1d_obmc_masks.0[w..];
+    let dst_w = w * 3 >> 2;
 
-    blend_v_16bpc_inner(token, dst, dst_stride_u16, tmp.as_slice(), w, h, obmc, bitdepth_max);
+    // blend_v formula: (dst * (64-m) + tmp * m + 32) >> 6
+    for row in 0..h {
+        let dst_row = &mut dst[row * dst_stride_u16..][..dst_w];
+        let tmp_row = &tmp[row * w..][..dst_w];
+        for col in 0..dst_w {
+            let d = dst_row[col] as u32;
+            let t = tmp_row[col] as u32;
+            let m = mask[col] as u32;
+            dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u16;
+        }
+    }
 }
 
 // ============================================================================
@@ -1040,20 +1089,31 @@ fn blend_h_8bpc_inner(
 pub unsafe extern "C" fn blend_h_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
-    tmp: &[i16; COMPINTER_LEN],
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
     use crate::src::tables::dav1d_obmc_masks;
 
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
-    let obmc = &dav1d_obmc_masks.0[w..];
+    let mask = &dav1d_obmc_masks.0[h..];
+    let h_effective = h * 3 >> 2;
+    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h_effective * dst_stride.unsigned_abs());
+    let tmp = std::slice::from_raw_parts(tmp as *const u8, w * h_effective);
 
-    blend_h_8bpc_inner(token, dst, dst_stride as usize, tmp.as_slice(), w, h, obmc);
+    // blend_h formula: (dst * (64-m) + tmp * m + 32) >> 6
+    for row in 0..h_effective {
+        let dst_row = &mut dst[row * dst_stride.unsigned_abs()..][..w];
+        let tmp_row = &tmp[row * w..][..w];
+        let m = mask[row] as u32;
+        for col in 0..w {
+            let d = dst_row[col] as u32;
+            let t = tmp_row[col] as u32;
+            dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u8;
+        }
+    }
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1129,22 +1189,32 @@ fn blend_h_16bpc_inner(
 pub unsafe extern "C" fn blend_h_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
-    tmp: &[i16; COMPINTER_LEN],
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
     use crate::src::tables::dav1d_obmc_masks;
 
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
+    let mask = &dav1d_obmc_masks.0[h..];
+    let h_effective = h * 3 >> 2;
     let dst_stride_u16 = (dst_stride / 2) as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
-    let obmc = &dav1d_obmc_masks.0[w..];
-    let bitdepth_max = 1023;
+    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h_effective * dst_stride_u16);
+    let tmp = std::slice::from_raw_parts(tmp as *const u16, w * h_effective);
 
-    blend_h_16bpc_inner(token, dst, dst_stride_u16, tmp.as_slice(), w, h, obmc, bitdepth_max);
+    // blend_h formula: (dst * (64-m) + tmp * m + 32) >> 6
+    for row in 0..h_effective {
+        let dst_row = &mut dst[row * dst_stride_u16..][..w];
+        let tmp_row = &tmp[row * w..][..w];
+        let m = mask[row] as u32;
+        for col in 0..w {
+            let d = dst_row[col] as u32;
+            let t = tmp_row[col] as u32;
+            dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u16;
+        }
+    }
 }
 
 // ============================================================================
@@ -1156,9 +1226,8 @@ use crate::src::internal::SEG_MASK_LEN;
 /// Core w_mask implementation for 8bpc
 /// SS_HOR and SS_VER control subsampling: 444=(false,false), 422=(true,false), 420=(true,true)
 #[cfg(target_arch = "aarch64")]
-#[arcane]
-fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
-    _token: Arm64,
+#[target_feature(enable = "neon")]
+unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     dst: &mut [u8],
     dst_stride: usize,
     tmp1: &[i16],
@@ -1182,7 +1251,7 @@ fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
         let tmp1_row = &tmp1[y * w..][..w];
         let tmp2_row = &tmp2[y * w..][..w];
         let dst_row = &mut dst[y * dst_stride..][..w];
-        let mask_row = if SS_VER && (y & 1) != 0 {
+        let mut mask_row = if SS_VER && (y & 1) != 0 {
             None
         } else {
             let mask_y = if SS_VER { y >> 1 } else { y };
@@ -1280,13 +1349,20 @@ fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
                         let m_narrow = vqmovun_s16(m_16);
                         vst1_u8(mask_row[col..].as_mut_ptr(), m_narrow);
                     } else {
-                        // 422/420: average pairs horizontally
+                        // 422/420: average pairs horizontally (unrolled - vgetq_lane requires const)
                         let mask_idx = col >> 1;
-                        for i in 0..4 {
-                            let m0 = vgetq_lane_s16(m_16, (i * 2) as i32) as i32;
-                            let m1 = vgetq_lane_s16(m_16, (i * 2 + 1) as i32) as i32;
-                            mask_row[mask_idx + i] = ((m0 + m1 + 1) >> 1) as u8;
-                        }
+                        let m0 = vgetq_lane_s16::<0>(m_16) as i32;
+                        let m1 = vgetq_lane_s16::<1>(m_16) as i32;
+                        mask_row[mask_idx] = ((m0 + m1 + 1) >> 1) as u8;
+                        let m2 = vgetq_lane_s16::<2>(m_16) as i32;
+                        let m3 = vgetq_lane_s16::<3>(m_16) as i32;
+                        mask_row[mask_idx + 1] = ((m2 + m3 + 1) >> 1) as u8;
+                        let m4 = vgetq_lane_s16::<4>(m_16) as i32;
+                        let m5 = vgetq_lane_s16::<5>(m_16) as i32;
+                        mask_row[mask_idx + 2] = ((m4 + m5 + 1) >> 1) as u8;
+                        let m6 = vgetq_lane_s16::<6>(m_16) as i32;
+                        let m7 = vgetq_lane_s16::<7>(m_16) as i32;
+                        mask_row[mask_idx + 3] = ((m6 + m7 + 1) >> 1) as u8;
                     }
                 }
             }
@@ -1348,13 +1424,12 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
 
     w_mask_8bpc_inner::<false, false>(
-        token, dst, dst_stride as usize,
+        dst, dst_stride as usize,
         tmp1.as_slice(), tmp2.as_slice(),
         w, h, mask.as_mut_slice(), sign as u8
     );
@@ -1373,13 +1448,12 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
 
     w_mask_8bpc_inner::<true, false>(
-        token, dst, dst_stride as usize,
+        dst, dst_stride as usize,
         tmp1.as_slice(), tmp2.as_slice(),
         w, h, mask.as_mut_slice(), sign as u8
     );
@@ -1398,13 +1472,12 @@ pub unsafe extern "C" fn w_mask_420_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
 
     w_mask_8bpc_inner::<true, true>(
-        token, dst, dst_stride as usize,
+        dst, dst_stride as usize,
         tmp1.as_slice(), tmp2.as_slice(),
         w, h, mask.as_mut_slice(), sign as u8
     );
@@ -2135,9 +2208,8 @@ pub unsafe extern "C" fn prep_bilin_16bpc_neon(
 
 /// Core w_mask implementation for 16bpc
 #[cfg(target_arch = "aarch64")]
-#[arcane]
-fn w_mask_16bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
-    _token: Arm64,
+#[target_feature(enable = "neon")]
+unsafe fn w_mask_16bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     dst: &mut [u16],
     dst_stride: usize,
     tmp1: &[i16],
@@ -2162,7 +2234,7 @@ fn w_mask_16bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
         let tmp1_row = &tmp1[y * w..][..w];
         let tmp2_row = &tmp2[y * w..][..w];
         let dst_row = &mut dst[y * dst_stride..][..w];
-        let mask_row = if SS_VER && (y & 1) != 0 {
+        let mut mask_row = if SS_VER && (y & 1) != 0 {
             None
         } else {
             let mask_y = if SS_VER { y >> 1 } else { y };
@@ -2219,14 +2291,13 @@ pub unsafe extern "C" fn w_mask_444_16bpc_neon(
     bitdepth_max: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
 
     w_mask_16bpc_inner::<false, false>(
-        token, dst, dst_stride_u16,
+        dst, dst_stride_u16,
         tmp1.as_slice(), tmp2.as_slice(),
         w, h, mask.as_mut_slice(), sign as u8, bitdepth_max
     );
@@ -2245,14 +2316,13 @@ pub unsafe extern "C" fn w_mask_422_16bpc_neon(
     bitdepth_max: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
 
     w_mask_16bpc_inner::<true, false>(
-        token, dst, dst_stride_u16,
+        dst, dst_stride_u16,
         tmp1.as_slice(), tmp2.as_slice(),
         w, h, mask.as_mut_slice(), sign as u8, bitdepth_max
     );
@@ -2271,14 +2341,13 @@ pub unsafe extern "C" fn w_mask_420_16bpc_neon(
     bitdepth_max: i32,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
     let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
 
     w_mask_16bpc_inner::<true, true>(
-        token, dst, dst_stride_u16,
+        dst, dst_stride_u16,
         tmp1.as_slice(), tmp2.as_slice(),
         w, h, mask.as_mut_slice(), sign as u8, bitdepth_max
     );
@@ -2770,15 +2839,15 @@ fn put_8tap_8bpc_inner(
 fn get_h_filter_type(filter: Filter2d) -> Rav1dFilterMode {
     match filter {
         Filter2d::Regular8Tap | Filter2d::RegularSmooth8Tap | Filter2d::RegularSharp8Tap => {
-            Rav1dFilterMode::Regular
+            Rav1dFilterMode::Regular8Tap
         }
         Filter2d::Smooth8Tap | Filter2d::SmoothRegular8Tap | Filter2d::SmoothSharp8Tap => {
-            Rav1dFilterMode::Smooth
+            Rav1dFilterMode::Smooth8Tap
         }
         Filter2d::Sharp8Tap | Filter2d::SharpRegular8Tap | Filter2d::SharpSmooth8Tap => {
-            Rav1dFilterMode::Sharp
+            Rav1dFilterMode::Sharp8Tap
         }
-        Filter2d::Bilinear => Rav1dFilterMode::Regular, // fallback
+        Filter2d::Bilinear => Rav1dFilterMode::Regular8Tap, // fallback
     }
 }
 
@@ -2787,15 +2856,15 @@ fn get_h_filter_type(filter: Filter2d) -> Rav1dFilterMode {
 fn get_v_filter_type(filter: Filter2d) -> Rav1dFilterMode {
     match filter {
         Filter2d::Regular8Tap | Filter2d::SmoothRegular8Tap | Filter2d::SharpRegular8Tap => {
-            Rav1dFilterMode::Regular
+            Rav1dFilterMode::Regular8Tap
         }
         Filter2d::Smooth8Tap | Filter2d::RegularSmooth8Tap | Filter2d::SharpSmooth8Tap => {
-            Rav1dFilterMode::Smooth
+            Rav1dFilterMode::Smooth8Tap
         }
         Filter2d::Sharp8Tap | Filter2d::RegularSharp8Tap | Filter2d::SmoothSharp8Tap => {
-            Rav1dFilterMode::Sharp
+            Rav1dFilterMode::Sharp8Tap
         }
-        Filter2d::Bilinear => Rav1dFilterMode::Regular, // fallback
+        Filter2d::Bilinear => Rav1dFilterMode::Regular8Tap, // fallback
     }
 }
 

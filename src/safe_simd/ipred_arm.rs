@@ -3,6 +3,7 @@
 //! Replaces hand-written assembly with safe Rust intrinsics.
 
 #![allow(unused)]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;

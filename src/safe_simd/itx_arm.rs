@@ -5,6 +5,7 @@
 
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -4574,7 +4575,7 @@ unsafe fn identity_rect_8bpc_inner<const W: usize, const H: usize>(
     col_fn: fn(&mut [i32], usize),
     is_rect2: bool,
 ) {
-    let mut tmp = [0i32; W * H];
+    let mut tmp = vec![0i32; W * H];
 
     for y in 0..H {
         let mut row = [0i32; W];
@@ -4618,7 +4619,7 @@ unsafe fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
     col_fn: fn(&mut [i32], usize),
     is_rect2: bool,
 ) {
-    let mut tmp = [0i32; W * H];
+    let mut tmp = vec![0i32; W * H];
 
     for y in 0..H {
         let mut row = [0i32; W];

@@ -4,6 +4,7 @@
 
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -23,6 +24,7 @@ use crate::src::align::AlignedVec64;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::looprestoration::{padding, LrEdgeFlags, LooprestorationParams};
+use crate::src::pixels::Pixels;
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_sgr_x_by_x;
 use libc::ptrdiff_t;
@@ -185,7 +187,7 @@ pub unsafe extern "C" fn wiener_filter7_8bpc_neon(
     let p = unsafe { *FFISafe::get(p) };
     let left = unsafe { slice::from_raw_parts(left as *const LeftPixelRow<u8>, h as usize + 3) };
     let lpf = unsafe { FFISafe::get(lpf) };
-    let lpf_off = lpf_ptr as isize - lpf.as_ptr() as isize;
+    let lpf_off = lpf_ptr as isize - lpf.as_byte_mut_ptr() as isize;
 
     wiener_filter_8bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, 7);
 }
@@ -207,7 +209,7 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_neon(
     let p = unsafe { *FFISafe::get(p) };
     let left = unsafe { slice::from_raw_parts(left as *const LeftPixelRow<u8>, h as usize + 2) };
     let lpf = unsafe { FFISafe::get(lpf) };
-    let lpf_off = lpf_ptr as isize - lpf.as_ptr() as isize;
+    let lpf_off = lpf_ptr as isize - lpf.as_byte_mut_ptr() as isize;
 
     wiener_filter_8bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, 5);
 }
@@ -233,7 +235,7 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_neon(
     let p = unsafe { *FFISafe::get(p) };
     let left = unsafe { slice::from_raw_parts(left as *const LeftPixelRow<u16>, h as usize + 3) };
     let lpf = unsafe { FFISafe::get(lpf) };
-    let lpf_off = (lpf_ptr as isize - lpf.as_ptr() as isize) / 2;
+    let lpf_off = (lpf_ptr as isize - lpf.as_byte_mut_ptr() as isize) / 2;
 
     wiener_filter_16bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, 7, bitdepth_max);
 }
@@ -255,7 +257,7 @@ pub unsafe extern "C" fn wiener_filter5_16bpc_neon(
     let p = unsafe { *FFISafe::get(p) };
     let left = unsafe { slice::from_raw_parts(left as *const LeftPixelRow<u16>, h as usize + 2) };
     let lpf = unsafe { FFISafe::get(lpf) };
-    let lpf_off = (lpf_ptr as isize - lpf.as_ptr() as isize) / 2;
+    let lpf_off = (lpf_ptr as isize - lpf.as_byte_mut_ptr() as isize) / 2;
 
     wiener_filter_16bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, 5, bitdepth_max);
 }
@@ -675,7 +677,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_8bpc_neon(
     let p = unsafe { *FFISafe::get(p) };
     let left = unsafe { slice::from_raw_parts(left as *const LeftPixelRow<u8>, h as usize) };
     let lpf = unsafe { FFISafe::get(lpf) };
-    let lpf_off = lpf_ptr as isize - lpf.as_ptr() as isize;
+    let lpf_off = lpf_ptr as isize - lpf.as_byte_mut_ptr() as isize;
 
     sgr_5x5_8bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges);
 }
@@ -697,7 +699,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_8bpc_neon(
     let p = unsafe { *FFISafe::get(p) };
     let left = unsafe { slice::from_raw_parts(left as *const LeftPixelRow<u8>, h as usize) };
     let lpf = unsafe { FFISafe::get(lpf) };
-    let lpf_off = lpf_ptr as isize - lpf.as_ptr() as isize;
+    let lpf_off = lpf_ptr as isize - lpf.as_byte_mut_ptr() as isize;
 
     sgr_3x3_8bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges);
 }
@@ -719,7 +721,7 @@ pub unsafe extern "C" fn sgr_filter_mix_8bpc_neon(
     let p = unsafe { *FFISafe::get(p) };
     let left = unsafe { slice::from_raw_parts(left as *const LeftPixelRow<u8>, h as usize) };
     let lpf = unsafe { FFISafe::get(lpf) };
-    let lpf_off = lpf_ptr as isize - lpf.as_ptr() as isize;
+    let lpf_off = lpf_ptr as isize - lpf.as_byte_mut_ptr() as isize;
 
     sgr_mix_8bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges);
 }
@@ -1137,7 +1139,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_16bpc_neon(
     let p = unsafe { *FFISafe::get(p) };
     let left = unsafe { slice::from_raw_parts(left as *const LeftPixelRow<u16>, h as usize) };
     let lpf = unsafe { FFISafe::get(lpf) };
-    let lpf_off = (lpf_ptr as isize - lpf.as_ptr() as isize) / 2;
+    let lpf_off = (lpf_ptr as isize - lpf.as_byte_mut_ptr() as isize) / 2;
 
     sgr_5x5_16bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, bitdepth_max);
 }
@@ -1159,7 +1161,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_16bpc_neon(
     let p = unsafe { *FFISafe::get(p) };
     let left = unsafe { slice::from_raw_parts(left as *const LeftPixelRow<u16>, h as usize) };
     let lpf = unsafe { FFISafe::get(lpf) };
-    let lpf_off = (lpf_ptr as isize - lpf.as_ptr() as isize) / 2;
+    let lpf_off = (lpf_ptr as isize - lpf.as_byte_mut_ptr() as isize) / 2;
 
     sgr_3x3_16bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, bitdepth_max);
 }
@@ -1181,7 +1183,7 @@ pub unsafe extern "C" fn sgr_filter_mix_16bpc_neon(
     let p = unsafe { *FFISafe::get(p) };
     let left = unsafe { slice::from_raw_parts(left as *const LeftPixelRow<u16>, h as usize) };
     let lpf = unsafe { FFISafe::get(lpf) };
-    let lpf_off = (lpf_ptr as isize - lpf.as_ptr() as isize) / 2;
+    let lpf_off = (lpf_ptr as isize - lpf.as_byte_mut_ptr() as isize) / 2;
 
     sgr_mix_16bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, bitdepth_max);
 }

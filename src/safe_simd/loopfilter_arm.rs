@@ -4,6 +4,7 @@
 
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -212,10 +213,10 @@ fn lpf_h_sb_inner<BD: BitDepth, const YUV: usize>(
             continue;
         }
 
-        let sharp = lut.sharp[lvl[0] as usize];
-        let e = lut.e[sharp as usize] as i32;
-        let i = lut.i[sharp as usize] as i32;
-        let h = lut.hev_thr[(lvl[0] >> 4) as usize] as i32;
+        let l = lvl[0] as usize;
+        let e = lut.e[l] as i32;
+        let i = lut.i[l] as i32;
+        let h = (lvl[0] >> 4) as i32;
 
         let wd = if YUV == 0 {
             match vm {
@@ -266,10 +267,10 @@ fn lpf_v_sb_inner<BD: BitDepth, const YUV: usize>(
             continue;
         }
 
-        let sharp = lut.sharp[lvl[0] as usize];
-        let e = lut.e[sharp as usize] as i32;
-        let i = lut.i[sharp as usize] as i32;
-        let h = lut.hev_thr[(lvl[0] >> 4) as usize] as i32;
+        let l = lvl[0] as usize;
+        let e = lut.e[l] as i32;
+        let i = lut.i[l] as i32;
+        let h = (lvl[0] >> 4) as i32;
 
         let wd = if YUV == 0 {
             match vm {
