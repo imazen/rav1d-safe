@@ -2936,52 +2936,51 @@ fn v_filter_8tap_to_i16_neon(
     let mut col = 0;
     
     while col + 4 <= w {
-        unsafe {
-            let c0 = filter[0] as i32;
-            let c1 = filter[1] as i32;
-            let c2 = filter[2] as i32;
-            let c3 = filter[3] as i32;
-            let c4 = filter[4] as i32;
-            let c5 = filter[5] as i32;
-            let c6 = filter[6] as i32;
-            let c7 = filter[7] as i32;
-            
-            // Load 4 values from each of 8 rows
-            let r0 = vld1_s16(mid[0][col..].as_ptr());
-            let r1 = vld1_s16(mid[1][col..].as_ptr());
-            let r2 = vld1_s16(mid[2][col..].as_ptr());
-            let r3 = vld1_s16(mid[3][col..].as_ptr());
-            let r4 = vld1_s16(mid[4][col..].as_ptr());
-            let r5 = vld1_s16(mid[5][col..].as_ptr());
-            let r6 = vld1_s16(mid[6][col..].as_ptr());
-            let r7 = vld1_s16(mid[7][col..].as_ptr());
-            
-            // Widen to i32
-            let r0_32 = vmovl_s16(r0);
-            let r1_32 = vmovl_s16(r1);
-            let r2_32 = vmovl_s16(r2);
-            let r3_32 = vmovl_s16(r3);
-            let r4_32 = vmovl_s16(r4);
-            let r5_32 = vmovl_s16(r5);
-            let r6_32 = vmovl_s16(r6);
-            let r7_32 = vmovl_s16(r7);
-            
-            let mut sum = vmulq_n_s32(r0_32, c0);
-            sum = vmlaq_n_s32(sum, r1_32, c1);
-            sum = vmlaq_n_s32(sum, r2_32, c2);
-            sum = vmlaq_n_s32(sum, r3_32, c3);
-            sum = vmlaq_n_s32(sum, r4_32, c4);
-            sum = vmlaq_n_s32(sum, r5_32, c5);
-            sum = vmlaq_n_s32(sum, r6_32, c6);
-            sum = vmlaq_n_s32(sum, r7_32, c7);
-            
-            let rnd_vec = vdupq_n_s32(rnd);
-            sum = vshrq_n_s32::<10>(vaddq_s32(sum, rnd_vec));
-            
-            // Narrow to i16
-            let result = vqmovn_s32(sum);
-            vst1_s16(dst[col..].as_mut_ptr(), result);
-        }
+        let c0 = filter[0] as i32;
+        let c1 = filter[1] as i32;
+        let c2 = filter[2] as i32;
+        let c3 = filter[3] as i32;
+        let c4 = filter[4] as i32;
+        let c5 = filter[5] as i32;
+        let c6 = filter[6] as i32;
+        let c7 = filter[7] as i32;
+
+        // Load 4 values from each of 8 rows
+        let r0 = partial_simd::vld1_s16(mid[0][col..][..4].try_into().unwrap());
+        let r1 = partial_simd::vld1_s16(mid[1][col..][..4].try_into().unwrap());
+        let r2 = partial_simd::vld1_s16(mid[2][col..][..4].try_into().unwrap());
+        let r3 = partial_simd::vld1_s16(mid[3][col..][..4].try_into().unwrap());
+        let r4 = partial_simd::vld1_s16(mid[4][col..][..4].try_into().unwrap());
+        let r5 = partial_simd::vld1_s16(mid[5][col..][..4].try_into().unwrap());
+        let r6 = partial_simd::vld1_s16(mid[6][col..][..4].try_into().unwrap());
+        let r7 = partial_simd::vld1_s16(mid[7][col..][..4].try_into().unwrap());
+
+        // Widen to i32
+        let r0_32 = vmovl_s16(r0);
+        let r1_32 = vmovl_s16(r1);
+        let r2_32 = vmovl_s16(r2);
+        let r3_32 = vmovl_s16(r3);
+        let r4_32 = vmovl_s16(r4);
+        let r5_32 = vmovl_s16(r5);
+        let r6_32 = vmovl_s16(r6);
+        let r7_32 = vmovl_s16(r7);
+
+        let mut sum = vmulq_n_s32(r0_32, c0);
+        sum = vmlaq_n_s32(sum, r1_32, c1);
+        sum = vmlaq_n_s32(sum, r2_32, c2);
+        sum = vmlaq_n_s32(sum, r3_32, c3);
+        sum = vmlaq_n_s32(sum, r4_32, c4);
+        sum = vmlaq_n_s32(sum, r5_32, c5);
+        sum = vmlaq_n_s32(sum, r6_32, c6);
+        sum = vmlaq_n_s32(sum, r7_32, c7);
+
+        let rnd_vec = vdupq_n_s32(rnd);
+        sum = vshrq_n_s32::<10>(vaddq_s32(sum, rnd_vec));
+
+        // Narrow to i16
+        let result = vqmovn_s32(sum);
+        let dst_arr: &mut [i16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
+        partial_simd::vst1_s16(dst_arr, result);
         col += 4;
     }
     
@@ -3053,49 +3052,48 @@ fn prep_8tap_8bpc_inner(
                 // Output to i16 with intermediate_bits shift
                 let mut col = 0;
                 while col + 8 <= w {
-                    unsafe {
-                        let c0 = fh[0] as i16;
-                        let c1 = fh[1] as i16;
-                        let c2 = fh[2] as i16;
-                        let c3 = fh[3] as i16;
-                        let c4 = fh[4] as i16;
-                        let c5 = fh[5] as i16;
-                        let c6 = fh[6] as i16;
-                        let c7 = fh[7] as i16;
-                        
-                        let s0 = vld1_u8(src_row[col..].as_ptr());
-                        let s1 = vld1_u8(src_row[col + 1..].as_ptr());
-                        let s2 = vld1_u8(src_row[col + 2..].as_ptr());
-                        let s3 = vld1_u8(src_row[col + 3..].as_ptr());
-                        let s4 = vld1_u8(src_row[col + 4..].as_ptr());
-                        let s5 = vld1_u8(src_row[col + 5..].as_ptr());
-                        let s6 = vld1_u8(src_row[col + 6..].as_ptr());
-                        let s7 = vld1_u8(src_row[col + 7..].as_ptr());
-                        
-                        let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
-                        let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
-                        let s2_16 = vreinterpretq_s16_u16(vmovl_u8(s2));
-                        let s3_16 = vreinterpretq_s16_u16(vmovl_u8(s3));
-                        let s4_16 = vreinterpretq_s16_u16(vmovl_u8(s4));
-                        let s5_16 = vreinterpretq_s16_u16(vmovl_u8(s5));
-                        let s6_16 = vreinterpretq_s16_u16(vmovl_u8(s6));
-                        let s7_16 = vreinterpretq_s16_u16(vmovl_u8(s7));
-                        
-                        let mut sum = vmulq_n_s16(s0_16, c0);
-                        sum = vmlaq_n_s16(sum, s1_16, c1);
-                        sum = vmlaq_n_s16(sum, s2_16, c2);
-                        sum = vmlaq_n_s16(sum, s3_16, c3);
-                        sum = vmlaq_n_s16(sum, s4_16, c4);
-                        sum = vmlaq_n_s16(sum, s5_16, c5);
-                        sum = vmlaq_n_s16(sum, s6_16, c6);
-                        sum = vmlaq_n_s16(sum, s7_16, c7);
-                        
-                        // Shift for intermediate: (sum + 8) >> 4
-                        let rnd_vec = vdupq_n_s16(8);
-                        let result = vshrq_n_s16::<4>(vaddq_s16(sum, rnd_vec));
-                        
-                        vst1q_s16(out_row[col..].as_mut_ptr(), result);
-                    }
+                    let c0 = fh[0] as i16;
+                    let c1 = fh[1] as i16;
+                    let c2 = fh[2] as i16;
+                    let c3 = fh[3] as i16;
+                    let c4 = fh[4] as i16;
+                    let c5 = fh[5] as i16;
+                    let c6 = fh[6] as i16;
+                    let c7 = fh[7] as i16;
+
+                    let s0 = partial_simd::vld1_u8(src_row[col..][..8].try_into().unwrap());
+                    let s1 = partial_simd::vld1_u8(src_row[col + 1..][..8].try_into().unwrap());
+                    let s2 = partial_simd::vld1_u8(src_row[col + 2..][..8].try_into().unwrap());
+                    let s3 = partial_simd::vld1_u8(src_row[col + 3..][..8].try_into().unwrap());
+                    let s4 = partial_simd::vld1_u8(src_row[col + 4..][..8].try_into().unwrap());
+                    let s5 = partial_simd::vld1_u8(src_row[col + 5..][..8].try_into().unwrap());
+                    let s6 = partial_simd::vld1_u8(src_row[col + 6..][..8].try_into().unwrap());
+                    let s7 = partial_simd::vld1_u8(src_row[col + 7..][..8].try_into().unwrap());
+
+                    let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
+                    let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
+                    let s2_16 = vreinterpretq_s16_u16(vmovl_u8(s2));
+                    let s3_16 = vreinterpretq_s16_u16(vmovl_u8(s3));
+                    let s4_16 = vreinterpretq_s16_u16(vmovl_u8(s4));
+                    let s5_16 = vreinterpretq_s16_u16(vmovl_u8(s5));
+                    let s6_16 = vreinterpretq_s16_u16(vmovl_u8(s6));
+                    let s7_16 = vreinterpretq_s16_u16(vmovl_u8(s7));
+
+                    let mut sum = vmulq_n_s16(s0_16, c0);
+                    sum = vmlaq_n_s16(sum, s1_16, c1);
+                    sum = vmlaq_n_s16(sum, s2_16, c2);
+                    sum = vmlaq_n_s16(sum, s3_16, c3);
+                    sum = vmlaq_n_s16(sum, s4_16, c4);
+                    sum = vmlaq_n_s16(sum, s5_16, c5);
+                    sum = vmlaq_n_s16(sum, s6_16, c6);
+                    sum = vmlaq_n_s16(sum, s7_16, c7);
+
+                    // Shift for intermediate: (sum + 8) >> 4
+                    let rnd_vec = vdupq_n_s16(8);
+                    let result = vshrq_n_s16::<4>(vaddq_s16(sum, rnd_vec));
+
+                    let out_arr: &mut [i16; 8] = (&mut out_row[col..col + 8]).try_into().unwrap();
+                    partial_simd::vst1q_s16(out_arr, result);
                     col += 8;
                 }
                 while col < w {
