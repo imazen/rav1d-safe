@@ -18,8 +18,8 @@ Pick the next unfinished module and port it. Priority order:
 2. ~~ITX (~11k lines)~~ **COMPLETE** (160 transforms each for 8bpc/16bpc)
 3. ~~loopfilter/CDEF~~ **COMPLETE** (8bpc + 16bpc)
 4. ~~looprestoration~~ **COMPLETE** (Wiener + SGR 8bpc + 16bpc)
-5. filmgrain (~13k lines) - scaffolding exists but fallback is faster
-6. ARM NEON mc variants (8bpc partial, 16bpc missing)
+5. ~~ARM NEON mc~~ **COMPLETE** (all 8tap filters, 8bpc + 16bpc)
+6. filmgrain (~13k lines) - scaffolding exists but fallback is faster
 
 Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with safe Rust intrinsics.
 
@@ -51,7 +51,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | Module | Location | Status |
 |--------|----------|--------|
 | mc | `src/safe_simd/mc.rs` | **Complete** - 8bpc+16bpc, x86 AVX2 |
-| mc_arm | `src/safe_simd/mc_arm.rs` | **Partial** - 8bpc+16bpc NEON (avg, w_avg, mask, blend, w_mask, bilin) |
+| mc_arm | `src/safe_simd/mc_arm.rs` | **Complete** - 8bpc+16bpc NEON (all MC functions including 8tap filters) |
 | itx | `src/safe_simd/itx.rs` | **Complete** - 160 transforms each for 8bpc/16bpc (full parity) |
 | loopfilter | `src/safe_simd/loopfilter.rs` | **Complete** - 8bpc + 16bpc |
 | cdef | `src/safe_simd/cdef.rs` | **Complete** - 8bpc + 16bpc |
@@ -68,9 +68,9 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 
 ## Porting Progress (160k lines target)
 
-**SIMD optimized (~26k lines in safe_simd/):**
+**SIMD optimized (~28k lines in safe_simd/):**
 - MC x86 module (~5k lines): Complete (8bpc + 16bpc)
-- MC ARM module (~2.3k lines): Basic ops (8bpc + 16bpc avg/w_avg/mask/blend/w_mask/bilin)
+- MC ARM module (~3.9k lines): Complete (8bpc + 16bpc all filters including 8tap)
 - ITX module (~12k lines): **100% complete** (160 transforms for both 8bpc and 16bpc)
   - All square DCT (4x4 to 64x64) - 8bpc + 16bpc
   - All square ADST/FLIPADST (4x4, 8x8, 16x16) - 8bpc + 16bpc
