@@ -4519,3 +4519,665 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_neon(
         bitdepth_max,
     );
 }
+
+// ============================================================================
+// IDENTITY 1D HELPERS
+// ============================================================================
+
+#[inline(always)]
+fn identity4_1d_arm(c: &mut [i32], stride: usize) {
+    for i in 0..4 {
+        let v = c[i * stride];
+        c[i * stride] = ((v * 181 + 128) >> 8) + v;
+    }
+}
+
+#[inline(always)]
+fn identity8_1d_arm(c: &mut [i32], stride: usize) {
+    for i in 0..8 {
+        c[i * stride] *= 2;
+    }
+}
+
+#[inline(always)]
+fn identity16_1d_arm(c: &mut [i32], stride: usize) {
+    for i in 0..16 {
+        c[i * stride] *= 2;
+    }
+}
+
+#[inline(always)]
+fn identity32_1d_arm(c: &mut [i32], stride: usize) {
+    for i in 0..32 {
+        c[i * stride] *= 4;
+    }
+}
+
+/// rect2 scale: multiply by sqrt(2) for 2:1 rectangular transforms
+#[inline(always)]
+fn rect2_scale(v: i32) -> i32 {
+    (v * 181 + 128) >> 8
+}
+
+// ============================================================================
+// GENERIC RECTANGULAR IDENTITY INNER FUNCTIONS
+// ============================================================================
+
+/// Generic rectangular identity transform for 8bpc
+unsafe fn identity_rect_8bpc_inner<const W: usize, const H: usize>(
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
+    row_fn: fn(&mut [i32], usize),
+    col_fn: fn(&mut [i32], usize),
+    is_rect2: bool,
+) {
+    let mut tmp = [0i32; W * H];
+
+    for y in 0..H {
+        let mut row = [0i32; W];
+        for x in 0..W {
+            let c = unsafe { *coeff.add(y + x * H) as i32 };
+            row[x] = if is_rect2 { rect2_scale(c) } else { c };
+        }
+        row_fn(&mut row, 1);
+        for x in 0..W {
+            tmp[y * W + x] = row[x];
+        }
+    }
+
+    for x in 0..W {
+        col_fn(&mut tmp[x..], W);
+    }
+
+    for y in 0..H {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..W {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * W + x] + 8) >> 4;
+            let result = iclip(d + val, 0, bitdepth_max);
+            unsafe { *dst_row.add(x) = result as u8 };
+        }
+    }
+
+    for i in 0..(W * H) {
+        unsafe { *coeff.add(i) = 0 };
+    }
+}
+
+/// Generic rectangular identity transform for 16bpc
+unsafe fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
+    dst: *mut u16,
+    dst_stride: isize,
+    coeff: *mut i32,
+    _eob: i32,
+    bitdepth_max: i32,
+    row_fn: fn(&mut [i32], usize),
+    col_fn: fn(&mut [i32], usize),
+    is_rect2: bool,
+) {
+    let mut tmp = [0i32; W * H];
+
+    for y in 0..H {
+        let mut row = [0i32; W];
+        for x in 0..W {
+            let c = unsafe { *coeff.add(y + x * H) };
+            row[x] = if is_rect2 { rect2_scale(c) } else { c };
+        }
+        row_fn(&mut row, 1);
+        for x in 0..W {
+            tmp[y * W + x] = row[x];
+        }
+    }
+
+    for x in 0..W {
+        col_fn(&mut tmp[x..], W);
+    }
+
+    for y in 0..H {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..W {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * W + x] + 8) >> 4;
+            let result = iclip(d + val, 0, bitdepth_max);
+            unsafe { *dst_row.add(x) = result as u16 };
+        }
+    }
+
+    for i in 0..(W * H) {
+        unsafe { *coeff.add(i) = 0 };
+    }
+}
+
+// ============================================================================
+// RECTANGULAR IDENTITY_IDENTITY FFI WRAPPERS - 16BPC ONLY
+// ============================================================================
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_16bpc_inner::<4, 8>(
+        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
+        eob, bitdepth_max, identity4_1d_arm, identity8_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_16bpc_inner::<8, 4>(
+        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
+        eob, bitdepth_max, identity8_1d_arm, identity4_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_16bpc_inner::<4, 16>(
+        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
+        eob, bitdepth_max, identity4_1d_arm, identity16_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_16bpc_inner::<16, 4>(
+        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
+        eob, bitdepth_max, identity16_1d_arm, identity4_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_16bpc_inner::<8, 16>(
+        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
+        eob, bitdepth_max, identity8_1d_arm, identity16_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_16bpc_inner::<16, 8>(
+        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
+        eob, bitdepth_max, identity16_1d_arm, identity8_1d_arm, true,
+    );
+}
+
+// ============================================================================
+// RECTANGULAR IDENTITY_IDENTITY - 8BPC + 16BPC
+// ============================================================================
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_8bpc_inner::<8, 32>(
+        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
+        eob, bitdepth_max, identity8_1d_arm, identity32_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_16bpc_inner::<8, 32>(
+        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
+        eob, bitdepth_max, identity8_1d_arm, identity32_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_8bpc_inner::<32, 8>(
+        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
+        eob, bitdepth_max, identity32_1d_arm, identity8_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_16bpc_inner::<32, 8>(
+        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
+        eob, bitdepth_max, identity32_1d_arm, identity8_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_8bpc_inner::<16, 32>(
+        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
+        eob, bitdepth_max, identity16_1d_arm, identity32_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_16bpc_inner::<16, 32>(
+        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
+        eob, bitdepth_max, identity16_1d_arm, identity32_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_8bpc_inner::<32, 16>(
+        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
+        eob, bitdepth_max, identity32_1d_arm, identity16_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_16bpc_inner::<32, 16>(
+        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
+        eob, bitdepth_max, identity32_1d_arm, identity16_1d_arm, true,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_8bpc_inner::<32, 32>(
+        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
+        eob, bitdepth_max, identity32_1d_arm, identity32_1d_arm, false,
+    );
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) {
+    identity_rect_16bpc_inner::<32, 32>(
+        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
+        eob, bitdepth_max, identity32_1d_arm, identity32_1d_arm, false,
+    );
+}
+
+// ============================================================================
+// HYBRID IDENTITY TRANSFORMS 4x4 8BPC
+// ============================================================================
+
+unsafe fn inv_txfm_add_dct_identity_4x4_8bpc_inner(
+    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+) {
+    let mut tmp = [0i32; 16];
+    for y in 0..4 {
+        let c0 = unsafe { *coeff.add(y) as i32 };
+        let c1 = unsafe { *coeff.add(y + 4) as i32 };
+        let c2 = unsafe { *coeff.add(y + 8) as i32 };
+        let c3 = unsafe { *coeff.add(y + 12) as i32 };
+        let out = dct4_1d(c0, c1, c2, c3);
+        for x in 0..4 { tmp[y * 4 + x] = out[x]; }
+    }
+    for x in 0..4 { identity4_1d_arm(&mut tmp[x..], 4); }
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+        }
+    }
+    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+}
+
+unsafe fn inv_txfm_add_identity_dct_4x4_8bpc_inner(
+    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+) {
+    let mut tmp = [0i32; 16];
+    for y in 0..4 {
+        let mut row = [0i32; 4];
+        for x in 0..4 { row[x] = unsafe { *coeff.add(y + x * 4) as i32 }; }
+        identity4_1d_arm(&mut row, 1);
+        for x in 0..4 { tmp[y * 4 + x] = row[x]; }
+    }
+    for x in 0..4 {
+        let out = dct4_1d(tmp[0 * 4 + x], tmp[1 * 4 + x], tmp[2 * 4 + x], tmp[3 * 4 + x]);
+        for y in 0..4 { tmp[y * 4 + x] = out[y]; }
+    }
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+        }
+    }
+    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+}
+
+unsafe fn inv_txfm_add_adst_identity_4x4_8bpc_inner(
+    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+) {
+    let mut tmp = [0i32; 16];
+    for y in 0..4 {
+        let out = adst4_1d(
+            unsafe { *coeff.add(y) as i32 }, unsafe { *coeff.add(y + 4) as i32 },
+            unsafe { *coeff.add(y + 8) as i32 }, unsafe { *coeff.add(y + 12) as i32 },
+        );
+        for x in 0..4 { tmp[y * 4 + x] = out[x]; }
+    }
+    for x in 0..4 { identity4_1d_arm(&mut tmp[x..], 4); }
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+        }
+    }
+    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+}
+
+unsafe fn inv_txfm_add_identity_adst_4x4_8bpc_inner(
+    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+) {
+    let mut tmp = [0i32; 16];
+    for y in 0..4 {
+        let mut row = [0i32; 4];
+        for x in 0..4 { row[x] = unsafe { *coeff.add(y + x * 4) as i32 }; }
+        identity4_1d_arm(&mut row, 1);
+        for x in 0..4 { tmp[y * 4 + x] = row[x]; }
+    }
+    for x in 0..4 {
+        let out = adst4_1d(tmp[0 * 4 + x], tmp[1 * 4 + x], tmp[2 * 4 + x], tmp[3 * 4 + x]);
+        for y in 0..4 { tmp[y * 4 + x] = out[y]; }
+    }
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+        }
+    }
+    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+}
+
+unsafe fn inv_txfm_add_flipadst_identity_4x4_8bpc_inner(
+    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+) {
+    let mut tmp = [0i32; 16];
+    for y in 0..4 {
+        let out = flipadst4_1d(
+            unsafe { *coeff.add(y) as i32 }, unsafe { *coeff.add(y + 4) as i32 },
+            unsafe { *coeff.add(y + 8) as i32 }, unsafe { *coeff.add(y + 12) as i32 },
+        );
+        for x in 0..4 { tmp[y * 4 + x] = out[x]; }
+    }
+    for x in 0..4 { identity4_1d_arm(&mut tmp[x..], 4); }
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+        }
+    }
+    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+}
+
+unsafe fn inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
+    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+) {
+    let mut tmp = [0i32; 16];
+    for y in 0..4 {
+        let mut row = [0i32; 4];
+        for x in 0..4 { row[x] = unsafe { *coeff.add(y + x * 4) as i32 }; }
+        identity4_1d_arm(&mut row, 1);
+        for x in 0..4 { tmp[y * 4 + x] = row[x]; }
+    }
+    for x in 0..4 {
+        let out = flipadst4_1d(tmp[0 * 4 + x], tmp[1 * 4 + x], tmp[2 * 4 + x], tmp[3 * 4 + x]);
+        for y in 0..4 { tmp[y * 4 + x] = out[y]; }
+    }
+    for y in 0..4 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..4 {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+        }
+    }
+    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) { inv_txfm_add_dct_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) { inv_txfm_add_identity_dct_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) { inv_txfm_add_adst_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) { inv_txfm_add_identity_adst_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) { inv_txfm_add_flipadst_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) { inv_txfm_add_identity_flipadst_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+
+// ============================================================================
+// DCT_DCT 16x64 and 64x16
+// ============================================================================
+
+unsafe fn inv_txfm_add_dct_dct_16x64_8bpc_inner(
+    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+) {
+    let mut tmp = [0i32; 16 * 64];
+    for y in 0..64 {
+        let mut row = [0i32; 16];
+        for x in 0..16 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 64) as i32 }); }
+        let out = dct16_1d(&row);
+        for x in 0..16 { tmp[y * 16 + x] = (out[x] + 1) >> 1; }
+    }
+    for x in 0..16 {
+        let mut col = [0i32; 64];
+        for y in 0..64 { col[y] = tmp[y * 16 + x]; }
+        let out = dct64_1d(&col);
+        for y in 0..64 { tmp[y * 16 + x] = out[y]; }
+    }
+    for y in 0..64 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..16 {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * 16 + x] + 8) >> 4;
+            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+        }
+    }
+    for i in 0..(16 * 64) { unsafe { *coeff.add(i) = 0; } }
+}
+
+unsafe fn inv_txfm_add_dct_dct_16x64_16bpc_inner(
+    dst: *mut u16, dst_stride: isize, coeff: *mut i32, _eob: i32, bitdepth_max: i32,
+) {
+    let mut tmp = [0i32; 16 * 64];
+    for y in 0..64 {
+        let mut row = [0i32; 16];
+        for x in 0..16 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 64) }); }
+        let out = dct16_1d(&row);
+        for x in 0..16 { tmp[y * 16 + x] = (out[x] + 1) >> 1; }
+    }
+    for x in 0..16 {
+        let mut col = [0i32; 64];
+        for y in 0..64 { col[y] = tmp[y * 16 + x]; }
+        let out = dct64_1d(&col);
+        for y in 0..64 { tmp[y * 16 + x] = out[y]; }
+    }
+    for y in 0..64 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..16 {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * 16 + x] + 8) >> 4;
+            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u16 };
+        }
+    }
+    for i in 0..(16 * 64) { unsafe { *coeff.add(i) = 0; } }
+}
+
+unsafe fn inv_txfm_add_dct_dct_64x16_8bpc_inner(
+    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+) {
+    let mut tmp = [0i32; 64 * 16];
+    for y in 0..16 {
+        let mut row = [0i32; 64];
+        for x in 0..64 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 16) as i32 }); }
+        let out = dct64_1d(&row);
+        for x in 0..64 { tmp[y * 64 + x] = (out[x] + 1) >> 1; }
+    }
+    for x in 0..64 {
+        let mut col = [0i32; 16];
+        for y in 0..16 { col[y] = tmp[y * 64 + x]; }
+        let out = dct16_1d(&col);
+        for y in 0..16 { tmp[y * 64 + x] = out[y]; }
+    }
+    for y in 0..16 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..64 {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * 64 + x] + 8) >> 4;
+            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+        }
+    }
+    for i in 0..(64 * 16) { unsafe { *coeff.add(i) = 0; } }
+}
+
+unsafe fn inv_txfm_add_dct_dct_64x16_16bpc_inner(
+    dst: *mut u16, dst_stride: isize, coeff: *mut i32, _eob: i32, bitdepth_max: i32,
+) {
+    let mut tmp = [0i32; 64 * 16];
+    for y in 0..16 {
+        let mut row = [0i32; 64];
+        for x in 0..64 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 16) }); }
+        let out = dct64_1d(&row);
+        for x in 0..64 { tmp[y * 64 + x] = (out[x] + 1) >> 1; }
+    }
+    for x in 0..64 {
+        let mut col = [0i32; 16];
+        for y in 0..16 { col[y] = tmp[y * 64 + x]; }
+        let out = dct16_1d(&col);
+        for y in 0..16 { tmp[y * 64 + x] = out[y]; }
+    }
+    for y in 0..16 {
+        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..64 {
+            let d = unsafe { *dst_row.add(x) as i32 };
+            let val = (tmp[y * 64 + x] + 8) >> 4;
+            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u16 };
+        }
+    }
+    for i in 0..(64 * 16) { unsafe { *coeff.add(i) = 0; } }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) { inv_txfm_add_dct_dct_16x64_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) { inv_txfm_add_dct_dct_16x64_16bpc_inner(dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max); }
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) { inv_txfm_add_dct_dct_64x16_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_neon(
+    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) { inv_txfm_add_dct_dct_64x16_16bpc_inner(dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max); }

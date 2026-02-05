@@ -1650,6 +1650,8 @@ impl Rav1dInvTxfmDSPContext {
         let tx_32x64 = TxfmSize::from_wh(32, 64) as usize;
         let tx_64x32 = TxfmSize::from_wh(64, 32) as usize;
         let tx_64x64 = TxfmSize::from_wh(64, 64) as usize;
+        let tx_16x64 = TxfmSize::from_wh(16, 64) as usize;
+        let tx_64x16 = TxfmSize::from_wh(64, 16) as usize;
 
         match BD::BPC {
             BPC::BPC8 => {
@@ -1730,6 +1732,38 @@ impl Rav1dInvTxfmDSPContext {
                     itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_8x8_8bpc_neon);
                 self.itxfm_add[tx_8x8][DCT_ADST as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_8x8_8bpc_neon);
+
+                // Rectangular IDENTITY
+                self.itxfm_add[tx_8x32][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x32_8bpc_neon);
+                self.itxfm_add[tx_32x8][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x8_8bpc_neon);
+                self.itxfm_add[tx_16x32][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x32_8bpc_neon);
+                self.itxfm_add[tx_32x16][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x16_8bpc_neon);
+                self.itxfm_add[tx_32x32][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x32_8bpc_neon);
+
+                // Identity hybrid transforms 4x4
+                self.itxfm_add[tx_4x4][H_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_4x4_8bpc_neon);
+                self.itxfm_add[tx_4x4][V_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_4x4_8bpc_neon);
+                self.itxfm_add[tx_4x4][H_ADST as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_4x4_8bpc_neon);
+                self.itxfm_add[tx_4x4][V_ADST as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_4x4_8bpc_neon);
+                self.itxfm_add[tx_4x4][H_FLIPADST as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_4x4_8bpc_neon);
+                self.itxfm_add[tx_4x4][V_FLIPADST as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_4x4_8bpc_neon);
+
+                // DCT_DCT 16x64, 64x16
+                self.itxfm_add[tx_16x64][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x64_8bpc_neon);
+                self.itxfm_add[tx_64x16][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x16_8bpc_neon);
             }
             BPC::BPC16 => {
                 // WHT_WHT 4x4
@@ -1809,9 +1843,38 @@ impl Rav1dInvTxfmDSPContext {
                     itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_8x8_16bpc_neon);
                 self.itxfm_add[tx_8x8][DCT_ADST as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_8x8_16bpc_neon);
+
+                // Rectangular IDENTITY
+                self.itxfm_add[tx_4x8][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x8_16bpc_neon);
+                self.itxfm_add[tx_8x4][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x4_16bpc_neon);
+                self.itxfm_add[tx_4x16][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x16_16bpc_neon);
+                self.itxfm_add[tx_16x4][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x4_16bpc_neon);
+                self.itxfm_add[tx_8x16][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x16_16bpc_neon);
+                self.itxfm_add[tx_16x8][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x8_16bpc_neon);
+                self.itxfm_add[tx_8x32][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x32_16bpc_neon);
+                self.itxfm_add[tx_32x8][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x8_16bpc_neon);
+                self.itxfm_add[tx_16x32][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x32_16bpc_neon);
+                self.itxfm_add[tx_32x16][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x16_16bpc_neon);
+                self.itxfm_add[tx_32x32][IDTX as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x32_16bpc_neon);
+
+                // DCT_DCT 16x64, 64x16
+                self.itxfm_add[tx_16x64][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x64_16bpc_neon);
+                self.itxfm_add[tx_64x16][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x16_16bpc_neon);
             }
         }
-        // 64x64 and some rectangular transforms use C fallback
 
         self
     }
