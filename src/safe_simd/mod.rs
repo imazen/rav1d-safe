@@ -16,6 +16,9 @@ pub mod ipred_arm;
 #[cfg(target_arch = "aarch64")]
 pub mod cdef_arm;
 
+#[cfg(target_arch = "aarch64")]
+pub mod loopfilter_arm;
+
 pub mod cdef;
 
 #[cfg(target_arch = "x86_64")]
