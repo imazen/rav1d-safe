@@ -38,15 +38,74 @@ wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
     _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) -> ());
 
-impl loopfilter_sb::Fn {
-    pub fn call<BD: BitDepth>(
-        &self,
-        f: &Rav1dFrameData,
-        dst: Rav1dPictureDataComponentOffset,
-        mask: &[u32; 3],
-        lvl: WithOffset<&DisjointMut<Vec<u8>>>,
-        w: usize,
-    ) {
+/// Direct dispatch for loopfilter_sb - bypasses function pointer table.
+///
+/// Selects optimal SIMD implementation at runtime based on CPU features.
+/// Used when `feature = "asm"` is disabled for zero-overhead direct calls.
+#[cfg(not(feature = "asm"))]
+fn loopfilter_sb_direct<BD: BitDepth>(
+    f: &Rav1dFrameData,
+    dst: Rav1dPictureDataComponentOffset,
+    mask: &[u32; 3],
+    lvl: WithOffset<&DisjointMut<Vec<u8>>>,
+    w: usize,
+    is_y: bool,
+    is_v: bool,
+) {
+    use crate::include::common::bitdepth::BPC;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+            let stride = dst.stride();
+            assert!(lvl.offset <= lvl.data.len());
+            // SAFETY: `lvl.offset` is in bounds, just checked above.
+            let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };
+            let lvl_ptr = lvl_ptr.cast::<[u8; 4]>();
+            let b4_stride = f.b4_stride;
+            let lut = &f.lf.lim_lut;
+            let w = w as c_int;
+            let bd = f.bitdepth_max;
+            let dst_ffi = FFISafe::new(&dst);
+            let lvl_ffi = FFISafe::new(&lvl);
+            use crate::src::safe_simd::loopfilter as safe_lpf;
+            // SAFETY: AVX2 verified by CpuFlags check. All pointers derived from valid references.
+            unsafe {
+                match (BD::BPC, is_y, is_v) {
+                    (BPC::BPC8, true, false) => safe_lpf::lpf_h_sb_y_8bpc_avx2(
+                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                    ),
+                    (BPC::BPC8, true, true) => safe_lpf::lpf_v_sb_y_8bpc_avx2(
+                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                    ),
+                    (BPC::BPC8, false, false) => safe_lpf::lpf_h_sb_uv_8bpc_avx2(
+                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                    ),
+                    (BPC::BPC8, false, true) => safe_lpf::lpf_v_sb_uv_8bpc_avx2(
+                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                    ),
+                    (BPC::BPC16, true, false) => safe_lpf::lpf_h_sb_y_16bpc_avx2(
+                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                    ),
+                    (BPC::BPC16, true, true) => safe_lpf::lpf_v_sb_y_16bpc_avx2(
+                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                    ),
+                    (BPC::BPC16, false, false) => safe_lpf::lpf_h_sb_uv_16bpc_avx2(
+                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                    ),
+                    (BPC::BPC16, false, true) => safe_lpf::lpf_v_sb_uv_16bpc_avx2(
+                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                    ),
+                }
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
         let dst_ptr = dst.as_mut_ptr::<BD>().cast();
         let stride = dst.stride();
         assert!(lvl.offset <= lvl.data.len());
@@ -57,13 +116,101 @@ impl loopfilter_sb::Fn {
         let lut = &f.lf.lim_lut;
         let w = w as c_int;
         let bd = f.bitdepth_max;
-        let dst = FFISafe::new(&dst);
-        let lvl = FFISafe::new(&lvl);
-        // SAFETY: Fallback `fn loop_filter_sb128_rust` is safe; asm is supposed to do the same.
+        let dst_ffi = FFISafe::new(&dst);
+        let lvl_ffi = FFISafe::new(&lvl);
+        use crate::src::safe_simd::loopfilter_arm as safe_lpf;
+        // SAFETY: NEON always available on aarch64. All pointers derived from valid references.
         unsafe {
-            self.get()(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst, lvl,
-            )
+            match (BD::BPC, is_y, is_v) {
+                (BPC::BPC8, true, false) => safe_lpf::lpf_h_sb_y_8bpc_neon(
+                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                ),
+                (BPC::BPC8, true, true) => safe_lpf::lpf_v_sb_y_8bpc_neon(
+                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                ),
+                (BPC::BPC8, false, false) => safe_lpf::lpf_h_sb_uv_8bpc_neon(
+                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                ),
+                (BPC::BPC8, false, true) => safe_lpf::lpf_v_sb_uv_8bpc_neon(
+                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                ),
+                (BPC::BPC16, true, false) => safe_lpf::lpf_h_sb_y_16bpc_neon(
+                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                ),
+                (BPC::BPC16, true, true) => safe_lpf::lpf_v_sb_y_16bpc_neon(
+                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                ),
+                (BPC::BPC16, false, false) => safe_lpf::lpf_h_sb_uv_16bpc_neon(
+                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                ),
+                (BPC::BPC16, false, true) => safe_lpf::lpf_v_sb_uv_16bpc_neon(
+                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
+                ),
+            }
+        }
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    {
+        let b4_stride = f.b4_stride as usize;
+        let lut = &f.lf.lim_lut;
+        let wh = w as c_int;
+        let bd = BD::from_c(f.bitdepth_max);
+        match (is_y, is_v) {
+            (true, false) => loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::Y as usize }>(
+                dst, mask, lvl, b4_stride, lut, wh, bd,
+            ),
+            (true, true) => loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::Y as usize }>(
+                dst, mask, lvl, b4_stride, lut, wh, bd,
+            ),
+            (false, false) => loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::UV as usize }>(
+                dst, mask, lvl, b4_stride, lut, wh, bd,
+            ),
+            (false, true) => loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::UV as usize }>(
+                dst, mask, lvl, b4_stride, lut, wh, bd,
+            ),
+        }
+    }
+}
+
+impl loopfilter_sb::Fn {
+    pub fn call<BD: BitDepth>(
+        &self,
+        f: &Rav1dFrameData,
+        dst: Rav1dPictureDataComponentOffset,
+        mask: &[u32; 3],
+        lvl: WithOffset<&DisjointMut<Vec<u8>>>,
+        w: usize,
+        is_y: bool,
+        is_v: bool,
+    ) {
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = (is_y, is_v);
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let stride = dst.stride();
+                assert!(lvl.offset <= lvl.data.len());
+                // SAFETY: `lvl.offset` is in bounds, just checked above.
+                let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };
+                let lvl_ptr = lvl_ptr.cast::<[u8; 4]>();
+                let b4_stride = f.b4_stride;
+                let lut = &f.lf.lim_lut;
+                let w = w as c_int;
+                let bd = f.bitdepth_max;
+                let dst = FFISafe::new(&dst);
+                let lvl = FFISafe::new(&lvl);
+                // SAFETY: Fallback `fn loop_filter_sb128_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst, lvl,
+                    )
+                }
+            } else {
+                // Direct dispatch: no function pointers, no extern "C" ABI overhead
+                loopfilter_sb_direct::<BD>(f, dst, mask, lvl, w, is_y, is_v)
+            }
         }
     }
 

@@ -14,6 +14,52 @@ wrap_fn_ptr!(pub unsafe extern "C" fn pal_idx_finish(
     h: c_int,
 ) -> ());
 
+/// Direct dispatch for pal_idx_finish - bypasses function pointer table.
+///
+/// Checks CPU flags at runtime and dispatches to the optimal SIMD implementation.
+/// Used when `feature = "asm"` is disabled for zero-overhead direct calls.
+#[cfg(not(feature = "asm"))]
+fn pal_idx_finish_direct(
+    dst: Option<&mut [u8]>,
+    tmp: &mut [u8],
+    bw: usize,
+    bh: usize,
+    w: usize,
+    h: usize,
+) {
+    let dst = dst.map(|dst| &mut dst[..(bw / 2) * bh]);
+    let tmp = &mut tmp[..bw * bh];
+    // SAFETY: Note that `dst` and `src` may be the same.
+    // This is safe because they are raw ptrs for now,
+    // and in the fallback `fn pal_idx_finish_rust`, this is checked for
+    // before creating `&mut`s from them.
+    let dst = dst.unwrap_or(tmp).as_mut_ptr();
+    let src = tmp.as_ptr();
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            let [bw, bh, w, h] = [bw, bh, w, h].map(|it| it as c_int);
+            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid slices above.
+            unsafe {
+                crate::src::safe_simd::pal::pal_idx_finish_avx2(dst, src, bw, bh, w, h);
+            }
+            return;
+        }
+    }
+
+    // Scalar fallback (also used on aarch64 where no NEON pal implementation exists)
+    #[allow(unreachable_code)]
+    {
+        let [bw, bh, w, h] = [bw, bh, w, h].map(|it| it as c_int);
+        // SAFETY: Pointers derived from valid slices above. pal_idx_finish_c is safe.
+        unsafe {
+            pal_idx_finish_c(dst, src, bw, bh, w, h);
+        }
+    }
+}
+
 impl pal_idx_finish::Fn {
     /// If `dst` is [`None`], `tmp` is used as `dst`.
     /// This is why `tmp` must be `&mut`, too.
@@ -27,17 +73,23 @@ impl pal_idx_finish::Fn {
         w: usize,
         h: usize,
     ) {
-        let dst = dst.map(|dst| &mut dst[..(bw / 2) * bh]);
-        let tmp = &mut tmp[..bw * bh];
-        // SAFETY: Note that `dst` and `src` may be the same.
-        // This is safe because they are raw ptrs for now,
-        // and in the fallback `fn pal_idx_finish_rust`, this is checked for
-        // before creating `&mut`s from them.
-        let dst = dst.unwrap_or(tmp).as_mut_ptr();
-        let src = tmp.as_ptr();
-        let [bw, bh, w, h] = [bw, bh, w, h].map(|it| it as c_int);
-        // SAFETY: Fallback `fn pal_idx_finish_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst, src, bw, bh, w, h) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst = dst.map(|dst| &mut dst[..(bw / 2) * bh]);
+                let tmp = &mut tmp[..bw * bh];
+                // SAFETY: Note that `dst` and `src` may be the same.
+                // This is safe because they are raw ptrs for now,
+                // and in the fallback `fn pal_idx_finish_rust`, this is checked for
+                // before creating `&mut`s from them.
+                let dst = dst.unwrap_or(tmp).as_mut_ptr();
+                let src = tmp.as_ptr();
+                let [bw, bh, w, h] = [bw, bh, w, h].map(|it| it as c_int);
+                // SAFETY: Fallback `fn pal_idx_finish_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst, src, bw, bh, w, h) }
+            } else {
+                pal_idx_finish_direct(dst, tmp, bw, bh, w, h)
+            }
+        }
     }
 }
 

@@ -185,6 +185,77 @@ wrap_fn_ptr!(pub(crate) unsafe extern "C" fn load_tmvs(
     _rp_ref: *const FFISafe<[Option<DisjointMutArcSlice<RefMvsTemporalBlock>>; 7]>,
 ) -> ());
 
+/// Direct dispatch for load_tmvs - bypasses function pointer table.
+/// No SIMD implementations exist; always calls scalar fallback.
+#[cfg(not(feature = "asm"))]
+fn load_tmvs_direct(
+    rf: &RefMvsFrame,
+    _rp: &Option<DisjointMutArcSlice<RefMvsTemporalBlock>>,
+    rp_ref: &[Option<DisjointMutArcSlice<RefMvsTemporalBlock>>; 7],
+    tile_row_idx: i32,
+    col_start8: i32,
+    col_end8: i32,
+    row_start8: i32,
+    row_end8: i32,
+) {
+    let RefMvsFrame {
+        iw4,
+        ih4,
+        iw8,
+        ih8,
+        sbsz,
+        use_ref_frame_mvs,
+        sign_bias,
+        mfmv_sign,
+        pocdiff,
+        mfmv_ref,
+        mfmv_ref2cur,
+        mfmv_ref2ref,
+        n_mfmvs,
+        n_blocks,
+        ref rp_proj,
+        rp_stride,
+        ref r,
+        n_tile_threads,
+        n_frame_threads,
+    } = *rf;
+    let rf_dav1d = AsmRefMvsFrame {
+        _lifetime: PhantomData,
+        _frm_hdr: ptr::null(),
+        iw4,
+        ih4,
+        iw8,
+        ih8,
+        sbsz,
+        use_ref_frame_mvs,
+        sign_bias,
+        mfmv_sign,
+        pocdiff,
+        mfmv_ref,
+        mfmv_ref2cur,
+        mfmv_ref2ref,
+        n_mfmvs,
+        n_blocks: n_blocks as _,
+        rp: ptr::null_mut(),
+        rp_ref: ptr::null(),
+        rp_proj: rp_proj.as_mut_ptr(),
+        rp_stride: rp_stride as _,
+        r: r.as_mut_ptr(),
+        n_tile_threads: n_tile_threads as _,
+        n_frame_threads: n_frame_threads as _,
+    };
+    load_tmvs_rust(
+        &rf_dav1d,
+        tile_row_idx,
+        col_start8,
+        col_end8,
+        row_start8,
+        row_end8,
+        &rf.rp_proj,
+        rp_ref,
+    );
+}
+
 impl load_tmvs::Fn {
     pub fn call(
         &self,
@@ -197,79 +268,86 @@ impl load_tmvs::Fn {
         row_start8: i32,
         row_end8: i32,
     ) {
-        let RefMvsFrame {
-            iw4,
-            ih4,
-            iw8,
-            ih8,
-            sbsz,
-            use_ref_frame_mvs,
-            sign_bias,
-            mfmv_sign,
-            pocdiff,
-            mfmv_ref,
-            mfmv_ref2cur,
-            mfmv_ref2ref,
-            n_mfmvs,
-            n_blocks,
-            ref rp_proj,
-            rp_stride,
-            ref r,
-            n_tile_threads,
-            n_frame_threads,
-        } = *rf;
-        fn mvs_to_dav1d(
-            mvs: &Option<DisjointMutArcSlice<RefMvsTemporalBlock>>,
-        ) -> *mut RefMvsTemporalBlock {
-            mvs.as_ref()
-                .map(|rp| rp.inner.as_mut_ptr())
-                .unwrap_or_else(ptr::null_mut)
-        }
-        let rp_ref_dav1d = rp_ref.each_ref().map(mvs_to_dav1d);
-        let rf_dav1d = AsmRefMvsFrame {
-            _lifetime: PhantomData,
-            _frm_hdr: ptr::null(), // never used
-            iw4,
-            ih4,
-            iw8,
-            ih8,
-            sbsz,
-            use_ref_frame_mvs,
-            sign_bias,
-            mfmv_sign,
-            pocdiff,
-            mfmv_ref,
-            mfmv_ref2cur,
-            mfmv_ref2ref,
-            n_mfmvs,
-            n_blocks: n_blocks as _,
-            rp: mvs_to_dav1d(rp),
-            rp_ref: rp_ref_dav1d.as_ptr(),
-            rp_proj: rp_proj.as_mut_ptr(),
-            rp_stride: rp_stride as _,
-            r: r.as_mut_ptr(),
-            n_tile_threads: n_tile_threads as _,
-            n_frame_threads: n_frame_threads as _,
-        };
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let RefMvsFrame {
+                    iw4,
+                    ih4,
+                    iw8,
+                    ih8,
+                    sbsz,
+                    use_ref_frame_mvs,
+                    sign_bias,
+                    mfmv_sign,
+                    pocdiff,
+                    mfmv_ref,
+                    mfmv_ref2cur,
+                    mfmv_ref2ref,
+                    n_mfmvs,
+                    n_blocks,
+                    ref rp_proj,
+                    rp_stride,
+                    ref r,
+                    n_tile_threads,
+                    n_frame_threads,
+                } = *rf;
+                fn mvs_to_dav1d(
+                    mvs: &Option<DisjointMutArcSlice<RefMvsTemporalBlock>>,
+                ) -> *mut RefMvsTemporalBlock {
+                    mvs.as_ref()
+                        .map(|rp| rp.inner.as_mut_ptr())
+                        .unwrap_or_else(ptr::null_mut)
+                }
+                let rp_ref_dav1d = rp_ref.each_ref().map(mvs_to_dav1d);
+                let rf_dav1d = AsmRefMvsFrame {
+                    _lifetime: PhantomData,
+                    _frm_hdr: ptr::null(), // never used
+                    iw4,
+                    ih4,
+                    iw8,
+                    ih8,
+                    sbsz,
+                    use_ref_frame_mvs,
+                    sign_bias,
+                    mfmv_sign,
+                    pocdiff,
+                    mfmv_ref,
+                    mfmv_ref2cur,
+                    mfmv_ref2ref,
+                    n_mfmvs,
+                    n_blocks: n_blocks as _,
+                    rp: mvs_to_dav1d(rp),
+                    rp_ref: rp_ref_dav1d.as_ptr(),
+                    rp_proj: rp_proj.as_mut_ptr(),
+                    rp_stride: rp_stride as _,
+                    r: r.as_mut_ptr(),
+                    n_tile_threads: n_tile_threads as _,
+                    n_frame_threads: n_frame_threads as _,
+                };
 
-        let rp_proj = FFISafe::new(&rf.rp_proj);
-        let rp_ref = FFISafe::new(rp_ref);
-        let rf = &rf_dav1d;
-        // SAFETY: Assembly call. Arguments are safe Rust references converted to
-        // pointers for use in assembly. For the Rust fallback function the extra args
-        // `rp_proj` and `rp_ref` are passed to allow for disjointedness checking.
-        unsafe {
-            self.get()(
-                rf,
-                tile_row_idx,
-                col_start8,
-                col_end8,
-                row_start8,
-                row_end8,
-                rp_proj,
-                rp_ref,
-            )
-        };
+                let rp_proj = FFISafe::new(&rf.rp_proj);
+                let rp_ref = FFISafe::new(rp_ref);
+                let rf = &rf_dav1d;
+                // SAFETY: Assembly call. Arguments are safe Rust references converted to
+                // pointers for use in assembly. For the Rust fallback function the extra args
+                // `rp_proj` and `rp_ref` are passed to allow for disjointedness checking.
+                unsafe {
+                    self.get()(
+                        rf,
+                        tile_row_idx,
+                        col_start8,
+                        col_end8,
+                        row_start8,
+                        row_end8,
+                        rp_proj,
+                        rp_ref,
+                    )
+                };
+            } else {
+                // Direct dispatch: no function pointers, no extern "C" ABI overhead
+                load_tmvs_direct(rf, rp, rp_ref, tile_row_idx, col_start8, col_end8, row_start8, row_end8)
+            }
+        }
     }
 }
 
@@ -286,6 +364,36 @@ wrap_fn_ptr!(pub unsafe extern "C" fn save_tmvs(
     _ri: &[usize; 31],
     _rp: *const FFISafe<DisjointMutArcSlice<RefMvsTemporalBlock>>,
 ) -> ());
+
+/// Direct dispatch for save_tmvs - bypasses function pointer table.
+/// No SIMD implementations exist; always calls scalar fallback.
+#[cfg(not(feature = "asm"))]
+fn save_tmvs_direct(
+    rt: &RefmvsTile,
+    rf: &RefMvsFrame,
+    rp: &DisjointMutArcSlice<RefMvsTemporalBlock>,
+    col_start8: i32,
+    col_end8: i32,
+    row_start8: i32,
+    row_end8: i32,
+) {
+    let row_end8 = cmp::min(row_end8, rf.ih8);
+    let col_end8 = cmp::min(col_end8, rf.iw8);
+    let stride = rf.rp_stride as usize;
+    let ref_sign = &rf.mfmv_sign;
+    let ri = <&[_; 31]>::try_from(&rt.r[6..]).unwrap();
+    save_tmvs_rust(
+        stride,
+        ref_sign,
+        col_end8 as usize,
+        row_end8 as usize,
+        col_start8 as usize,
+        row_start8 as usize,
+        &rf.r,
+        ri,
+        &rp.inner,
+    );
+}
 
 impl save_tmvs::Fn {
     // cache the current tile/sbrow (or frame/sbrow)'s projectable motion vectors
@@ -305,53 +413,60 @@ impl save_tmvs::Fn {
 
         let rp = &*rp.as_ref().unwrap();
 
-        let row_end8 = cmp::min(row_end8, rf.ih8);
-        let col_end8 = cmp::min(col_end8, rf.iw8);
-        let stride = rf.rp_stride as usize;
-        let ref_sign = &rf.mfmv_sign;
-        let ri = <&[_; 31]>::try_from(&rt.r[6..]).unwrap();
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let row_end8 = cmp::min(row_end8, rf.ih8);
+                let col_end8 = cmp::min(col_end8, rf.iw8);
+                let stride = rf.rp_stride as usize;
+                let ref_sign = &rf.mfmv_sign;
+                let ri = <&[_; 31]>::try_from(&rt.r[6..]).unwrap();
 
-        // SAFETY: Note that for asm calls, disjointedness is unchecked here,
-        // even with `#[cfg(debug_assertions)]`.  This is because the disjointedness
-        // is more fine-grained than the pointers passed to asm.
-        // For the Rust fallback fn, the extra args `&rf.r` and `ri`
-        // are passed to allow for disjointedness checking.
-        let rr = &ri.map(|ri| {
-            if ri > rf.r.len() - R_PAD {
-                return ptr::null();
+                // SAFETY: Note that for asm calls, disjointedness is unchecked here,
+                // even with `#[cfg(debug_assertions)]`.  This is because the disjointedness
+                // is more fine-grained than the pointers passed to asm.
+                // For the Rust fallback fn, the extra args `&rf.r` and `ri`
+                // are passed to allow for disjointedness checking.
+                let rr = &ri.map(|ri| {
+                    if ri > rf.r.len() - R_PAD {
+                        return ptr::null();
+                    }
+
+                    const _: () = assert!(mem::size_of::<RefMvsBlock>() * (1 + R_PAD) > 16);
+                    // SAFETY: `.add` is in-bounds; checked above.
+                    // Also note that asm may read 12-byte `refmvs_block`s in 16-byte chunks.
+                    // This is safe because we allocate `rf.r` with an extra `R_PAD` (1) elements.
+                    // These ptrs are only read, so these overlapping reads are safe
+                    // (only read is only checked in the fallback Rust `fn`).
+                    // Furthermore, this is provenance safe because
+                    // we derive the ptrs from `rf.r.as_mut_ptr()`,
+                    // as opposed to materializing intermediate references.
+                    unsafe { rf.r.as_mut_ptr().cast_const().add(ri) }
+                });
+
+                // SAFETY: Note that for asm calls, disjointedness is unchecked here,
+                // even with `#[cfg(debug_assertions)]`. This is because the disjointedness
+                // is more fine-grained than the pointers passed to asm.
+                // For the Rust fallback fn, the extra arg `rp`
+                // is passed to allow for disjointedness checking.
+                let rp_offset = row_start8 as usize * stride;
+                assert!(rp_offset <= rp.inner.len());
+                // SAFETY: `rp_offset` was just bounds checked.
+                let rp_ptr = unsafe { rp.inner.as_mut_ptr().add(rp_offset) };
+                let stride = stride as isize;
+                let r = FFISafe::new(&rf.r);
+                let rp = FFISafe::new(rp);
+                // SAFETY: Assembly call. Arguments are safe Rust references converted to
+                // pointers for use in assembly.
+                unsafe {
+                    self.get()(
+                        rp_ptr, stride, rr, ref_sign, col_end8, row_end8, col_start8, row_start8, r, ri, rp,
+                    )
+                };
+            } else {
+                // Direct dispatch: no function pointers, no extern "C" ABI overhead
+                save_tmvs_direct(rt, rf, rp, col_start8, col_end8, row_start8, row_end8)
             }
-
-            const _: () = assert!(mem::size_of::<RefMvsBlock>() * (1 + R_PAD) > 16);
-            // SAFETY: `.add` is in-bounds; checked above.
-            // Also note that asm may read 12-byte `refmvs_block`s in 16-byte chunks.
-            // This is safe because we allocate `rf.r` with an extra `R_PAD` (1) elements.
-            // These ptrs are only read, so these overlapping reads are safe
-            // (only read is only checked in the fallback Rust `fn`).
-            // Furthermore, this is provenance safe because
-            // we derive the ptrs from `rf.r.as_mut_ptr()`,
-            // as opposed to materializing intermediate references.
-            unsafe { rf.r.as_mut_ptr().cast_const().add(ri) }
-        });
-
-        // SAFETY: Note that for asm calls, disjointedness is unchecked here,
-        // even with `#[cfg(debug_assertions)]`. This is because the disjointedness
-        // is more fine-grained than the pointers passed to asm.
-        // For the Rust fallback fn, the extra arg `rp`
-        // is passed to allow for disjointedness checking.
-        let rp_offset = row_start8 as usize * stride;
-        assert!(rp_offset <= rp.inner.len());
-        // SAFETY: `rp_offset` was just bounds checked.
-        let rp_ptr = unsafe { rp.inner.as_mut_ptr().add(rp_offset) };
-        let stride = stride as isize;
-        let r = FFISafe::new(&rf.r);
-        let rp = FFISafe::new(rp);
-        // SAFETY: Assembly call. Arguments are safe Rust references converted to
-        // pointers for use in assembly.
-        unsafe {
-            self.get()(
-                rp_ptr, stride, rr, ref_sign, col_end8, row_end8, col_start8, row_start8, r, ri, rp,
-            )
-        };
+        }
     }
 }
 
@@ -362,6 +477,53 @@ wrap_fn_ptr!(pub unsafe extern "C" fn splat_mv(
     bw4: i32,
     bh4: i32,
 ) -> ());
+
+/// Direct dispatch for splat_mv - bypasses function pointer table.
+/// Has SIMD implementations: AVX2 (x86_64) and NEON (aarch64).
+#[cfg(not(feature = "asm"))]
+fn splat_mv_direct(
+    rr: *mut *mut RefMvsBlock,
+    rmv: &Align16<RefMvsBlock>,
+    bx4: i32,
+    bw4: i32,
+    bh4: i32,
+) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            // SAFETY: AVX2 verified by CpuFlags check. Pointers set up by caller.
+            unsafe {
+                crate::src::safe_simd::refmvs::splat_mv_avx2(rr, rmv, bx4, bw4, bh4);
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: NEON always available on aarch64. Pointers set up by caller.
+        unsafe {
+            crate::src::safe_simd::refmvs_arm::splat_mv_neon(rr, rmv, bx4, bw4, bh4);
+        }
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    {
+        let bh4 = bh4 as usize;
+        let bx4 = bx4 as usize;
+        let bw4 = bw4 as usize;
+        // SAFETY: Length set up by caller in `splat_mv::Fn::call`.
+        let rr = unsafe { slice::from_raw_parts_mut(rr, bh4) };
+        let rr = rr.into_iter().map(|&mut r| {
+            // SAFETY: Pointers set up by caller.
+            unsafe { slice::from_raw_parts_mut(r.add(bx4), bw4) }
+        });
+        splat_mv_rust(rr, rmv);
+    }
+}
 
 impl splat_mv::Fn {
     pub fn call(
@@ -422,10 +584,17 @@ impl splat_mv::Fn {
         let bw4 = bw4 as _;
         let bh4 = bh4 as _;
 
-        // SAFETY: Unsafe asm call. `rr` is `bh4` elements long,
-        // and each ptr in `rr` points to at least `bx4 + bw4` elements,
-        // which is what will be accessed in `splat_mv`.
-        unsafe { self.get()(rr, rmv, bx4, bw4, bh4) };
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                // SAFETY: Unsafe asm call. `rr` is `bh4` elements long,
+                // and each ptr in `rr` points to at least `bx4 + bw4` elements,
+                // which is what will be accessed in `splat_mv`.
+                unsafe { self.get()(rr, rmv, bx4, bw4, bh4) };
+            } else {
+                // Direct dispatch: no function pointers, no extern "C" ABI overhead
+                splat_mv_direct(rr, rmv, bx4, bw4, bh4);
+            }
+        }
 
         if mem::needs_drop::<Guard>() {
             for i in 0..len {
