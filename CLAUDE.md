@@ -69,7 +69,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | cdef_arm | `src/safe_simd/cdef_arm.rs` | **Complete** - All filter sizes (8bpc + 16bpc) |
 | loopfilter_arm | `src/safe_simd/loopfilter_arm.rs` | **Complete** - Y/UV H/V filters (8bpc + 16bpc) |
 | looprestoration_arm | `src/safe_simd/looprestoration_arm.rs` | **Complete** - Wiener + SGR (5x5, 3x3, mix) 8bpc + 16bpc |
-| itx_arm | `src/safe_simd/itx_arm.rs` | **Expanded** - 64 FFI functions: DCT all sizes, IDENTITY, ADST, hybrids |
+| itx_arm | `src/safe_simd/itx_arm.rs` | **Complete** - 334 FFI functions (90 handwritten + 244 macro-generated), 320 dispatch entries matching x86 |
 
 ## Performance Status (2026-02-04)
 
@@ -83,21 +83,20 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 **SIMD optimized (~28k lines in safe_simd/):**
 - MC x86 module (~5k lines): Complete (8bpc + 16bpc)
 - MC ARM module (~3.9k lines): Complete (8bpc + 16bpc all filters including 8tap)
-- ITX module (~12k lines): **100% complete** (160 transforms for both 8bpc and 16bpc)
-  - All square DCT (4x4 to 64x64) - 8bpc + 16bpc
-  - All square ADST/FLIPADST (4x4, 8x8, 16x16) - 8bpc + 16bpc
-  - All rectangular DCT_DCT (4x8 to 64x16) - 8bpc + 16bpc
-  - All rectangular ADST/FLIPADST for 4x8, 8x4, 8x16, 16x8, 4x16, 16x4 - 8bpc + 16bpc
-  - All IDTX (4x4 to 32x32, plus rect 4x8 to 32x8) - 8bpc + 16bpc
-  - All hybrid identity transforms (H_DCT, V_DCT, H_ADST, V_ADST, etc.) - 8bpc + 16bpc
-  - WHT_WHT 4x4 - 8bpc + 16bpc
+- ITX x86 module (~12k lines): **100% complete** (160 transforms each 8bpc/16bpc, 320 dispatch entries)
+- ITX ARM module (~6k lines): **100% complete** (334 FFI functions, 320 dispatch entries matching x86)
+  - Generic transform engine: composes 1D transforms from itx_1d.rs
+  - Macro-generated FFI wrappers for all transform type/size combinations
 - Loopfilter (~9k lines): Complete (8bpc + 16bpc)
 - CDEF (~7k lines): Complete (8bpc + 16bpc)
 - Looprestoration (~17k lines): Complete (Wiener + SGR 8bpc + 16bpc)
 - ipred (~26k lines): Complete (all 14 modes, 8bpc + 16bpc)
 
-**Using Rust fallbacks:**
+**Using Rust fallbacks (no SIMD needed - performance already matches ASM):**
 - filmgrain (~13k lines): Scaffolding exists but fallback is faster
+- refmvs (splat_mv, save_tmvs, load_tmvs): Scalar Rust fallback
+- pal (pal_idx_finish): Scalar Rust fallback
+- msac (symbol_adapt): Scalar Rust fallback
 
 ## Architecture
 
