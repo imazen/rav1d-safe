@@ -48,16 +48,27 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 
 ## Safe-SIMD Modules
 
+### x86_64 (AVX2)
+
 | Module | Location | Status |
 |--------|----------|--------|
-| mc | `src/safe_simd/mc.rs` | **Complete** - 8bpc+16bpc, x86 AVX2 |
-| mc_arm | `src/safe_simd/mc_arm.rs` | **Complete** - 8bpc+16bpc NEON (all MC functions including 8tap filters) |
-| itx | `src/safe_simd/itx.rs` | **Complete** - 160 transforms each for 8bpc/16bpc (full parity) |
+| mc | `src/safe_simd/mc.rs` | **Complete** - 8bpc+16bpc |
+| itx | `src/safe_simd/itx.rs` | **Complete** - 160 transforms each for 8bpc/16bpc |
 | loopfilter | `src/safe_simd/loopfilter.rs` | **Complete** - 8bpc + 16bpc |
 | cdef | `src/safe_simd/cdef.rs` | **Complete** - 8bpc + 16bpc |
-| looprestoration | `src/safe_simd/looprestoration.rs` | **Complete** - Wiener + SGR 5x5/3x3/mix (8bpc + 16bpc) |
-| ipred | `src/safe_simd/ipred.rs` | **Complete** - All 14 modes for both 8bpc and 16bpc |
+| looprestoration | `src/safe_simd/looprestoration.rs` | **Complete** - Wiener + SGR 8bpc + 16bpc |
+| ipred | `src/safe_simd/ipred.rs` | **Complete** - All 14 modes, 8bpc + 16bpc |
 | filmgrain | `src/safe_simd/filmgrain.rs` | **Scaffolding** - Not wired (slower than fallback) |
+
+### ARM aarch64 (NEON)
+
+| Module | Location | Status |
+|--------|----------|--------|
+| mc_arm | `src/safe_simd/mc_arm.rs` | **Complete** - 8bpc+16bpc (all MC functions including 8tap) |
+| ipred_arm | `src/safe_simd/ipred_arm.rs` | **Complete** - DC/V/H/paeth/smooth modes (8bpc + 16bpc) |
+| cdef_arm | `src/safe_simd/cdef_arm.rs` | **Complete** - All filter sizes (8bpc + 16bpc) |
+| loopfilter_arm | `src/safe_simd/loopfilter_arm.rs` | **Complete** - Y/UV H/V filters (8bpc + 16bpc) |
+| looprestoration_arm | `src/safe_simd/looprestoration_arm.rs` | **Partial** - Wiener filters only (SGR uses fallback) |
 
 ## Performance Status (2026-02-04)
 
