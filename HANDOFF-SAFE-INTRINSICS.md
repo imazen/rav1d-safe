@@ -3,16 +3,26 @@
 ## Progress (2026-02-04)
 
 ### Completed
-- **pal.rs**: Fully refactored with `#[arcane]` + `safe_unaligned_simd` + `partial_simd`
+- **pal.rs** (x86_64): Fully refactored with `#[arcane]` + `safe_unaligned_simd` + `partial_simd`
   - Inner function: **ZERO** unsafe blocks
   - FFI wrapper: 3 unavoidable unsafe blocks (pointer-to-slice, token forge)
   - Verified via `cargo asm`: same instructions (vmovdqu, vmovq, vpmaddubsw, etc.)
   - No performance regression
 
-- **partial_simd module**: Safe wrappers for 64-bit load/store
-  - Fills gap in safe_unaligned_simd
+- **mc_arm.rs** (aarch64): Fully refactored with `#[arcane]` + `partial_simd`
+  - **ZERO** non-FFI unsafe blocks (down from 39)
+  - Only 8 unavoidable `forge_token_dangerously()` in FFI wrappers
+  - All NEON memory ops converted to partial_simd safe wrappers
+  - ARM cross-compilation verified
+
+- **partial_simd module**: Safe wrappers for 64-bit and 128-bit NEON load/store
+  - Fills gap in safe_unaligned_simd (which lacks aarch64 support)
+  - x86_64: `mm_loadl_epi64`, `mm_storel_epi64` for 64-bit SSE ops
+  - aarch64: Full NEON coverage including:
+    - 64-bit: `vld1_u8`, `vld1_u16`, `vld1_s16`, `vld1_s32`, `vld1_u32`, `vld1_u64` + stores
+    - 128-bit: `vld1q_u8`, `vld1q_u16`, `vld1q_s16`, `vld1q_s32`, `vld1q_u32`, `vld1q_u64` + stores
   - Uses sealed trait pattern for type safety
-  - Zero overhead (vmovq instructions)
+  - Zero overhead verified
 
 ### Findings for archmage
 
@@ -117,10 +127,16 @@ pub unsafe extern "C" fn my_func(dst: *mut u8, src: *const u8, w: i32) {
 
 ### Phase 2: ARM NEON Modules
 
-Same pattern, using `Arm64` token and `safe_unaligned_simd::aarch64`.
+Same pattern, using `Arm64` token and `partial_simd` (since safe_unaligned_simd lacks aarch64 support).
 
-Note: mc_arm.rs already has `#[arcane]` but still uses `unsafe {}` blocks.
-These could be refactored to use safe_unaligned_simd.
+1. ~~**mc_arm.rs** (~4k lines)~~ ✅ DONE - Zero non-FFI unsafe blocks
+2. **ipred_arm.rs** (~2k lines) - Next priority
+3. **cdef_arm.rs** (~800 lines)
+4. **loopfilter_arm.rs** (~1k lines)
+5. **looprestoration_arm.rs** (~2k lines)
+6. **itx_arm.rs** (~6k lines)
+7. **filmgrain_arm.rs** (~750 lines)
+8. **refmvs_arm.rs** (~50 lines)
 
 ## Token Mapping
 
@@ -153,4 +169,5 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 3. **Use `forge_token_dangerously()`** in FFI wrappers - we know features are available because dispatch already checked
 4. **Benchmark after each module** to ensure no performance regression
 5. **Commit incrementally** - one module at a time
-6. **Partial 64-bit ops still need unsafe** - `_mm_loadl_epi64`, `_mm_storel_epi64` lack safe wrappers
+6. ~~**Partial 64-bit ops still need unsafe**~~ SOLVED: `partial_simd` module provides safe wrappers
+7. **safe_unaligned_simd lacks aarch64 support** - Use `partial_simd` for all NEON memory ops
