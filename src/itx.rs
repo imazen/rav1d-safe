@@ -1355,13 +1355,37 @@ impl Rav1dInvTxfmDSPContext {
         self.itxfm_add[tx_16x16][FLIPADST_ADST as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_16x16_16bpc_avx2);
 
-        // IDTX (identity) transforms 16bpc
+        // IDTX (identity) transforms 16bpc - square
         self.itxfm_add[tx_4x4][IDTX as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x4_16bpc_avx2);
         self.itxfm_add[tx_8x8][IDTX as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x8_16bpc_avx2);
         self.itxfm_add[tx_16x16][IDTX as usize] =
             itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x16_16bpc_avx2);
+        self.itxfm_add[tx_32x32][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x32_16bpc_avx2);
+
+        // IDTX (identity) transforms 16bpc - rectangular
+        self.itxfm_add[tx_4x8][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x8_16bpc_avx2);
+        self.itxfm_add[tx_8x4][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x4_16bpc_avx2);
+        self.itxfm_add[tx_8x16][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x16_16bpc_avx2);
+        self.itxfm_add[tx_16x8][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x8_16bpc_avx2);
+        self.itxfm_add[tx_4x16][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x16_16bpc_avx2);
+        self.itxfm_add[tx_16x4][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x4_16bpc_avx2);
+        self.itxfm_add[tx_16x32][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x32_16bpc_avx2);
+        self.itxfm_add[tx_32x16][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x16_16bpc_avx2);
+        self.itxfm_add[tx_8x32][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x32_16bpc_avx2);
+        self.itxfm_add[tx_32x8][IDTX as usize] =
+            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x8_16bpc_avx2);
 
         self
     }
