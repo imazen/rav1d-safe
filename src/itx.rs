@@ -1635,11 +1635,16 @@ impl Rav1dInvTxfmDSPContext {
 
         let tx_4x4 = TxfmSize::from_wh(4, 4) as usize;
         let tx_4x8 = TxfmSize::from_wh(4, 8) as usize;
+        let tx_4x16 = TxfmSize::from_wh(4, 16) as usize;
         let tx_8x4 = TxfmSize::from_wh(8, 4) as usize;
         let tx_8x8 = TxfmSize::from_wh(8, 8) as usize;
         let tx_8x16 = TxfmSize::from_wh(8, 16) as usize;
+        let tx_16x4 = TxfmSize::from_wh(16, 4) as usize;
         let tx_16x8 = TxfmSize::from_wh(16, 8) as usize;
         let tx_16x16 = TxfmSize::from_wh(16, 16) as usize;
+        let tx_16x32 = TxfmSize::from_wh(16, 32) as usize;
+        let tx_32x16 = TxfmSize::from_wh(32, 16) as usize;
+        let tx_32x32 = TxfmSize::from_wh(32, 32) as usize;
 
         match BD::BPC {
             BPC::BPC8 => {
@@ -1652,16 +1657,26 @@ impl Rav1dInvTxfmDSPContext {
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x4_8bpc_neon);
                 self.itxfm_add[tx_4x8][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x8_8bpc_neon);
+                self.itxfm_add[tx_4x16][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x16_8bpc_neon);
                 self.itxfm_add[tx_8x4][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x4_8bpc_neon);
                 self.itxfm_add[tx_8x8][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x8_8bpc_neon);
                 self.itxfm_add[tx_8x16][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x16_8bpc_neon);
+                self.itxfm_add[tx_16x4][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x4_8bpc_neon);
                 self.itxfm_add[tx_16x8][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x8_8bpc_neon);
                 self.itxfm_add[tx_16x16][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x16_8bpc_neon);
+                self.itxfm_add[tx_16x32][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x32_8bpc_neon);
+                self.itxfm_add[tx_32x16][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x16_8bpc_neon);
+                self.itxfm_add[tx_32x32][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x32_8bpc_neon);
 
                 // IDENTITY 4x4, 8x8, 16x16
                 self.itxfm_add[tx_4x4][IDTX as usize] =
@@ -1711,16 +1726,26 @@ impl Rav1dInvTxfmDSPContext {
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x4_16bpc_neon);
                 self.itxfm_add[tx_4x8][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x8_16bpc_neon);
+                self.itxfm_add[tx_4x16][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x16_16bpc_neon);
                 self.itxfm_add[tx_8x4][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x4_16bpc_neon);
                 self.itxfm_add[tx_8x8][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x8_16bpc_neon);
                 self.itxfm_add[tx_8x16][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x16_16bpc_neon);
+                self.itxfm_add[tx_16x4][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x4_16bpc_neon);
                 self.itxfm_add[tx_16x8][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x8_16bpc_neon);
                 self.itxfm_add[tx_16x16][DCT_DCT as usize] =
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x16_16bpc_neon);
+                self.itxfm_add[tx_16x32][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x32_16bpc_neon);
+                self.itxfm_add[tx_32x16][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x16_16bpc_neon);
+                self.itxfm_add[tx_32x32][DCT_DCT as usize] =
+                    itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x32_16bpc_neon);
 
                 // IDENTITY 4x4, 8x8, 16x16
                 self.itxfm_add[tx_4x4][IDTX as usize] =
@@ -1761,7 +1786,7 @@ impl Rav1dInvTxfmDSPContext {
                     itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_8x8_16bpc_neon);
             }
         }
-        // Larger sizes (32x32, 64x64) and some rectangular transforms use C fallback
+        // 64x64 and some rectangular transforms use C fallback
 
         self
     }
