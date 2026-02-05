@@ -3,11 +3,16 @@
 ## Progress (2026-02-04)
 
 ### Completed
-- **pal.rs**: Fully refactored with `#[arcane]` and `safe_unaligned_simd`
-  - Reduced from implicit unsafe (whole function) to 5 explicit unsafe blocks
-  - Only 2 in inner function (for partial 64-bit ops lacking safe wrappers)
-  - Verified via `cargo asm`: same instructions (vmovdqu, vpmaddubsw, etc.)
+- **pal.rs**: Fully refactored with `#[arcane]` + `safe_unaligned_simd` + `partial_simd`
+  - Inner function: **ZERO** unsafe blocks
+  - FFI wrapper: 3 unavoidable unsafe blocks (pointer-to-slice, token forge)
+  - Verified via `cargo asm`: same instructions (vmovdqu, vmovq, vpmaddubsw, etc.)
   - No performance regression
+
+- **partial_simd module**: Safe wrappers for 64-bit load/store
+  - Fills gap in safe_unaligned_simd
+  - Uses sealed trait pattern for type safety
+  - Zero overhead (vmovq instructions)
 
 ### Findings for archmage
 
@@ -17,10 +22,13 @@
 2. **Slice-to-array conversion has no overhead**:
    `slice[..32].try_into().unwrap()` optimizes away in release builds
 
-3. **Missing safe wrappers** for partial ops:
-   - `_mm_loadl_epi64` (64-bit load) - no `Is64BitsUnaligned` trait
-   - `_mm_storel_epi64` (64-bit store) - no safe wrapper
-   - Consider adding these to safe_unaligned_simd
+3. **SOLVED: Created `partial_simd` module** for 64-bit operations:
+   - `mm_loadl_epi64(&[u8; 8])` → `vmovq` load
+   - `mm_storel_epi64(&mut [u8; 8], val)` → `vmovq` store
+   - Uses `Is64BitsUnaligned` sealed trait pattern
+   - Safe functions with `#[target_feature]` - callable from `#[arcane]` without `unsafe`
+   - Zero overhead verified via `cargo asm`
+   - Pattern could be upstreamed to safe_unaligned_simd
 
 ## Ultimate Goal
 
