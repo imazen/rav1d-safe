@@ -3579,22 +3579,33 @@ impl Rav1dLoopRestorationDSPContext {
         use crate::include::common::bitdepth::BPC;
         use crate::src::safe_simd::looprestoration_arm as safe_lr;
 
-        // Wire up Wiener filters - SGR uses fallback
+        // Wire up Wiener and SGR filters
         match BD::BPC {
             BPC::BPC8 => {
                 self.wiener[0] =
                     loop_restoration_filter::Fn::new(safe_lr::wiener_filter7_8bpc_neon);
                 self.wiener[1] =
                     loop_restoration_filter::Fn::new(safe_lr::wiener_filter5_8bpc_neon);
+                self.sgr[0] =
+                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_5x5_8bpc_neon);
+                self.sgr[1] =
+                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_3x3_8bpc_neon);
+                self.sgr[2] =
+                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_mix_8bpc_neon);
             }
             BPC::BPC16 => {
                 self.wiener[0] =
                     loop_restoration_filter::Fn::new(safe_lr::wiener_filter7_16bpc_neon);
                 self.wiener[1] =
                     loop_restoration_filter::Fn::new(safe_lr::wiener_filter5_16bpc_neon);
+                self.sgr[0] =
+                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_5x5_16bpc_neon);
+                self.sgr[1] =
+                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_3x3_16bpc_neon);
+                self.sgr[2] =
+                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_mix_16bpc_neon);
             }
         }
-        // SGR filters use the default C fallback
 
         self
     }

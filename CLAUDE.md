@@ -68,8 +68,8 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | ipred_arm | `src/safe_simd/ipred_arm.rs` | **Complete** - DC/V/H/paeth/smooth modes (8bpc + 16bpc) |
 | cdef_arm | `src/safe_simd/cdef_arm.rs` | **Complete** - All filter sizes (8bpc + 16bpc) |
 | loopfilter_arm | `src/safe_simd/loopfilter_arm.rs` | **Complete** - Y/UV H/V filters (8bpc + 16bpc) |
-| looprestoration_arm | `src/safe_simd/looprestoration_arm.rs` | **Partial** - Wiener filters only (SGR uses fallback) |
-| itx_arm | `src/safe_simd/itx_arm.rs` | **Partial** - WHT/DCT 4x4 only, other sizes use fallback |
+| looprestoration_arm | `src/safe_simd/looprestoration_arm.rs` | **Complete** - Wiener + SGR (5x5, 3x3, mix) 8bpc + 16bpc |
+| itx_arm | `src/safe_simd/itx_arm.rs` | **Expanded** - 64 FFI functions: DCT all sizes, IDENTITY, ADST, hybrids |
 
 ## Performance Status (2026-02-04)
 
