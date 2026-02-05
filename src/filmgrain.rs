@@ -1407,6 +1407,50 @@ impl Rav1dFilmGrainDSPContext {
         self
     }
 
+    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+    #[inline(always)]
+    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
+        use crate::include::common::bitdepth::BPC;
+        use crate::src::safe_simd::filmgrain_arm as safe_fg;
+
+        match BD::BPC {
+            BPC::BPC8 => {
+                self.generate_grain_y =
+                    generate_grain_y::Fn::new(safe_fg::generate_grain_y_8bpc_neon);
+                self.generate_grain_uv = enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
+                    I420 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_420_8bpc_neon),
+                    I422 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_422_8bpc_neon),
+                    I444 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_444_8bpc_neon),
+                });
+                self.fgy_32x32xn =
+                    fgy_32x32xn::Fn::new(safe_fg::fgy_32x32xn_8bpc_neon);
+                self.fguv_32x32xn = enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
+                    I420 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i420_8bpc_neon),
+                    I422 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i422_8bpc_neon),
+                    I444 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i444_8bpc_neon),
+                });
+            }
+            BPC::BPC16 => {
+                self.generate_grain_y =
+                    generate_grain_y::Fn::new(safe_fg::generate_grain_y_16bpc_neon);
+                self.generate_grain_uv = enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
+                    I420 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_420_16bpc_neon),
+                    I422 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_422_16bpc_neon),
+                    I444 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_444_16bpc_neon),
+                });
+                self.fgy_32x32xn =
+                    fgy_32x32xn::Fn::new(safe_fg::fgy_32x32xn_16bpc_neon);
+                self.fguv_32x32xn = enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
+                    I420 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i420_16bpc_neon),
+                    I422 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i422_16bpc_neon),
+                    I444 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i444_16bpc_neon),
+                });
+            }
+        }
+
+        self
+    }
+
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -1426,6 +1470,10 @@ impl Rav1dFilmGrainDSPContext {
             #[cfg(target_arch = "x86_64")]
             {
                 return self.init_x86_safe_simd::<BD>(flags);
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                return self.init_arm_safe_simd::<BD>(flags);
             }
         }
 

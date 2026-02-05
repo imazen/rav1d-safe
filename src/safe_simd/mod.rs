@@ -48,6 +48,12 @@ pub mod pal;
 #[cfg(target_arch = "x86_64")]
 pub mod refmvs;
 
+#[cfg(target_arch = "aarch64")]
+pub mod filmgrain_arm;
+
+#[cfg(target_arch = "aarch64")]
+pub mod refmvs_arm;
+
 // Re-export x86 implementations
 pub use mc::*;
 

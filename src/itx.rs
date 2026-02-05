@@ -1635,10 +1635,10 @@ impl Rav1dInvTxfmDSPContext {
 
         // Helper macro: assign a single ITX function to the dispatch table
         macro_rules! a {
-            ($w:literal, $h:literal, $type_name:ident, $type_enum:ident, $bpc:ident) => {
+            ($w:literal, $h:literal, $type_name:ident, $type_enum:ident, $bpc:literal) => {
                 paste::paste! {
                     self.itxfm_add[TxfmSize::from_wh($w, $h) as usize][$type_enum as usize] =
-                        itxfm::Fn::new(safe_itx::[<inv_txfm_add_ $type_name _ $w x $h _ $bpc _neon>]);
+                        itxfm::Fn::new(safe_itx::[<inv_txfm_add_ $type_name _ $w x $h _ $bpc bpc_neon>]);
                 }
             };
         }
@@ -1646,7 +1646,7 @@ impl Rav1dInvTxfmDSPContext {
         // itx16: 16 transform types (DCT_DCT + IDTX + 10 hybrids + 4 identity hybrids)
         // Used for sizes 4x4, 8x8, 16x16 where all types are valid
         macro_rules! itx16 {
-            ($w:literal, $h:literal, $bpc:ident) => {
+            ($w:literal, $h:literal, $bpc:literal) => {
                 a!($w, $h, dct_dct, DCT_DCT, $bpc);
                 a!($w, $h, identity_identity, IDTX, $bpc);
                 a!($w, $h, adst_dct, DCT_ADST, $bpc);
@@ -1669,7 +1669,7 @@ impl Rav1dInvTxfmDSPContext {
         // itx12: 12 transform types (DCT_DCT + IDTX + 10 hybrids, no identity hybrids)
         // Used for rectangular sizes (4x8, 8x4, 4x16, etc.)
         macro_rules! itx12 {
-            ($w:literal, $h:literal, $bpc:ident) => {
+            ($w:literal, $h:literal, $bpc:literal) => {
                 a!($w, $h, dct_dct, DCT_DCT, $bpc);
                 a!($w, $h, identity_identity, IDTX, $bpc);
                 a!($w, $h, adst_dct, DCT_ADST, $bpc);
@@ -1687,7 +1687,7 @@ impl Rav1dInvTxfmDSPContext {
 
         // itx2: DCT_DCT + IDTX only (large rectangular sizes)
         macro_rules! itx2 {
-            ($w:literal, $h:literal, $bpc:ident) => {
+            ($w:literal, $h:literal, $bpc:literal) => {
                 a!($w, $h, dct_dct, DCT_DCT, $bpc);
                 a!($w, $h, identity_identity, IDTX, $bpc);
             };
@@ -1695,64 +1695,64 @@ impl Rav1dInvTxfmDSPContext {
 
         match BD::BPC {
             BPC::BPC8 => {
-                a!(4, 4, wht_wht, WHT_WHT, 8bpc);
+                a!(4, 4, wht_wht, WHT_WHT, 8);
 
                 // Square sizes: full 16 transform types
-                itx16!(4, 4, 8bpc);
-                itx16!(8, 8, 8bpc);
-                itx16!(16, 16, 8bpc);
+                itx16!(4, 4, 8);
+                itx16!(8, 8, 8);
+                itx16!(16, 16, 8);
 
                 // Rectangular sizes: all 16 transform types
-                itx16!(4, 8, 8bpc);
-                itx16!(8, 4, 8bpc);
-                itx16!(4, 16, 8bpc);
-                itx16!(16, 4, 8bpc);
-                itx16!(8, 16, 8bpc);
-                itx16!(16, 8, 8bpc);
+                itx16!(4, 8, 8);
+                itx16!(8, 4, 8);
+                itx16!(4, 16, 8);
+                itx16!(16, 4, 8);
+                itx16!(8, 16, 8);
+                itx16!(16, 8, 8);
 
                 // Large rectangular: DCT_DCT + IDTX
-                itx2!(8, 32, 8bpc);
-                itx2!(32, 8, 8bpc);
-                itx2!(16, 32, 8bpc);
-                itx2!(32, 16, 8bpc);
-                itx2!(32, 32, 8bpc);
+                itx2!(8, 32, 8);
+                itx2!(32, 8, 8);
+                itx2!(16, 32, 8);
+                itx2!(32, 16, 8);
+                itx2!(32, 32, 8);
 
                 // DCT-only large sizes
-                a!(32, 64, dct_dct, DCT_DCT, 8bpc);
-                a!(64, 32, dct_dct, DCT_DCT, 8bpc);
-                a!(64, 64, dct_dct, DCT_DCT, 8bpc);
-                a!(16, 64, dct_dct, DCT_DCT, 8bpc);
-                a!(64, 16, dct_dct, DCT_DCT, 8bpc);
+                a!(32, 64, dct_dct, DCT_DCT, 8);
+                a!(64, 32, dct_dct, DCT_DCT, 8);
+                a!(64, 64, dct_dct, DCT_DCT, 8);
+                a!(16, 64, dct_dct, DCT_DCT, 8);
+                a!(64, 16, dct_dct, DCT_DCT, 8);
             }
             BPC::BPC16 => {
-                a!(4, 4, wht_wht, WHT_WHT, 16bpc);
+                a!(4, 4, wht_wht, WHT_WHT, 16);
 
                 // Square sizes: full 16 transform types
-                itx16!(4, 4, 16bpc);
-                itx16!(8, 8, 16bpc);
-                itx16!(16, 16, 16bpc);
+                itx16!(4, 4, 16);
+                itx16!(8, 8, 16);
+                itx16!(16, 16, 16);
 
                 // Rectangular sizes: all 16 transform types
-                itx16!(4, 8, 16bpc);
-                itx16!(8, 4, 16bpc);
-                itx16!(4, 16, 16bpc);
-                itx16!(16, 4, 16bpc);
-                itx16!(8, 16, 16bpc);
-                itx16!(16, 8, 16bpc);
+                itx16!(4, 8, 16);
+                itx16!(8, 4, 16);
+                itx16!(4, 16, 16);
+                itx16!(16, 4, 16);
+                itx16!(8, 16, 16);
+                itx16!(16, 8, 16);
 
                 // Large rectangular: DCT_DCT + IDTX
-                itx2!(8, 32, 16bpc);
-                itx2!(32, 8, 16bpc);
-                itx2!(16, 32, 16bpc);
-                itx2!(32, 16, 16bpc);
-                itx2!(32, 32, 16bpc);
+                itx2!(8, 32, 16);
+                itx2!(32, 8, 16);
+                itx2!(16, 32, 16);
+                itx2!(32, 16, 16);
+                itx2!(32, 32, 16);
 
                 // DCT-only large sizes
-                a!(32, 64, dct_dct, DCT_DCT, 16bpc);
-                a!(64, 32, dct_dct, DCT_DCT, 16bpc);
-                a!(64, 64, dct_dct, DCT_DCT, 16bpc);
-                a!(16, 64, dct_dct, DCT_DCT, 16bpc);
-                a!(64, 16, dct_dct, DCT_DCT, 16bpc);
+                a!(32, 64, dct_dct, DCT_DCT, 16);
+                a!(64, 32, dct_dct, DCT_DCT, 16);
+                a!(64, 64, dct_dct, DCT_DCT, 16);
+                a!(16, 64, dct_dct, DCT_DCT, 16);
+                a!(64, 16, dct_dct, DCT_DCT, 16);
             }
         }
 
