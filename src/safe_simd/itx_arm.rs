@@ -5181,3 +5181,454 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_neon(
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) { inv_txfm_add_dct_dct_64x16_16bpc_inner(dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max); }
+
+// ============================================================================
+// GENERIC TRANSFORM ENGINE
+// ============================================================================
+//
+// Instead of writing 234 individual inner functions for every (row_tx, col_tx, WxH, bpc)
+// combination, we use the existing 1D transform functions from itx_1d.rs and compose them
+// generically, exactly like the C fallback does.
+
+use std::num::NonZeroUsize;
+use std::cmp;
+use crate::src::itx_1d::*;
+
+type Itx1dFn = fn(&mut [i32], NonZeroUsize, i32, i32);
+
+/// Generic 8bpc inverse transform: apply row_fn across rows, then col_fn down columns,
+/// then add residuals to dst pixels.
+unsafe fn inv_txfm_add_generic_8bpc(
+    dst: *mut u8, dst_stride: isize, coeff: *mut i16, eob: i32, _bitdepth_max: i32,
+    w: usize, h: usize, shift: u8,
+    row_fn: Itx1dFn, col_fn: Itx1dFn,
+    has_dc_only: bool,
+) {
+    let is_rect2 = w * 2 == h || h * 2 == w;
+    let rnd = if shift > 0 { 1i32 << (shift - 1) } else { 0 };
+
+    // DC-only fast path
+    if eob < has_dc_only as i32 {
+        let mut dc = unsafe { *coeff as i32 };
+        unsafe { *coeff = 0; }
+        if is_rect2 { dc = (dc * 181 + 128) >> 8; }
+        dc = (dc * 181 + 128) >> 8;
+        dc = (dc + rnd) >> shift;
+        dc = (dc * 181 + 128 + 2048) >> 12;
+        for y in 0..h {
+            let row = unsafe { dst.offset(y as isize * dst_stride) };
+            for x in 0..w {
+                let p = unsafe { *row.add(x) } as i32 + dc;
+                unsafe { *row.add(x) = p.max(0).min(255) as u8; }
+            }
+        }
+        return;
+    }
+
+    let sh = cmp::min(h, 32);
+    let sw = cmp::min(w, 32);
+
+    let row_clip_min = i16::MIN as i32;
+    let row_clip_max = i16::MAX as i32;
+    let col_clip_min = i16::MIN as i32;
+    let col_clip_max = i16::MAX as i32;
+
+    let mut tmp = [0i32; 64 * 64];
+
+    // Row transforms
+    for y in 0..sh {
+        if is_rect2 {
+            for x in 0..sw {
+                tmp[y * w + x] = (unsafe { *coeff.add(y + x * sh) } as i32 * 181 + 128) >> 8;
+            }
+        } else {
+            for x in 0..sw {
+                tmp[y * w + x] = unsafe { *coeff.add(y + x * sh) } as i32;
+            }
+        }
+        row_fn(&mut tmp[y * w..], 1.try_into().unwrap(), row_clip_min, row_clip_max);
+    }
+
+    // Clear coefficients
+    for i in 0..(sh * sw) { unsafe { *coeff.add(i) = 0; } }
+
+    // Apply shift + clip
+    for i in 0..(w * sh) {
+        tmp[i] = iclip((tmp[i] + rnd) >> shift, col_clip_min, col_clip_max);
+    }
+
+    // Column transforms
+    for x in 0..w {
+        col_fn(&mut tmp[x..], w.try_into().unwrap(), col_clip_min, col_clip_max);
+    }
+
+    // Add to dst
+    for y in 0..h {
+        let row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..w {
+            let p = unsafe { *row.add(x) } as i32 + ((tmp[y * w + x] + 8) >> 4);
+            unsafe { *row.add(x) = p.max(0).min(255) as u8; }
+        }
+    }
+}
+
+/// Generic 16bpc inverse transform
+unsafe fn inv_txfm_add_generic_16bpc(
+    dst: *mut u16, dst_stride: isize, coeff: *mut i32, eob: i32, bitdepth_max: i32,
+    w: usize, h: usize, shift: u8,
+    row_fn: Itx1dFn, col_fn: Itx1dFn,
+    has_dc_only: bool,
+) {
+    let is_rect2 = w * 2 == h || h * 2 == w;
+    let rnd = if shift > 0 { 1i32 << (shift - 1) } else { 0 };
+
+    // DC-only fast path
+    if eob < has_dc_only as i32 {
+        let mut dc = unsafe { *coeff };
+        unsafe { *coeff = 0; }
+        if is_rect2 { dc = (dc * 181 + 128) >> 8; }
+        dc = (dc * 181 + 128) >> 8;
+        dc = (dc + rnd) >> shift;
+        dc = (dc * 181 + 128 + 2048) >> 12;
+        for y in 0..h {
+            let row = unsafe { dst.offset(y as isize * dst_stride) };
+            for x in 0..w {
+                let p = unsafe { *row.add(x) } as i32 + dc;
+                unsafe { *row.add(x) = p.max(0).min(bitdepth_max) as u16; }
+            }
+        }
+        return;
+    }
+
+    let sh = cmp::min(h, 32);
+    let sw = cmp::min(w, 32);
+
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
+
+    let mut tmp = [0i32; 64 * 64];
+
+    // Row transforms
+    for y in 0..sh {
+        if is_rect2 {
+            for x in 0..sw {
+                tmp[y * w + x] = (unsafe { *coeff.add(y + x * sh) } * 181 + 128) >> 8;
+            }
+        } else {
+            for x in 0..sw {
+                tmp[y * w + x] = unsafe { *coeff.add(y + x * sh) };
+            }
+        }
+        row_fn(&mut tmp[y * w..], 1.try_into().unwrap(), row_clip_min, row_clip_max);
+    }
+
+    // Clear coefficients
+    for i in 0..(sh * sw) { unsafe { *coeff.add(i) = 0; } }
+
+    // Apply shift + clip
+    for i in 0..(w * sh) {
+        tmp[i] = iclip((tmp[i] + rnd) >> shift, col_clip_min, col_clip_max);
+    }
+
+    // Column transforms
+    for x in 0..w {
+        col_fn(&mut tmp[x..], w.try_into().unwrap(), col_clip_min, col_clip_max);
+    }
+
+    // Add to dst
+    for y in 0..h {
+        let row = unsafe { dst.offset(y as isize * dst_stride) };
+        for x in 0..w {
+            let p = unsafe { *row.add(x) } as i32 + ((tmp[y * w + x] + 8) >> 4);
+            unsafe { *row.add(x) = p.max(0).min(bitdepth_max) as u16; }
+        }
+    }
+}
+
+/// Resolve a 1D transform function by type and size
+fn resolve_1d(txfm: &str, n: usize) -> Itx1dFn {
+    match (txfm, n) {
+        ("dct", 4) => rav1d_inv_dct4_1d_c,
+        ("dct", 8) => rav1d_inv_dct8_1d_c,
+        ("dct", 16) => rav1d_inv_dct16_1d_c,
+        ("dct", 32) => rav1d_inv_dct32_1d_c,
+        ("dct", 64) => rav1d_inv_dct64_1d_c,
+        ("adst", 4) => rav1d_inv_adst4_1d_c,
+        ("adst", 8) => rav1d_inv_adst8_1d_c,
+        ("adst", 16) => rav1d_inv_adst16_1d_c,
+        ("flipadst", 4) => rav1d_inv_flipadst4_1d_c,
+        ("flipadst", 8) => rav1d_inv_flipadst8_1d_c,
+        ("flipadst", 16) => rav1d_inv_flipadst16_1d_c,
+        ("identity", 4) => rav1d_inv_identity4_1d_c,
+        ("identity", 8) => rav1d_inv_identity8_1d_c,
+        ("identity", 16) => rav1d_inv_identity16_1d_c,
+        ("identity", 32) => rav1d_inv_identity32_1d_c,
+        _ => unreachable!("unsupported 1D transform: {} size {}", txfm, n),
+    }
+}
+
+fn shift_for(w: usize, h: usize) -> u8 {
+    match (w, h) {
+        (4, 4) => 0,
+        (4, 8) => 0,
+        (4, 16) => 1,
+        (8, 4) => 0,
+        (8, 8) => 1,
+        (8, 16) => 1,
+        (8, 32) => 2,
+        (16, 4) => 1,
+        (16, 8) => 1,
+        (16, 16) => 2,
+        (16, 32) => 1,
+        (16, 64) => 2,
+        (32, 8) => 2,
+        (32, 16) => 1,
+        (32, 32) => 2,
+        (32, 64) => 1,
+        (64, 16) => 2,
+        (64, 32) => 1,
+        (64, 64) => 2,
+        _ => unreachable!(),
+    }
+}
+
+/// Macro to generate FFI wrappers for ARM ITX functions using the generic engine.
+/// This avoids writing hundreds of individual inner functions.
+///
+/// Usage: gen_itx_arm!(row_tx, col_tx, W, H, is_dct_dct);
+/// Generates both 8bpc and 16bpc FFI wrappers.
+macro_rules! gen_itx_arm {
+    ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
+        paste::paste! {
+            #[cfg(target_arch = "aarch64")]
+            pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _8bpc_neon>](
+                dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+                eob: i32, bitdepth_max: i32, _coeff_len: u16,
+                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            ) {
+                inv_txfm_add_generic_8bpc(
+                    dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max,
+                    $w, $h, shift_for($w, $h),
+                    resolve_1d(stringify!($row_name), $w),
+                    resolve_1d(stringify!($col_name), $h),
+                    $is_dct_dct,
+                );
+            }
+
+            #[cfg(target_arch = "aarch64")]
+            pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _16bpc_neon>](
+                dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+                eob: i32, bitdepth_max: i32, _coeff_len: u16,
+                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            ) {
+                inv_txfm_add_generic_16bpc(
+                    dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max,
+                    $w, $h, shift_for($w, $h),
+                    resolve_1d(stringify!($row_name), $w),
+                    resolve_1d(stringify!($col_name), $h),
+                    $is_dct_dct,
+                );
+            }
+        }
+    };
+}
+
+/// 8bpc-only variant (when 16bpc already exists as handwritten)
+macro_rules! gen_itx_arm_8bpc {
+    ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
+        paste::paste! {
+            #[cfg(target_arch = "aarch64")]
+            pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _8bpc_neon>](
+                dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+                eob: i32, bitdepth_max: i32, _coeff_len: u16,
+                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            ) {
+                inv_txfm_add_generic_8bpc(
+                    dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max,
+                    $w, $h, shift_for($w, $h),
+                    resolve_1d(stringify!($row_name), $w),
+                    resolve_1d(stringify!($col_name), $h),
+                    $is_dct_dct,
+                );
+            }
+        }
+    };
+}
+
+/// 16bpc-only variant (when 8bpc already exists as handwritten)
+macro_rules! gen_itx_arm_16bpc {
+    ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
+        paste::paste! {
+            #[cfg(target_arch = "aarch64")]
+            pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _16bpc_neon>](
+                dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
+                eob: i32, bitdepth_max: i32, _coeff_len: u16,
+                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            ) {
+                inv_txfm_add_generic_16bpc(
+                    dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max,
+                    $w, $h, shift_for($w, $h),
+                    resolve_1d(stringify!($row_name), $w),
+                    resolve_1d(stringify!($col_name), $h),
+                    $is_dct_dct,
+                );
+            }
+        }
+    };
+}
+
+// Generate all missing ADST_ADST variants
+gen_itx_arm!(adst, adst, 4, 8, false);
+gen_itx_arm!(adst, adst, 8, 4, false);
+gen_itx_arm!(adst, adst, 4, 16, false);
+gen_itx_arm!(adst, adst, 16, 4, false);
+gen_itx_arm!(adst, adst, 8, 16, false);
+gen_itx_arm!(adst, adst, 16, 8, false);
+gen_itx_arm!(adst, adst, 16, 16, false);
+
+// ADST_DCT
+gen_itx_arm!(adst, dct, 4, 8, false);
+gen_itx_arm!(adst, dct, 8, 4, false);
+gen_itx_arm!(adst, dct, 4, 16, false);
+gen_itx_arm!(adst, dct, 16, 4, false);
+gen_itx_arm!(adst, dct, 8, 16, false);
+gen_itx_arm!(adst, dct, 16, 8, false);
+gen_itx_arm!(adst, dct, 16, 16, false);
+
+// DCT_ADST
+gen_itx_arm!(dct, adst, 4, 8, false);
+gen_itx_arm!(dct, adst, 8, 4, false);
+gen_itx_arm!(dct, adst, 4, 16, false);
+gen_itx_arm!(dct, adst, 16, 4, false);
+gen_itx_arm!(dct, adst, 8, 16, false);
+gen_itx_arm!(dct, adst, 16, 8, false);
+gen_itx_arm!(dct, adst, 16, 16, false);
+
+// FLIPADST_FLIPADST
+gen_itx_arm!(flipadst, flipadst, 4, 8, false);
+gen_itx_arm!(flipadst, flipadst, 8, 4, false);
+gen_itx_arm!(flipadst, flipadst, 4, 16, false);
+gen_itx_arm!(flipadst, flipadst, 16, 4, false);
+gen_itx_arm!(flipadst, flipadst, 8, 8, false);
+gen_itx_arm!(flipadst, flipadst, 8, 16, false);
+gen_itx_arm!(flipadst, flipadst, 16, 8, false);
+gen_itx_arm!(flipadst, flipadst, 16, 16, false);
+
+// DCT_FLIPADST
+gen_itx_arm!(dct, flipadst, 4, 8, false);
+gen_itx_arm!(dct, flipadst, 8, 4, false);
+gen_itx_arm!(dct, flipadst, 4, 16, false);
+gen_itx_arm!(dct, flipadst, 16, 4, false);
+gen_itx_arm!(dct, flipadst, 8, 8, false);
+gen_itx_arm!(dct, flipadst, 8, 16, false);
+gen_itx_arm!(dct, flipadst, 16, 8, false);
+gen_itx_arm!(dct, flipadst, 16, 16, false);
+
+// FLIPADST_DCT
+gen_itx_arm!(flipadst, dct, 4, 8, false);
+gen_itx_arm!(flipadst, dct, 8, 4, false);
+gen_itx_arm!(flipadst, dct, 4, 16, false);
+gen_itx_arm!(flipadst, dct, 16, 4, false);
+gen_itx_arm!(flipadst, dct, 8, 8, false);
+gen_itx_arm!(flipadst, dct, 8, 16, false);
+gen_itx_arm!(flipadst, dct, 16, 8, false);
+gen_itx_arm!(flipadst, dct, 16, 16, false);
+
+// ADST_FLIPADST
+gen_itx_arm!(adst, flipadst, 4, 8, false);
+gen_itx_arm!(adst, flipadst, 8, 4, false);
+gen_itx_arm!(adst, flipadst, 4, 16, false);
+gen_itx_arm!(adst, flipadst, 16, 4, false);
+gen_itx_arm!(adst, flipadst, 8, 8, false);
+gen_itx_arm!(adst, flipadst, 8, 16, false);
+gen_itx_arm!(adst, flipadst, 16, 8, false);
+gen_itx_arm!(adst, flipadst, 16, 16, false);
+
+// FLIPADST_ADST
+gen_itx_arm!(flipadst, adst, 4, 8, false);
+gen_itx_arm!(flipadst, adst, 8, 4, false);
+gen_itx_arm!(flipadst, adst, 4, 16, false);
+gen_itx_arm!(flipadst, adst, 16, 4, false);
+gen_itx_arm!(flipadst, adst, 8, 8, false);
+gen_itx_arm!(flipadst, adst, 8, 16, false);
+gen_itx_arm!(flipadst, adst, 16, 8, false);
+gen_itx_arm!(flipadst, adst, 16, 16, false);
+
+// Identity hybrid transforms: dct_identity (H_DCT = row DCT, col identity)
+// 4x4: 8bpc handwritten, generate 16bpc only
+gen_itx_arm_16bpc!(dct, identity, 4, 4, false);
+gen_itx_arm!(dct, identity, 4, 8, false);
+gen_itx_arm!(dct, identity, 8, 4, false);
+gen_itx_arm!(dct, identity, 4, 16, false);
+gen_itx_arm!(dct, identity, 16, 4, false);
+gen_itx_arm!(dct, identity, 8, 8, false);
+gen_itx_arm!(dct, identity, 8, 16, false);
+gen_itx_arm!(dct, identity, 16, 8, false);
+gen_itx_arm!(dct, identity, 16, 16, false);
+
+// identity_dct (V_DCT = row identity, col DCT)
+gen_itx_arm_16bpc!(identity, dct, 4, 4, false);
+gen_itx_arm!(identity, dct, 4, 8, false);
+gen_itx_arm!(identity, dct, 8, 4, false);
+gen_itx_arm!(identity, dct, 4, 16, false);
+gen_itx_arm!(identity, dct, 16, 4, false);
+gen_itx_arm!(identity, dct, 8, 8, false);
+gen_itx_arm!(identity, dct, 8, 16, false);
+gen_itx_arm!(identity, dct, 16, 8, false);
+gen_itx_arm!(identity, dct, 16, 16, false);
+
+// adst_identity (H_ADST = row ADST, col identity)
+gen_itx_arm_16bpc!(adst, identity, 4, 4, false);
+gen_itx_arm!(adst, identity, 4, 8, false);
+gen_itx_arm!(adst, identity, 8, 4, false);
+gen_itx_arm!(adst, identity, 4, 16, false);
+gen_itx_arm!(adst, identity, 16, 4, false);
+gen_itx_arm!(adst, identity, 8, 8, false);
+gen_itx_arm!(adst, identity, 8, 16, false);
+gen_itx_arm!(adst, identity, 16, 8, false);
+gen_itx_arm!(adst, identity, 16, 16, false);
+
+// identity_adst (V_ADST = row identity, col ADST)
+gen_itx_arm_16bpc!(identity, adst, 4, 4, false);
+gen_itx_arm!(identity, adst, 4, 8, false);
+gen_itx_arm!(identity, adst, 8, 4, false);
+gen_itx_arm!(identity, adst, 4, 16, false);
+gen_itx_arm!(identity, adst, 16, 4, false);
+gen_itx_arm!(identity, adst, 8, 8, false);
+gen_itx_arm!(identity, adst, 8, 16, false);
+gen_itx_arm!(identity, adst, 16, 8, false);
+gen_itx_arm!(identity, adst, 16, 16, false);
+
+// flipadst_identity (H_FLIPADST = row flipadst, col identity)
+gen_itx_arm_16bpc!(flipadst, identity, 4, 4, false);
+gen_itx_arm!(flipadst, identity, 4, 8, false);
+gen_itx_arm!(flipadst, identity, 8, 4, false);
+gen_itx_arm!(flipadst, identity, 4, 16, false);
+gen_itx_arm!(flipadst, identity, 16, 4, false);
+gen_itx_arm!(flipadst, identity, 8, 8, false);
+gen_itx_arm!(flipadst, identity, 8, 16, false);
+gen_itx_arm!(flipadst, identity, 16, 8, false);
+gen_itx_arm!(flipadst, identity, 16, 16, false);
+
+// identity_flipadst (V_FLIPADST = row identity, col flipadst)
+gen_itx_arm_16bpc!(identity, flipadst, 4, 4, false);
+gen_itx_arm!(identity, flipadst, 4, 8, false);
+gen_itx_arm!(identity, flipadst, 8, 4, false);
+gen_itx_arm!(identity, flipadst, 4, 16, false);
+gen_itx_arm!(identity, flipadst, 16, 4, false);
+gen_itx_arm!(identity, flipadst, 8, 8, false);
+gen_itx_arm!(identity, flipadst, 8, 16, false);
+gen_itx_arm!(identity, flipadst, 16, 8, false);
+gen_itx_arm!(identity, flipadst, 16, 16, false);
+
+// Rectangular IDENTITY_IDENTITY
+// 4x8, 8x4, 4x16, 16x4, 8x16, 16x8: handwritten 16bpc exists, generate 8bpc only
+gen_itx_arm_8bpc!(identity, identity, 4, 8, false);
+gen_itx_arm_8bpc!(identity, identity, 8, 4, false);
+gen_itx_arm_8bpc!(identity, identity, 4, 16, false);
+gen_itx_arm_8bpc!(identity, identity, 16, 4, false);
+gen_itx_arm_8bpc!(identity, identity, 8, 16, false);
+gen_itx_arm_8bpc!(identity, identity, 16, 8, false);
+// 8x32, 32x8, 16x32, 32x16, 32x32: handwritten 8bpc+16bpc both exist, skip
