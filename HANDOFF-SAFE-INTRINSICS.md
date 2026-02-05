@@ -9,20 +9,21 @@
   - Verified via `cargo asm`: same instructions (vmovdqu, vmovq, vpmaddubsw, etc.)
   - No performance regression
 
-- **mc_arm.rs** (aarch64): Fully refactored with `#[arcane]` + `partial_simd`
+- **mc_arm.rs** (aarch64): Fully refactored with `#[arcane]` + `safe_unaligned_simd`
   - **ZERO** non-FFI unsafe blocks (down from 39)
   - Only 8 unavoidable `forge_token_dangerously()` in FFI wrappers
-  - All NEON memory ops converted to partial_simd safe wrappers
+  - All NEON memory ops use `safe_unaligned_simd::aarch64`
   - ARM cross-compilation verified
 
-- **partial_simd module**: Safe wrappers for 64-bit and 128-bit NEON load/store
-  - Fills gap in safe_unaligned_simd (which lacks aarch64 support)
+- **safe_unaligned_simd 0.2.3+**: Has full aarch64 NEON support!
+  - `vld1_u8`, `vld1_u16`, `vld1_s16`, `vld1_s32`, etc.
+  - `vld1q_u8`, `vld1q_u16`, `vld1q_s16`, `vld1q_s32`, etc.
+  - Multi-register variants: `vld1_u8_x2`, `vld1_u8_x3`, `vld1_u8_x4`, etc.
+  - **partial_simd module is now obsolete** - can be removed
+
+- **partial_simd module**: Legacy wrappers (can be deprecated)
   - x86_64: `mm_loadl_epi64`, `mm_storel_epi64` for 64-bit SSE ops
-  - aarch64: Full NEON coverage including:
-    - 64-bit: `vld1_u8`, `vld1_u16`, `vld1_s16`, `vld1_s32`, `vld1_u32`, `vld1_u64` + stores
-    - 128-bit: `vld1q_u8`, `vld1q_u16`, `vld1q_s16`, `vld1q_s32`, `vld1q_u32`, `vld1q_u64` + stores
-  - Uses sealed trait pattern for type safety
-  - Zero overhead verified
+  - aarch64: Was used before discovering safe_unaligned_simd has NEON support
 
 ### Findings for archmage
 
@@ -127,7 +128,7 @@ pub unsafe extern "C" fn my_func(dst: *mut u8, src: *const u8, w: i32) {
 
 ### Phase 2: ARM NEON Modules
 
-Same pattern, using `Arm64` token and `partial_simd` (since safe_unaligned_simd lacks aarch64 support).
+Same pattern, using `Arm64` token and `safe_unaligned_simd::aarch64` for memory ops.
 
 1. ~~**mc_arm.rs** (~4k lines)~~ ✅ DONE - Zero non-FFI unsafe blocks
 2. **ipred_arm.rs** (~2k lines) - Next priority
@@ -162,12 +163,46 @@ cd /home/lilith/work/zenavif && touch src/lib.rs && cargo build --release --exam
 time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/work/aom-decode/tests/test.avif /dev/null 2>/dev/null; done
 ```
 
+## FFI Elimination (Future Work)
+
+The current architecture has an artificial FFI boundary:
+
+```
+call site → avg::Fn.call() → converts safe types to pointers
+         → calls extern "C" fn pointer
+         → implementation converts pointers back to slices
+```
+
+**Why it exists:** `wrap_fn_ptr!` macro creates `extern "C"` function types to support
+linking external assembly. Even when asm is disabled, the same types are used.
+
+**To fully eliminate FFI:**
+
+1. **Change `wrap_fn_ptr!`** to generate Rust `fn` types when `feature = "asm"` is off
+2. **Change function signatures** from raw pointers to `Rav1dPictureDataComponentOffset` etc.
+3. **Update all `call()` implementations** to not do pointer conversions
+4. **This is a large refactor** touching mc.rs, itx.rs, cdef.rs, ipred.rs, etc.
+
+**Alternative: Bypass dispatch entirely**
+
+For pure Rust builds, replace function pointer dispatch with:
+```rust
+match backend {
+    SimdBackend::Avx2 => mc::avg_avx2::<BD>(dst, tmp1, tmp2, w, h, bd),
+    SimdBackend::Neon => mc::avg_neon::<BD>(dst, tmp1, tmp2, w, h, bd),
+    SimdBackend::Rust => mc::avg_rust::<BD>(dst, tmp1, tmp2, w, h, bd),
+}
+```
+
+This would require making the `*_rust` fallback functions `pub(crate)` and creating
+new SIMD implementations that take safe types directly.
+
 ## Notes
 
-1. **Phase 1: Don't change FFI signatures** - They must match rav1d's dispatch system
+1. **Don't change FFI signatures yet** - Requires architectural refactor
 2. **Keep `#![allow(unsafe_op_in_unsafe_fn)]`** at module top for FFI wrappers
 3. **Use `forge_token_dangerously()`** in FFI wrappers - we know features are available because dispatch already checked
 4. **Benchmark after each module** to ensure no performance regression
 5. **Commit incrementally** - one module at a time
-6. ~~**Partial 64-bit ops still need unsafe**~~ SOLVED: `partial_simd` module provides safe wrappers
-7. **safe_unaligned_simd lacks aarch64 support** - Use `partial_simd` for all NEON memory ops
+6. ~~**Partial 64-bit ops still need unsafe**~~ SOLVED: `safe_unaligned_simd` has full NEON support
+7. ~~**safe_unaligned_simd lacks aarch64 support**~~ WRONG: 0.2.3+ has full aarch64 NEON support
