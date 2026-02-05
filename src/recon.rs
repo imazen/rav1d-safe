@@ -1443,7 +1443,7 @@ fn read_coef_tree<BD: BitDepth>(
                         "dq",
                     );
                 }
-                f.dsp.itx.itxfm_add[ytx as usize][txtp as usize].call::<BD>(y_dst, cf, eob, bd);
+                f.dsp.itx.itxfm_add[ytx as usize][txtp as usize].call::<BD>(ytx as usize, txtp as usize, y_dst, cf, eob, bd);
                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                     hex_dump_pic::<BD>(y_dst, t_dim.w as usize * 4, t_dim.h as usize * 4, "recon");
                 }
@@ -2237,6 +2237,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             bd,
                         );
                         f.dsp.ipred.intra_pred[m as usize].call(
+                            m as usize,
                             y_dst,
                             edge_array,
                             edge_offset,
@@ -2348,7 +2349,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                 );
                             }
                             f.dsp.itx.itxfm_add[intra.tx as usize][txtp as usize]
-                                .call::<BD>(y_dst, cf, eob, bd);
+                                .call::<BD>(intra.tx as usize, txtp as usize, y_dst, cf, eob, bd);
                             if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                                 hex_dump_pic::<BD>(
                                     y_dst,
@@ -2401,6 +2402,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 let furthest_b = (ch4 << ss_ver) + t_dim.h as c_int - 1 & !(t_dim.h as c_int - 1);
                 let layout = f.cur.p.layout.try_into().unwrap();
                 f.dsp.ipred.cfl_ac[layout].call::<BD>(
+                    layout,
                     ac,
                     y_src,
                     cbw4 - (furthest_r >> ss_hor),
@@ -2451,6 +2453,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                         bd,
                     );
                     f.dsp.ipred.cfl_pred[m as usize].call(
+                        m as usize,
                         uv_dst,
                         edge_array,
                         edge_offset,
@@ -2611,6 +2614,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             );
                             angle |= intra_edge_filter_flag;
                             f.dsp.ipred.intra_pred[m as usize].call(
+                                m as usize,
                                 uv_dst,
                                 edge_array,
                                 edge_offset,
@@ -2725,7 +2729,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                     );
                                 }
                                 f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize]
-                                    .call::<BD>(uv_dst, cf, eob, bd);
+                                    .call::<BD>(b.uvtx as usize, txtp as usize, uv_dst, cf, eob, bd);
                                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                                     hex_dump_pic::<BD>(
                                         uv_dst,
@@ -3112,6 +3116,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
             );
             let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
             f.dsp.ipred.intra_pred[m as usize].call(
+                m as usize,
                 Rav1dPictureDataComponentOffset {
                     data: &Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * bw4 as usize),
                     offset: 0,
@@ -3396,6 +3401,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                         );
                         let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
                         f.dsp.ipred.intra_pred[m as usize].call(
+                            m as usize,
                             Rav1dPictureDataComponentOffset {
                                 data: &Rav1dPictureDataComponent::wrap_buf::<BD>(
                                     tmp,
@@ -3606,7 +3612,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                                         "dq",
                                     );
                                 }
-                                f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize].call::<BD>(
+                                f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize].call::<BD>(b.uvtx as usize, txtp as usize, 
                                     uv_dst + 4 * x as usize,
                                     cf,
                                     eob,

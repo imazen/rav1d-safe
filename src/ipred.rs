@@ -69,9 +69,139 @@ wrap_fn_ptr!(pub unsafe extern "C" fn angular_ipred(
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) -> ());
 
+/// Direct dispatch for intra prediction - bypasses function pointer table.
+/// Selects optimal SIMD implementation at runtime based on CPU features.
+/// `mode`: prediction mode index (0-13)
+#[cfg(not(feature = "asm"))]
+fn intra_pred_direct<BD: BitDepth>(
+    mode: usize,
+    dst: Rav1dPictureDataComponentOffset,
+    topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
+    topleft_off: usize,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    max_width: c_int,
+    max_height: c_int,
+    bd: BD,
+) {
+    use crate::include::common::bitdepth::BPC;
+
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let stride = dst.stride();
+    let topleft_ptr = topleft[topleft_off..].as_ptr().cast();
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            use crate::src::safe_simd::ipred as safe_ipred;
+            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid types.
+            unsafe {
+                match (BD::BPC, mode) {
+                    (BPC::BPC8, 0) => safe_ipred::ipred_dc_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 1) => safe_ipred::ipred_v_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 2) => safe_ipred::ipred_h_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 3) => safe_ipred::ipred_dc_left_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 4) => safe_ipred::ipred_dc_top_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 5) => safe_ipred::ipred_dc_128_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 6) => safe_ipred::ipred_z1_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 7) => safe_ipred::ipred_z2_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 8) => safe_ipred::ipred_z3_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 9) => safe_ipred::ipred_smooth_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 10) => safe_ipred::ipred_smooth_v_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 11) => safe_ipred::ipred_smooth_h_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 12) => safe_ipred::ipred_paeth_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC8, 13) => safe_ipred::ipred_filter_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 0) => safe_ipred::ipred_dc_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 1) => safe_ipred::ipred_v_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 2) => safe_ipred::ipred_h_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 3) => safe_ipred::ipred_dc_left_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 4) => safe_ipred::ipred_dc_top_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 5) => safe_ipred::ipred_dc_128_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 6) => safe_ipred::ipred_z1_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 7) => safe_ipred::ipred_z2_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 8) => safe_ipred::ipred_z3_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 9) => safe_ipred::ipred_smooth_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 10) => safe_ipred::ipred_smooth_v_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 11) => safe_ipred::ipred_smooth_h_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 12) => safe_ipred::ipred_paeth_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    (BPC::BPC16, 13) => safe_ipred::ipred_filter_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+                    _ => unreachable!(),
+                }
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        use crate::src::safe_simd::ipred_arm as safe_ipred;
+        // ARM NEON has 10 modes (DC, V, H, DC_LEFT, DC_TOP, DC_128, PAETH, SMOOTH, SMOOTH_V, SMOOTH_H)
+        // Z1, Z2, Z3, FILTER fall through to scalar fallback
+        let handled = unsafe {
+            match (BD::BPC, mode) {
+                (BPC::BPC8, 0) => { safe_ipred::ipred_dc_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC8, 1) => { safe_ipred::ipred_v_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC8, 2) => { safe_ipred::ipred_h_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC8, 3) => { safe_ipred::ipred_dc_left_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC8, 4) => { safe_ipred::ipred_dc_top_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC8, 5) => { safe_ipred::ipred_dc_128_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC8, 9) => { safe_ipred::ipred_smooth_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC8, 10) => { safe_ipred::ipred_smooth_v_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC8, 11) => { safe_ipred::ipred_smooth_h_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC8, 12) => { safe_ipred::ipred_paeth_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC16, 0) => { safe_ipred::ipred_dc_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC16, 1) => { safe_ipred::ipred_v_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC16, 2) => { safe_ipred::ipred_h_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC16, 3) => { safe_ipred::ipred_dc_left_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC16, 4) => { safe_ipred::ipred_dc_top_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC16, 5) => { safe_ipred::ipred_dc_128_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC16, 9) => { safe_ipred::ipred_smooth_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC16, 10) => { safe_ipred::ipred_smooth_v_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC16, 11) => { safe_ipred::ipred_smooth_h_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                (BPC::BPC16, 12) => { safe_ipred::ipred_paeth_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+                _ => false,
+            }
+        };
+        if handled {
+            return;
+        }
+    }
+
+    // Scalar fallback for all remaining modes (Z1, Z2, Z3, FILTER on ARM, or all on other arches)
+    #[allow(unreachable_code)]
+    {
+        // SAFETY: These are the safe Rust fallbacks.
+        unsafe {
+            let erased_fn = match mode {
+                0 => ipred_dc_c_erased::<BD, { DcGen::TopLeft as u8 }>,
+                1 => ipred_v_c_erased::<BD>,
+                2 => ipred_h_c_erased::<BD>,
+                3 => ipred_dc_c_erased::<BD, { DcGen::Left as u8 }>,
+                4 => ipred_dc_c_erased::<BD, { DcGen::Top as u8 }>,
+                5 => ipred_dc_128_c_erased::<BD>,
+                6 => ipred_z_c_erased::<BD, 1>,
+                7 => ipred_z_c_erased::<BD, 2>,
+                8 => ipred_z_c_erased::<BD, 3>,
+                9 => ipred_smooth_c_erased::<BD>,
+                10 => ipred_smooth_v_c_erased::<BD>,
+                11 => ipred_smooth_h_c_erased::<BD>,
+                12 => ipred_paeth_c_erased::<BD>,
+                13 => ipred_filter_c_erased::<BD>,
+                _ => unreachable!(),
+            };
+            erased_fn(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi);
+        }
+    }
+}
+
 impl angular_ipred::Fn {
     pub fn call<BD: BitDepth>(
         &self,
+        mode: usize,
         dst: Rav1dPictureDataComponentOffset,
         topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
         topleft_off: usize,
@@ -82,33 +212,45 @@ impl angular_ipred::Fn {
         max_height: c_int,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let topleft = topleft[topleft_off..].as_ptr().cast();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallbacks are safe; asm is supposed to do the same, where the fallbacks are:
-        // * `fn splat_dc`
-        // * `fn ipred_{v,h}_rust`
-        // * `fn ipred_paeth_rust`
-        // * `fn ipred_smooth_rust`
-        // * `fn ipred_smooth_{v,h}_rust`
-        // * `fn ipred_z{1,2,3}_rust`
-        // * `fn ipred_filter_rust`
-        unsafe {
-            self.get()(
-                dst_ptr,
-                stride,
-                topleft,
-                width,
-                height,
-                angle,
-                max_width,
-                max_height,
-                bd,
-                topleft_off,
-                dst,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = mode;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let stride = dst.stride();
+                let topleft = topleft[topleft_off..].as_ptr().cast();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallbacks are safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr,
+                        stride,
+                        topleft,
+                        width,
+                        height,
+                        angle,
+                        max_width,
+                        max_height,
+                        bd,
+                        topleft_off,
+                        dst,
+                    )
+                }
+            } else {
+                let _ = self;
+                intra_pred_direct::<BD>(
+                    mode,
+                    dst,
+                    topleft,
+                    topleft_off,
+                    width,
+                    height,
+                    angle,
+                    max_width,
+                    max_height,
+                    bd,
+                )
+            }
         }
     }
 }
@@ -124,9 +266,36 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cfl_ac(
     _y: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) -> ());
 
+/// Direct dispatch for CFL AC - bypasses function pointer table.
+/// No safe_simd implementations exist, so this dispatches to scalar fallback.
+/// `layout`: pixel layout subsampling variant
+#[cfg(not(feature = "asm"))]
+fn cfl_ac_direct<BD: BitDepth>(
+    layout: Rav1dPixelLayoutSubSampled,
+    ac: &mut [i16; SCRATCH_AC_TXTP_LEN],
+    y: Rav1dPictureDataComponentOffset,
+    w_pad: c_int,
+    h_pad: c_int,
+    cw: c_int,
+    ch: c_int,
+) {
+    let y_ptr = y.as_ptr::<BD>().cast();
+    let stride = y.stride();
+    let y_ffi = FFISafe::new(&y);
+    // Scalar fallback - no safe_simd implementations for cfl_ac
+    let erased_fn = match layout {
+        Rav1dPixelLayoutSubSampled::I420 => cfl_ac_c_erased::<BD, true, true>,
+        Rav1dPixelLayoutSubSampled::I422 => cfl_ac_c_erased::<BD, true, false>,
+        Rav1dPixelLayoutSubSampled::I444 => cfl_ac_c_erased::<BD, false, false>,
+    };
+    // SAFETY: These are the safe Rust fallbacks.
+    unsafe { erased_fn(ac, y_ptr, stride, w_pad, h_pad, cw, ch, y_ffi) }
+}
+
 impl cfl_ac::Fn {
     pub fn call<BD: BitDepth>(
         &self,
+        layout: Rav1dPixelLayoutSubSampled,
         ac: &mut [i16; SCRATCH_AC_TXTP_LEN],
         y: Rav1dPictureDataComponentOffset,
         w_pad: c_int,
@@ -134,11 +303,19 @@ impl cfl_ac::Fn {
         cw: c_int,
         ch: c_int,
     ) {
-        let y_ptr = y.as_ptr::<BD>().cast();
-        let stride = y.stride();
-        let y = FFISafe::new(&y);
-        // SAFETY: Fallback `fn cfl_ac_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(ac, y_ptr, stride, w_pad, h_pad, cw, ch, y) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = layout;
+                let y_ptr = y.as_ptr::<BD>().cast();
+                let stride = y.stride();
+                let y = FFISafe::new(&y);
+                // SAFETY: Fallback `fn cfl_ac_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(ac, y_ptr, stride, w_pad, h_pad, cw, ch, y) }
+            } else {
+                let _ = self;
+                cfl_ac_direct::<BD>(layout, ac, y, w_pad, h_pad, cw, ch)
+            }
+        }
     }
 }
 
@@ -155,9 +332,46 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cfl_pred(
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) -> ());
 
+/// Direct dispatch for CFL prediction - bypasses function pointer table.
+/// No safe_simd implementations exist, so this dispatches to scalar fallback.
+/// `mode`: CFL pred mode index (DC_PRED=0, DC_128_PRED=5, TOP_DC_PRED=4, LEFT_DC_PRED=3)
+#[cfg(not(feature = "asm"))]
+fn cfl_pred_direct<BD: BitDepth>(
+    mode: usize,
+    dst: Rav1dPictureDataComponentOffset,
+    topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
+    topleft_off: usize,
+    width: c_int,
+    height: c_int,
+    ac: &[i16; SCRATCH_AC_TXTP_LEN],
+    alpha: c_int,
+    bd: BD,
+) {
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let stride = dst.stride();
+    let topleft_ptr = topleft[topleft_off..].as_ptr().cast();
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+    // Scalar fallback - no safe_simd implementations for cfl_pred
+    let erased_fn: unsafe extern "C" fn(
+        *mut DynPixel, ptrdiff_t, *const DynPixel, c_int, c_int,
+        &[i16; SCRATCH_AC_TXTP_LEN], c_int, c_int, usize,
+        *const FFISafe<Rav1dPictureDataComponentOffset>,
+    ) = match mode {
+        0 => ipred_cfl_c_erased::<BD, { DcGen::TopLeft as u8 }>,
+        3 => ipred_cfl_c_erased::<BD, { DcGen::Left as u8 }>,
+        4 => ipred_cfl_c_erased::<BD, { DcGen::Top as u8 }>,
+        5 => ipred_cfl_128_c_erased::<BD>,
+        _ => unreachable!(),
+    };
+    // SAFETY: These are the safe Rust fallbacks.
+    unsafe { erased_fn(dst_ptr, stride, topleft_ptr, width, height, ac, alpha, bd_c, topleft_off, dst_ffi) }
+}
+
 impl cfl_pred::Fn {
     pub fn call<BD: BitDepth>(
         &self,
+        mode: usize,
         dst: Rav1dPictureDataComponentOffset,
         topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
         topleft_off: usize,
@@ -167,25 +381,43 @@ impl cfl_pred::Fn {
         alpha: c_int,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let topleft = topleft[topleft_off..].as_ptr().cast();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn cfl_pred` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr,
-                stride,
-                topleft,
-                width,
-                height,
-                ac,
-                alpha,
-                bd,
-                topleft_off,
-                dst,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = mode;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let stride = dst.stride();
+                let topleft = topleft[topleft_off..].as_ptr().cast();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn cfl_pred` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr,
+                        stride,
+                        topleft,
+                        width,
+                        height,
+                        ac,
+                        alpha,
+                        bd,
+                        topleft_off,
+                        dst,
+                    )
+                }
+            } else {
+                let _ = self;
+                cfl_pred_direct::<BD>(
+                    mode,
+                    dst,
+                    topleft,
+                    topleft_off,
+                    width,
+                    height,
+                    ac,
+                    alpha,
+                    bd,
+                )
+            }
         }
     }
 }
@@ -200,6 +432,25 @@ wrap_fn_ptr!(pub unsafe extern "C" fn pal_pred(
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) -> ());
 
+/// Direct dispatch for palette prediction - bypasses function pointer table.
+/// No safe_simd implementations exist, so this dispatches to scalar fallback.
+#[cfg(not(feature = "asm"))]
+fn pal_pred_direct<BD: BitDepth>(
+    dst: Rav1dPictureDataComponentOffset,
+    pal: &[BD::Pixel; 8],
+    idx: &[u8],
+    w: c_int,
+    h: c_int,
+) {
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let stride = dst.stride();
+    let pal_ptr = pal.as_ptr().cast();
+    let idx_ptr = idx[..(w * h) as usize / 2].as_ptr();
+    let dst_ffi = FFISafe::new(&dst);
+    // SAFETY: This is the safe Rust fallback.
+    unsafe { pal_pred_c_erased::<BD>(dst_ptr, stride, pal_ptr, idx_ptr, w, h, dst_ffi) }
+}
+
 impl pal_pred::Fn {
     pub fn call<BD: BitDepth>(
         &self,
@@ -209,15 +460,22 @@ impl pal_pred::Fn {
         w: c_int,
         h: c_int,
     ) {
-        // SAFETY: `DisjointMut` is unchecked for asm `fn`s,
-        // but passed through as an extra arg for the fallback `fn`.
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let pal = pal.as_ptr().cast();
-        let idx = idx[..(w * h) as usize / 2].as_ptr();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn pal_pred_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, stride, pal, idx, w, h, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                // SAFETY: `DisjointMut` is unchecked for asm `fn`s,
+                // but passed through as an extra arg for the fallback `fn`.
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let stride = dst.stride();
+                let pal = pal.as_ptr().cast();
+                let idx = idx[..(w * h) as usize / 2].as_ptr();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn pal_pred_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, stride, pal, idx, w, h, dst) }
+            } else {
+                let _ = self;
+                pal_pred_direct::<BD>(dst, pal, idx, w, h)
+            }
+        }
     }
 }
 

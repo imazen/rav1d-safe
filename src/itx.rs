@@ -292,9 +292,297 @@ wrap_fn_ptr!(unsafe extern "C" fn itxfm(
     _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
 ) -> ());
 
+
+/// Macro to generate the per-arch/bpc direct dispatch functions for ITX.
+/// Each generated function matches on (tx_size, tx_type) and calls the right SIMD function.
+#[cfg(not(feature = "asm"))]
+macro_rules! impl_itxfm_direct_dispatch {
+    (
+        fn $fn_name:ident, $mod_path:path,
+        itx16: [$(($sz16:expr, $w16:literal, $h16:literal)),* $(,)?],
+        itx12: [$(($sz12:expr, $w12:literal, $h12:literal)),* $(,)?],
+        itx2: [$(($sz2:expr, $w2:literal, $h2:literal)),* $(,)?],
+        itx1: [$(($sz1:expr, $w1:literal, $h1:literal)),* $(,)?],
+        wht: ($szw:expr, $ww:literal, $hw:literal),
+        $bpc:literal bpc, $ext:ident,
+        h_dct_fn: $h_dct_fn:ident, v_dct_fn: $v_dct_fn:ident,
+        h_adst_fn: $h_adst_fn:ident, v_adst_fn: $v_adst_fn:ident,
+        h_flipadst_fn: $h_flipadst_fn:ident, v_flipadst_fn: $v_flipadst_fn:ident
+    ) => {
+        paste::paste! {
+            #[cfg(not(feature = "asm"))]
+            #[allow(non_upper_case_globals)]
+            fn $fn_name(
+                tx_size: usize,
+                tx_type: usize,
+                dst_ptr: *mut DynPixel,
+                dst_stride: isize,
+                coeff: *mut DynCoef,
+                eob: i32,
+                bitdepth_max: i32,
+                coeff_len: u16,
+                dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            ) -> bool {
+                use $mod_path as si;
+
+                macro_rules! c {
+                    ($func:expr) => {{
+                        // SAFETY: SIMD feature verified by caller. All pointers from valid Rust refs.
+                        unsafe { $func(dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst) };
+                        return true;
+                    }};
+                }
+
+                // TxfmSize constants for matching
+                const s4x4: usize = TxfmSize::S4x4 as usize;
+                const s8x8: usize = TxfmSize::S8x8 as usize;
+                const s16x16: usize = TxfmSize::S16x16 as usize;
+                const s32x32: usize = TxfmSize::S32x32 as usize;
+                const s64x64: usize = TxfmSize::S64x64 as usize;
+                const r4x8: usize = TxfmSize::R4x8 as usize;
+                const r8x4: usize = TxfmSize::R8x4 as usize;
+                const r8x16: usize = TxfmSize::R8x16 as usize;
+                const r16x8: usize = TxfmSize::R16x8 as usize;
+                const r16x32: usize = TxfmSize::R16x32 as usize;
+                const r32x16: usize = TxfmSize::R32x16 as usize;
+                const r32x64: usize = TxfmSize::R32x64 as usize;
+                const r64x32: usize = TxfmSize::R64x32 as usize;
+                const r4x16: usize = TxfmSize::R4x16 as usize;
+                const r16x4: usize = TxfmSize::R16x4 as usize;
+                const r8x32: usize = TxfmSize::R8x32 as usize;
+                const r32x8: usize = TxfmSize::R32x8 as usize;
+                const r16x64: usize = TxfmSize::R16x64 as usize;
+                const r64x16: usize = TxfmSize::R64x16 as usize;
+
+                match (tx_size, tx_type as TxfmType) {
+                    // WHT_WHT (only 4x4)
+                    ($szw, WHT_WHT) => c!(si::[<inv_txfm_add_wht_wht_ $ww x $hw _ $bpc bpc_ $ext>]),
+
+                    // itx16 sizes: all 16 non-WHT transform types
+                    $(
+                        ($sz16, DCT_DCT) => c!(si::[<inv_txfm_add_dct_dct_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, IDTX) => c!(si::[<inv_txfm_add_identity_identity_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, ADST_DCT) => c!(si::[<inv_txfm_add_dct_adst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, DCT_ADST) => c!(si::[<inv_txfm_add_adst_dct_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, ADST_ADST) => c!(si::[<inv_txfm_add_adst_adst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, FLIPADST_DCT) => c!(si::[<inv_txfm_add_dct_flipadst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, DCT_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_dct_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, FLIPADST_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_flipadst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, ADST_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_adst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, FLIPADST_ADST) => c!(si::[<inv_txfm_add_adst_flipadst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, H_DCT) => c!(si::[<inv_txfm_add_ $h_dct_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, V_DCT) => c!(si::[<inv_txfm_add_ $v_dct_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, H_ADST) => c!(si::[<inv_txfm_add_ $h_adst_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, V_ADST) => c!(si::[<inv_txfm_add_ $v_adst_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, H_FLIPADST) => c!(si::[<inv_txfm_add_ $h_flipadst_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, V_FLIPADST) => c!(si::[<inv_txfm_add_ $v_flipadst_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                    )*
+
+                    // itx12 sizes: 12 transform types (no H/V ADST/FLIPADST hybrids)
+                    $(
+                        ($sz12, DCT_DCT) => c!(si::[<inv_txfm_add_dct_dct_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, IDTX) => c!(si::[<inv_txfm_add_identity_identity_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, ADST_DCT) => c!(si::[<inv_txfm_add_dct_adst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, DCT_ADST) => c!(si::[<inv_txfm_add_adst_dct_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, ADST_ADST) => c!(si::[<inv_txfm_add_adst_adst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, FLIPADST_DCT) => c!(si::[<inv_txfm_add_dct_flipadst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, DCT_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_dct_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, FLIPADST_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_flipadst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, ADST_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_adst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, FLIPADST_ADST) => c!(si::[<inv_txfm_add_adst_flipadst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, H_DCT) => c!(si::[<inv_txfm_add_ $h_dct_fn _ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, V_DCT) => c!(si::[<inv_txfm_add_ $v_dct_fn _ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                    )*
+
+                    // itx2 sizes: DCT_DCT + IDTX only
+                    $(
+                        ($sz2, DCT_DCT) => c!(si::[<inv_txfm_add_dct_dct_ $w2 x $h2 _ $bpc bpc_ $ext>]),
+                        ($sz2, IDTX) => c!(si::[<inv_txfm_add_identity_identity_ $w2 x $h2 _ $bpc bpc_ $ext>]),
+                    )*
+
+                    // itx1 sizes: DCT_DCT only
+                    $(
+                        ($sz1, DCT_DCT) => c!(si::[<inv_txfm_add_dct_dct_ $w1 x $h1 _ $bpc bpc_ $ext>]),
+                    )*
+
+                    _ => return false,
+                }
+            }
+        }
+    };
+}
+
+// x86_64 8bpc direct dispatch
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+impl_itxfm_direct_dispatch!(
+    fn itxfm_add_direct_x86_8bpc, crate::src::safe_simd::itx,
+    itx16: [
+        (s4x4, 4, 4),
+        (s8x8, 8, 8),
+        (r4x8, 4, 8), (r8x4, 8, 4),
+        (r4x16, 4, 16), (r16x4, 16, 4),
+        (r8x16, 8, 16), (r16x8, 16, 8),
+    ],
+    itx12: [
+        (s16x16, 16, 16),
+    ],
+    itx2: [
+        (r8x32, 8, 32), (r32x8, 32, 8),
+        (r16x32, 16, 32), (r32x16, 32, 16),
+        (s32x32, 32, 32),
+    ],
+    itx1: [
+        (r16x64, 16, 64), (r32x64, 32, 64),
+        (r64x16, 64, 16), (r64x32, 64, 32),
+        (s64x64, 64, 64),
+    ],
+    wht: (s4x4, 4, 4),
+    8 bpc, avx2,
+    h_dct_fn: identity_dct, v_dct_fn: dct_identity,
+    h_adst_fn: identity_adst, v_adst_fn: adst_identity,
+    h_flipadst_fn: identity_flipadst, v_flipadst_fn: flipadst_identity
+);
+
+// x86_64 16bpc direct dispatch
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+impl_itxfm_direct_dispatch!(
+    fn itxfm_add_direct_x86_16bpc, crate::src::safe_simd::itx,
+    itx16: [
+        (s4x4, 4, 4),
+        (s8x8, 8, 8),
+        (r4x8, 4, 8), (r8x4, 8, 4),
+        (r4x16, 4, 16), (r16x4, 16, 4),
+        (r8x16, 8, 16), (r16x8, 16, 8),
+    ],
+    itx12: [
+        (s16x16, 16, 16),
+    ],
+    itx2: [
+        (r8x32, 8, 32), (r32x8, 32, 8),
+        (r16x32, 16, 32), (r32x16, 32, 16),
+        (s32x32, 32, 32),
+    ],
+    itx1: [
+        (r16x64, 16, 64), (r32x64, 32, 64),
+        (r64x16, 64, 16), (r64x32, 64, 32),
+        (s64x64, 64, 64),
+    ],
+    wht: (s4x4, 4, 4),
+    16 bpc, avx2,
+    // 16bpc x86: V_DCT->identity_dct, H_DCT->dct_identity (swapped from 8bpc)
+    h_dct_fn: dct_identity, v_dct_fn: identity_dct,
+    h_adst_fn: adst_identity, v_adst_fn: identity_adst,
+    h_flipadst_fn: flipadst_identity, v_flipadst_fn: identity_flipadst
+);
+
+// ARM aarch64 8bpc direct dispatch
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+impl_itxfm_direct_dispatch!(
+    fn itxfm_add_direct_arm_8bpc, crate::src::safe_simd::itx_arm,
+    itx16: [
+        (s4x4, 4, 4),
+        (s8x8, 8, 8),
+        (r4x8, 4, 8), (r8x4, 8, 4),
+        (r4x16, 4, 16), (r16x4, 16, 4),
+        (r8x16, 8, 16), (r16x8, 16, 8),
+    ],
+    itx12: [
+        (s16x16, 16, 16),
+    ],
+    itx2: [
+        (r8x32, 8, 32), (r32x8, 32, 8),
+        (r16x32, 16, 32), (r32x16, 32, 16),
+        (s32x32, 32, 32),
+    ],
+    itx1: [
+        (r16x64, 16, 64), (r32x64, 32, 64),
+        (r64x16, 64, 16), (r64x32, 64, 32),
+        (s64x64, 64, 64),
+    ],
+    wht: (s4x4, 4, 4),
+    8 bpc, neon,
+    h_dct_fn: dct_identity, v_dct_fn: identity_dct,
+    h_adst_fn: adst_identity, v_adst_fn: identity_adst,
+    h_flipadst_fn: flipadst_identity, v_flipadst_fn: identity_flipadst
+);
+
+// ARM aarch64 16bpc direct dispatch
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+impl_itxfm_direct_dispatch!(
+    fn itxfm_add_direct_arm_16bpc, crate::src::safe_simd::itx_arm,
+    itx16: [
+        (s4x4, 4, 4),
+        (s8x8, 8, 8),
+        (r4x8, 4, 8), (r8x4, 8, 4),
+        (r4x16, 4, 16), (r16x4, 16, 4),
+        (r8x16, 8, 16), (r16x8, 16, 8),
+    ],
+    itx12: [
+        (s16x16, 16, 16),
+    ],
+    itx2: [
+        (r8x32, 8, 32), (r32x8, 32, 8),
+        (r16x32, 16, 32), (r32x16, 32, 16),
+        (s32x32, 32, 32),
+    ],
+    itx1: [
+        (r16x64, 16, 64), (r32x64, 32, 64),
+        (r64x16, 64, 16), (r64x32, 64, 32),
+        (s64x64, 64, 64),
+    ],
+    wht: (s4x4, 4, 4),
+    16 bpc, neon,
+    h_dct_fn: dct_identity, v_dct_fn: identity_dct,
+    h_adst_fn: adst_identity, v_adst_fn: identity_adst,
+    h_flipadst_fn: flipadst_identity, v_flipadst_fn: identity_flipadst
+);
+
+/// Direct dispatch for itxfm_add - bypasses function pointer table.
+/// Returns true if a SIMD function handled the call, false to fall through to scalar.
+#[cfg(not(feature = "asm"))]
+fn itxfm_add_direct<BD: BitDepth>(
+    tx_size: usize,
+    tx_type: usize,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    coeff_len: u16,
+    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::src::cpu::CpuFlags;
+        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+            return match BD::BPC {
+                BPC::BPC8 => itxfm_add_direct_x86_8bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst),
+                BPC::BPC16 => itxfm_add_direct_x86_16bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst),
+            };
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        return match BD::BPC {
+            BPC::BPC8 => itxfm_add_direct_arm_8bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst),
+            BPC::BPC16 => itxfm_add_direct_arm_16bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst),
+        };
+    }
+
+    #[allow(unreachable_code)]
+    {
+        let _ = (tx_size, tx_type, dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst);
+        false
+    }
+}
 impl itxfm::Fn {
     pub fn call<BD: BitDepth>(
         &self,
+        tx_size: usize,
+        tx_type: usize,
         dst: Rav1dPictureDataComponentOffset,
         coeff: &mut [BD::Coef],
         eob: i32,
@@ -303,11 +591,26 @@ impl itxfm::Fn {
         let dst_ptr = dst.as_mut_ptr::<BD>().cast();
         let dst_stride = dst.stride();
         let coeff_len = coeff.len() as u16;
-        let coeff = coeff.as_mut_ptr().cast();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn inv_txfm_add_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, coeff, eob, bd, coeff_len, dst) }
+        let coeff_ptr = coeff.as_mut_ptr().cast();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = (tx_size, tx_type);
+                // SAFETY: Fallback `fn inv_txfm_add_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) }
+            } else {
+                // Direct dispatch: bypass function pointer for SIMD implementations.
+                // Returns true if a SIMD function handled the call, false to fall through to scalar.
+                if itxfm_add_direct::<BD>(tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) {
+                    return;
+                }
+                // Fall through to scalar (function pointer to inv_txfm_add_c_erased)
+                // SAFETY: Fallback `fn inv_txfm_add_rust` is safe.
+                unsafe { self.get()(dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) }
+            }
+        }
     }
 }
 

@@ -59,6 +59,7 @@ fn lr_stripe<BD: BitDepth>(
 
     let mut params = LooprestorationParams::default();
     let lr_fn;
+    let lr_variant;
     if lr.r#type == Rav1dRestorationType::Wiener {
         let filter = &mut params.filter;
         filter[0][0] = lr.filter_h[0] as i16;
@@ -82,7 +83,9 @@ fn lr_stripe<BD: BitDepth>(
         filter[1][4] = lr.filter_v[2] as i16;
         filter[1][3] = 128 - (filter[1][0] + filter[1][1] + filter[1][2]) * 2;
 
-        lr_fn = f.dsp.lr.wiener[((filter[0][0] | filter[1][0]) == 0) as usize];
+        let wiener_idx = ((filter[0][0] | filter[1][0]) == 0) as usize;
+        lr_fn = f.dsp.lr.wiener[wiener_idx];
+        lr_variant = wiener_idx; // 0 = wiener7, 1 = wiener5
     } else {
         let sgr_idx = assert_matches!(lr.r#type, Rav1dRestorationType::SgrProj(idx) => idx);
         let sgr_params = &dav1d_sgr_params[sgr_idx as usize];
@@ -92,7 +95,9 @@ fn lr_stripe<BD: BitDepth>(
             w0: lr.sgr_weights[0] as i16,
             w1: 128 - (lr.sgr_weights[0] as i16 + lr.sgr_weights[1] as i16),
         };
-        lr_fn = f.dsp.lr.sgr[(sgr_params[0] != 0) as usize + (sgr_params[1] != 0) as usize * 2 - 1];
+        let sgr_array_idx = (sgr_params[0] != 0) as usize + (sgr_params[1] != 0) as usize * 2 - 1;
+        lr_fn = f.dsp.lr.sgr[sgr_array_idx];
+        lr_variant = sgr_array_idx + 2; // 2 = sgr_5x5, 3 = sgr_3x3, 4 = sgr_mix
     }
 
     let mut left = &left[..];
@@ -102,6 +107,7 @@ fn lr_stripe<BD: BitDepth>(
             sby + 1 != f.sbh || y + stripe_h != row_h,
         );
         lr_fn.call::<BD>(
+            lr_variant,
             p,
             left,
             &f.lf.lr_line_buf,
