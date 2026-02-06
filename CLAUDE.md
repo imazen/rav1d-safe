@@ -188,7 +188,7 @@ Build a test binary or integration test that:
 
 ## Known Issues
 
-(none currently)
+1. **Safe-SIMD decode failure on some IVF files**: When decoding certain AV1 bitstreams without the `asm` feature, `rav1d_msac_decode_symbol_adapt16` returns invalid `BlockPartition` values (panic at `src/decode.rs:3492`). A second test file hits an index-out-of-bounds in `src/ipred_prepare.rs:217`. These decode correctly with `asm` enabled. Root cause: likely a bug in the safe SIMD msac or ipred implementation. Test files: `av1-I-frame-320x240-agtm.ivf` and `test-25fps.av1.ivf` from chromium test data.
 
 ## Technical Notes
 
