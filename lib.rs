@@ -48,7 +48,6 @@ pub mod src {
     pub(crate) mod c_arc;
     #[allow(unsafe_code)]
     pub(crate) mod c_box;
-    #[allow(unsafe_code)]
     pub mod cpu;
     #[allow(unsafe_code)]
     pub(crate) mod disjoint_mut;
@@ -66,7 +65,6 @@ pub mod src {
     mod tables;
 
     // Data/picture management
-    #[allow(unsafe_code)]
     mod data;
     #[allow(unsafe_code)]
     mod picture;
@@ -92,7 +90,6 @@ pub mod src {
     mod refmvs;
     #[allow(unsafe_code)]
     mod lf_mask;
-    #[allow(unsafe_code)]
     mod recon;
 
     // Entropy coding (inline SIMD)

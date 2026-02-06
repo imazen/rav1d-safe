@@ -1,4 +1,3 @@
-#![deny(unsafe_op_in_unsafe_fn)]
 
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
@@ -18,7 +17,7 @@ use crate::include::dav1d::headers::Rav1dWarpedMotionParams;
 use crate::include::dav1d::headers::Rav1dWarpedMotionType;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 use crate::include::dav1d::picture::PicOffset;
-use crate::src::assume::assume;
+
 use crate::src::cdef_apply::rav1d_cdef_brow;
 use crate::src::ctx::CaseSet;
 use crate::src::env::get_uv_inter_txtp;
@@ -725,11 +724,11 @@ fn decode_coefs<BD: BitDepth>(
     impl<'a, BD: BitDepth> Cf<'a, BD> {
         fn index(&self, rc: u16) -> usize {
             let i = rc as usize & (self.0.len() - 1);
-            // SAFETY: `self.0.len()` is either `cf_len` or `CF_LEN`,
+            // `self.0.len()` is either `cf_len` or `CF_LEN`,
             // both of which are powers of 2.
             // `cf_len` is a power of 2 since it's from `1 << n`, etc.
             // Thus, `& (self.0.len() - 1)` is the same as `% self.0.len()`.
-            unsafe { assume(i < self.0.len()) };
+            debug_assert!(i < self.0.len());
             i
         }
 
