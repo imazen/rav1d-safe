@@ -10,6 +10,7 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+use archmage::{arcane, Desktop64, SimdToken};
 use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
@@ -44,8 +45,9 @@ const REST_UNIT_STRIDE: usize = 256 * 3 / 2 + 3 + 3; // = 390
 /// - Horizontal: 7-tap filter on each row, output is 16-bit
 /// - Vertical: 7-tap filter on columns of the horizontal output
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn wiener_filter7_8bpc_avx2_inner(
+#[arcane]
+fn wiener_filter7_8bpc_avx2_inner(
+    _token: Desktop64,
     p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -117,58 +119,58 @@ unsafe fn wiener_filter7_8bpc_avx2_inner(
 
         // Process 8 pixels at a time with AVX2
         while i + 8 <= w {
+            // Load 8 u16 values from each of the 7 rows and convert to i32
+            // We need to process low and high halves separately
+            let row0 = &hor[(j + 0) * REST_UNIT_STRIDE + i..];
+            let row1 = &hor[(j + 1) * REST_UNIT_STRIDE + i..];
+            let row2 = &hor[(j + 2) * REST_UNIT_STRIDE + i..];
+            let row3 = &hor[(j + 3) * REST_UNIT_STRIDE + i..];
+            let row4 = &hor[(j + 4) * REST_UNIT_STRIDE + i..];
+            let row5 = &hor[(j + 5) * REST_UNIT_STRIDE + i..];
+            let row6 = &hor[(j + 6) * REST_UNIT_STRIDE + i..];
+
+            // Load 8 u16 values as __m128i - SSE intrinsics still require unsafe
+            let r0 = unsafe { _mm_loadu_si128(row0.as_ptr() as *const __m128i) };
+            let r1 = unsafe { _mm_loadu_si128(row1.as_ptr() as *const __m128i) };
+            let r2 = unsafe { _mm_loadu_si128(row2.as_ptr() as *const __m128i) };
+            let r3 = unsafe { _mm_loadu_si128(row3.as_ptr() as *const __m128i) };
+            let r4 = unsafe { _mm_loadu_si128(row4.as_ptr() as *const __m128i) };
+            let r5 = unsafe { _mm_loadu_si128(row5.as_ptr() as *const __m128i) };
+            let r6 = unsafe { _mm_loadu_si128(row6.as_ptr() as *const __m128i) };
+
+            // Process low 4 pixels (expand u16 to i32)
+            let r0_lo = _mm256_cvtepu16_epi32(r0);
+            let r1_lo = _mm256_cvtepu16_epi32(r1);
+            let r2_lo = _mm256_cvtepu16_epi32(r2);
+            let r3_lo = _mm256_cvtepu16_epi32(r3);
+            let r4_lo = _mm256_cvtepu16_epi32(r4);
+            let r5_lo = _mm256_cvtepu16_epi32(r5);
+            let r6_lo = _mm256_cvtepu16_epi32(r6);
+
+            // sum = -round_offset + sum(row[k] * filter[k])
+            let mut sum = v_round_offset;
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r0_lo, vf0));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r1_lo, vf1));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r2_lo, vf2));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r3_lo, vf3));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r4_lo, vf4));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r5_lo, vf5));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r6_lo, vf6));
+
+            // Add rounding and shift
+            sum = _mm256_add_epi32(sum, v_rounding);
+            sum = _mm256_srai_epi32::<11>(sum); // round_bits_v = 11 for 8bpc
+
+            // Clip to 0-255 and pack to bytes
+            // packus_epi32 saturates to 0-65535, then packus_epi16 saturates to 0-255
+            let sum16 = _mm256_packus_epi32(sum, sum); // i32 -> u16, gives [0-7][0-7]
+            let sum16_lo = _mm256_castsi256_si128(sum16);
+            let sum16_hi = _mm256_extracti128_si256(sum16, 1);
+            let sum16_combined = _mm_unpacklo_epi64(sum16_lo, sum16_hi);
+            let sum8 = _mm_packus_epi16(sum16_combined, sum16_combined); // u16 -> u8
+
+            // Store 8 bytes
             unsafe {
-                // Load 8 u16 values from each of the 7 rows and convert to i32
-                // We need to process low and high halves separately
-                let row0 = &hor[(j + 0) * REST_UNIT_STRIDE + i..];
-                let row1 = &hor[(j + 1) * REST_UNIT_STRIDE + i..];
-                let row2 = &hor[(j + 2) * REST_UNIT_STRIDE + i..];
-                let row3 = &hor[(j + 3) * REST_UNIT_STRIDE + i..];
-                let row4 = &hor[(j + 4) * REST_UNIT_STRIDE + i..];
-                let row5 = &hor[(j + 5) * REST_UNIT_STRIDE + i..];
-                let row6 = &hor[(j + 6) * REST_UNIT_STRIDE + i..];
-
-                // Load 8 u16 values as __m128i
-                let r0 = _mm_loadu_si128(row0.as_ptr() as *const __m128i);
-                let r1 = _mm_loadu_si128(row1.as_ptr() as *const __m128i);
-                let r2 = _mm_loadu_si128(row2.as_ptr() as *const __m128i);
-                let r3 = _mm_loadu_si128(row3.as_ptr() as *const __m128i);
-                let r4 = _mm_loadu_si128(row4.as_ptr() as *const __m128i);
-                let r5 = _mm_loadu_si128(row5.as_ptr() as *const __m128i);
-                let r6 = _mm_loadu_si128(row6.as_ptr() as *const __m128i);
-
-                // Process low 4 pixels (expand u16 to i32)
-                let r0_lo = _mm256_cvtepu16_epi32(r0);
-                let r1_lo = _mm256_cvtepu16_epi32(r1);
-                let r2_lo = _mm256_cvtepu16_epi32(r2);
-                let r3_lo = _mm256_cvtepu16_epi32(r3);
-                let r4_lo = _mm256_cvtepu16_epi32(r4);
-                let r5_lo = _mm256_cvtepu16_epi32(r5);
-                let r6_lo = _mm256_cvtepu16_epi32(r6);
-
-                // sum = -round_offset + sum(row[k] * filter[k])
-                let mut sum = v_round_offset;
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r0_lo, vf0));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r1_lo, vf1));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r2_lo, vf2));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r3_lo, vf3));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r4_lo, vf4));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r5_lo, vf5));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r6_lo, vf6));
-
-                // Add rounding and shift
-                sum = _mm256_add_epi32(sum, v_rounding);
-                sum = _mm256_srai_epi32::<11>(sum); // round_bits_v = 11 for 8bpc
-
-                // Clip to 0-255 and pack to bytes
-                // packus_epi32 saturates to 0-65535, then packus_epi16 saturates to 0-255
-                let sum16 = _mm256_packus_epi32(sum, sum); // i32 -> u16, gives [0-7][0-7]
-                let sum16_lo = _mm256_castsi256_si128(sum16);
-                let sum16_hi = _mm256_extracti128_si256(sum16, 1);
-                let sum16_combined = _mm_unpacklo_epi64(sum16_lo, sum16_hi);
-                let sum8 = _mm_packus_epi16(sum16_combined, sum16_combined); // u16 -> u8
-
-                // Store 8 bytes
                 let dst_ptr = dst_row.as_mut_ptr().add(i);
                 _mm_storel_epi64(dst_ptr as *mut __m128i, sum8);
             }
@@ -191,7 +193,9 @@ unsafe fn wiener_filter7_8bpc_avx2_inner(
 ///
 /// Same as 7-tap but filter[0][0] = filter[0][6] = 0 and filter[1][0] = filter[1][6] = 0
 #[cfg(target_arch = "x86_64")]
+#[arcane]
 fn wiener_filter5_8bpc_avx2_inner(
+    _token: Desktop64,
     p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -202,10 +206,7 @@ fn wiener_filter5_8bpc_avx2_inner(
     edges: LrEdgeFlags,
 ) {
     // 5-tap is identical to 7-tap, the coefficient array just has zeros at edges
-    // SAFETY: AVX2 availability verified by caller (dispatch checks CpuFlags::AVX2)
-    unsafe {
-        wiener_filter7_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    wiener_filter7_8bpc_avx2_inner(_token, p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 // ============================================================================
@@ -343,10 +344,9 @@ pub unsafe extern "C" fn wiener_filter7_8bpc_avx2(
     // SAFETY: Length was sliced in loop_restoration_filter::Fn::call
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    // SAFETY: All parameters validated, target_feature enabled
-    unsafe {
-        wiener_filter7_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    // SAFETY: AVX2 available (checked by dispatch)
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    wiener_filter7_8bpc_avx2_inner(token, p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 /// FFI wrapper for Wiener filter 5-tap 8bpc
@@ -376,7 +376,9 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
     // SAFETY: Length was sliced in loop_restoration_filter::Fn::call
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    wiener_filter5_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
+    // SAFETY: AVX2 available (checked by dispatch)
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    wiener_filter5_8bpc_avx2_inner(token, p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 /// Reconstructs lpf offset from pointer for 16bpc
@@ -1579,10 +1581,12 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
     let left_8 = || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u8>]) };
     let left_16 = || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u16>]) };
 
+    // SAFETY: AVX2 verified by CpuFlags check above
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+
     match (BD::BPC, variant) {
-        // SAFETY: wiener_filter7_8bpc uses AVX2 intrinsics; AVX2 verified by CpuFlags check above
-        (BPC::BPC8, 0) => unsafe { wiener_filter7_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges) },
-        (BPC::BPC8, 1) => wiener_filter5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+        (BPC::BPC8, 0) => wiener_filter7_8bpc_avx2_inner(token, dst, left_8(), lpf, lpf_off, w, h, params, edges),
+        (BPC::BPC8, 1) => wiener_filter5_8bpc_avx2_inner(token, dst, left_8(), lpf, lpf_off, w, h, params, edges),
         (BPC::BPC8, 2) => sgr_5x5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
         (BPC::BPC8, 3) => sgr_3x3_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
         (BPC::BPC8, _) => sgr_mix_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
