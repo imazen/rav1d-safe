@@ -653,6 +653,7 @@ fn cdef_find_dir_16bpc_inner(
 // ============================================================================
 // FFI WRAPPERS
 // ============================================================================
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn cdef_filter_8x8_8bpc_neon(
@@ -682,6 +683,7 @@ pub unsafe extern "C" fn cdef_filter_8x8_8bpc_neon(
         8, 8,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn cdef_filter_4x8_8bpc_neon(
@@ -711,6 +713,7 @@ pub unsafe extern "C" fn cdef_filter_4x8_8bpc_neon(
         4, 8,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn cdef_filter_4x4_8bpc_neon(
@@ -740,6 +743,7 @@ pub unsafe extern "C" fn cdef_filter_4x4_8bpc_neon(
         4, 4,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn cdef_find_dir_8bpc_neon(
@@ -752,6 +756,7 @@ pub unsafe extern "C" fn cdef_find_dir_8bpc_neon(
     let img = *FFISafe::get(dst);
     cdef_find_dir_8bpc_inner(img, variance)
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn cdef_filter_8x8_16bpc_neon(
@@ -781,6 +786,7 @@ pub unsafe extern "C" fn cdef_filter_8x8_16bpc_neon(
         8, 8, bitdepth_max,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn cdef_filter_4x8_16bpc_neon(
@@ -810,6 +816,7 @@ pub unsafe extern "C" fn cdef_filter_4x8_16bpc_neon(
         4, 8, bitdepth_max,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn cdef_filter_4x4_16bpc_neon(
@@ -839,6 +846,7 @@ pub unsafe extern "C" fn cdef_filter_4x4_16bpc_neon(
         4, 4, bitdepth_max,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn cdef_find_dir_16bpc_neon(

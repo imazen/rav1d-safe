@@ -44,19 +44,19 @@ macro_rules! wrap_fn_ptr {
     ) -> $return_ty:ty) => {
         $vis mod $name {
             use $crate::src::enum_map::DefaultValue;
+            #[allow(unused_imports)]
             use super::*;
 
+            // When asm or c-ffi is enabled, use real function pointers
+            #[cfg(any(feature = "asm", feature = "c-ffi"))]
             pub type FnPtr = unsafe extern "C" fn($($arg_name: $arg_ty),*) -> $return_ty;
 
-            /// A newtype wrapped [`FnPtr`].
-            ///
-            /// This allows us to add a safer
-            /// (type-safe for sure, and increasingly fully safe)
-            /// interface for calling a `fn` ptr.
+            #[cfg(any(feature = "asm", feature = "c-ffi"))]
             #[derive(Clone, Copy, PartialEq, Eq)]
             #[repr(transparent)]
             pub struct Fn(FnPtr);
 
+            #[cfg(any(feature = "asm", feature = "c-ffi"))]
             impl Fn {
                 pub(super) const fn new(fn_ptr: FnPtr) -> Self {
                     Self(fn_ptr)
@@ -67,6 +67,7 @@ macro_rules! wrap_fn_ptr {
                 }
             }
 
+            #[cfg(any(feature = "asm", feature = "c-ffi"))]
             impl DefaultValue for Fn {
                 const DEFAULT: Self = {
                     extern "C" fn default_unimplemented(
@@ -77,6 +78,17 @@ macro_rules! wrap_fn_ptr {
                     }
                     Self::new(default_unimplemented)
                 };
+            }
+
+            // When neither asm nor c-ffi is enabled, use a unit struct.
+            // The `call` methods use direct dispatch and never dereference the fn ptr.
+            #[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+            #[derive(Clone, Copy, PartialEq, Eq)]
+            pub struct Fn(());
+
+            #[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+            impl DefaultValue for Fn {
+                const DEFAULT: Self = Fn(());
             }
 
             #[cfg(feature = "asm")]
@@ -100,7 +112,7 @@ macro_rules! wrap_fn_ptr {
             /// This is similar to `decl_fn!` but takes a Rust function
             /// directly instead of declaring an extern "C" block.
             /// Used when `safe-simd` feature is enabled.
-            #[cfg(not(feature = "asm"))]
+            #[cfg(all(not(feature = "asm"), any(feature = "c-ffi")))]
             #[allow(unused_macros)]
             macro_rules! decl_fn_safe {
                 ($fn_path:path) => {{
@@ -108,7 +120,7 @@ macro_rules! wrap_fn_ptr {
                 }};
             }
 
-            #[cfg(not(feature = "asm"))]
+            #[cfg(all(not(feature = "asm"), any(feature = "c-ffi")))]
             #[allow(unused_imports)]
             pub(crate) use decl_fn_safe;
         }

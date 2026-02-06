@@ -10,6 +10,7 @@ use core::arch::aarch64::*;
 
 use crate::src::align::Align16;
 use crate::src::refmvs::RefMvsBlock;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// ARM NEON implementation of splat_mv.
 ///

@@ -328,6 +328,7 @@ unsafe fn dct4_2rows_avx2(
 // ============================================================================
 // FFI WRAPPERS
 // ============================================================================
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x4 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -489,6 +490,7 @@ unsafe fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     // Clear coefficients
     unsafe { _mm256_storeu_si256(coeff as *mut __m256i, _mm256_setzero_si256()) };
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x4 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -598,6 +600,7 @@ unsafe fn inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
         unsafe { *c_ptr.add(i) = 0 };
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x4 WHT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -690,6 +693,7 @@ unsafe fn inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
         unsafe { *c_ptr.add(i) = 0 };
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x4 WHT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -779,6 +783,7 @@ pub unsafe fn inv_identity_add_4x4_8bpc_avx2(
         _mm_storeu_si128(coeff.add(8) as *mut __m128i, _mm_setzero_si128());
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x4 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -859,6 +864,7 @@ pub unsafe fn inv_identity_add_8x8_8bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x8 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -1215,6 +1221,7 @@ unsafe fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
         _mm256_storeu_si256((coeff as *mut __m256i).add(3), zero256);
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x8 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -1338,6 +1345,7 @@ unsafe fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
         _mm256_storeu_si256((coeff as *mut __m256i).add(3), zero256);
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x8 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -1447,6 +1455,7 @@ pub unsafe fn inv_identity_add_16x16_8bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x16 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -1853,6 +1862,7 @@ macro_rules! impl_16x16_transform {
 /// Macro to generate FFI wrappers for 16x16 transforms
 macro_rules! impl_16x16_ffi_wrapper {
     ($wrapper:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
@@ -1992,6 +2002,7 @@ unsafe fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x16 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -2121,6 +2132,7 @@ unsafe fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x16 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -2223,6 +2235,7 @@ unsafe fn inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(
         _mm256_storeu_si256((coeff as *mut __m256i).add(1), _mm256_setzero_si256());
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x8 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -2329,6 +2342,7 @@ unsafe fn inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
         _mm256_storeu_si256((coeff as *mut __m256i).add(1), _mm256_setzero_si256());
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x4 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -2507,6 +2521,7 @@ impl_8x4_transform!(inv_txfm_add_flipadst_adst_8x4_8bpc_avx2_inner, flipadst8_1d
 // FFI wrappers for 4x8 ADST variants
 macro_rules! impl_4x8_ffi_wrapper {
     ($name:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -2535,6 +2550,7 @@ impl_4x8_ffi_wrapper!(inv_txfm_add_flipadst_adst_4x8_8bpc_avx2, inv_txfm_add_fli
 // FFI wrappers for 8x4 ADST variants
 macro_rules! impl_8x4_ffi_wrapper {
     ($name:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -2800,6 +2816,7 @@ impl_16x8_transform!(inv_txfm_add_flipadst_adst_16x8_8bpc_avx2_inner, flipadst16
 /// FFI wrapper macro for 8x16 transforms
 macro_rules! impl_8x16_ffi_wrapper {
     ($name:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -2827,6 +2844,7 @@ macro_rules! impl_8x16_ffi_wrapper {
 /// FFI wrapper macro for 16x8 transforms
 macro_rules! impl_16x8_ffi_wrapper {
     ($name:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -2991,6 +3009,7 @@ unsafe fn inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x16 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -3102,6 +3121,7 @@ unsafe fn inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x8 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -3217,6 +3237,7 @@ unsafe fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x32 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -3332,6 +3353,7 @@ unsafe fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x16 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -3443,6 +3465,7 @@ unsafe fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x32 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -3522,6 +3545,7 @@ unsafe fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x16 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -3646,6 +3670,7 @@ unsafe fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x64 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -3765,6 +3790,7 @@ unsafe fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 64x32 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -3850,6 +3876,7 @@ unsafe fn inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x16 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -3959,6 +3986,7 @@ unsafe fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x4 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -4158,6 +4186,7 @@ impl_16x4_transform!(inv_txfm_add_flipadst_adst_16x4_8bpc_avx2_inner, flipadst16
 /// FFI wrapper macro for 4x16 transforms
 macro_rules! impl_4x16_ffi_wrapper {
     ($name:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -4185,6 +4214,7 @@ macro_rules! impl_4x16_ffi_wrapper {
 /// FFI wrapper macro for 16x4 transforms
 macro_rules! impl_16x4_ffi_wrapper {
     ($name:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -4326,6 +4356,7 @@ unsafe fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x32 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -4441,6 +4472,7 @@ unsafe fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x8 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -4522,6 +4554,7 @@ unsafe fn inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x32 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -4599,6 +4632,7 @@ unsafe fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x8 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -4721,6 +4755,7 @@ unsafe fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x64 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -4839,6 +4874,7 @@ unsafe fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 64x16 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -5111,6 +5147,7 @@ pub unsafe fn inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
 // ============================================================================
 // ADST FFI WRAPPERS
 // ============================================================================
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for ADST_DCT 4x4 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -5134,6 +5171,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_avx2(
         );
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for DCT_ADST 4x4 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -5157,6 +5195,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_avx2(
         );
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for ADST_ADST 4x4 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -5411,6 +5450,7 @@ pub unsafe fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
 }
 
 // FFI wrappers for FlipADST variants
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2(
@@ -5420,6 +5460,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2(
 ) {
     unsafe { inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -5430,6 +5471,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2(
 ) {
     unsafe { inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -5440,6 +5482,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2(
 ) {
     unsafe { inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -5450,6 +5493,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2(
 ) {
     unsafe { inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -5651,6 +5695,7 @@ impl_8x8_transform!(inv_txfm_add_flipadst_adst_8x8_8bpc_avx2_inner, flipadst8_1d
 // FFI wrappers for 8x8 transforms
 macro_rules! impl_8x8_ffi_wrapper {
     ($wrapper:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
@@ -5856,6 +5901,7 @@ pub unsafe fn inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
 }
 
 // FFI wrappers for V/H ADST
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_avx2(
@@ -5865,6 +5911,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_avx2(
 ) {
     unsafe { inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -5875,6 +5922,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_avx2(
 ) {
     unsafe { inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -5885,6 +5933,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_avx2(
 ) {
     unsafe { inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -5985,6 +6034,7 @@ pub unsafe fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
 }
 
 // FFI wrappers for V/H DCT
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_avx2(
@@ -5994,6 +6044,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_avx2(
 ) {
     unsafe { inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -6367,6 +6418,7 @@ unsafe fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
     );
     unsafe { add_32x32_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x32 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -6390,6 +6442,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_avx2(
         );
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x32 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -6511,6 +6564,7 @@ unsafe fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
     );
     unsafe { add_32x32_to_dst_16bpc(dst, dst_stride, &tmp, coeff, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x32 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -7265,6 +7319,7 @@ unsafe fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
     );
     unsafe { add_64x64_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 64x64 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -7386,6 +7441,7 @@ unsafe fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
     );
     unsafe { add_64x64_to_dst_16bpc(dst, dst_stride, &tmp, coeff, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 64x64 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -7484,6 +7540,7 @@ unsafe fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
         _mm256_storeu_si256((coeff as *mut __m256i).add(1), _mm256_setzero_si256());
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x8 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -7587,6 +7644,7 @@ unsafe fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
         _mm256_storeu_si256((coeff as *mut __m256i).add(1), _mm256_setzero_si256());
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x4 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -7694,6 +7752,7 @@ unsafe fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x16 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -7809,6 +7868,7 @@ unsafe fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x8 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -7903,6 +7963,7 @@ unsafe fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x16 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -8014,6 +8075,7 @@ unsafe fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x4 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -8128,6 +8190,7 @@ unsafe fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x32 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -8241,6 +8304,7 @@ unsafe fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x16 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -8348,6 +8412,7 @@ unsafe fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x32 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -8461,6 +8526,7 @@ unsafe fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x8 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -8571,6 +8637,7 @@ unsafe fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x64 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -8681,6 +8748,7 @@ unsafe fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 64x32 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -8792,6 +8860,7 @@ unsafe fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x64 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -8902,6 +8971,7 @@ unsafe fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 64x16 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -9011,6 +9081,7 @@ impl_8x8_transform_16bpc!(inv_txfm_add_flipadst_adst_8x8_16bpc_avx2_inner, flipa
 // FFI wrappers for 8x8 16bpc transforms
 macro_rules! impl_8x8_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
@@ -9105,6 +9176,7 @@ impl_4x4_transform_16bpc!(inv_txfm_add_flipadst_adst_4x4_16bpc_avx2_inner, flipa
 // FFI wrappers for 4x4 16bpc transforms
 macro_rules! impl_4x4_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
@@ -9205,6 +9277,7 @@ impl_16x16_transform_16bpc!(inv_txfm_add_flipadst_adst_16x16_16bpc_avx2_inner, f
 // FFI wrappers for 16x16 16bpc transforms
 macro_rules! impl_16x16_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
@@ -9285,6 +9358,7 @@ pub unsafe fn inv_identity_add_4x4_16bpc_avx2(
         _mm_storeu_si128(coeff.add(8) as *mut __m128i, _mm_setzero_si128());
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x4 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -9367,6 +9441,7 @@ pub unsafe fn inv_identity_add_8x8_16bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x8 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -9473,6 +9548,7 @@ pub unsafe fn inv_identity_add_16x16_16bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x16 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -9525,6 +9601,7 @@ unsafe fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
     );
     unsafe { add_32x32_to_dst_16bpc(dst, dst_stride, &tmp, coeff, bitdepth_max); }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x32 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -9623,6 +9700,7 @@ unsafe fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
         _mm256_storeu_si256((coeff as *mut __m256i).add(1), _mm256_setzero_si256());
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x8 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -9726,6 +9804,7 @@ unsafe fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
         _mm256_storeu_si256((coeff as *mut __m256i).add(1), _mm256_setzero_si256());
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x4 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -9830,6 +9909,7 @@ unsafe fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x16 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -9938,6 +10018,7 @@ unsafe fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x8 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -10032,6 +10113,7 @@ unsafe fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 4x16 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -10139,6 +10221,7 @@ unsafe fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x4 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -10248,6 +10331,7 @@ unsafe fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 16x32 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -10357,6 +10441,7 @@ unsafe fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x16 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -10460,6 +10545,7 @@ unsafe fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 8x32 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -10568,6 +10654,7 @@ unsafe fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for 32x8 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -10754,6 +10841,7 @@ macro_rules! impl_8x4_transform_16bpc {
 /// Macro for FFI wrapper 16bpc
 macro_rules! impl_ffi_wrapper_16bpc {
     ($name:ident, $inner:ident) => {
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(

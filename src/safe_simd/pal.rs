@@ -147,6 +147,7 @@ fn pal_idx_finish_inner(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// AVX2 implementation of pal_idx_finish - FFI wrapper.
 #[cfg(target_arch = "x86_64")]

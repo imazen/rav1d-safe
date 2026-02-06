@@ -296,6 +296,7 @@ fn lpf_v_sb_inner<BD: BitDepth, const YUV: usize>(
 // ============================================================================
 // FFI WRAPPERS - 8BPC
 // ============================================================================
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn lpf_h_sb_y_8bpc_neon(
@@ -322,6 +323,7 @@ pub unsafe extern "C" fn lpf_h_sb_y_8bpc_neon(
         bitdepth_max,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn lpf_v_sb_y_8bpc_neon(
@@ -348,6 +350,7 @@ pub unsafe extern "C" fn lpf_v_sb_y_8bpc_neon(
         bitdepth_max,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_neon(
@@ -374,6 +377,7 @@ pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_neon(
         bitdepth_max,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_neon(
@@ -404,6 +408,7 @@ pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_neon(
 // ============================================================================
 // FFI WRAPPERS - 16BPC
 // ============================================================================
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn lpf_h_sb_y_16bpc_neon(
@@ -431,6 +436,7 @@ pub unsafe extern "C" fn lpf_h_sb_y_16bpc_neon(
         bitdepth_max,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn lpf_v_sb_y_16bpc_neon(
@@ -458,6 +464,7 @@ pub unsafe extern "C" fn lpf_v_sb_y_16bpc_neon(
         bitdepth_max,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_neon(
@@ -485,6 +492,7 @@ pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_neon(
         bitdepth_max,
     );
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn lpf_v_sb_uv_16bpc_neon(

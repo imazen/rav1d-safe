@@ -24,6 +24,7 @@ use crate::src::levels::Filter2d;
 /// pmulhrsw computes: (a * b + 16384) >> 15
 /// With b=1024: (a * 1024 + 16384) >> 15 ≈ (a + 1) >> 1 (with rounding)
 const PW_1024: i16 = 1024;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// AVG operation for 8-bit pixels using AVX2
 ///
@@ -130,6 +131,7 @@ pub unsafe extern "C" fn avg_8bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// AVG operation for 16-bit pixels using AVX2
 ///
@@ -226,6 +228,7 @@ pub unsafe extern "C" fn avg_16bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// SSE4.1 fallback for avg_8bpc
 ///
@@ -249,6 +252,7 @@ pub unsafe extern "C" fn avg_8bpc_sse4(
     // SAFETY: avg_scalar is safe to call with valid pointers
     unsafe { avg_scalar(dst_ptr, dst_stride, tmp1, tmp2, w, h, bitdepth_max, _dst) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Scalar fallback for avg
 ///
@@ -291,6 +295,7 @@ pub unsafe extern "C" fn avg_scalar(
 
 /// Weighted average rounding constant for pmulhrsw
 const PW_2048: i16 = 2048;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Weighted average for 8-bit pixels using AVX2
 ///
@@ -390,6 +395,7 @@ pub unsafe extern "C" fn w_avg_8bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Weighted average for 16-bit pixels using AVX2
 ///
@@ -483,6 +489,7 @@ pub unsafe extern "C" fn w_avg_16bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Scalar fallback for w_avg
 ///
@@ -527,6 +534,7 @@ pub unsafe extern "C" fn w_avg_scalar(
 // =============================================================================
 // MASK (Per-pixel blend with mask)
 // =============================================================================
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Mask blend for 8-bit pixels using AVX2
 ///
@@ -642,6 +650,7 @@ pub unsafe extern "C" fn mask_8bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Mask blend for 16-bit pixels
 #[cfg(target_arch = "x86_64")]
@@ -736,6 +745,7 @@ pub unsafe extern "C" fn mask_16bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Scalar fallback for mask
 pub unsafe extern "C" fn mask_scalar(
@@ -780,6 +790,7 @@ pub unsafe extern "C" fn mask_scalar(
 // =============================================================================
 
 use crate::src::internal::{SCRATCH_INTER_INTRA_BUF_LEN, SCRATCH_LAP_LEN};
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Blend pixels using per-pixel mask
 ///
@@ -870,6 +881,7 @@ pub unsafe extern "C" fn blend_8bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Blend pixels for 16-bit
 #[cfg(target_arch = "x86_64")]
@@ -959,6 +971,7 @@ pub unsafe extern "C" fn blend_16bpc_avx2(
 
 use crate::src::tables::dav1d_mc_subpel_filters;
 use crate::src::tables::dav1d_obmc_masks;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Vertical blend (overlapped block motion compensation)
 ///
@@ -1035,6 +1048,7 @@ pub unsafe extern "C" fn blend_v_8bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Horizontal blend (overlapped block motion compensation)
 #[cfg(target_arch = "x86_64")]
@@ -1109,6 +1123,7 @@ pub unsafe extern "C" fn blend_h_8bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// 16-bit blend_v
 #[cfg(target_arch = "x86_64")]
@@ -1187,6 +1202,7 @@ pub unsafe extern "C" fn blend_v_16bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// 16-bit blend_h
 #[cfg(target_arch = "x86_64")]
@@ -1770,6 +1786,7 @@ unsafe fn put_8tap_8bpc_avx2_impl(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Generic put_8tap function wrapper with Filter2d const generic
 #[cfg(target_arch = "x86_64")]
@@ -1800,6 +1817,7 @@ pub unsafe extern "C" fn put_8tap_8bpc_avx2<const FILTER: usize>(
 
 // Specific filter type wrappers for dispatch table
 // These are needed because decl_fn_safe! requires concrete functions, not generics
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -1833,6 +1851,7 @@ pub unsafe extern "C" fn put_8tap_regular_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -1866,6 +1885,7 @@ pub unsafe extern "C" fn put_8tap_regular_smooth_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -1899,6 +1919,7 @@ pub unsafe extern "C" fn put_8tap_regular_sharp_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -1932,6 +1953,7 @@ pub unsafe extern "C" fn put_8tap_smooth_regular_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -1965,6 +1987,7 @@ pub unsafe extern "C" fn put_8tap_smooth_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -1998,6 +2021,7 @@ pub unsafe extern "C" fn put_8tap_smooth_sharp_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -2031,6 +2055,7 @@ pub unsafe extern "C" fn put_8tap_sharp_regular_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -2064,6 +2089,7 @@ pub unsafe extern "C" fn put_8tap_sharp_smooth_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -2280,6 +2306,7 @@ unsafe fn v_filter_8tap_to_i16_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Generic prep_8tap function wrapper with Filter2d const generic
 #[cfg(target_arch = "x86_64")]
@@ -2305,6 +2332,7 @@ pub unsafe extern "C" fn prep_8tap_8bpc_avx2<const FILTER: usize>(
 }
 
 // Specific filter type wrappers for dispatch table
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -2326,6 +2354,7 @@ pub unsafe extern "C" fn prep_8tap_regular_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -2347,6 +2376,7 @@ pub unsafe extern "C" fn prep_8tap_regular_smooth_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -2368,6 +2398,7 @@ pub unsafe extern "C" fn prep_8tap_regular_sharp_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -2389,6 +2420,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_regular_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -2410,6 +2442,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -2431,6 +2464,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_sharp_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -2452,6 +2486,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_regular_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -2473,6 +2508,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_smooth_8bpc_avx2(
     )
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3301,6 +3337,7 @@ unsafe fn prep_8tap_16bpc_avx2_impl(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Generic put_8tap function wrapper for 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -3328,6 +3365,7 @@ pub unsafe extern "C" fn put_8tap_16bpc_avx2<const FILTER: usize>(
         );
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Generic prep_8tap function wrapper for 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -3353,6 +3391,7 @@ pub unsafe extern "C" fn prep_8tap_16bpc_avx2<const FILTER: usize>(
 }
 
 // 16bpc wrapper functions for each filter type
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3363,6 +3402,7 @@ pub unsafe extern "C" fn put_8tap_regular_16bpc_avx2(
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3373,6 +3413,7 @@ pub unsafe extern "C" fn put_8tap_regular_smooth_16bpc_avx2(
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3383,6 +3424,7 @@ pub unsafe extern "C" fn put_8tap_regular_sharp_16bpc_avx2(
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3393,6 +3435,7 @@ pub unsafe extern "C" fn put_8tap_smooth_regular_16bpc_avx2(
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3403,6 +3446,7 @@ pub unsafe extern "C" fn put_8tap_smooth_16bpc_avx2(
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3413,6 +3457,7 @@ pub unsafe extern "C" fn put_8tap_smooth_sharp_16bpc_avx2(
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3423,6 +3468,7 @@ pub unsafe extern "C" fn put_8tap_sharp_regular_16bpc_avx2(
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3433,6 +3479,7 @@ pub unsafe extern "C" fn put_8tap_sharp_smooth_16bpc_avx2(
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3445,6 +3492,7 @@ pub unsafe extern "C" fn put_8tap_sharp_16bpc_avx2(
 }
 
 // 16bpc prep wrapper functions
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3454,6 +3502,7 @@ pub unsafe extern "C" fn prep_8tap_regular_16bpc_avx2(
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3463,6 +3512,7 @@ pub unsafe extern "C" fn prep_8tap_regular_smooth_16bpc_avx2(
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3472,6 +3522,7 @@ pub unsafe extern "C" fn prep_8tap_regular_sharp_16bpc_avx2(
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3481,6 +3532,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_regular_16bpc_avx2(
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3490,6 +3542,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_16bpc_avx2(
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3499,6 +3552,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_sharp_16bpc_avx2(
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3508,6 +3562,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_regular_16bpc_avx2(
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3517,6 +3572,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_smooth_16bpc_avx2(
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -3893,6 +3949,7 @@ unsafe fn put_bilin_8bpc_avx2_impl(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Bilinear put for 8bpc - extern "C" wrapper
 #[cfg(target_arch = "x86_64")]
@@ -4016,6 +4073,7 @@ unsafe fn prep_bilin_8bpc_avx2_impl(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Bilinear prep for 8bpc - extern "C" wrapper
 #[cfg(target_arch = "x86_64")]
@@ -4136,6 +4194,7 @@ unsafe fn w_mask_8bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// w_mask for 4:4:4 (no subsampling)
 #[cfg(target_arch = "x86_64")]
@@ -4156,6 +4215,7 @@ pub unsafe extern "C" fn w_mask_444_8bpc_avx2(
         w_mask_8bpc_avx2_impl::<false, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign);
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// w_mask for 4:2:2 (horizontal subsampling only)
 #[cfg(target_arch = "x86_64")]
@@ -4176,6 +4236,7 @@ pub unsafe extern "C" fn w_mask_422_8bpc_avx2(
         w_mask_8bpc_avx2_impl::<true, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign);
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// w_mask for 4:2:0 (horizontal and vertical subsampling)
 #[cfg(target_arch = "x86_64")]
@@ -4277,6 +4338,7 @@ unsafe fn w_mask_16bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -4296,6 +4358,7 @@ pub unsafe extern "C" fn w_mask_444_16bpc_avx2(
         w_mask_16bpc_avx2_impl::<false, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max);
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -4315,6 +4378,7 @@ pub unsafe extern "C" fn w_mask_422_16bpc_avx2(
         w_mask_16bpc_avx2_impl::<true, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max);
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -4724,6 +4788,7 @@ unsafe fn v_bilin_16bpc_prep_direct_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 
 /// Bilinear put for 16bpc
@@ -4802,6 +4867,7 @@ pub unsafe extern "C" fn put_bilin_16bpc_avx2(
         }
     }
 }
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Bilinear prep for 16bpc (scalar implementation)
 #[cfg(target_arch = "x86_64")]
