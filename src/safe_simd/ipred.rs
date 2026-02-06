@@ -12,6 +12,7 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+use archmage::{arcane, Desktop64, SimdToken};
 use libc::{c_int, ptrdiff_t};
 
 use crate::include::common::bitdepth::DynPixel;
@@ -26,23 +27,15 @@ use crate::src::ffi_safe::FFISafe;
 ///
 /// For 8bpc, fills with 128. This is the simplest prediction mode.
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_128_8bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    _topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    _angle: c_int,
-    _max_width: c_int,
-    _max_height: c_int,
-    _bitdepth_max: c_int,
-    _topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
+#[arcane]
+fn ipred_dc_128_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    width: usize,
+    height: usize,
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u8;
+
 
     unsafe {
         let fill_val = _mm256_set1_epi8(128u8 as i8);
@@ -69,19 +62,16 @@ pub unsafe extern "C" fn ipred_dc_128_8bpc_avx2(
             }
         }
     }
+
 }
 
-// ============================================================================
-// Vertical Prediction (copy top row)
-// ============================================================================
-
-/// Vertical prediction: copy the top row to all rows in the block
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_v_8bpc_avx2(
+pub unsafe extern "C" fn ipred_dc_128_8bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
-    topleft: *const DynPixel,
+    _topleft: *const DynPixel,
     width: c_int,
     height: c_int,
     _angle: c_int,
@@ -90,10 +80,30 @@ pub unsafe extern "C" fn ipred_v_8bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u8;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_dc_128_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, width as usize, height as usize);
+}
+
+
+
+// ============================================================================
+// Vertical Prediction (copy top row)
+// ============================================================================
+
+/// Vertical prediction: copy the top row to all rows in the block
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_v_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
 
     unsafe {
         // Top pixels start at topleft + 1
@@ -147,16 +157,13 @@ pub unsafe extern "C" fn ipred_v_8bpc_avx2(
             }
         }
     }
+
 }
 
-// ============================================================================
-// Horizontal Prediction (fill from left pixels)
-// ============================================================================
-
-/// Horizontal prediction: fill each row with the left pixel value
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_h_8bpc_avx2(
+pub unsafe extern "C" fn ipred_v_8bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -168,10 +175,30 @@ pub unsafe extern "C" fn ipred_h_8bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u8;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_v_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+// ============================================================================
+// Horizontal Prediction (fill from left pixels)
+// ============================================================================
+
+/// Horizontal prediction: fill each row with the left pixel value
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_h_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
     let left_base = topleft as *const u8;
 
     unsafe {
@@ -201,16 +228,13 @@ pub unsafe extern "C" fn ipred_h_8bpc_avx2(
             }
         }
     }
+
 }
 
-// ============================================================================
-// DC Prediction (average of top and left)
-// ============================================================================
-
-/// DC prediction: fill block with average of top and left edge pixels
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_8bpc_avx2(
+pub unsafe extern "C" fn ipred_h_8bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -222,10 +246,30 @@ pub unsafe extern "C" fn ipred_dc_8bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u8;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_h_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+// ============================================================================
+// DC Prediction (average of top and left)
+// ============================================================================
+
+/// DC prediction: fill block with average of top and left edge pixels
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
     let tl = topleft as *const u8;
 
     unsafe {
@@ -267,12 +311,13 @@ pub unsafe extern "C" fn ipred_dc_8bpc_avx2(
             }
         }
     }
+
 }
 
-/// DC_TOP prediction: fill block with average of top edge only
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_top_8bpc_avx2(
+pub unsafe extern "C" fn ipred_dc_8bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -284,10 +329,26 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u8;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_dc_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// DC_TOP prediction: fill block with average of top edge only
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_top_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
     let tl = topleft as *const u8;
 
     unsafe {
@@ -324,12 +385,13 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_avx2(
             }
         }
     }
+
 }
 
-/// DC_LEFT prediction: fill block with average of left edge only
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
+pub unsafe extern "C" fn ipred_dc_top_8bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -341,10 +403,26 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u8;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_dc_top_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// DC_LEFT prediction: fill block with average of left edge only
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_left_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
     let tl = topleft as *const u8;
 
     unsafe {
@@ -381,7 +459,31 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_dc_left_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
 
 // ============================================================================
 // PAETH Prediction
@@ -396,23 +498,16 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
 ///   tldiff = |topleft - base|
 ///   pick whichever of left/top/topleft has smallest diff
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_paeth_8bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    _angle: c_int,
-    _max_width: c_int,
-    _max_height: c_int,
-    _bitdepth_max: c_int,
-    _topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
+#[arcane]
+fn ipred_paeth_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u8;
+
     let tl = topleft as *const u8;
 
     unsafe {
@@ -506,7 +601,31 @@ pub unsafe extern "C" fn ipred_paeth_8bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_paeth_8bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_paeth_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
 
 // ============================================================================
 // SMOOTH Predictions (using weight tables)
@@ -519,23 +638,16 @@ use crate::src::tables::dav1d_sm_weights;
 /// pred = w_v[y] * top + (256 - w_v[y]) * bottom + w_h[x] * left + (256 - w_h[x]) * right
 /// dst = (pred + 256) >> 9
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_8bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    _angle: c_int,
-    _max_width: c_int,
-    _max_height: c_int,
-    _bitdepth_max: c_int,
-    _topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
+#[arcane]
+fn ipred_smooth_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u8;
+
     let tl = topleft as *const u8;
 
     unsafe {
@@ -612,15 +724,13 @@ pub unsafe extern "C" fn ipred_smooth_8bpc_avx2(
             }
         }
     }
+
 }
 
-/// SMOOTH_V prediction: vertical-only weighted blend (top/bottom)
-///
-/// pred = w_v[y] * top + (256 - w_v[y]) * bottom
-/// dst = (pred + 128) >> 8
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_v_8bpc_avx2(
+pub unsafe extern "C" fn ipred_smooth_8bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -632,10 +742,29 @@ pub unsafe extern "C" fn ipred_smooth_v_8bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u8;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_smooth_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// SMOOTH_V prediction: vertical-only weighted blend (top/bottom)
+///
+/// pred = w_v[y] * top + (256 - w_v[y]) * bottom
+/// dst = (pred + 128) >> 8
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_smooth_v_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
     let tl = topleft as *const u8;
 
     unsafe {
@@ -691,15 +820,13 @@ pub unsafe extern "C" fn ipred_smooth_v_8bpc_avx2(
             }
         }
     }
+
 }
 
-/// SMOOTH_H prediction: horizontal-only weighted blend (left/right)
-///
-/// pred = w_h[x] * left + (256 - w_h[x]) * right
-/// dst = (pred + 128) >> 8
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
+pub unsafe extern "C" fn ipred_smooth_v_8bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -711,10 +838,29 @@ pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u8;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_smooth_v_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// SMOOTH_H prediction: horizontal-only weighted blend (left/right)
+///
+/// pred = w_h[x] * left + (256 - w_h[x]) * right
+/// dst = (pred + 128) >> 8
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_smooth_h_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
     let tl = topleft as *const u8;
 
     unsafe {
@@ -770,7 +916,31 @@ pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_smooth_h_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
 
 // ============================================================================
 // FILTER Prediction (filter intra)
@@ -787,23 +957,19 @@ use crate::src::tables::{dav1d_dr_intra_derivative, dav1d_filter_intra_taps, fil
 /// Input pixels:
 /// p0 = topleft, p1-p4 = top row (4 pixels), p5-p6 = left column (2 pixels)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    filt_idx: c_int,
-    _max_width: c_int,
-    _max_height: c_int,
-    _bitdepth_max: c_int,
+#[arcane]
+fn ipred_filter_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+    filt_idx: i32,
     topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
 ) {
+
     let width = (width as usize / 4) * 4; // Round down to multiple of 4
-    let height = height as usize;
-    let dst = dst_ptr as *mut u8;
     let tl = topleft as *const u8;
     let filt_idx = (filt_idx as usize) & 511;
 
@@ -865,7 +1031,31 @@ pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    filt_idx: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_filter_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize, filt_idx as i32, topleft_off);
+}
+
+
 
 // ============================================================================
 // Z1 Prediction (angular prediction for angles < 90)
@@ -879,23 +1069,18 @@ pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
 ///   frac = xpos & 0x3e
 ///   out = (top[base] * (64 - frac) + top[base+1] * frac + 32) >> 6
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z1_8bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    angle: c_int,
-    _max_width: c_int,
-    _max_height: c_int,
-    _bitdepth_max: c_int,
-    _topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
+#[arcane]
+fn ipred_z1_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+    angle: i32,
 ) {
-    let width = width as usize;
+
     let height = height as i32;
-    let dst = dst_ptr as *mut u8;
     let tl = topleft as *const u8;
 
     // Extract angle flags
@@ -1002,7 +1187,31 @@ pub unsafe extern "C" fn ipred_z1_8bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_z1_8bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_z1_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize, angle as i32);
+}
+
+
 
 /// Helper: get filter strength (simplified version)
 #[inline]
@@ -1077,23 +1286,21 @@ unsafe fn ipred_z1_scalar(
 /// - When base_x >= 0: interpolate from top edge
 /// - When base_x < 0: interpolate from left edge
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z2_8bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    angle: c_int,
-    max_width: c_int,
-    max_height: c_int,
-    _bitdepth_max: c_int,
-    _topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
+#[arcane]
+fn ipred_z2_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+    angle: i32,
+    max_width: i32,
+    max_height: i32,
 ) {
+
     let width = width as i32;
     let height = height as i32;
-    let dst = dst_ptr as *mut u8;
     let tl = topleft as *const u8;
 
     // Extract angle flags
@@ -1244,7 +1451,31 @@ pub unsafe extern "C" fn ipred_z2_8bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_z2_8bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    max_width: c_int,
+    max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_z2_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize, angle as i32, max_width as i32, max_height as i32);
+}
+
+
 
 /// Scalar fallback for Z2 with edge filtering/upsampling
 #[inline(never)]
@@ -1305,23 +1536,18 @@ unsafe fn ipred_z2_scalar(
 /// Loop order is column-major (outer x, inner y) for better cache locality
 /// when accessing the left edge.
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z3_8bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    angle: c_int,
-    _max_width: c_int,
-    _max_height: c_int,
-    _bitdepth_max: c_int,
-    _topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
+#[arcane]
+fn ipred_z3_8bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+    angle: i32,
 ) {
-    let width = width as usize;
+
     let height = height as i32;
-    let dst = dst_ptr as *mut u8;
     let tl = topleft as *const u8;
 
     // Extract angle flags
@@ -1388,7 +1614,31 @@ pub unsafe extern "C" fn ipred_z3_8bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_z3_8bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_z3_8bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize, angle as i32);
+}
+
+
 
 /// Scalar fallback for Z3 with edge filtering/upsampling
 #[inline(never)]
@@ -1439,23 +1689,17 @@ unsafe fn ipred_z3_scalar(
 /// For 10bpc: fill with 512 (1 << 9)
 /// For 12bpc: fill with 2048 (1 << 11)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_128_16bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    _topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    _angle: c_int,
-    _max_width: c_int,
-    _max_height: c_int,
-    bitdepth_max: c_int,
-    _topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
+#[arcane]
+fn ipred_dc_128_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    width: usize,
+    height: usize,
+    bitdepth_max: i32,
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u16;
+
+    let dst = dst as *mut u16;
     let stride_u16 = stride / 2; // stride is in bytes, we need u16 stride
 
     // Mid-value is (bitdepth_max + 1) / 2
@@ -1487,27 +1731,45 @@ pub unsafe extern "C" fn ipred_dc_128_16bpc_avx2(
             }
         }
     }
+
 }
 
-/// Vertical prediction for 16bpc: copy top row to all rows
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_v_16bpc_avx2(
+pub unsafe extern "C" fn ipred_dc_128_16bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
-    topleft: *const DynPixel,
+    _topleft: *const DynPixel,
     width: c_int,
     height: c_int,
     _angle: c_int,
     _max_width: c_int,
     _max_height: c_int,
-    _bitdepth_max: c_int,
+    bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u16;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_dc_128_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, width as usize, height as usize, bitdepth_max as i32);
+}
+
+
+
+/// Vertical prediction for 16bpc: copy top row to all rows
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_v_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
+    let dst = dst as *mut u16;
     let top = unsafe { (topleft as *const u16).add(1) };
     let stride_u16 = stride / 2;
 
@@ -1540,12 +1802,13 @@ pub unsafe extern "C" fn ipred_v_16bpc_avx2(
             }
         }
     }
+
 }
 
-/// Horizontal prediction for 16bpc: fill each row with its left pixel
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_h_16bpc_avx2(
+pub unsafe extern "C" fn ipred_v_16bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1557,10 +1820,27 @@ pub unsafe extern "C" fn ipred_h_16bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u16;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_v_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// Horizontal prediction for 16bpc: fill each row with its left pixel
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_h_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
 
@@ -1592,12 +1872,13 @@ pub unsafe extern "C" fn ipred_h_16bpc_avx2(
             }
         }
     }
+
 }
 
-/// DC prediction for 16bpc: average of top and left edge pixels
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_16bpc_avx2(
+pub unsafe extern "C" fn ipred_h_16bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1609,10 +1890,27 @@ pub unsafe extern "C" fn ipred_dc_16bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u16;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_h_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// DC prediction for 16bpc: average of top and left edge pixels
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
 
@@ -1656,12 +1954,13 @@ pub unsafe extern "C" fn ipred_dc_16bpc_avx2(
             }
         }
     }
+
 }
 
-/// DC_TOP prediction for 16bpc: average of top edge pixels
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_top_16bpc_avx2(
+pub unsafe extern "C" fn ipred_dc_16bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1673,10 +1972,27 @@ pub unsafe extern "C" fn ipred_dc_top_16bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u16;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_dc_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// DC_TOP prediction for 16bpc: average of top edge pixels
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_top_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
 
@@ -1710,12 +2026,13 @@ pub unsafe extern "C" fn ipred_dc_top_16bpc_avx2(
             }
         }
     }
+
 }
 
-/// DC_LEFT prediction for 16bpc: average of left edge pixels
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
+pub unsafe extern "C" fn ipred_dc_top_16bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1727,10 +2044,27 @@ pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u16;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_dc_top_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// DC_LEFT prediction for 16bpc: average of left edge pixels
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_left_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
 
@@ -1764,12 +2098,13 @@ pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
             }
         }
     }
+
 }
 
-/// PAETH prediction for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_paeth_16bpc_avx2(
+pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1781,10 +2116,27 @@ pub unsafe extern "C" fn ipred_paeth_16bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u16;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_dc_left_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// PAETH prediction for 16bpc
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_paeth_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
 
@@ -1817,12 +2169,13 @@ pub unsafe extern "C" fn ipred_paeth_16bpc_avx2(
             }
         }
     }
+
 }
 
-/// SMOOTH prediction for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_16bpc_avx2(
+pub unsafe extern "C" fn ipred_paeth_16bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1834,10 +2187,27 @@ pub unsafe extern "C" fn ipred_smooth_16bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u16;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_paeth_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// SMOOTH prediction for 16bpc
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_smooth_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
 
@@ -1866,12 +2236,13 @@ pub unsafe extern "C" fn ipred_smooth_16bpc_avx2(
             }
         }
     }
+
 }
 
-/// SMOOTH_V prediction for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_v_16bpc_avx2(
+pub unsafe extern "C" fn ipred_smooth_16bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1883,10 +2254,27 @@ pub unsafe extern "C" fn ipred_smooth_v_16bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u16;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_smooth_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// SMOOTH_V prediction for 16bpc
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_smooth_v_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
 
@@ -1905,12 +2293,13 @@ pub unsafe extern "C" fn ipred_smooth_v_16bpc_avx2(
             }
         }
     }
+
 }
 
-/// SMOOTH_H prediction for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
+pub unsafe extern "C" fn ipred_smooth_v_16bpc_avx2(
+
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1922,10 +2311,27 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
     _bitdepth_max: c_int,
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
+
 ) {
-    let width = width as usize;
-    let height = height as usize;
-    let dst = dst_ptr as *mut u16;
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_smooth_v_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
+
+/// SMOOTH_H prediction for 16bpc
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_smooth_h_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+) {
+
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
 
@@ -1944,7 +2350,31 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    _angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_smooth_h_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize);
+}
+
+
 
 // ============================================================================
 // Z1 Prediction 16bpc (angular prediction for angles < 90)
@@ -1952,23 +2382,19 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
 
 /// Z1 prediction for 16bpc: directional prediction using top edge only (angles < 90°)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z1_16bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    angle: c_int,
-    _max_width: c_int,
-    _max_height: c_int,
-    _bitdepth_max: c_int,
-    _topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
+#[arcane]
+fn ipred_z1_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+    angle: i32,
 ) {
-    let width = width as usize;
+
     let height = height as i32;
-    let dst = dst_ptr as *mut u16;
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
 
@@ -2072,7 +2498,31 @@ pub unsafe extern "C" fn ipred_z1_16bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_z1_16bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_z1_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize, angle as i32);
+}
+
+
 
 /// Scalar fallback for Z1 16bpc with edge filtering
 #[inline(never)]
@@ -2122,23 +2572,22 @@ unsafe fn ipred_z1_16bpc_scalar(
 
 /// Z2 prediction for 16bpc: directional prediction using both top AND left edges (angles 90-180°)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z2_16bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    angle: c_int,
-    max_width: c_int,
-    max_height: c_int,
-    _bitdepth_max: c_int,
-    _topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
+#[arcane]
+fn ipred_z2_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+    angle: i32,
+    max_width: i32,
+    max_height: i32,
 ) {
+
     let width = width as i32;
     let height = height as i32;
-    let dst = dst_ptr as *mut u16;
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
 
@@ -2281,7 +2730,31 @@ pub unsafe extern "C" fn ipred_z2_16bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_z2_16bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    max_width: c_int,
+    max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_z2_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize, angle as i32, max_width as i32, max_height as i32);
+}
+
+
 
 /// Scalar fallback for Z2 16bpc with edge filtering/upsampling
 #[inline(never)]
@@ -2336,23 +2809,19 @@ unsafe fn ipred_z2_16bpc_scalar(
 
 /// Z3 prediction for 16bpc: directional prediction using left edge only (angles > 180°)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z3_16bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    angle: c_int,
-    _max_width: c_int,
-    _max_height: c_int,
-    _bitdepth_max: c_int,
-    _topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
+#[arcane]
+fn ipred_z3_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+    angle: i32,
 ) {
-    let width = width as usize;
+
     let height = height as i32;
-    let dst = dst_ptr as *mut u16;
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
 
@@ -2416,7 +2885,31 @@ pub unsafe extern "C" fn ipred_z3_16bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_z3_16bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    _bitdepth_max: c_int,
+    _topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_z3_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize, angle as i32);
+}
+
+
 
 /// Scalar fallback for Z3 16bpc with edge filtering/upsampling
 #[inline(never)]
@@ -2468,23 +2961,21 @@ unsafe fn ipred_z3_16bpc_scalar(
 /// Input pixels: p0 = topleft, p1-p4 = top row (4 pixels), p5-p6 = left column (2 pixels)
 /// For 16bpc: out = (sum + 8) >> 4, clamped to [0, bitdepth_max]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_filter_16bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    stride: ptrdiff_t,
-    topleft: *const DynPixel,
-    width: c_int,
-    height: c_int,
-    filt_idx: c_int,
-    _max_width: c_int,
-    _max_height: c_int,
-    bitdepth_max: c_int,
+#[arcane]
+fn ipred_filter_16bpc_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    stride: isize,
+    topleft: *const u8,
+    width: usize,
+    height: usize,
+    filt_idx: i32,
+    bitdepth_max: i32,
     topleft_off: usize,
-    _dst: *const FFISafe<PicOffset>,
 ) {
+
     let width = (width as usize / 4) * 4; // Round down to multiple of 4
-    let height = height as usize;
-    let dst = dst_ptr as *mut u16;
+    let dst = dst as *mut u16;
     let tl = topleft as *const u16;
     let stride_u16 = stride / 2;
     let filt_idx = (filt_idx as usize) & 511;
@@ -2547,7 +3038,31 @@ pub unsafe extern "C" fn ipred_filter_16bpc_avx2(
             }
         }
     }
+
 }
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn ipred_filter_16bpc_avx2(
+
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    topleft: *const DynPixel,
+    width: c_int,
+    height: c_int,
+    filt_idx: c_int,
+    _max_width: c_int,
+    _max_height: c_int,
+    bitdepth_max: c_int,
+    topleft_off: usize,
+    _dst: *const FFISafe<PicOffset>,
+
+) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    ipred_filter_16bpc_inner(token, dst_ptr as *mut u8, stride as isize, unsafe { (topleft as *const u8).add(1) }, width as usize, height as usize, filt_idx as i32, bitdepth_max as i32, topleft_off);
+}
+
+
 
 // ============================================================================
 // Safe dispatch wrapper for x86_64 AVX2
