@@ -29,6 +29,7 @@ use crate::src::tables::dav1d_resize_filter;
 use crate::src::with_offset::WithOffset;
 use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::cmp;
+#[cfg(feature = "asm")]
 use std::ffi::c_int;
 use std::iter;
 #[cfg(feature = "asm")]
