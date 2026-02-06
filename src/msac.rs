@@ -531,12 +531,12 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(s: &mut MsacContext, cdf: &mut [
 
     // Broadcast rng masked with 0xff00
     let rng_masked = (s.rng & 0xff00) as i16;
-    let rng_vec = unsafe { _mm256_set1_epi16(rng_masked) };
+    let rng_vec = _mm256_set1_epi16(rng_masked);
 
     // Calculate (cdf >> 6) << 7 then pmulhuw
     // This computes: ((cdf >> 6) * (rng >> 8)) >> 1
-    let cdf_shifted = unsafe { _mm256_slli_epi16(_mm256_srli_epi16(cdf_vec, 6), 7) };
-    let prod = unsafe { _mm256_mulhi_epu16(cdf_shifted, rng_vec) };
+    let cdf_shifted = _mm256_slli_epi16(_mm256_srli_epi16(cdf_vec, 6), 7);
+    let prod = _mm256_mulhi_epu16(cdf_shifted, rng_vec);
 
     // Load min_prob values offset by (15 - n_symbols)
     let min_prob_offset = 15 - n;
@@ -545,19 +545,19 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(s: &mut MsacContext, cdf: &mut [
     };
 
     // v = prod + min_prob
-    let v = unsafe { _mm256_add_epi16(prod, min_prob) };
+    let v = _mm256_add_epi16(prod, min_prob);
 
     // Store v for indexed access
     let mut v_arr = [0u16; 16];
     unsafe { _mm256_storeu_si256(v_arr.as_mut_ptr() as *mut __m256i, v) };
 
     // Compare using pmaxuw then equality: c >= v[i] iff max(c, v) == c
-    let c_vec = unsafe { _mm256_set1_epi16(c as i16) };
-    let max_cv = unsafe { _mm256_max_epu16(c_vec, v) };
-    let cmp = unsafe { _mm256_cmpeq_epi16(max_cv, c_vec) };
+    let c_vec = _mm256_set1_epi16(c as i16);
+    let max_cv = _mm256_max_epu16(c_vec, v);
+    let cmp = _mm256_cmpeq_epi16(max_cv, c_vec);
 
     // Get mask and count trailing zeros to find first symbol where c < v
-    let mask = unsafe { _mm256_movemask_epi8(cmp) as u32 };
+    let mask = _mm256_movemask_epi8(cmp) as u32;
     let val = (mask.trailing_zeros() >> 1) as u8;
 
     // Get u (previous v) and current v values for renormalization

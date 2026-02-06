@@ -101,15 +101,15 @@ unsafe fn wiener_filter7_8bpc_avx2_inner(
     let stride = p.pixel_stride::<BitDepth8>();
 
     // Load filter coefficients into AVX2 registers (broadcast to all lanes)
-    let vf0 = unsafe { _mm256_set1_epi32(filter[1][0] as i32) };
-    let vf1 = unsafe { _mm256_set1_epi32(filter[1][1] as i32) };
-    let vf2 = unsafe { _mm256_set1_epi32(filter[1][2] as i32) };
-    let vf3 = unsafe { _mm256_set1_epi32(filter[1][3] as i32) };
-    let vf4 = unsafe { _mm256_set1_epi32(filter[1][4] as i32) };
-    let vf5 = unsafe { _mm256_set1_epi32(filter[1][5] as i32) };
-    let vf6 = unsafe { _mm256_set1_epi32(filter[1][6] as i32) };
-    let v_round_offset = unsafe { _mm256_set1_epi32(-round_offset) };
-    let v_rounding = unsafe { _mm256_set1_epi32(rounding_off_v) };
+    let vf0 = _mm256_set1_epi32(filter[1][0] as i32);
+    let vf1 = _mm256_set1_epi32(filter[1][1] as i32);
+    let vf2 = _mm256_set1_epi32(filter[1][2] as i32);
+    let vf3 = _mm256_set1_epi32(filter[1][3] as i32);
+    let vf4 = _mm256_set1_epi32(filter[1][4] as i32);
+    let vf5 = _mm256_set1_epi32(filter[1][5] as i32);
+    let vf6 = _mm256_set1_epi32(filter[1][6] as i32);
+    let v_round_offset = _mm256_set1_epi32(-round_offset);
+    let v_rounding = _mm256_set1_epi32(rounding_off_v);
 
     for j in 0..h {
         let mut dst_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);

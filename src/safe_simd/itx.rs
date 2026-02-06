@@ -83,59 +83,59 @@ unsafe fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     };
 
     // Pack rows into 256-bit vectors for processing
-    let rows01 = unsafe { _mm256_set_m128i(row1, row0) };
-    let rows23 = unsafe { _mm256_set_m128i(row3, row2) };
+    let rows01 = _mm256_set_m128i(row1, row0);
+    let rows23 = _mm256_set_m128i(row3, row2);
 
     // DCT4 butterfly on rows
     let (rows01_out, rows23_out) = unsafe { dct4_2rows_avx2(rows01, rows23) };
 
     // Transpose for column pass
-    let r0 = unsafe { _mm256_castsi256_si128(rows01_out) };
-    let r1 = unsafe { _mm256_extracti128_si256(rows01_out, 1) };
-    let r2 = unsafe { _mm256_castsi256_si128(rows23_out) };
-    let r3 = unsafe { _mm256_extracti128_si256(rows23_out, 1) };
+    let r0 = _mm256_castsi256_si128(rows01_out);
+    let r1 = _mm256_extracti128_si256(rows01_out, 1);
+    let r2 = _mm256_castsi256_si128(rows23_out);
+    let r3 = _mm256_extracti128_si256(rows23_out, 1);
 
     // Transpose 4x4 using unpack
-    let t01_lo = unsafe { _mm_unpacklo_epi32(r0, r1) };
-    let t01_hi = unsafe { _mm_unpackhi_epi32(r0, r1) };
-    let t23_lo = unsafe { _mm_unpacklo_epi32(r2, r3) };
-    let t23_hi = unsafe { _mm_unpackhi_epi32(r2, r3) };
+    let t01_lo = _mm_unpacklo_epi32(r0, r1);
+    let t01_hi = _mm_unpackhi_epi32(r0, r1);
+    let t23_lo = _mm_unpacklo_epi32(r2, r3);
+    let t23_hi = _mm_unpackhi_epi32(r2, r3);
 
-    let col0 = unsafe { _mm_unpacklo_epi64(t01_lo, t23_lo) };
-    let col1 = unsafe { _mm_unpackhi_epi64(t01_lo, t23_lo) };
-    let col2 = unsafe { _mm_unpacklo_epi64(t01_hi, t23_hi) };
-    let col3 = unsafe { _mm_unpackhi_epi64(t01_hi, t23_hi) };
+    let col0 = _mm_unpacklo_epi64(t01_lo, t23_lo);
+    let col1 = _mm_unpackhi_epi64(t01_lo, t23_lo);
+    let col2 = _mm_unpacklo_epi64(t01_hi, t23_hi);
+    let col3 = _mm_unpackhi_epi64(t01_hi, t23_hi);
 
-    let cols01 = unsafe { _mm256_set_m128i(col1, col0) };
-    let cols23 = unsafe { _mm256_set_m128i(col3, col2) };
+    let cols01 = _mm256_set_m128i(col1, col0);
+    let cols23 = _mm256_set_m128i(col3, col2);
 
     // DCT4 butterfly on columns
     let (cols01_out, cols23_out) = unsafe { dct4_2rows_avx2(cols01, cols23) };
 
     // Final scaling: (result + 8) >> 4
-    let rnd = unsafe { _mm256_set1_epi32(8) };
-    let cols01_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(cols01_out, rnd), 4) };
-    let cols23_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(cols23_out, rnd), 4) };
+    let rnd = _mm256_set1_epi32(8);
+    let cols01_scaled = _mm256_srai_epi32(_mm256_add_epi32(cols01_out, rnd), 4);
+    let cols23_scaled = _mm256_srai_epi32(_mm256_add_epi32(cols23_out, rnd), 4);
 
     // Transpose back to row order for storing
-    let c0 = unsafe { _mm256_castsi256_si128(cols01_scaled) };
-    let c1 = unsafe { _mm256_extracti128_si256(cols01_scaled, 1) };
-    let c2 = unsafe { _mm256_castsi256_si128(cols23_scaled) };
-    let c3 = unsafe { _mm256_extracti128_si256(cols23_scaled, 1) };
+    let c0 = _mm256_castsi256_si128(cols01_scaled);
+    let c1 = _mm256_extracti128_si256(cols01_scaled, 1);
+    let c2 = _mm256_castsi256_si128(cols23_scaled);
+    let c3 = _mm256_extracti128_si256(cols23_scaled, 1);
 
-    let u01_lo = unsafe { _mm_unpacklo_epi32(c0, c1) };
-    let u01_hi = unsafe { _mm_unpackhi_epi32(c0, c1) };
-    let u23_lo = unsafe { _mm_unpacklo_epi32(c2, c3) };
-    let u23_hi = unsafe { _mm_unpackhi_epi32(c2, c3) };
+    let u01_lo = _mm_unpacklo_epi32(c0, c1);
+    let u01_hi = _mm_unpackhi_epi32(c0, c1);
+    let u23_lo = _mm_unpacklo_epi32(c2, c3);
+    let u23_hi = _mm_unpackhi_epi32(c2, c3);
 
-    let final0 = unsafe { _mm_unpacklo_epi64(u01_lo, u23_lo) };
-    let final1 = unsafe { _mm_unpackhi_epi64(u01_lo, u23_lo) };
-    let final2 = unsafe { _mm_unpacklo_epi64(u01_hi, u23_hi) };
-    let final3 = unsafe { _mm_unpackhi_epi64(u01_hi, u23_hi) };
+    let final0 = _mm_unpacklo_epi64(u01_lo, u23_lo);
+    let final1 = _mm_unpackhi_epi64(u01_lo, u23_lo);
+    let final2 = _mm_unpacklo_epi64(u01_hi, u23_hi);
+    let final3 = _mm_unpackhi_epi64(u01_hi, u23_hi);
 
     // Add to destination with clamping
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi16(bitdepth_max as i16);
 
     // Row 0
     unsafe {
@@ -205,72 +205,63 @@ unsafe fn dct4_2rows_avx2(
     //       t2 = (in1 * 1567 - in3 * (3784-4096) + 2048 >> 12) - in3
     //       t3 = (in1 * (3784-4096) + in3 * 1567 + 2048 >> 12) + in1
 
-    let sqrt2 = unsafe { _mm256_set1_epi32(181) };
-    let rnd8 = unsafe { _mm256_set1_epi32(128) };
-    let c1567 = unsafe { _mm256_set1_epi32(1567) };
-    let c_312 = unsafe { _mm256_set1_epi32(3784 - 4096) };
-    let rnd12 = unsafe { _mm256_set1_epi32(2048) };
+    let sqrt2 = _mm256_set1_epi32(181);
+    let rnd8 = _mm256_set1_epi32(128);
+    let c1567 = _mm256_set1_epi32(1567);
+    let c_312 = _mm256_set1_epi32(3784 - 4096);
+    let rnd12 = _mm256_set1_epi32(2048);
 
     // Process rows01
-    let in0_01 = unsafe { _mm256_shuffle_epi32(rows01, 0b00_00_00_00) };
-    let in1_01 = unsafe { _mm256_shuffle_epi32(rows01, 0b01_01_01_01) };
-    let in2_01 = unsafe { _mm256_shuffle_epi32(rows01, 0b10_10_10_10) };
-    let in3_01 = unsafe { _mm256_shuffle_epi32(rows01, 0b11_11_11_11) };
+    let in0_01 = _mm256_shuffle_epi32(rows01, 0b00_00_00_00);
+    let in1_01 = _mm256_shuffle_epi32(rows01, 0b01_01_01_01);
+    let in2_01 = _mm256_shuffle_epi32(rows01, 0b10_10_10_10);
+    let in3_01 = _mm256_shuffle_epi32(rows01, 0b11_11_11_11);
 
     // t0 = (in0 + in2) * 181 + 128 >> 8
-    let sum02_01 = unsafe { _mm256_add_epi32(in0_01, in2_01) };
-    let t0_01 = unsafe {
-        _mm256_srai_epi32(
+    let sum02_01 = _mm256_add_epi32(in0_01, in2_01);
+    let t0_01 = _mm256_srai_epi32(
             _mm256_add_epi32(_mm256_mullo_epi32(sum02_01, sqrt2), rnd8),
             8
-        )
-    };
+        );
 
     // t1 = (in0 - in2) * 181 + 128 >> 8
-    let diff02_01 = unsafe { _mm256_sub_epi32(in0_01, in2_01) };
-    let t1_01 = unsafe {
-        _mm256_srai_epi32(
+    let diff02_01 = _mm256_sub_epi32(in0_01, in2_01);
+    let t1_01 = _mm256_srai_epi32(
             _mm256_add_epi32(_mm256_mullo_epi32(diff02_01, sqrt2), rnd8),
             8
-        )
-    };
+        );
 
     // t2 = (in1 * 1567 - in3 * (3784-4096) + 2048 >> 12) - in3
-    let mul1_1567_01 = unsafe { _mm256_mullo_epi32(in1_01, c1567) };
-    let mul3_312_01 = unsafe { _mm256_mullo_epi32(in3_01, c_312) };
-    let t2_inner_01 = unsafe {
-        _mm256_srai_epi32(
+    let mul1_1567_01 = _mm256_mullo_epi32(in1_01, c1567);
+    let mul3_312_01 = _mm256_mullo_epi32(in3_01, c_312);
+    let t2_inner_01 = _mm256_srai_epi32(
             _mm256_add_epi32(_mm256_sub_epi32(mul1_1567_01, mul3_312_01), rnd12),
             12
-        )
-    };
-    let t2_01 = unsafe { _mm256_sub_epi32(t2_inner_01, in3_01) };
+        );
+    let t2_01 = _mm256_sub_epi32(t2_inner_01, in3_01);
 
     // t3 = (in1 * (3784-4096) + in3 * 1567 + 2048 >> 12) + in1
-    let mul1_312_01 = unsafe { _mm256_mullo_epi32(in1_01, c_312) };
-    let mul3_1567_01 = unsafe { _mm256_mullo_epi32(in3_01, c1567) };
-    let t3_inner_01 = unsafe {
-        _mm256_srai_epi32(
+    let mul1_312_01 = _mm256_mullo_epi32(in1_01, c_312);
+    let mul3_1567_01 = _mm256_mullo_epi32(in3_01, c1567);
+    let t3_inner_01 = _mm256_srai_epi32(
             _mm256_add_epi32(_mm256_add_epi32(mul1_312_01, mul3_1567_01), rnd12),
             12
-        )
-    };
-    let t3_01 = unsafe { _mm256_add_epi32(t3_inner_01, in1_01) };
+        );
+    let t3_01 = _mm256_add_epi32(t3_inner_01, in1_01);
 
     // Output: out0 = t0+t3, out1 = t1+t2, out2 = t1-t2, out3 = t0-t3
-    let out0_01 = unsafe { _mm256_add_epi32(t0_01, t3_01) };
-    let out1_01 = unsafe { _mm256_add_epi32(t1_01, t2_01) };
-    let out2_01 = unsafe { _mm256_sub_epi32(t1_01, t2_01) };
-    let out3_01 = unsafe { _mm256_sub_epi32(t0_01, t3_01) };
+    let out0_01 = _mm256_add_epi32(t0_01, t3_01);
+    let out1_01 = _mm256_add_epi32(t1_01, t2_01);
+    let out2_01 = _mm256_sub_epi32(t1_01, t2_01);
+    let out3_01 = _mm256_sub_epi32(t0_01, t3_01);
 
     // Interleave outputs back: [out0, out1, out2, out3] per lane
-    let mask0 = unsafe { _mm256_set_epi32(0, 0, 0, -1i32, 0, 0, 0, -1i32) };
-    let mask1 = unsafe { _mm256_set_epi32(0, 0, -1i32, 0, 0, 0, -1i32, 0) };
-    let mask2 = unsafe { _mm256_set_epi32(0, -1i32, 0, 0, 0, -1i32, 0, 0) };
-    let mask3 = unsafe { _mm256_set_epi32(-1i32, 0, 0, 0, -1i32, 0, 0, 0) };
+    let mask0 = _mm256_set_epi32(0, 0, 0, -1i32, 0, 0, 0, -1i32);
+    let mask1 = _mm256_set_epi32(0, 0, -1i32, 0, 0, 0, -1i32, 0);
+    let mask2 = _mm256_set_epi32(0, -1i32, 0, 0, 0, -1i32, 0, 0);
+    let mask3 = _mm256_set_epi32(-1i32, 0, 0, 0, -1i32, 0, 0, 0);
 
-    let rows01_out = unsafe {
-        _mm256_or_si256(
+    let rows01_out = _mm256_or_si256(
             _mm256_or_si256(
                 _mm256_and_si256(out0_01, mask0),
                 _mm256_and_si256(_mm256_shuffle_epi32(out1_01, 0b00_00_00_01), mask1)
@@ -279,58 +270,48 @@ unsafe fn dct4_2rows_avx2(
                 _mm256_and_si256(_mm256_shuffle_epi32(out2_01, 0b00_00_10_00), mask2),
                 _mm256_and_si256(_mm256_shuffle_epi32(out3_01, 0b00_11_00_00), mask3)
             )
-        )
-    };
+        );
 
     // Same for rows23
-    let in0_23 = unsafe { _mm256_shuffle_epi32(rows23, 0b00_00_00_00) };
-    let in1_23 = unsafe { _mm256_shuffle_epi32(rows23, 0b01_01_01_01) };
-    let in2_23 = unsafe { _mm256_shuffle_epi32(rows23, 0b10_10_10_10) };
-    let in3_23 = unsafe { _mm256_shuffle_epi32(rows23, 0b11_11_11_11) };
+    let in0_23 = _mm256_shuffle_epi32(rows23, 0b00_00_00_00);
+    let in1_23 = _mm256_shuffle_epi32(rows23, 0b01_01_01_01);
+    let in2_23 = _mm256_shuffle_epi32(rows23, 0b10_10_10_10);
+    let in3_23 = _mm256_shuffle_epi32(rows23, 0b11_11_11_11);
 
-    let sum02_23 = unsafe { _mm256_add_epi32(in0_23, in2_23) };
-    let t0_23 = unsafe {
-        _mm256_srai_epi32(
+    let sum02_23 = _mm256_add_epi32(in0_23, in2_23);
+    let t0_23 = _mm256_srai_epi32(
             _mm256_add_epi32(_mm256_mullo_epi32(sum02_23, sqrt2), rnd8),
             8
-        )
-    };
+        );
 
-    let diff02_23 = unsafe { _mm256_sub_epi32(in0_23, in2_23) };
-    let t1_23 = unsafe {
-        _mm256_srai_epi32(
+    let diff02_23 = _mm256_sub_epi32(in0_23, in2_23);
+    let t1_23 = _mm256_srai_epi32(
             _mm256_add_epi32(_mm256_mullo_epi32(diff02_23, sqrt2), rnd8),
             8
-        )
-    };
+        );
 
-    let mul1_1567_23 = unsafe { _mm256_mullo_epi32(in1_23, c1567) };
-    let mul3_312_23 = unsafe { _mm256_mullo_epi32(in3_23, c_312) };
-    let t2_inner_23 = unsafe {
-        _mm256_srai_epi32(
+    let mul1_1567_23 = _mm256_mullo_epi32(in1_23, c1567);
+    let mul3_312_23 = _mm256_mullo_epi32(in3_23, c_312);
+    let t2_inner_23 = _mm256_srai_epi32(
             _mm256_add_epi32(_mm256_sub_epi32(mul1_1567_23, mul3_312_23), rnd12),
             12
-        )
-    };
-    let t2_23 = unsafe { _mm256_sub_epi32(t2_inner_23, in3_23) };
+        );
+    let t2_23 = _mm256_sub_epi32(t2_inner_23, in3_23);
 
-    let mul1_312_23 = unsafe { _mm256_mullo_epi32(in1_23, c_312) };
-    let mul3_1567_23 = unsafe { _mm256_mullo_epi32(in3_23, c1567) };
-    let t3_inner_23 = unsafe {
-        _mm256_srai_epi32(
+    let mul1_312_23 = _mm256_mullo_epi32(in1_23, c_312);
+    let mul3_1567_23 = _mm256_mullo_epi32(in3_23, c1567);
+    let t3_inner_23 = _mm256_srai_epi32(
             _mm256_add_epi32(_mm256_add_epi32(mul1_312_23, mul3_1567_23), rnd12),
             12
-        )
-    };
-    let t3_23 = unsafe { _mm256_add_epi32(t3_inner_23, in1_23) };
+        );
+    let t3_23 = _mm256_add_epi32(t3_inner_23, in1_23);
 
-    let out0_23 = unsafe { _mm256_add_epi32(t0_23, t3_23) };
-    let out1_23 = unsafe { _mm256_add_epi32(t1_23, t2_23) };
-    let out2_23 = unsafe { _mm256_sub_epi32(t1_23, t2_23) };
-    let out3_23 = unsafe { _mm256_sub_epi32(t0_23, t3_23) };
+    let out0_23 = _mm256_add_epi32(t0_23, t3_23);
+    let out1_23 = _mm256_add_epi32(t1_23, t2_23);
+    let out2_23 = _mm256_sub_epi32(t1_23, t2_23);
+    let out3_23 = _mm256_sub_epi32(t0_23, t3_23);
 
-    let rows23_out = unsafe {
-        _mm256_or_si256(
+    let rows23_out = _mm256_or_si256(
             _mm256_or_si256(
                 _mm256_and_si256(out0_23, mask0),
                 _mm256_and_si256(_mm256_shuffle_epi32(out1_23, 0b00_00_00_01), mask1)
@@ -339,8 +320,7 @@ unsafe fn dct4_2rows_avx2(
                 _mm256_and_si256(_mm256_shuffle_epi32(out2_23, 0b00_00_10_00), mask2),
                 _mm256_and_si256(_mm256_shuffle_epi32(out3_23, 0b00_11_00_00), mask3)
             )
-        )
-    };
+        );
 
     (rows01_out, rows23_out)
 }
@@ -417,93 +397,93 @@ unsafe fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     };
 
     // Pack rows into 256-bit vectors
-    let rows01 = unsafe { _mm256_set_m128i(row1, row0) };
-    let rows23 = unsafe { _mm256_set_m128i(row3, row2) };
+    let rows01 = _mm256_set_m128i(row1, row0);
+    let rows23 = _mm256_set_m128i(row3, row2);
 
     // DCT4 butterfly on rows
     let (rows01_out, rows23_out) = unsafe { dct4_2rows_avx2(rows01, rows23) };
 
     // Transpose for column pass
-    let r0 = unsafe { _mm256_castsi256_si128(rows01_out) };
-    let r1 = unsafe { _mm256_extracti128_si256(rows01_out, 1) };
-    let r2 = unsafe { _mm256_castsi256_si128(rows23_out) };
-    let r3 = unsafe { _mm256_extracti128_si256(rows23_out, 1) };
+    let r0 = _mm256_castsi256_si128(rows01_out);
+    let r1 = _mm256_extracti128_si256(rows01_out, 1);
+    let r2 = _mm256_castsi256_si128(rows23_out);
+    let r3 = _mm256_extracti128_si256(rows23_out, 1);
 
     // Transpose 4x4 using unpack
-    let t01_lo = unsafe { _mm_unpacklo_epi32(r0, r1) };
-    let t01_hi = unsafe { _mm_unpackhi_epi32(r0, r1) };
-    let t23_lo = unsafe { _mm_unpacklo_epi32(r2, r3) };
-    let t23_hi = unsafe { _mm_unpackhi_epi32(r2, r3) };
+    let t01_lo = _mm_unpacklo_epi32(r0, r1);
+    let t01_hi = _mm_unpackhi_epi32(r0, r1);
+    let t23_lo = _mm_unpacklo_epi32(r2, r3);
+    let t23_hi = _mm_unpackhi_epi32(r2, r3);
 
-    let c0 = unsafe { _mm_unpacklo_epi64(t01_lo, t23_lo) };
-    let c1 = unsafe { _mm_unpackhi_epi64(t01_lo, t23_lo) };
-    let c2 = unsafe { _mm_unpacklo_epi64(t01_hi, t23_hi) };
-    let c3 = unsafe { _mm_unpackhi_epi64(t01_hi, t23_hi) };
+    let c0 = _mm_unpacklo_epi64(t01_lo, t23_lo);
+    let c1 = _mm_unpackhi_epi64(t01_lo, t23_lo);
+    let c2 = _mm_unpacklo_epi64(t01_hi, t23_hi);
+    let c3 = _mm_unpackhi_epi64(t01_hi, t23_hi);
 
     // DCT4 on columns
-    let cols01 = unsafe { _mm256_set_m128i(c1, c0) };
-    let cols23 = unsafe { _mm256_set_m128i(c3, c2) };
+    let cols01 = _mm256_set_m128i(c1, c0);
+    let cols23 = _mm256_set_m128i(c3, c2);
     let (cols01_out, cols23_out) = unsafe { dct4_2rows_avx2(cols01, cols23) };
 
     // Extract final columns
-    let col0 = unsafe { _mm256_castsi256_si128(cols01_out) };
-    let col1 = unsafe { _mm256_extracti128_si256(cols01_out, 1) };
-    let col2 = unsafe { _mm256_castsi256_si128(cols23_out) };
-    let col3 = unsafe { _mm256_extracti128_si256(cols23_out, 1) };
+    let col0 = _mm256_castsi256_si128(cols01_out);
+    let col1 = _mm256_extracti128_si256(cols01_out, 1);
+    let col2 = _mm256_castsi256_si128(cols23_out);
+    let col3 = _mm256_extracti128_si256(cols23_out, 1);
 
     // Transpose back to rows for output
-    let t01_lo = unsafe { _mm_unpacklo_epi32(col0, col1) };
-    let t01_hi = unsafe { _mm_unpackhi_epi32(col0, col1) };
-    let t23_lo = unsafe { _mm_unpacklo_epi32(col2, col3) };
-    let t23_hi = unsafe { _mm_unpackhi_epi32(col2, col3) };
+    let t01_lo = _mm_unpacklo_epi32(col0, col1);
+    let t01_hi = _mm_unpackhi_epi32(col0, col1);
+    let t23_lo = _mm_unpacklo_epi32(col2, col3);
+    let t23_hi = _mm_unpackhi_epi32(col2, col3);
 
-    let out0 = unsafe { _mm_unpacklo_epi64(t01_lo, t23_lo) };
-    let out1 = unsafe { _mm_unpackhi_epi64(t01_lo, t23_lo) };
-    let out2 = unsafe { _mm_unpacklo_epi64(t01_hi, t23_hi) };
-    let out3 = unsafe { _mm_unpackhi_epi64(t01_hi, t23_hi) };
+    let out0 = _mm_unpacklo_epi64(t01_lo, t23_lo);
+    let out1 = _mm_unpackhi_epi64(t01_lo, t23_lo);
+    let out2 = _mm_unpacklo_epi64(t01_hi, t23_hi);
+    let out3 = _mm_unpackhi_epi64(t01_hi, t23_hi);
 
     // Add to destination: shift by 4, clamp to [0, bitdepth_max]
-    let rnd = unsafe { _mm_set1_epi32(8) };
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let rnd = _mm_set1_epi32(8);
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     // Row 0
     let dst0 = unsafe { _mm_loadl_epi64(dst as *const __m128i) };
-    let dst0_32 = unsafe { _mm_unpacklo_epi16(dst0, zero) };
-    let scaled0 = unsafe { _mm_srai_epi32(_mm_add_epi32(out0, rnd), 4) };
-    let sum0 = unsafe { _mm_add_epi32(dst0_32, scaled0) };
-    let clamped0 = unsafe { _mm_max_epi32(_mm_min_epi32(sum0, max_val), zero) };
-    let packed0 = unsafe { _mm_packus_epi32(clamped0, clamped0) };
+    let dst0_32 = _mm_unpacklo_epi16(dst0, zero);
+    let scaled0 = _mm_srai_epi32(_mm_add_epi32(out0, rnd), 4);
+    let sum0 = _mm_add_epi32(dst0_32, scaled0);
+    let clamped0 = _mm_max_epi32(_mm_min_epi32(sum0, max_val), zero);
+    let packed0 = _mm_packus_epi32(clamped0, clamped0);
     unsafe { _mm_storel_epi64(dst as *mut __m128i, packed0) };
 
     // Row 1
     let dst_row1 = unsafe { dst.add(stride_u16) };
     let dst1 = unsafe { _mm_loadl_epi64(dst_row1 as *const __m128i) };
-    let dst1_32 = unsafe { _mm_unpacklo_epi16(dst1, zero) };
-    let scaled1 = unsafe { _mm_srai_epi32(_mm_add_epi32(out1, rnd), 4) };
-    let sum1 = unsafe { _mm_add_epi32(dst1_32, scaled1) };
-    let clamped1 = unsafe { _mm_max_epi32(_mm_min_epi32(sum1, max_val), zero) };
-    let packed1 = unsafe { _mm_packus_epi32(clamped1, clamped1) };
+    let dst1_32 = _mm_unpacklo_epi16(dst1, zero);
+    let scaled1 = _mm_srai_epi32(_mm_add_epi32(out1, rnd), 4);
+    let sum1 = _mm_add_epi32(dst1_32, scaled1);
+    let clamped1 = _mm_max_epi32(_mm_min_epi32(sum1, max_val), zero);
+    let packed1 = _mm_packus_epi32(clamped1, clamped1);
     unsafe { _mm_storel_epi64(dst_row1 as *mut __m128i, packed1) };
 
     // Row 2
     let dst_row2 = unsafe { dst.add(stride_u16 * 2) };
     let dst2 = unsafe { _mm_loadl_epi64(dst_row2 as *const __m128i) };
-    let dst2_32 = unsafe { _mm_unpacklo_epi16(dst2, zero) };
-    let scaled2 = unsafe { _mm_srai_epi32(_mm_add_epi32(out2, rnd), 4) };
-    let sum2 = unsafe { _mm_add_epi32(dst2_32, scaled2) };
-    let clamped2 = unsafe { _mm_max_epi32(_mm_min_epi32(sum2, max_val), zero) };
-    let packed2 = unsafe { _mm_packus_epi32(clamped2, clamped2) };
+    let dst2_32 = _mm_unpacklo_epi16(dst2, zero);
+    let scaled2 = _mm_srai_epi32(_mm_add_epi32(out2, rnd), 4);
+    let sum2 = _mm_add_epi32(dst2_32, scaled2);
+    let clamped2 = _mm_max_epi32(_mm_min_epi32(sum2, max_val), zero);
+    let packed2 = _mm_packus_epi32(clamped2, clamped2);
     unsafe { _mm_storel_epi64(dst_row2 as *mut __m128i, packed2) };
 
     // Row 3
     let dst_row3 = unsafe { dst.add(stride_u16 * 3) };
     let dst3 = unsafe { _mm_loadl_epi64(dst_row3 as *const __m128i) };
-    let dst3_32 = unsafe { _mm_unpacklo_epi16(dst3, zero) };
-    let scaled3 = unsafe { _mm_srai_epi32(_mm_add_epi32(out3, rnd), 4) };
-    let sum3 = unsafe { _mm_add_epi32(dst3_32, scaled3) };
-    let clamped3 = unsafe { _mm_max_epi32(_mm_min_epi32(sum3, max_val), zero) };
-    let packed3 = unsafe { _mm_packus_epi32(clamped3, clamped3) };
+    let dst3_32 = _mm_unpacklo_epi16(dst3, zero);
+    let scaled3 = _mm_srai_epi32(_mm_add_epi32(out3, rnd), 4);
+    let sum3 = _mm_add_epi32(dst3_32, scaled3);
+    let clamped3 = _mm_max_epi32(_mm_min_epi32(sum3, max_val), zero);
+    let packed3 = _mm_packus_epi32(clamped3, clamped3);
     unsafe { _mm_storel_epi64(dst_row3 as *mut __m128i, packed3) };
 
     // Clear coefficients
@@ -754,15 +734,15 @@ pub unsafe fn inv_identity_add_4x4_8bpc_avx2(
     // Plus shift: >> 0 for 4x4, then final (+ 8) >> 4
 
     let c_ptr = coeff;
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi16(bitdepth_max as i16);
 
     for y in 0..4 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         // Load destination
         let d = unsafe { _mm_cvtsi32_si128(*(dst_row as *const i32)) };
-        let d16 = unsafe { _mm_unpacklo_epi8(d, zero) };
+        let d16 = _mm_unpacklo_epi8(d, zero);
 
         // Load coeffs for this row (column-major: y, y+4, y+8, y+12)
         let c0 = unsafe { *c_ptr.add(y) as i32 };
@@ -783,12 +763,12 @@ pub unsafe fn inv_identity_add_4x4_8bpc_avx2(
         let r3 = (scale(c3) + 8) >> 4;
 
         // Add to destination
-        let result = unsafe { _mm_set_epi32(r3, r2, r1, r0) };
-        let d32 = unsafe { _mm_cvtepi16_epi32(d16) };
-        let sum = unsafe { _mm_add_epi32(d32, result) };
-        let sum16 = unsafe { _mm_packs_epi32(sum, sum) };
-        let clamped = unsafe { _mm_max_epi16(_mm_min_epi16(sum16, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi16(clamped, clamped) };
+        let result = _mm_set_epi32(r3, r2, r1, r0);
+        let d32 = _mm_cvtepi16_epi32(d16);
+        let sum = _mm_add_epi32(d32, result);
+        let sum16 = _mm_packs_epi32(sum, sum);
+        let clamped = _mm_max_epi16(_mm_min_epi16(sum16, max_val), zero);
+        let packed = _mm_packus_epi16(clamped, clamped);
 
         unsafe { *(dst_row as *mut i32) = _mm_cvtsi128_si32(packed) };
     }
@@ -841,15 +821,15 @@ pub unsafe fn inv_identity_add_8x8_8bpc_avx2(
     bitdepth_max: i32,
 ) {
     let c_ptr = coeff;
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi16(bitdepth_max as i16);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         // Load 8 destination pixels
         let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-        let d16 = unsafe { _mm_unpacklo_epi8(d, zero) };
+        let d16 = _mm_unpacklo_epi8(d, zero);
 
         // Load 8 coefficients for this row (column-major: y, y+8, y+16, ...)
         let mut coeffs = [0i16; 8];
@@ -861,14 +841,12 @@ pub unsafe fn inv_identity_add_8x8_8bpc_avx2(
         // Final shift: (+ 8) >> 4
         // Combined: (c * 4 + 8) >> 4 = (c + 2) >> 2
         let c_vec = unsafe { _mm_loadu_si128(coeffs.as_ptr() as *const __m128i) };
-        let c_shifted = unsafe {
-            _mm_srai_epi16(_mm_add_epi16(_mm_slli_epi16(c_vec, 2), _mm_set1_epi16(8)), 4)
-        };
+        let c_shifted = _mm_srai_epi16(_mm_add_epi16(_mm_slli_epi16(c_vec, 2), _mm_set1_epi16(8)), 4);
 
         // Add to destination
-        let sum = unsafe { _mm_add_epi16(d16, c_shifted) };
-        let clamped = unsafe { _mm_max_epi16(_mm_min_epi16(sum, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi16(clamped, clamped) };
+        let sum = _mm_add_epi16(d16, c_shifted);
+        let clamped = _mm_max_epi16(_mm_min_epi16(sum, max_val), zero);
+        let packed = _mm_packus_epi16(clamped, clamped);
 
         unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
     }
@@ -1189,44 +1167,40 @@ unsafe fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
     }
 
     // Add to destination with SIMD
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         // Load destination pixels (8 bytes)
         let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-        let d16 = unsafe { _mm_unpacklo_epi8(d, zero) };
+        let d16 = _mm_unpacklo_epi8(d, zero);
 
         // Load and scale coefficients
-        let c_lo = unsafe {
-            _mm_set_epi32(
+        let c_lo = _mm_set_epi32(
                 tmp[y * 8 + 3], tmp[y * 8 + 2],
                 tmp[y * 8 + 1], tmp[y * 8 + 0]
-            )
-        };
-        let c_hi = unsafe {
-            _mm_set_epi32(
+            );
+        let c_hi = _mm_set_epi32(
                 tmp[y * 8 + 7], tmp[y * 8 + 6],
                 tmp[y * 8 + 5], tmp[y * 8 + 4]
-            )
-        };
+            );
 
         // Final scaling: (c + 8) >> 4
-        let c_lo_256 = unsafe { _mm256_set_m128i(c_hi, c_lo) };
-        let c_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4) };
+        let c_lo_256 = _mm256_set_m128i(c_hi, c_lo);
+        let c_scaled = _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4);
 
         // Pack to 16-bit
-        let c_lo_scaled = unsafe { _mm256_castsi256_si128(c_scaled) };
-        let c_hi_scaled = unsafe { _mm256_extracti128_si256(c_scaled, 1) };
-        let c16 = unsafe { _mm_packs_epi32(c_lo_scaled, c_hi_scaled) };
+        let c_lo_scaled = _mm256_castsi256_si128(c_scaled);
+        let c_hi_scaled = _mm256_extracti128_si256(c_scaled, 1);
+        let c16 = _mm_packs_epi32(c_lo_scaled, c_hi_scaled);
 
         // Add to destination
-        let sum = unsafe { _mm_add_epi16(d16, c16) };
-        let clamped = unsafe { _mm_max_epi16(_mm_min_epi16(sum, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi16(clamped, clamped) };
+        let sum = _mm_add_epi16(d16, c16);
+        let clamped = _mm_max_epi16(_mm_min_epi16(sum, max_val), zero);
+        let packed = _mm_packus_epi16(clamped, clamped);
 
         // Store 8 pixels
         unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
@@ -1316,46 +1290,42 @@ unsafe fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
     }
 
     // Add to destination with SIMD (16bpc = u16 pixels)
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm_set1_epi32(8) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
+    let rnd_final = _mm_set1_epi32(8);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination pixels (8 u16 = 16 bytes)
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) }; // First 4 as i32
-        let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) }; // Last 4 as i32
+        let d_lo = _mm_unpacklo_epi16(d, zero); // First 4 as i32
+        let d_hi = _mm_unpackhi_epi16(d, zero); // Last 4 as i32
 
         // Load and scale coefficients
-        let c_lo = unsafe {
-            _mm_set_epi32(
+        let c_lo = _mm_set_epi32(
                 tmp[y * 8 + 3], tmp[y * 8 + 2],
                 tmp[y * 8 + 1], tmp[y * 8 + 0]
-            )
-        };
-        let c_hi = unsafe {
-            _mm_set_epi32(
+            );
+        let c_hi = _mm_set_epi32(
                 tmp[y * 8 + 7], tmp[y * 8 + 6],
                 tmp[y * 8 + 5], tmp[y * 8 + 4]
-            )
-        };
+            );
 
         // Final scaling: (c + 8) >> 4
-        let c_lo_scaled = unsafe { _mm_srai_epi32(_mm_add_epi32(c_lo, rnd_final), 4) };
-        let c_hi_scaled = unsafe { _mm_srai_epi32(_mm_add_epi32(c_hi, rnd_final), 4) };
+        let c_lo_scaled = _mm_srai_epi32(_mm_add_epi32(c_lo, rnd_final), 4);
+        let c_hi_scaled = _mm_srai_epi32(_mm_add_epi32(c_hi, rnd_final), 4);
 
         // Add to destination
-        let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo_scaled) };
-        let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi_scaled) };
+        let sum_lo = _mm_add_epi32(d_lo, c_lo_scaled);
+        let sum_hi = _mm_add_epi32(d_hi, c_hi_scaled);
 
         // Clamp to [0, bitdepth_max]
-        let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-        let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
+        let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+        let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
 
         // Pack to u16 and store
-        let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+        let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
     }
 
@@ -1410,8 +1380,8 @@ pub unsafe fn inv_identity_add_16x16_8bpc_avx2(
     bitdepth_max: i32,
 ) {
     let c_ptr = coeff;
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
 
     // Identity16 scale factor: f(x) = 2*x + (x*1697 + 1024) >> 11
     // For 16x16, applied twice (row + col), then final (+ 8) >> 4
@@ -1446,27 +1416,25 @@ pub unsafe fn inv_identity_add_16x16_8bpc_avx2(
 
         // Load 16 destination pixels
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d_lo = unsafe { _mm256_cvtepu8_epi16(d) };
+        let d_lo = _mm256_cvtepu8_epi16(d);
 
         // Load 16 transformed coefficients
-        let c_vec = unsafe {
-            _mm256_set_epi16(
+        let c_vec = _mm256_set_epi16(
                 tmp[y][15] as i16, tmp[y][14] as i16, tmp[y][13] as i16, tmp[y][12] as i16,
                 tmp[y][11] as i16, tmp[y][10] as i16, tmp[y][9] as i16, tmp[y][8] as i16,
                 tmp[y][7] as i16, tmp[y][6] as i16, tmp[y][5] as i16, tmp[y][4] as i16,
                 tmp[y][3] as i16, tmp[y][2] as i16, tmp[y][1] as i16, tmp[y][0] as i16,
-            )
-        };
+            );
 
         // Add and clamp
-        let sum = unsafe { _mm256_add_epi16(d_lo, c_vec) };
-        let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+        let sum = _mm256_add_epi16(d_lo, c_vec);
+        let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
         // Pack to bytes
-        let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-        let packed_lo = unsafe { _mm256_castsi256_si128(packed) };
-        let packed_hi = unsafe { _mm256_extracti128_si256(packed, 1) };
-        let result = unsafe { _mm_unpacklo_epi64(packed_lo, packed_hi) };
+        let packed = _mm256_packus_epi16(clamped, clamped);
+        let packed_lo = _mm256_castsi256_si128(packed);
+        let packed_hi = _mm256_extracti128_si256(packed, 1);
+        let result = _mm_unpacklo_epi64(packed_lo, packed_hi);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, result) };
     }
@@ -1970,51 +1938,47 @@ unsafe fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
     }
 
     // Add to destination with SIMD
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..16 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         // Load destination pixels (16 bytes)
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+        let d16 = _mm256_cvtepu8_epi16(d);
 
         // Load and scale coefficients (16 values)
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y * 16 + 7], tmp[y * 16 + 6],
                 tmp[y * 16 + 5], tmp[y * 16 + 4],
                 tmp[y * 16 + 3], tmp[y * 16 + 2],
                 tmp[y * 16 + 1], tmp[y * 16 + 0]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y * 16 + 15], tmp[y * 16 + 14],
                 tmp[y * 16 + 13], tmp[y * 16 + 12],
                 tmp[y * 16 + 11], tmp[y * 16 + 10],
                 tmp[y * 16 + 9], tmp[y * 16 + 8]
-            )
-        };
+            );
 
         // Final scaling: (c + 8) >> 4
-        let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-        let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+        let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+        let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
         // Pack to 16-bit
-        let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
+        let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
         // Fix lane order after packs
-        let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+        let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
         // Add to destination
-        let sum = unsafe { _mm256_add_epi16(d16, c16) };
-        let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+        let sum = _mm256_add_epi16(d16, c16);
+        let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
         // Pack to 8-bit
-        let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_packus_epi16(clamped, clamped);
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
         // Store 16 pixels
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
@@ -2100,9 +2064,9 @@ unsafe fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
     }
 
     // Add to destination with SIMD (16bpc = u16 pixels)
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi32(bitdepth_max);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..16 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -2110,46 +2074,42 @@ unsafe fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
         // Load destination pixels (16 u16 = 32 bytes)
         let d = unsafe { _mm256_loadu_si256(dst_row as *const __m256i) };
         // Unpack to i32: low 8 and high 8
-        let d_lo = unsafe { _mm256_unpacklo_epi16(d, _mm256_setzero_si256()) };
-        let d_hi = unsafe { _mm256_unpackhi_epi16(d, _mm256_setzero_si256()) };
+        let d_lo = _mm256_unpacklo_epi16(d, _mm256_setzero_si256());
+        let d_hi = _mm256_unpackhi_epi16(d, _mm256_setzero_si256());
         // Permute to get correct order after unpack
-        let d_0_4 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x20) }; // pixels 0-3, 8-11
-        let d_4_8 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x31) }; // pixels 4-7, 12-15
+        let d_0_4 = _mm256_permute2x128_si256(d_lo, d_hi, 0x20); // pixels 0-3, 8-11
+        let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31); // pixels 4-7, 12-15
 
         // Load and scale coefficients (16 values)
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y * 16 + 3], tmp[y * 16 + 2],
                 tmp[y * 16 + 1], tmp[y * 16 + 0],
                 tmp[y * 16 + 11], tmp[y * 16 + 10],
                 tmp[y * 16 + 9], tmp[y * 16 + 8]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y * 16 + 7], tmp[y * 16 + 6],
                 tmp[y * 16 + 5], tmp[y * 16 + 4],
                 tmp[y * 16 + 15], tmp[y * 16 + 14],
                 tmp[y * 16 + 13], tmp[y * 16 + 12]
-            )
-        };
+            );
 
         // Final scaling: (c + 8) >> 4
-        let c0_scaled = unsafe { _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final)) };
-        let c1_scaled = unsafe { _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final)) };
+        let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
+        let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
 
         // Add to destination
-        let sum0 = unsafe { _mm256_add_epi32(d_0_4, c0_scaled) };
-        let sum1 = unsafe { _mm256_add_epi32(d_4_8, c1_scaled) };
+        let sum0 = _mm256_add_epi32(d_0_4, c0_scaled);
+        let sum1 = _mm256_add_epi32(d_4_8, c1_scaled);
 
         // Clamp to [0, bitdepth_max]
-        let clamped0 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero) };
-        let clamped1 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero) };
+        let clamped0 = _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero);
+        let clamped1 = _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero);
 
         // Pack to u16 and store
-        let packed = unsafe { _mm256_packus_epi32(clamped0, clamped1) };
+        let packed = _mm256_packus_epi32(clamped0, clamped1);
         // Fix lane order after packus
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
         unsafe { _mm256_storeu_si256(dst_row as *mut __m256i, packed) };
     }
 
@@ -2230,31 +2190,29 @@ unsafe fn inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi16(bitdepth_max as i16);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         // Load destination (4 bytes)
         let d = unsafe { _mm_cvtsi32_si128(*(dst_row as *const i32)) };
-        let d16 = unsafe { _mm_unpacklo_epi8(d, zero) };
-        let d32 = unsafe { _mm_cvtepi16_epi32(d16) };
+        let d16 = _mm_unpacklo_epi8(d, zero);
+        let d32 = _mm_cvtepi16_epi32(d16);
 
         // Load and scale coefficients
-        let c = unsafe {
-            _mm_set_epi32(
+        let c = _mm_set_epi32(
                 (tmp[y * 4 + 3] + 8) >> 4,
                 (tmp[y * 4 + 2] + 8) >> 4,
                 (tmp[y * 4 + 1] + 8) >> 4,
                 (tmp[y * 4 + 0] + 8) >> 4
-            )
-        };
+            );
 
-        let sum = unsafe { _mm_add_epi32(d32, c) };
-        let sum16 = unsafe { _mm_packs_epi32(sum, sum) };
-        let clamped = unsafe { _mm_max_epi16(_mm_min_epi16(sum16, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi16(clamped, clamped) };
+        let sum = _mm_add_epi32(d32, c);
+        let sum16 = _mm_packs_epi32(sum, sum);
+        let clamped = _mm_max_epi16(_mm_min_epi16(sum16, max_val), zero);
+        let packed = _mm_packus_epi16(clamped, clamped);
 
         unsafe { *(dst_row as *mut i32) = _mm_cvtsi128_si32(packed) };
     }
@@ -2330,41 +2288,37 @@ unsafe fn inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..4 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         // Load destination (8 bytes)
         let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-        let d16 = unsafe { _mm_unpacklo_epi8(d, zero) };
+        let d16 = _mm_unpacklo_epi8(d, zero);
 
         // Load and scale coefficients
-        let c_lo = unsafe {
-            _mm_set_epi32(
+        let c_lo = _mm_set_epi32(
                 tmp[y * 8 + 3], tmp[y * 8 + 2],
                 tmp[y * 8 + 1], tmp[y * 8 + 0]
-            )
-        };
-        let c_hi = unsafe {
-            _mm_set_epi32(
+            );
+        let c_hi = _mm_set_epi32(
                 tmp[y * 8 + 7], tmp[y * 8 + 6],
                 tmp[y * 8 + 5], tmp[y * 8 + 4]
-            )
-        };
+            );
 
-        let c_lo_256 = unsafe { _mm256_set_m128i(c_hi, c_lo) };
-        let c_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4) };
+        let c_lo_256 = _mm256_set_m128i(c_hi, c_lo);
+        let c_scaled = _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4);
 
-        let c_lo_scaled = unsafe { _mm256_castsi256_si128(c_scaled) };
-        let c_hi_scaled = unsafe { _mm256_extracti128_si256(c_scaled, 1) };
-        let c16 = unsafe { _mm_packs_epi32(c_lo_scaled, c_hi_scaled) };
+        let c_lo_scaled = _mm256_castsi256_si128(c_scaled);
+        let c_hi_scaled = _mm256_extracti128_si256(c_scaled, 1);
+        let c16 = _mm_packs_epi32(c_lo_scaled, c_hi_scaled);
 
-        let sum = unsafe { _mm_add_epi16(d16, c16) };
-        let clamped = unsafe { _mm_max_epi16(_mm_min_epi16(sum, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi16(clamped, clamped) };
+        let sum = _mm_add_epi16(d16, c16);
+        let clamped = _mm_max_epi16(_mm_min_epi16(sum, max_val), zero);
+        let packed = _mm_packus_epi16(clamped, clamped);
 
         unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
     }
@@ -2442,28 +2396,26 @@ macro_rules! impl_4x8_transform {
             }
 
             // Add to destination
-            let zero = unsafe { _mm_setzero_si128() };
-            let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi16(bitdepth_max as i16);
 
             for y in 0..8 {
                 let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
                 let d = unsafe { _mm_cvtsi32_si128(*(dst_row as *const i32)) };
-                let d16 = unsafe { _mm_unpacklo_epi8(d, zero) };
-                let d32 = unsafe { _mm_cvtepi16_epi32(d16) };
+                let d16 = _mm_unpacklo_epi8(d, zero);
+                let d32 = _mm_cvtepi16_epi32(d16);
 
-                let c = unsafe {
-                    _mm_set_epi32(
+                let c = _mm_set_epi32(
                         (tmp[y * 4 + 3] + 8) >> 4,
                         (tmp[y * 4 + 2] + 8) >> 4,
                         (tmp[y * 4 + 1] + 8) >> 4,
                         (tmp[y * 4 + 0] + 8) >> 4
-                    )
-                };
+                    );
 
-                let sum = unsafe { _mm_add_epi32(d32, c) };
-                let sum16 = unsafe { _mm_packs_epi32(sum, sum) };
-                let clamped = unsafe { _mm_max_epi16(_mm_min_epi16(sum16, max_val), zero) };
-                let packed = unsafe { _mm_packus_epi16(clamped, clamped) };
+                let sum = _mm_add_epi32(d32, c);
+                let sum16 = _mm_packs_epi32(sum, sum);
+                let clamped = _mm_max_epi16(_mm_min_epi16(sum16, max_val), zero);
+                let packed = _mm_packus_epi16(clamped, clamped);
                 unsafe { *(dst_row as *mut i32) = _mm_cvtsi128_si32(packed) };
             }
 
@@ -2691,39 +2643,35 @@ macro_rules! impl_8x16_transform {
             }
 
             // Add to destination
-            let zero = unsafe { _mm_setzero_si128() };
-            let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
-            let rnd_final = unsafe { _mm256_set1_epi32(8) };
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi16(bitdepth_max as i16);
+            let rnd_final = _mm256_set1_epi32(8);
 
             for y in 0..16 {
                 let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
                 let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-                let d16 = unsafe { _mm_unpacklo_epi8(d, zero) };
+                let d16 = _mm_unpacklo_epi8(d, zero);
 
-                let c_lo = unsafe {
-                    _mm_set_epi32(
+                let c_lo = _mm_set_epi32(
                         tmp[y * 8 + 3], tmp[y * 8 + 2],
                         tmp[y * 8 + 1], tmp[y * 8 + 0]
-                    )
-                };
-                let c_hi = unsafe {
-                    _mm_set_epi32(
+                    );
+                let c_hi = _mm_set_epi32(
                         tmp[y * 8 + 7], tmp[y * 8 + 6],
                         tmp[y * 8 + 5], tmp[y * 8 + 4]
-                    )
-                };
+                    );
 
-                let c_lo_256 = unsafe { _mm256_set_m128i(c_hi, c_lo) };
-                let c_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4) };
+                let c_lo_256 = _mm256_set_m128i(c_hi, c_lo);
+                let c_scaled = _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4);
 
-                let c_lo_scaled = unsafe { _mm256_castsi256_si128(c_scaled) };
-                let c_hi_scaled = unsafe { _mm256_extracti128_si256(c_scaled, 1) };
-                let c16 = unsafe { _mm_packs_epi32(c_lo_scaled, c_hi_scaled) };
+                let c_lo_scaled = _mm256_castsi256_si128(c_scaled);
+                let c_hi_scaled = _mm256_extracti128_si256(c_scaled, 1);
+                let c16 = _mm_packs_epi32(c_lo_scaled, c_hi_scaled);
 
-                let sum = unsafe { _mm_add_epi16(d16, c16) };
-                let clamped = unsafe { _mm_max_epi16(_mm_min_epi16(sum, max_val), zero) };
-                let packed = unsafe { _mm_packus_epi16(clamped, clamped) };
+                let sum = _mm_add_epi16(d16, c16);
+                let clamped = _mm_max_epi16(_mm_min_epi16(sum, max_val), zero);
+                let packed = _mm_packus_epi16(clamped, clamped);
 
                 unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
             }
@@ -2780,44 +2728,40 @@ macro_rules! impl_16x8_transform {
             }
 
             // Add to destination
-            let zero = unsafe { _mm256_setzero_si256() };
-            let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-            let rnd_final = unsafe { _mm256_set1_epi32(8) };
+            let zero = _mm256_setzero_si256();
+            let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+            let rnd_final = _mm256_set1_epi32(8);
 
             for y in 0..8 {
                 let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
                 let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-                let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+                let d16 = _mm256_cvtepu8_epi16(d);
 
-                let c0 = unsafe {
-                    _mm256_set_epi32(
+                let c0 = _mm256_set_epi32(
                         tmp[y * 16 + 7], tmp[y * 16 + 6],
                         tmp[y * 16 + 5], tmp[y * 16 + 4],
                         tmp[y * 16 + 3], tmp[y * 16 + 2],
                         tmp[y * 16 + 1], tmp[y * 16 + 0]
-                    )
-                };
-                let c1 = unsafe {
-                    _mm256_set_epi32(
+                    );
+                let c1 = _mm256_set_epi32(
                         tmp[y * 16 + 15], tmp[y * 16 + 14],
                         tmp[y * 16 + 13], tmp[y * 16 + 12],
                         tmp[y * 16 + 11], tmp[y * 16 + 10],
                         tmp[y * 16 + 9], tmp[y * 16 + 8]
-                    )
-                };
+                    );
 
-                let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-                let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+                let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+                let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-                let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-                let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+                let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+                let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-                let sum = unsafe { _mm256_add_epi16(d16, c16) };
-                let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+                let sum = _mm256_add_epi16(d16, c16);
+                let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-                let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-                let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+                let packed = _mm256_packus_epi16(clamped, clamped);
+                let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
                 unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
             }
@@ -3006,39 +2950,35 @@ unsafe fn inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..16 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-        let d16 = unsafe { _mm_unpacklo_epi8(d, zero) };
+        let d16 = _mm_unpacklo_epi8(d, zero);
 
-        let c_lo = unsafe {
-            _mm_set_epi32(
+        let c_lo = _mm_set_epi32(
                 tmp[y * 8 + 3], tmp[y * 8 + 2],
                 tmp[y * 8 + 1], tmp[y * 8 + 0]
-            )
-        };
-        let c_hi = unsafe {
-            _mm_set_epi32(
+            );
+        let c_hi = _mm_set_epi32(
                 tmp[y * 8 + 7], tmp[y * 8 + 6],
                 tmp[y * 8 + 5], tmp[y * 8 + 4]
-            )
-        };
+            );
 
-        let c_lo_256 = unsafe { _mm256_set_m128i(c_hi, c_lo) };
-        let c_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4) };
+        let c_lo_256 = _mm256_set_m128i(c_hi, c_lo);
+        let c_scaled = _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4);
 
-        let c_lo_scaled = unsafe { _mm256_castsi256_si128(c_scaled) };
-        let c_hi_scaled = unsafe { _mm256_extracti128_si256(c_scaled, 1) };
-        let c16 = unsafe { _mm_packs_epi32(c_lo_scaled, c_hi_scaled) };
+        let c_lo_scaled = _mm256_castsi256_si128(c_scaled);
+        let c_hi_scaled = _mm256_extracti128_si256(c_scaled, 1);
+        let c16 = _mm_packs_epi32(c_lo_scaled, c_hi_scaled);
 
-        let sum = unsafe { _mm_add_epi16(d16, c16) };
-        let clamped = unsafe { _mm_max_epi16(_mm_min_epi16(sum, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi16(clamped, clamped) };
+        let sum = _mm_add_epi16(d16, c16);
+        let clamped = _mm_max_epi16(_mm_min_epi16(sum, max_val), zero);
+        let packed = _mm_packus_epi16(clamped, clamped);
 
         unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
     }
@@ -3116,44 +3056,40 @@ unsafe fn inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+        let d16 = _mm256_cvtepu8_epi16(d);
 
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y * 16 + 7], tmp[y * 16 + 6],
                 tmp[y * 16 + 5], tmp[y * 16 + 4],
                 tmp[y * 16 + 3], tmp[y * 16 + 2],
                 tmp[y * 16 + 1], tmp[y * 16 + 0]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y * 16 + 15], tmp[y * 16 + 14],
                 tmp[y * 16 + 13], tmp[y * 16 + 12],
                 tmp[y * 16 + 11], tmp[y * 16 + 10],
                 tmp[y * 16 + 9], tmp[y * 16 + 8]
-            )
-        };
+            );
 
-        let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-        let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+        let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+        let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-        let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-        let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+        let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+        let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-        let sum = unsafe { _mm256_add_epi16(d16, c16) };
-        let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+        let sum = _mm256_add_epi16(d16, c16);
+        let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-        let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_packus_epi16(clamped, clamped);
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
     }
@@ -3235,44 +3171,40 @@ unsafe fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..32 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+        let d16 = _mm256_cvtepu8_epi16(d);
 
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y * 16 + 7], tmp[y * 16 + 6],
                 tmp[y * 16 + 5], tmp[y * 16 + 4],
                 tmp[y * 16 + 3], tmp[y * 16 + 2],
                 tmp[y * 16 + 1], tmp[y * 16 + 0]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y * 16 + 15], tmp[y * 16 + 14],
                 tmp[y * 16 + 13], tmp[y * 16 + 12],
                 tmp[y * 16 + 11], tmp[y * 16 + 10],
                 tmp[y * 16 + 9], tmp[y * 16 + 8]
-            )
-        };
+            );
 
-        let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-        let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+        let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+        let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-        let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-        let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+        let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+        let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-        let sum = unsafe { _mm256_add_epi16(d16, c16) };
-        let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+        let sum = _mm256_add_epi16(d16, c16);
+        let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-        let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_packus_epi16(clamped, clamped);
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
     }
@@ -3350,9 +3282,9 @@ unsafe fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..16 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -3361,36 +3293,32 @@ unsafe fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
         for chunk in 0..2 {
             let chunk_off = chunk * 16;
             let d = unsafe { _mm_loadu_si128(dst_row.add(chunk_off) as *const __m128i) };
-            let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+            let d16 = _mm256_cvtepu8_epi16(d);
 
-            let c0 = unsafe {
-                _mm256_set_epi32(
+            let c0 = _mm256_set_epi32(
                     tmp[y * 32 + chunk_off + 7], tmp[y * 32 + chunk_off + 6],
                     tmp[y * 32 + chunk_off + 5], tmp[y * 32 + chunk_off + 4],
                     tmp[y * 32 + chunk_off + 3], tmp[y * 32 + chunk_off + 2],
                     tmp[y * 32 + chunk_off + 1], tmp[y * 32 + chunk_off + 0]
-                )
-            };
-            let c1 = unsafe {
-                _mm256_set_epi32(
+                );
+            let c1 = _mm256_set_epi32(
                     tmp[y * 32 + chunk_off + 15], tmp[y * 32 + chunk_off + 14],
                     tmp[y * 32 + chunk_off + 13], tmp[y * 32 + chunk_off + 12],
                     tmp[y * 32 + chunk_off + 11], tmp[y * 32 + chunk_off + 10],
                     tmp[y * 32 + chunk_off + 9], tmp[y * 32 + chunk_off + 8]
-                )
-            };
+                );
 
-            let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-            let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+            let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+            let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-            let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-            let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+            let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+            let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-            let sum = unsafe { _mm256_add_epi16(d16, c16) };
-            let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+            let sum = _mm256_add_epi16(d16, c16);
+            let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-            let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-            let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+            let packed = _mm256_packus_epi16(clamped, clamped);
+            let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
             unsafe { _mm_storeu_si128(dst_row.add(chunk_off) as *mut __m128i, _mm256_castsi256_si128(packed)) };
         }
@@ -3469,44 +3397,40 @@ unsafe fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..32 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+        let d16 = _mm256_cvtepu8_epi16(d);
 
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y * 16 + 7], tmp[y * 16 + 6],
                 tmp[y * 16 + 5], tmp[y * 16 + 4],
                 tmp[y * 16 + 3], tmp[y * 16 + 2],
                 tmp[y * 16 + 1], tmp[y * 16 + 0]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y * 16 + 15], tmp[y * 16 + 14],
                 tmp[y * 16 + 13], tmp[y * 16 + 12],
                 tmp[y * 16 + 11], tmp[y * 16 + 10],
                 tmp[y * 16 + 9], tmp[y * 16 + 8]
-            )
-        };
+            );
 
-        let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-        let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+        let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+        let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-        let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-        let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+        let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+        let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-        let sum = unsafe { _mm256_add_epi16(d16, c16) };
-        let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+        let sum = _mm256_add_epi16(d16, c16);
+        let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-        let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_packus_epi16(clamped, clamped);
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
     }
@@ -3672,9 +3596,9 @@ unsafe fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..64 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -3683,36 +3607,32 @@ unsafe fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
         for chunk in 0..2 {
             let chunk_off = chunk * 16;
             let d = unsafe { _mm_loadu_si128(dst_row.add(chunk_off) as *const __m128i) };
-            let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+            let d16 = _mm256_cvtepu8_epi16(d);
 
-            let c0 = unsafe {
-                _mm256_set_epi32(
+            let c0 = _mm256_set_epi32(
                     tmp[y * 32 + chunk_off + 7], tmp[y * 32 + chunk_off + 6],
                     tmp[y * 32 + chunk_off + 5], tmp[y * 32 + chunk_off + 4],
                     tmp[y * 32 + chunk_off + 3], tmp[y * 32 + chunk_off + 2],
                     tmp[y * 32 + chunk_off + 1], tmp[y * 32 + chunk_off + 0]
-                )
-            };
-            let c1 = unsafe {
-                _mm256_set_epi32(
+                );
+            let c1 = _mm256_set_epi32(
                     tmp[y * 32 + chunk_off + 15], tmp[y * 32 + chunk_off + 14],
                     tmp[y * 32 + chunk_off + 13], tmp[y * 32 + chunk_off + 12],
                     tmp[y * 32 + chunk_off + 11], tmp[y * 32 + chunk_off + 10],
                     tmp[y * 32 + chunk_off + 9], tmp[y * 32 + chunk_off + 8]
-                )
-            };
+                );
 
-            let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-            let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+            let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+            let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-            let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-            let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+            let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+            let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-            let sum = unsafe { _mm256_add_epi16(d16, c16) };
-            let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+            let sum = _mm256_add_epi16(d16, c16);
+            let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-            let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-            let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+            let packed = _mm256_packus_epi16(clamped, clamped);
+            let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
             unsafe { _mm_storeu_si128(dst_row.add(chunk_off) as *mut __m128i, _mm256_castsi256_si128(packed)) };
         }
@@ -3795,9 +3715,9 @@ unsafe fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..32 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -3806,36 +3726,32 @@ unsafe fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
         for chunk in 0..4 {
             let chunk_off = chunk * 16;
             let d = unsafe { _mm_loadu_si128(dst_row.add(chunk_off) as *const __m128i) };
-            let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+            let d16 = _mm256_cvtepu8_epi16(d);
 
-            let c0 = unsafe {
-                _mm256_set_epi32(
+            let c0 = _mm256_set_epi32(
                     tmp[y * 64 + chunk_off + 7], tmp[y * 64 + chunk_off + 6],
                     tmp[y * 64 + chunk_off + 5], tmp[y * 64 + chunk_off + 4],
                     tmp[y * 64 + chunk_off + 3], tmp[y * 64 + chunk_off + 2],
                     tmp[y * 64 + chunk_off + 1], tmp[y * 64 + chunk_off + 0]
-                )
-            };
-            let c1 = unsafe {
-                _mm256_set_epi32(
+                );
+            let c1 = _mm256_set_epi32(
                     tmp[y * 64 + chunk_off + 15], tmp[y * 64 + chunk_off + 14],
                     tmp[y * 64 + chunk_off + 13], tmp[y * 64 + chunk_off + 12],
                     tmp[y * 64 + chunk_off + 11], tmp[y * 64 + chunk_off + 10],
                     tmp[y * 64 + chunk_off + 9], tmp[y * 64 + chunk_off + 8]
-                )
-            };
+                );
 
-            let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-            let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+            let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+            let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-            let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-            let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+            let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+            let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-            let sum = unsafe { _mm256_add_epi16(d16, c16) };
-            let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+            let sum = _mm256_add_epi16(d16, c16);
+            let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-            let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-            let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+            let packed = _mm256_packus_epi16(clamped, clamped);
+            let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
             unsafe { _mm_storeu_si128(dst_row.add(chunk_off) as *mut __m128i, _mm256_castsi256_si128(packed)) };
         }
@@ -3997,44 +3913,40 @@ unsafe fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..4 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+        let d16 = _mm256_cvtepu8_epi16(d);
 
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y * 16 + 7], tmp[y * 16 + 6],
                 tmp[y * 16 + 5], tmp[y * 16 + 4],
                 tmp[y * 16 + 3], tmp[y * 16 + 2],
                 tmp[y * 16 + 1], tmp[y * 16 + 0]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y * 16 + 15], tmp[y * 16 + 14],
                 tmp[y * 16 + 13], tmp[y * 16 + 12],
                 tmp[y * 16 + 11], tmp[y * 16 + 10],
                 tmp[y * 16 + 9], tmp[y * 16 + 8]
-            )
-        };
+            );
 
-        let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-        let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+        let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+        let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-        let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-        let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+        let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+        let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-        let sum = unsafe { _mm256_add_epi16(d16, c16) };
-        let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+        let sum = _mm256_add_epi16(d16, c16);
+        let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-        let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_packus_epi16(clamped, clamped);
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
     }
@@ -4174,44 +4086,40 @@ macro_rules! impl_16x4_transform {
             }
 
             // Add to destination
-            let zero = unsafe { _mm256_setzero_si256() };
-            let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-            let rnd_final = unsafe { _mm256_set1_epi32(8) };
+            let zero = _mm256_setzero_si256();
+            let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+            let rnd_final = _mm256_set1_epi32(8);
 
             for y in 0..4 {
                 let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
                 let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-                let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+                let d16 = _mm256_cvtepu8_epi16(d);
 
-                let c0 = unsafe {
-                    _mm256_set_epi32(
+                let c0 = _mm256_set_epi32(
                         tmp[y * 16 + 7], tmp[y * 16 + 6],
                         tmp[y * 16 + 5], tmp[y * 16 + 4],
                         tmp[y * 16 + 3], tmp[y * 16 + 2],
                         tmp[y * 16 + 1], tmp[y * 16 + 0]
-                    )
-                };
-                let c1 = unsafe {
-                    _mm256_set_epi32(
+                    );
+                let c1 = _mm256_set_epi32(
                         tmp[y * 16 + 15], tmp[y * 16 + 14],
                         tmp[y * 16 + 13], tmp[y * 16 + 12],
                         tmp[y * 16 + 11], tmp[y * 16 + 10],
                         tmp[y * 16 + 9], tmp[y * 16 + 8]
-                    )
-                };
+                    );
 
-                let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-                let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+                let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+                let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-                let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-                let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+                let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+                let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-                let sum = unsafe { _mm256_add_epi16(d16, c16) };
-                let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+                let sum = _mm256_add_epi16(d16, c16);
+                let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-                let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-                let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+                let packed = _mm256_packus_epi16(clamped, clamped);
+                let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
                 unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
             }
@@ -4483,9 +4391,9 @@ unsafe fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -4494,36 +4402,32 @@ unsafe fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
         for chunk in 0..2 {
             let chunk_off = chunk * 16;
             let d = unsafe { _mm_loadu_si128(dst_row.add(chunk_off) as *const __m128i) };
-            let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+            let d16 = _mm256_cvtepu8_epi16(d);
 
-            let c0 = unsafe {
-                _mm256_set_epi32(
+            let c0 = _mm256_set_epi32(
                     tmp[y * 32 + chunk_off + 7], tmp[y * 32 + chunk_off + 6],
                     tmp[y * 32 + chunk_off + 5], tmp[y * 32 + chunk_off + 4],
                     tmp[y * 32 + chunk_off + 3], tmp[y * 32 + chunk_off + 2],
                     tmp[y * 32 + chunk_off + 1], tmp[y * 32 + chunk_off + 0]
-                )
-            };
-            let c1 = unsafe {
-                _mm256_set_epi32(
+                );
+            let c1 = _mm256_set_epi32(
                     tmp[y * 32 + chunk_off + 15], tmp[y * 32 + chunk_off + 14],
                     tmp[y * 32 + chunk_off + 13], tmp[y * 32 + chunk_off + 12],
                     tmp[y * 32 + chunk_off + 11], tmp[y * 32 + chunk_off + 10],
                     tmp[y * 32 + chunk_off + 9], tmp[y * 32 + chunk_off + 8]
-                )
-            };
+                );
 
-            let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-            let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+            let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+            let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-            let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-            let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+            let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+            let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-            let sum = unsafe { _mm256_add_epi16(d16, c16) };
-            let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+            let sum = _mm256_add_epi16(d16, c16);
+            let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-            let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-            let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+            let packed = _mm256_packus_epi16(clamped, clamped);
+            let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
             unsafe { _mm_storeu_si128(dst_row.add(chunk_off) as *mut __m128i, _mm256_castsi256_si128(packed)) };
         }
@@ -4771,44 +4675,40 @@ unsafe fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..64 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
 
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+        let d16 = _mm256_cvtepu8_epi16(d);
 
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y * 16 + 7], tmp[y * 16 + 6],
                 tmp[y * 16 + 5], tmp[y * 16 + 4],
                 tmp[y * 16 + 3], tmp[y * 16 + 2],
                 tmp[y * 16 + 1], tmp[y * 16 + 0]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y * 16 + 15], tmp[y * 16 + 14],
                 tmp[y * 16 + 13], tmp[y * 16 + 12],
                 tmp[y * 16 + 11], tmp[y * 16 + 10],
                 tmp[y * 16 + 9], tmp[y * 16 + 8]
-            )
-        };
+            );
 
-        let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-        let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+        let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+        let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-        let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-        let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+        let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+        let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-        let sum = unsafe { _mm256_add_epi16(d16, c16) };
-        let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+        let sum = _mm256_add_epi16(d16, c16);
+        let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-        let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_packus_epi16(clamped, clamped);
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
     }
@@ -4889,9 +4789,9 @@ unsafe fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi16(bitdepth_max as i16) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi16(bitdepth_max as i16);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..16 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -4900,36 +4800,32 @@ unsafe fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
         for chunk in 0..4 {
             let chunk_off = chunk * 16;
             let d = unsafe { _mm_loadu_si128(dst_row.add(chunk_off) as *const __m128i) };
-            let d16 = unsafe { _mm256_cvtepu8_epi16(d) };
+            let d16 = _mm256_cvtepu8_epi16(d);
 
-            let c0 = unsafe {
-                _mm256_set_epi32(
+            let c0 = _mm256_set_epi32(
                     tmp[y * 64 + chunk_off + 7], tmp[y * 64 + chunk_off + 6],
                     tmp[y * 64 + chunk_off + 5], tmp[y * 64 + chunk_off + 4],
                     tmp[y * 64 + chunk_off + 3], tmp[y * 64 + chunk_off + 2],
                     tmp[y * 64 + chunk_off + 1], tmp[y * 64 + chunk_off + 0]
-                )
-            };
-            let c1 = unsafe {
-                _mm256_set_epi32(
+                );
+            let c1 = _mm256_set_epi32(
                     tmp[y * 64 + chunk_off + 15], tmp[y * 64 + chunk_off + 14],
                     tmp[y * 64 + chunk_off + 13], tmp[y * 64 + chunk_off + 12],
                     tmp[y * 64 + chunk_off + 11], tmp[y * 64 + chunk_off + 10],
                     tmp[y * 64 + chunk_off + 9], tmp[y * 64 + chunk_off + 8]
-                )
-            };
+                );
 
-            let c0_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4) };
-            let c1_scaled = unsafe { _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4) };
+            let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
+            let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
 
-            let c16 = unsafe { _mm256_packs_epi32(c0_scaled, c1_scaled) };
-            let c16 = unsafe { _mm256_permute4x64_epi64(c16, 0b11_01_10_00) };
+            let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+            let c16 = _mm256_permute4x64_epi64(c16, 0b11_01_10_00);
 
-            let sum = unsafe { _mm256_add_epi16(d16, c16) };
-            let clamped = unsafe { _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero) };
+            let sum = _mm256_add_epi16(d16, c16);
+            let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
 
-            let packed = unsafe { _mm256_packus_epi16(clamped, clamped) };
-            let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+            let packed = _mm256_packus_epi16(clamped, clamped);
+            let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
             unsafe { _mm_storeu_si128(dst_row.add(chunk_off) as *mut __m128i, _mm256_castsi256_si128(packed)) };
         }
@@ -7557,29 +7453,27 @@ unsafe fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination (4 u16 = 8 bytes)
         let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-        let d32 = unsafe { _mm_unpacklo_epi16(d, zero) };
+        let d32 = _mm_unpacklo_epi16(d, zero);
 
         // Load and scale coefficients
-        let c = unsafe {
-            _mm_set_epi32(
+        let c = _mm_set_epi32(
                 (tmp[y * 4 + 3] + 8) >> 4,
                 (tmp[y * 4 + 2] + 8) >> 4,
                 (tmp[y * 4 + 1] + 8) >> 4,
                 (tmp[y * 4 + 0] + 8) >> 4
-            )
-        };
+            );
 
-        let sum = unsafe { _mm_add_epi32(d32, c) };
-        let clamped = unsafe { _mm_max_epi32(_mm_min_epi32(sum, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped, clamped) };
+        let sum = _mm_add_epi32(d32, c);
+        let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
+        let packed = _mm_packus_epi32(clamped, clamped);
 
         unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
     }
@@ -7653,40 +7547,36 @@ unsafe fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..4 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination (8 u16 = 16 bytes)
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-        let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+        let d_lo = _mm_unpacklo_epi16(d, zero);
+        let d_hi = _mm_unpackhi_epi16(d, zero);
 
         // Load and scale coefficients
-        let c_lo = unsafe {
-            _mm_set_epi32(
+        let c_lo = _mm_set_epi32(
                 (tmp[y * 8 + 3] + 8) >> 4,
                 (tmp[y * 8 + 2] + 8) >> 4,
                 (tmp[y * 8 + 1] + 8) >> 4,
                 (tmp[y * 8 + 0] + 8) >> 4
-            )
-        };
-        let c_hi = unsafe {
-            _mm_set_epi32(
+            );
+        let c_hi = _mm_set_epi32(
                 (tmp[y * 8 + 7] + 8) >> 4,
                 (tmp[y * 8 + 6] + 8) >> 4,
                 (tmp[y * 8 + 5] + 8) >> 4,
                 (tmp[y * 8 + 4] + 8) >> 4
-            )
-        };
+            );
 
-        let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-        let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-        let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-        let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+        let sum_lo = _mm_add_epi32(d_lo, c_lo);
+        let sum_hi = _mm_add_epi32(d_hi, c_hi);
+        let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+        let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+        let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
     }
@@ -7763,39 +7653,35 @@ unsafe fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..16 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination (8 u16)
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-        let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+        let d_lo = _mm_unpacklo_epi16(d, zero);
+        let d_hi = _mm_unpackhi_epi16(d, zero);
 
-        let c_lo = unsafe {
-            _mm_set_epi32(
+        let c_lo = _mm_set_epi32(
                 (tmp[y * 8 + 3] + 8) >> 4,
                 (tmp[y * 8 + 2] + 8) >> 4,
                 (tmp[y * 8 + 1] + 8) >> 4,
                 (tmp[y * 8 + 0] + 8) >> 4
-            )
-        };
-        let c_hi = unsafe {
-            _mm_set_epi32(
+            );
+        let c_hi = _mm_set_epi32(
                 (tmp[y * 8 + 7] + 8) >> 4,
                 (tmp[y * 8 + 6] + 8) >> 4,
                 (tmp[y * 8 + 5] + 8) >> 4,
                 (tmp[y * 8 + 4] + 8) >> 4
-            )
-        };
+            );
 
-        let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-        let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-        let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-        let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+        let sum_lo = _mm_add_epi32(d_lo, c_lo);
+        let sum_hi = _mm_add_epi32(d_hi, c_hi);
+        let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+        let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+        let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
     }
@@ -7874,48 +7760,44 @@ unsafe fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi32(bitdepth_max);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination (16 u16 = 32 bytes)
         let d = unsafe { _mm256_loadu_si256(dst_row as *const __m256i) };
-        let d_lo = unsafe { _mm256_unpacklo_epi16(d, _mm256_setzero_si256()) };
-        let d_hi = unsafe { _mm256_unpackhi_epi16(d, _mm256_setzero_si256()) };
-        let d_0_4 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x20) };
-        let d_4_8 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x31) };
+        let d_lo = _mm256_unpacklo_epi16(d, _mm256_setzero_si256());
+        let d_hi = _mm256_unpackhi_epi16(d, _mm256_setzero_si256());
+        let d_0_4 = _mm256_permute2x128_si256(d_lo, d_hi, 0x20);
+        let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y * 16 + 3], tmp[y * 16 + 2],
                 tmp[y * 16 + 1], tmp[y * 16 + 0],
                 tmp[y * 16 + 11], tmp[y * 16 + 10],
                 tmp[y * 16 + 9], tmp[y * 16 + 8]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y * 16 + 7], tmp[y * 16 + 6],
                 tmp[y * 16 + 5], tmp[y * 16 + 4],
                 tmp[y * 16 + 15], tmp[y * 16 + 14],
                 tmp[y * 16 + 13], tmp[y * 16 + 12]
-            )
-        };
+            );
 
-        let c0_scaled = unsafe { _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final)) };
-        let c1_scaled = unsafe { _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final)) };
+        let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
+        let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
 
-        let sum0 = unsafe { _mm256_add_epi32(d_0_4, c0_scaled) };
-        let sum1 = unsafe { _mm256_add_epi32(d_4_8, c1_scaled) };
+        let sum0 = _mm256_add_epi32(d_0_4, c0_scaled);
+        let sum1 = _mm256_add_epi32(d_4_8, c1_scaled);
 
-        let clamped0 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero) };
-        let clamped1 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero) };
+        let clamped0 = _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero);
+        let clamped1 = _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero);
 
-        let packed = unsafe { _mm256_packus_epi32(clamped0, clamped1) };
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_packus_epi32(clamped0, clamped1);
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
         unsafe { _mm256_storeu_si256(dst_row as *mut __m256i, packed) };
     }
 
@@ -7990,27 +7872,25 @@ unsafe fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..16 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-        let d32 = unsafe { _mm_unpacklo_epi16(d, zero) };
+        let d32 = _mm_unpacklo_epi16(d, zero);
 
-        let c = unsafe {
-            _mm_set_epi32(
+        let c = _mm_set_epi32(
                 (tmp[y * 4 + 3] + 8) >> 4,
                 (tmp[y * 4 + 2] + 8) >> 4,
                 (tmp[y * 4 + 1] + 8) >> 4,
                 (tmp[y * 4 + 0] + 8) >> 4
-            )
-        };
+            );
 
-        let sum = unsafe { _mm_add_epi32(d32, c) };
-        let clamped = unsafe { _mm_max_epi32(_mm_min_epi32(sum, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped, clamped) };
+        let sum = _mm_add_epi32(d32, c);
+        let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
+        let packed = _mm_packus_epi32(clamped, clamped);
 
         unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
     }
@@ -8086,47 +7966,43 @@ unsafe fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi32(bitdepth_max);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..4 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         let d = unsafe { _mm256_loadu_si256(dst_row as *const __m256i) };
-        let d_lo = unsafe { _mm256_unpacklo_epi16(d, _mm256_setzero_si256()) };
-        let d_hi = unsafe { _mm256_unpackhi_epi16(d, _mm256_setzero_si256()) };
-        let d_0_4 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x20) };
-        let d_4_8 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x31) };
+        let d_lo = _mm256_unpacklo_epi16(d, _mm256_setzero_si256());
+        let d_hi = _mm256_unpackhi_epi16(d, _mm256_setzero_si256());
+        let d_0_4 = _mm256_permute2x128_si256(d_lo, d_hi, 0x20);
+        let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y * 16 + 3], tmp[y * 16 + 2],
                 tmp[y * 16 + 1], tmp[y * 16 + 0],
                 tmp[y * 16 + 11], tmp[y * 16 + 10],
                 tmp[y * 16 + 9], tmp[y * 16 + 8]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y * 16 + 7], tmp[y * 16 + 6],
                 tmp[y * 16 + 5], tmp[y * 16 + 4],
                 tmp[y * 16 + 15], tmp[y * 16 + 14],
                 tmp[y * 16 + 13], tmp[y * 16 + 12]
-            )
-        };
+            );
 
-        let c0_scaled = unsafe { _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final)) };
-        let c1_scaled = unsafe { _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final)) };
+        let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
+        let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
 
-        let sum0 = unsafe { _mm256_add_epi32(d_0_4, c0_scaled) };
-        let sum1 = unsafe { _mm256_add_epi32(d_4_8, c1_scaled) };
+        let sum0 = _mm256_add_epi32(d_0_4, c0_scaled);
+        let sum1 = _mm256_add_epi32(d_4_8, c1_scaled);
 
-        let clamped0 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero) };
-        let clamped1 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero) };
+        let clamped0 = _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero);
+        let clamped1 = _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero);
 
-        let packed = unsafe { _mm256_packus_epi32(clamped0, clamped1) };
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_packus_epi32(clamped0, clamped1);
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
         unsafe { _mm256_storeu_si256(dst_row as *mut __m256i, packed) };
     }
 
@@ -8204,47 +8080,43 @@ unsafe fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm256_set1_epi32(4) };  // (+ 4) >> 3 for 16x32
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi32(bitdepth_max);
+    let rnd_final = _mm256_set1_epi32(4);  // (+ 4) >> 3 for 16x32
 
     for y in 0..32 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         let d = unsafe { _mm256_loadu_si256(dst_row as *const __m256i) };
-        let d_lo = unsafe { _mm256_unpacklo_epi16(d, _mm256_setzero_si256()) };
-        let d_hi = unsafe { _mm256_unpackhi_epi16(d, _mm256_setzero_si256()) };
-        let d_0_4 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x20) };
-        let d_4_8 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x31) };
+        let d_lo = _mm256_unpacklo_epi16(d, _mm256_setzero_si256());
+        let d_hi = _mm256_unpackhi_epi16(d, _mm256_setzero_si256());
+        let d_0_4 = _mm256_permute2x128_si256(d_lo, d_hi, 0x20);
+        let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y * 16 + 3], tmp[y * 16 + 2],
                 tmp[y * 16 + 1], tmp[y * 16 + 0],
                 tmp[y * 16 + 11], tmp[y * 16 + 10],
                 tmp[y * 16 + 9], tmp[y * 16 + 8]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y * 16 + 7], tmp[y * 16 + 6],
                 tmp[y * 16 + 5], tmp[y * 16 + 4],
                 tmp[y * 16 + 15], tmp[y * 16 + 14],
                 tmp[y * 16 + 13], tmp[y * 16 + 12]
-            )
-        };
+            );
 
-        let c0_scaled = unsafe { _mm256_srai_epi32::<3>(_mm256_add_epi32(c0, rnd_final)) };
-        let c1_scaled = unsafe { _mm256_srai_epi32::<3>(_mm256_add_epi32(c1, rnd_final)) };
+        let c0_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c0, rnd_final));
+        let c1_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c1, rnd_final));
 
-        let sum0 = unsafe { _mm256_add_epi32(d_0_4, c0_scaled) };
-        let sum1 = unsafe { _mm256_add_epi32(d_4_8, c1_scaled) };
+        let sum0 = _mm256_add_epi32(d_0_4, c0_scaled);
+        let sum1 = _mm256_add_epi32(d_4_8, c1_scaled);
 
-        let clamped0 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero) };
-        let clamped1 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero) };
+        let clamped0 = _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero);
+        let clamped1 = _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero);
 
-        let packed = unsafe { _mm256_packus_epi32(clamped0, clamped1) };
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_packus_epi32(clamped0, clamped1);
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
         unsafe { _mm256_storeu_si256(dst_row as *mut __m256i, packed) };
     }
 
@@ -8322,9 +8194,9 @@ unsafe fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm256_set1_epi32(4) };  // (+ 4) >> 3 for 32x16
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi32(bitdepth_max);
+    let rnd_final = _mm256_set1_epi32(4);  // (+ 4) >> 3 for 32x16
 
     for y in 0..16 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -8335,32 +8207,28 @@ unsafe fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
             let dst_chunk = unsafe { dst_row.add(x_base) };
 
             let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-            let d_lo = unsafe { _mm_unpacklo_epi16(d, _mm_setzero_si128()) };
-            let d_hi = unsafe { _mm_unpackhi_epi16(d, _mm_setzero_si128()) };
+            let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
+            let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
-            let c_lo = unsafe {
-                _mm_set_epi32(
+            let c_lo = _mm_set_epi32(
                     tmp[y * 32 + x_base + 3], tmp[y * 32 + x_base + 2],
                     tmp[y * 32 + x_base + 1], tmp[y * 32 + x_base + 0]
-                )
-            };
-            let c_hi = unsafe {
-                _mm_set_epi32(
+                );
+            let c_hi = _mm_set_epi32(
                     tmp[y * 32 + x_base + 7], tmp[y * 32 + x_base + 6],
                     tmp[y * 32 + x_base + 5], tmp[y * 32 + x_base + 4]
-                )
-            };
+                );
 
-            let d32 = unsafe { _mm256_set_m128i(d_hi, d_lo) };
-            let c32 = unsafe { _mm256_set_m128i(c_hi, c_lo) };
+            let d32 = _mm256_set_m128i(d_hi, d_lo);
+            let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            let c_scaled = unsafe { _mm256_srai_epi32::<3>(_mm256_add_epi32(c32, rnd_final)) };
-            let sum = unsafe { _mm256_add_epi32(d32, c_scaled) };
-            let clamped = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero) };
+            let c_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c32, rnd_final));
+            let sum = _mm256_add_epi32(d32, c_scaled);
+            let clamped = _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero);
 
-            let lo = unsafe { _mm256_castsi256_si128(clamped) };
-            let hi = unsafe { _mm256_extracti128_si256(clamped, 1) };
-            let packed = unsafe { _mm_packus_epi32(lo, hi) };
+            let lo = _mm256_castsi256_si128(clamped);
+            let hi = _mm256_extracti128_si256(clamped, 1);
+            let packed = _mm_packus_epi32(lo, hi);
             unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
         }
     }
@@ -8439,39 +8307,35 @@ unsafe fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..32 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-        let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+        let d_lo = _mm_unpacklo_epi16(d, zero);
+        let d_hi = _mm_unpackhi_epi16(d, zero);
 
         // (+ 4) >> 3 for 8x32
-        let c_lo = unsafe {
-            _mm_set_epi32(
+        let c_lo = _mm_set_epi32(
                 (tmp[y * 8 + 3] + 4) >> 3,
                 (tmp[y * 8 + 2] + 4) >> 3,
                 (tmp[y * 8 + 1] + 4) >> 3,
                 (tmp[y * 8 + 0] + 4) >> 3
-            )
-        };
-        let c_hi = unsafe {
-            _mm_set_epi32(
+            );
+        let c_hi = _mm_set_epi32(
                 (tmp[y * 8 + 7] + 4) >> 3,
                 (tmp[y * 8 + 6] + 4) >> 3,
                 (tmp[y * 8 + 5] + 4) >> 3,
                 (tmp[y * 8 + 4] + 4) >> 3
-            )
-        };
+            );
 
-        let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-        let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-        let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-        let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+        let sum_lo = _mm_add_epi32(d_lo, c_lo);
+        let sum_hi = _mm_add_epi32(d_hi, c_hi);
+        let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+        let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+        let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
     }
@@ -8550,9 +8414,9 @@ unsafe fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm256_set1_epi32(4) };  // (+ 4) >> 3
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi32(bitdepth_max);
+    let rnd_final = _mm256_set1_epi32(4);  // (+ 4) >> 3
 
     for y in 0..8 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -8563,32 +8427,28 @@ unsafe fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
             let dst_chunk = unsafe { dst_row.add(x_base) };
 
             let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-            let d_lo = unsafe { _mm_unpacklo_epi16(d, _mm_setzero_si128()) };
-            let d_hi = unsafe { _mm_unpackhi_epi16(d, _mm_setzero_si128()) };
+            let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
+            let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
-            let c_lo = unsafe {
-                _mm_set_epi32(
+            let c_lo = _mm_set_epi32(
                     tmp[y * 32 + x_base + 3], tmp[y * 32 + x_base + 2],
                     tmp[y * 32 + x_base + 1], tmp[y * 32 + x_base + 0]
-                )
-            };
-            let c_hi = unsafe {
-                _mm_set_epi32(
+                );
+            let c_hi = _mm_set_epi32(
                     tmp[y * 32 + x_base + 7], tmp[y * 32 + x_base + 6],
                     tmp[y * 32 + x_base + 5], tmp[y * 32 + x_base + 4]
-                )
-            };
+                );
 
-            let d32 = unsafe { _mm256_set_m128i(d_hi, d_lo) };
-            let c32 = unsafe { _mm256_set_m128i(c_hi, c_lo) };
+            let d32 = _mm256_set_m128i(d_hi, d_lo);
+            let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            let c_scaled = unsafe { _mm256_srai_epi32::<3>(_mm256_add_epi32(c32, rnd_final)) };
-            let sum = unsafe { _mm256_add_epi32(d32, c_scaled) };
-            let clamped = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero) };
+            let c_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c32, rnd_final));
+            let sum = _mm256_add_epi32(d32, c_scaled);
+            let clamped = _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero);
 
-            let lo = unsafe { _mm256_castsi256_si128(clamped) };
-            let hi = unsafe { _mm256_extracti128_si256(clamped, 1) };
-            let packed = unsafe { _mm_packus_epi32(lo, hi) };
+            let lo = _mm256_castsi256_si128(clamped);
+            let hi = _mm256_extracti128_si256(clamped, 1);
+            let packed = _mm_packus_epi32(lo, hi);
             unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
         }
     }
@@ -8664,9 +8524,9 @@ unsafe fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm256_set1_epi32(2) };  // (+ 2) >> 2
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi32(bitdepth_max);
+    let rnd_final = _mm256_set1_epi32(2);  // (+ 2) >> 2
 
     for y in 0..64 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -8677,32 +8537,28 @@ unsafe fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
             let dst_chunk = unsafe { dst_row.add(x_base) };
 
             let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-            let d_lo = unsafe { _mm_unpacklo_epi16(d, _mm_setzero_si128()) };
-            let d_hi = unsafe { _mm_unpackhi_epi16(d, _mm_setzero_si128()) };
+            let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
+            let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
-            let c_lo = unsafe {
-                _mm_set_epi32(
+            let c_lo = _mm_set_epi32(
                     tmp[y * 32 + x_base + 3], tmp[y * 32 + x_base + 2],
                     tmp[y * 32 + x_base + 1], tmp[y * 32 + x_base + 0]
-                )
-            };
-            let c_hi = unsafe {
-                _mm_set_epi32(
+                );
+            let c_hi = _mm_set_epi32(
                     tmp[y * 32 + x_base + 7], tmp[y * 32 + x_base + 6],
                     tmp[y * 32 + x_base + 5], tmp[y * 32 + x_base + 4]
-                )
-            };
+                );
 
-            let d32 = unsafe { _mm256_set_m128i(d_hi, d_lo) };
-            let c32 = unsafe { _mm256_set_m128i(c_hi, c_lo) };
+            let d32 = _mm256_set_m128i(d_hi, d_lo);
+            let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            let c_scaled = unsafe { _mm256_srai_epi32::<2>(_mm256_add_epi32(c32, rnd_final)) };
-            let sum = unsafe { _mm256_add_epi32(d32, c_scaled) };
-            let clamped = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero) };
+            let c_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c32, rnd_final));
+            let sum = _mm256_add_epi32(d32, c_scaled);
+            let clamped = _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero);
 
-            let lo = unsafe { _mm256_castsi256_si128(clamped) };
-            let hi = unsafe { _mm256_extracti128_si256(clamped, 1) };
-            let packed = unsafe { _mm_packus_epi32(lo, hi) };
+            let lo = _mm256_castsi256_si128(clamped);
+            let hi = _mm256_extracti128_si256(clamped, 1);
+            let packed = _mm_packus_epi32(lo, hi);
             unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
         }
     }
@@ -8778,9 +8634,9 @@ unsafe fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm256_set1_epi32(2) };  // (+ 2) >> 2
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi32(bitdepth_max);
+    let rnd_final = _mm256_set1_epi32(2);  // (+ 2) >> 2
 
     for y in 0..32 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -8791,32 +8647,28 @@ unsafe fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
             let dst_chunk = unsafe { dst_row.add(x_base) };
 
             let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-            let d_lo = unsafe { _mm_unpacklo_epi16(d, _mm_setzero_si128()) };
-            let d_hi = unsafe { _mm_unpackhi_epi16(d, _mm_setzero_si128()) };
+            let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
+            let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
-            let c_lo = unsafe {
-                _mm_set_epi32(
+            let c_lo = _mm_set_epi32(
                     tmp[y * 64 + x_base + 3], tmp[y * 64 + x_base + 2],
                     tmp[y * 64 + x_base + 1], tmp[y * 64 + x_base + 0]
-                )
-            };
-            let c_hi = unsafe {
-                _mm_set_epi32(
+                );
+            let c_hi = _mm_set_epi32(
                     tmp[y * 64 + x_base + 7], tmp[y * 64 + x_base + 6],
                     tmp[y * 64 + x_base + 5], tmp[y * 64 + x_base + 4]
-                )
-            };
+                );
 
-            let d32 = unsafe { _mm256_set_m128i(d_hi, d_lo) };
-            let c32 = unsafe { _mm256_set_m128i(c_hi, c_lo) };
+            let d32 = _mm256_set_m128i(d_hi, d_lo);
+            let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            let c_scaled = unsafe { _mm256_srai_epi32::<2>(_mm256_add_epi32(c32, rnd_final)) };
-            let sum = unsafe { _mm256_add_epi32(d32, c_scaled) };
-            let clamped = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero) };
+            let c_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c32, rnd_final));
+            let sum = _mm256_add_epi32(d32, c_scaled);
+            let clamped = _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero);
 
-            let lo = unsafe { _mm256_castsi256_si128(clamped) };
-            let hi = unsafe { _mm256_extracti128_si256(clamped, 1) };
-            let packed = unsafe { _mm_packus_epi32(lo, hi) };
+            let lo = _mm256_castsi256_si128(clamped);
+            let hi = _mm256_extracti128_si256(clamped, 1);
+            let packed = _mm_packus_epi32(lo, hi);
             unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
         }
     }
@@ -8892,47 +8744,43 @@ unsafe fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm256_set1_epi32(2) };  // (+ 2) >> 2
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi32(bitdepth_max);
+    let rnd_final = _mm256_set1_epi32(2);  // (+ 2) >> 2
 
     for y in 0..64 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         let d = unsafe { _mm256_loadu_si256(dst_row as *const __m256i) };
-        let d_lo = unsafe { _mm256_unpacklo_epi16(d, _mm256_setzero_si256()) };
-        let d_hi = unsafe { _mm256_unpackhi_epi16(d, _mm256_setzero_si256()) };
-        let d_0_4 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x20) };
-        let d_4_8 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x31) };
+        let d_lo = _mm256_unpacklo_epi16(d, _mm256_setzero_si256());
+        let d_hi = _mm256_unpackhi_epi16(d, _mm256_setzero_si256());
+        let d_0_4 = _mm256_permute2x128_si256(d_lo, d_hi, 0x20);
+        let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y * 16 + 3], tmp[y * 16 + 2],
                 tmp[y * 16 + 1], tmp[y * 16 + 0],
                 tmp[y * 16 + 11], tmp[y * 16 + 10],
                 tmp[y * 16 + 9], tmp[y * 16 + 8]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y * 16 + 7], tmp[y * 16 + 6],
                 tmp[y * 16 + 5], tmp[y * 16 + 4],
                 tmp[y * 16 + 15], tmp[y * 16 + 14],
                 tmp[y * 16 + 13], tmp[y * 16 + 12]
-            )
-        };
+            );
 
-        let c0_scaled = unsafe { _mm256_srai_epi32::<2>(_mm256_add_epi32(c0, rnd_final)) };
-        let c1_scaled = unsafe { _mm256_srai_epi32::<2>(_mm256_add_epi32(c1, rnd_final)) };
+        let c0_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c0, rnd_final));
+        let c1_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c1, rnd_final));
 
-        let sum0 = unsafe { _mm256_add_epi32(d_0_4, c0_scaled) };
-        let sum1 = unsafe { _mm256_add_epi32(d_4_8, c1_scaled) };
+        let sum0 = _mm256_add_epi32(d_0_4, c0_scaled);
+        let sum1 = _mm256_add_epi32(d_4_8, c1_scaled);
 
-        let clamped0 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero) };
-        let clamped1 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero) };
+        let clamped0 = _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero);
+        let clamped1 = _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero);
 
-        let packed = unsafe { _mm256_packus_epi32(clamped0, clamped1) };
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_packus_epi32(clamped0, clamped1);
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
         unsafe { _mm256_storeu_si256(dst_row as *mut __m256i, packed) };
     }
 
@@ -9007,9 +8855,9 @@ unsafe fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm256_set1_epi32(2) };  // (+ 2) >> 2
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi32(bitdepth_max);
+    let rnd_final = _mm256_set1_epi32(2);  // (+ 2) >> 2
 
     for y in 0..16 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -9020,32 +8868,28 @@ unsafe fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
             let dst_chunk = unsafe { dst_row.add(x_base) };
 
             let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-            let d_lo = unsafe { _mm_unpacklo_epi16(d, _mm_setzero_si128()) };
-            let d_hi = unsafe { _mm_unpackhi_epi16(d, _mm_setzero_si128()) };
+            let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
+            let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
-            let c_lo = unsafe {
-                _mm_set_epi32(
+            let c_lo = _mm_set_epi32(
                     tmp[y * 64 + x_base + 3], tmp[y * 64 + x_base + 2],
                     tmp[y * 64 + x_base + 1], tmp[y * 64 + x_base + 0]
-                )
-            };
-            let c_hi = unsafe {
-                _mm_set_epi32(
+                );
+            let c_hi = _mm_set_epi32(
                     tmp[y * 64 + x_base + 7], tmp[y * 64 + x_base + 6],
                     tmp[y * 64 + x_base + 5], tmp[y * 64 + x_base + 4]
-                )
-            };
+                );
 
-            let d32 = unsafe { _mm256_set_m128i(d_hi, d_lo) };
-            let c32 = unsafe { _mm256_set_m128i(c_hi, c_lo) };
+            let d32 = _mm256_set_m128i(d_hi, d_lo);
+            let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            let c_scaled = unsafe { _mm256_srai_epi32::<2>(_mm256_add_epi32(c32, rnd_final)) };
-            let sum = unsafe { _mm256_add_epi32(d32, c_scaled) };
-            let clamped = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero) };
+            let c_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c32, rnd_final));
+            let sum = _mm256_add_epi32(d32, c_scaled);
+            let clamped = _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero);
 
-            let lo = unsafe { _mm256_castsi256_si128(clamped) };
-            let hi = unsafe { _mm256_extracti128_si256(clamped, 1) };
-            let packed = unsafe { _mm_packus_epi32(lo, hi) };
+            let lo = _mm256_castsi256_si128(clamped);
+            let hi = _mm256_extracti128_si256(clamped, 1);
+            let packed = _mm_packus_epi32(lo, hi);
             unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
         }
     }
@@ -9398,15 +9242,15 @@ pub unsafe fn inv_identity_add_4x4_16bpc_avx2(
 ) {
     let stride_u16 = (dst_stride / 2) as usize;
     let c_ptr = coeff;
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..4 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination (4 u16)
         let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-        let d32 = unsafe { _mm_unpacklo_epi16(d, zero) };
+        let d32 = _mm_unpacklo_epi16(d, zero);
 
         // Load coeffs (column-major: y, y+4, y+8, y+12)
         let c0 = unsafe { *c_ptr.add(y) as i32 };
@@ -9427,10 +9271,10 @@ pub unsafe fn inv_identity_add_4x4_16bpc_avx2(
         let r3 = (scale(c3) + 8) >> 4;
 
         // Add to destination
-        let result = unsafe { _mm_set_epi32(r3, r2, r1, r0) };
-        let sum = unsafe { _mm_add_epi32(d32, result) };
-        let clamped = unsafe { _mm_max_epi32(_mm_min_epi32(sum, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped, clamped) };
+        let result = _mm_set_epi32(r3, r2, r1, r0);
+        let sum = _mm_add_epi32(d32, result);
+        let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
+        let packed = _mm_packus_epi32(clamped, clamped);
 
         unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
     }
@@ -9477,16 +9321,16 @@ pub unsafe fn inv_identity_add_8x8_16bpc_avx2(
 ) {
     let stride_u16 = (dst_stride / 2) as usize;
     let c_ptr = coeff;
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination (8 u16)
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-        let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+        let d_lo = _mm_unpacklo_epi16(d, zero);
+        let d_hi = _mm_unpackhi_epi16(d, zero);
 
         // Load coefficients (column-major: y, y+8, ...)
         let mut coeffs = [0i32; 8];
@@ -9502,15 +9346,15 @@ pub unsafe fn inv_identity_add_8x8_16bpc_avx2(
             results[x] = (coeffs[x] * 4 + 8) >> 4;
         }
 
-        let c_lo = unsafe { _mm_set_epi32(results[3], results[2], results[1], results[0]) };
-        let c_hi = unsafe { _mm_set_epi32(results[7], results[6], results[5], results[4]) };
+        let c_lo = _mm_set_epi32(results[3], results[2], results[1], results[0]);
+        let c_hi = _mm_set_epi32(results[7], results[6], results[5], results[4]);
 
         // Add to destination
-        let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-        let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-        let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-        let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+        let sum_lo = _mm_add_epi32(d_lo, c_lo);
+        let sum_hi = _mm_add_epi32(d_hi, c_hi);
+        let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+        let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+        let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
     }
@@ -9585,43 +9429,39 @@ pub unsafe fn inv_identity_add_16x16_16bpc_avx2(
     }
 
     // Add to destination
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_val = unsafe { _mm256_set1_epi32(bitdepth_max) };
-    let rnd_final = unsafe { _mm256_set1_epi32(8) };
+    let zero = _mm256_setzero_si256();
+    let max_val = _mm256_set1_epi32(bitdepth_max);
+    let rnd_final = _mm256_set1_epi32(8);
 
     for y in 0..16 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         let d = unsafe { _mm256_loadu_si256(dst_row as *const __m256i) };
-        let d_lo = unsafe { _mm256_unpacklo_epi16(d, _mm256_setzero_si256()) };
-        let d_hi = unsafe { _mm256_unpackhi_epi16(d, _mm256_setzero_si256()) };
-        let d_0_4 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x20) };
-        let d_4_8 = unsafe { _mm256_permute2x128_si256(d_lo, d_hi, 0x31) };
+        let d_lo = _mm256_unpacklo_epi16(d, _mm256_setzero_si256());
+        let d_hi = _mm256_unpackhi_epi16(d, _mm256_setzero_si256());
+        let d_0_4 = _mm256_permute2x128_si256(d_lo, d_hi, 0x20);
+        let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
-        let c0 = unsafe {
-            _mm256_set_epi32(
+        let c0 = _mm256_set_epi32(
                 tmp[y][3], tmp[y][2], tmp[y][1], tmp[y][0],
                 tmp[y][11], tmp[y][10], tmp[y][9], tmp[y][8]
-            )
-        };
-        let c1 = unsafe {
-            _mm256_set_epi32(
+            );
+        let c1 = _mm256_set_epi32(
                 tmp[y][7], tmp[y][6], tmp[y][5], tmp[y][4],
                 tmp[y][15], tmp[y][14], tmp[y][13], tmp[y][12]
-            )
-        };
+            );
 
-        let c0_scaled = unsafe { _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final)) };
-        let c1_scaled = unsafe { _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final)) };
+        let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
+        let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
 
-        let sum0 = unsafe { _mm256_add_epi32(d_0_4, c0_scaled) };
-        let sum1 = unsafe { _mm256_add_epi32(d_4_8, c1_scaled) };
+        let sum0 = _mm256_add_epi32(d_0_4, c0_scaled);
+        let sum1 = _mm256_add_epi32(d_4_8, c1_scaled);
 
-        let clamped0 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero) };
-        let clamped1 = unsafe { _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero) };
+        let clamped0 = _mm256_max_epi32(_mm256_min_epi32(sum0, max_val), zero);
+        let clamped1 = _mm256_max_epi32(_mm256_min_epi32(sum1, max_val), zero);
 
-        let packed = unsafe { _mm256_packus_epi32(clamped0, clamped1) };
-        let packed = unsafe { _mm256_permute4x64_epi64(packed, 0b11_01_10_00) };
+        let packed = _mm256_packus_epi32(clamped0, clamped1);
+        let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
         unsafe { _mm256_storeu_si256(dst_row as *mut __m256i, packed) };
     }
 
@@ -9752,29 +9592,27 @@ unsafe fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination (4 u16 = 8 bytes)
         let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-        let d32 = unsafe { _mm_unpacklo_epi16(d, zero) };
+        let d32 = _mm_unpacklo_epi16(d, zero);
 
         // Load and scale coefficients
-        let c = unsafe {
-            _mm_set_epi32(
+        let c = _mm_set_epi32(
                 (tmp[y * 4 + 3] + 8) >> 4,
                 (tmp[y * 4 + 2] + 8) >> 4,
                 (tmp[y * 4 + 1] + 8) >> 4,
                 (tmp[y * 4 + 0] + 8) >> 4
-            )
-        };
+            );
 
-        let sum = unsafe { _mm_add_epi32(d32, c) };
-        let clamped = unsafe { _mm_max_epi32(_mm_min_epi32(sum, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped, clamped) };
+        let sum = _mm_add_epi32(d32, c);
+        let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
+        let packed = _mm_packus_epi32(clamped, clamped);
 
         unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
     }
@@ -9848,40 +9686,36 @@ unsafe fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..4 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination (8 u16 = 16 bytes)
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-        let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+        let d_lo = _mm_unpacklo_epi16(d, zero);
+        let d_hi = _mm_unpackhi_epi16(d, zero);
 
         // Load and scale coefficients
-        let c_lo = unsafe {
-            _mm_set_epi32(
+        let c_lo = _mm_set_epi32(
                 (tmp[y * 8 + 3] + 8) >> 4,
                 (tmp[y * 8 + 2] + 8) >> 4,
                 (tmp[y * 8 + 1] + 8) >> 4,
                 (tmp[y * 8 + 0] + 8) >> 4
-            )
-        };
-        let c_hi = unsafe {
-            _mm_set_epi32(
+            );
+        let c_hi = _mm_set_epi32(
                 (tmp[y * 8 + 7] + 8) >> 4,
                 (tmp[y * 8 + 6] + 8) >> 4,
                 (tmp[y * 8 + 5] + 8) >> 4,
                 (tmp[y * 8 + 4] + 8) >> 4
-            )
-        };
+            );
 
-        let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-        let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-        let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-        let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+        let sum_lo = _mm_add_epi32(d_lo, c_lo);
+        let sum_hi = _mm_add_epi32(d_hi, c_hi);
+        let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+        let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+        let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
     }
@@ -9955,40 +9789,36 @@ unsafe fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..16 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination (8 u16 = 16 bytes)
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-        let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+        let d_lo = _mm_unpacklo_epi16(d, zero);
+        let d_hi = _mm_unpackhi_epi16(d, zero);
 
         // Load and scale coefficients - 8x16 uses >> 4 for final shift
-        let c_lo = unsafe {
-            _mm_set_epi32(
+        let c_lo = _mm_set_epi32(
                 (tmp[y * 8 + 3] + 8) >> 4,
                 (tmp[y * 8 + 2] + 8) >> 4,
                 (tmp[y * 8 + 1] + 8) >> 4,
                 (tmp[y * 8 + 0] + 8) >> 4
-            )
-        };
-        let c_hi = unsafe {
-            _mm_set_epi32(
+            );
+        let c_hi = _mm_set_epi32(
                 (tmp[y * 8 + 7] + 8) >> 4,
                 (tmp[y * 8 + 6] + 8) >> 4,
                 (tmp[y * 8 + 5] + 8) >> 4,
                 (tmp[y * 8 + 4] + 8) >> 4
-            )
-        };
+            );
 
-        let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-        let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-        let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-        let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+        let sum_lo = _mm_add_epi32(d_lo, c_lo);
+        let sum_hi = _mm_add_epi32(d_hi, c_hi);
+        let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+        let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+        let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
     }
@@ -10063,8 +9893,8 @@ unsafe fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -10075,31 +9905,27 @@ unsafe fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
             let dst_chunk = unsafe { dst_row.add(x_base) };
 
             let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-            let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-            let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+            let d_lo = _mm_unpacklo_epi16(d, zero);
+            let d_hi = _mm_unpackhi_epi16(d, zero);
 
-            let c_lo = unsafe {
-                _mm_set_epi32(
+            let c_lo = _mm_set_epi32(
                     (tmp[y * 16 + x_base + 3] + 8) >> 4,
                     (tmp[y * 16 + x_base + 2] + 8) >> 4,
                     (tmp[y * 16 + x_base + 1] + 8) >> 4,
                     (tmp[y * 16 + x_base + 0] + 8) >> 4
-                )
-            };
-            let c_hi = unsafe {
-                _mm_set_epi32(
+                );
+            let c_hi = _mm_set_epi32(
                     (tmp[y * 16 + x_base + 7] + 8) >> 4,
                     (tmp[y * 16 + x_base + 6] + 8) >> 4,
                     (tmp[y * 16 + x_base + 5] + 8) >> 4,
                     (tmp[y * 16 + x_base + 4] + 8) >> 4
-                )
-            };
+                );
 
-            let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-            let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-            let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-            let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-            let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+            let sum_lo = _mm_add_epi32(d_lo, c_lo);
+            let sum_hi = _mm_add_epi32(d_hi, c_hi);
+            let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+            let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+            let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
             unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
         }
@@ -10174,29 +10000,27 @@ unsafe fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..16 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination (4 u16 = 8 bytes)
         let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-        let d32 = unsafe { _mm_unpacklo_epi16(d, zero) };
+        let d32 = _mm_unpacklo_epi16(d, zero);
 
         // Load and scale coefficients - 4x16 uses >> 4 for final shift
-        let c = unsafe {
-            _mm_set_epi32(
+        let c = _mm_set_epi32(
                 (tmp[y * 4 + 3] + 8) >> 4,
                 (tmp[y * 4 + 2] + 8) >> 4,
                 (tmp[y * 4 + 1] + 8) >> 4,
                 (tmp[y * 4 + 0] + 8) >> 4
-            )
-        };
+            );
 
-        let sum = unsafe { _mm_add_epi32(d32, c) };
-        let clamped = unsafe { _mm_max_epi32(_mm_min_epi32(sum, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped, clamped) };
+        let sum = _mm_add_epi32(d32, c);
+        let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
+        let packed = _mm_packus_epi32(clamped, clamped);
 
         unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
     }
@@ -10270,8 +10094,8 @@ unsafe fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..4 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -10282,31 +10106,27 @@ unsafe fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
             let dst_chunk = unsafe { dst_row.add(x_base) };
 
             let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-            let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-            let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+            let d_lo = _mm_unpacklo_epi16(d, zero);
+            let d_hi = _mm_unpackhi_epi16(d, zero);
 
-            let c_lo = unsafe {
-                _mm_set_epi32(
+            let c_lo = _mm_set_epi32(
                     (tmp[y * 16 + x_base + 3] + 8) >> 4,
                     (tmp[y * 16 + x_base + 2] + 8) >> 4,
                     (tmp[y * 16 + x_base + 1] + 8) >> 4,
                     (tmp[y * 16 + x_base + 0] + 8) >> 4
-                )
-            };
-            let c_hi = unsafe {
-                _mm_set_epi32(
+                );
+            let c_hi = _mm_set_epi32(
                     (tmp[y * 16 + x_base + 7] + 8) >> 4,
                     (tmp[y * 16 + x_base + 6] + 8) >> 4,
                     (tmp[y * 16 + x_base + 5] + 8) >> 4,
                     (tmp[y * 16 + x_base + 4] + 8) >> 4
-                )
-            };
+                );
 
-            let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-            let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-            let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-            let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-            let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+            let sum_lo = _mm_add_epi32(d_lo, c_lo);
+            let sum_hi = _mm_add_epi32(d_hi, c_hi);
+            let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+            let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+            let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
             unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
         }
@@ -10382,8 +10202,8 @@ unsafe fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..32 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -10394,32 +10214,28 @@ unsafe fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
             let dst_chunk = unsafe { dst_row.add(x_base) };
 
             let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-            let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-            let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+            let d_lo = _mm_unpacklo_epi16(d, zero);
+            let d_hi = _mm_unpackhi_epi16(d, zero);
 
             // 16x32 uses >> 3 for final shift
-            let c_lo = unsafe {
-                _mm_set_epi32(
+            let c_lo = _mm_set_epi32(
                     (tmp[y * 16 + x_base + 3] + 4) >> 3,
                     (tmp[y * 16 + x_base + 2] + 4) >> 3,
                     (tmp[y * 16 + x_base + 1] + 4) >> 3,
                     (tmp[y * 16 + x_base + 0] + 4) >> 3
-                )
-            };
-            let c_hi = unsafe {
-                _mm_set_epi32(
+                );
+            let c_hi = _mm_set_epi32(
                     (tmp[y * 16 + x_base + 7] + 4) >> 3,
                     (tmp[y * 16 + x_base + 6] + 4) >> 3,
                     (tmp[y * 16 + x_base + 5] + 4) >> 3,
                     (tmp[y * 16 + x_base + 4] + 4) >> 3
-                )
-            };
+                );
 
-            let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-            let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-            let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-            let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-            let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+            let sum_lo = _mm_add_epi32(d_lo, c_lo);
+            let sum_hi = _mm_add_epi32(d_hi, c_hi);
+            let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+            let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+            let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
             unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
         }
@@ -10495,8 +10311,8 @@ unsafe fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..16 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -10507,32 +10323,28 @@ unsafe fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
             let dst_chunk = unsafe { dst_row.add(x_base) };
 
             let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-            let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-            let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+            let d_lo = _mm_unpacklo_epi16(d, zero);
+            let d_hi = _mm_unpackhi_epi16(d, zero);
 
             // 32x16 uses >> 3 for final shift
-            let c_lo = unsafe {
-                _mm_set_epi32(
+            let c_lo = _mm_set_epi32(
                     (tmp[y * 32 + x_base + 3] + 4) >> 3,
                     (tmp[y * 32 + x_base + 2] + 4) >> 3,
                     (tmp[y * 32 + x_base + 1] + 4) >> 3,
                     (tmp[y * 32 + x_base + 0] + 4) >> 3
-                )
-            };
-            let c_hi = unsafe {
-                _mm_set_epi32(
+                );
+            let c_hi = _mm_set_epi32(
                     (tmp[y * 32 + x_base + 7] + 4) >> 3,
                     (tmp[y * 32 + x_base + 6] + 4) >> 3,
                     (tmp[y * 32 + x_base + 5] + 4) >> 3,
                     (tmp[y * 32 + x_base + 4] + 4) >> 3
-                )
-            };
+                );
 
-            let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-            let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-            let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-            let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-            let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+            let sum_lo = _mm_add_epi32(d_lo, c_lo);
+            let sum_hi = _mm_add_epi32(d_hi, c_hi);
+            let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+            let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+            let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
             unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
         }
@@ -10607,40 +10419,36 @@ unsafe fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..32 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
 
         // Load destination (8 u16 = 16 bytes)
         let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-        let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-        let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+        let d_lo = _mm_unpacklo_epi16(d, zero);
+        let d_hi = _mm_unpackhi_epi16(d, zero);
 
         // 8x32 uses >> 3 for final shift
-        let c_lo = unsafe {
-            _mm_set_epi32(
+        let c_lo = _mm_set_epi32(
                 (tmp[y * 8 + 3] + 4) >> 3,
                 (tmp[y * 8 + 2] + 4) >> 3,
                 (tmp[y * 8 + 1] + 4) >> 3,
                 (tmp[y * 8 + 0] + 4) >> 3
-            )
-        };
-        let c_hi = unsafe {
-            _mm_set_epi32(
+            );
+        let c_hi = _mm_set_epi32(
                 (tmp[y * 8 + 7] + 4) >> 3,
                 (tmp[y * 8 + 6] + 4) >> 3,
                 (tmp[y * 8 + 5] + 4) >> 3,
                 (tmp[y * 8 + 4] + 4) >> 3
-            )
-        };
+            );
 
-        let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-        let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-        let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-        let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-        let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+        let sum_lo = _mm_add_epi32(d_lo, c_lo);
+        let sum_hi = _mm_add_epi32(d_hi, c_hi);
+        let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+        let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+        let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
         unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
     }
@@ -10714,8 +10522,8 @@ unsafe fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
     }
 
     // Add to destination
-    let zero = unsafe { _mm_setzero_si128() };
-    let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
     for y in 0..8 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -10726,32 +10534,28 @@ unsafe fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
             let dst_chunk = unsafe { dst_row.add(x_base) };
 
             let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-            let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-            let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+            let d_lo = _mm_unpacklo_epi16(d, zero);
+            let d_hi = _mm_unpackhi_epi16(d, zero);
 
             // 32x8 uses >> 3 for final shift
-            let c_lo = unsafe {
-                _mm_set_epi32(
+            let c_lo = _mm_set_epi32(
                     (tmp[y * 32 + x_base + 3] + 4) >> 3,
                     (tmp[y * 32 + x_base + 2] + 4) >> 3,
                     (tmp[y * 32 + x_base + 1] + 4) >> 3,
                     (tmp[y * 32 + x_base + 0] + 4) >> 3
-                )
-            };
-            let c_hi = unsafe {
-                _mm_set_epi32(
+                );
+            let c_hi = _mm_set_epi32(
                     (tmp[y * 32 + x_base + 7] + 4) >> 3,
                     (tmp[y * 32 + x_base + 6] + 4) >> 3,
                     (tmp[y * 32 + x_base + 5] + 4) >> 3,
                     (tmp[y * 32 + x_base + 4] + 4) >> 3
-                )
-            };
+                );
 
-            let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-            let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-            let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-            let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-            let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+            let sum_lo = _mm_add_epi32(d_lo, c_lo);
+            let sum_hi = _mm_add_epi32(d_hi, c_hi);
+            let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+            let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+            let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
             unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
         }
@@ -10833,27 +10637,25 @@ macro_rules! impl_4x8_transform_16bpc {
             }
 
             // Add to destination
-            let zero = unsafe { _mm_setzero_si128() };
-            let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi32(bitdepth_max);
 
             for y in 0..8 {
                 let dst_row = unsafe { dst.add(y * stride_u16) };
 
                 let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-                let d32 = unsafe { _mm_unpacklo_epi16(d, zero) };
+                let d32 = _mm_unpacklo_epi16(d, zero);
 
-                let c = unsafe {
-                    _mm_set_epi32(
+                let c = _mm_set_epi32(
                         (tmp[y * 4 + 3] + 8) >> 4,
                         (tmp[y * 4 + 2] + 8) >> 4,
                         (tmp[y * 4 + 1] + 8) >> 4,
                         (tmp[y * 4 + 0] + 8) >> 4
-                    )
-                };
+                    );
 
-                let sum = unsafe { _mm_add_epi32(d32, c) };
-                let clamped = unsafe { _mm_max_epi32(_mm_min_epi32(sum, max_val), zero) };
-                let packed = unsafe { _mm_packus_epi32(clamped, clamped) };
+                let sum = _mm_add_epi32(d32, c);
+                let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
+                let packed = _mm_packus_epi32(clamped, clamped);
 
                 unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
             }
@@ -10908,38 +10710,34 @@ macro_rules! impl_8x4_transform_16bpc {
             }
 
             // Add to destination
-            let zero = unsafe { _mm_setzero_si128() };
-            let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi32(bitdepth_max);
 
             for y in 0..4 {
                 let dst_row = unsafe { dst.add(y * stride_u16) };
 
                 let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-                let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-                let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+                let d_lo = _mm_unpacklo_epi16(d, zero);
+                let d_hi = _mm_unpackhi_epi16(d, zero);
 
-                let c_lo = unsafe {
-                    _mm_set_epi32(
+                let c_lo = _mm_set_epi32(
                         (tmp[y * 8 + 3] + 8) >> 4,
                         (tmp[y * 8 + 2] + 8) >> 4,
                         (tmp[y * 8 + 1] + 8) >> 4,
                         (tmp[y * 8 + 0] + 8) >> 4
-                    )
-                };
-                let c_hi = unsafe {
-                    _mm_set_epi32(
+                    );
+                let c_hi = _mm_set_epi32(
                         (tmp[y * 8 + 7] + 8) >> 4,
                         (tmp[y * 8 + 6] + 8) >> 4,
                         (tmp[y * 8 + 5] + 8) >> 4,
                         (tmp[y * 8 + 4] + 8) >> 4
-                    )
-                };
+                    );
 
-                let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-                let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-                let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-                let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-                let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+                let sum_lo = _mm_add_epi32(d_lo, c_lo);
+                let sum_hi = _mm_add_epi32(d_hi, c_hi);
+                let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+                let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+                let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
                 unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
             }
@@ -11059,38 +10857,34 @@ macro_rules! impl_8x16_transform_16bpc {
             }
 
             // Add to destination
-            let zero = unsafe { _mm_setzero_si128() };
-            let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi32(bitdepth_max);
 
             for y in 0..16 {
                 let dst_row = unsafe { dst.add(y * stride_u16) };
 
                 let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-                let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-                let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+                let d_lo = _mm_unpacklo_epi16(d, zero);
+                let d_hi = _mm_unpackhi_epi16(d, zero);
 
-                let c_lo = unsafe {
-                    _mm_set_epi32(
+                let c_lo = _mm_set_epi32(
                         (tmp[y * 8 + 3] + 8) >> 4,
                         (tmp[y * 8 + 2] + 8) >> 4,
                         (tmp[y * 8 + 1] + 8) >> 4,
                         (tmp[y * 8 + 0] + 8) >> 4
-                    )
-                };
-                let c_hi = unsafe {
-                    _mm_set_epi32(
+                    );
+                let c_hi = _mm_set_epi32(
                         (tmp[y * 8 + 7] + 8) >> 4,
                         (tmp[y * 8 + 6] + 8) >> 4,
                         (tmp[y * 8 + 5] + 8) >> 4,
                         (tmp[y * 8 + 4] + 8) >> 4
-                    )
-                };
+                    );
 
-                let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-                let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-                let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-                let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-                let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+                let sum_lo = _mm_add_epi32(d_lo, c_lo);
+                let sum_hi = _mm_add_epi32(d_hi, c_hi);
+                let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+                let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+                let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
                 unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
             }
@@ -11146,8 +10940,8 @@ macro_rules! impl_16x8_transform_16bpc {
             }
 
             // Add to destination
-            let zero = unsafe { _mm_setzero_si128() };
-            let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi32(bitdepth_max);
 
             for y in 0..8 {
                 let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -11157,31 +10951,27 @@ macro_rules! impl_16x8_transform_16bpc {
                     let dst_chunk = unsafe { dst_row.add(x_base) };
 
                     let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-                    let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-                    let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+                    let d_lo = _mm_unpacklo_epi16(d, zero);
+                    let d_hi = _mm_unpackhi_epi16(d, zero);
 
-                    let c_lo = unsafe {
-                        _mm_set_epi32(
+                    let c_lo = _mm_set_epi32(
                             (tmp[y * 16 + x_base + 3] + 8) >> 4,
                             (tmp[y * 16 + x_base + 2] + 8) >> 4,
                             (tmp[y * 16 + x_base + 1] + 8) >> 4,
                             (tmp[y * 16 + x_base + 0] + 8) >> 4
-                        )
-                    };
-                    let c_hi = unsafe {
-                        _mm_set_epi32(
+                        );
+                    let c_hi = _mm_set_epi32(
                             (tmp[y * 16 + x_base + 7] + 8) >> 4,
                             (tmp[y * 16 + x_base + 6] + 8) >> 4,
                             (tmp[y * 16 + x_base + 5] + 8) >> 4,
                             (tmp[y * 16 + x_base + 4] + 8) >> 4
-                        )
-                    };
+                        );
 
-                    let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-                    let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-                    let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-                    let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-                    let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+                    let sum_lo = _mm_add_epi32(d_lo, c_lo);
+                    let sum_hi = _mm_add_epi32(d_hi, c_hi);
+                    let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+                    let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+                    let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
                     unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
                 }
@@ -11275,27 +11065,25 @@ macro_rules! impl_4x16_transform_16bpc {
             }
 
             // Add to destination
-            let zero = unsafe { _mm_setzero_si128() };
-            let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi32(bitdepth_max);
 
             for y in 0..16 {
                 let dst_row = unsafe { dst.add(y * stride_u16) };
 
                 let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-                let d32 = unsafe { _mm_unpacklo_epi16(d, zero) };
+                let d32 = _mm_unpacklo_epi16(d, zero);
 
-                let c = unsafe {
-                    _mm_set_epi32(
+                let c = _mm_set_epi32(
                         (tmp[y * 4 + 3] + 8) >> 4,
                         (tmp[y * 4 + 2] + 8) >> 4,
                         (tmp[y * 4 + 1] + 8) >> 4,
                         (tmp[y * 4 + 0] + 8) >> 4
-                    )
-                };
+                    );
 
-                let sum = unsafe { _mm_add_epi32(d32, c) };
-                let clamped = unsafe { _mm_max_epi32(_mm_min_epi32(sum, max_val), zero) };
-                let packed = unsafe { _mm_packus_epi32(clamped, clamped) };
+                let sum = _mm_add_epi32(d32, c);
+                let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
+                let packed = _mm_packus_epi32(clamped, clamped);
 
                 unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
             }
@@ -11350,8 +11138,8 @@ macro_rules! impl_16x4_transform_16bpc {
             }
 
             // Add to destination
-            let zero = unsafe { _mm_setzero_si128() };
-            let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi32(bitdepth_max);
 
             for y in 0..4 {
                 let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -11361,31 +11149,27 @@ macro_rules! impl_16x4_transform_16bpc {
                     let dst_chunk = unsafe { dst_row.add(x_base) };
 
                     let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-                    let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-                    let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+                    let d_lo = _mm_unpacklo_epi16(d, zero);
+                    let d_hi = _mm_unpackhi_epi16(d, zero);
 
-                    let c_lo = unsafe {
-                        _mm_set_epi32(
+                    let c_lo = _mm_set_epi32(
                             (tmp[y * 16 + x_base + 3] + 8) >> 4,
                             (tmp[y * 16 + x_base + 2] + 8) >> 4,
                             (tmp[y * 16 + x_base + 1] + 8) >> 4,
                             (tmp[y * 16 + x_base + 0] + 8) >> 4
-                        )
-                    };
-                    let c_hi = unsafe {
-                        _mm_set_epi32(
+                        );
+                    let c_hi = _mm_set_epi32(
                             (tmp[y * 16 + x_base + 7] + 8) >> 4,
                             (tmp[y * 16 + x_base + 6] + 8) >> 4,
                             (tmp[y * 16 + x_base + 5] + 8) >> 4,
                             (tmp[y * 16 + x_base + 4] + 8) >> 4
-                        )
-                    };
+                        );
 
-                    let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-                    let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-                    let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-                    let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-                    let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+                    let sum_lo = _mm_add_epi32(d_lo, c_lo);
+                    let sum_hi = _mm_add_epi32(d_hi, c_hi);
+                    let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+                    let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+                    let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
                     unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
                 }
@@ -11577,38 +11361,34 @@ macro_rules! impl_8x8_transform_16bpc {
             }
 
             // Add to destination
-            let zero = unsafe { _mm_setzero_si128() };
-            let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi32(bitdepth_max);
 
             for y in 0..8 {
                 let dst_row = unsafe { dst.add(y * stride_u16) };
 
                 let d = unsafe { _mm_loadu_si128(dst_row as *const __m128i) };
-                let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-                let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+                let d_lo = _mm_unpacklo_epi16(d, zero);
+                let d_hi = _mm_unpackhi_epi16(d, zero);
 
-                let c_lo = unsafe {
-                    _mm_set_epi32(
+                let c_lo = _mm_set_epi32(
                         (tmp[y * 8 + 3] + 8) >> 4,
                         (tmp[y * 8 + 2] + 8) >> 4,
                         (tmp[y * 8 + 1] + 8) >> 4,
                         (tmp[y * 8 + 0] + 8) >> 4
-                    )
-                };
-                let c_hi = unsafe {
-                    _mm_set_epi32(
+                    );
+                let c_hi = _mm_set_epi32(
                         (tmp[y * 8 + 7] + 8) >> 4,
                         (tmp[y * 8 + 6] + 8) >> 4,
                         (tmp[y * 8 + 5] + 8) >> 4,
                         (tmp[y * 8 + 4] + 8) >> 4
-                    )
-                };
+                    );
 
-                let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-                let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-                let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-                let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-                let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+                let sum_lo = _mm_add_epi32(d_lo, c_lo);
+                let sum_hi = _mm_add_epi32(d_hi, c_hi);
+                let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+                let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+                let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
                 unsafe { _mm_storeu_si128(dst_row as *mut __m128i, packed) };
             }
@@ -11676,27 +11456,25 @@ macro_rules! impl_4x4_transform_16bpc {
             }
 
             // Add to destination
-            let zero = unsafe { _mm_setzero_si128() };
-            let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi32(bitdepth_max);
 
             for y in 0..4 {
                 let dst_row = unsafe { dst.add(y * stride_u16) };
 
                 let d = unsafe { _mm_loadl_epi64(dst_row as *const __m128i) };
-                let d32 = unsafe { _mm_unpacklo_epi16(d, zero) };
+                let d32 = _mm_unpacklo_epi16(d, zero);
 
-                let c = unsafe {
-                    _mm_set_epi32(
+                let c = _mm_set_epi32(
                         (tmp[y * 4 + 3] + 8) >> 4,
                         (tmp[y * 4 + 2] + 8) >> 4,
                         (tmp[y * 4 + 1] + 8) >> 4,
                         (tmp[y * 4 + 0] + 8) >> 4
-                    )
-                };
+                    );
 
-                let sum = unsafe { _mm_add_epi32(d32, c) };
-                let clamped = unsafe { _mm_max_epi32(_mm_min_epi32(sum, max_val), zero) };
-                let packed = unsafe { _mm_packus_epi32(clamped, clamped) };
+                let sum = _mm_add_epi32(d32, c);
+                let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
+                let packed = _mm_packus_epi32(clamped, clamped);
 
                 unsafe { _mm_storel_epi64(dst_row as *mut __m128i, packed) };
             }
@@ -11762,8 +11540,8 @@ macro_rules! impl_16x16_transform_16bpc {
             }
 
             // Add to destination
-            let zero = unsafe { _mm_setzero_si128() };
-            let max_val = unsafe { _mm_set1_epi32(bitdepth_max) };
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi32(bitdepth_max);
 
             for y in 0..16 {
                 let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -11773,31 +11551,27 @@ macro_rules! impl_16x16_transform_16bpc {
                     let dst_chunk = unsafe { dst_row.add(x_base) };
 
                     let d = unsafe { _mm_loadu_si128(dst_chunk as *const __m128i) };
-                    let d_lo = unsafe { _mm_unpacklo_epi16(d, zero) };
-                    let d_hi = unsafe { _mm_unpackhi_epi16(d, zero) };
+                    let d_lo = _mm_unpacklo_epi16(d, zero);
+                    let d_hi = _mm_unpackhi_epi16(d, zero);
 
-                    let c_lo = unsafe {
-                        _mm_set_epi32(
+                    let c_lo = _mm_set_epi32(
                             (tmp[y * 16 + x_base + 3] + 8) >> 4,
                             (tmp[y * 16 + x_base + 2] + 8) >> 4,
                             (tmp[y * 16 + x_base + 1] + 8) >> 4,
                             (tmp[y * 16 + x_base + 0] + 8) >> 4
-                        )
-                    };
-                    let c_hi = unsafe {
-                        _mm_set_epi32(
+                        );
+                    let c_hi = _mm_set_epi32(
                             (tmp[y * 16 + x_base + 7] + 8) >> 4,
                             (tmp[y * 16 + x_base + 6] + 8) >> 4,
                             (tmp[y * 16 + x_base + 5] + 8) >> 4,
                             (tmp[y * 16 + x_base + 4] + 8) >> 4
-                        )
-                    };
+                        );
 
-                    let sum_lo = unsafe { _mm_add_epi32(d_lo, c_lo) };
-                    let sum_hi = unsafe { _mm_add_epi32(d_hi, c_hi) };
-                    let clamped_lo = unsafe { _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero) };
-                    let clamped_hi = unsafe { _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero) };
-                    let packed = unsafe { _mm_packus_epi32(clamped_lo, clamped_hi) };
+                    let sum_lo = _mm_add_epi32(d_lo, c_lo);
+                    let sum_hi = _mm_add_epi32(d_hi, c_hi);
+                    let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+                    let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+                    let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
                     unsafe { _mm_storeu_si128(dst_chunk as *mut __m128i, packed) };
                 }

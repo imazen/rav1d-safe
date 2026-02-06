@@ -45,8 +45,7 @@ unsafe fn constrain_avx2(
     threshold: __m256i,
     shift: __m128i,
 ) -> __m256i {
-    unsafe {
-        let zero = _mm256_setzero_si256();
+    let zero = _mm256_setzero_si256();
 
         // Compute absolute value
         let adiff = _mm256_abs_epi16(diff);
@@ -67,7 +66,6 @@ unsafe fn constrain_avx2(
         let sign_mask = _mm256_cmpgt_epi16(zero, diff);
         let neg_result = _mm256_sub_epi16(zero, result_abs);
         _mm256_blendv_epi8(result_abs, neg_result, sign_mask)
-    }
 }
 
 // ============================================================================

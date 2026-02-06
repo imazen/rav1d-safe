@@ -163,9 +163,9 @@ pub unsafe extern "C" fn avg_16bpc_avx2(
     let max = bitdepth_max as i32;
 
     // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
-    let rnd_vec = unsafe { _mm256_set1_epi32(rnd) };
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_vec = unsafe { _mm256_set1_epi32(max) };
+    let rnd_vec = _mm256_set1_epi32(rnd);
+    let zero = _mm256_setzero_si256();
+    let max_vec = _mm256_set1_epi32(max);
 
     for row in 0..h {
         let tmp1_ptr = tmp1[row * w..].as_ptr();
@@ -420,11 +420,11 @@ pub unsafe extern "C" fn w_avg_16bpc_avx2(
     let inv_weight = 16 - weight;
 
     // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
-    let rnd_vec = unsafe { _mm256_set1_epi32(rnd) };
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_vec = unsafe { _mm256_set1_epi32(max) };
-    let weight_vec = unsafe { _mm256_set1_epi32(weight) };
-    let inv_weight_vec = unsafe { _mm256_set1_epi32(inv_weight) };
+    let rnd_vec = _mm256_set1_epi32(rnd);
+    let zero = _mm256_setzero_si256();
+    let max_vec = _mm256_set1_epi32(max);
+    let weight_vec = _mm256_set1_epi32(weight);
+    let inv_weight_vec = _mm256_set1_epi32(inv_weight);
 
     for row in 0..h {
         let tmp1_ptr = tmp1[row * w..].as_ptr();
@@ -559,7 +559,7 @@ pub unsafe extern "C" fn mask_8bpc_avx2(
     // Formula: (tmp1 * m + tmp2 * (64-m) + 512) >> 10
     // Rewrite: ((tmp1 - tmp2) * m + tmp2 * 64 + 512) >> 10
     // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
-    let rnd = unsafe { _mm256_set1_epi32(512) };
+    let rnd = _mm256_set1_epi32(512);
 
     for row in 0..h {
         let tmp1_ptr = tmp1[row * w..].as_ptr();
@@ -667,10 +667,10 @@ pub unsafe extern "C" fn mask_16bpc_avx2(
     let rnd = 524800i32;
 
     // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
-    let rnd_vec = unsafe { _mm256_set1_epi32(rnd) };
-    let zero = unsafe { _mm256_setzero_si256() };
-    let max_vec = unsafe { _mm256_set1_epi32(max) };
-    let sixty_four = unsafe { _mm256_set1_epi32(64) };
+    let rnd_vec = _mm256_set1_epi32(rnd);
+    let zero = _mm256_setzero_si256();
+    let max_vec = _mm256_set1_epi32(max);
+    let sixty_four = _mm256_set1_epi32(64);
 
     for row in 0..h {
         let tmp1_ptr = tmp1[row * w..].as_ptr();
@@ -807,8 +807,8 @@ pub unsafe extern "C" fn blend_8bpc_avx2(
 
     // Constants for blend formula: (dst * (64-m) + tmp * m + 32) >> 6
     // SAFETY: AVX2 is available
-    let sixty_four = unsafe { _mm256_set1_epi16(64) };
-    let rnd = unsafe { _mm256_set1_epi16(32) };
+    let sixty_four = _mm256_set1_epi16(64);
+    let rnd = _mm256_set1_epi16(32);
 
     for row in 0..h {
         // SAFETY: pointers valid for row * stride + w
@@ -890,8 +890,8 @@ pub unsafe extern "C" fn blend_16bpc_avx2(
     let tmp = tmp as *const u16;
 
     // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
-    let rnd = unsafe { _mm256_set1_epi32(32) };
-    let sixty_four = unsafe { _mm256_set1_epi32(64) };
+    let rnd = _mm256_set1_epi32(32);
+    let sixty_four = _mm256_set1_epi32(64);
 
     for row in 0..h {
         // SAFETY: dst is valid for row * stride + w elements
@@ -980,8 +980,8 @@ pub unsafe extern "C" fn blend_v_8bpc_avx2(
     let obmc_mask = &dav1d_obmc_masks.0[h..];
 
     // SAFETY: AVX2 is available
-    let rnd = unsafe { _mm256_set1_epi16(32) };
-    let sixty_four = unsafe { _mm256_set1_epi16(64) };
+    let rnd = _mm256_set1_epi16(32);
+    let sixty_four = _mm256_set1_epi16(64);
 
     for row in 0..h {
         // SAFETY: pointers valid for row * stride + w
@@ -991,8 +991,8 @@ pub unsafe extern "C" fn blend_v_8bpc_avx2(
 
         // Broadcast mask value for the whole row
         // SAFETY: AVX2 is available
-        let mask_16 = unsafe { _mm256_set1_epi16(m as i16) };
-        let inv_mask = unsafe { _mm256_sub_epi16(sixty_four, mask_16) };
+        let mask_16 = _mm256_set1_epi16(m as i16);
+        let inv_mask = _mm256_sub_epi16(sixty_four, mask_16);
 
         let mut col = 0usize;
 
@@ -1054,8 +1054,8 @@ pub unsafe extern "C" fn blend_h_8bpc_avx2(
     let obmc_mask = &dav1d_obmc_masks.0[w..];
 
     // SAFETY: AVX2 is available
-    let rnd = unsafe { _mm256_set1_epi16(32) };
-    let sixty_four = unsafe { _mm256_set1_epi16(64) };
+    let rnd = _mm256_set1_epi16(32);
+    let sixty_four = _mm256_set1_epi16(64);
 
     for row in 0..h {
         // SAFETY: pointers valid for row * stride + w
@@ -1129,8 +1129,8 @@ pub unsafe extern "C" fn blend_v_16bpc_avx2(
     let obmc_mask = &dav1d_obmc_masks.0[h..];
 
     // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
-    let rnd = unsafe { _mm256_set1_epi32(32) };
-    let sixty_four = unsafe { _mm256_set1_epi32(64) };
+    let rnd = _mm256_set1_epi32(32);
+    let sixty_four = _mm256_set1_epi32(64);
 
     for row in 0..h {
         let dst_row = unsafe { dst.offset(row as isize * dst_stride_elems) };
@@ -1139,8 +1139,8 @@ pub unsafe extern "C" fn blend_v_16bpc_avx2(
 
         // Broadcast mask value for the whole row
         // SAFETY: AVX2 is available
-        let mask_32 = unsafe { _mm256_set1_epi32(m as i32) };
-        let inv_mask = unsafe { _mm256_sub_epi32(sixty_four, mask_32) };
+        let mask_32 = _mm256_set1_epi32(m as i32);
+        let inv_mask = _mm256_sub_epi32(sixty_four, mask_32);
 
         let mut col = 0usize;
 
@@ -1207,8 +1207,8 @@ pub unsafe extern "C" fn blend_h_16bpc_avx2(
     let obmc_mask = &dav1d_obmc_masks.0[w..];
 
     // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
-    let rnd = unsafe { _mm256_set1_epi32(32) };
-    let sixty_four = unsafe { _mm256_set1_epi32(64) };
+    let rnd = _mm256_set1_epi32(32);
+    let sixty_four = _mm256_set1_epi32(64);
 
     for row in 0..h {
         let dst_row = unsafe { dst.offset(row as isize * dst_stride_elems) };
