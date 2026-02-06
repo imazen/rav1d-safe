@@ -340,7 +340,7 @@ fn lpf_v_sb_inner<BD: BitDepth, const YUV: usize>(
 // FFI WRAPPERS - 8BPC
 // ============================================================================
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn lpf_h_sb_y_8bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -366,7 +366,7 @@ pub unsafe extern "C" fn lpf_h_sb_y_8bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn lpf_v_sb_y_8bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -392,7 +392,7 @@ pub unsafe extern "C" fn lpf_v_sb_y_8bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -418,7 +418,7 @@ pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -448,7 +448,7 @@ pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_neon(
 // FFI WRAPPERS - 16BPC
 // ============================================================================
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn lpf_h_sb_y_16bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -475,7 +475,7 @@ pub unsafe extern "C" fn lpf_h_sb_y_16bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn lpf_v_sb_y_16bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -502,7 +502,7 @@ pub unsafe extern "C" fn lpf_v_sb_y_16bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -529,7 +529,7 @@ pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn lpf_v_sb_uv_16bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -572,114 +572,26 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
 
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast::<BD::Pixel>();
     assert!(lvl.offset <= lvl.data.len());
     // SAFETY: `lvl.offset` is in bounds, checked above.
     let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };
     let lvl_ptr = lvl_ptr.cast::<[u8; 4]>();
-    let dst_ffi = FFISafe::new(&dst);
-    let lvl_ffi = FFISafe::new(&lvl);
 
-    // SAFETY: NEON always available on aarch64. All pointers from valid references.
-    unsafe {
-        match (BD::BPC, is_y, is_v) {
-            (BPC::BPC8, true, false) => lpf_h_sb_y_8bpc_neon(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
-            ),
-            (BPC::BPC8, true, true) => lpf_v_sb_y_8bpc_neon(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
-            ),
-            (BPC::BPC8, false, false) => lpf_h_sb_uv_8bpc_neon(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
-            ),
-            (BPC::BPC8, false, true) => lpf_v_sb_uv_8bpc_neon(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
-            ),
-            (BPC::BPC16, true, false) => lpf_h_sb_y_16bpc_neon(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
-            ),
-            (BPC::BPC16, true, true) => lpf_v_sb_y_16bpc_neon(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
-            ),
-            (BPC::BPC16, false, false) => lpf_h_sb_uv_16bpc_neon(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
-            ),
-            (BPC::BPC16, false, true) => lpf_v_sb_uv_16bpc_neon(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
-            ),
-        }
+    // Call inner functions directly, bypassing FFI wrappers.
+    match (is_y, is_v) {
+        (true, false) => lpf_h_sb_inner::<BD, 0>(
+            dst_ptr, stride as isize, mask, lvl_ptr, b4_stride, &lut.0, w, bitdepth_max,
+        ),
+        (true, true) => lpf_v_sb_inner::<BD, 0>(
+            dst_ptr, stride as isize, mask, lvl_ptr, b4_stride, &lut.0, w, bitdepth_max,
+        ),
+        (false, false) => lpf_h_sb_inner::<BD, 1>(
+            dst_ptr, stride as isize, mask, lvl_ptr, b4_stride, &lut.0, w, bitdepth_max,
+        ),
+        (false, true) => lpf_v_sb_inner::<BD, 1>(
+            dst_ptr, stride as isize, mask, lvl_ptr, b4_stride, &lut.0, w, bitdepth_max,
+        ),
     }
     true
 }

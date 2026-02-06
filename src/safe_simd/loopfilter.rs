@@ -487,7 +487,7 @@ unsafe fn lpf_v_sb_uv_8bpc_avx2_inner(
 // ============================================================================
 
 /// FFI wrapper for Y horizontal filter
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn lpf_h_sb_y_8bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -516,7 +516,7 @@ pub unsafe extern "C" fn lpf_h_sb_y_8bpc_avx2(
 }
 
 /// FFI wrapper for Y vertical filter
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn lpf_v_sb_y_8bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -545,7 +545,7 @@ pub unsafe extern "C" fn lpf_v_sb_y_8bpc_avx2(
 }
 
 /// FFI wrapper for UV horizontal filter
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -574,7 +574,7 @@ pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_avx2(
 }
 
 /// FFI wrapper for UV vertical filter
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -1032,7 +1032,7 @@ unsafe fn lpf_v_sb_uv_16bpc_avx2_inner(
 }
 
 /// FFI wrapper for Y horizontal filter 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn lpf_h_sb_y_16bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -1061,7 +1061,7 @@ pub unsafe extern "C" fn lpf_h_sb_y_16bpc_avx2(
 }
 
 /// FFI wrapper for Y vertical filter 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn lpf_v_sb_y_16bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -1090,7 +1090,7 @@ pub unsafe extern "C" fn lpf_v_sb_y_16bpc_avx2(
 }
 
 /// FFI wrapper for UV horizontal filter 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -1119,7 +1119,7 @@ pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_avx2(
 }
 
 /// FFI wrapper for UV vertical filter 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn lpf_v_sb_uv_16bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -1190,107 +1190,34 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     // SAFETY: `lvl.offset` is in bounds, checked above.
     let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };
     let lvl_ptr = lvl_ptr.cast::<[u8; 4]>();
-    let dst_ffi = FFISafe::new(&dst);
-    let lvl_ffi = FFISafe::new(&lvl);
 
     // SAFETY: AVX2 verified by CpuFlags check. All pointers derived from valid references.
+    // Call inner functions directly, bypassing FFI wrappers.
     unsafe {
         match (BD::BPC, is_y, is_v) {
-            (BPC::BPC8, true, false) => lpf_h_sb_y_8bpc_avx2(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
+            (BPC::BPC8, true, false) => lpf_h_sb_y_8bpc_avx2_inner(
+                dst_ptr as *mut u8, stride as isize, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max,
             ),
-            (BPC::BPC8, true, true) => lpf_v_sb_y_8bpc_avx2(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
+            (BPC::BPC8, true, true) => lpf_v_sb_y_8bpc_avx2_inner(
+                dst_ptr as *mut u8, stride as isize, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max,
             ),
-            (BPC::BPC8, false, false) => lpf_h_sb_uv_8bpc_avx2(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
+            (BPC::BPC8, false, false) => lpf_h_sb_uv_8bpc_avx2_inner(
+                dst_ptr as *mut u8, stride as isize, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max,
             ),
-            (BPC::BPC8, false, true) => lpf_v_sb_uv_8bpc_avx2(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
+            (BPC::BPC8, false, true) => lpf_v_sb_uv_8bpc_avx2_inner(
+                dst_ptr as *mut u8, stride as isize, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max,
             ),
-            (BPC::BPC16, true, false) => lpf_h_sb_y_16bpc_avx2(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
+            (BPC::BPC16, true, false) => lpf_h_sb_y_16bpc_avx2_inner(
+                dst_ptr as *mut u16, stride as isize, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max,
             ),
-            (BPC::BPC16, true, true) => lpf_v_sb_y_16bpc_avx2(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
+            (BPC::BPC16, true, true) => lpf_v_sb_y_16bpc_avx2_inner(
+                dst_ptr as *mut u16, stride as isize, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max,
             ),
-            (BPC::BPC16, false, false) => lpf_h_sb_uv_16bpc_avx2(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
+            (BPC::BPC16, false, false) => lpf_h_sb_uv_16bpc_avx2_inner(
+                dst_ptr as *mut u16, stride as isize, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max,
             ),
-            (BPC::BPC16, false, true) => lpf_v_sb_uv_16bpc_avx2(
-                dst_ptr,
-                stride,
-                mask,
-                lvl_ptr,
-                b4_stride,
-                lut,
-                w,
-                bitdepth_max,
-                dst_ffi,
-                lvl_ffi,
+            (BPC::BPC16, false, true) => lpf_v_sb_uv_16bpc_avx2_inner(
+                dst_ptr as *mut u16, stride as isize, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max,
             ),
         }
     }

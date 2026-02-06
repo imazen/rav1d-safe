@@ -322,7 +322,7 @@ fn reconstruct_lpf_offset(lpf: &DisjointMut<AlignedVec64<u8>>, ptr: *const u8) -
 }
 
 /// FFI wrapper for Wiener filter 7-tap 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn wiener_filter7_8bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -355,7 +355,7 @@ pub unsafe extern "C" fn wiener_filter7_8bpc_avx2(
 }
 
 /// FFI wrapper for Wiener filter 5-tap 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -394,7 +394,7 @@ fn reconstruct_lpf_offset_16bpc(lpf: &DisjointMut<AlignedVec64<u8>>, ptr: *const
 }
 
 /// FFI wrapper for Wiener filter 7-tap 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -424,7 +424,7 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
 }
 
 /// FFI wrapper for Wiener filter 5-tap 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -909,7 +909,7 @@ unsafe fn sgr_mix_8bpc_avx2_inner(
 // ============================================================================
 
 /// FFI wrapper for SGR 5x5 filter 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_5x5_8bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -939,7 +939,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_8bpc_avx2(
 }
 
 /// FFI wrapper for SGR 3x3 filter 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_3x3_8bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -969,7 +969,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_8bpc_avx2(
 }
 
 /// FFI wrapper for SGR mix filter 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_mix_8bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -1473,7 +1473,7 @@ unsafe fn sgr_mix_16bpc_avx2_inner(
 // ============================================================================
 
 /// FFI wrapper for SGR 5x5 filter 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_5x5_16bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -1503,7 +1503,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_16bpc_avx2(
 }
 
 /// FFI wrapper for SGR 3x3 filter 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_3x3_16bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -1533,7 +1533,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_16bpc_avx2(
 }
 
 /// FFI wrapper for SGR mix filter 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_mix_16bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -1604,51 +1604,24 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
         return false;
     }
 
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-    let dst_stride = dst.stride();
-    let left_ptr = left[..h as usize].as_ptr().cast();
-    let lpf_ptr = lpf
-        .as_mut_ptr()
-        .cast::<BD::Pixel>()
-        .wrapping_offset(lpf_off)
-        .cast();
-    let bd_c = bd.into_c();
-    let dst_ffi = FFISafe::new(&dst);
-    let lpf_ffi = FFISafe::new(lpf);
+    let w = w as usize;
+    let h = h as usize;
+    let left_8 = || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u8>]) };
+    let left_16 = || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u16>]) };
 
-    // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid types.
+    // SAFETY: AVX2 verified by CpuFlags check. Call inner functions directly.
     unsafe {
         match (BD::BPC, variant) {
-            (BPC::BPC8, 0) => wiener_filter7_8bpc_avx2(
-                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-            ),
-            (BPC::BPC8, 1) => wiener_filter5_8bpc_avx2(
-                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-            ),
-            (BPC::BPC8, 2) => sgr_filter_5x5_8bpc_avx2(
-                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-            ),
-            (BPC::BPC8, 3) => sgr_filter_3x3_8bpc_avx2(
-                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-            ),
-            (BPC::BPC8, _) => sgr_filter_mix_8bpc_avx2(
-                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-            ),
-            (BPC::BPC16, 0) => wiener_filter7_16bpc_avx2(
-                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-            ),
-            (BPC::BPC16, 1) => wiener_filter5_16bpc_avx2(
-                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-            ),
-            (BPC::BPC16, 2) => sgr_filter_5x5_16bpc_avx2(
-                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-            ),
-            (BPC::BPC16, 3) => sgr_filter_3x3_16bpc_avx2(
-                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-            ),
-            (BPC::BPC16, _) => sgr_filter_mix_16bpc_avx2(
-                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-            ),
+            (BPC::BPC8, 0) => wiener_filter7_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+            (BPC::BPC8, 1) => wiener_filter5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+            (BPC::BPC8, 2) => sgr_5x5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+            (BPC::BPC8, 3) => sgr_3x3_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+            (BPC::BPC8, _) => sgr_mix_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+            (BPC::BPC16, 0) => wiener_filter7_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
+            (BPC::BPC16, 1) => wiener_filter5_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
+            (BPC::BPC16, 2) => sgr_5x5_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
+            (BPC::BPC16, 3) => sgr_3x3_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
+            (BPC::BPC16, _) => sgr_mix_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
         }
     }
     true

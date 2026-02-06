@@ -450,7 +450,7 @@ unsafe fn cdef_filter_8x8_8bpc_avx2_inner(
 }
 
 /// FFI wrapper for CDEF 8x8 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn cdef_filter_8x8_8bpc_avx2(
     _dst_ptr: *mut DynPixel,
@@ -619,7 +619,7 @@ unsafe fn cdef_filter_4x8_8bpc_avx2_inner(
 }
 
 /// FFI wrapper for CDEF 4x8 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn cdef_filter_4x8_8bpc_avx2(
     _dst_ptr: *mut DynPixel,
@@ -788,7 +788,7 @@ unsafe fn cdef_filter_4x4_8bpc_avx2_inner(
 }
 
 /// FFI wrapper for CDEF 4x4 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn cdef_filter_4x4_8bpc_avx2(
     _dst_ptr: *mut DynPixel,
@@ -827,7 +827,7 @@ pub unsafe extern "C" fn cdef_filter_4x4_8bpc_avx2(
 }
 
 /// CDEF direction finding for 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn cdef_find_dir_8bpc_avx2(
     _dst_ptr: *const DynPixel,
@@ -1275,7 +1275,7 @@ unsafe fn cdef_filter_4x4_16bpc_avx2_inner(
 }
 
 /// FFI wrapper for CDEF filter 8x8 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn cdef_filter_8x8_16bpc_avx2(
     _dst_ptr: *mut DynPixel,
@@ -1315,7 +1315,7 @@ pub unsafe extern "C" fn cdef_filter_8x8_16bpc_avx2(
 }
 
 /// FFI wrapper for CDEF filter 4x8 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn cdef_filter_4x8_16bpc_avx2(
     _dst_ptr: *mut DynPixel,
@@ -1355,7 +1355,7 @@ pub unsafe extern "C" fn cdef_filter_4x8_16bpc_avx2(
 }
 
 /// FFI wrapper for CDEF filter 4x4 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn cdef_filter_4x4_16bpc_avx2(
     _dst_ptr: *mut DynPixel,
@@ -1395,7 +1395,7 @@ pub unsafe extern "C" fn cdef_filter_4x4_16bpc_avx2(
 }
 
 /// FFI wrapper for cdef_find_dir 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn cdef_find_dir_16bpc_avx2(
     _dst_ptr: *const DynPixel,
@@ -1441,114 +1441,48 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
         return false;
     }
 
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-    let stride = dst.stride();
-    let left_ptr = std::ptr::from_ref(left).cast();
-    let top_ptr = top.as_ptr::<BD>().cast();
-    let bottom_ptr = bottom.wrapping_as_ptr::<BD>().cast();
-    let top_ffi = FFISafe::new(&top);
-    let bottom_ffi = FFISafe::new(&bottom);
-    let bd_c = bd.into_c();
-    let dst_ffi = FFISafe::new(&dst);
-
-    // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid types.
+    // SAFETY: AVX2 verified by CpuFlags check. Inner functions use target_feature(enable = "avx2").
+    // Left pointer cast is safe because LeftPixelRow2px<BD::Pixel> has same layout for u8/u16.
     unsafe {
         match (BD::BPC, variant) {
-            (BPC::BPC8, 0) => cdef_filter_8x8_8bpc_avx2(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
+            (BPC::BPC8, 0) => cdef_filter_8x8_8bpc_avx2_inner(
+                dst,
+                &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]),
+                &top, &bottom,
+                pri_strength, sec_strength, dir, damping, edges,
             ),
-            (BPC::BPC8, 1) => cdef_filter_4x8_8bpc_avx2(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
+            (BPC::BPC8, 1) => cdef_filter_4x8_8bpc_avx2_inner(
+                dst,
+                &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]),
+                &top, &bottom,
+                pri_strength, sec_strength, dir, damping, edges,
             ),
-            (BPC::BPC8, _) => cdef_filter_4x4_8bpc_avx2(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
+            (BPC::BPC8, _) => cdef_filter_4x4_8bpc_avx2_inner(
+                dst,
+                &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]),
+                &top, &bottom,
+                pri_strength, sec_strength, dir, damping, edges,
             ),
-            (BPC::BPC16, 0) => cdef_filter_8x8_16bpc_avx2(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
+            (BPC::BPC16, 0) => cdef_filter_8x8_16bpc_avx2_inner(
+                dst,
+                &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]),
+                &top, &bottom,
+                pri_strength, sec_strength, dir, damping, edges,
+                bd.into_c(),
             ),
-            (BPC::BPC16, 1) => cdef_filter_4x8_16bpc_avx2(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
+            (BPC::BPC16, 1) => cdef_filter_4x8_16bpc_avx2_inner(
+                dst,
+                &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]),
+                &top, &bottom,
+                pri_strength, sec_strength, dir, damping, edges,
+                bd.into_c(),
             ),
-            (BPC::BPC16, _) => cdef_filter_4x4_16bpc_avx2(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
+            (BPC::BPC16, _) => cdef_filter_4x4_16bpc_avx2_inner(
+                dst,
+                &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]),
+                &top, &bottom,
+                pri_strength, sec_strength, dir, damping, edges,
+                bd.into_c(),
             ),
         }
     }
@@ -1562,24 +1496,11 @@ pub fn cdef_dir_dispatch<BD: BitDepth>(
     variance: &mut c_uint,
     bd: BD,
 ) -> Option<c_int> {
-    use crate::include::common::bitdepth::BPC;
     use crate::src::cpu::CpuFlags;
 
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return None;
     }
 
-    let dst_ptr = dst.as_ptr::<BD>().cast();
-    let dst_stride = dst.stride();
-    let bd_c = bd.into_c();
-    let dst_ffi = FFISafe::new(&dst);
-
-    // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid dst.
-    let dir = unsafe {
-        match BD::BPC {
-            BPC::BPC8 => cdef_find_dir_8bpc_avx2(dst_ptr, dst_stride, variance, bd_c, dst_ffi),
-            BPC::BPC16 => cdef_find_dir_16bpc_avx2(dst_ptr, dst_stride, variance, bd_c, dst_ffi),
-        }
-    };
-    Some(dir)
+    Some(cdef_find_dir_scalar(dst, variance, bd))
 }

@@ -61,8 +61,7 @@ const AR_PAD: usize = 3;
 // generate_grain_y - 8bpc (scalar, LFSR is inherently serial)
 // ============================================================================
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn generate_grain_y_8bpc_avx2(
     buf: *mut GrainLut<DynEntry>,
     data: &Dav1dFilmGrainData,
@@ -112,8 +111,7 @@ fn generate_grain_y_inner_8bpc(buf: &mut GrainLut<i8>, data: &Rav1dFilmGrainData
 // generate_grain_y - 16bpc (scalar)
 // ============================================================================
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn generate_grain_y_16bpc_avx2(
     buf: *mut GrainLut<DynEntry>,
     data: &Dav1dFilmGrainData,
@@ -228,8 +226,7 @@ fn generate_grain_uv_inner_8bpc(
     }
 }
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn generate_grain_uv_420_8bpc_avx2(
     buf: *mut GrainLut<DynEntry>,
     buf_y: *const GrainLut<DynEntry>,
@@ -243,8 +240,7 @@ pub unsafe extern "C" fn generate_grain_uv_420_8bpc_avx2(
     generate_grain_uv_inner_8bpc(buf, buf_y, &data, uv != 0, true, true);
 }
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn generate_grain_uv_422_8bpc_avx2(
     buf: *mut GrainLut<DynEntry>,
     buf_y: *const GrainLut<DynEntry>,
@@ -258,8 +254,7 @@ pub unsafe extern "C" fn generate_grain_uv_422_8bpc_avx2(
     generate_grain_uv_inner_8bpc(buf, buf_y, &data, uv != 0, true, false);
 }
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn generate_grain_uv_444_8bpc_avx2(
     buf: *mut GrainLut<DynEntry>,
     buf_y: *const GrainLut<DynEntry>,
@@ -342,8 +337,7 @@ fn generate_grain_uv_inner_16bpc(
     }
 }
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn generate_grain_uv_420_16bpc_avx2(
     buf: *mut GrainLut<DynEntry>,
     buf_y: *const GrainLut<DynEntry>,
@@ -358,8 +352,7 @@ pub unsafe extern "C" fn generate_grain_uv_420_16bpc_avx2(
     generate_grain_uv_inner_16bpc(buf, buf_y, &data, uv != 0, true, true, bitdepth);
 }
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn generate_grain_uv_422_16bpc_avx2(
     buf: *mut GrainLut<DynEntry>,
     buf_y: *const GrainLut<DynEntry>,
@@ -374,8 +367,7 @@ pub unsafe extern "C" fn generate_grain_uv_422_16bpc_avx2(
     generate_grain_uv_inner_16bpc(buf, buf_y, &data, uv != 0, true, false, bitdepth);
 }
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn generate_grain_uv_444_16bpc_avx2(
     buf: *mut GrainLut<DynEntry>,
     buf_y: *const GrainLut<DynEntry>,
@@ -565,7 +557,6 @@ unsafe fn fgy_row_simd_8bpc(
 }
 
 /// Apply luma grain - 8bpc AVX2
-#[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
     dst_row_ptr: *mut DynPixel,
@@ -733,7 +724,6 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
 // ============================================================================
 
 /// Apply luma grain - 16bpc AVX2
-#[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn fgy_32x32xn_16bpc_avx2(
     dst_row_ptr: *mut DynPixel,
@@ -1171,8 +1161,7 @@ unsafe fn compute_uv_scaling_val(
 
 // fguv FFI wrappers for each subsampling mode (8bpc)
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn fguv_32x32xn_i420_8bpc_avx2(
     dst_row_ptr: *mut DynPixel,
     src_row_ptr: *const DynPixel,
@@ -1212,8 +1201,7 @@ pub unsafe extern "C" fn fguv_32x32xn_i420_8bpc_avx2(
     );
 }
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn fguv_32x32xn_i422_8bpc_avx2(
     dst_row_ptr: *mut DynPixel,
     src_row_ptr: *const DynPixel,
@@ -1253,8 +1241,7 @@ pub unsafe extern "C" fn fguv_32x32xn_i422_8bpc_avx2(
     );
 }
 
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn fguv_32x32xn_i444_8bpc_avx2(
     dst_row_ptr: *mut DynPixel,
     src_row_ptr: *const DynPixel,
@@ -1454,8 +1441,7 @@ unsafe fn fguv_inner_16bpc(
 
 macro_rules! fguv_16bpc_wrapper {
     ($name:ident, $is_sx:expr, $is_sy:expr) => {
-        #[cfg(target_arch = "x86_64")]
-        #[target_feature(enable = "avx2")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
         pub unsafe extern "C" fn $name(
             dst_row_ptr: *mut DynPixel,
             src_row_ptr: *const DynPixel,
@@ -1523,13 +1509,16 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return false;
     }
-    let buf_ptr = std::ptr::from_mut(buf).cast();
-    let data_c = &data.clone().into();
-    let bd_c = bd.into_c();
-    unsafe {
-        match BD::BPC {
-            BPC::BPC8 => generate_grain_y_8bpc_avx2(buf_ptr, data_c, bd_c),
-            BPC::BPC16 => generate_grain_y_16bpc_avx2(buf_ptr, data_c, bd_c),
+    // Call inner functions directly, bypassing FFI wrappers.
+    match BD::BPC {
+        BPC::BPC8 => {
+            let buf = unsafe { &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i8>) };
+            generate_grain_y_inner_8bpc(buf, data);
+        }
+        BPC::BPC16 => {
+            let buf = unsafe { &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i16>) };
+            let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
+            generate_grain_y_inner_16bpc(buf, data, bitdepth);
         }
     }
     true
@@ -1549,31 +1538,23 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return false;
     }
-    let buf_ptr = std::ptr::from_mut(buf).cast();
-    let buf_y_ptr = std::ptr::from_ref(buf_y).cast();
-    let data_c = &data.clone().into();
-    let uv: intptr_t = is_uv.into();
-    let bd_c = bd.into_c();
-    unsafe {
-        match (BD::BPC, layout) {
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => {
-                generate_grain_uv_420_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
-            }
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => {
-                generate_grain_uv_422_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
-            }
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => {
-                generate_grain_uv_444_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
-            }
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => {
-                generate_grain_uv_420_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
-            }
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => {
-                generate_grain_uv_422_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
-            }
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => {
-                generate_grain_uv_444_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
-            }
+    // Call inner functions directly, bypassing FFI wrappers.
+    let (is_subx, is_suby) = match layout {
+        Rav1dPixelLayoutSubSampled::I420 => (true, true),
+        Rav1dPixelLayoutSubSampled::I422 => (true, false),
+        Rav1dPixelLayoutSubSampled::I444 => (false, false),
+    };
+    match BD::BPC {
+        BPC::BPC8 => {
+            let buf = unsafe { &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i8>) };
+            let buf_y = unsafe { &*(buf_y as *const GrainLut<BD::Entry> as *const GrainLut<i8>) };
+            generate_grain_uv_inner_8bpc(buf, buf_y, data, is_uv, is_subx, is_suby);
+        }
+        BPC::BPC16 => {
+            let buf = unsafe { &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i16>) };
+            let buf_y = unsafe { &*(buf_y as *const GrainLut<BD::Entry> as *const GrainLut<i16>) };
+            let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
+            generate_grain_uv_inner_16bpc(buf, buf_y, data, is_uv, is_subx, is_suby, bitdepth);
         }
     }
     true
@@ -1673,135 +1654,54 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
     let src_row_ptr = src_row.as_ptr::<BD>().cast();
     let stride = dst.stride();
-    let data_c = &data.clone().into();
-    let scaling_ptr = (scaling as *const BD::Scaling).cast();
-    let grain_lut_ptr = (grain_lut as *const GrainLut<BD::Entry>).cast();
-    let bh_c = bh as c_int;
-    let row_num_c = row_num as c_int;
+    let scaling_ptr = (scaling as *const BD::Scaling).cast::<u8>();
     let luma_row = luma.with_offset::<BD>() + (row_strides * luma.pixel_stride::<BD>());
     let luma_row_ptr = luma_row.as_ptr::<BD>().cast();
     let luma_stride = luma.stride();
-    let uv_pl = is_uv as c_int;
-    let is_id_c = is_id as c_int;
-    let bd_c = bd.into_c();
-    let dst_row_ffi = FFISafe::new(&dst_row);
-    let src_row_ffi = FFISafe::new(&src_row);
-    let luma_row_ffi = FFISafe::new(&luma_row);
+
+    let (is_sx, is_sy) = match layout {
+        Rav1dPixelLayoutSubSampled::I420 => (true, true),
+        Rav1dPixelLayoutSubSampled::I422 => (true, false),
+        Rav1dPixelLayoutSubSampled::I444 => (false, false),
+    };
+
+    // Call inner functions directly, bypassing FFI wrappers.
     unsafe {
-        match (BD::BPC, layout) {
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => fguv_32x32xn_i420_8bpc_avx2(
-                dst_row_ptr,
-                src_row_ptr,
-                stride,
-                data_c,
+        match BD::BPC {
+            BPC::BPC8 => fguv_inner_8bpc(
+                dst_row_ptr as *mut u8,
+                src_row_ptr as *const u8,
+                stride as isize,
+                data,
                 pw,
                 scaling_ptr,
-                grain_lut_ptr,
-                bh_c,
-                row_num_c,
-                luma_row_ptr,
-                luma_stride,
-                uv_pl,
-                is_id_c,
-                bd_c,
-                dst_row_ffi,
-                src_row_ffi,
-                luma_row_ffi,
+                grain_lut as *const GrainLut<BD::Entry> as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+                bh,
+                row_num,
+                luma_row_ptr as *const u8,
+                luma_stride as isize,
+                is_uv,
+                is_id,
+                is_sx,
+                is_sy,
             ),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => fguv_32x32xn_i422_8bpc_avx2(
-                dst_row_ptr,
-                src_row_ptr,
-                stride,
-                data_c,
+            BPC::BPC16 => fguv_inner_16bpc(
+                dst_row_ptr as *mut u16,
+                src_row_ptr as *const u16,
+                stride / 2,
+                data,
                 pw,
                 scaling_ptr,
-                grain_lut_ptr,
-                bh_c,
-                row_num_c,
-                luma_row_ptr,
-                luma_stride,
-                uv_pl,
-                is_id_c,
-                bd_c,
-                dst_row_ffi,
-                src_row_ffi,
-                luma_row_ffi,
-            ),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => fguv_32x32xn_i444_8bpc_avx2(
-                dst_row_ptr,
-                src_row_ptr,
-                stride,
-                data_c,
-                pw,
-                scaling_ptr,
-                grain_lut_ptr,
-                bh_c,
-                row_num_c,
-                luma_row_ptr,
-                luma_stride,
-                uv_pl,
-                is_id_c,
-                bd_c,
-                dst_row_ffi,
-                src_row_ffi,
-                luma_row_ffi,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => fguv_32x32xn_i420_16bpc_avx2(
-                dst_row_ptr,
-                src_row_ptr,
-                stride,
-                data_c,
-                pw,
-                scaling_ptr,
-                grain_lut_ptr,
-                bh_c,
-                row_num_c,
-                luma_row_ptr,
-                luma_stride,
-                uv_pl,
-                is_id_c,
-                bd_c,
-                dst_row_ffi,
-                src_row_ffi,
-                luma_row_ffi,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => fguv_32x32xn_i422_16bpc_avx2(
-                dst_row_ptr,
-                src_row_ptr,
-                stride,
-                data_c,
-                pw,
-                scaling_ptr,
-                grain_lut_ptr,
-                bh_c,
-                row_num_c,
-                luma_row_ptr,
-                luma_stride,
-                uv_pl,
-                is_id_c,
-                bd_c,
-                dst_row_ffi,
-                src_row_ffi,
-                luma_row_ffi,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => fguv_32x32xn_i444_16bpc_avx2(
-                dst_row_ptr,
-                src_row_ptr,
-                stride,
-                data_c,
-                pw,
-                scaling_ptr,
-                grain_lut_ptr,
-                bh_c,
-                row_num_c,
-                luma_row_ptr,
-                luma_stride,
-                uv_pl,
-                is_id_c,
-                bd_c,
-                dst_row_ffi,
-                src_row_ffi,
-                luma_row_ffi,
+                grain_lut as *const GrainLut<BD::Entry> as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+                bh,
+                row_num,
+                luma_row_ptr as *const u16,
+                luma_stride / 2,
+                is_uv,
+                is_id,
+                is_sx,
+                is_sy,
+                bd.into_c(),
             ),
         }
     }

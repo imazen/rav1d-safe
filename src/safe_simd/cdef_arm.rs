@@ -683,7 +683,7 @@ fn cdef_find_dir_16bpc_inner(img: PicOffset, variance: &mut c_uint, bitdepth_max
 // FFI WRAPPERS
 // ============================================================================
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn cdef_filter_8x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -720,7 +720,7 @@ pub unsafe extern "C" fn cdef_filter_8x8_8bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn cdef_filter_4x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -757,7 +757,7 @@ pub unsafe extern "C" fn cdef_filter_4x8_8bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn cdef_filter_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -794,7 +794,7 @@ pub unsafe extern "C" fn cdef_filter_4x4_8bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn cdef_find_dir_8bpc_neon(
     _dst_ptr: *const DynPixel,
     _dst_stride: ptrdiff_t,
@@ -806,7 +806,7 @@ pub unsafe extern "C" fn cdef_find_dir_8bpc_neon(
     cdef_find_dir_8bpc_inner(img, variance)
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn cdef_filter_8x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -844,7 +844,7 @@ pub unsafe extern "C" fn cdef_filter_8x8_16bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn cdef_filter_4x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -882,7 +882,7 @@ pub unsafe extern "C" fn cdef_filter_4x8_16bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn cdef_filter_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -920,7 +920,7 @@ pub unsafe extern "C" fn cdef_filter_4x4_16bpc_neon(
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn cdef_find_dir_16bpc_neon(
     _dst_ptr: *const DynPixel,
     _dst_stride: ptrdiff_t,
@@ -953,114 +953,30 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
 
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-    let stride = dst.stride();
-    let left_ptr = std::ptr::from_ref(left).cast();
-    let top_ptr = top.as_ptr::<BD>().cast();
-    let bottom_ptr = bottom.wrapping_as_ptr::<BD>().cast();
-    let top_ffi = FFISafe::new(&top);
-    let bottom_ffi = FFISafe::new(&bottom);
-    let bd_c = bd.into_c();
-    let dst_ffi = FFISafe::new(&dst);
+    let (w, h) = match variant {
+        0 => (8, 8),
+        1 => (4, 8),
+        _ => (4, 4),
+    };
 
-    // SAFETY: NEON always available on aarch64. Pointers derived from valid types.
+    // Call inner functions directly, bypassing FFI wrappers.
+    // SAFETY: left pointer cast is safe because LeftPixelRow2px<BD::Pixel> has same layout for u8/u16.
     unsafe {
-        match (BD::BPC, variant) {
-            (BPC::BPC8, 0) => cdef_filter_8x8_8bpc_neon(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
+        match BD::BPC {
+            BPC::BPC8 => cdef_filter_block_8bpc_inner(
+                dst,
+                &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]),
+                &top, &bottom,
+                pri_strength, sec_strength, dir, damping, edges,
+                w, h,
             ),
-            (BPC::BPC8, 1) => cdef_filter_4x8_8bpc_neon(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
-            ),
-            (BPC::BPC8, _) => cdef_filter_4x4_8bpc_neon(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
-            ),
-            (BPC::BPC16, 0) => cdef_filter_8x8_16bpc_neon(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
-            ),
-            (BPC::BPC16, 1) => cdef_filter_4x8_16bpc_neon(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
-            ),
-            (BPC::BPC16, _) => cdef_filter_4x4_16bpc_neon(
-                dst_ptr,
-                stride,
-                left_ptr,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd_c,
-                dst_ffi,
-                top_ffi,
-                bottom_ffi,
+            BPC::BPC16 => cdef_filter_block_16bpc_inner(
+                dst,
+                &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]),
+                &top, &bottom,
+                pri_strength, sec_strength, dir, damping, edges,
+                w, h,
+                bd.into_c(),
             ),
         }
     }
@@ -1076,17 +992,9 @@ pub fn cdef_dir_dispatch<BD: BitDepth>(
 ) -> Option<c_int> {
     use crate::include::common::bitdepth::BPC;
 
-    let dst_ptr = dst.as_ptr::<BD>().cast();
-    let dst_stride = dst.stride();
-    let bd_c = bd.into_c();
-    let dst_ffi = FFISafe::new(&dst);
-
-    // SAFETY: NEON always available on aarch64. Pointers from valid dst.
-    let dir = unsafe {
-        match BD::BPC {
-            BPC::BPC8 => cdef_find_dir_8bpc_neon(dst_ptr, dst_stride, variance, bd_c, dst_ffi),
-            BPC::BPC16 => cdef_find_dir_16bpc_neon(dst_ptr, dst_stride, variance, bd_c, dst_ffi),
-        }
+    let dir = match BD::BPC {
+        BPC::BPC8 => cdef_find_dir_8bpc_inner(dst, variance),
+        BPC::BPC16 => cdef_find_dir_16bpc_inner(dst, variance, bd.into_c()),
     };
     Some(dir)
 }
