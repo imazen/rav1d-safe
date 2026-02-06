@@ -20,7 +20,6 @@ use crate::src::ffi_safe::FFISafe;
 // ============================================================================
 // DC_128 Prediction (fill with mid-value)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// DC_128 prediction: fill block with 128 (8bpc) or 1 << (bitdepth - 1) (16bpc)
 #[cfg(target_arch = "aarch64")]
@@ -63,7 +62,6 @@ pub unsafe extern "C" fn ipred_dc_128_8bpc_neon(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_128_16bpc_neon(
@@ -111,7 +109,6 @@ pub unsafe extern "C" fn ipred_dc_128_16bpc_neon(
 // ============================================================================
 // Vertical Prediction (copy top row)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Vertical prediction: copy the top row to all rows in the block
 #[cfg(target_arch = "aarch64")]
@@ -156,7 +153,6 @@ pub unsafe extern "C" fn ipred_v_8bpc_neon(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_v_16bpc_neon(
@@ -204,7 +200,6 @@ pub unsafe extern "C" fn ipred_v_16bpc_neon(
 // ============================================================================
 // Horizontal Prediction (fill from left pixels)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Horizontal prediction: fill each row with the left pixel
 #[cfg(target_arch = "aarch64")]
@@ -249,7 +244,6 @@ pub unsafe extern "C" fn ipred_h_8bpc_neon(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_h_16bpc_neon(
@@ -297,7 +291,6 @@ pub unsafe extern "C" fn ipred_h_16bpc_neon(
 // ============================================================================
 // DC Prediction (average of top and left)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// DC prediction: average of top and left pixels
 #[cfg(target_arch = "aarch64")]
@@ -353,7 +346,6 @@ pub unsafe extern "C" fn ipred_dc_8bpc_neon(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_16bpc_neon(
@@ -412,7 +404,6 @@ pub unsafe extern "C" fn ipred_dc_16bpc_neon(
 // ============================================================================
 // DC_TOP Prediction (average of top only)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_top_8bpc_neon(
@@ -461,7 +452,6 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_neon(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_top_16bpc_neon(
@@ -515,7 +505,6 @@ pub unsafe extern "C" fn ipred_dc_top_16bpc_neon(
 // ============================================================================
 // DC_LEFT Prediction (average of left only)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_left_8bpc_neon(
@@ -564,7 +553,6 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_neon(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_left_16bpc_neon(
@@ -637,7 +625,6 @@ fn paeth(left: i32, top: i32, topleft: i32) -> i32 {
         topleft
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_paeth_8bpc_neon(
@@ -672,7 +659,6 @@ pub unsafe extern "C" fn ipred_paeth_8bpc_neon(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_paeth_16bpc_neon(
@@ -711,7 +697,6 @@ pub unsafe extern "C" fn ipred_paeth_16bpc_neon(
 // ============================================================================
 // Smooth Prediction
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_8bpc_neon(
@@ -758,7 +743,6 @@ pub unsafe extern "C" fn ipred_smooth_8bpc_neon(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_16bpc_neon(
@@ -805,7 +789,6 @@ pub unsafe extern "C" fn ipred_smooth_16bpc_neon(
 // ============================================================================
 // Smooth V Prediction (vertical only)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_v_8bpc_neon(
@@ -840,7 +823,6 @@ pub unsafe extern "C" fn ipred_smooth_v_8bpc_neon(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_v_16bpc_neon(
@@ -880,7 +862,6 @@ pub unsafe extern "C" fn ipred_smooth_v_16bpc_neon(
 // ============================================================================
 // Smooth H Prediction (horizontal only)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_h_8bpc_neon(
@@ -915,7 +896,6 @@ pub unsafe extern "C" fn ipred_smooth_h_8bpc_neon(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_h_16bpc_neon(

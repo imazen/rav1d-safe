@@ -98,7 +98,6 @@ fn avg_8bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// AVG operation for 8-bit pixels - extern "C" wrapper for dispatch
 #[cfg(target_arch = "aarch64")]
@@ -192,7 +191,6 @@ fn avg_16bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// AVG operation for 16-bit pixels - extern "C" wrapper
 #[cfg(target_arch = "aarch64")]
@@ -282,7 +280,6 @@ fn w_avg_8bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_avg_8bpc_neon(
@@ -365,7 +362,6 @@ fn w_avg_16bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_avg_16bpc_neon(
@@ -461,7 +457,6 @@ fn mask_8bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn mask_8bpc_neon(
@@ -555,7 +550,6 @@ fn mask_16bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn mask_16bpc_neon(
@@ -656,7 +650,6 @@ fn blend_8bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_8bpc_neon(
@@ -755,7 +748,6 @@ fn blend_16bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_16bpc_neon(
@@ -881,7 +873,6 @@ fn blend_v_8bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_v_8bpc_neon(
@@ -974,7 +965,6 @@ fn blend_v_16bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_v_16bpc_neon(
@@ -1086,7 +1076,6 @@ fn blend_h_8bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_h_8bpc_neon(
@@ -1186,7 +1175,6 @@ fn blend_h_16bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_h_16bpc_neon(
@@ -1413,7 +1401,6 @@ unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_444_8bpc_neon(
@@ -1438,7 +1425,6 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
         w, h, mask.as_mut_slice(), sign as u8
     );
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_422_8bpc_neon(
@@ -1463,7 +1449,6 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
         w, h, mask.as_mut_slice(), sign as u8
     );
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_420_8bpc_neon(
@@ -1695,7 +1680,6 @@ fn put_bilin_8bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn put_bilin_8bpc_neon(
@@ -1928,7 +1912,6 @@ fn prep_bilin_8bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn prep_bilin_8bpc_neon(
@@ -2054,7 +2037,6 @@ fn put_bilin_16bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn put_bilin_16bpc_neon(
@@ -2181,7 +2163,6 @@ fn prep_bilin_16bpc_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn prep_bilin_16bpc_neon(
@@ -2280,7 +2261,6 @@ unsafe fn w_mask_16bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_444_16bpc_neon(
@@ -2306,7 +2286,6 @@ pub unsafe extern "C" fn w_mask_444_16bpc_neon(
         w, h, mask.as_mut_slice(), sign as u8, bitdepth_max
     );
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_422_16bpc_neon(
@@ -2332,7 +2311,6 @@ pub unsafe extern "C" fn w_mask_422_16bpc_neon(
         w, h, mask.as_mut_slice(), sign as u8, bitdepth_max
     );
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_420_16bpc_neon(

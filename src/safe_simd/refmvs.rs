@@ -11,7 +11,6 @@ use std::arch::x86_64::*;
 
 use crate::src::align::Align16;
 use crate::src::refmvs::RefMvsBlock;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// AVX2 implementation of splat_mv.
 ///

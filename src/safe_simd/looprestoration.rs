@@ -320,7 +320,6 @@ fn reconstruct_lpf_offset(lpf: &DisjointMut<AlignedVec64<u8>>, ptr: *const u8) -
     let base = lpf.as_mut_ptr();
     (ptr as isize - base as isize)
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for Wiener filter 7-tap 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -354,7 +353,6 @@ pub unsafe extern "C" fn wiener_filter7_8bpc_avx2(
         wiener_filter7_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for Wiener filter 5-tap 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -394,7 +392,6 @@ fn reconstruct_lpf_offset_16bpc(lpf: &DisjointMut<AlignedVec64<u8>>, ptr: *const
     let base = lpf.as_mut_ptr().cast::<u16>();
     (ptr as isize - base as isize) / 2 // Divide by sizeof(u16)
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for Wiener filter 7-tap 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -425,7 +422,6 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
         wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for Wiener filter 5-tap 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -889,7 +885,6 @@ unsafe fn sgr_mix_8bpc_avx2_inner(
 // ============================================================================
 // SGR FFI WRAPPERS
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for SGR 5x5 filter 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -920,7 +915,6 @@ pub unsafe extern "C" fn sgr_filter_5x5_8bpc_avx2(
         sgr_5x5_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for SGR 3x3 filter 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -951,7 +945,6 @@ pub unsafe extern "C" fn sgr_filter_3x3_8bpc_avx2(
         sgr_3x3_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for SGR mix filter 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -1421,7 +1414,6 @@ unsafe fn sgr_mix_16bpc_avx2_inner(
 // ============================================================================
 // SGR 16bpc FFI WRAPPERS
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for SGR 5x5 filter 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -1452,7 +1444,6 @@ pub unsafe extern "C" fn sgr_filter_5x5_16bpc_avx2(
         sgr_5x5_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for SGR 3x3 filter 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -1483,7 +1474,6 @@ pub unsafe extern "C" fn sgr_filter_3x3_16bpc_avx2(
         sgr_3x3_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for SGR mix filter 16bpc
 #[cfg(target_arch = "x86_64")]

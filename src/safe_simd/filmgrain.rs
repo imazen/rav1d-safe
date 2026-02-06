@@ -60,7 +60,6 @@ const AR_PAD: usize = 3;
 // ============================================================================
 // generate_grain_y - 8bpc (scalar, LFSR is inherently serial)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -112,7 +111,6 @@ fn generate_grain_y_inner_8bpc(buf: &mut GrainLut<i8>, data: &Rav1dFilmGrainData
 // ============================================================================
 // generate_grain_y - 16bpc (scalar)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -229,7 +227,6 @@ fn generate_grain_uv_inner_8bpc(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -245,7 +242,6 @@ pub unsafe extern "C" fn generate_grain_uv_420_8bpc_avx2(
     let data: Rav1dFilmGrainData = data.clone().into();
     generate_grain_uv_inner_8bpc(buf, buf_y, &data, uv != 0, true, true);
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -261,7 +257,6 @@ pub unsafe extern "C" fn generate_grain_uv_422_8bpc_avx2(
     let data: Rav1dFilmGrainData = data.clone().into();
     generate_grain_uv_inner_8bpc(buf, buf_y, &data, uv != 0, true, false);
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -346,7 +341,6 @@ fn generate_grain_uv_inner_16bpc(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -363,7 +357,6 @@ pub unsafe extern "C" fn generate_grain_uv_420_16bpc_avx2(
     let bitdepth = if bitdepth_max >= 4095 { 12 } else { 10 };
     generate_grain_uv_inner_16bpc(buf, buf_y, &data, uv != 0, true, true, bitdepth);
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -380,7 +373,6 @@ pub unsafe extern "C" fn generate_grain_uv_422_16bpc_avx2(
     let bitdepth = if bitdepth_max >= 4095 { 12 } else { 10 };
     generate_grain_uv_inner_16bpc(buf, buf_y, &data, uv != 0, true, false, bitdepth);
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -581,7 +573,6 @@ unsafe fn fgy_row_simd_8bpc(
         x += 1;
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Apply luma grain - 8bpc AVX2
 #[cfg(target_arch = "x86_64")]
@@ -735,7 +726,6 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
 // ============================================================================
 // fgy_32x32xn - 16bpc AVX2
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Apply luma grain - 16bpc AVX2
 #[cfg(target_arch = "x86_64")]
@@ -1138,7 +1128,6 @@ unsafe fn compute_uv_scaling_val(
 }
 
 // fguv FFI wrappers for each subsampling mode (8bpc)
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -1180,7 +1169,6 @@ pub unsafe extern "C" fn fguv_32x32xn_i420_8bpc_avx2(
         true,  // is_sy
     );
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
@@ -1222,7 +1210,6 @@ pub unsafe extern "C" fn fguv_32x32xn_i422_8bpc_avx2(
         false, // is_sy
     );
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]

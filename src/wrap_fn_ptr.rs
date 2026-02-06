@@ -87,6 +87,17 @@ macro_rules! wrap_fn_ptr {
             pub struct Fn(());
 
             #[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+            impl Fn {
+                /// Accept a function pointer but discard it — direct dispatch
+                /// bypasses function pointers entirely.
+                pub(super) const fn new(
+                    _fn_ptr: unsafe extern "C" fn($($arg_name: $arg_ty),*) -> $return_ty
+                ) -> Self {
+                    Fn(())
+                }
+            }
+
+            #[cfg(not(any(feature = "asm", feature = "c-ffi")))]
             impl DefaultValue for Fn {
                 const DEFAULT: Self = Fn(());
             }

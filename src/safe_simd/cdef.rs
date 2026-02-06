@@ -427,7 +427,6 @@ unsafe fn cdef_filter_8x8_8bpc_avx2_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for CDEF 8x8 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -591,7 +590,6 @@ unsafe fn cdef_filter_4x8_8bpc_avx2_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for CDEF 4x8 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -755,7 +753,6 @@ unsafe fn cdef_filter_4x4_8bpc_avx2_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for CDEF 4x4 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -789,7 +786,6 @@ pub unsafe extern "C" fn cdef_filter_4x4_8bpc_avx2(
         );
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// CDEF direction finding for 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -1196,7 +1192,6 @@ unsafe fn cdef_filter_4x4_16bpc_avx2_inner(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for CDEF filter 8x8 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -1230,7 +1225,6 @@ pub unsafe extern "C" fn cdef_filter_8x8_16bpc_avx2(
         );
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for CDEF filter 4x8 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -1264,7 +1258,6 @@ pub unsafe extern "C" fn cdef_filter_4x8_16bpc_avx2(
         );
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for CDEF filter 4x4 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -1298,7 +1291,6 @@ pub unsafe extern "C" fn cdef_filter_4x4_16bpc_avx2(
         );
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for cdef_find_dir 16bpc
 #[cfg(target_arch = "x86_64")]

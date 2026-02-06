@@ -3325,7 +3325,7 @@ impl Rav1dMCDSPContext {
     /// Uses Rust intrinsics via archmage/safe_unaligned_simd instead.
     #[cfg(all(
         not(feature = "asm"),
-        not(feature = "asm"),
+        feature = "c-ffi",
         any(target_arch = "x86", target_arch = "x86_64")
     ))]
     #[inline(always)]
@@ -3439,7 +3439,7 @@ impl Rav1dMCDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
     const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
         use crate::src::safe_simd::mc_arm as safe_mc_arm;
@@ -3560,7 +3560,7 @@ impl Rav1dMCDSPContext {
 
         #[cfg(all(
             not(feature = "asm"),
-            not(feature = "asm"),
+            feature = "c-ffi",
             any(target_arch = "x86", target_arch = "x86_64")
         ))]
         {
@@ -3569,7 +3569,7 @@ impl Rav1dMCDSPContext {
 
         #[cfg(all(
             not(feature = "asm"),
-            not(feature = "asm"),
+            feature = "c-ffi",
             target_arch = "aarch64"
         ))]
         {

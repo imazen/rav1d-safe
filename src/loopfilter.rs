@@ -599,7 +599,7 @@ impl Rav1dLoopFilterDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
     #[inline(always)]
     const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
@@ -627,7 +627,7 @@ impl Rav1dLoopFilterDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
     #[inline(always)]
     const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
@@ -665,12 +665,12 @@ impl Rav1dLoopFilterDSPContext {
             }
         }
 
-        #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+        #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
         {
             return self.init_x86_safe_simd::<BD>(flags);
         }
 
-        #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+        #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
         {
             return self.init_arm_safe_simd::<BD>(flags);
         }

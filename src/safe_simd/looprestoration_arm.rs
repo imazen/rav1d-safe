@@ -169,7 +169,6 @@ fn wiener_filter_16bpc_inner(
 // ============================================================================
 // FFI WRAPPERS - 8BPC
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn wiener_filter7_8bpc_neon(
@@ -192,7 +191,6 @@ pub unsafe extern "C" fn wiener_filter7_8bpc_neon(
 
     wiener_filter_8bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, 7);
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn wiener_filter5_8bpc_neon(
@@ -219,7 +217,6 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_neon(
 // ============================================================================
 // FFI WRAPPERS - 16BPC
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn wiener_filter7_16bpc_neon(
@@ -242,7 +239,6 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_neon(
 
     wiener_filter_16bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, 7, bitdepth_max);
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn wiener_filter5_16bpc_neon(
@@ -663,7 +659,6 @@ fn sgr_mix_8bpc_inner(
 // ============================================================================
 // SGR FFI WRAPPERS - 8BPC
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn sgr_filter_5x5_8bpc_neon(
@@ -686,7 +681,6 @@ pub unsafe extern "C" fn sgr_filter_5x5_8bpc_neon(
 
     sgr_5x5_8bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges);
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn sgr_filter_3x3_8bpc_neon(
@@ -709,7 +703,6 @@ pub unsafe extern "C" fn sgr_filter_3x3_8bpc_neon(
 
     sgr_3x3_8bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges);
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn sgr_filter_mix_8bpc_neon(
@@ -1128,7 +1121,6 @@ fn sgr_mix_16bpc_inner(
 // ============================================================================
 // SGR FFI WRAPPERS - 16BPC
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn sgr_filter_5x5_16bpc_neon(
@@ -1151,7 +1143,6 @@ pub unsafe extern "C" fn sgr_filter_5x5_16bpc_neon(
 
     sgr_5x5_16bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, bitdepth_max);
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn sgr_filter_3x3_16bpc_neon(
@@ -1174,7 +1165,6 @@ pub unsafe extern "C" fn sgr_filter_3x3_16bpc_neon(
 
     sgr_3x3_16bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, bitdepth_max);
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn sgr_filter_mix_16bpc_neon(

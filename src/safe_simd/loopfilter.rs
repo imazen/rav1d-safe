@@ -439,7 +439,6 @@ unsafe fn lpf_v_sb_uv_8bpc_avx2_inner(
 // ============================================================================
 // FFI WRAPPERS
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for Y horizontal filter
 #[cfg(target_arch = "x86_64")]
@@ -469,7 +468,6 @@ pub unsafe extern "C" fn lpf_h_sb_y_8bpc_avx2(
         );
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for Y vertical filter
 #[cfg(target_arch = "x86_64")]
@@ -499,7 +497,6 @@ pub unsafe extern "C" fn lpf_v_sb_y_8bpc_avx2(
         );
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for UV horizontal filter
 #[cfg(target_arch = "x86_64")]
@@ -529,7 +526,6 @@ pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_avx2(
         );
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for UV vertical filter
 #[cfg(target_arch = "x86_64")]
@@ -938,7 +934,6 @@ unsafe fn lpf_v_sb_uv_16bpc_avx2_inner(
         lvl_offset += 4 * b4_stridea;
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for Y horizontal filter 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -968,7 +963,6 @@ pub unsafe extern "C" fn lpf_h_sb_y_16bpc_avx2(
         );
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for Y vertical filter 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -998,7 +992,6 @@ pub unsafe extern "C" fn lpf_v_sb_y_16bpc_avx2(
         );
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for UV horizontal filter 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -1028,7 +1021,6 @@ pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_avx2(
         );
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FFI wrapper for UV vertical filter 16bpc
 #[cfg(target_arch = "x86_64")]

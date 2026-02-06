@@ -92,7 +92,6 @@ fn generate_grain_y_inner_8bpc(buf: &mut GrainLut<i8>, data: &Rav1dFilmGrainData
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 pub unsafe extern "C" fn generate_grain_y_8bpc_neon(
     buf: *mut GrainLut<DynEntry>,
@@ -139,7 +138,6 @@ fn generate_grain_y_inner_16bpc(buf: &mut GrainLut<i16>, data: &Rav1dFilmGrainDa
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 pub unsafe extern "C" fn generate_grain_y_16bpc_neon(
     buf: *mut GrainLut<DynEntry>,
@@ -368,7 +366,6 @@ unsafe fn fgy_row_neon_8bpc(
         x += 1;
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 pub unsafe extern "C" fn fgy_32x32xn_8bpc_neon(
     dst_row_ptr: *mut DynPixel,
@@ -487,7 +484,6 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_neon(
 // ============================================================================
 // fgy_32x32xn - 16bpc NEON
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 pub unsafe extern "C" fn fgy_32x32xn_16bpc_neon(
     dst_row_ptr: *mut DynPixel,

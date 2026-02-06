@@ -2500,7 +2500,7 @@ impl Rav1dIntraPredDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
     #[inline(always)]
     const fn init_x86_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::src::safe_simd::ipred as safe_ipred;
@@ -2573,7 +2573,7 @@ impl Rav1dIntraPredDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
     #[inline(always)]
     const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
@@ -2652,12 +2652,12 @@ impl Rav1dIntraPredDSPContext {
     #[inline(always)]
     #[cfg(not(feature = "asm"))]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(feature = "c-ffi", target_arch = "x86_64"))]
         {
             return self.init_x86_safe_simd::<BD>(flags);
         }
 
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(all(feature = "c-ffi", target_arch = "aarch64"))]
         {
             return self.init_arm_safe_simd::<BD>(flags);
         }

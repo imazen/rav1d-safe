@@ -223,7 +223,7 @@ impl Rav1dPalDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
     #[inline(always)]
     const fn init_x86_safe_simd(mut self, _flags: CpuFlags) -> Self {
         self.pal_idx_finish =
@@ -245,7 +245,7 @@ impl Rav1dPalDSPContext {
             }
         }
 
-        #[cfg(not(feature = "asm"))]
+        #[cfg(all(not(feature = "asm"), feature = "c-ffi"))]
         {
             #[cfg(target_arch = "x86_64")]
             {

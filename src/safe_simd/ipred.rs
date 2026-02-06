@@ -21,7 +21,6 @@ use crate::src::ffi_safe::FFISafe;
 // ============================================================================
 // DC_128 Prediction (fill with mid-value)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// DC_128 prediction: fill block with 128 (or 1 << (bitdepth - 1))
 ///
@@ -72,7 +71,6 @@ pub unsafe extern "C" fn ipred_dc_128_8bpc_avx2(
 // ============================================================================
 // Vertical Prediction (copy top row)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Vertical prediction: copy the top row to all rows in the block
 #[cfg(target_arch = "x86_64")]
@@ -151,7 +149,6 @@ pub unsafe extern "C" fn ipred_v_8bpc_avx2(
 // ============================================================================
 // Horizontal Prediction (fill from left pixels)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Horizontal prediction: fill each row with the left pixel value
 #[cfg(target_arch = "x86_64")]
@@ -203,7 +200,6 @@ pub unsafe extern "C" fn ipred_h_8bpc_avx2(
 // ============================================================================
 // DC Prediction (average of top and left)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// DC prediction: fill block with average of top and left edge pixels
 #[cfg(target_arch = "x86_64")]
@@ -263,7 +259,6 @@ pub unsafe extern "C" fn ipred_dc_8bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// DC_TOP prediction: fill block with average of top edge only
 #[cfg(target_arch = "x86_64")]
@@ -318,7 +313,6 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// DC_LEFT prediction: fill block with average of left edge only
 #[cfg(target_arch = "x86_64")]
@@ -377,7 +371,6 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
 // ============================================================================
 // PAETH Prediction
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// PAETH prediction: each pixel is closest of left, top, or topleft to (left + top - topleft)
 ///
@@ -505,7 +498,6 @@ pub unsafe extern "C" fn ipred_paeth_8bpc_avx2(
 // ============================================================================
 
 use crate::src::tables::dav1d_sm_weights;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// SMOOTH prediction: weighted blend of top/bottom and left/right edges
 ///
@@ -606,7 +598,6 @@ pub unsafe extern "C" fn ipred_smooth_8bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// SMOOTH_V prediction: vertical-only weighted blend (top/bottom)
 ///
@@ -686,7 +677,6 @@ pub unsafe extern "C" fn ipred_smooth_v_8bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// SMOOTH_H prediction: horizontal-only weighted blend (left/right)
 ///
@@ -772,7 +762,6 @@ pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
 // ============================================================================
 
 use crate::src::tables::{dav1d_dr_intra_derivative, dav1d_filter_intra_taps, filter_fn, FLT_INCR};
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FILTER prediction: uses directional filter taps on 4x2 blocks
 ///
@@ -866,7 +855,6 @@ pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
 // ============================================================================
 // Z1 Prediction (angular prediction for angles < 90)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Z1 prediction: directional prediction using top edge only (angles < 90°)
 ///
@@ -1066,7 +1054,6 @@ unsafe fn ipred_z1_scalar(
 // ============================================================================
 // Z2 Prediction (angular prediction for angles 90-180)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Z2 prediction: directional prediction using both top AND left edges (angles 90-180°)
 ///
@@ -1272,7 +1259,6 @@ unsafe fn ipred_z2_scalar(
 // ============================================================================
 // Z3 Prediction (angular prediction for angles > 180)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Z3 prediction: directional prediction using left edge only (angles > 180°)
 ///
@@ -1407,7 +1393,6 @@ unsafe fn ipred_z3_scalar(
 // ============================================================================
 // 16bpc IMPLEMENTATIONS
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// DC_128 prediction for 16bpc: fill block with mid-value
 ///
@@ -1463,7 +1448,6 @@ pub unsafe extern "C" fn ipred_dc_128_16bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Vertical prediction for 16bpc: copy top row to all rows
 #[cfg(target_arch = "x86_64")]
@@ -1517,7 +1501,6 @@ pub unsafe extern "C" fn ipred_v_16bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Horizontal prediction for 16bpc: fill each row with its left pixel
 #[cfg(target_arch = "x86_64")]
@@ -1570,7 +1553,6 @@ pub unsafe extern "C" fn ipred_h_16bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// DC prediction for 16bpc: average of top and left edge pixels
 #[cfg(target_arch = "x86_64")]
@@ -1635,7 +1617,6 @@ pub unsafe extern "C" fn ipred_dc_16bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// DC_TOP prediction for 16bpc: average of top edge pixels
 #[cfg(target_arch = "x86_64")]
@@ -1690,7 +1671,6 @@ pub unsafe extern "C" fn ipred_dc_top_16bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// DC_LEFT prediction for 16bpc: average of left edge pixels
 #[cfg(target_arch = "x86_64")]
@@ -1745,7 +1725,6 @@ pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// PAETH prediction for 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -1799,7 +1778,6 @@ pub unsafe extern "C" fn ipred_paeth_16bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// SMOOTH prediction for 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -1849,7 +1827,6 @@ pub unsafe extern "C" fn ipred_smooth_16bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// SMOOTH_V prediction for 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -1889,7 +1866,6 @@ pub unsafe extern "C" fn ipred_smooth_v_16bpc_avx2(
         }
     }
 }
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// SMOOTH_H prediction for 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -1933,7 +1909,6 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
 // ============================================================================
 // Z1 Prediction 16bpc (angular prediction for angles < 90)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Z1 prediction for 16bpc: directional prediction using top edge only (angles < 90°)
 #[cfg(target_arch = "x86_64")]
@@ -2103,7 +2078,6 @@ unsafe fn ipred_z1_16bpc_scalar(
 // ============================================================================
 // Z2 Prediction 16bpc (angular prediction for angles 90-180)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Z2 prediction for 16bpc: directional prediction using both top AND left edges (angles 90-180°)
 #[cfg(target_arch = "x86_64")]
@@ -2295,7 +2269,6 @@ unsafe fn ipred_z2_16bpc_scalar(
 // ============================================================================
 // Z3 Prediction 16bpc (angular prediction for angles > 180)
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// Z3 prediction for 16bpc: directional prediction using left edge only (angles > 180°)
 #[cfg(target_arch = "x86_64")]
@@ -2423,7 +2396,6 @@ unsafe fn ipred_z3_16bpc_scalar(
 // ============================================================================
 // FILTER Prediction 16bpc
 // ============================================================================
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
 
 /// FILTER prediction for 16bpc: uses 7-tap filter for intra prediction
 ///
