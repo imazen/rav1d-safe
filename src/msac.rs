@@ -17,7 +17,11 @@ use std::slice;
 
 // x86_64 SIMD intrinsics for safe_simd implementations
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-use std::arch::x86_64::*;
+use core::arch::x86_64::*;
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+use archmage::{arcane, Desktop64, SimdToken};
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+use safe_unaligned_simd::x86_64 as safe_simd;
 
 // aarch64 SIMD intrinsics for safe_simd implementations
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
@@ -525,8 +529,9 @@ static MIN_PROB_16: [u16; 31] = [
 /// AVX2 implementation of symbol_adapt16
 /// Uses parallel CDF probability calculation and comparison
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(
+#[arcane]
+fn rav1d_msac_decode_symbol_adapt16_avx2(
+    _t: Desktop64,
     s: &mut MsacContext,
     cdf: &mut [u16],
     n_symbols: u8,
@@ -535,7 +540,8 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(
     let n = n_symbols as usize;
 
     // Load CDF values (16 values = 256 bits)
-    let cdf_vec = unsafe { _mm256_loadu_si256(cdf.as_ptr() as *const __m256i) };
+    let cdf_arr: &[u16; 16] = cdf[..16].try_into().unwrap();
+    let cdf_vec = safe_simd::_mm256_loadu_si256(cdf_arr);
 
     // Broadcast rng masked with 0xff00
     let rng_masked = (s.rng & 0xff00) as i16;
@@ -543,20 +549,20 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(
 
     // Calculate (cdf >> 6) << 7 then pmulhuw
     // This computes: ((cdf >> 6) * (rng >> 8)) >> 1
-    let cdf_shifted = _mm256_slli_epi16(_mm256_srli_epi16(cdf_vec, 6), 7);
+    let cdf_shifted = _mm256_slli_epi16::<7>(_mm256_srli_epi16::<6>(cdf_vec));
     let prod = _mm256_mulhi_epu16(cdf_shifted, rng_vec);
 
     // Load min_prob values offset by (15 - n_symbols)
     let min_prob_offset = 15 - n;
-    let min_prob =
-        unsafe { _mm256_loadu_si256(MIN_PROB_16.as_ptr().add(min_prob_offset) as *const __m256i) };
+    let min_prob_arr: &[u16; 16] = MIN_PROB_16[min_prob_offset..min_prob_offset + 16].try_into().unwrap();
+    let min_prob = safe_simd::_mm256_loadu_si256(min_prob_arr);
 
     // v = prod + min_prob
     let v = _mm256_add_epi16(prod, min_prob);
 
     // Store v for indexed access
     let mut v_arr = [0u16; 16];
-    unsafe { _mm256_storeu_si256(v_arr.as_mut_ptr() as *mut __m256i, v) };
+    safe_simd::_mm256_storeu_si256(&mut v_arr, v);
 
     // Compare using pmaxuw then equality: c >= v[i] iff max(c, v) == c
     let c_vec = _mm256_set1_epi16(c as i16);
@@ -821,11 +827,8 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
             };
         } else if #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))] {
             // SIMD AVX2 with runtime check, scalar fallback
-            if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-                // SAFETY: AVX2 verified by CpuFlags check above.
-                ret = unsafe {
-                    rav1d_msac_decode_symbol_adapt16_avx2(s, cdf, n_symbols)
-                } as c_uint;
+            if let Some(token) = Desktop64::summon() {
+                ret = rav1d_msac_decode_symbol_adapt16_avx2(token, s, cdf, n_symbols) as c_uint;
             } else {
                 ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
             }
