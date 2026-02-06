@@ -3604,83 +3604,6 @@ impl Rav1dLoopRestorationDSPContext {
 
         self
     }
-    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
-    #[inline(always)]
-    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::looprestoration as safe_lr;
-
-        if !flags.contains(CpuFlags::AVX2) {
-            return self;
-        }
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.wiener[0] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter7_8bpc_avx2);
-                self.wiener[1] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter5_8bpc_avx2);
-            }
-            BPC::BPC16 => {
-                self.wiener[0] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter7_16bpc_avx2);
-                self.wiener[1] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter5_16bpc_avx2);
-            }
-        }
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.sgr[0] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_5x5_8bpc_avx2);
-                self.sgr[1] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_3x3_8bpc_avx2);
-                self.sgr[2] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_mix_8bpc_avx2);
-            }
-            BPC::BPC16 => {
-                self.sgr[0] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_5x5_16bpc_avx2);
-                self.sgr[1] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_3x3_16bpc_avx2);
-                self.sgr[2] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_mix_16bpc_avx2);
-            }
-        }
-
-        self
-    }
-
-    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
-    #[inline(always)]
-    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::looprestoration_arm as safe_lr;
-
-        // Wire up Wiener and SGR filters
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.wiener[0] =
-                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter7_8bpc_neon);
-                self.wiener[1] =
-                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter5_8bpc_neon);
-                self.sgr[0] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_5x5_8bpc_neon);
-                self.sgr[1] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_3x3_8bpc_neon);
-                self.sgr[2] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_mix_8bpc_neon);
-            }
-            BPC::BPC16 => {
-                self.wiener[0] =
-                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter7_16bpc_neon);
-                self.wiener[1] =
-                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter5_16bpc_neon);
-                self.sgr[0] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_5x5_16bpc_neon);
-                self.sgr[1] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_3x3_16bpc_neon);
-                self.sgr[2] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_mix_16bpc_neon);
-            }
-        }
-
-        self
-    }
-
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags, bpc: u8) -> Self {
         #[cfg(feature = "asm")]
@@ -3693,18 +3616,6 @@ impl Rav1dLoopRestorationDSPContext {
             {
                 return self.init_arm::<BD>(flags, bpc);
             }
-        }
-
-        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
-        {
-            let _ = bpc;
-            return self.init_x86_safe_simd::<BD>(flags);
-        }
-
-        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
-        {
-            let _ = bpc;
-            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.

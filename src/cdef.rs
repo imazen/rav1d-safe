@@ -883,57 +883,6 @@ impl Rav1dCdefDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
-    #[inline(always)]
-    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
-        use crate::src::safe_simd::cdef as safe_cdef;
-
-        if !flags.contains(CpuFlags::AVX2) {
-            return self;
-        }
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.dir = cdef_dir::decl_fn_safe!(safe_cdef::cdef_find_dir_8bpc_avx2);
-                self.fb[0] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_8x8_8bpc_avx2);
-                self.fb[1] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x8_8bpc_avx2);
-                self.fb[2] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x4_8bpc_avx2);
-            }
-            BPC::BPC16 => {
-                self.dir = cdef_dir::decl_fn_safe!(safe_cdef::cdef_find_dir_16bpc_avx2);
-                self.fb[0] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_8x8_16bpc_avx2);
-                self.fb[1] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x8_16bpc_avx2);
-                self.fb[2] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x4_16bpc_avx2);
-            }
-        }
-
-        self
-    }
-
-    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
-    #[inline(always)]
-    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::cdef_arm as safe_cdef;
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.dir = cdef_dir::Fn::new(safe_cdef::cdef_find_dir_8bpc_neon);
-                self.fb[0] = cdef::Fn::new(safe_cdef::cdef_filter_8x8_8bpc_neon);
-                self.fb[1] = cdef::Fn::new(safe_cdef::cdef_filter_4x8_8bpc_neon);
-                self.fb[2] = cdef::Fn::new(safe_cdef::cdef_filter_4x4_8bpc_neon);
-            }
-            BPC::BPC16 => {
-                self.dir = cdef_dir::Fn::new(safe_cdef::cdef_find_dir_16bpc_neon);
-                self.fb[0] = cdef::Fn::new(safe_cdef::cdef_filter_8x8_16bpc_neon);
-                self.fb[1] = cdef::Fn::new(safe_cdef::cdef_filter_4x8_16bpc_neon);
-                self.fb[2] = cdef::Fn::new(safe_cdef::cdef_filter_4x4_16bpc_neon);
-            }
-        }
-
-        self
-    }
-
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -946,16 +895,6 @@ impl Rav1dCdefDSPContext {
             {
                 return self.init_arm::<BD>(flags);
             }
-        }
-
-        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
-        {
-            return self.init_x86_safe_simd::<BD>(flags);
-        }
-
-        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
-        {
-            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.

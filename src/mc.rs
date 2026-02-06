@@ -3163,111 +3163,6 @@ impl Rav1dMCDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
-    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::mc_arm as safe_mc_arm;
-
-        // NEON is always available on aarch64
-        self.avg = match BD::BPC {
-            BPC::BPC8 => avg::decl_fn_safe!(safe_mc_arm::avg_8bpc_neon),
-            BPC::BPC16 => avg::decl_fn_safe!(safe_mc_arm::avg_16bpc_neon),
-        };
-        self.w_avg = match BD::BPC {
-            BPC::BPC8 => w_avg::decl_fn_safe!(safe_mc_arm::w_avg_8bpc_neon),
-            BPC::BPC16 => w_avg::decl_fn_safe!(safe_mc_arm::w_avg_16bpc_neon),
-        };
-        self.mask = match BD::BPC {
-            BPC::BPC8 => mask::decl_fn_safe!(safe_mc_arm::mask_8bpc_neon),
-            BPC::BPC16 => mask::decl_fn_safe!(safe_mc_arm::mask_16bpc_neon),
-        };
-        self.blend = match BD::BPC {
-            BPC::BPC8 => blend::decl_fn_safe!(safe_mc_arm::blend_8bpc_neon),
-            BPC::BPC16 => blend::decl_fn_safe!(safe_mc_arm::blend_16bpc_neon),
-        };
-
-        self.blend_v = match BD::BPC {
-            BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_v_8bpc_neon),
-            BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_v_16bpc_neon),
-        };
-        self.blend_h = match BD::BPC {
-            BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_h_8bpc_neon),
-            BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_h_16bpc_neon),
-        };
-
-        // w_mask for 8bpc and 16bpc
-        self.w_mask = match BD::BPC {
-            BPC::BPC8 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                I420 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_420_8bpc_neon),
-                I422 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_422_8bpc_neon),
-                I444 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_444_8bpc_neon),
-            }),
-            BPC::BPC16 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                I420 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_420_16bpc_neon),
-                I422 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_422_16bpc_neon),
-                I444 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_444_16bpc_neon),
-            }),
-        };
-
-        // mc (put_8tap + bilinear) and mct (prep_8tap + bilinear)
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.mc = enum_map!(Filter2d => mc::Fn; match key {
-                    Regular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_8bpc_neon),
-                    RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_smooth_8bpc_neon),
-                    RegularSharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_sharp_8bpc_neon),
-                    SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_regular_8bpc_neon),
-                    Smooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_8bpc_neon),
-                    SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_sharp_8bpc_neon),
-                    SharpRegular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_regular_8bpc_neon),
-                    SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_smooth_8bpc_neon),
-                    Sharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_8bpc_neon),
-                    Bilinear => mc::decl_fn_safe!(safe_mc_arm::put_bilin_8bpc_neon),
-                });
-                self.mct = enum_map!(Filter2d => mct::Fn; match key {
-                    Regular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_8bpc_neon),
-                    RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_smooth_8bpc_neon),
-                    RegularSharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_sharp_8bpc_neon),
-                    SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_regular_8bpc_neon),
-                    Smooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_8bpc_neon),
-                    SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_sharp_8bpc_neon),
-                    SharpRegular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_regular_8bpc_neon),
-                    SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_smooth_8bpc_neon),
-                    Sharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_8bpc_neon),
-                    Bilinear => mct::decl_fn_safe!(safe_mc_arm::prep_bilin_8bpc_neon),
-                });
-            }
-            BPC::BPC16 => {
-                self.mc = enum_map!(Filter2d => mc::Fn; match key {
-                    Regular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_16bpc_neon),
-                    RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_smooth_16bpc_neon),
-                    RegularSharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_sharp_16bpc_neon),
-                    SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_regular_16bpc_neon),
-                    Smooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_16bpc_neon),
-                    SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_sharp_16bpc_neon),
-                    SharpRegular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_regular_16bpc_neon),
-                    SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_smooth_16bpc_neon),
-                    Sharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_16bpc_neon),
-                    Bilinear => mc::decl_fn_safe!(safe_mc_arm::put_bilin_16bpc_neon),
-                });
-                self.mct = enum_map!(Filter2d => mct::Fn; match key {
-                    Regular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_16bpc_neon),
-                    RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_smooth_16bpc_neon),
-                    RegularSharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_sharp_16bpc_neon),
-                    SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_regular_16bpc_neon),
-                    Smooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_16bpc_neon),
-                    SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_sharp_16bpc_neon),
-                    SharpRegular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_regular_16bpc_neon),
-                    SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_smooth_16bpc_neon),
-                    Sharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_16bpc_neon),
-                    Bilinear => mct::decl_fn_safe!(safe_mc_arm::prep_bilin_16bpc_neon),
-                });
-            }
-        }
-
-        self
-    }
-
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -3280,20 +3175,6 @@ impl Rav1dMCDSPContext {
             {
                 return self.init_arm::<BD>(flags);
             }
-        }
-
-        #[cfg(all(
-            not(feature = "asm"),
-            feature = "asm",
-            any(target_arch = "x86", target_arch = "x86_64")
-        ))]
-        {
-            return self.init_x86_safe_simd::<BD>(flags);
-        }
-
-        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
-        {
-            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
