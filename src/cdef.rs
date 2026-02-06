@@ -1,5 +1,3 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
@@ -21,6 +19,7 @@ use libc::ptrdiff_t;
 use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 use std::ptr;
 
 #[cfg(all(
@@ -32,8 +31,11 @@ use crate::include::common::bitdepth::bd_fn;
 #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]
 use crate::include::common::bitdepth::{bpc_fn, BPC};
 
-#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+#[cfg(all(not(feature = "asm"), feature = "c-ffi", any(target_arch = "x86_64", target_arch = "aarch64")))]
 use crate::include::common::bitdepth::BPC;
+
+#[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+use crate::src::enum_map::DefaultValue;
 
 bitflags! {
     #[repr(transparent)]
@@ -83,106 +85,19 @@ fn cdef_direct<BD: BitDepth>(
     edges: CdefEdgeFlags,
     bd: BD,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-            let stride = dst.stride();
-            let left_ptr = ptr::from_ref(left).cast();
-            let top_ptr = top.as_ptr::<BD>().cast();
-            let bottom_ptr = bottom.wrapping_as_ptr::<BD>().cast();
-            let top_ffi = FFISafe::new(&top);
-            let bottom_ffi = FFISafe::new(&bottom);
-            let bd_c = bd.into_c();
-            let dst_ffi = FFISafe::new(&dst);
-            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid types.
-            unsafe {
-                match (BD::BPC, variant) {
-                    (BPC::BPC8, 0) => crate::src::safe_simd::cdef::cdef_filter_8x8_8bpc_avx2(
-                        dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                        pri_strength, sec_strength, dir, damping, edges, bd_c,
-                        dst_ffi, top_ffi, bottom_ffi,
-                    ),
-                    (BPC::BPC8, 1) => crate::src::safe_simd::cdef::cdef_filter_4x8_8bpc_avx2(
-                        dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                        pri_strength, sec_strength, dir, damping, edges, bd_c,
-                        dst_ffi, top_ffi, bottom_ffi,
-                    ),
-                    (BPC::BPC8, _) => crate::src::safe_simd::cdef::cdef_filter_4x4_8bpc_avx2(
-                        dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                        pri_strength, sec_strength, dir, damping, edges, bd_c,
-                        dst_ffi, top_ffi, bottom_ffi,
-                    ),
-                    (BPC::BPC16, 0) => crate::src::safe_simd::cdef::cdef_filter_8x8_16bpc_avx2(
-                        dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                        pri_strength, sec_strength, dir, damping, edges, bd_c,
-                        dst_ffi, top_ffi, bottom_ffi,
-                    ),
-                    (BPC::BPC16, 1) => crate::src::safe_simd::cdef::cdef_filter_4x8_16bpc_avx2(
-                        dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                        pri_strength, sec_strength, dir, damping, edges, bd_c,
-                        dst_ffi, top_ffi, bottom_ffi,
-                    ),
-                    (BPC::BPC16, _) => crate::src::safe_simd::cdef::cdef_filter_4x4_16bpc_avx2(
-                        dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                        pri_strength, sec_strength, dir, damping, edges, bd_c,
-                        dst_ffi, top_ffi, bottom_ffi,
-                    ),
-                }
-            }
-            return;
-        }
+    if crate::src::safe_simd::cdef::cdef_filter_dispatch::<BD>(
+        variant, dst, left, top, bottom,
+        pri_strength, sec_strength, dir, damping, edges, bd,
+    ) {
+        return;
     }
 
     #[cfg(target_arch = "aarch64")]
-    {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let left_ptr = ptr::from_ref(left).cast();
-        let top_ptr = top.as_ptr::<BD>().cast();
-        let bottom_ptr = bottom.wrapping_as_ptr::<BD>().cast();
-        let top_ffi = FFISafe::new(&top);
-        let bottom_ffi = FFISafe::new(&bottom);
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        // SAFETY: NEON always available on aarch64. Pointers from valid types.
-        unsafe {
-            match (BD::BPC, variant) {
-                (BPC::BPC8, 0) => crate::src::safe_simd::cdef_arm::cdef_filter_8x8_8bpc_neon(
-                    dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                    pri_strength, sec_strength, dir, damping, edges, bd_c,
-                    dst_ffi, top_ffi, bottom_ffi,
-                ),
-                (BPC::BPC8, 1) => crate::src::safe_simd::cdef_arm::cdef_filter_4x8_8bpc_neon(
-                    dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                    pri_strength, sec_strength, dir, damping, edges, bd_c,
-                    dst_ffi, top_ffi, bottom_ffi,
-                ),
-                (BPC::BPC8, _) => crate::src::safe_simd::cdef_arm::cdef_filter_4x4_8bpc_neon(
-                    dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                    pri_strength, sec_strength, dir, damping, edges, bd_c,
-                    dst_ffi, top_ffi, bottom_ffi,
-                ),
-                (BPC::BPC16, 0) => crate::src::safe_simd::cdef_arm::cdef_filter_8x8_16bpc_neon(
-                    dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                    pri_strength, sec_strength, dir, damping, edges, bd_c,
-                    dst_ffi, top_ffi, bottom_ffi,
-                ),
-                (BPC::BPC16, 1) => crate::src::safe_simd::cdef_arm::cdef_filter_4x8_16bpc_neon(
-                    dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                    pri_strength, sec_strength, dir, damping, edges, bd_c,
-                    dst_ffi, top_ffi, bottom_ffi,
-                ),
-                (BPC::BPC16, _) => crate::src::safe_simd::cdef_arm::cdef_filter_4x4_16bpc_neon(
-                    dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
-                    pri_strength, sec_strength, dir, damping, edges, bd_c,
-                    dst_ffi, top_ffi, bottom_ffi,
-                ),
-            }
-        }
+    if crate::src::safe_simd::cdef_arm::cdef_filter_dispatch::<BD>(
+        variant, dst, left, top, bottom,
+        pri_strength, sec_strength, dir, damping, edges, bd,
+    ) {
         return;
     }
 
@@ -289,47 +204,14 @@ fn cdef_dir_direct<BD: BitDepth>(
     variance: &mut c_uint,
     bd: BD,
 ) -> c_int {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let dst_ptr = dst.as_ptr::<BD>().cast();
-            let dst_stride = dst.stride();
-            let bd_c = bd.into_c();
-            let dst_ffi = FFISafe::new(&dst);
-            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid dst.
-            return unsafe {
-                match BD::BPC {
-                    BPC::BPC8 => crate::src::safe_simd::cdef::cdef_find_dir_8bpc_avx2(
-                        dst_ptr, dst_stride, variance, bd_c, dst_ffi,
-                    ),
-                    BPC::BPC16 => crate::src::safe_simd::cdef::cdef_find_dir_16bpc_avx2(
-                        dst_ptr, dst_stride, variance, bd_c, dst_ffi,
-                    ),
-                }
-            };
-        }
+    if let Some(dir) = crate::src::safe_simd::cdef::cdef_dir_dispatch::<BD>(dst, variance, bd) {
+        return dir;
     }
 
     #[cfg(target_arch = "aarch64")]
-    {
-        let dst_ptr = dst.as_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        // SAFETY: NEON always available on aarch64. Pointers from valid dst.
-        return unsafe {
-            match BD::BPC {
-                BPC::BPC8 => crate::src::safe_simd::cdef_arm::cdef_find_dir_8bpc_neon(
-                    dst_ptr, dst_stride, variance, bd_c, dst_ffi,
-                ),
-                BPC::BPC16 => crate::src::safe_simd::cdef_arm::cdef_find_dir_16bpc_neon(
-                    dst_ptr, dst_stride, variance, bd_c, dst_ffi,
-                ),
-            }
-        };
+    if let Some(dir) = crate::src::safe_simd::cdef_arm::cdef_dir_dispatch::<BD>(dst, variance, bd) {
+        return dir;
     }
 
     // Scalar fallback
@@ -593,6 +475,7 @@ fn cdef_filter_block_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`cdef::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn cdef_filter_block_c_erased<BD: BitDepth, const W: usize, const H: usize>(
     _dst_ptr: *mut DynPixel,
@@ -638,6 +521,7 @@ unsafe extern "C" fn cdef_filter_block_c_erased<BD: BitDepth, const W: usize, co
 /// # Safety
 ///
 /// Must be called by [`cdef_dir::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn cdef_find_dir_c_erased<BD: BitDepth>(
     _img_ptr: *const DynPixel,
@@ -884,13 +768,22 @@ mod neon {
 
 impl Rav1dCdefDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
-        Self {
-            dir: cdef_dir::Fn::new(cdef_find_dir_c_erased::<BD>),
-            fb: [
-                cdef::Fn::new(cdef_filter_block_c_erased::<BD, 8, 8>),
-                cdef::Fn::new(cdef_filter_block_c_erased::<BD, 4, 8>),
-                cdef::Fn::new(cdef_filter_block_c_erased::<BD, 4, 4>),
-            ],
+        cfg_if::cfg_if! {
+            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+                Self {
+                    dir: cdef_dir::Fn::new(cdef_find_dir_c_erased::<BD>),
+                    fb: [
+                        cdef::Fn::new(cdef_filter_block_c_erased::<BD, 8, 8>),
+                        cdef::Fn::new(cdef_filter_block_c_erased::<BD, 4, 8>),
+                        cdef::Fn::new(cdef_filter_block_c_erased::<BD, 4, 4>),
+                    ],
+                }
+            } else {
+                Self {
+                    dir: cdef_dir::Fn::DEFAULT,
+                    fb: [cdef::Fn::DEFAULT; 3],
+                }
+            }
         }
     }
 

@@ -851,3 +851,100 @@ pub unsafe extern "C" fn cdef_find_dir_16bpc_neon(
     let img = *FFISafe::get(dst);
     cdef_find_dir_16bpc_inner(img, variance, bitdepth_max)
 }
+
+// ============================================================================
+// SAFE DISPATCH WRAPPERS (aarch64)
+// ============================================================================
+
+/// Safe dispatch for cdef_filter on aarch64. Returns true if NEON was used.
+#[cfg(target_arch = "aarch64")]
+pub fn cdef_filter_dispatch<BD: BitDepth>(
+    variant: usize,
+    dst: PicOffset,
+    left: &[LeftPixelRow2px<BD::Pixel>; 8],
+    top: CdefTop,
+    bottom: CdefBottom,
+    pri_strength: c_int,
+    sec_strength: c_int,
+    dir: c_int,
+    damping: c_int,
+    edges: CdefEdgeFlags,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let stride = dst.stride();
+    let left_ptr = std::ptr::from_ref(left).cast();
+    let top_ptr = top.as_ptr::<BD>().cast();
+    let bottom_ptr = bottom.wrapping_as_ptr::<BD>().cast();
+    let top_ffi = FFISafe::new(&top);
+    let bottom_ffi = FFISafe::new(&bottom);
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+
+    // SAFETY: NEON always available on aarch64. Pointers derived from valid types.
+    unsafe {
+        match (BD::BPC, variant) {
+            (BPC::BPC8, 0) => cdef_filter_8x8_8bpc_neon(
+                dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
+                pri_strength, sec_strength, dir, damping, edges, bd_c,
+                dst_ffi, top_ffi, bottom_ffi,
+            ),
+            (BPC::BPC8, 1) => cdef_filter_4x8_8bpc_neon(
+                dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
+                pri_strength, sec_strength, dir, damping, edges, bd_c,
+                dst_ffi, top_ffi, bottom_ffi,
+            ),
+            (BPC::BPC8, _) => cdef_filter_4x4_8bpc_neon(
+                dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
+                pri_strength, sec_strength, dir, damping, edges, bd_c,
+                dst_ffi, top_ffi, bottom_ffi,
+            ),
+            (BPC::BPC16, 0) => cdef_filter_8x8_16bpc_neon(
+                dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
+                pri_strength, sec_strength, dir, damping, edges, bd_c,
+                dst_ffi, top_ffi, bottom_ffi,
+            ),
+            (BPC::BPC16, 1) => cdef_filter_4x8_16bpc_neon(
+                dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
+                pri_strength, sec_strength, dir, damping, edges, bd_c,
+                dst_ffi, top_ffi, bottom_ffi,
+            ),
+            (BPC::BPC16, _) => cdef_filter_4x4_16bpc_neon(
+                dst_ptr, stride, left_ptr, top_ptr, bottom_ptr,
+                pri_strength, sec_strength, dir, damping, edges, bd_c,
+                dst_ffi, top_ffi, bottom_ffi,
+            ),
+        }
+    }
+    true
+}
+
+/// Safe dispatch for cdef_find_dir on aarch64. Returns Some(dir).
+#[cfg(target_arch = "aarch64")]
+pub fn cdef_dir_dispatch<BD: BitDepth>(
+    dst: PicOffset,
+    variance: &mut c_uint,
+    bd: BD,
+) -> Option<c_int> {
+    use crate::include::common::bitdepth::BPC;
+
+    let dst_ptr = dst.as_ptr::<BD>().cast();
+    let dst_stride = dst.stride();
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+
+    // SAFETY: NEON always available on aarch64. Pointers from valid dst.
+    let dir = unsafe {
+        match BD::BPC {
+            BPC::BPC8 => cdef_find_dir_8bpc_neon(
+                dst_ptr, dst_stride, variance, bd_c, dst_ffi,
+            ),
+            BPC::BPC16 => cdef_find_dir_16bpc_neon(
+                dst_ptr, dst_stride, variance, bd_c, dst_ffi,
+            ),
+        }
+    };
+    Some(dir)
+}

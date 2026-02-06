@@ -70,7 +70,6 @@ pub mod src {
     mod picture;
 
     // DSP dispatch modules (contain _erased functions and fn ptr dispatch)
-    #[allow(unsafe_code)]
     mod cdef;
     #[allow(unsafe_code)]
     mod filmgrain;
