@@ -341,12 +341,7 @@ impl<const SB128: bool, const N_BRANCH: usize, const N_TIP: usize>
 
     fn edge<E, const N: usize>(edges: &[E; N], edge: EdgeIndex, kind: EdgeKind) -> &E {
         assert!(edge.kind == kind);
-        if cfg!(debug_assertions) {
-            &edges[edge.index as usize]
-        } else {
-            // SAFETY: Already checked in `Self::check_indices`, and `EdgeIndex`'s fields are private.
-            unsafe { edges.get_unchecked(edge.index as usize) }
-        }
+        &edges[edge.index as usize]
     }
 
     pub fn branch(&self, branch: EdgeIndex) -> &EdgeBranch {

@@ -54,19 +54,15 @@ pub mod src {
     pub(crate) mod disjoint_mut;
     #[allow(unsafe_code)]
     mod ffi_safe;
-    #[allow(unsafe_code)]
     pub(crate) mod pixels;
     #[allow(unsafe_code)]
     pub mod send_sync_non_null;
     #[allow(unsafe_code)]
     pub(super) mod internal;
-    #[allow(unsafe_code)]
     mod in_range;
-    #[allow(unsafe_code)]
     mod intra_edge;
     #[allow(unsafe_code)]
     pub(crate) mod log;
-    #[allow(unsafe_code)]
     mod tables;
 
     // Data/picture management

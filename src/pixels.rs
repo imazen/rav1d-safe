@@ -45,8 +45,8 @@ pub trait Pixels {
         if pixel_offset > pixel_len {
             out_of_bounds(pixel_offset, pixel_len);
         }
-        // SAFETY: We just checked that `pixel_offset` is in bounds.
-        unsafe { self.as_mut_ptr::<BD>().add(pixel_offset) }
+        // Bounds already checked above.
+        self.as_mut_ptr::<BD>().wrapping_add(pixel_offset)
     }
 
     /// Absolute ptr to [`BitDepth::Pixel`]s starting at `pixel_offset`.
