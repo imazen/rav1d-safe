@@ -1399,7 +1399,6 @@ unsafe fn fguv_inner_16bpc(
 
 macro_rules! fguv_16bpc_wrapper {
     ($name:ident, $is_sx:expr, $is_sy:expr) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(

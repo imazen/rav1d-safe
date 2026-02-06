@@ -204,7 +204,6 @@ fn generate_grain_uv_inner_8bpc(
 
 macro_rules! gen_grain_uv_8bpc {
     ($name:ident, $is_subx:expr, $is_suby:expr) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         pub unsafe extern "C" fn $name(
             buf: *mut GrainLut<DynEntry>,
             buf_y: *const GrainLut<DynEntry>,
@@ -282,7 +281,6 @@ fn generate_grain_uv_inner_16bpc(
 
 macro_rules! gen_grain_uv_16bpc {
     ($name:ident, $is_subx:expr, $is_suby:expr) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         pub unsafe extern "C" fn $name(
             buf: *mut GrainLut<DynEntry>,
             buf_y: *const GrainLut<DynEntry>,
@@ -789,7 +787,6 @@ unsafe fn fguv_inner_8bpc(
 // 8bpc fguv FFI wrappers
 macro_rules! fguv_8bpc_wrapper {
     ($name:ident, $is_sx:expr, $is_sy:expr) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         pub unsafe extern "C" fn $name(
             dst_row_ptr: *mut DynPixel, src_row_ptr: *const DynPixel, stride: ptrdiff_t,
             data: &Dav1dFilmGrainData, pw: usize, scaling: *const DynScaling,
@@ -921,7 +918,6 @@ unsafe fn fguv_inner_16bpc(
 
 macro_rules! fguv_16bpc_wrapper {
     ($name:ident, $is_sx:expr, $is_sy:expr) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         pub unsafe extern "C" fn $name(
             dst_row_ptr: *mut DynPixel, src_row_ptr: *const DynPixel, stride: ptrdiff_t,
             data: &Dav1dFilmGrainData, pw: usize, scaling: *const DynScaling,

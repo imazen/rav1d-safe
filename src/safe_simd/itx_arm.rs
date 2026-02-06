@@ -5403,7 +5403,6 @@ fn shift_for(w: usize, h: usize) -> u8 {
 macro_rules! gen_itx_arm {
     ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
         paste::paste! {
-            #[cfg(any(feature = "asm", feature = "c-ffi"))]
             #[cfg(target_arch = "aarch64")]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _8bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
@@ -5418,7 +5417,6 @@ macro_rules! gen_itx_arm {
                     $is_dct_dct,
                 );
             }
-            #[cfg(any(feature = "asm", feature = "c-ffi"))]
 
             #[cfg(target_arch = "aarch64")]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _16bpc_neon>](
@@ -5442,7 +5440,6 @@ macro_rules! gen_itx_arm {
 macro_rules! gen_itx_arm_8bpc {
     ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
         paste::paste! {
-            #[cfg(any(feature = "asm", feature = "c-ffi"))]
             #[cfg(target_arch = "aarch64")]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _8bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
@@ -5465,7 +5462,6 @@ macro_rules! gen_itx_arm_8bpc {
 macro_rules! gen_itx_arm_16bpc {
     ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
         paste::paste! {
-            #[cfg(any(feature = "asm", feature = "c-ffi"))]
             #[cfg(target_arch = "aarch64")]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _16bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,

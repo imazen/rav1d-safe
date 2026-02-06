@@ -1853,7 +1853,6 @@ macro_rules! impl_16x16_transform {
 /// Macro to generate FFI wrappers for 16x16 transforms
 macro_rules! impl_16x16_ffi_wrapper {
     ($wrapper:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
@@ -2508,7 +2507,6 @@ impl_8x4_transform!(inv_txfm_add_flipadst_adst_8x4_8bpc_avx2_inner, flipadst8_1d
 // FFI wrappers for 4x8 ADST variants
 macro_rules! impl_4x8_ffi_wrapper {
     ($name:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -2537,7 +2535,6 @@ impl_4x8_ffi_wrapper!(inv_txfm_add_flipadst_adst_4x8_8bpc_avx2, inv_txfm_add_fli
 // FFI wrappers for 8x4 ADST variants
 macro_rules! impl_8x4_ffi_wrapper {
     ($name:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -2803,7 +2800,6 @@ impl_16x8_transform!(inv_txfm_add_flipadst_adst_16x8_8bpc_avx2_inner, flipadst16
 /// FFI wrapper macro for 8x16 transforms
 macro_rules! impl_8x16_ffi_wrapper {
     ($name:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -2831,7 +2827,6 @@ macro_rules! impl_8x16_ffi_wrapper {
 /// FFI wrapper macro for 16x8 transforms
 macro_rules! impl_16x8_ffi_wrapper {
     ($name:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -4163,7 +4158,6 @@ impl_16x4_transform!(inv_txfm_add_flipadst_adst_16x4_8bpc_avx2_inner, flipadst16
 /// FFI wrapper macro for 4x16 transforms
 macro_rules! impl_4x16_ffi_wrapper {
     ($name:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -4191,7 +4185,6 @@ macro_rules! impl_4x16_ffi_wrapper {
 /// FFI wrapper macro for 16x4 transforms
 macro_rules! impl_16x4_ffi_wrapper {
     ($name:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(
@@ -5658,7 +5651,6 @@ impl_8x8_transform!(inv_txfm_add_flipadst_adst_8x8_8bpc_avx2_inner, flipadst8_1d
 // FFI wrappers for 8x8 transforms
 macro_rules! impl_8x8_ffi_wrapper {
     ($wrapper:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
@@ -9019,7 +9011,6 @@ impl_8x8_transform_16bpc!(inv_txfm_add_flipadst_adst_8x8_16bpc_avx2_inner, flipa
 // FFI wrappers for 8x8 16bpc transforms
 macro_rules! impl_8x8_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
@@ -9114,7 +9105,6 @@ impl_4x4_transform_16bpc!(inv_txfm_add_flipadst_adst_4x4_16bpc_avx2_inner, flipa
 // FFI wrappers for 4x4 16bpc transforms
 macro_rules! impl_4x4_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
@@ -9215,7 +9205,6 @@ impl_16x16_transform_16bpc!(inv_txfm_add_flipadst_adst_16x16_16bpc_avx2_inner, f
 // FFI wrappers for 16x16 16bpc transforms
 macro_rules! impl_16x16_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
@@ -10765,7 +10754,6 @@ macro_rules! impl_8x4_transform_16bpc {
 /// Macro for FFI wrapper 16bpc
 macro_rules! impl_ffi_wrapper_16bpc {
     ($name:ident, $inner:ident) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $name(

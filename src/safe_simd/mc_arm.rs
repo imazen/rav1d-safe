@@ -2850,7 +2850,6 @@ fn get_v_filter_type(filter: Filter2d) -> Rav1dFilterMode {
 
 macro_rules! define_put_8tap_8bpc {
     ($name:ident, $filter:expr) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
@@ -3139,7 +3138,6 @@ fn prep_8tap_8bpc_inner(
 
 macro_rules! define_prep_8tap_8bpc {
     ($name:ident, $filter:expr) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             tmp: *mut i16,
@@ -3594,7 +3592,6 @@ fn put_8tap_16bpc_inner(
 
 macro_rules! define_put_8tap_16bpc {
     ($name:ident, $filter:expr) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
@@ -3865,7 +3862,6 @@ fn prep_8tap_16bpc_inner(
 
 macro_rules! define_prep_8tap_16bpc {
     ($name:ident, $filter:expr) => {
-        #[cfg(any(feature = "asm", feature = "c-ffi"))]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             tmp: *mut i16,
