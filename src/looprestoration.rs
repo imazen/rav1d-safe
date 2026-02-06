@@ -22,7 +22,7 @@ use std::ffi::c_uint;
 use std::iter;
 use std::mem;
 use std::ops::Add;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use std::slice;
 use to_method::To;
 use zerocopy::AsBytes;
@@ -38,7 +38,7 @@ use crate::include::common::bitdepth::bd_fn;
 #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]
 use crate::include::common::bitdepth::bpc_fn;
 
-#[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+#[cfg(not(feature = "asm"))]
 use crate::src::enum_map::DefaultValue;
 
 bitflags! {
@@ -401,7 +401,7 @@ pub(crate) fn padding<BD: BitDepth>(
 /// [`offset_from`].
 ///
 /// [`offset_from`]: https://doc.rust-lang.org/stable/std/primitive.pointer.html#method.offset_from
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 fn reconstruct_lpf_offset<BD: BitDepth>(
     lpf: &DisjointMut<AlignedVec64<u8>>,
     ptr: *const BD::Pixel,
@@ -413,7 +413,7 @@ fn reconstruct_lpf_offset<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn wiener_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -830,7 +830,7 @@ fn selfguided_filter<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn sgr_5x5_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -897,7 +897,7 @@ fn sgr_5x5_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn sgr_3x3_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -959,7 +959,7 @@ fn sgr_3x3_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn sgr_mix_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -3469,7 +3469,7 @@ mod neon_erased {
 impl Rav1dLoopRestorationDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
         cfg_if::cfg_if! {
-            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+            if #[cfg(feature = "asm")] {
                 Self {
                     wiener: [loop_restoration_filter::Fn::new(wiener_c_erased::<BD>); 2],
                     sgr: [
@@ -3601,7 +3601,7 @@ impl Rav1dLoopRestorationDSPContext {
 
         self
     }
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
     #[inline(always)]
     const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
@@ -3647,7 +3647,7 @@ impl Rav1dLoopRestorationDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
     #[inline(always)]
     const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
@@ -3698,13 +3698,13 @@ impl Rav1dLoopRestorationDSPContext {
             }
         }
 
-        #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
+        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
         {
             let _ = bpc;
             return self.init_x86_safe_simd::<BD>(flags);
         }
 
-        #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
+        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
         {
             let _ = bpc;
             return self.init_arm_safe_simd::<BD>(flags);

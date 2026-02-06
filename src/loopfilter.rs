@@ -23,7 +23,7 @@ use strum::FromRepr;
 ))]
 use crate::include::common::bitdepth::bd_fn;
 
-#[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+#[cfg(not(feature = "asm"))]
 use crate::src::enum_map::DefaultValue;
 
 wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
@@ -134,7 +134,7 @@ impl loopfilter_sb::Fn {
         }
     }
 
-    #[cfg(any(feature = "asm", feature = "c-ffi"))]
+    #[cfg(feature = "asm")]
     const fn default<BD: BitDepth, const HV: usize, const YUV: usize>() -> Self {
         Self::new(loop_filter_sb128_c_erased::<BD, { HV }, { YUV }>)
     }
@@ -425,7 +425,7 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
 /// # Safety
 ///
 /// Must be called by [`loopfilter_sb::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, const YUV: usize>(
     _dst_ptr: *mut DynPixel,
@@ -451,7 +451,7 @@ unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, c
 impl Rav1dLoopFilterDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
         cfg_if::cfg_if! {
-            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+            if #[cfg(feature = "asm")] {
                 use HV::*;
                 use YUV::*;
                 Self {
@@ -538,7 +538,7 @@ impl Rav1dLoopFilterDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
     #[inline(always)]
     const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
@@ -566,7 +566,7 @@ impl Rav1dLoopFilterDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
     #[inline(always)]
     const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
@@ -604,12 +604,12 @@ impl Rav1dLoopFilterDSPContext {
             }
         }
 
-        #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
+        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
         {
             return self.init_x86_safe_simd::<BD>(flags);
         }
 
-        #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
+        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
         {
             return self.init_arm_safe_simd::<BD>(flags);
         }

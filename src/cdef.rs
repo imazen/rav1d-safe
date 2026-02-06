@@ -19,7 +19,7 @@ use libc::ptrdiff_t;
 use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use std::ptr;
 
 #[cfg(all(
@@ -31,10 +31,10 @@ use crate::include::common::bitdepth::bd_fn;
 #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]
 use crate::include::common::bitdepth::{bpc_fn, BPC};
 
-#[cfg(all(not(feature = "asm"), feature = "c-ffi", any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(all(not(feature = "asm"), feature = "asm", any(target_arch = "x86_64", target_arch = "aarch64")))]
 use crate::include::common::bitdepth::BPC;
 
-#[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+#[cfg(not(feature = "asm"))]
 use crate::src::enum_map::DefaultValue;
 
 bitflags! {
@@ -475,7 +475,7 @@ fn cdef_filter_block_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`cdef::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn cdef_filter_block_c_erased<BD: BitDepth, const W: usize, const H: usize>(
     _dst_ptr: *mut DynPixel,
@@ -521,7 +521,7 @@ unsafe extern "C" fn cdef_filter_block_c_erased<BD: BitDepth, const W: usize, co
 /// # Safety
 ///
 /// Must be called by [`cdef_dir::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn cdef_find_dir_c_erased<BD: BitDepth>(
     _img_ptr: *const DynPixel,
@@ -769,7 +769,7 @@ mod neon {
 impl Rav1dCdefDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
         cfg_if::cfg_if! {
-            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+            if #[cfg(feature = "asm")] {
                 Self {
                     dir: cdef_dir::Fn::new(cdef_find_dir_c_erased::<BD>),
                     fb: [
@@ -860,7 +860,7 @@ impl Rav1dCdefDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
     #[inline(always)]
     const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
         use crate::src::safe_simd::cdef as safe_cdef;
@@ -887,7 +887,7 @@ impl Rav1dCdefDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
     #[inline(always)]
     const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
@@ -925,12 +925,12 @@ impl Rav1dCdefDSPContext {
             }
         }
 
-        #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
+        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
         {
             return self.init_x86_safe_simd::<BD>(flags);
         }
 
-        #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
+        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
         {
             return self.init_arm_safe_simd::<BD>(flags);
         }

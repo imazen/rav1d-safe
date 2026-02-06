@@ -27,7 +27,7 @@ use std::mem;
 use std::ops::Add;
 use std::ops::Shl;
 use std::ops::Shr;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use std::ptr;
 use to_method::To;
 
@@ -431,7 +431,7 @@ fn row_seed(rows: usize, row_num: usize, data: &Rav1dFilmGrainData) -> [c_uint; 
 /// # Safety
 ///
 /// Must be called by [`generate_grain_y::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn generate_grain_y_c_erased<BD: BitDepth>(
     buf: *mut GrainLut<DynEntry>,
@@ -625,7 +625,7 @@ fn generate_grain_uv_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`generate_grain_uv::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 #[inline(never)]
 unsafe extern "C" fn generate_grain_uv_c_erased<
@@ -676,7 +676,7 @@ fn sample_lut<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`fgy_32x32xn::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn fgy_32x32xn_c_erased<BD: BitDepth>(
     _dst_row_ptr: *mut DynPixel,
@@ -1006,7 +1006,7 @@ fn fguv_32x32xn_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`fguv_32x32xn::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 #[inline(never)]
 unsafe extern "C" fn fguv_32x32xn_c_erased<
@@ -1416,7 +1416,7 @@ mod neon {
 impl Rav1dFilmGrainDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
         cfg_if::cfg_if! {
-            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+            if #[cfg(feature = "asm")] {
                 Self {
                     generate_grain_y: generate_grain_y::Fn::new(generate_grain_y_c_erased::<BD>),
                     generate_grain_uv: enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
@@ -1534,7 +1534,7 @@ impl Rav1dFilmGrainDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
     #[inline(always)]
     const fn init_x86_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
@@ -1578,7 +1578,7 @@ impl Rav1dFilmGrainDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
     #[inline(always)]
     const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
@@ -1636,7 +1636,7 @@ impl Rav1dFilmGrainDSPContext {
             }
         }
 
-        #[cfg(all(not(feature = "asm"), feature = "c-ffi"))]
+        #[cfg(all(not(feature = "asm"), feature = "asm"))]
         {
             #[cfg(target_arch = "x86_64")]
             {

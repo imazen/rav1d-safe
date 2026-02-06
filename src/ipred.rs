@@ -12,34 +12,34 @@ use crate::src::enum_map::enum_map_ty;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::SCRATCH_AC_TXTP_LEN;
 use crate::src::internal::SCRATCH_EDGE_LEN;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::DC_128_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::DC_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::FILTER_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::HOR_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::LEFT_DC_PRED;
 use crate::src::levels::N_IMPL_INTRA_PRED_MODES;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::PAETH_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::SMOOTH_H_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::SMOOTH_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::SMOOTH_V_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::TOP_DC_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::VERT_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::Z1_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::Z2_PRED;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use crate::src::levels::Z3_PRED;
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_dr_intra_derivative;
@@ -52,7 +52,7 @@ use libc::ptrdiff_t;
 use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use std::slice;
 use strum::FromRepr;
 use zerocopy::AsBytes;
@@ -545,7 +545,7 @@ impl DcGen {
 /// `topleft_ptr` must be a pointer into an array of length [`SCRATCH_EDGE_LEN`]
 /// and is `topleft_off` elements from the beginning of the array. This should
 /// be guaranteed by the logic in `angular_ipred::call`.
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe fn reconstruct_topleft<'a, BD: BitDepth>(
     topleft_ptr: *const DynPixel,
     topleft_off: usize,
@@ -562,7 +562,7 @@ unsafe fn reconstruct_topleft<'a, BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_dc_c_erased<BD: BitDepth, const DC_GEN: u8>(
     _dst_ptr: *mut DynPixel,
@@ -591,7 +591,7 @@ unsafe extern "C" fn ipred_dc_c_erased<BD: BitDepth, const DC_GEN: u8>(
 /// # Safety
 ///
 /// Must be called by [`cfl_pred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_cfl_c_erased<BD: BitDepth, const DC_GEN: u8>(
     _dst_ptr: *mut DynPixel,
@@ -619,7 +619,7 @@ unsafe extern "C" fn ipred_cfl_c_erased<BD: BitDepth, const DC_GEN: u8>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_dc_128_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -644,7 +644,7 @@ unsafe extern "C" fn ipred_dc_128_c_erased<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`cfl_pred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_cfl_128_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -688,7 +688,7 @@ fn ipred_v_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_v_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -733,7 +733,7 @@ fn ipred_h_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_h_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -792,7 +792,7 @@ fn ipred_paeth_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_paeth_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -844,7 +844,7 @@ fn ipred_smooth_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_smooth_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -892,7 +892,7 @@ fn ipred_smooth_v_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_smooth_v_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -940,7 +940,7 @@ fn ipred_smooth_h_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_smooth_h_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -1377,7 +1377,7 @@ fn ipred_z3_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_z_c_erased<BD: BitDepth, const Z: usize>(
     _dst_ptr: *mut DynPixel,
@@ -1469,7 +1469,7 @@ fn ipred_filter_rust<BD: BitDepth>(
     }
 }
 
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn ipred_filter_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _stride: ptrdiff_t,
@@ -1569,7 +1569,7 @@ fn cfl_ac_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`cfl_ac::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn cfl_ac_c_erased<BD: BitDepth, const IS_SS_HOR: bool, const IS_SS_VER: bool>(
     ac: &mut [i16; SCRATCH_AC_TXTP_LEN],
@@ -1616,7 +1616,7 @@ fn pal_pred_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`pal_pred::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn pal_pred_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -2198,7 +2198,7 @@ mod neon {
 impl Rav1dIntraPredDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
         cfg_if::cfg_if! {
-            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+            if #[cfg(feature = "asm")] {
                 Self {
                     intra_pred: {
                         let mut a = [DefaultValue::DEFAULT; N_IMPL_INTRA_PRED_MODES];
@@ -2440,7 +2440,7 @@ impl Rav1dIntraPredDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
     #[inline(always)]
     const fn init_x86_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::src::safe_simd::ipred as safe_ipred;
@@ -2513,7 +2513,7 @@ impl Rav1dIntraPredDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
     #[inline(always)]
     const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
@@ -2592,12 +2592,12 @@ impl Rav1dIntraPredDSPContext {
     #[inline(always)]
     #[cfg(not(feature = "asm"))]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
-        #[cfg(all(feature = "c-ffi", target_arch = "x86_64"))]
+        #[cfg(all(feature = "asm", target_arch = "x86_64"))]
         {
             return self.init_x86_safe_simd::<BD>(flags);
         }
 
-        #[cfg(all(feature = "c-ffi", target_arch = "aarch64"))]
+        #[cfg(all(feature = "asm", target_arch = "aarch64"))]
         {
             return self.init_arm_safe_simd::<BD>(flags);
         }

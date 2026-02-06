@@ -30,11 +30,11 @@ use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::cmp;
 use std::ffi::c_int;
 use std::iter;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use std::mem;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use std::ptr;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use std::slice;
 use to_method::To;
 
@@ -1991,7 +1991,7 @@ pub struct Rav1dMCDSPContext {
 ///
 /// Must be called by [`mc::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn put_c_erased<BD: BitDepth, const FILTER: usize>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2026,7 +2026,7 @@ unsafe extern "C" fn put_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`mc_scaled::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn put_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2065,7 +2065,7 @@ unsafe extern "C" fn put_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`mct::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn prep_c_erased<BD: BitDepth, const FILTER: usize>(
     tmp: *mut i16,
     _src_ptr: *const DynPixel,
@@ -2098,7 +2098,7 @@ unsafe extern "C" fn prep_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`mct_scaled::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn prep_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
     tmp: *mut i16,
     _src_ptr: *const DynPixel,
@@ -2135,7 +2135,7 @@ unsafe extern "C" fn prep_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`avg::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn avg_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2158,7 +2158,7 @@ unsafe extern "C" fn avg_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`w_avg::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn w_avg_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2182,7 +2182,7 @@ unsafe extern "C" fn w_avg_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`mask::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn mask_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2208,7 +2208,7 @@ unsafe extern "C" fn mask_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`w_mask::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn w_mask_c_erased<const SS_HOR: bool, const SS_VER: bool, BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2235,7 +2235,7 @@ unsafe extern "C" fn w_mask_c_erased<const SS_HOR: bool, const SS_VER: bool, BD:
 ///
 /// Must be called by [`blend::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn blend_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2260,7 +2260,7 @@ unsafe extern "C" fn blend_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`blend_dir::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn blend_v_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2282,7 +2282,7 @@ unsafe extern "C" fn blend_v_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`blend_dir::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn blend_h_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2304,7 +2304,7 @@ unsafe extern "C" fn blend_h_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`warp8x8::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn warp_affine_8x8_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2329,7 +2329,7 @@ unsafe extern "C" fn warp_affine_8x8_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`warp8x8t::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn warp_affine_8x8t_c_erased<BD: BitDepth>(
     tmp: *mut i16,
     tmp_stride: usize,
@@ -2351,7 +2351,7 @@ unsafe extern "C" fn warp_affine_8x8t_c_erased<BD: BitDepth>(
 }
 
 #[deny(unsafe_op_in_unsafe_fn)]
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn emu_edge_c_erased<BD: BitDepth>(
     bw: isize,
     bh: isize,
@@ -2374,7 +2374,7 @@ unsafe extern "C" fn emu_edge_c_erased<BD: BitDepth>(
     emu_edge_rust::<BD>(bw, bh, iw, ih, x, y, dst, dst_stride, r#ref)
 }
 
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn resize_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2403,7 +2403,7 @@ unsafe extern "C" fn resize_c_erased<BD: BitDepth>(
 impl Rav1dMCDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
         cfg_if::cfg_if! {
-            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+            if #[cfg(feature = "asm")] {
                 Self {
                     mc: enum_map!(Filter2d => mc::Fn; match key {
                         Regular8Tap => mc::Fn::new(put_c_erased::<BD, {Regular8Tap as _}>),
@@ -2995,7 +2995,7 @@ impl Rav1dMCDSPContext {
     /// Uses Rust intrinsics via archmage/safe_unaligned_simd instead.
     #[cfg(all(
         not(feature = "asm"),
-        feature = "c-ffi",
+        feature = "asm",
         any(target_arch = "x86", target_arch = "x86_64")
     ))]
     #[inline(always)]
@@ -3109,7 +3109,7 @@ impl Rav1dMCDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
     const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;
         use crate::src::safe_simd::mc_arm as safe_mc_arm;
@@ -3230,7 +3230,7 @@ impl Rav1dMCDSPContext {
 
         #[cfg(all(
             not(feature = "asm"),
-            feature = "c-ffi",
+            feature = "asm",
             any(target_arch = "x86", target_arch = "x86_64")
         ))]
         {
@@ -3239,7 +3239,7 @@ impl Rav1dMCDSPContext {
 
         #[cfg(all(
             not(feature = "asm"),
-            feature = "c-ffi",
+            feature = "asm",
             target_arch = "aarch64"
         ))]
         {

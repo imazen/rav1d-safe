@@ -1,9 +1,9 @@
 use crate::src::cpu::CpuFlags;
-#[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+#[cfg(not(feature = "asm"))]
 use crate::src::enum_map::DefaultValue;
 use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::ffi::c_int;
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 use std::slice;
 
 wrap_fn_ptr!(pub unsafe extern "C" fn pal_idx_finish(
@@ -92,7 +92,7 @@ enum PalIdx<'a> {
 /// # Safety
 ///
 /// Must be called by [`pal_idx_finish::Fn::call`].
-#[cfg(any(feature = "asm", feature = "c-ffi"))]
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn pal_idx_finish_c(
     dst: *mut u8,
@@ -174,7 +174,7 @@ fn pal_idx_finish_rust(idx: PalIdx, bw: usize, bh: usize, w: usize, h: usize) {
 impl Rav1dPalDSPContext {
     pub const fn default() -> Self {
         cfg_if::cfg_if! {
-            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+            if #[cfg(feature = "asm")] {
                 Self {
                     pal_idx_finish: pal_idx_finish::Fn::new(pal_idx_finish_c),
                 }
@@ -219,7 +219,7 @@ impl Rav1dPalDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
+    #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "x86_64"))]
     #[inline(always)]
     const fn init_x86_safe_simd(mut self, _flags: CpuFlags) -> Self {
         self.pal_idx_finish =
@@ -241,7 +241,7 @@ impl Rav1dPalDSPContext {
             }
         }
 
-        #[cfg(all(not(feature = "asm"), feature = "c-ffi"))]
+        #[cfg(all(not(feature = "asm"), feature = "asm"))]
         {
             #[cfg(target_arch = "x86_64")]
             {
