@@ -17,7 +17,7 @@ use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynCoef;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 use std::ffi::c_int;
 use std::num::NonZeroUsize;
@@ -359,7 +359,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
@@ -520,7 +520,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
@@ -629,7 +629,7 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
@@ -721,7 +721,7 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
@@ -810,7 +810,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_identity_add_4x4_8bpc_avx2(
@@ -892,7 +892,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_identity_add_8x8_8bpc_avx2(
@@ -1252,7 +1252,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
@@ -1379,7 +1379,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
@@ -1490,7 +1490,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_identity_add_16x16_8bpc_avx2(
@@ -1890,7 +1890,7 @@ macro_rules! impl_16x16_ffi_wrapper {
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
             eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
         }
@@ -2039,7 +2039,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
@@ -2172,7 +2172,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
@@ -2276,7 +2276,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(
@@ -2386,7 +2386,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
@@ -2564,7 +2564,7 @@ macro_rules! impl_4x8_ffi_wrapper {
             eob: c_int,
             bitdepth_max: c_int,
             _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
         }
@@ -2592,7 +2592,7 @@ macro_rules! impl_8x4_ffi_wrapper {
             eob: c_int,
             bitdepth_max: c_int,
             _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
         }
@@ -2865,7 +2865,7 @@ macro_rules! impl_8x16_ffi_wrapper {
             eob: c_int,
             bitdepth_max: c_int,
             _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe {
                 $inner(
@@ -2892,7 +2892,7 @@ macro_rules! impl_16x8_ffi_wrapper {
             eob: c_int,
             bitdepth_max: c_int,
             _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe {
                 $inner(
@@ -3062,7 +3062,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
@@ -3177,7 +3177,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
@@ -3296,7 +3296,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
@@ -3415,7 +3415,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
@@ -3530,7 +3530,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
@@ -3609,7 +3609,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
@@ -3737,7 +3737,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
@@ -3860,7 +3860,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
@@ -3945,7 +3945,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(
@@ -4058,7 +4058,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
@@ -4259,7 +4259,7 @@ macro_rules! impl_4x16_ffi_wrapper {
             eob: c_int,
             bitdepth_max: c_int,
             _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe {
                 $inner(
@@ -4286,7 +4286,7 @@ macro_rules! impl_16x4_ffi_wrapper {
             eob: c_int,
             bitdepth_max: c_int,
             _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe {
                 $inner(
@@ -4429,7 +4429,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
@@ -4548,7 +4548,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
@@ -4629,7 +4629,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
@@ -4706,7 +4706,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
@@ -4832,7 +4832,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
@@ -4954,7 +4954,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
@@ -5226,7 +5226,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner(
@@ -5249,7 +5249,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner(
@@ -5272,7 +5272,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
@@ -5520,7 +5520,7 @@ pub unsafe fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
 pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe { inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
@@ -5530,7 +5530,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2(
 pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe { inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
@@ -5540,7 +5540,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2(
 pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe { inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
@@ -5550,7 +5550,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2(
 pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe { inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
@@ -5560,7 +5560,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2(
 pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe { inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
@@ -5760,7 +5760,7 @@ macro_rules! impl_8x8_ffi_wrapper {
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
             eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
         }
@@ -5965,7 +5965,7 @@ pub unsafe fn inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
 pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe { inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
@@ -5975,7 +5975,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_avx2(
 pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe { inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
@@ -5985,7 +5985,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_avx2(
 pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe { inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
@@ -5995,7 +5995,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_avx2(
 pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe { inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
@@ -6094,7 +6094,7 @@ pub unsafe fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
 pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe { inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
@@ -6104,7 +6104,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_avx2(
 pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe { inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 }
@@ -6482,7 +6482,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
@@ -6505,7 +6505,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
@@ -6626,7 +6626,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
@@ -7380,7 +7380,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
@@ -7501,7 +7501,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
@@ -7601,7 +7601,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
@@ -7708,7 +7708,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
@@ -7819,7 +7819,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
@@ -7938,7 +7938,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
@@ -8034,7 +8034,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
@@ -8149,7 +8149,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
@@ -8267,7 +8267,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
@@ -8384,7 +8384,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
@@ -8495,7 +8495,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
@@ -8612,7 +8612,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
@@ -8726,7 +8726,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
@@ -8840,7 +8840,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
@@ -8955,7 +8955,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
@@ -9069,7 +9069,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
@@ -9172,7 +9172,7 @@ macro_rules! impl_8x8_ffi_wrapper_16bpc {
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
             eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe { $inner(dst_ptr as *mut u16, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
         }
@@ -9266,7 +9266,7 @@ macro_rules! impl_4x4_ffi_wrapper_16bpc {
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
             eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe { $inner(dst_ptr as *mut u16, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
         }
@@ -9366,7 +9366,7 @@ macro_rules! impl_16x16_ffi_wrapper_16bpc {
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
             eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe { $inner(dst_ptr as *mut u16, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
         }
@@ -9452,7 +9452,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_identity_add_4x4_16bpc_avx2(
@@ -9534,7 +9534,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_identity_add_8x8_16bpc_avx2(
@@ -9644,7 +9644,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_identity_add_16x16_16bpc_avx2(
@@ -9696,7 +9696,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
@@ -9796,7 +9796,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
@@ -9903,7 +9903,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
@@ -10011,7 +10011,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
@@ -10123,7 +10123,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
@@ -10219,7 +10219,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
@@ -10330,7 +10330,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
@@ -10443,7 +10443,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
@@ -10556,7 +10556,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
@@ -10663,7 +10663,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
@@ -10775,7 +10775,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_avx2(
     eob: c_int,
     bitdepth_max: c_int,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
@@ -10965,7 +10965,7 @@ macro_rules! impl_ffi_wrapper_16bpc {
             eob: c_int,
             bitdepth_max: c_int,
             _coeff_len: u16,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
         ) {
             unsafe {
                 $inner(

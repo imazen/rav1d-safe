@@ -14,7 +14,7 @@ use archmage::{arcane, Arm64, SimdToken};
 use libc::{c_int, ptrdiff_t};
 
 use crate::include::common::bitdepth::DynPixel;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 
 // ============================================================================
@@ -34,7 +34,7 @@ pub unsafe extern "C" fn ipred_dc_128_8bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -75,7 +75,7 @@ pub unsafe extern "C" fn ipred_dc_128_16bpc_neon(
     _max_height: c_int,
     bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -123,7 +123,7 @@ pub unsafe extern "C" fn ipred_v_8bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn ipred_v_16bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -214,7 +214,7 @@ pub unsafe extern "C" fn ipred_h_8bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -257,7 +257,7 @@ pub unsafe extern "C" fn ipred_h_16bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -305,7 +305,7 @@ pub unsafe extern "C" fn ipred_dc_8bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -359,7 +359,7 @@ pub unsafe extern "C" fn ipred_dc_16bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -417,7 +417,7 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -465,7 +465,7 @@ pub unsafe extern "C" fn ipred_dc_top_16bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -518,7 +518,7 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -566,7 +566,7 @@ pub unsafe extern "C" fn ipred_dc_left_16bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -638,7 +638,7 @@ pub unsafe extern "C" fn ipred_paeth_8bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -672,7 +672,7 @@ pub unsafe extern "C" fn ipred_paeth_16bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -710,7 +710,7 @@ pub unsafe extern "C" fn ipred_smooth_8bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -756,7 +756,7 @@ pub unsafe extern "C" fn ipred_smooth_16bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -802,7 +802,7 @@ pub unsafe extern "C" fn ipred_smooth_v_8bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -836,7 +836,7 @@ pub unsafe extern "C" fn ipred_smooth_v_16bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -875,7 +875,7 @@ pub unsafe extern "C" fn ipred_smooth_h_8bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -909,7 +909,7 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_neon(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;

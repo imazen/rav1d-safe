@@ -8,7 +8,7 @@ use crate::include::common::intops::iclip;
 use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::cpu::CpuFlags;
 use crate::src::enum_map::enum_map;
@@ -51,8 +51,8 @@ use crate::include::common::bitdepth::bpc_fn;
 
 #[inline(never)]
 fn put_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
 ) {
@@ -68,7 +68,7 @@ fn put_rust<BD: BitDepth>(
 #[inline(never)]
 fn prep_rust<BD: BitDepth>(
     tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     bd: BD,
@@ -124,7 +124,7 @@ fn filter_8tap_mid(mid: &[[i16; MID_STRIDE]], x: usize, f: &[i8; 8]) -> FilterRe
 }
 
 fn filter_8tap<BD: BitDepth>(
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     x: usize,
     f: &[i8; 8],
     stride: isize,
@@ -150,8 +150,8 @@ fn get_filter(m: usize, d: usize, filter_type: Rav1dFilterMode) -> Option<&'stat
 
 #[inline(never)]
 fn put_8tap_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -218,8 +218,8 @@ fn put_8tap_rust<BD: BitDepth>(
 
 #[inline(never)]
 fn put_8tap_scaled_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -278,7 +278,7 @@ fn put_8tap_scaled_rust<BD: BitDepth>(
 #[inline(never)]
 fn prep_8tap_rust<BD: BitDepth>(
     tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -341,7 +341,7 @@ fn prep_8tap_rust<BD: BitDepth>(
 #[inline(never)]
 fn prep_8tap_scaled_rust<BD: BitDepth>(
     tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -400,7 +400,7 @@ fn filter_bilin_mid(mid: &[[i16; MID_STRIDE]], x: usize, mxy: usize) -> FilterRe
 }
 
 fn filter_bilin<BD: BitDepth>(
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     x: usize,
     mxy: usize,
     stride: isize,
@@ -413,8 +413,8 @@ fn filter_bilin<BD: BitDepth>(
 }
 
 fn put_bilin_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -476,8 +476,8 @@ fn put_bilin_rust<BD: BitDepth>(
 }
 
 fn put_bilin_scaled_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -522,7 +522,7 @@ fn put_bilin_scaled_rust<BD: BitDepth>(
 
 fn prep_bilin_rust<BD: BitDepth>(
     tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -579,7 +579,7 @@ fn prep_bilin_rust<BD: BitDepth>(
 
 fn prep_bilin_scaled_rust<BD: BitDepth>(
     tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -627,7 +627,7 @@ fn prep_bilin_scaled_rust<BD: BitDepth>(
 /// Used when `feature = "asm"` is disabled for zero-overhead direct calls.
 #[cfg(not(feature = "asm"))]
 fn avg_direct<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
@@ -687,7 +687,7 @@ fn avg_direct<BD: BitDepth>(
 /// Direct dispatch for w_avg - bypasses function pointer table.
 #[cfg(not(feature = "asm"))]
 fn w_avg_direct<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
@@ -745,7 +745,7 @@ fn w_avg_direct<BD: BitDepth>(
 /// Direct dispatch for mask - bypasses function pointer table.
 #[cfg(not(feature = "asm"))]
 fn mask_direct<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
@@ -805,7 +805,7 @@ fn mask_direct<BD: BitDepth>(
 /// Direct dispatch for blend - bypasses function pointer table.
 #[cfg(not(feature = "asm"))]
 fn blend_direct<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN],
     w: i32,
     h: i32,
@@ -870,8 +870,8 @@ fn blend_direct<BD: BitDepth>(
 #[cfg(not(feature = "asm"))]
 fn mc_put_direct<BD: BitDepth>(
     filter: Filter2d,
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     w: i32,
     h: i32,
     mx: i32,
@@ -980,7 +980,7 @@ fn mc_put_direct<BD: BitDepth>(
 fn mct_prep_direct<BD: BitDepth>(
     filter: Filter2d,
     tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     w: i32,
     h: i32,
     mx: i32,
@@ -1084,8 +1084,8 @@ fn mct_prep_direct<BD: BitDepth>(
 #[cfg(not(feature = "asm"))]
 fn mc_scaled_direct<BD: BitDepth>(
     filter: Filter2d,
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     w: i32,
     h: i32,
     mx: i32,
@@ -1112,7 +1112,7 @@ fn mc_scaled_direct<BD: BitDepth>(
 fn mct_scaled_direct<BD: BitDepth>(
     filter: Filter2d,
     tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     w: i32,
     h: i32,
     mx: i32,
@@ -1138,7 +1138,7 @@ fn mct_scaled_direct<BD: BitDepth>(
 #[cfg(not(feature = "asm"))]
 fn blend_dir_direct<BD: BitDepth>(
     is_h: bool,
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp: &[BD::Pixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
@@ -1197,7 +1197,7 @@ fn blend_dir_direct<BD: BitDepth>(
 #[cfg(not(feature = "asm"))]
 fn w_mask_direct<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
@@ -1271,8 +1271,8 @@ fn w_mask_direct<BD: BitDepth>(
 /// No safe SIMD implementation available; calls scalar Rust fallback directly.
 #[cfg(not(feature = "asm"))]
 fn warp8x8_direct<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     abcd: &[i16; 4],
     mx: i32,
     my: i32,
@@ -1287,7 +1287,7 @@ fn warp8x8_direct<BD: BitDepth>(
 fn warp8x8t_direct<BD: BitDepth>(
     tmp: &mut [i16],
     tmp_stride: usize,
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     abcd: &[i16; 4],
     mx: i32,
     my: i32,
@@ -1318,7 +1318,7 @@ fn emu_edge_direct<BD: BitDepth>(
 #[cfg(not(feature = "asm"))]
 fn resize_direct<BD: BitDepth>(
     dst: WithOffset<PicOrBuf<AlignedVec64<u8>>>,
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     dst_w: usize,
     h: usize,
     src_w: usize,
@@ -1330,7 +1330,7 @@ fn resize_direct<BD: BitDepth>(
 }
 
 fn avg_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: usize,
@@ -1354,7 +1354,7 @@ fn avg_rust<BD: BitDepth>(
 }
 
 fn w_avg_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: usize,
@@ -1380,7 +1380,7 @@ fn w_avg_rust<BD: BitDepth>(
 }
 
 fn mask_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: usize,
@@ -1413,7 +1413,7 @@ fn blend_px<BD: BitDepth>(a: BD::Pixel, b: BD::Pixel, m: u8) -> BD::Pixel {
 }
 
 fn blend_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN],
     w: usize,
     h: usize,
@@ -1429,7 +1429,7 @@ fn blend_rust<BD: BitDepth>(
 }
 
 fn blend_v_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp: &[BD::Pixel; SCRATCH_LAP_LEN],
     w: usize,
     h: usize,
@@ -1447,7 +1447,7 @@ fn blend_v_rust<BD: BitDepth>(
 }
 
 fn blend_h_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp: &[BD::Pixel; SCRATCH_LAP_LEN],
     w: usize,
     h: usize,
@@ -1465,7 +1465,7 @@ fn blend_h_rust<BD: BitDepth>(
 }
 
 fn w_mask_rust<BD: BitDepth>(
-    mut dst: Rav1dPictureDataComponentOffset,
+    mut dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: usize,
@@ -1534,8 +1534,8 @@ fn w_mask_rust<BD: BitDepth>(
 }
 
 fn warp_affine_8x8_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     abcd: &[i16; 4],
     mx: i32,
     my: i32,
@@ -1586,7 +1586,7 @@ fn warp_affine_8x8_rust<BD: BitDepth>(
 fn warp_affine_8x8t_rust<BD: BitDepth>(
     tmp: &mut [i16],
     tmp_stride: usize,
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     abcd: &[i16; 4],
     mx: i32,
     my: i32,
@@ -1706,7 +1706,7 @@ fn emu_edge_rust<BD: BitDepth>(
 
 fn resize_rust<BD: BitDepth>(
     dst: WithOffset<PicOrBuf<AlignedVec64<u8>>>,
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     dst_w: usize,
     h: usize,
     src_w: usize,
@@ -1753,16 +1753,16 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mc(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl mc::Fn {
     pub fn call<BD: BitDepth>(
         &self,
         filter: Filter2d,
-        dst: Rav1dPictureDataComponentOffset,
-        src: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
+        src: PicOffset,
         w: i32,
         h: i32,
         mx: i32,
@@ -1805,16 +1805,16 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mc_scaled(
     dx: i32,
     dy: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl mc_scaled::Fn {
     pub fn call<BD: BitDepth>(
         &self,
         filter: Filter2d,
-        dst: Rav1dPictureDataComponentOffset,
-        src: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
+        src: PicOffset,
         w: i32,
         h: i32,
         mx: i32,
@@ -1855,15 +1855,15 @@ wrap_fn_ptr!(pub unsafe extern "C" fn warp8x8(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl warp8x8::Fn {
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
-        src: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
+        src: PicOffset,
         abcd: &[i16; 4],
         mx: i32,
         my: i32,
@@ -1900,7 +1900,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mct(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl mct::Fn {
@@ -1908,7 +1908,7 @@ impl mct::Fn {
         &self,
         filter: Filter2d,
         tmp: &mut [i16],
-        src: Rav1dPictureDataComponentOffset,
+        src: PicOffset,
         w: i32,
         h: i32,
         mx: i32,
@@ -1943,7 +1943,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mct_scaled(
     dx: i32,
     dy: i32,
     bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl mct_scaled::Fn {
@@ -1951,7 +1951,7 @@ impl mct_scaled::Fn {
         &self,
         filter: Filter2d,
         tmp: &mut [i16],
-        src: Rav1dPictureDataComponentOffset,
+        src: PicOffset,
         w: i32,
         h: i32,
         mx: i32,
@@ -1987,7 +1987,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn warp8x8t(
     my: i32,
     bitdepth_max: i32,
     _tmp_len: usize,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl warp8x8t::Fn {
@@ -1995,7 +1995,7 @@ impl warp8x8t::Fn {
         &self,
         tmp: &mut [i16],
         tmp_stride: usize,
-        src: Rav1dPictureDataComponentOffset,
+        src: PicOffset,
         abcd: &[i16; 4],
         mx: i32,
         my: i32,
@@ -2030,13 +2030,13 @@ wrap_fn_ptr!(pub unsafe extern "C" fn avg(
     w: i32,
     h: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl avg::Fn {
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         tmp1: &[i16; COMPINTER_LEN],
         tmp2: &[i16; COMPINTER_LEN],
         w: i32,
@@ -2068,13 +2068,13 @@ wrap_fn_ptr!(pub unsafe extern "C" fn w_avg(
     h: i32,
     weight: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl w_avg::Fn {
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         tmp1: &[i16; COMPINTER_LEN],
         tmp2: &[i16; COMPINTER_LEN],
         w: i32,
@@ -2106,13 +2106,13 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mask(
     h: i32,
     mask: *const u8,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl mask::Fn {
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         tmp1: &[i16; COMPINTER_LEN],
         tmp2: &[i16; COMPINTER_LEN],
         w: i32,
@@ -2146,14 +2146,14 @@ wrap_fn_ptr!(pub unsafe extern "C" fn w_mask(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl w_mask::Fn {
     pub fn call<BD: BitDepth>(
         &self,
         layout: Rav1dPixelLayoutSubSampled,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         tmp1: &[i16; COMPINTER_LEN],
         tmp2: &[i16; COMPINTER_LEN],
         w: i32,
@@ -2185,13 +2185,13 @@ wrap_fn_ptr!(pub unsafe extern "C" fn blend(
     w: i32,
     h: i32,
     mask: *const u8,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl blend::Fn {
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         tmp: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN],
         w: i32,
         h: i32,
@@ -2219,14 +2219,14 @@ wrap_fn_ptr!(pub unsafe extern "C" fn blend_dir(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl blend_dir::Fn {
     pub fn call<BD: BitDepth>(
         &self,
         is_h: bool,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         tmp: &[BD::Pixel; SCRATCH_LAP_LEN],
         w: i32,
         h: i32,
@@ -2305,7 +2305,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn resize(
     dx: i32,
     mx: i32,
     bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
     _dst: *const FFISafe<WithOffset<PicOrBuf<AlignedVec64<u8>>>>,
 ) -> ());
 
@@ -2313,7 +2313,7 @@ impl resize::Fn {
     pub fn call<BD: BitDepth>(
         &self,
         dst: WithOffset<PicOrBuf<AlignedVec64<u8>>>,
-        src: Rav1dPictureDataComponentOffset,
+        src: PicOffset,
         dst_w: usize,
         h: usize,
         src_w: usize,
@@ -2378,8 +2378,8 @@ unsafe extern "C" fn put_c_erased<BD: BitDepth, const FILTER: usize>(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `mc::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -2414,8 +2414,8 @@ unsafe extern "C" fn put_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
     dx: i32,
     dy: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `mc_scaled::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -2449,7 +2449,7 @@ unsafe extern "C" fn prep_c_erased<BD: BitDepth, const FILTER: usize>(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `mct::Fn::call`.
     let src = *unsafe { FFISafe::get(src) };
@@ -2483,7 +2483,7 @@ unsafe extern "C" fn prep_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
     dx: i32,
     dy: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `mct_scaled::Fn::call`.
     let src = *unsafe { FFISafe::get(src) };
@@ -2516,7 +2516,7 @@ unsafe extern "C" fn avg_c_erased<BD: BitDepth>(
     w: i32,
     h: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `avg::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -2539,7 +2539,7 @@ unsafe extern "C" fn w_avg_c_erased<BD: BitDepth>(
     h: i32,
     weight: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `w_avg::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -2562,7 +2562,7 @@ unsafe extern "C" fn mask_c_erased<BD: BitDepth>(
     h: i32,
     mask: *const u8,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `mask::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -2588,7 +2588,7 @@ unsafe extern "C" fn w_mask_c_erased<const SS_HOR: bool, const SS_VER: bool, BD:
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `w_mask::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -2611,7 +2611,7 @@ unsafe extern "C" fn blend_c_erased<BD: BitDepth>(
     w: i32,
     h: i32,
     mask: *const u8,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `blend::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -2634,7 +2634,7 @@ unsafe extern "C" fn blend_v_c_erased<BD: BitDepth>(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `blend_dir::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -2655,7 +2655,7 @@ unsafe extern "C" fn blend_h_c_erased<BD: BitDepth>(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `blend_dir::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -2679,8 +2679,8 @@ unsafe extern "C" fn warp_affine_8x8_c_erased<BD: BitDepth>(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `warp_8x8::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -2704,7 +2704,7 @@ unsafe extern "C" fn warp_affine_8x8t_c_erased<BD: BitDepth>(
     my: i32,
     bitdepth_max: i32,
     tmp_len: usize,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: `warp8x8t::Fn::call` passed `tmp.len()` as `tmp_len`.
     let tmp = unsafe { slice::from_raw_parts_mut(tmp, tmp_len) };
@@ -2748,7 +2748,7 @@ unsafe extern "C" fn resize_c_erased<BD: BitDepth>(
     dx: i32,
     mx0: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
     dst: *const FFISafe<WithOffset<PicOrBuf<AlignedVec64<u8>>>>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `resize::Fn::call`.

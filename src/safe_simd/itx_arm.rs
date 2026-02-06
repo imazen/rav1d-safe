@@ -18,7 +18,7 @@ use crate::include::common::bitdepth::BitDepth16;
 use crate::include::common::bitdepth::DynCoef;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 use libc::ptrdiff_t;
 
@@ -1719,7 +1719,7 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_wht_wht_4x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -1738,7 +1738,7 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_wht_wht_4x4_16bpc_inner(
@@ -1758,7 +1758,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_4x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -1777,7 +1777,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_4x4_16bpc_inner(
@@ -1798,7 +1798,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_8x8_8bpc_inner(
         dst_ptr as *mut u8,
@@ -1817,7 +1817,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_8x8_16bpc_inner(
@@ -1838,7 +1838,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_16x16_8bpc_inner(
         dst_ptr as *mut u8,
@@ -1857,7 +1857,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_16x16_16bpc_inner(
@@ -1878,7 +1878,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_identity_identity_4x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -1897,7 +1897,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_identity_identity_4x4_16bpc_inner(
@@ -1917,7 +1917,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_identity_identity_8x8_8bpc_inner(
         dst_ptr as *mut u8,
@@ -1936,7 +1936,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_identity_identity_8x8_16bpc_inner(
@@ -1956,7 +1956,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_identity_identity_16x16_8bpc_inner(
         dst_ptr as *mut u8,
@@ -1975,7 +1975,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_identity_identity_16x16_16bpc_inner(
@@ -1996,7 +1996,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_adst_adst_4x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2015,7 +2015,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_adst_adst_4x4_16bpc_inner(
@@ -2035,7 +2035,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_adst_adst_8x8_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2054,7 +2054,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_adst_adst_8x8_16bpc_inner(
@@ -2075,7 +2075,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_flipadst_flipadst_4x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2094,7 +2094,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(
@@ -2115,7 +2115,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_adst_4x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2134,7 +2134,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_adst_4x4_16bpc_inner(
@@ -2154,7 +2154,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_adst_dct_4x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2173,7 +2173,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_adst_dct_4x4_16bpc_inner(
@@ -2194,7 +2194,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_flipadst_4x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2213,7 +2213,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_flipadst_4x4_16bpc_inner(
@@ -2233,7 +2233,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_flipadst_dct_4x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2252,7 +2252,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_flipadst_dct_4x4_16bpc_inner(
@@ -2273,7 +2273,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_adst_flipadst_4x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2292,7 +2292,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_adst_flipadst_4x4_16bpc_inner(
@@ -2312,7 +2312,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_flipadst_adst_4x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2331,7 +2331,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_flipadst_adst_4x4_16bpc_inner(
@@ -2895,7 +2895,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_4x8_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2914,7 +2914,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_4x8_16bpc_inner(
@@ -2934,7 +2934,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_8x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2953,7 +2953,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_8x4_16bpc_inner(
@@ -2973,7 +2973,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_8x16_8bpc_inner(
         dst_ptr as *mut u8,
@@ -2992,7 +2992,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_8x16_16bpc_inner(
@@ -3012,7 +3012,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_16x8_8bpc_inner(
         dst_ptr as *mut u8,
@@ -3031,7 +3031,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_16x8_16bpc_inner(
@@ -3052,7 +3052,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_adst_8x8_8bpc_inner(
         dst_ptr as *mut u8,
@@ -3071,7 +3071,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_adst_8x8_16bpc_inner(
@@ -3091,7 +3091,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_8x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_adst_dct_8x8_8bpc_inner(
         dst_ptr as *mut u8,
@@ -3110,7 +3110,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_8x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_adst_dct_8x8_16bpc_inner(
@@ -3650,7 +3650,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_32x32_8bpc_inner(
         dst_ptr as *mut u8,
@@ -3669,7 +3669,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_32x32_16bpc_inner(
@@ -3689,7 +3689,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_4x16_8bpc_inner(
         dst_ptr as *mut u8,
@@ -3708,7 +3708,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_4x16_16bpc_inner(
@@ -3728,7 +3728,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_16x4_8bpc_inner(
         dst_ptr as *mut u8,
@@ -3747,7 +3747,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_16x4_16bpc_inner(
@@ -3767,7 +3767,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_16x32_8bpc_inner(
         dst_ptr as *mut u8,
@@ -3786,7 +3786,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_16x32_16bpc_inner(
@@ -3806,7 +3806,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_32x16_8bpc_inner(
         dst_ptr as *mut u8,
@@ -3825,7 +3825,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_32x16_16bpc_inner(
@@ -4334,7 +4334,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_64x64_8bpc_inner(
         dst_ptr as *mut u8,
@@ -4353,7 +4353,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_64x64_16bpc_inner(
@@ -4373,7 +4373,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_8x32_8bpc_inner(
         dst_ptr as *mut u8,
@@ -4392,7 +4392,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_8x32_16bpc_inner(
@@ -4412,7 +4412,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_32x8_8bpc_inner(
         dst_ptr as *mut u8,
@@ -4431,7 +4431,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_32x8_16bpc_inner(
@@ -4451,7 +4451,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_32x64_8bpc_inner(
         dst_ptr as *mut u8,
@@ -4470,7 +4470,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_32x64_16bpc_inner(
@@ -4490,7 +4490,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     inv_txfm_add_dct_dct_64x32_8bpc_inner(
         dst_ptr as *mut u8,
@@ -4509,7 +4509,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let dst_stride_u16 = dst_stride / 2;
     inv_txfm_add_dct_dct_64x32_16bpc_inner(
@@ -4660,7 +4660,7 @@ unsafe fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<4, 8>(
         dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
@@ -4672,7 +4672,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<8, 4>(
         dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
@@ -4684,7 +4684,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<4, 16>(
         dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
@@ -4696,7 +4696,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<16, 4>(
         dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
@@ -4708,7 +4708,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<8, 16>(
         dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
@@ -4720,7 +4720,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<16, 8>(
         dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
@@ -4736,7 +4736,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_8bpc_inner::<8, 32>(
         dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
@@ -4748,7 +4748,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<8, 32>(
         dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
@@ -4760,7 +4760,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_8bpc_inner::<32, 8>(
         dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
@@ -4772,7 +4772,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<32, 8>(
         dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
@@ -4784,7 +4784,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_8bpc_inner::<16, 32>(
         dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
@@ -4796,7 +4796,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<16, 32>(
         dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
@@ -4808,7 +4808,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_8bpc_inner::<32, 16>(
         dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
@@ -4820,7 +4820,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<32, 16>(
         dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
@@ -4832,7 +4832,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_8bpc_inner::<32, 32>(
         dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
@@ -4844,7 +4844,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<32, 32>(
         dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
@@ -5005,42 +5005,42 @@ unsafe fn inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
 pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) { inv_txfm_add_dct_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) { inv_txfm_add_identity_dct_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) { inv_txfm_add_adst_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) { inv_txfm_add_identity_adst_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) { inv_txfm_add_flipadst_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) { inv_txfm_add_identity_flipadst_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 
 // ============================================================================
@@ -5159,28 +5159,28 @@ unsafe fn inv_txfm_add_dct_dct_64x16_16bpc_inner(
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) { inv_txfm_add_dct_dct_16x64_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) { inv_txfm_add_dct_dct_16x64_16bpc_inner(dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max); }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) { inv_txfm_add_dct_dct_64x16_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_neon(
     dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
     eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) { inv_txfm_add_dct_dct_64x16_16bpc_inner(dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max); }
 
 // ============================================================================
@@ -5407,7 +5407,7 @@ macro_rules! gen_itx_arm {
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _8bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
                 eob: i32, bitdepth_max: i32, _coeff_len: u16,
-                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+                _dst: *const FFISafe<PicOffset>,
             ) {
                 inv_txfm_add_generic_8bpc(
                     dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max,
@@ -5422,7 +5422,7 @@ macro_rules! gen_itx_arm {
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _16bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
                 eob: i32, bitdepth_max: i32, _coeff_len: u16,
-                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+                _dst: *const FFISafe<PicOffset>,
             ) {
                 inv_txfm_add_generic_16bpc(
                     dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max,
@@ -5444,7 +5444,7 @@ macro_rules! gen_itx_arm_8bpc {
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _8bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
                 eob: i32, bitdepth_max: i32, _coeff_len: u16,
-                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+                _dst: *const FFISafe<PicOffset>,
             ) {
                 inv_txfm_add_generic_8bpc(
                     dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max,
@@ -5466,7 +5466,7 @@ macro_rules! gen_itx_arm_16bpc {
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _16bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
                 eob: i32, bitdepth_max: i32, _coeff_len: u16,
-                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+                _dst: *const FFISafe<PicOffset>,
             ) {
                 inv_txfm_add_generic_16bpc(
                     dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max,

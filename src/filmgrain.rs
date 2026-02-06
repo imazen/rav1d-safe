@@ -10,7 +10,7 @@ use crate::include::dav1d::headers::Dav1dFilmGrainData;
 use crate::include::dav1d::headers::Rav1dFilmGrainData;
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::assume::assume;
 use crate::src::cpu::CpuFlags;
 use crate::src::enum_map::enum_map;
@@ -120,8 +120,8 @@ wrap_fn_ptr!(pub unsafe extern "C" fn fgy_32x32xn(
     bh: c_int,
     row_num: c_int,
     bitdepth_max: c_int,
-    _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src_src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst_row: *const FFISafe<PicOffset>,
+    _src_src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl fgy_32x32xn::Fn {
@@ -192,9 +192,9 @@ wrap_fn_ptr!(pub unsafe extern "C" fn fguv_32x32xn(
     uv_pl: c_int,
     is_id: c_int,
     bitdepth_max: c_int,
-    _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _luma_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst_row: *const FFISafe<PicOffset>,
+    _src_row: *const FFISafe<PicOffset>,
+    _luma_row: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl fguv_32x32xn::Fn {
@@ -869,8 +869,8 @@ unsafe extern "C" fn fgy_32x32xn_c_erased<BD: BitDepth>(
     bh: c_int,
     row_num: c_int,
     bitdepth_max: c_int,
-    dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_row: *const FFISafe<PicOffset>,
+    src_row: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `fgy_32x32xn::Fn::call`.
     let [dst_row, src_row] = [dst_row, src_row].map(|it| *unsafe { FFISafe::get(it) });
@@ -888,8 +888,8 @@ unsafe extern "C" fn fgy_32x32xn_c_erased<BD: BitDepth>(
 }
 
 fn fgy_32x32xn_rust<BD: BitDepth>(
-    dst_row: Rav1dPictureDataComponentOffset,
-    src_row: Rav1dPictureDataComponentOffset,
+    dst_row: PicOffset,
+    src_row: PicOffset,
     data: &Rav1dFilmGrainData,
     pw: usize,
     scaling: &BD::Scaling,
@@ -1023,15 +1023,15 @@ fn fgy_32x32xn_rust<BD: BitDepth>(
 }
 
 fn fguv_32x32xn_rust<BD: BitDepth>(
-    dst_row: Rav1dPictureDataComponentOffset,
-    src_row: Rav1dPictureDataComponentOffset,
+    dst_row: PicOffset,
+    src_row: PicOffset,
     data: &Rav1dFilmGrainData,
     pw: usize,
     scaling: &BD::Scaling,
     grain_lut: &GrainLut<BD::Entry>,
     bh: usize,
     row_num: usize,
-    luma_row: Rav1dPictureDataComponentOffset,
+    luma_row: PicOffset,
     is_uv: bool,
     is_id: bool,
     is_sx: bool,
@@ -1208,9 +1208,9 @@ unsafe extern "C" fn fguv_32x32xn_c_erased<
     uv_pl: c_int,
     is_id: c_int,
     bitdepth_max: c_int,
-    dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    luma_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_row: *const FFISafe<PicOffset>,
+    src_row: *const FFISafe<PicOffset>,
+    luma_row: *const FFISafe<PicOffset>,
 ) {
     let [dst_row, src_row, luma_row] = [dst_row, src_row, luma_row].map(|row| {
         // SAFETY: Was passed as `FFISafe::new(_)` in `fguv_32x32xn::Fn::call`.
@@ -1321,8 +1321,8 @@ mod neon {
         bh: c_int,
         row_num: c_int,
         bitdepth_max: c_int,
-        _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-        _src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        _dst_row: *const FFISafe<PicOffset>,
+        _src_row: *const FFISafe<PicOffset>,
     ) {
         let dst_row = dst_row_ptr.cast();
         let src_row = src_row_ptr.cast();
@@ -1485,9 +1485,9 @@ mod neon {
         uv: c_int,
         is_id: c_int,
         bitdepth_max: c_int,
-        _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-        _src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-        _luma_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        _dst_row: *const FFISafe<PicOffset>,
+        _src_row: *const FFISafe<PicOffset>,
+        _luma_row: *const FFISafe<PicOffset>,
     ) {
         let dst_row = dst_row_ptr.cast();
         let src_row = src_row_ptr.cast();

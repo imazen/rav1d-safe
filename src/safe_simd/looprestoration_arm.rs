@@ -19,7 +19,7 @@ use crate::include::common::bitdepth::BitDepth16;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::bitdepth::LeftPixelRow;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::ffi_safe::FFISafe;
@@ -37,7 +37,7 @@ const MAX_RESTORATION_WIDTH: usize = 256 * 3 / 2;
 // ============================================================================
 
 fn wiener_filter_8bpc_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -104,7 +104,7 @@ fn wiener_filter_8bpc_inner(
 // ============================================================================
 
 fn wiener_filter_16bpc_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -181,7 +181,7 @@ pub unsafe extern "C" fn wiener_filter7_8bpc_neon(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -203,7 +203,7 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_neon(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -229,7 +229,7 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_neon(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -251,7 +251,7 @@ pub unsafe extern "C" fn wiener_filter5_16bpc_neon(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -561,7 +561,7 @@ fn selfguided_filter_8bpc(
 
 /// SGR 5x5 filter for 8bpc
 fn sgr_5x5_8bpc_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -592,7 +592,7 @@ fn sgr_5x5_8bpc_inner(
 
 /// SGR 3x3 filter for 8bpc
 fn sgr_3x3_8bpc_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -623,7 +623,7 @@ fn sgr_3x3_8bpc_inner(
 
 /// SGR mix filter for 8bpc (combines 5x5 and 3x3)
 fn sgr_mix_8bpc_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -671,7 +671,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_8bpc_neon(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -693,7 +693,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_8bpc_neon(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -715,7 +715,7 @@ pub unsafe extern "C" fn sgr_filter_mix_8bpc_neon(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -1020,7 +1020,7 @@ fn selfguided_filter_16bpc(
 
 /// SGR 5x5 filter for 16bpc
 fn sgr_5x5_16bpc_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -1052,7 +1052,7 @@ fn sgr_5x5_16bpc_inner(
 
 /// SGR 3x3 filter for 16bpc
 fn sgr_3x3_16bpc_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -1084,7 +1084,7 @@ fn sgr_3x3_16bpc_inner(
 
 /// SGR mix filter for 16bpc
 fn sgr_mix_16bpc_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -1133,7 +1133,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_16bpc_neon(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -1155,7 +1155,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_16bpc_neon(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -1177,7 +1177,7 @@ pub unsafe extern "C" fn sgr_filter_mix_16bpc_neon(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };

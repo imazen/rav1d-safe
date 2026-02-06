@@ -22,7 +22,7 @@ use crate::include::common::bitdepth::BitDepth16;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::bitdepth::LeftPixelRow;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::ffi_safe::FFISafe;
@@ -46,7 +46,7 @@ const REST_UNIT_STRIDE: usize = 256 * 3 / 2 + 3 + 3; // = 390
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn wiener_filter7_8bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -193,7 +193,7 @@ unsafe fn wiener_filter7_8bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn wiener_filter5_8bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -222,7 +222,7 @@ unsafe fn wiener_filter5_8bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn wiener_filter7_16bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -296,7 +296,7 @@ unsafe fn wiener_filter7_16bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn wiener_filter5_16bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -334,7 +334,7 @@ pub unsafe extern "C" fn wiener_filter7_8bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     // SAFETY: p and lpf were passed as FFISafe::new(_) in loop_restoration_filter::Fn::call
@@ -367,7 +367,7 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     // SAFETY: p and lpf were passed as FFISafe::new(_) in loop_restoration_filter::Fn::call
@@ -406,7 +406,7 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -436,7 +436,7 @@ pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -783,7 +783,7 @@ fn selfguided_filter_8bpc(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn sgr_5x5_8bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -816,7 +816,7 @@ unsafe fn sgr_5x5_8bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn sgr_3x3_8bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -849,7 +849,7 @@ unsafe fn sgr_3x3_8bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn sgr_mix_8bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -899,7 +899,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_8bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -929,7 +929,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_8bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -959,7 +959,7 @@ pub unsafe extern "C" fn sgr_filter_mix_8bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -1309,7 +1309,7 @@ fn selfguided_filter_16bpc(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn sgr_5x5_16bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -1343,7 +1343,7 @@ unsafe fn sgr_5x5_16bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn sgr_3x3_16bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -1377,7 +1377,7 @@ unsafe fn sgr_3x3_16bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn sgr_mix_16bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -1428,7 +1428,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_16bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -1458,7 +1458,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_16bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -1488,7 +1488,7 @@ pub unsafe extern "C" fn sgr_filter_mix_16bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };

@@ -4,7 +4,7 @@ use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::Align16;
 use crate::src::cpu::CpuFlags;
 use crate::src::disjoint_mut::DisjointMut;
@@ -34,7 +34,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) -> ());
 
@@ -45,7 +45,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
 #[cfg(not(feature = "asm"))]
 fn loopfilter_sb_direct<BD: BitDepth>(
     f: &Rav1dFrameData,
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     mask: &[u32; 3],
     lvl: WithOffset<&DisjointMut<Vec<u8>>>,
     w: usize,
@@ -179,7 +179,7 @@ impl loopfilter_sb::Fn {
     pub fn call<BD: BitDepth>(
         &self,
         f: &Rav1dFrameData,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         mask: &[u32; 3],
         lvl: WithOffset<&DisjointMut<Vec<u8>>>,
         w: usize,
@@ -235,7 +235,7 @@ pub struct Rav1dLoopFilterDSPContext {
 
 #[inline(never)]
 fn loop_filter<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     e: u8,
     i: u8,
     h: u8,
@@ -435,7 +435,7 @@ enum YUV {
 }
 
 fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
-    mut dst: Rav1dPictureDataComponentOffset,
+    mut dst: PicOffset,
     vmask: &[u32; 3],
     mut lvl: WithOffset<&DisjointMut<Vec<u8>>>,
     b4_stride: usize,
@@ -514,7 +514,7 @@ unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, c
     lut: &Align16<Av1FilterLUT>,
     wh: c_int,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `loopfilter_sb::Fn::call`.

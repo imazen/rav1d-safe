@@ -5,7 +5,7 @@ use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynCoef;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::cpu::CpuFlags;
 use crate::src::enum_map::DefaultValue;
 use crate::src::ffi_safe::FFISafe;
@@ -64,7 +64,7 @@ pub type Itx1dFn = fn(c: &mut [i32], stride: NonZeroUsize, min: i32, max: i32);
 
 #[inline(never)]
 fn inv_txfm_add<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     coeff: &mut [BD::Coef],
     eob: i32,
     w: usize,
@@ -160,7 +160,7 @@ fn inv_txfm_add<BD: BitDepth>(
 }
 
 fn inv_txfm_add_rust<const W: usize, const H: usize, const TYPE: TxfmType, BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     coeff: &mut [BD::Coef],
     eob: i32,
     bd: BD,
@@ -272,7 +272,7 @@ unsafe extern "C" fn inv_txfm_add_c_erased<
     eob: i32,
     bitdepth_max: i32,
     coeff_len: u16,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `itxfm::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -289,7 +289,7 @@ wrap_fn_ptr!(unsafe extern "C" fn itxfm(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 
@@ -321,7 +321,7 @@ macro_rules! impl_itxfm_direct_dispatch {
                 eob: i32,
                 bitdepth_max: i32,
                 coeff_len: u16,
-                dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+                dst: *const FFISafe<PicOffset>,
             ) -> bool {
                 use $mod_path as si;
 
@@ -549,7 +549,7 @@ fn itxfm_add_direct<BD: BitDepth>(
     eob: i32,
     bitdepth_max: i32,
     coeff_len: u16,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
 
@@ -583,7 +583,7 @@ impl itxfm::Fn {
         &self,
         tx_size: usize,
         tx_type: usize,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         coeff: &mut [BD::Coef],
         eob: i32,
         bd: BD,
@@ -619,7 +619,7 @@ pub struct Rav1dInvTxfmDSPContext {
 }
 
 fn inv_txfm_add_wht_wht_4x4_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     coeff: &mut [BD::Coef],
     bd: BD,
 ) {

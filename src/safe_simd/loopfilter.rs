@@ -19,7 +19,7 @@ use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::Align16;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::ffi_safe::FFISafe;
@@ -452,7 +452,7 @@ pub unsafe extern "C" fn lpf_h_sb_y_8bpc_avx2(
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     unsafe {
@@ -481,7 +481,7 @@ pub unsafe extern "C" fn lpf_v_sb_y_8bpc_avx2(
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     unsafe {
@@ -510,7 +510,7 @@ pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_avx2(
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     unsafe {
@@ -539,7 +539,7 @@ pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_avx2(
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     unsafe {
@@ -947,7 +947,7 @@ pub unsafe extern "C" fn lpf_h_sb_y_16bpc_avx2(
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     unsafe {
@@ -976,7 +976,7 @@ pub unsafe extern "C" fn lpf_v_sb_y_16bpc_avx2(
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     unsafe {
@@ -1005,7 +1005,7 @@ pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_avx2(
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     unsafe {
@@ -1034,7 +1034,7 @@ pub unsafe extern "C" fn lpf_v_sb_uv_16bpc_avx2(
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     unsafe {

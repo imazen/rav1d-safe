@@ -18,7 +18,7 @@ use libc::{intptr_t, ptrdiff_t};
 
 use crate::include::common::bitdepth::{DynEntry, DynPixel, DynScaling};
 use crate::include::dav1d::headers::{Dav1dFilmGrainData, Rav1dFilmGrainData};
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::filmgrain::{GRAIN_HEIGHT, GRAIN_WIDTH, FG_BLOCK_SIZE};
 use crate::src::internal::GrainLut;
@@ -376,8 +376,8 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_neon(
     bh: c_int,
     row_num: c_int,
     _bitdepth_max: c_int,
-    _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst_row: *const FFISafe<PicOffset>,
+    _src_row: *const FFISafe<PicOffset>,
 ) {
     let dst = dst_row_ptr as *mut u8;
     let src = src_row_ptr as *const u8;
@@ -494,8 +494,8 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_neon(
     bh: c_int,
     row_num: c_int,
     bitdepth_max: c_int,
-    _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst_row: *const FFISafe<PicOffset>,
+    _src_row: *const FFISafe<PicOffset>,
 ) {
     let dst = dst_row_ptr as *mut u16;
     let src = src_row_ptr as *const u16;
@@ -793,9 +793,9 @@ macro_rules! fguv_8bpc_wrapper {
             grain_lut: *const GrainLut<DynEntry>, bh: c_int, row_num: c_int,
             luma_row_ptr: *const DynPixel, luma_stride: ptrdiff_t,
             uv_pl: c_int, is_id: c_int, _bitdepth_max: c_int,
-            _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-            _src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-            _luma_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst_row: *const FFISafe<PicOffset>,
+            _src_row: *const FFISafe<PicOffset>,
+            _luma_row: *const FFISafe<PicOffset>,
         ) {
             let data: Rav1dFilmGrainData = data.clone().into();
             fguv_inner_8bpc(
@@ -924,9 +924,9 @@ macro_rules! fguv_16bpc_wrapper {
             grain_lut: *const GrainLut<DynEntry>, bh: c_int, row_num: c_int,
             luma_row_ptr: *const DynPixel, luma_stride: ptrdiff_t,
             uv_pl: c_int, is_id: c_int, bitdepth_max: c_int,
-            _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-            _src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-            _luma_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst_row: *const FFISafe<PicOffset>,
+            _src_row: *const FFISafe<PicOffset>,
+            _luma_row: *const FFISafe<PicOffset>,
         ) {
             let data: Rav1dFilmGrainData = data.clone().into();
             fguv_inner_16bpc(

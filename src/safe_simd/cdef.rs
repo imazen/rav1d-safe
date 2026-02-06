@@ -16,7 +16,7 @@ use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::bitdepth::LeftPixelRow2px;
 use crate::include::common::intops::apply_sign;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::cdef::CdefEdgeFlags;
 use crate::src::cdef::CdefBottom;
@@ -78,7 +78,7 @@ unsafe fn constrain_avx2(
 /// Returns direction (0-7) and sets variance
 #[inline(never)]
 fn cdef_find_dir_scalar<BD: BitDepth>(
-    img: Rav1dPictureDataComponentOffset,
+    img: PicOffset,
     variance: &mut c_uint,
     bd: BD,
 ) -> c_int {
@@ -221,7 +221,7 @@ fn constrain_scalar(diff: i32, threshold: c_int, shift: c_int) -> i32 {
 /// Padding function for 8bpc - copies edge pixels into temporary buffer
 fn padding_8bpc(
     tmp: &mut [u16],
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u8>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -302,7 +302,7 @@ fn padding_8bpc(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn cdef_filter_8x8_8bpc_avx2_inner(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u8>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -445,7 +445,7 @@ pub unsafe extern "C" fn cdef_filter_8x8_8bpc_avx2(
     damping: c_int,
     edges: CdefEdgeFlags,
     _bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top: *const FFISafe<CdefTop>,
     bottom: *const FFISafe<CdefBottom>,
 ) {
@@ -467,7 +467,7 @@ pub unsafe extern "C" fn cdef_filter_8x8_8bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn cdef_filter_4x8_8bpc_avx2_inner(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u8>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -608,7 +608,7 @@ pub unsafe extern "C" fn cdef_filter_4x8_8bpc_avx2(
     damping: c_int,
     edges: CdefEdgeFlags,
     _bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top: *const FFISafe<CdefTop>,
     bottom: *const FFISafe<CdefBottom>,
 ) {
@@ -630,7 +630,7 @@ pub unsafe extern "C" fn cdef_filter_4x8_8bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn cdef_filter_4x4_8bpc_avx2_inner(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u8>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -771,7 +771,7 @@ pub unsafe extern "C" fn cdef_filter_4x4_8bpc_avx2(
     damping: c_int,
     edges: CdefEdgeFlags,
     _bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top: *const FFISafe<CdefTop>,
     bottom: *const FFISafe<CdefBottom>,
 ) {
@@ -797,7 +797,7 @@ pub unsafe extern "C" fn cdef_find_dir_8bpc_avx2(
     _dst_stride: ptrdiff_t,
     variance: &mut c_uint,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) -> c_int {
     use crate::include::common::bitdepth::BitDepth8;
 
@@ -814,7 +814,7 @@ pub unsafe extern "C" fn cdef_find_dir_8bpc_avx2(
 /// Padding function for 16bpc
 fn padding_16bpc(
     tmp: &mut [u16],
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u16>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -899,7 +899,7 @@ fn padding_16bpc(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn cdef_filter_8x8_16bpc_avx2_inner(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u16>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -1038,7 +1038,7 @@ unsafe fn cdef_filter_8x8_16bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn cdef_filter_4x8_16bpc_avx2_inner(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u16>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -1119,7 +1119,7 @@ unsafe fn cdef_filter_4x8_16bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn cdef_filter_4x4_16bpc_avx2_inner(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u16>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -1210,7 +1210,7 @@ pub unsafe extern "C" fn cdef_filter_8x8_16bpc_avx2(
     damping: c_int,
     edges: CdefEdgeFlags,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top: *const FFISafe<CdefTop>,
     bottom: *const FFISafe<CdefBottom>,
 ) {
@@ -1243,7 +1243,7 @@ pub unsafe extern "C" fn cdef_filter_4x8_16bpc_avx2(
     damping: c_int,
     edges: CdefEdgeFlags,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top: *const FFISafe<CdefTop>,
     bottom: *const FFISafe<CdefBottom>,
 ) {
@@ -1276,7 +1276,7 @@ pub unsafe extern "C" fn cdef_filter_4x4_16bpc_avx2(
     damping: c_int,
     edges: CdefEdgeFlags,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top: *const FFISafe<CdefTop>,
     bottom: *const FFISafe<CdefBottom>,
 ) {
@@ -1302,7 +1302,7 @@ pub unsafe extern "C" fn cdef_find_dir_16bpc_avx2(
     _dst_stride: ptrdiff_t,
     variance: &mut c_uint,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) -> c_int {
     use crate::include::common::bitdepth::BitDepth16;
 

@@ -17,7 +17,7 @@ use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::headers::Rav1dWarpedMotionParams;
 use crate::include::dav1d::headers::Rav1dWarpedMotionType;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::assume::assume;
 use crate::src::cdef_apply::rav1d_cdef_brow;
 use crate::src::ctx::CaseSet;
@@ -1271,7 +1271,7 @@ fn read_coef_tree<BD: BitDepth>(
     tx_split: [u16; 2],
     x_off: c_int,
     y_off: c_int,
-    mut y_dst: Option<Rav1dPictureDataComponentOffset>,
+    mut y_dst: Option<PicOffset>,
 ) {
     let bd = BD::from_c(f.bitdepth_max);
 
@@ -1698,7 +1698,7 @@ pub(crate) fn rav1d_read_coef_blocks<BD: BitDepth>(
 
 enum MaybeTempPixels<'a, TmpStride> {
     NonTemp {
-        dst: Rav1dPictureDataComponentOffset<'a>,
+        dst: PicOffset<'a>,
     },
     Temp {
         tmp: &'a mut [i16],
@@ -1765,7 +1765,7 @@ fn mc<BD: BitDepth>(
                 &ref_data[pl],
             );
             let stride = 192;
-            Rav1dPictureDataComponentOffset {
+            PicOffset {
                 data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
                 offset: stride * (my != 0) as usize * 3 + (mx != 0) as usize * 3,
             }
@@ -1838,7 +1838,7 @@ fn mc<BD: BitDepth>(
                 println!("Emu");
             }
             let stride = 320;
-            Rav1dPictureDataComponentOffset {
+            PicOffset {
                 data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
                 offset: stride * 3 + 3,
             }
@@ -1869,7 +1869,7 @@ fn mc<BD: BitDepth>(
 fn obmc<BD: BitDepth>(
     f: &Rav1dFrameData,
     t: &mut Rav1dTaskContext,
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     b_dim: &[u8; 4],
     pl: usize,
     bx4: c_int,
@@ -1906,7 +1906,7 @@ fn obmc<BD: BitDepth>(
                     &mut scratch.emu_edge,
                     t.b,
                     MaybeTempPixels::NonTemp {
-                        dst: Rav1dPictureDataComponentOffset {
+                        dst: PicOffset {
                             data: &Rav1dPictureDataComponent::wrap_buf::<BD>(
                                 lap,
                                 ow4 as usize * h_mul as usize,
@@ -1955,7 +1955,7 @@ fn obmc<BD: BitDepth>(
                     &mut scratch.emu_edge,
                     t.b,
                     MaybeTempPixels::NonTemp {
-                        dst: Rav1dPictureDataComponentOffset {
+                        dst: PicOffset {
                             data: &Rav1dPictureDataComponent::wrap_buf::<BD>(
                                 lap,
                                 ow4 as usize * h_mul as usize,
@@ -2044,7 +2044,7 @@ fn warp_affine<BD: BitDepth>(
                     &ref_data[pl],
                 );
                 let stride = 32;
-                Rav1dPictureDataComponentOffset {
+                PicOffset {
                     data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
                     offset: stride * 3 + 3,
                 }
@@ -3117,7 +3117,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
             let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
             f.dsp.ipred.intra_pred[m as usize].call(
                 m as usize,
-                Rav1dPictureDataComponentOffset {
+                PicOffset {
                     data: &Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * bw4 as usize),
                     offset: 0,
                 },
@@ -3402,7 +3402,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                         let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
                         f.dsp.ipred.intra_pred[m as usize].call(
                             m as usize,
-                            Rav1dPictureDataComponentOffset {
+                            PicOffset {
                                 data: &Rav1dPictureDataComponent::wrap_buf::<BD>(
                                     tmp,
                                     4 * cbw4 as usize,

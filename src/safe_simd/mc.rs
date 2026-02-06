@@ -15,7 +15,7 @@ use archmage::{arcane, Desktop64, SimdToken};
 
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::headers::Rav1dFilterMode;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::COMPINTER_LEN;
 use crate::src::levels::Filter2d;
@@ -45,7 +45,7 @@ pub unsafe extern "C" fn avg_8bpc_avx2(
     w: i32,
     h: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn avg_16bpc_avx2(
     w: i32,
     h: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -242,7 +242,7 @@ pub unsafe extern "C" fn avg_8bpc_sse4(
     w: i32,
     h: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     // For SSE4.1, use scalar fallback for now
     // TODO: Implement proper SSE4.1 version with _mm_* intrinsics
@@ -264,7 +264,7 @@ pub unsafe extern "C" fn avg_scalar(
     w: i32,
     h: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -312,7 +312,7 @@ pub unsafe extern "C" fn w_avg_8bpc_avx2(
     h: i32,
     weight: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -407,7 +407,7 @@ pub unsafe extern "C" fn w_avg_16bpc_avx2(
     h: i32,
     weight: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -498,7 +498,7 @@ pub unsafe extern "C" fn w_avg_scalar(
     h: i32,
     weight: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -549,7 +549,7 @@ pub unsafe extern "C" fn mask_8bpc_avx2(
     h: i32,
     mask_ptr: *const u8,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -655,7 +655,7 @@ pub unsafe extern "C" fn mask_16bpc_avx2(
     h: i32,
     mask_ptr: *const u8,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -747,7 +747,7 @@ pub unsafe extern "C" fn mask_scalar(
     h: i32,
     mask_ptr: *const u8,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -798,7 +798,7 @@ pub unsafe extern "C" fn blend_8bpc_avx2(
     w: i32,
     h: i32,
     mask_ptr: *const u8,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -881,7 +881,7 @@ pub unsafe extern "C" fn blend_16bpc_avx2(
     w: i32,
     h: i32,
     mask_ptr: *const u8,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -971,7 +971,7 @@ pub unsafe extern "C" fn blend_v_8bpc_avx2(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -1045,7 +1045,7 @@ pub unsafe extern "C" fn blend_h_8bpc_avx2(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -1119,7 +1119,7 @@ pub unsafe extern "C" fn blend_v_16bpc_avx2(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -1197,7 +1197,7 @@ pub unsafe extern "C" fn blend_h_16bpc_avx2(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -1784,8 +1784,8 @@ pub unsafe extern "C" fn put_8tap_8bpc_avx2<const FILTER: usize>(
     mx: i32,
     my: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     let filter = Filter2d::from_repr(FILTER).unwrap();
     let (h_filter, v_filter) = filter.hv();
@@ -1813,8 +1813,8 @@ pub unsafe extern "C" fn put_8tap_regular_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -1846,8 +1846,8 @@ pub unsafe extern "C" fn put_8tap_regular_smooth_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -1879,8 +1879,8 @@ pub unsafe extern "C" fn put_8tap_regular_sharp_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -1912,8 +1912,8 @@ pub unsafe extern "C" fn put_8tap_smooth_regular_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -1945,8 +1945,8 @@ pub unsafe extern "C" fn put_8tap_smooth_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -1978,8 +1978,8 @@ pub unsafe extern "C" fn put_8tap_smooth_sharp_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2011,8 +2011,8 @@ pub unsafe extern "C" fn put_8tap_sharp_regular_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2044,8 +2044,8 @@ pub unsafe extern "C" fn put_8tap_sharp_smooth_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2077,8 +2077,8 @@ pub unsafe extern "C" fn put_8tap_sharp_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2293,7 +2293,7 @@ pub unsafe extern "C" fn prep_8tap_8bpc_avx2<const FILTER: usize>(
     mx: i32,
     my: i32,
     _bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     let filter = Filter2d::from_repr(FILTER).unwrap();
     let (h_filter, v_filter) = filter.hv();
@@ -2317,7 +2317,7 @@ pub unsafe extern "C" fn prep_8tap_regular_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2338,7 +2338,7 @@ pub unsafe extern "C" fn prep_8tap_regular_smooth_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2359,7 +2359,7 @@ pub unsafe extern "C" fn prep_8tap_regular_sharp_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2380,7 +2380,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_regular_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2401,7 +2401,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2422,7 +2422,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_sharp_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2443,7 +2443,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_regular_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2464,7 +2464,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_smooth_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -2485,7 +2485,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_8bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -3315,8 +3315,8 @@ pub unsafe extern "C" fn put_8tap_16bpc_avx2<const FILTER: usize>(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     let filter = Filter2d::from_repr(FILTER).unwrap();
     let (h_filter, v_filter) = filter.hv();
@@ -3341,7 +3341,7 @@ pub unsafe extern "C" fn prep_8tap_16bpc_avx2<const FILTER: usize>(
     mx: i32,
     my: i32,
     _bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     let filter = Filter2d::from_repr(FILTER).unwrap();
     let (h_filter, v_filter) = filter.hv();
@@ -3359,7 +3359,7 @@ pub unsafe extern "C" fn prep_8tap_16bpc_avx2<const FILTER: usize>(
 pub unsafe extern "C" fn put_8tap_regular_16bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
     w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
@@ -3369,7 +3369,7 @@ pub unsafe extern "C" fn put_8tap_regular_16bpc_avx2(
 pub unsafe extern "C" fn put_8tap_regular_smooth_16bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
     w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
@@ -3379,7 +3379,7 @@ pub unsafe extern "C" fn put_8tap_regular_smooth_16bpc_avx2(
 pub unsafe extern "C" fn put_8tap_regular_sharp_16bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
     w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
@@ -3389,7 +3389,7 @@ pub unsafe extern "C" fn put_8tap_regular_sharp_16bpc_avx2(
 pub unsafe extern "C" fn put_8tap_smooth_regular_16bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
     w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
@@ -3399,7 +3399,7 @@ pub unsafe extern "C" fn put_8tap_smooth_regular_16bpc_avx2(
 pub unsafe extern "C" fn put_8tap_smooth_16bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
     w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
@@ -3409,7 +3409,7 @@ pub unsafe extern "C" fn put_8tap_smooth_16bpc_avx2(
 pub unsafe extern "C" fn put_8tap_smooth_sharp_16bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
     w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
@@ -3419,7 +3419,7 @@ pub unsafe extern "C" fn put_8tap_smooth_sharp_16bpc_avx2(
 pub unsafe extern "C" fn put_8tap_sharp_regular_16bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
     w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
@@ -3429,7 +3429,7 @@ pub unsafe extern "C" fn put_8tap_sharp_regular_16bpc_avx2(
 pub unsafe extern "C" fn put_8tap_sharp_smooth_16bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
     w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
@@ -3439,7 +3439,7 @@ pub unsafe extern "C" fn put_8tap_sharp_smooth_16bpc_avx2(
 pub unsafe extern "C" fn put_8tap_sharp_16bpc_avx2(
     dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
     w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { put_8tap_16bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
 }
@@ -3450,7 +3450,7 @@ pub unsafe extern "C" fn put_8tap_sharp_16bpc_avx2(
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_regular_16bpc_avx2(
     tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
@@ -3459,7 +3459,7 @@ pub unsafe extern "C" fn prep_8tap_regular_16bpc_avx2(
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_regular_smooth_16bpc_avx2(
     tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
@@ -3468,7 +3468,7 @@ pub unsafe extern "C" fn prep_8tap_regular_smooth_16bpc_avx2(
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_regular_sharp_16bpc_avx2(
     tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
@@ -3477,7 +3477,7 @@ pub unsafe extern "C" fn prep_8tap_regular_sharp_16bpc_avx2(
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_smooth_regular_16bpc_avx2(
     tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
@@ -3486,7 +3486,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_regular_16bpc_avx2(
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_smooth_16bpc_avx2(
     tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
@@ -3495,7 +3495,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_16bpc_avx2(
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_smooth_sharp_16bpc_avx2(
     tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
@@ -3504,7 +3504,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_sharp_16bpc_avx2(
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_sharp_regular_16bpc_avx2(
     tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
@@ -3513,7 +3513,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_regular_16bpc_avx2(
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_sharp_smooth_16bpc_avx2(
     tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
@@ -3522,7 +3522,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_smooth_16bpc_avx2(
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_sharp_16bpc_avx2(
     tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
 ) {
     unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
 }
@@ -3907,8 +3907,8 @@ pub unsafe extern "C" fn put_bilin_8bpc_avx2(
     mx: i32,
     my: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -4029,7 +4029,7 @@ pub unsafe extern "C" fn prep_bilin_8bpc_avx2(
     mx: i32,
     my: i32,
     _bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
@@ -4150,7 +4150,7 @@ pub unsafe extern "C" fn w_mask_444_8bpc_avx2(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         w_mask_8bpc_avx2_impl::<false, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign);
@@ -4170,7 +4170,7 @@ pub unsafe extern "C" fn w_mask_422_8bpc_avx2(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         w_mask_8bpc_avx2_impl::<true, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign);
@@ -4190,7 +4190,7 @@ pub unsafe extern "C" fn w_mask_420_8bpc_avx2(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         w_mask_8bpc_avx2_impl::<true, true>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign);
@@ -4290,7 +4290,7 @@ pub unsafe extern "C" fn w_mask_444_16bpc_avx2(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         w_mask_16bpc_avx2_impl::<false, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max);
@@ -4309,7 +4309,7 @@ pub unsafe extern "C" fn w_mask_422_16bpc_avx2(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         w_mask_16bpc_avx2_impl::<true, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max);
@@ -4328,7 +4328,7 @@ pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
         w_mask_16bpc_avx2_impl::<true, true>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max);
@@ -4739,8 +4739,8 @@ pub unsafe extern "C" fn put_bilin_16bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -4815,7 +4815,7 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;

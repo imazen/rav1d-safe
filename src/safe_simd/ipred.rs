@@ -15,7 +15,7 @@ use core::arch::x86_64::*;
 use libc::{ptrdiff_t, c_int};
 
 use crate::include::common::bitdepth::DynPixel;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 
 // ============================================================================
@@ -38,7 +38,7 @@ pub unsafe extern "C" fn ipred_dc_128_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -86,7 +86,7 @@ pub unsafe extern "C" fn ipred_v_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -164,7 +164,7 @@ pub unsafe extern "C" fn ipred_h_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -215,7 +215,7 @@ pub unsafe extern "C" fn ipred_dc_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -274,7 +274,7 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -328,7 +328,7 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -393,7 +393,7 @@ pub unsafe extern "C" fn ipred_paeth_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -516,7 +516,7 @@ pub unsafe extern "C" fn ipred_smooth_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -616,7 +616,7 @@ pub unsafe extern "C" fn ipred_smooth_v_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -695,7 +695,7 @@ pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -784,7 +784,7 @@ pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = (width as usize / 4) * 4; // Round down to multiple of 4
     let height = height as usize;
@@ -876,7 +876,7 @@ pub unsafe extern "C" fn ipred_z1_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as i32;
@@ -1073,7 +1073,7 @@ pub unsafe extern "C" fn ipred_z2_8bpc_avx2(
     max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as i32;
     let height = height as i32;
@@ -1278,7 +1278,7 @@ pub unsafe extern "C" fn ipred_z3_8bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as i32;
@@ -1411,7 +1411,7 @@ pub unsafe extern "C" fn ipred_dc_128_16bpc_avx2(
     _max_height: c_int,
     bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -1463,7 +1463,7 @@ pub unsafe extern "C" fn ipred_v_16bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -1516,7 +1516,7 @@ pub unsafe extern "C" fn ipred_h_16bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -1568,7 +1568,7 @@ pub unsafe extern "C" fn ipred_dc_16bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -1632,7 +1632,7 @@ pub unsafe extern "C" fn ipred_dc_top_16bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -1686,7 +1686,7 @@ pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -1740,7 +1740,7 @@ pub unsafe extern "C" fn ipred_paeth_16bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -1793,7 +1793,7 @@ pub unsafe extern "C" fn ipred_smooth_16bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -1842,7 +1842,7 @@ pub unsafe extern "C" fn ipred_smooth_v_16bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -1881,7 +1881,7 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as usize;
@@ -1924,7 +1924,7 @@ pub unsafe extern "C" fn ipred_z1_16bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as i32;
@@ -2093,7 +2093,7 @@ pub unsafe extern "C" fn ipred_z2_16bpc_avx2(
     max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as i32;
     let height = height as i32;
@@ -2284,7 +2284,7 @@ pub unsafe extern "C" fn ipred_z3_16bpc_avx2(
     _max_height: c_int,
     _bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = width as usize;
     let height = height as i32;
@@ -2415,7 +2415,7 @@ pub unsafe extern "C" fn ipred_filter_16bpc_avx2(
     _max_height: c_int,
     bitdepth_max: c_int,
     topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let width = (width as usize / 4) * 4; // Round down to multiple of 4
     let height = height as usize;

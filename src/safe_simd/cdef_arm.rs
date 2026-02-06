@@ -19,7 +19,7 @@ use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::bitdepth::LeftPixelRow2px;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::cdef::CdefEdgeFlags;
 use crate::src::cdef::CdefBottom;
 use crate::src::cdef::CdefTop;
@@ -47,7 +47,7 @@ fn constrain_scalar(diff: i32, threshold: c_int, shift: c_int) -> i32 {
 /// Padding function for 8bpc - copies edge pixels into temporary buffer
 fn padding_8bpc(
     tmp: &mut [u16],
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u8>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -126,7 +126,7 @@ fn padding_8bpc(
 
 /// CDEF filter inner implementation for 8bpc
 fn cdef_filter_block_8bpc_inner(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u8>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -267,7 +267,7 @@ fn cdef_filter_block_8bpc_inner(
 
 /// Scalar implementation of cdef_find_dir for 8bpc
 fn cdef_find_dir_8bpc_inner(
-    img: Rav1dPictureDataComponentOffset,
+    img: PicOffset,
     variance: &mut c_uint,
 ) -> c_int {
     use crate::include::common::bitdepth::BitDepth8;
@@ -351,7 +351,7 @@ fn cdef_find_dir_8bpc_inner(
 /// Padding function for 16bpc
 fn padding_16bpc(
     tmp: &mut [u16],
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u16>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -432,7 +432,7 @@ fn padding_16bpc(
 
 /// CDEF filter inner implementation for 16bpc
 fn cdef_filter_block_16bpc_inner(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<u16>; 8],
     top: &CdefTop,
     bottom: &CdefBottom,
@@ -570,7 +570,7 @@ fn cdef_filter_block_16bpc_inner(
 
 /// Scalar implementation of cdef_find_dir for 16bpc
 fn cdef_find_dir_16bpc_inner(
-    img: Rav1dPictureDataComponentOffset,
+    img: PicOffset,
     variance: &mut c_uint,
     bitdepth_max: i32,
 ) -> c_int {
@@ -667,7 +667,7 @@ pub unsafe extern "C" fn cdef_filter_8x8_8bpc_neon(
     damping: c_int,
     edges: CdefEdgeFlags,
     _bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top_ffi: *const FFISafe<CdefTop>,
     bottom_ffi: *const FFISafe<CdefBottom>,
 ) {
@@ -696,7 +696,7 @@ pub unsafe extern "C" fn cdef_filter_4x8_8bpc_neon(
     damping: c_int,
     edges: CdefEdgeFlags,
     _bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top_ffi: *const FFISafe<CdefTop>,
     bottom_ffi: *const FFISafe<CdefBottom>,
 ) {
@@ -725,7 +725,7 @@ pub unsafe extern "C" fn cdef_filter_4x4_8bpc_neon(
     damping: c_int,
     edges: CdefEdgeFlags,
     _bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top_ffi: *const FFISafe<CdefTop>,
     bottom_ffi: *const FFISafe<CdefBottom>,
 ) {
@@ -747,7 +747,7 @@ pub unsafe extern "C" fn cdef_find_dir_8bpc_neon(
     _dst_stride: ptrdiff_t,
     variance: &mut c_uint,
     _bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) -> c_int {
     let img = *FFISafe::get(dst);
     cdef_find_dir_8bpc_inner(img, variance)
@@ -766,7 +766,7 @@ pub unsafe extern "C" fn cdef_filter_8x8_16bpc_neon(
     damping: c_int,
     edges: CdefEdgeFlags,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top_ffi: *const FFISafe<CdefTop>,
     bottom_ffi: *const FFISafe<CdefBottom>,
 ) {
@@ -795,7 +795,7 @@ pub unsafe extern "C" fn cdef_filter_4x8_16bpc_neon(
     damping: c_int,
     edges: CdefEdgeFlags,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top_ffi: *const FFISafe<CdefTop>,
     bottom_ffi: *const FFISafe<CdefBottom>,
 ) {
@@ -824,7 +824,7 @@ pub unsafe extern "C" fn cdef_filter_4x4_16bpc_neon(
     damping: c_int,
     edges: CdefEdgeFlags,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top_ffi: *const FFISafe<CdefTop>,
     bottom_ffi: *const FFISafe<CdefBottom>,
 ) {
@@ -846,7 +846,7 @@ pub unsafe extern "C" fn cdef_find_dir_16bpc_neon(
     _dst_stride: ptrdiff_t,
     variance: &mut c_uint,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) -> c_int {
     let img = *FFISafe::get(dst);
     cdef_find_dir_16bpc_inner(img, variance, bitdepth_max)

@@ -3,7 +3,7 @@
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::include::dav1d::headers::Rav1dRestorationType;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::Align16;
 use crate::src::internal::Rav1dContext;
 use crate::src::internal::Rav1dFrameData;
@@ -33,7 +33,7 @@ bitflags! {
 fn lr_stripe<BD: BitDepth>(
     c: &Rav1dContext,
     f: &Rav1dFrameData,
-    mut p: Rav1dPictureDataComponentOffset,
+    mut p: PicOffset,
     left: &[[BD::Pixel; 4]; 128 + 8],
     x: c_int,
     mut y: c_int,
@@ -133,7 +133,7 @@ fn lr_stripe<BD: BitDepth>(
 
 fn backup_4xu<BD: BitDepth>(
     dst: &mut [[BD::Pixel; 4]; 128 + 8],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     u: c_int,
 ) {
     let u = u as usize;
@@ -150,7 +150,7 @@ fn backup_4xu<BD: BitDepth>(
 fn lr_sbrow<BD: BitDepth>(
     c: &Rav1dContext,
     f: &Rav1dFrameData,
-    mut p: Rav1dPictureDataComponentOffset,
+    mut p: PicOffset,
     y: c_int,
     w: c_int,
     h: c_int,
@@ -254,7 +254,7 @@ fn lr_sbrow<BD: BitDepth>(
 pub(crate) fn rav1d_lr_sbrow<BD: BitDepth>(
     c: &Rav1dContext,
     f: &Rav1dFrameData,
-    dst: [Rav1dPictureDataComponentOffset; 3],
+    dst: [PicOffset; 3],
     sby: c_int,
 ) {
     let offset_y = 8 * (sby != 0) as c_int;

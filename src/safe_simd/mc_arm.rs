@@ -16,7 +16,7 @@ use safe_unaligned_simd::aarch64 as safe_simd;
 
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::headers::Rav1dFilterMode;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::COMPINTER_LEN;
 use crate::src::internal::SCRATCH_INTER_INTRA_BUF_LEN;
@@ -109,7 +109,7 @@ pub unsafe extern "C" fn avg_8bpc_neon(
     w: i32,
     h: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: This function is only called through dispatch when NEON is available
     let token = unsafe { Arm64::forge_token_dangerously() };
@@ -202,7 +202,7 @@ pub unsafe extern "C" fn avg_16bpc_neon(
     w: i32,
     h: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
@@ -291,7 +291,7 @@ pub unsafe extern "C" fn w_avg_8bpc_neon(
     h: i32,
     weight: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
@@ -373,7 +373,7 @@ pub unsafe extern "C" fn w_avg_16bpc_neon(
     h: i32,
     weight: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
@@ -468,7 +468,7 @@ pub unsafe extern "C" fn mask_8bpc_neon(
     h: i32,
     mask_ptr: *const u8,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let token = Arm64::forge_token_dangerously();
     let w = w as usize;
@@ -561,7 +561,7 @@ pub unsafe extern "C" fn mask_16bpc_neon(
     h: i32,
     mask_ptr: *const u8,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let token = Arm64::forge_token_dangerously();
     let w = w as usize;
@@ -659,7 +659,7 @@ pub unsafe extern "C" fn blend_8bpc_neon(
     w: i32,
     h: i32,
     mask_ptr: *const u8,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -757,7 +757,7 @@ pub unsafe extern "C" fn blend_16bpc_neon(
     w: i32,
     h: i32,
     mask_ptr: *const u8,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -881,7 +881,7 @@ pub unsafe extern "C" fn blend_v_8bpc_neon(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     use crate::src::tables::dav1d_obmc_masks;
 
@@ -973,7 +973,7 @@ pub unsafe extern "C" fn blend_v_16bpc_neon(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     use crate::src::tables::dav1d_obmc_masks;
 
@@ -1084,7 +1084,7 @@ pub unsafe extern "C" fn blend_h_8bpc_neon(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     use crate::src::tables::dav1d_obmc_masks;
 
@@ -1183,7 +1183,7 @@ pub unsafe extern "C" fn blend_h_16bpc_neon(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     use crate::src::tables::dav1d_obmc_masks;
 
@@ -1413,7 +1413,7 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -1437,7 +1437,7 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -1461,7 +1461,7 @@ pub unsafe extern "C" fn w_mask_420_8bpc_neon(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -1692,8 +1692,8 @@ pub unsafe extern "C" fn put_bilin_8bpc_neon(
     mx: i32,
     my: i32,
     _bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
@@ -1923,7 +1923,7 @@ pub unsafe extern "C" fn prep_bilin_8bpc_neon(
     mx: i32,
     my: i32,
     _bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
@@ -2049,8 +2049,8 @@ pub unsafe extern "C" fn put_bilin_16bpc_neon(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
@@ -2174,7 +2174,7 @@ pub unsafe extern "C" fn prep_bilin_16bpc_neon(
     mx: i32,
     my: i32,
     _bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
@@ -2273,7 +2273,7 @@ pub unsafe extern "C" fn w_mask_444_16bpc_neon(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -2298,7 +2298,7 @@ pub unsafe extern "C" fn w_mask_422_16bpc_neon(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -2323,7 +2323,7 @@ pub unsafe extern "C" fn w_mask_420_16bpc_neon(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -2861,8 +2861,8 @@ macro_rules! define_put_8tap_8bpc {
             mx: i32,
             my: i32,
             _bitdepth_max: i32,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-            _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
+            _src: *const FFISafe<PicOffset>,
         ) {
             let token = Arm64::forge_token_dangerously();
             let w = w as usize;
@@ -3148,7 +3148,7 @@ macro_rules! define_prep_8tap_8bpc {
             mx: i32,
             my: i32,
             _bitdepth_max: i32,
-            _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _src: *const FFISafe<PicOffset>,
         ) {
             let token = Arm64::forge_token_dangerously();
             let w = w as usize;
@@ -3603,8 +3603,8 @@ macro_rules! define_put_8tap_16bpc {
             mx: i32,
             my: i32,
             bitdepth_max: i32,
-            _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-            _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _dst: *const FFISafe<PicOffset>,
+            _src: *const FFISafe<PicOffset>,
         ) {
             let token = Arm64::forge_token_dangerously();
             let w = w as usize;
@@ -3872,7 +3872,7 @@ macro_rules! define_prep_8tap_16bpc {
             mx: i32,
             my: i32,
             _bitdepth_max: i32,
-            _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+            _src: *const FFISafe<PicOffset>,
         ) {
             let token = Arm64::forge_token_dangerously();
             let w = w as usize;

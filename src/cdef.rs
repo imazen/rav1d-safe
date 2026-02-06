@@ -6,7 +6,7 @@ use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::bitdepth::LeftPixelRow2px;
 use crate::include::common::intops::apply_sign;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::cpu::CpuFlags;
 use crate::src::disjoint_mut::DisjointMut;
@@ -58,7 +58,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cdef(
     damping: c_int,
     edges: CdefEdgeFlags,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _top: *const FFISafe<CdefTop>,
     _bottom: *const FFISafe<CdefBottom>,
 ) -> ());
@@ -72,7 +72,7 @@ pub type CdefBottom<'a> = WithOffset<PicOrBuf<'a, AlignedVec64<u8>>>;
 #[cfg(not(feature = "asm"))]
 fn cdef_direct<BD: BitDepth>(
     variant: usize,
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<BD::Pixel>; 8],
     top: CdefTop,
     bottom: CdefBottom,
@@ -209,7 +209,7 @@ impl cdef::Fn {
     pub fn call<BD: BitDepth>(
         &self,
         variant: usize,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         left: &[LeftPixelRow2px<BD::Pixel>; 8],
         top: CdefTop,
         bottom: CdefBottom,
@@ -278,14 +278,14 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cdef_dir(
     dst_stride: ptrdiff_t,
     variance: &mut c_uint,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> c_int);
 
 /// Direct dispatch for cdef_dir - bypasses function pointer table.
 /// Selects optimal SIMD implementation at runtime based on CPU features.
 #[cfg(not(feature = "asm"))]
 fn cdef_dir_direct<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     variance: &mut c_uint,
     bd: BD,
 ) -> c_int {
@@ -340,7 +340,7 @@ fn cdef_dir_direct<BD: BitDepth>(
 impl cdef_dir::Fn {
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         variance: &mut c_uint,
         bd: BD,
     ) -> c_int {
@@ -389,7 +389,7 @@ pub fn fill(tmp: &mut [i16], w: usize, h: usize) {
 
 fn padding<BD: BitDepth>(
     tmp: &mut [i16; TMP_STRIDE * TMP_STRIDE],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     left: &[LeftPixelRow2px<BD::Pixel>; 8],
     top: CdefTop,
     bottom: CdefBottom,
@@ -460,7 +460,7 @@ fn padding<BD: BitDepth>(
 
 #[inline(never)]
 fn cdef_filter_block_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<BD::Pixel>; 8],
     top: CdefTop,
     bottom: CdefBottom,
@@ -606,7 +606,7 @@ unsafe extern "C" fn cdef_filter_block_c_erased<BD: BitDepth, const W: usize, co
     damping: c_int,
     edges: CdefEdgeFlags,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top: *const FFISafe<CdefTop>,
     bottom: *const FFISafe<CdefBottom>,
 ) {
@@ -644,7 +644,7 @@ unsafe extern "C" fn cdef_find_dir_c_erased<BD: BitDepth>(
     _stride: ptrdiff_t,
     variance: &mut c_uint,
     bitdepth_max: c_int,
-    img: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    img: *const FFISafe<PicOffset>,
 ) -> c_int {
     // SAFETY: Was passed as `FFISafe::new(_)` in `cdef_dir::Fn::call`.
     let img = *unsafe { FFISafe::get(img) };
@@ -653,7 +653,7 @@ unsafe extern "C" fn cdef_find_dir_c_erased<BD: BitDepth>(
 }
 
 fn cdef_find_dir_rust<BD: BitDepth>(
-    img: Rav1dPictureDataComponentOffset,
+    img: PicOffset,
     variance: &mut c_uint,
     bd: BD,
 ) -> c_int {
@@ -852,7 +852,7 @@ mod neon {
         damping: c_int,
         edges: CdefEdgeFlags,
         bitdepth_max: c_int,
-        _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        _dst: *const FFISafe<PicOffset>,
         _top: *const FFISafe<CdefTop>,
         _bottom: *const FFISafe<CdefBottom>,
     ) {

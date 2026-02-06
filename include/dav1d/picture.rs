@@ -812,3 +812,4 @@ impl Rav1dPicAllocator {
         }
     }
 }
+pub type PicOffset<'a> = Rav1dPictureDataComponentOffset<'a>;
