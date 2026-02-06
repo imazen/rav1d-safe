@@ -5,7 +5,6 @@
 
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
-#![allow(unsafe_op_in_unsafe_fn)]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -961,23 +960,23 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
 
     // Call inner functions directly, bypassing FFI wrappers.
     // SAFETY: left pointer cast is safe because LeftPixelRow2px<BD::Pixel> has same layout for u8/u16.
-    unsafe {
-        match BD::BPC {
-            BPC::BPC8 => cdef_filter_block_8bpc_inner(
-                dst,
-                &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]),
-                &top, &bottom,
+    match BD::BPC {
+        BPC::BPC8 => {
+            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]) };
+            cdef_filter_block_8bpc_inner(
+                dst, left, &top, &bottom,
                 pri_strength, sec_strength, dir, damping, edges,
                 w, h,
-            ),
-            BPC::BPC16 => cdef_filter_block_16bpc_inner(
-                dst,
-                &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]),
-                &top, &bottom,
+            );
+        }
+        BPC::BPC16 => {
+            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]) };
+            cdef_filter_block_16bpc_inner(
+                dst, left, &top, &bottom,
                 pri_strength, sec_strength, dir, damping, edges,
                 w, h,
                 bd.into_c(),
-            ),
+            );
         }
     }
     true
