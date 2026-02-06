@@ -191,8 +191,7 @@ unsafe fn wiener_filter7_8bpc_avx2_inner(
 ///
 /// Same as 7-tap but filter[0][0] = filter[0][6] = 0 and filter[1][0] = filter[1][6] = 0
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn wiener_filter5_8bpc_avx2_inner(
+fn wiener_filter5_8bpc_avx2_inner(
     p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -203,7 +202,7 @@ unsafe fn wiener_filter5_8bpc_avx2_inner(
     edges: LrEdgeFlags,
 ) {
     // 5-tap is identical to 7-tap, the coefficient array just has zeros at edges
-    // SAFETY: Called within unsafe fn, maintains same invariants
+    // SAFETY: AVX2 availability verified by caller (dispatch checks CpuFlags::AVX2)
     unsafe {
         wiener_filter7_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
     }
@@ -220,8 +219,7 @@ unsafe fn wiener_filter5_8bpc_avx2_inner(
 /// - Different shift amounts based on 10bpc vs 12bpc
 /// - 16-bit pixel values
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn wiener_filter7_16bpc_avx2_inner(
+fn wiener_filter7_16bpc_avx2_inner(
     p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -294,8 +292,7 @@ unsafe fn wiener_filter7_16bpc_avx2_inner(
 
 /// Wiener filter 5-tap for 16bpc using AVX2
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn wiener_filter5_16bpc_avx2_inner(
+fn wiener_filter5_16bpc_avx2_inner(
     p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -306,9 +303,7 @@ unsafe fn wiener_filter5_16bpc_avx2_inner(
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
 ) {
-    unsafe {
-        wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 // ============================================================================
@@ -381,10 +376,7 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
     // SAFETY: Length was sliced in loop_restoration_filter::Fn::call
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    // SAFETY: All parameters validated, target_feature enabled
-    unsafe {
-        wiener_filter5_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    wiener_filter5_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 /// Reconstructs lpf offset from pointer for 16bpc
@@ -418,9 +410,7 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 /// FFI wrapper for Wiener filter 5-tap 16bpc
@@ -448,9 +438,7 @@ pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        wiener_filter5_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    wiener_filter5_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 // ============================================================================
@@ -803,8 +791,7 @@ fn selfguided_filter_8bpc(
 
 /// SGR 5x5 filter for 8bpc using AVX2
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_5x5_8bpc_avx2_inner(
+fn sgr_5x5_8bpc_avx2_inner(
     p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -836,8 +823,7 @@ unsafe fn sgr_5x5_8bpc_avx2_inner(
 
 /// SGR 3x3 filter for 8bpc using AVX2
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_3x3_8bpc_avx2_inner(
+fn sgr_3x3_8bpc_avx2_inner(
     p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -869,8 +855,7 @@ unsafe fn sgr_3x3_8bpc_avx2_inner(
 
 /// SGR mix filter for 8bpc using AVX2 (combines 5x5 and 3x3)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_mix_8bpc_avx2_inner(
+fn sgr_mix_8bpc_avx2_inner(
     p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -933,9 +918,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_8bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_5x5_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    sgr_5x5_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 /// FFI wrapper for SGR 3x3 filter 8bpc
@@ -963,9 +946,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_8bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_3x3_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    sgr_3x3_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 /// FFI wrapper for SGR mix filter 8bpc
@@ -993,9 +974,7 @@ pub unsafe extern "C" fn sgr_filter_mix_8bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_mix_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    sgr_mix_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 // ============================================================================
@@ -1364,8 +1343,7 @@ fn selfguided_filter_16bpc(
 
 /// SGR 5x5 filter for 16bpc using AVX2
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_5x5_16bpc_avx2_inner(
+fn sgr_5x5_16bpc_avx2_inner(
     p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -1398,8 +1376,7 @@ unsafe fn sgr_5x5_16bpc_avx2_inner(
 
 /// SGR 3x3 filter for 16bpc using AVX2
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_3x3_16bpc_avx2_inner(
+fn sgr_3x3_16bpc_avx2_inner(
     p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -1432,8 +1409,7 @@ unsafe fn sgr_3x3_16bpc_avx2_inner(
 
 /// SGR mix filter for 16bpc using AVX2 (combines 5x5 and 3x3)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_mix_16bpc_avx2_inner(
+fn sgr_mix_16bpc_avx2_inner(
     p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -1497,9 +1473,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_5x5_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    sgr_5x5_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 /// FFI wrapper for SGR 3x3 filter 16bpc
@@ -1527,9 +1501,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_3x3_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    sgr_3x3_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 /// FFI wrapper for SGR mix filter 16bpc
@@ -1557,9 +1529,7 @@ pub unsafe extern "C" fn sgr_filter_mix_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_mix_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    sgr_mix_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 // ============================================================================
@@ -1609,20 +1579,18 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
     let left_8 = || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u8>]) };
     let left_16 = || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u16>]) };
 
-    // SAFETY: AVX2 verified by CpuFlags check. Call inner functions directly.
-    unsafe {
-        match (BD::BPC, variant) {
-            (BPC::BPC8, 0) => wiener_filter7_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
-            (BPC::BPC8, 1) => wiener_filter5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
-            (BPC::BPC8, 2) => sgr_5x5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
-            (BPC::BPC8, 3) => sgr_3x3_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
-            (BPC::BPC8, _) => sgr_mix_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
-            (BPC::BPC16, 0) => wiener_filter7_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
-            (BPC::BPC16, 1) => wiener_filter5_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
-            (BPC::BPC16, 2) => sgr_5x5_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
-            (BPC::BPC16, 3) => sgr_3x3_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
-            (BPC::BPC16, _) => sgr_mix_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
-        }
+    match (BD::BPC, variant) {
+        // SAFETY: wiener_filter7_8bpc uses AVX2 intrinsics; AVX2 verified by CpuFlags check above
+        (BPC::BPC8, 0) => unsafe { wiener_filter7_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges) },
+        (BPC::BPC8, 1) => wiener_filter5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+        (BPC::BPC8, 2) => sgr_5x5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+        (BPC::BPC8, 3) => sgr_3x3_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+        (BPC::BPC8, _) => sgr_mix_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+        (BPC::BPC16, 0) => wiener_filter7_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
+        (BPC::BPC16, 1) => wiener_filter5_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
+        (BPC::BPC16, 2) => sgr_5x5_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
+        (BPC::BPC16, 3) => sgr_3x3_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
+        (BPC::BPC16, _) => sgr_mix_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
     }
     true
 }
