@@ -121,17 +121,17 @@ Full-stack benchmark via zenavif (20 decodes of test.avif):
 
 rav1d uses function pointer dispatch for SIMD:
 1. `wrap_fn_ptr!` macro creates type-safe function pointer wrappers
-2. For asm: `bd_fn!` macro links to asm symbols
-3. For safe-simd: `decl_fn_safe!` wraps our Rust functions
-4. `init_x86_safe_simd` populates dispatch table when asm disabled
+2. For asm: `bd_fn!` macro links to asm symbols, `call` method invokes fn ptr
+3. For non-asm: `call` method uses `cfg_if` to call `*_dispatch` directly (no fn ptrs)
+4. `*_dispatch` functions do `Desktop64::summon()` or `CpuFlags::AVX2` check, call inner SIMD
 
-### FFI Wrapper Pattern
+### FFI Wrapper Pattern (asm only)
 
+FFI wrappers are gated behind `#[cfg(feature = "asm")]`:
 ```rust
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn function_8bpc_avx2(
-    // Match exact signature from wrap_fn_ptr! macro
     dst: *const FFISafe<...>,
     // ... other params
 ) {
@@ -142,11 +142,19 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 ## Safety Status
 
-**c-ffi decoupled from fn-ptr dispatch.** The `c-ffi` feature now only controls the 19 `dav1d_*` extern "C" entry points in `src/lib.rs`. Internal DSP dispatch uses direct function calls (no function pointers) when `asm` is disabled, regardless of `c-ffi`.
+**Crate-level deny(unsafe_code) when asm disabled.** `lib.rs` has `#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]` — compiler-enforced safety for the entire non-asm path.
 
-**Modules still requiring `#[allow(unsafe_code)]`:** refmvs, lf_mask, msac (non-asm unsafe), plus core primitives (align, assume, c_arc, c_box, disjoint_mut, ffi_safe, send_sync_non_null, internal, log, picture) and safe_simd (target_feature).
+**47/80 modules have explicit `deny(unsafe_code)`:**
+- 35 unconditionally safe (decode, recon, lf_mask, lf_apply, ctx, obu, cdf, etc.)
+- 12 conditionally safe when asm disabled (cdef, filmgrain, ipred, itx, loopfilter, looprestoration, mc, pal, data, tables, cpu, safe_simd/pal)
 
-**DSP modules fully safe (no `#[allow(unsafe_code)]`):** cdef, filmgrain, ipred, itx, loopfilter, looprestoration, mc, pal, recon.
+**FFI wrappers gated behind `feature = "asm"`** in: cdef, cdef_arm, loopfilter, loopfilter_arm, looprestoration, looprestoration_arm, filmgrain, filmgrain_arm, pal.
+
+**Archmage conversions complete:** cdef constrain_avx2, msac symbol_adapt16 AVX2.
+
+**Remaining unsafe in safe_simd:** Raw pointer pixel access in inner SIMD functions (mc, itx, ipred, cdef, etc.). These need slice-based pixel access to become safe.
+
+**c-ffi decoupled from fn-ptr dispatch.** The `c-ffi` feature now only controls the 19 `dav1d_*` extern "C" entry points in `src/lib.rs`. Internal DSP dispatch uses direct function calls (no function pointers) when `asm` is disabled.
 
 ## TODO: CI & Parity Testing
 
