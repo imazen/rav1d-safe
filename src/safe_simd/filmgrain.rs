@@ -410,12 +410,12 @@ unsafe fn fgy_row_simd_8bpc(
     mul: __m256i,
     min_vec: __m256i,
     max_vec: __m256i,
-    offsets: &[[c_int; 2]; 2],
-    grain_lut: *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
-    offy: usize,
-    y: usize,
-    grain_min: i32,
-    grain_max: i32,
+    _offsets: &[[c_int; 2]; 2],
+    _grain_lut: *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+    _offy: usize,
+    _y: usize,
+    _grain_min: i32,
+    _grain_max: i32,
     scaling_shift: u8,
 ) {
     let zero = _mm256_setzero_si256();
@@ -508,7 +508,7 @@ unsafe fn fgy_row_simd_8bpc(
 
         // Load 16 grain values and sign-extend to 16-bit
         let grain_bytes = _mm_loadu_si128(grain_row.add(x) as *const __m128i);
-        let grain_lo = _mm256_cvtepi8_epi16(grain_bytes);
+        let _grain_lo = _mm256_cvtepi8_epi16(grain_bytes);
 
         // For pmaddubsw, we need unsigned * signed layout
         // grain_lo is already sign-extended i16, but we need [g, 0, g, 0] bytes

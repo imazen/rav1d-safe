@@ -906,7 +906,7 @@ fn padding_16bpc(
     // Handle top edge
     if edges.contains(CdefEdgeFlags::HAVE_TOP) {
         let top_ptr = top.as_ptr::<BitDepth16>() as *const u16;
-        let stride = dst.pixel_stride::<BitDepth16>();
+        let _stride = dst.pixel_stride::<BitDepth16>();
         for dy in 0..2 {
             let row_offset = tmp_offset - (2 - dy) * TMP_STRIDE;
             let start_x = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
@@ -930,7 +930,7 @@ fn padding_16bpc(
     // Handle bottom edge
     if edges.contains(CdefEdgeFlags::HAVE_BOTTOM) {
         let bottom_ptr = bottom.wrapping_as_ptr::<BitDepth16>() as *const u16;
-        let stride = dst.pixel_stride::<BitDepth16>();
+        let _stride = dst.pixel_stride::<BitDepth16>();
         for dy in 0..2 {
             let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
             let start_x = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {

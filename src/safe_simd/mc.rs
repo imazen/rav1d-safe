@@ -5297,7 +5297,7 @@ pub unsafe extern "C" fn put_bilin_16bpc_avx2(
     // H pass shift = 4 - intermediate_bits = 0 (no shift for intermediate)
     // V pass shift = 4 + intermediate_bits = 8
     let intermediate_bits = 4i32;
-    let h_pass_sh = 4 - intermediate_bits; // = 0
+    let _h_pass_sh = 4 - intermediate_bits; // = 0
     let v_pass_sh = 4 + intermediate_bits; // = 8
 
     unsafe {
@@ -5355,7 +5355,7 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
     h: i32,
     mx: i32,
     my: i32,
-    bitdepth_max: i32,
+    _bitdepth_max: i32,
     _src: *const FFISafe<PicOffset>,
 ) {
     let w = w as usize;
@@ -5372,7 +5372,7 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
     // H pass shift = 4 - intermediate_bits = 0 (no shift for intermediate)
     // V pass shift = 4 + intermediate_bits = 8
     let intermediate_bits = 4i32;
-    let h_pass_sh = 4 - intermediate_bits; // = 0
+    let _h_pass_sh = 4 - intermediate_bits; // = 0
     let v_pass_sh = 4 + intermediate_bits; // = 8
 
     unsafe {
