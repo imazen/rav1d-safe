@@ -6,6 +6,8 @@
 #![allow(unused_imports)]
 
 #[cfg(target_arch = "x86_64")]
+use archmage::{arcane, rite, Desktop64, SimdToken};
+#[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
 use std::ffi::c_int;
@@ -38,9 +40,9 @@ use std::cmp;
 /// Processes 16 i16 values at once
 /// Formula: sign(diff) * min(|diff|, max(0, threshold - (|diff| >> shift)))
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[rite]
 #[inline]
-unsafe fn constrain_avx2(diff: __m256i, threshold: __m256i, shift: __m128i) -> __m256i {
+fn constrain_avx2(_t: Desktop64, diff: __m256i, threshold: __m256i, shift: __m128i) -> __m256i {
     let zero = _mm256_setzero_si256();
 
     // Compute absolute value
@@ -188,7 +190,8 @@ mod tests {
             let thresh_vec = _mm256_set1_epi16(threshold);
             let shift_vec = _mm_cvtsi32_si128(shift);
 
-            let result = constrain_avx2(diff_vec, thresh_vec, shift_vec);
+            let token = Desktop64::summon().expect("AVX2 required for test");
+            let result = constrain_avx2(token, diff_vec, thresh_vec, shift_vec);
 
             let mut simd_results = [0i16; 16];
             _mm256_storeu_si256(simd_results.as_mut_ptr() as *mut __m256i, result);
