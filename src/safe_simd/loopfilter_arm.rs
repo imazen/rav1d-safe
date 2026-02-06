@@ -512,3 +512,59 @@ pub unsafe extern "C" fn lpf_v_sb_uv_16bpc_neon(
         bitdepth_max,
     );
 }
+
+/// Safe dispatch for loopfilter_sb on aarch64. Returns true if SIMD was used.
+#[cfg(target_arch = "aarch64")]
+pub fn loopfilter_sb_dispatch<BD: BitDepth>(
+    dst: PicOffset,
+    stride: ptrdiff_t,
+    mask: &[u32; 3],
+    lvl: WithOffset<&DisjointMut<Vec<u8>>>,
+    b4_stride: isize,
+    lut: &Align16<Av1FilterLUT>,
+    w: c_int,
+    bitdepth_max: c_int,
+    is_y: bool,
+    is_v: bool,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    assert!(lvl.offset <= lvl.data.len());
+    // SAFETY: `lvl.offset` is in bounds, checked above.
+    let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };
+    let lvl_ptr = lvl_ptr.cast::<[u8; 4]>();
+    let dst_ffi = FFISafe::new(&dst);
+    let lvl_ffi = FFISafe::new(&lvl);
+
+    // SAFETY: NEON always available on aarch64. All pointers from valid references.
+    unsafe {
+        match (BD::BPC, is_y, is_v) {
+            (BPC::BPC8, true, false) => lpf_h_sb_y_8bpc_neon(
+                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+            ),
+            (BPC::BPC8, true, true) => lpf_v_sb_y_8bpc_neon(
+                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+            ),
+            (BPC::BPC8, false, false) => lpf_h_sb_uv_8bpc_neon(
+                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+            ),
+            (BPC::BPC8, false, true) => lpf_v_sb_uv_8bpc_neon(
+                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+            ),
+            (BPC::BPC16, true, false) => lpf_h_sb_y_16bpc_neon(
+                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+            ),
+            (BPC::BPC16, true, true) => lpf_v_sb_y_16bpc_neon(
+                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+            ),
+            (BPC::BPC16, false, false) => lpf_h_sb_uv_16bpc_neon(
+                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+            ),
+            (BPC::BPC16, false, true) => lpf_v_sb_uv_16bpc_neon(
+                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+            ),
+        }
+    }
+    true
+}

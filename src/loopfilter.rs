@@ -1,5 +1,3 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
@@ -24,6 +22,9 @@ use strum::FromRepr;
     not(any(target_arch = "riscv64", target_arch = "riscv32"))
 ))]
 use crate::include::common::bitdepth::bd_fn;
+
+#[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+use crate::src::enum_map::DefaultValue;
 
 wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
     dst_ptr: *mut DynPixel,
@@ -52,112 +53,31 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     is_y: bool,
     is_v: bool,
 ) {
-    use crate::include::common::bitdepth::BPC;
+    let stride = dst.stride();
+    let b4_stride = f.b4_stride;
+    let lut = &f.lf.lim_lut;
+    let wh = w as c_int;
+    let bd_max = f.bitdepth_max;
 
     #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-            let stride = dst.stride();
-            assert!(lvl.offset <= lvl.data.len());
-            // SAFETY: `lvl.offset` is in bounds, just checked above.
-            let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };
-            let lvl_ptr = lvl_ptr.cast::<[u8; 4]>();
-            let b4_stride = f.b4_stride;
-            let lut = &f.lf.lim_lut;
-            let w = w as c_int;
-            let bd = f.bitdepth_max;
-            let dst_ffi = FFISafe::new(&dst);
-            let lvl_ffi = FFISafe::new(&lvl);
-            use crate::src::safe_simd::loopfilter as safe_lpf;
-            // SAFETY: AVX2 verified by CpuFlags check. All pointers derived from valid references.
-            unsafe {
-                match (BD::BPC, is_y, is_v) {
-                    (BPC::BPC8, true, false) => safe_lpf::lpf_h_sb_y_8bpc_avx2(
-                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                    ),
-                    (BPC::BPC8, true, true) => safe_lpf::lpf_v_sb_y_8bpc_avx2(
-                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                    ),
-                    (BPC::BPC8, false, false) => safe_lpf::lpf_h_sb_uv_8bpc_avx2(
-                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                    ),
-                    (BPC::BPC8, false, true) => safe_lpf::lpf_v_sb_uv_8bpc_avx2(
-                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                    ),
-                    (BPC::BPC16, true, false) => safe_lpf::lpf_h_sb_y_16bpc_avx2(
-                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                    ),
-                    (BPC::BPC16, true, true) => safe_lpf::lpf_v_sb_y_16bpc_avx2(
-                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                    ),
-                    (BPC::BPC16, false, false) => safe_lpf::lpf_h_sb_uv_16bpc_avx2(
-                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                    ),
-                    (BPC::BPC16, false, true) => safe_lpf::lpf_v_sb_uv_16bpc_avx2(
-                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                    ),
-                }
-            }
-            return;
-        }
+    if crate::src::safe_simd::loopfilter::loopfilter_sb_dispatch::<BD>(
+        dst, stride, mask, lvl, b4_stride, lut, wh, bd_max, is_y, is_v,
+    ) {
+        return;
     }
 
     #[cfg(target_arch = "aarch64")]
-    {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let stride = dst.stride();
-        assert!(lvl.offset <= lvl.data.len());
-        // SAFETY: `lvl.offset` is in bounds, just checked above.
-        let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };
-        let lvl_ptr = lvl_ptr.cast::<[u8; 4]>();
-        let b4_stride = f.b4_stride;
-        let lut = &f.lf.lim_lut;
-        let w = w as c_int;
-        let bd = f.bitdepth_max;
-        let dst_ffi = FFISafe::new(&dst);
-        let lvl_ffi = FFISafe::new(&lvl);
-        use crate::src::safe_simd::loopfilter_arm as safe_lpf;
-        // SAFETY: NEON always available on aarch64. All pointers derived from valid references.
-        unsafe {
-            match (BD::BPC, is_y, is_v) {
-                (BPC::BPC8, true, false) => safe_lpf::lpf_h_sb_y_8bpc_neon(
-                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                ),
-                (BPC::BPC8, true, true) => safe_lpf::lpf_v_sb_y_8bpc_neon(
-                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                ),
-                (BPC::BPC8, false, false) => safe_lpf::lpf_h_sb_uv_8bpc_neon(
-                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                ),
-                (BPC::BPC8, false, true) => safe_lpf::lpf_v_sb_uv_8bpc_neon(
-                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                ),
-                (BPC::BPC16, true, false) => safe_lpf::lpf_h_sb_y_16bpc_neon(
-                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                ),
-                (BPC::BPC16, true, true) => safe_lpf::lpf_v_sb_y_16bpc_neon(
-                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                ),
-                (BPC::BPC16, false, false) => safe_lpf::lpf_h_sb_uv_16bpc_neon(
-                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                ),
-                (BPC::BPC16, false, true) => safe_lpf::lpf_v_sb_uv_16bpc_neon(
-                    dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst_ffi, lvl_ffi,
-                ),
-            }
-        }
+    if crate::src::safe_simd::loopfilter_arm::loopfilter_sb_dispatch::<BD>(
+        dst, stride, mask, lvl, b4_stride, lut, wh, bd_max, is_y, is_v,
+    ) {
         return;
     }
 
     // Scalar fallback
     #[allow(unreachable_code)]
     {
-        let b4_stride = f.b4_stride as usize;
-        let lut = &f.lf.lim_lut;
-        let wh = w as c_int;
-        let bd = BD::from_c(f.bitdepth_max);
+        let b4_stride = b4_stride as usize;
+        let bd = BD::from_c(bd_max);
         match (is_y, is_v) {
             (true, false) => loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::Y as usize }>(
                 dst, mask, lvl, b4_stride, lut, wh, bd,
@@ -214,6 +134,7 @@ impl loopfilter_sb::Fn {
         }
     }
 
+    #[cfg(any(feature = "asm", feature = "c-ffi"))]
     const fn default<BD: BitDepth, const HV: usize, const YUV: usize>() -> Self {
         Self::new(loop_filter_sb128_c_erased::<BD, { HV }, { YUV }>)
     }
@@ -504,6 +425,7 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
 /// # Safety
 ///
 /// Must be called by [`loopfilter_sb::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, const YUV: usize>(
     _dst_ptr: *mut DynPixel,
@@ -528,19 +450,36 @@ unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, c
 
 impl Rav1dLoopFilterDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
-        use HV::*;
-        use YUV::*;
-        Self {
-            loop_filter_sb: LoopFilterYUVDSPContext {
-                y: LoopFilterHVDSPContext {
-                    h: loopfilter_sb::Fn::default::<BD, { H as _ }, { Y as _ }>(),
-                    v: loopfilter_sb::Fn::default::<BD, { V as _ }, { Y as _ }>(),
-                },
-                uv: LoopFilterHVDSPContext {
-                    h: loopfilter_sb::Fn::default::<BD, { H as _ }, { UV as _ }>(),
-                    v: loopfilter_sb::Fn::default::<BD, { V as _ }, { UV as _ }>(),
-                },
-            },
+        cfg_if::cfg_if! {
+            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+                use HV::*;
+                use YUV::*;
+                Self {
+                    loop_filter_sb: LoopFilterYUVDSPContext {
+                        y: LoopFilterHVDSPContext {
+                            h: loopfilter_sb::Fn::default::<BD, { H as _ }, { Y as _ }>(),
+                            v: loopfilter_sb::Fn::default::<BD, { V as _ }, { Y as _ }>(),
+                        },
+                        uv: LoopFilterHVDSPContext {
+                            h: loopfilter_sb::Fn::default::<BD, { H as _ }, { UV as _ }>(),
+                            v: loopfilter_sb::Fn::default::<BD, { V as _ }, { UV as _ }>(),
+                        },
+                    },
+                }
+            } else {
+                Self {
+                    loop_filter_sb: LoopFilterYUVDSPContext {
+                        y: LoopFilterHVDSPContext {
+                            h: loopfilter_sb::Fn::DEFAULT,
+                            v: loopfilter_sb::Fn::DEFAULT,
+                        },
+                        uv: LoopFilterHVDSPContext {
+                            h: loopfilter_sb::Fn::DEFAULT,
+                            v: loopfilter_sb::Fn::DEFAULT,
+                        },
+                    },
+                }
+            }
         }
     }
 

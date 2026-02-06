@@ -77,7 +77,6 @@ pub mod src {
     mod ipred;
     #[allow(unsafe_code)]
     mod itx;
-    #[allow(unsafe_code)]
     mod loopfilter;
     #[allow(unsafe_code)]
     mod looprestoration;
