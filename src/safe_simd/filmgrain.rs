@@ -20,6 +20,9 @@ use std::ffi::c_uint;
 
 use libc::{intptr_t, ptrdiff_t};
 
+#[cfg(target_arch = "x86_64")]
+use archmage::{arcane, Desktop64, SimdToken};
+
 use crate::include::common::bitdepth::{DynEntry, DynPixel, DynScaling};
 use crate::include::dav1d::headers::{Dav1dFilmGrainData, Rav1dFilmGrainData};
 use crate::include::dav1d::picture::PicOffset;
@@ -399,8 +402,9 @@ fn grain_offsets(randval: c_int, is_subx: bool, is_suby: bool) -> (usize, usize)
 /// Inner SIMD loop for fgy: process 32 pixels at once using AVX2.
 /// Uses scalar scaling lookups + SIMD multiply/round/add/clamp.
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn fgy_row_simd_8bpc(
+#[arcane]
+fn fgy_row_simd_8bpc(
+    _token: Desktop64,
     dst: *mut u8,
     src: *const u8,
     scaling: *const u8,
@@ -424,12 +428,9 @@ unsafe fn fgy_row_simd_8bpc(
     let mut x = xstart;
     while x + 32 <= bw {
         // Load 32 source pixels
-        let (src_vec, src_lo, src_hi) = unsafe {
-            let src_vec = _mm256_loadu_si256(src.add(x) as *const __m256i);
-            let src_lo = _mm256_unpacklo_epi8(src_vec, zero);
-            let src_hi = _mm256_unpackhi_epi8(src_vec, zero);
-            (src_vec, src_lo, src_hi)
-        };
+        let src_vec = unsafe { _mm256_loadu_si256(src.add(x) as *const __m256i) };
+        let src_lo = _mm256_unpacklo_epi8(src_vec, zero);
+        let src_hi = _mm256_unpackhi_epi8(src_vec, zero);
 
         // Scalar scaling lookup, pack into vectors
         // Each lane of AVX2 unpack operates independently:
@@ -466,46 +467,41 @@ unsafe fn fgy_row_simd_8bpc(
             }
         }
 
-        unsafe {
-            let sc_lo = _mm256_loadu_si256(sc_lo_bytes.as_ptr() as *const __m256i);
-            let sc_hi = _mm256_loadu_si256(sc_hi_bytes.as_ptr() as *const __m256i);
+        let sc_lo = unsafe { _mm256_loadu_si256(sc_lo_bytes.as_ptr() as *const __m256i) };
+        let sc_hi = unsafe { _mm256_loadu_si256(sc_hi_bytes.as_ptr() as *const __m256i) };
 
-            // Load 32 grain values and interleave with zeros
-            let grain_vec = _mm256_loadu_si256(grain_row.add(x) as *const __m256i);
-            let grain_lo = _mm256_unpacklo_epi8(grain_vec, zero);
-            let grain_hi = _mm256_unpackhi_epi8(grain_vec, zero);
+        // Load 32 grain values and interleave with zeros
+        let grain_vec = unsafe { _mm256_loadu_si256(grain_row.add(x) as *const __m256i) };
+        let grain_lo = _mm256_unpacklo_epi8(grain_vec, zero);
+        let grain_hi = _mm256_unpackhi_epi8(grain_vec, zero);
 
-            // pmaddubsw: unsigned(scaling) * signed(grain)
-            // sc_lo has [sc, 0, sc, 0, ...] in same layout as grain_lo [g, 0, g, 0, ...]
-            // Result: sc[i] * g[i] + 0 * 0 = sc[i] * g[i] as i16
-            let noise_lo = _mm256_maddubs_epi16(sc_lo, grain_lo);
-            let noise_hi = _mm256_maddubs_epi16(sc_hi, grain_hi);
+        // pmaddubsw: unsigned(scaling) * signed(grain)
+        // sc_lo has [sc, 0, sc, 0, ...] in same layout as grain_lo [g, 0, g, 0, ...]
+        // Result: sc[i] * g[i] + 0 * 0 = sc[i] * g[i] as i16
+        let noise_lo = _mm256_maddubs_epi16(sc_lo, grain_lo);
+        let noise_hi = _mm256_maddubs_epi16(sc_hi, grain_hi);
 
-            // pmulhrsw: (noise * mul + 16384) >> 15, implements round2(noise, scaling_shift)
-            let noise_lo = _mm256_mulhrs_epi16(noise_lo, mul);
-            let noise_hi = _mm256_mulhrs_epi16(noise_hi, mul);
+        // pmulhrsw: (noise * mul + 16384) >> 15, implements round2(noise, scaling_shift)
+        let noise_lo = _mm256_mulhrs_epi16(noise_lo, mul);
+        let noise_hi = _mm256_mulhrs_epi16(noise_hi, mul);
 
-            // Add noise to source
-            let result_lo = _mm256_add_epi16(src_lo, noise_lo);
-            let result_hi = _mm256_add_epi16(src_hi, noise_hi);
+        // Add noise to source
+        let result_lo = _mm256_add_epi16(src_lo, noise_lo);
+        let result_hi = _mm256_add_epi16(src_hi, noise_hi);
 
-            // Pack to u8 (saturating) and clamp to [min, max]
-            let result = _mm256_packus_epi16(result_lo, result_hi);
-            let result = _mm256_max_epu8(result, min_vec);
-            let result = _mm256_min_epu8(result, max_vec);
+        // Pack to u8 (saturating) and clamp to [min, max]
+        let result = _mm256_packus_epi16(result_lo, result_hi);
+        let result = _mm256_max_epu8(result, min_vec);
+        let result = _mm256_min_epu8(result, max_vec);
 
-            _mm256_storeu_si256(dst.add(x) as *mut __m256i, result);
-        }
+        unsafe { _mm256_storeu_si256(dst.add(x) as *mut __m256i, result) };
         x += 32;
     }
 
     // Process remaining 16-pixel chunk if present
     if x + 16 <= bw {
-        let (src_vec, src_lo) = unsafe {
-            let src_vec = _mm_loadu_si128(src.add(x) as *const __m128i);
-            let src_lo = _mm256_cvtepu8_epi16(src_vec);
-            (src_vec, src_lo)
-        };
+        let src_vec = unsafe { _mm_loadu_si128(src.add(x) as *const __m128i) };
+        let src_lo = _mm256_cvtepu8_epi16(src_vec);
 
         // Scalar scaling lookup
         let mut sc_bytes = [0u8; 32];
@@ -525,42 +521,40 @@ unsafe fn fgy_row_simd_8bpc(
             }
         }
 
-        unsafe {
-            let sc_vec = _mm256_loadu_si256(sc_bytes.as_ptr() as *const __m256i);
+        let sc_vec = unsafe { _mm256_loadu_si256(sc_bytes.as_ptr() as *const __m256i) };
 
-            // Load 16 grain values and sign-extend to 16-bit
-            let grain_bytes = _mm_loadu_si128(grain_row.add(x) as *const __m128i);
-            let _grain_lo = _mm256_cvtepi8_epi16(grain_bytes);
+        // Load 16 grain values and sign-extend to 16-bit
+        let grain_bytes = unsafe { _mm_loadu_si128(grain_row.add(x) as *const __m128i) };
+        let _grain_lo = _mm256_cvtepi8_epi16(grain_bytes);
 
-            // For pmaddubsw, we need unsigned * signed layout
-            // grain_lo is already sign-extended i16, but we need [g, 0, g, 0] bytes
-            // Actually, we need the raw bytes for pmaddubsw
-            let grain_interleaved = _mm256_unpacklo_epi8(_mm256_castsi128_si256(grain_bytes), zero);
-            // Fix: need to handle both lanes properly
-            // Use insert to put high bytes in high lane
-            let grain_128_hi = _mm_srli_si128(grain_bytes, 8);
-            let grain_interleaved_hi = _mm256_unpacklo_epi8(_mm256_castsi128_si256(grain_128_hi), zero);
-            // Combine into one register
-            let grain_combined = _mm256_inserti128_si256(
-                grain_interleaved,
-                _mm256_castsi256_si128(grain_interleaved_hi),
-                1,
-            );
+        // For pmaddubsw, we need unsigned * signed layout
+        // grain_lo is already sign-extended i16, but we need [g, 0, g, 0] bytes
+        // Actually, we need the raw bytes for pmaddubsw
+        let grain_interleaved = _mm256_unpacklo_epi8(_mm256_castsi128_si256(grain_bytes), zero);
+        // Fix: need to handle both lanes properly
+        // Use insert to put high bytes in high lane
+        let grain_128_hi = unsafe { _mm_srli_si128(grain_bytes, 8) };
+        let grain_interleaved_hi = _mm256_unpacklo_epi8(_mm256_castsi128_si256(grain_128_hi), zero);
+        // Combine into one register
+        let grain_combined = _mm256_inserti128_si256(
+            grain_interleaved,
+            _mm256_castsi256_si128(grain_interleaved_hi),
+            1,
+        );
 
-            let noise = _mm256_maddubs_epi16(sc_vec, grain_combined);
-            let noise = _mm256_mulhrs_epi16(noise, mul);
-            let result = _mm256_add_epi16(src_lo, noise);
-            let result = _mm256_packus_epi16(result, result);
+        let noise = _mm256_maddubs_epi16(sc_vec, grain_combined);
+        let noise = _mm256_mulhrs_epi16(noise, mul);
+        let result = _mm256_add_epi16(src_lo, noise);
+        let result = _mm256_packus_epi16(result, result);
 
-            // Extract low 8 bytes from each lane and combine
-            let lo128 = _mm256_castsi256_si128(result);
-            let hi128 = _mm256_extracti128_si256::<1>(result);
-            let combined = _mm_unpacklo_epi64(lo128, hi128);
-            let combined = _mm_max_epu8(combined, _mm256_castsi256_si128(min_vec));
-            let combined = _mm_min_epu8(combined, _mm256_castsi256_si128(max_vec));
+        // Extract low 8 bytes from each lane and combine
+        let lo128 = _mm256_castsi256_si128(result);
+        let hi128 = _mm256_extracti128_si256::<1>(result);
+        let combined = unsafe { _mm_unpacklo_epi64(lo128, hi128) };
+        let combined = unsafe { _mm_max_epu8(combined, _mm256_castsi256_si128(min_vec)) };
+        let combined = unsafe { _mm_min_epu8(combined, _mm256_castsi256_si128(max_vec)) };
 
-            _mm_storeu_si128(dst.add(x) as *mut __m128i, combined);
-        }
+        unsafe { _mm_storeu_si128(dst.add(x) as *mut __m128i, combined) };
         x += 16;
     }
 
@@ -597,6 +591,8 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
     _dst_row: *const FFISafe<PicOffset>,
     _src_row: *const FFISafe<PicOffset>,
 ) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+
     let dst = dst_row_ptr as *mut u8;
     let src = src_row_ptr as *const u8;
     let stride = stride;
@@ -686,26 +682,25 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
             }
 
             // SIMD for the rest
-            unsafe {
-                fgy_row_simd_8bpc(
-                    dst_ptr,
-                    src_ptr,
-                    scaling,
-                    grain_row,
-                    bw,
-                    xstart,
-                    mul,
-                    min_vec,
-                    max_vec,
-                    &offsets,
-                    grain_lut,
-                    offy,
-                    y,
-                    -128,
-                    127,
-                    scaling_shift,
-                );
-            }
+            fgy_row_simd_8bpc(
+                token,
+                dst_ptr,
+                src_ptr,
+                scaling,
+                grain_row,
+                bw,
+                xstart,
+                mul,
+                min_vec,
+                max_vec,
+                &offsets,
+                grain_lut,
+                offy,
+                y,
+                -128,
+                127,
+                scaling_shift,
+            );
         }
 
         // y-overlap rows
@@ -961,8 +956,9 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_avx2(
 /// Apply chroma grain - 8bpc AVX2
 /// Parameterized by subsampling mode (is_sx, is_sy)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn fguv_inner_8bpc(
+#[arcane]
+fn fguv_inner_8bpc(
+    _token: Desktop64,
     dst: *mut u8,
     src: *const u8,
     stride: isize,
@@ -1082,12 +1078,9 @@ unsafe fn fguv_inner_8bpc(
             // SIMD for main body
             let mut x = xstart;
             while x + 32 <= bw {
-                let (src_lo, src_hi) = unsafe {
-                    let src_vec = _mm256_loadu_si256(src_ptr.add(x) as *const __m256i);
-                    let src_lo = _mm256_unpacklo_epi8(src_vec, zero);
-                    let src_hi = _mm256_unpackhi_epi8(src_vec, zero);
-                    (src_lo, src_hi)
-                };
+                let src_vec = unsafe { _mm256_loadu_si256(src_ptr.add(x) as *const __m256i) };
+                let src_lo = _mm256_unpacklo_epi8(src_vec, zero);
+                let src_hi = _mm256_unpackhi_epi8(src_vec, zero);
 
                 // Compute scaling values with luma dependency
                 let mut sc_lo_bytes = [0u8; 32];
@@ -1146,26 +1139,24 @@ unsafe fn fguv_inner_8bpc(
                     sc_hi_bytes[16 + i * 2] = val;
                 }
 
-                unsafe {
-                    let sc_lo = _mm256_loadu_si256(sc_lo_bytes.as_ptr() as *const __m256i);
-                    let sc_hi = _mm256_loadu_si256(sc_hi_bytes.as_ptr() as *const __m256i);
+                let sc_lo = unsafe { _mm256_loadu_si256(sc_lo_bytes.as_ptr() as *const __m256i) };
+                let sc_hi = unsafe { _mm256_loadu_si256(sc_hi_bytes.as_ptr() as *const __m256i) };
 
-                    let grain_vec = _mm256_loadu_si256(grain_row.add(x) as *const __m256i);
-                    let grain_lo = _mm256_unpacklo_epi8(grain_vec, zero);
-                    let grain_hi = _mm256_unpackhi_epi8(grain_vec, zero);
+                let grain_vec = unsafe { _mm256_loadu_si256(grain_row.add(x) as *const __m256i) };
+                let grain_lo = _mm256_unpacklo_epi8(grain_vec, zero);
+                let grain_hi = _mm256_unpackhi_epi8(grain_vec, zero);
 
-                    let noise_lo = _mm256_maddubs_epi16(sc_lo, grain_lo);
-                    let noise_hi = _mm256_maddubs_epi16(sc_hi, grain_hi);
-                    let noise_lo = _mm256_mulhrs_epi16(noise_lo, mul);
-                    let noise_hi = _mm256_mulhrs_epi16(noise_hi, mul);
+                let noise_lo = _mm256_maddubs_epi16(sc_lo, grain_lo);
+                let noise_hi = _mm256_maddubs_epi16(sc_hi, grain_hi);
+                let noise_lo = _mm256_mulhrs_epi16(noise_lo, mul);
+                let noise_hi = _mm256_mulhrs_epi16(noise_hi, mul);
 
-                    let result_lo = _mm256_add_epi16(src_lo, noise_lo);
-                    let result_hi = _mm256_add_epi16(src_hi, noise_hi);
-                    let result = _mm256_packus_epi16(result_lo, result_hi);
-                    let result = _mm256_max_epu8(result, min_vec);
-                    let result = _mm256_min_epu8(result, max_vec);
-                    _mm256_storeu_si256(dst_ptr.add(x) as *mut __m256i, result);
-                }
+                let result_lo = _mm256_add_epi16(src_lo, noise_lo);
+                let result_hi = _mm256_add_epi16(src_hi, noise_hi);
+                let result = _mm256_packus_epi16(result_lo, result_hi);
+                let result = _mm256_max_epu8(result, min_vec);
+                let result = _mm256_min_epu8(result, max_vec);
+                unsafe { _mm256_storeu_si256(dst_ptr.add(x) as *mut __m256i, result) };
 
                 x += 32;
             }
@@ -1269,26 +1260,26 @@ pub unsafe extern "C" fn fguv_32x32xn_i420_8bpc_avx2(
     _src_row: *const FFISafe<PicOffset>,
     _luma_row: *const FFISafe<PicOffset>,
 ) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
     let data: Rav1dFilmGrainData = unsafe { data.clone().into() };
-    unsafe {
-        fguv_inner_8bpc(
-            dst_row_ptr as *mut u8,
-            src_row_ptr as *const u8,
-            stride as isize,
-            &data,
-            pw,
-            scaling as *const u8,
-            grain_lut as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
-            bh as usize,
-            row_num as usize,
-            luma_row_ptr as *const u8,
-            luma_stride as isize,
-            uv_pl != 0,
-            is_id != 0,
-            true, // is_sx
-            true, // is_sy
-        );
-    }
+    fguv_inner_8bpc(
+        token,
+        dst_row_ptr as *mut u8,
+        src_row_ptr as *const u8,
+        stride as isize,
+        &data,
+        pw,
+        scaling as *const u8,
+        grain_lut as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+        bh as usize,
+        row_num as usize,
+        luma_row_ptr as *const u8,
+        luma_stride as isize,
+        uv_pl != 0,
+        is_id != 0,
+        true,  // is_sx
+        true,  // is_sy
+    );
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -1311,26 +1302,26 @@ pub unsafe extern "C" fn fguv_32x32xn_i422_8bpc_avx2(
     _src_row: *const FFISafe<PicOffset>,
     _luma_row: *const FFISafe<PicOffset>,
 ) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
     let data: Rav1dFilmGrainData = unsafe { data.clone().into() };
-    unsafe {
-        fguv_inner_8bpc(
-            dst_row_ptr as *mut u8,
-            src_row_ptr as *const u8,
-            stride as isize,
-            &data,
-            pw,
-            scaling as *const u8,
-            grain_lut as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
-            bh as usize,
-            row_num as usize,
-            luma_row_ptr as *const u8,
-            luma_stride as isize,
-            uv_pl != 0,
-            is_id != 0,
-            true,  // is_sx
-            false, // is_sy
-        );
-    }
+    fguv_inner_8bpc(
+        token,
+        dst_row_ptr as *mut u8,
+        src_row_ptr as *const u8,
+        stride as isize,
+        &data,
+        pw,
+        scaling as *const u8,
+        grain_lut as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+        bh as usize,
+        row_num as usize,
+        luma_row_ptr as *const u8,
+        luma_stride as isize,
+        uv_pl != 0,
+        is_id != 0,
+        true,  // is_sx
+        false, // is_sy
+    );
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -1353,26 +1344,26 @@ pub unsafe extern "C" fn fguv_32x32xn_i444_8bpc_avx2(
     _src_row: *const FFISafe<PicOffset>,
     _luma_row: *const FFISafe<PicOffset>,
 ) {
+    let token = unsafe { Desktop64::forge_token_dangerously() };
     let data: Rav1dFilmGrainData = unsafe { data.clone().into() };
-    unsafe {
-        fguv_inner_8bpc(
-            dst_row_ptr as *mut u8,
-            src_row_ptr as *const u8,
-            stride as isize,
-            &data,
-            pw,
-            scaling as *const u8,
-            grain_lut as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
-            bh as usize,
-            row_num as usize,
-            luma_row_ptr as *const u8,
-            luma_stride as isize,
-            uv_pl != 0,
-            is_id != 0,
-            false, // is_sx
-            false, // is_sy
-        );
-    }
+    fguv_inner_8bpc(
+        token,
+        dst_row_ptr as *mut u8,
+        src_row_ptr as *const u8,
+        stride as isize,
+        &data,
+        pw,
+        scaling as *const u8,
+        grain_lut as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+        bh as usize,
+        row_num as usize,
+        luma_row_ptr as *const u8,
+        luma_stride as isize,
+        uv_pl != 0,
+        is_id != 0,
+        false, // is_sx
+        false, // is_sy
+    );
 }
 
 // ============================================================================
@@ -1380,8 +1371,9 @@ pub unsafe extern "C" fn fguv_32x32xn_i444_8bpc_avx2(
 // ============================================================================
 
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn fguv_inner_16bpc(
+#[arcane]
+fn fguv_inner_16bpc(
+    _token: Desktop64,
     dst: *mut u16,
     src: *const u16,
     stride_u16: isize,
@@ -1571,27 +1563,27 @@ macro_rules! fguv_16bpc_wrapper {
             _src_row: *const FFISafe<PicOffset>,
             _luma_row: *const FFISafe<PicOffset>,
         ) {
+            let token = unsafe { Desktop64::forge_token_dangerously() };
             let data: Rav1dFilmGrainData = unsafe { data.clone().into() };
-            unsafe {
-                fguv_inner_16bpc(
-                    dst_row_ptr as *mut u16,
-                    src_row_ptr as *const u16,
-                    stride / 2,
-                    &data,
-                    pw,
-                    scaling as *const u8,
-                    grain_lut as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
-                    bh as usize,
-                    row_num as usize,
-                    luma_row_ptr as *const u16,
-                    luma_stride / 2,
-                    uv_pl != 0,
-                    is_id != 0,
-                    $is_sx,
-                    $is_sy,
-                    bitdepth_max,
-                );
-            }
+            fguv_inner_16bpc(
+                token,
+                dst_row_ptr as *mut u16,
+                src_row_ptr as *const u16,
+                stride / 2,
+                &data,
+                pw,
+                scaling as *const u8,
+                grain_lut as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+                bh as usize,
+                row_num as usize,
+                luma_row_ptr as *const u16,
+                luma_stride / 2,
+                uv_pl != 0,
+                is_id != 0,
+                $is_sx,
+                $is_sy,
+                bitdepth_max,
+            );
         }
     };
 }
@@ -1782,44 +1774,45 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     };
 
     // Call inner functions directly, bypassing FFI wrappers.
-    unsafe {
-        match BD::BPC {
-            BPC::BPC8 => fguv_inner_8bpc(
-                dst_row_ptr as *mut u8,
-                src_row_ptr as *const u8,
-                stride as isize,
-                data,
-                pw,
-                scaling_ptr,
-                grain_lut as *const GrainLut<BD::Entry> as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
-                bh,
-                row_num,
-                luma_row_ptr as *const u8,
-                luma_stride as isize,
-                is_uv,
-                is_id,
-                is_sx,
-                is_sy,
-            ),
-            BPC::BPC16 => fguv_inner_16bpc(
-                dst_row_ptr as *mut u16,
-                src_row_ptr as *const u16,
-                stride / 2,
-                data,
-                pw,
-                scaling_ptr,
-                grain_lut as *const GrainLut<BD::Entry> as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
-                bh,
-                row_num,
-                luma_row_ptr as *const u16,
-                luma_stride / 2,
-                is_uv,
-                is_id,
-                is_sx,
-                is_sy,
-                bd.into_c(),
-            ),
-        }
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    match BD::BPC {
+        BPC::BPC8 => fguv_inner_8bpc(
+            token,
+            dst_row_ptr as *mut u8,
+            src_row_ptr as *const u8,
+            stride as isize,
+            data,
+            pw,
+            scaling_ptr,
+            grain_lut as *const GrainLut<BD::Entry> as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+            bh,
+            row_num,
+            luma_row_ptr as *const u8,
+            luma_stride as isize,
+            is_uv,
+            is_id,
+            is_sx,
+            is_sy,
+        ),
+        BPC::BPC16 => fguv_inner_16bpc(
+            token,
+            dst_row_ptr as *mut u16,
+            src_row_ptr as *const u16,
+            stride / 2,
+            data,
+            pw,
+            scaling_ptr,
+            grain_lut as *const GrainLut<BD::Entry> as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+            bh,
+            row_num,
+            luma_row_ptr as *const u16,
+            luma_stride / 2,
+            is_uv,
+            is_id,
+            is_sx,
+            is_sy,
+            bd.into_c(),
+        ),
     }
     true
 }
