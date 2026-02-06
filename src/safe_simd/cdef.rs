@@ -322,8 +322,7 @@ fn padding_8bpc(
 
 /// CDEF filter using AVX2 SIMD for 8bpc 8x8 block
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn cdef_filter_8x8_8bpc_avx2_inner(
+fn cdef_filter_8x8_8bpc_avx2_inner(
     dst: PicOffset,
     left: &[LeftPixelRow2px<u8>; 8],
     top: &CdefTop,
@@ -476,25 +475,22 @@ pub unsafe extern "C" fn cdef_filter_8x8_8bpc_avx2(
     let top = unsafe { FFISafe::get(top) };
     let bottom = unsafe { FFISafe::get(bottom) };
 
-    unsafe {
-        cdef_filter_8x8_8bpc_avx2_inner(
-            dst,
-            left,
-            top,
-            bottom,
-            pri_strength,
-            sec_strength,
-            dir,
-            damping,
-            edges,
-        );
-    }
+    cdef_filter_8x8_8bpc_avx2_inner(
+        dst,
+        left,
+        top,
+        bottom,
+        pri_strength,
+        sec_strength,
+        dir,
+        damping,
+        edges,
+    );
 }
 
 /// CDEF filter 4x8 8bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn cdef_filter_4x8_8bpc_avx2_inner(
+fn cdef_filter_4x8_8bpc_avx2_inner(
     dst: PicOffset,
     left: &[LeftPixelRow2px<u8>; 8],
     top: &CdefTop,
@@ -645,25 +641,22 @@ pub unsafe extern "C" fn cdef_filter_4x8_8bpc_avx2(
     let top = unsafe { FFISafe::get(top) };
     let bottom = unsafe { FFISafe::get(bottom) };
 
-    unsafe {
-        cdef_filter_4x8_8bpc_avx2_inner(
-            dst,
-            left,
-            top,
-            bottom,
-            pri_strength,
-            sec_strength,
-            dir,
-            damping,
-            edges,
-        );
-    }
+    cdef_filter_4x8_8bpc_avx2_inner(
+        dst,
+        left,
+        top,
+        bottom,
+        pri_strength,
+        sec_strength,
+        dir,
+        damping,
+        edges,
+    );
 }
 
 /// CDEF filter 4x4 8bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn cdef_filter_4x4_8bpc_avx2_inner(
+fn cdef_filter_4x4_8bpc_avx2_inner(
     dst: PicOffset,
     left: &[LeftPixelRow2px<u8>; 8],
     top: &CdefTop,
@@ -814,19 +807,17 @@ pub unsafe extern "C" fn cdef_filter_4x4_8bpc_avx2(
     let top = unsafe { FFISafe::get(top) };
     let bottom = unsafe { FFISafe::get(bottom) };
 
-    unsafe {
-        cdef_filter_4x4_8bpc_avx2_inner(
-            dst,
-            left,
-            top,
-            bottom,
-            pri_strength,
-            sec_strength,
-            dir,
-            damping,
-            edges,
-        );
-    }
+    cdef_filter_4x4_8bpc_avx2_inner(
+        dst,
+        left,
+        top,
+        bottom,
+        pri_strength,
+        sec_strength,
+        dir,
+        damping,
+        edges,
+    );
 }
 
 /// CDEF direction finding for 8bpc
@@ -955,8 +946,7 @@ fn padding_16bpc(
 
 /// CDEF filter for 16bpc 8x8 block
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn cdef_filter_8x8_16bpc_avx2_inner(
+fn cdef_filter_8x8_16bpc_avx2_inner(
     dst: PicOffset,
     left: &[LeftPixelRow2px<u16>; 8],
     top: &CdefTop,
@@ -1094,8 +1084,7 @@ unsafe fn cdef_filter_8x8_16bpc_avx2_inner(
 
 /// CDEF filter for 16bpc 4x8 block
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn cdef_filter_4x8_16bpc_avx2_inner(
+fn cdef_filter_4x8_16bpc_avx2_inner(
     dst: PicOffset,
     left: &[LeftPixelRow2px<u16>; 8],
     top: &CdefTop,
@@ -1187,8 +1176,7 @@ unsafe fn cdef_filter_4x8_16bpc_avx2_inner(
 
 /// CDEF filter for 16bpc 4x4 block
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn cdef_filter_4x4_16bpc_avx2_inner(
+fn cdef_filter_4x4_16bpc_avx2_inner(
     dst: PicOffset,
     left: &[LeftPixelRow2px<u16>; 8],
     top: &CdefTop,
@@ -1301,20 +1289,18 @@ pub unsafe extern "C" fn cdef_filter_8x8_16bpc_avx2(
     let top = unsafe { FFISafe::get(top) };
     let bottom = unsafe { FFISafe::get(bottom) };
 
-    unsafe {
-        cdef_filter_8x8_16bpc_avx2_inner(
-            dst,
-            left,
-            top,
-            bottom,
-            pri_strength,
-            sec_strength,
-            dir,
-            damping,
-            edges,
-            bitdepth_max,
-        );
-    }
+    cdef_filter_8x8_16bpc_avx2_inner(
+        dst,
+        left,
+        top,
+        bottom,
+        pri_strength,
+        sec_strength,
+        dir,
+        damping,
+        edges,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for CDEF filter 4x8 16bpc
@@ -1341,20 +1327,18 @@ pub unsafe extern "C" fn cdef_filter_4x8_16bpc_avx2(
     let top = unsafe { FFISafe::get(top) };
     let bottom = unsafe { FFISafe::get(bottom) };
 
-    unsafe {
-        cdef_filter_4x8_16bpc_avx2_inner(
-            dst,
-            left,
-            top,
-            bottom,
-            pri_strength,
-            sec_strength,
-            dir,
-            damping,
-            edges,
-            bitdepth_max,
-        );
-    }
+    cdef_filter_4x8_16bpc_avx2_inner(
+        dst,
+        left,
+        top,
+        bottom,
+        pri_strength,
+        sec_strength,
+        dir,
+        damping,
+        edges,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for CDEF filter 4x4 16bpc
@@ -1381,20 +1365,18 @@ pub unsafe extern "C" fn cdef_filter_4x4_16bpc_avx2(
     let top = unsafe { FFISafe::get(top) };
     let bottom = unsafe { FFISafe::get(bottom) };
 
-    unsafe {
-        cdef_filter_4x4_16bpc_avx2_inner(
-            dst,
-            left,
-            top,
-            bottom,
-            pri_strength,
-            sec_strength,
-            dir,
-            damping,
-            edges,
-            bitdepth_max,
-        );
-    }
+    cdef_filter_4x4_16bpc_avx2_inner(
+        dst,
+        left,
+        top,
+        bottom,
+        pri_strength,
+        sec_strength,
+        dir,
+        damping,
+        edges,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for cdef_find_dir 16bpc
@@ -1444,49 +1426,52 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
         return false;
     }
 
-    // SAFETY: AVX2 verified by CpuFlags check. Inner functions use target_feature(enable = "avx2").
     // Left pointer cast is safe because LeftPixelRow2px<BD::Pixel> has same layout for u8/u16.
-    unsafe {
-        match (BD::BPC, variant) {
-            (BPC::BPC8, 0) => cdef_filter_8x8_8bpc_avx2_inner(
-                dst,
-                &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]),
-                &top, &bottom,
+    match (BD::BPC, variant) {
+        (BPC::BPC8, 0) => {
+            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]) };
+            cdef_filter_8x8_8bpc_avx2_inner(
+                dst, left, &top, &bottom,
                 pri_strength, sec_strength, dir, damping, edges,
-            ),
-            (BPC::BPC8, 1) => cdef_filter_4x8_8bpc_avx2_inner(
-                dst,
-                &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]),
-                &top, &bottom,
+            );
+        }
+        (BPC::BPC8, 1) => {
+            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]) };
+            cdef_filter_4x8_8bpc_avx2_inner(
+                dst, left, &top, &bottom,
                 pri_strength, sec_strength, dir, damping, edges,
-            ),
-            (BPC::BPC8, _) => cdef_filter_4x4_8bpc_avx2_inner(
-                dst,
-                &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]),
-                &top, &bottom,
+            );
+        }
+        (BPC::BPC8, _) => {
+            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]) };
+            cdef_filter_4x4_8bpc_avx2_inner(
+                dst, left, &top, &bottom,
                 pri_strength, sec_strength, dir, damping, edges,
-            ),
-            (BPC::BPC16, 0) => cdef_filter_8x8_16bpc_avx2_inner(
-                dst,
-                &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]),
-                &top, &bottom,
-                pri_strength, sec_strength, dir, damping, edges,
-                bd.into_c(),
-            ),
-            (BPC::BPC16, 1) => cdef_filter_4x8_16bpc_avx2_inner(
-                dst,
-                &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]),
-                &top, &bottom,
+            );
+        }
+        (BPC::BPC16, 0) => {
+            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]) };
+            cdef_filter_8x8_16bpc_avx2_inner(
+                dst, left, &top, &bottom,
                 pri_strength, sec_strength, dir, damping, edges,
                 bd.into_c(),
-            ),
-            (BPC::BPC16, _) => cdef_filter_4x4_16bpc_avx2_inner(
-                dst,
-                &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]),
-                &top, &bottom,
+            );
+        }
+        (BPC::BPC16, 1) => {
+            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]) };
+            cdef_filter_4x8_16bpc_avx2_inner(
+                dst, left, &top, &bottom,
                 pri_strength, sec_strength, dir, damping, edges,
                 bd.into_c(),
-            ),
+            );
+        }
+        (BPC::BPC16, _) => {
+            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]) };
+            cdef_filter_4x4_16bpc_avx2_inner(
+                dst, left, &top, &bottom,
+                pri_strength, sec_strength, dir, damping, edges,
+                bd.into_c(),
+            );
         }
     }
     true
