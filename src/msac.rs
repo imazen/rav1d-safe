@@ -610,30 +610,6 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(
     val
 }
 
-/// SSE2 implementation of symbol_adapt8
-#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-#[target_feature(enable = "sse2")]
-unsafe fn rav1d_msac_decode_symbol_adapt8_sse2(
-    s: &mut MsacContext,
-    cdf: &mut [u16],
-    n_symbols: u8,
-) -> u8 {
-    // For 8 symbols, SSE2 is sufficient
-    // The overhead of SIMD setup may not be worth it for small n, use scalar
-    rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
-}
-
-/// SSE2 implementation of symbol_adapt4
-#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-#[target_feature(enable = "sse2")]
-unsafe fn rav1d_msac_decode_symbol_adapt4_sse2(
-    s: &mut MsacContext,
-    cdf: &mut [u16],
-    n_symbols: u8,
-) -> u8 {
-    // For 4 symbols, scalar is likely faster due to SIMD setup overhead
-    rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
-}
 
 // NEON implementations for aarch64
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
@@ -746,25 +722,6 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_neon(
     val
 }
 
-/// NEON implementation of symbol_adapt8 - uses scalar for simplicity
-#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-unsafe fn rav1d_msac_decode_symbol_adapt8_neon(
-    s: &mut MsacContext,
-    cdf: &mut [u16],
-    n_symbols: u8,
-) -> u8 {
-    rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
-}
-
-/// NEON implementation of symbol_adapt4 - uses scalar for simplicity
-#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-unsafe fn rav1d_msac_decode_symbol_adapt4_neon(
-    s: &mut MsacContext,
-    cdf: &mut [u16],
-    n_symbols: u8,
-) -> u8 {
-    rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
-}
 
 impl MsacContext {
     pub fn new(data: CArc<[u8]>, disable_cdf_update_flag: bool, dsp: &Rav1dMsacDSPContext) -> Self {
@@ -863,17 +820,23 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
                 dav1d_msac_decode_symbol_adapt16_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
         } else if #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))] {
-            // Safe SIMD AVX2 implementation
-            ret = unsafe {
-                rav1d_msac_decode_symbol_adapt16_avx2(s, cdf, n_symbols)
-            } as c_uint;
+            // SIMD AVX2 with runtime check, scalar fallback
+            if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+                // SAFETY: AVX2 verified by CpuFlags check above.
+                ret = unsafe {
+                    rav1d_msac_decode_symbol_adapt16_avx2(s, cdf, n_symbols)
+                } as c_uint;
+            } else {
+                ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
+            }
         } else if #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))] {
-            // Safe SIMD NEON implementation
+            // NEON is baseline on aarch64, always available
+            // SAFETY: NEON always available on aarch64.
             ret = unsafe {
                 rav1d_msac_decode_symbol_adapt16_neon(s, cdf, n_symbols)
             } as c_uint;
         } else {
-            ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols);
+            ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
         }
     }
     debug_assert!(ret < 16);
