@@ -25,7 +25,6 @@ use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::cmp;
 use std::marker::PhantomData;
 use std::mem;
-use std::mem::MaybeUninit;
 use std::ptr;
 use std::slice;
 use zerocopy::FromZeroes;
@@ -541,13 +540,11 @@ impl splat_mv::Fn {
 
         type Guard<'a> = DisjointMutGuard<'a, AlignedVec64<RefMvsBlock>, [RefMvsBlock]>;
 
-        let mut r_guards = [const { MaybeUninit::uninit() }; 37];
-        let mut r_ptrs = [MaybeUninit::uninit(); 37];
+        let mut r_guards: [Option<Guard<'_>>; 37] = [const { None }; 37];
+        let mut r_ptrs = [ptr::null_mut::<RefMvsBlock>(); 37];
 
         let r_indices = &rt.r[offset..][..len];
-        // SAFETY: `r_guards[i]` will be initialized if `r_ptrs[i]` is non-null.
         let r_guards = &mut r_guards[offset..][..len];
-        // SAFETY: This `r_ptrs` slice will be fully initialized.
         let r_ptrs = &mut r_ptrs[offset..][..len];
 
         for i in 0..len {
@@ -556,28 +553,13 @@ impl splat_mv::Fn {
                 // This is the range that will actually be accessed,
                 // but `splat_mv` expects a pointer offset `bx4` backwards.
                 let guard = rf.r.index_mut((ri + bx4.., ..bw4));
-                r_guards[i].write(guard);
-                // SAFETY: We just initialized it directly above.
-                let guard = unsafe { r_guards[i].assume_init_mut() };
+                r_guards[i] = Some(guard);
+                let guard = r_guards[i].as_mut().unwrap();
                 // SAFETY: The above `index_mut` starts at `ri + bx4`, so we can safely index `bx4` backwards.
                 let ptr = unsafe { guard.as_mut_ptr().sub(bx4) };
-                r_ptrs[i].write(ptr);
-            } else {
-                r_ptrs[i].write(ptr::null_mut());
+                r_ptrs[i] = ptr;
             }
         }
-
-        /// # Safety
-        ///
-        /// `slice` must be initialized.
-        // TODO use `MaybeUninit::slice_assume_init_mut` once `#![feature(maybe_uninit_slice)]` is stabilized.
-        unsafe fn slice_assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
-            // SAFETY: `slice` is already initialized and `MaybeUninit` is `#[repr(transparent)]`.
-            unsafe { &mut *(ptr::from_mut(slice) as *mut [T]) }
-        }
-
-        // SAFETY: The `r_ptrs` slice is fully initialized by the above loop.
-        let r_ptrs = unsafe { slice_assume_init_mut(r_ptrs) };
 
         let rr = r_ptrs.as_mut_ptr();
         let bx4 = b4.x as _;
@@ -595,17 +577,7 @@ impl splat_mv::Fn {
                 splat_mv_direct(rr, rmv, bx4, bw4, bh4);
             }
         }
-
-        if mem::needs_drop::<Guard>() {
-            for i in 0..len {
-                let ptr = r_ptrs[i];
-                if ptr.is_null() {
-                    continue;
-                }
-                // SAFETY: `r_guards[i]` is initialized iff `r_ptrs[i]` is non-null.
-                unsafe { r_guards[i].assume_init_drop() };
-            }
-        }
+        // r_guards drop automatically here, releasing DisjointMut borrows
     }
 }
 
