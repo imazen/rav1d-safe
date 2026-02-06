@@ -5,7 +5,8 @@
     feature(stdarch_riscv_feature_detection)
 )]
 // When neither `asm` nor `c-ffi` is enabled, deny unsafe code crate-wide.
-// Essential modules that encapsulate unsafe behind safe APIs get #[allow(unsafe_code)].
+// Modules that encapsulate unsafe behind safe APIs get #[allow(unsafe_code)].
+// As modules are made fully safe, their #[allow] annotations should be removed.
 #![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
 #![allow(clippy::all)]
@@ -23,82 +24,123 @@ pub mod include {
         pub(crate) mod intops;
         pub(crate) mod validate;
     } // mod common
+    #[allow(unsafe_code)]
     pub mod dav1d {
-        #[cfg_attr(not(any(feature = "asm", feature = "c-ffi")), allow(unsafe_code))]
         pub mod common;
-        #[cfg_attr(not(any(feature = "asm", feature = "c-ffi")), allow(unsafe_code))]
         pub mod data;
         pub mod dav1d;
-        #[cfg_attr(not(any(feature = "asm", feature = "c-ffi")), allow(unsafe_code))]
         pub mod headers;
-        #[cfg_attr(not(any(feature = "asm", feature = "c-ffi")), allow(unsafe_code))]
         pub mod picture;
     } // mod dav1d
 } // mod include
-#[cfg_attr(not(any(feature = "asm", feature = "c-ffi")), allow(unsafe_code))]
 pub mod src {
+    // === Modules with #[allow(unsafe_code)] ===
+    // These modules encapsulate unsafe behind safe APIs or contain
+    // fundamental primitives that require unsafe. Each should be
+    // audited and the allow removed as the code is made safe.
+
+    // Core primitives
+    #[allow(unsafe_code)]
     pub mod align;
+    #[allow(unsafe_code)]
     pub(crate) mod assume;
+    #[allow(unsafe_code)]
     pub(crate) mod c_arc;
+    #[allow(unsafe_code)]
     pub(crate) mod c_box;
+    #[allow(unsafe_code)]
+    pub mod cpu;
+    #[allow(unsafe_code)]
+    pub(crate) mod disjoint_mut;
+    #[allow(unsafe_code)]
+    mod ffi_safe;
+    #[allow(unsafe_code)]
+    pub(crate) mod pixels;
+    #[allow(unsafe_code)]
+    pub mod send_sync_non_null;
+    #[allow(unsafe_code)]
+    pub(super) mod internal;
+    #[allow(unsafe_code)]
+    mod in_range;
+    #[allow(unsafe_code)]
+    mod intra_edge;
+    #[allow(unsafe_code)]
+    pub(crate) mod log;
+    #[allow(unsafe_code)]
+    mod tables;
+
+    // Data/picture management
+    #[allow(unsafe_code)]
+    mod data;
+    #[allow(unsafe_code)]
+    mod picture;
+
+    // DSP dispatch modules (contain _erased functions and fn ptr dispatch)
+    #[allow(unsafe_code)]
     mod cdef;
+    #[allow(unsafe_code)]
+    mod filmgrain;
+    #[allow(unsafe_code)]
+    mod ipred;
+    #[allow(unsafe_code)]
+    mod itx;
+    #[allow(unsafe_code)]
+    mod loopfilter;
+    #[allow(unsafe_code)]
+    mod looprestoration;
+    #[allow(unsafe_code)]
+    mod mc;
+    #[allow(unsafe_code)]
+    mod pal;
+    #[allow(unsafe_code)]
+    mod refmvs;
+    #[allow(unsafe_code)]
+    mod lf_mask;
+    #[allow(unsafe_code)]
+    mod recon;
+
+    // Entropy coding (inline SIMD)
+    #[allow(unsafe_code)]
+    mod msac;
+
+    // Safe SIMD implementations
+    #[cfg(not(feature = "asm"))]
+    #[allow(unsafe_code)]
+    pub mod safe_simd;
+
+    // C API entry point
+    #[allow(unsafe_code)]
+    pub mod lib;
+
+    // === Modules WITHOUT unsafe_code (enforced by deny) ===
     mod cdef_apply;
     mod cdf;
     mod const_fn;
-    pub mod cpu;
     mod ctx;
     mod cursor;
-    mod data;
     mod decode;
     mod dequant_tables;
-    pub(crate) mod disjoint_mut;
     pub(crate) mod enum_map;
     mod env;
     pub(crate) mod error;
-    mod ffi_safe;
     mod fg_apply;
-    mod filmgrain;
     mod getbits;
     pub(crate) mod pic_or_buf;
-    pub(crate) mod pixels;
     pub(crate) mod relaxed_atomic;
-    pub mod send_sync_non_null;
     pub(crate) mod strided;
     pub(crate) mod with_offset;
     pub(crate) mod wrap_fn_ptr;
-    // TODO(kkysen) Temporarily `pub(crate)` due to a `pub use` until TAIT.
     mod extensions;
-    mod in_range;
-    pub(super) mod internal;
-    mod intra_edge;
-    mod ipred;
     mod ipred_prepare;
     mod iter;
-    mod itx;
     mod itx_1d;
     pub(crate) mod levels;
     mod lf_apply;
-    mod lf_mask;
-    pub mod lib;
-    pub(crate) mod log;
-    mod loopfilter;
-    mod looprestoration;
     mod lr_apply;
-    mod mc;
     mod mem;
-
-    // Safe SIMD implementations using archmage
-    mod msac;
     mod obu;
-    mod pal;
-    mod picture;
     mod qm;
-    mod recon;
-    mod refmvs;
-    #[cfg(not(feature = "asm"))]
-    pub mod safe_simd;
     mod scan;
-    mod tables;
     mod thread_task;
     mod warpmv;
     mod wedge;
