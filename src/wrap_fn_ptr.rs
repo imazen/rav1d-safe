@@ -92,6 +92,7 @@ macro_rules! wrap_fn_ptr {
             impl Fn {
                 /// Accept a function pointer but discard it — direct dispatch
                 /// bypasses function pointers entirely.
+                #[allow(dead_code)]
                 pub(super) const fn new(
                     _fn_ptr: unsafe extern "C" fn($($arg_name: $arg_ty),*) -> $return_ty
                 ) -> Self {
