@@ -84,7 +84,6 @@ pub mod src {
     mod looprestoration;
     #[allow(unsafe_code)]
     mod mc;
-    #[allow(unsafe_code)]
     mod pal;
     #[allow(unsafe_code)]
     mod refmvs;

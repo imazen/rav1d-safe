@@ -148,6 +148,26 @@ fn pal_idx_finish_inner(
     }
 }
 
+/// Safe dispatch for pal_idx_finish.
+///
+/// dst and src must NOT alias. Returns true if SIMD was used.
+#[cfg(target_arch = "x86_64")]
+pub fn pal_idx_finish_dispatch(
+    dst: &mut [u8],
+    src: &[u8],
+    bw: usize,
+    bh: usize,
+    w: usize,
+    h: usize,
+) -> bool {
+    if let Some(token) = Desktop64::summon() {
+        pal_idx_finish_inner(token, dst, src, bw, bh, w, h);
+        true
+    } else {
+        false
+    }
+}
+
 /// AVX2 implementation of pal_idx_finish - FFI wrapper.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]

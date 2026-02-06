@@ -1,8 +1,9 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
 use crate::src::cpu::CpuFlags;
+#[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+use crate::src::enum_map::DefaultValue;
 use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::ffi::c_int;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 use std::slice;
 
 wrap_fn_ptr!(pub unsafe extern "C" fn pal_idx_finish(
@@ -27,36 +28,22 @@ fn pal_idx_finish_direct(
     w: usize,
     h: usize,
 ) {
-    let dst = dst.map(|dst| &mut dst[..(bw / 2) * bh]);
-    let tmp = &mut tmp[..bw * bh];
-    // SAFETY: Note that `dst` and `src` may be the same.
-    // This is safe because they are raw ptrs for now,
-    // and in the fallback `fn pal_idx_finish_rust`, this is checked for
-    // before creating `&mut`s from them.
-    let dst = dst.unwrap_or(tmp).as_mut_ptr();
-    let src = tmp.as_ptr();
+    // When dst is separate from src, we can use SIMD with non-aliasing slices
+    if let Some(dst) = dst {
+        let dst = &mut dst[..(bw / 2) * bh];
+        let src = &tmp[..bw * bh];
 
-    #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let [bw, bh, w, h] = [bw, bh, w, h].map(|it| it as c_int);
-            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid slices above.
-            unsafe {
-                crate::src::safe_simd::pal::pal_idx_finish_avx2(dst, src, bw, bh, w, h);
-            }
+        #[cfg(target_arch = "x86_64")]
+        if crate::src::safe_simd::pal::pal_idx_finish_dispatch(dst, src, bw, bh, w, h) {
             return;
         }
-    }
 
-    // Scalar fallback (also used on aarch64 where no NEON pal implementation exists)
-    #[allow(unreachable_code)]
-    {
-        let [bw, bh, w, h] = [bw, bh, w, h].map(|it| it as c_int);
-        // SAFETY: Pointers derived from valid slices above. pal_idx_finish_c is safe.
-        unsafe {
-            pal_idx_finish_c(dst, src, bw, bh, w, h);
-        }
+        // Scalar fallback for non-aliased case
+        pal_idx_finish_rust(PalIdx::Idx { dst, src }, bw, bh, w, h);
+    } else {
+        // Aliased case (dst == src): use scalar fallback which handles this safely
+        let tmp = &mut tmp[..bw * bh];
+        pal_idx_finish_rust(PalIdx::Tmp(tmp), bw, bh, w, h);
     }
 }
 
@@ -105,6 +92,7 @@ enum PalIdx<'a> {
 /// # Safety
 ///
 /// Must be called by [`pal_idx_finish::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn pal_idx_finish_c(
     dst: *mut u8,
@@ -185,8 +173,16 @@ fn pal_idx_finish_rust(idx: PalIdx, bw: usize, bh: usize, w: usize, h: usize) {
 
 impl Rav1dPalDSPContext {
     pub const fn default() -> Self {
-        Self {
-            pal_idx_finish: pal_idx_finish::Fn::new(pal_idx_finish_c),
+        cfg_if::cfg_if! {
+            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+                Self {
+                    pal_idx_finish: pal_idx_finish::Fn::new(pal_idx_finish_c),
+                }
+            } else {
+                Self {
+                    pal_idx_finish: pal_idx_finish::Fn::DEFAULT,
+                }
+            }
         }
     }
 
