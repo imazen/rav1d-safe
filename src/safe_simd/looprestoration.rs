@@ -17,8 +17,8 @@ use std::slice;
 
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
-use crate::include::common::bitdepth::BitDepth8;
 use crate::include::common::bitdepth::BitDepth16;
+use crate::include::common::bitdepth::BitDepth8;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::bitdepth::LeftPixelRow;
 use crate::include::common::intops::iclip;
@@ -26,7 +26,7 @@ use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::ffi_safe::FFISafe;
-use crate::src::looprestoration::{padding, LrEdgeFlags, LooprestorationParams};
+use crate::src::looprestoration::{padding, LooprestorationParams, LrEdgeFlags};
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_sgr_x_by_x;
 use libc::ptrdiff_t;
@@ -497,10 +497,14 @@ fn boxsum5_8bpc(
             sumsq_v += REST_UNIT_STRIDE;
             sum[sum_v] = (a + b + c + d + e) as i16;
             sumsq[sumsq_v] = a2 + b2 + c2 + d2 + e2;
-            a = b; a2 = b2;
-            b = c; b2 = c2;
-            c = d; c2 = d2;
-            d = e; d2 = e2;
+            a = b;
+            a2 = b2;
+            b = c;
+            b2 = c2;
+            c = d;
+            c2 = d2;
+            d = e;
+            d2 = e2;
         }
     }
 
@@ -568,8 +572,10 @@ fn boxsum3_8bpc(
             sumsq_v += REST_UNIT_STRIDE;
             sum[sum_v] = (a + b + c) as i16;
             sumsq[sumsq_v] = a2 + b2 + c2;
-            a = b; a2 = b2;
-            b = c; b2 = c2;
+            a = b;
+            a2 = b2;
+            b = c;
+            b2 = c2;
         }
     }
 
@@ -666,10 +672,14 @@ fn selfguided_filter_8bpc(
                 let b_six = {
                     let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
                     let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
-                    let above_left = sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let above_right = sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
-                    let below_left = sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let below_right = sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let above_left =
+                        sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let above_right =
+                        sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let below_left =
+                        sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let below_right =
+                        sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 // six_neighbors for a (sumsq array)
@@ -684,7 +694,8 @@ fn selfguided_filter_8bpc(
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i32;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_six - b_six * src_val + (1 << 8)) >> 9) as i16;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_six - b_six * src_val + (1 << 8)) >> 9) as i16;
             }
 
             // Odd row: simplified 3-neighbor horizontal calculation
@@ -706,7 +717,8 @@ fn selfguided_filter_8bpc(
                     };
 
                     let src_val = src[src_base + (j + 1) * REST_UNIT_STRIDE + i] as i32;
-                    dst[(j + 1) * MAX_RESTORATION_WIDTH + i] = ((a_horiz - b_horiz * src_val + (1 << 7)) >> 8) as i16;
+                    dst[(j + 1) * MAX_RESTORATION_WIDTH + i] =
+                        ((a_horiz - b_horiz * src_val + (1 << 7)) >> 8) as i16;
                 }
             }
             j += 2;
@@ -718,10 +730,14 @@ fn selfguided_filter_8bpc(
                 let b_six = {
                     let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
                     let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
-                    let above_left = sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let above_right = sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
-                    let below_left = sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let below_right = sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let above_left =
+                        sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let above_right =
+                        sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let below_left =
+                        sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let below_right =
+                        sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 let a_six = {
@@ -735,7 +751,8 @@ fn selfguided_filter_8bpc(
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i32;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_six - b_six * src_val + (1 << 8)) >> 9) as i16;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_six - b_six * src_val + (1 << 8)) >> 9) as i16;
             }
         }
     } else {
@@ -750,10 +767,14 @@ fn selfguided_filter_8bpc(
                     let right = sum.get(idx + 1).copied().unwrap_or(0) as i32;
                     let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
                     let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
-                    let above_left = sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let above_right = sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
-                    let below_left = sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let below_right = sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let above_left =
+                        sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let above_right =
+                        sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let below_left =
+                        sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let below_right =
+                        sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
@@ -773,7 +794,8 @@ fn selfguided_filter_8bpc(
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i32;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_eight - b_eight * src_val + (1 << 8)) >> 9) as i16;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_eight - b_eight * src_val + (1 << 8)) >> 9) as i16;
             }
         }
     }
@@ -876,7 +898,7 @@ unsafe fn sgr_mix_8bpc_avx2_inner(
         let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);
         for i in 0..w {
             let v = w0 * dst0[j * MAX_RESTORATION_WIDTH + i] as i32
-                  + w1 * dst1[j * MAX_RESTORATION_WIDTH + i] as i32;
+                + w1 * dst1[j * MAX_RESTORATION_WIDTH + i] as i32;
             p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
         }
     }
@@ -1014,10 +1036,14 @@ fn boxsum5_16bpc(
             sumsq_v += REST_UNIT_STRIDE;
             sum[sum_v] = (a + b + c + d + e) as i32;
             sumsq[sumsq_v] = a2 + b2 + c2 + d2 + e2;
-            a = b; a2 = b2;
-            b = c; b2 = c2;
-            c = d; c2 = d2;
-            d = e; d2 = e2;
+            a = b;
+            a2 = b2;
+            b = c;
+            b2 = c2;
+            c = d;
+            c2 = d2;
+            d = e;
+            d2 = e2;
         }
     }
 
@@ -1085,8 +1111,10 @@ fn boxsum3_16bpc(
             sumsq_v += REST_UNIT_STRIDE;
             sum[sum_v] = (a + b + c) as i32;
             sumsq[sumsq_v] = a2 + b2 + c2;
-            a = b; a2 = b2;
-            b = c; b2 = c2;
+            a = b;
+            a2 = b2;
+            b = c;
+            b2 = c2;
         }
     }
 
@@ -1164,7 +1192,8 @@ fn selfguided_filter_16bpc(
             let b_val = sum.get(idx).copied().unwrap_or(0) as i64;
 
             // Apply bitdepth scaling: a >> (2 * bitdepth_min_8), b >> bitdepth_min_8
-            let a_scaled = ((a_val + (1 << (2 * bitdepth_min_8 - 1))) >> (2 * bitdepth_min_8)) as i32;
+            let a_scaled =
+                ((a_val + (1 << (2 * bitdepth_min_8 - 1))) >> (2 * bitdepth_min_8)) as i32;
             let b_scaled = ((b_val + (1 << (bitdepth_min_8 - 1))) >> bitdepth_min_8) as i32;
 
             let p = cmp::max(a_scaled * n - b_scaled * b_scaled, 0) as u32;
@@ -1192,25 +1221,34 @@ fn selfguided_filter_16bpc(
                 let b_six = {
                     let above = bb.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = bb.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 // six_neighbors for a (aa array)
                 let a_six = {
                     let above = aa.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = aa.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i64;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_six - b_six * src_val + (1 << 8)) >> 9) as i32;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_six - b_six * src_val + (1 << 8)) >> 9) as i32;
             }
 
             // Odd row: simplified 3-neighbor horizontal calculation
@@ -1232,7 +1270,8 @@ fn selfguided_filter_16bpc(
                     };
 
                     let src_val = src[src_base + (j + 1) * REST_UNIT_STRIDE + i] as i64;
-                    dst[(j + 1) * MAX_RESTORATION_WIDTH + i] = ((a_horiz - b_horiz * src_val + (1 << 7)) >> 8) as i32;
+                    dst[(j + 1) * MAX_RESTORATION_WIDTH + i] =
+                        ((a_horiz - b_horiz * src_val + (1 << 7)) >> 8) as i32;
                 }
             }
             j += 2;
@@ -1244,24 +1283,33 @@ fn selfguided_filter_16bpc(
                 let b_six = {
                     let above = bb.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = bb.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 let a_six = {
                     let above = aa.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = aa.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i64;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_six - b_six * src_val + (1 << 8)) >> 9) as i32;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_six - b_six * src_val + (1 << 8)) >> 9) as i32;
             }
         }
     } else {
@@ -1276,10 +1324,14 @@ fn selfguided_filter_16bpc(
                     let right = bb.get(idx + 1).copied().unwrap_or(0) as i64;
                     let above = bb.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = bb.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
@@ -1290,16 +1342,21 @@ fn selfguided_filter_16bpc(
                     let right = aa.get(idx + 1).copied().unwrap_or(0) as i64;
                     let above = aa.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = aa.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i64;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_eight - b_eight * src_val + (1 << 8)) >> 9) as i32;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_eight - b_eight * src_val + (1 << 8)) >> 9) as i32;
             }
         }
     }
@@ -1404,8 +1461,8 @@ unsafe fn sgr_mix_16bpc_avx2_inner(
     for j in 0..h {
         let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth16>(w);
         for i in 0..w {
-            let v = w0 * dst0[j * MAX_RESTORATION_WIDTH + i]
-                  + w1 * dst1[j * MAX_RESTORATION_WIDTH + i];
+            let v =
+                w0 * dst0[j * MAX_RESTORATION_WIDTH + i] + w1 * dst1[j * MAX_RESTORATION_WIDTH + i];
             p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max) as u16;
         }
     }

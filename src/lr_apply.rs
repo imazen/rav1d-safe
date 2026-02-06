@@ -131,11 +131,7 @@ fn lr_stripe<BD: BitDepth>(
     }
 }
 
-fn backup_4xu<BD: BitDepth>(
-    dst: &mut [[BD::Pixel; 4]; 128 + 8],
-    src: PicOffset,
-    u: c_int,
-) {
+fn backup_4xu<BD: BitDepth>(dst: &mut [[BD::Pixel; 4]; 128 + 8], src: PicOffset, u: c_int) {
     let u = u as usize;
     let dst = &mut dst[..u];
     for i in 0..u {

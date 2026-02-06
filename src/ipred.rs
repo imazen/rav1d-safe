@@ -101,14 +101,32 @@ fn intra_pred_direct<BD: BitDepth>(
 ) {
     #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::ipred::intra_pred_dispatch::<BD>(
-        mode, dst, topleft, topleft_off, width, height, angle, max_width, max_height, bd,
+        mode,
+        dst,
+        topleft,
+        topleft_off,
+        width,
+        height,
+        angle,
+        max_width,
+        max_height,
+        bd,
     ) {
         return;
     }
 
     #[cfg(target_arch = "aarch64")]
     if crate::src::safe_simd::ipred_arm::intra_pred_dispatch::<BD>(
-        mode, dst, topleft, topleft_off, width, height, angle, max_width, max_height, bd,
+        mode,
+        dst,
+        topleft,
+        topleft_off,
+        width,
+        height,
+        angle,
+        max_width,
+        max_height,
+        bd,
     ) {
         return;
     }
@@ -116,20 +134,72 @@ fn intra_pred_direct<BD: BitDepth>(
     // Scalar fallback
     #[allow(unreachable_code)]
     match mode {
-        0 => { let dc = DcGen::TopLeft.call::<BD>(topleft, topleft_off, width, height) as c_int; splat_dc::<BD>(dst, width, height, dc, bd) },
+        0 => {
+            let dc = DcGen::TopLeft.call::<BD>(topleft, topleft_off, width, height) as c_int;
+            splat_dc::<BD>(dst, width, height, dc, bd)
+        }
         1 => ipred_v_rust::<BD>(dst, topleft, topleft_off, width, height),
         2 => ipred_h_rust::<BD>(dst, topleft, topleft_off, width, height),
-        3 => { let dc = DcGen::Left.call::<BD>(topleft, topleft_off, width, height) as c_int; splat_dc::<BD>(dst, width, height, dc, bd) },
-        4 => { let dc = DcGen::Top.call::<BD>(topleft, topleft_off, width, height) as c_int; splat_dc::<BD>(dst, width, height, dc, bd) },
-        5 => { let dc = bd.bitdepth_max().as_::<c_int>() + 1 >> 1; splat_dc::<BD>(dst, width, height, dc, bd) },
-        6 => ipred_z1_rust::<BD>(dst, topleft, topleft_off, width, height, angle, max_width, max_height, bd),
-        7 => ipred_z2_rust::<BD>(dst, topleft, topleft_off, width, height, angle, max_width, max_height, bd),
-        8 => ipred_z3_rust::<BD>(dst, topleft, topleft_off, width, height, angle, max_width, max_height, bd),
+        3 => {
+            let dc = DcGen::Left.call::<BD>(topleft, topleft_off, width, height) as c_int;
+            splat_dc::<BD>(dst, width, height, dc, bd)
+        }
+        4 => {
+            let dc = DcGen::Top.call::<BD>(topleft, topleft_off, width, height) as c_int;
+            splat_dc::<BD>(dst, width, height, dc, bd)
+        }
+        5 => {
+            let dc = bd.bitdepth_max().as_::<c_int>() + 1 >> 1;
+            splat_dc::<BD>(dst, width, height, dc, bd)
+        }
+        6 => ipred_z1_rust::<BD>(
+            dst,
+            topleft,
+            topleft_off,
+            width,
+            height,
+            angle,
+            max_width,
+            max_height,
+            bd,
+        ),
+        7 => ipred_z2_rust::<BD>(
+            dst,
+            topleft,
+            topleft_off,
+            width,
+            height,
+            angle,
+            max_width,
+            max_height,
+            bd,
+        ),
+        8 => ipred_z3_rust::<BD>(
+            dst,
+            topleft,
+            topleft_off,
+            width,
+            height,
+            angle,
+            max_width,
+            max_height,
+            bd,
+        ),
         9 => ipred_smooth_rust::<BD>(dst, topleft, topleft_off, width, height),
         10 => ipred_smooth_v_rust::<BD>(dst, topleft, topleft_off, width, height),
         11 => ipred_smooth_h_rust::<BD>(dst, topleft, topleft_off, width, height),
         12 => ipred_paeth_rust::<BD>(dst, topleft, topleft_off, width, height),
-        13 => ipred_filter_rust::<BD>(dst, topleft, topleft_off, width, height, angle, max_width, max_height, bd),
+        13 => ipred_filter_rust::<BD>(
+            dst,
+            topleft,
+            topleft_off,
+            width,
+            height,
+            angle,
+            max_width,
+            max_height,
+            bd,
+        ),
         _ => unreachable!(),
     }
 }
@@ -220,7 +290,16 @@ fn cfl_ac_direct<BD: BitDepth>(
         Rav1dPixelLayoutSubSampled::I422 => (true, false),
         Rav1dPixelLayoutSubSampled::I444 => (false, false),
     };
-    cfl_ac_rust::<BD>(ac, y, w_pad, h_pad, cw as usize, ch as usize, is_ss_hor, is_ss_ver);
+    cfl_ac_rust::<BD>(
+        ac,
+        y,
+        w_pad,
+        h_pad,
+        cw as usize,
+        ch as usize,
+        is_ss_hor,
+        is_ss_ver,
+    );
 }
 
 impl cfl_ac::Fn {
@@ -401,13 +480,7 @@ pub struct Rav1dIntraPredDSPContext {
 }
 
 #[inline(never)]
-fn splat_dc<BD: BitDepth>(
-    dst: PicOffset,
-    width: c_int,
-    height: c_int,
-    dc: c_int,
-    bd: BD,
-) {
+fn splat_dc<BD: BitDepth>(dst: PicOffset, width: c_int, height: c_int, dc: c_int, bd: BD) {
     let height = height as isize;
     let width = width as usize;
     assert!(dc <= bd.bitdepth_max().as_::<c_int>());

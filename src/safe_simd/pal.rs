@@ -4,13 +4,13 @@
 //! dst[x] = src[2*x] | (src[2*x+1] << 4)
 
 #[cfg(target_arch = "x86_64")]
+use super::partial_simd;
+#[cfg(target_arch = "x86_64")]
 use archmage::{arcane, Desktop64, SimdToken};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 #[cfg(target_arch = "x86_64")]
 use safe_unaligned_simd::x86_64 as safe_simd;
-#[cfg(target_arch = "x86_64")]
-use super::partial_simd;
 use std::ffi::c_int;
 
 /// Inner implementation using archmage for safe SIMD.

@@ -1507,7 +1507,6 @@ fn get_filter_coeff(m: usize, d: usize, filter_type: Rav1dFilterMode) -> Option<
     Some(&dav1d_mc_subpel_filters.0[i as usize][m])
 }
 
-
 /// Horizontal 8-tap filter for 8bpc put (H-only case)
 /// Outputs directly to u8 with shift and clamp
 #[cfg(target_arch = "x86_64")]
@@ -1521,10 +1520,14 @@ unsafe fn h_filter_8tap_8bpc_put_avx2(
 ) {
     unsafe {
         // Broadcast filter coefficients for maddubs
-        let coeff_01 = _mm256_set1_epi16(((filter[1] as u8 as i16) << 8) | (filter[0] as u8 as i16));
-        let coeff_23 = _mm256_set1_epi16(((filter[3] as u8 as i16) << 8) | (filter[2] as u8 as i16));
-        let coeff_45 = _mm256_set1_epi16(((filter[5] as u8 as i16) << 8) | (filter[4] as u8 as i16));
-        let coeff_67 = _mm256_set1_epi16(((filter[7] as u8 as i16) << 8) | (filter[6] as u8 as i16));
+        let coeff_01 =
+            _mm256_set1_epi16(((filter[1] as u8 as i16) << 8) | (filter[0] as u8 as i16));
+        let coeff_23 =
+            _mm256_set1_epi16(((filter[3] as u8 as i16) << 8) | (filter[2] as u8 as i16));
+        let coeff_45 =
+            _mm256_set1_epi16(((filter[5] as u8 as i16) << 8) | (filter[4] as u8 as i16));
+        let coeff_67 =
+            _mm256_set1_epi16(((filter[7] as u8 as i16) << 8) | (filter[6] as u8 as i16));
 
         let rnd = _mm256_set1_epi16(32); // (1 << 6) >> 1
         let zero = _mm256_setzero_si256();
@@ -1572,11 +1575,11 @@ unsafe fn h_filter_8tap_8bpc_put_avx2(
             let shift_count = _mm_cvtsi32_si128(6);
             let shifted = _mm256_sra_epi16(_mm256_add_epi16(sum, rnd), shift_count);
             let clamped = _mm256_max_epi16(_mm256_min_epi16(shifted, _mm256_set1_epi16(255)), zero);
-            
+
             // Pack i16 to u8
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11011000);
-            
+
             _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(packed));
             col += 16;
         }
@@ -1626,13 +1629,27 @@ unsafe fn v_filter_8tap_8bpc_direct_avx2(
         while col + 8 <= w {
             // Load 8 u8 from each of 8 rows, zero-extend to i32
             let p0 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(src.add(col) as *const __m128i));
-            let p1 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(src.offset(src_stride).add(col) as *const __m128i));
-            let p2 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(src.offset(2 * src_stride).add(col) as *const __m128i));
-            let p3 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(src.offset(3 * src_stride).add(col) as *const __m128i));
-            let p4 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(src.offset(4 * src_stride).add(col) as *const __m128i));
-            let p5 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(src.offset(5 * src_stride).add(col) as *const __m128i));
-            let p6 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(src.offset(6 * src_stride).add(col) as *const __m128i));
-            let p7 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(src.offset(7 * src_stride).add(col) as *const __m128i));
+            let p1 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
+                src.offset(src_stride).add(col) as *const __m128i
+            ));
+            let p2 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
+                src.offset(2 * src_stride).add(col) as *const __m128i
+            ));
+            let p3 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
+                src.offset(3 * src_stride).add(col) as *const __m128i
+            ));
+            let p4 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
+                src.offset(4 * src_stride).add(col) as *const __m128i
+            ));
+            let p5 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
+                src.offset(5 * src_stride).add(col) as *const __m128i
+            ));
+            let p6 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
+                src.offset(6 * src_stride).add(col) as *const __m128i
+            ));
+            let p7 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
+                src.offset(7 * src_stride).add(col) as *const __m128i
+            ));
 
             // Multiply and accumulate
             let mut sum = _mm256_mullo_epi32(p0, c0);
@@ -1737,14 +1754,7 @@ unsafe fn put_8tap_8bpc_avx2_impl(
                 // Second pass: vertical filter to output
                 for y in 0..h {
                     let dst_row = dst.offset(y as isize * dst_stride);
-                    v_filter_8tap_8bpc_avx2(
-                        dst_row,
-                        &mid[y..],
-                        w,
-                        fv,
-                        6 + intermediate_bits,
-                        255,
-                    );
+                    v_filter_8tap_8bpc_avx2(dst_row, &mid[y..], w, fv, 6 + intermediate_bits, 255);
                 }
             }
             (Some(fh), None) => {
@@ -1822,19 +1832,19 @@ pub unsafe extern "C" fn put_8tap_regular_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    put_8tap_8bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
-        dst_ptr,
-        dst_stride,
-        src_ptr,
-        src_stride,
-        w,
-        h,
-        mx,
-        my,
-        bitdepth_max,
-        dst,
-        src,
-    )
+        put_8tap_8bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
     }
 }
 
@@ -1855,19 +1865,19 @@ pub unsafe extern "C" fn put_8tap_regular_smooth_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    put_8tap_8bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
-        dst_ptr,
-        dst_stride,
-        src_ptr,
-        src_stride,
-        w,
-        h,
-        mx,
-        my,
-        bitdepth_max,
-        dst,
-        src,
-    )
+        put_8tap_8bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
     }
 }
 
@@ -1888,19 +1898,19 @@ pub unsafe extern "C" fn put_8tap_regular_sharp_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    put_8tap_8bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
-        dst_ptr,
-        dst_stride,
-        src_ptr,
-        src_stride,
-        w,
-        h,
-        mx,
-        my,
-        bitdepth_max,
-        dst,
-        src,
-    )
+        put_8tap_8bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
     }
 }
 
@@ -1921,19 +1931,19 @@ pub unsafe extern "C" fn put_8tap_smooth_regular_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    put_8tap_8bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
-        dst_ptr,
-        dst_stride,
-        src_ptr,
-        src_stride,
-        w,
-        h,
-        mx,
-        my,
-        bitdepth_max,
-        dst,
-        src,
-    )
+        put_8tap_8bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
     }
 }
 
@@ -1954,19 +1964,19 @@ pub unsafe extern "C" fn put_8tap_smooth_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    put_8tap_8bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
-        dst_ptr,
-        dst_stride,
-        src_ptr,
-        src_stride,
-        w,
-        h,
-        mx,
-        my,
-        bitdepth_max,
-        dst,
-        src,
-    )
+        put_8tap_8bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
     }
 }
 
@@ -1987,19 +1997,19 @@ pub unsafe extern "C" fn put_8tap_smooth_sharp_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    put_8tap_8bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
-        dst_ptr,
-        dst_stride,
-        src_ptr,
-        src_stride,
-        w,
-        h,
-        mx,
-        my,
-        bitdepth_max,
-        dst,
-        src,
-    )
+        put_8tap_8bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
     }
 }
 
@@ -2020,19 +2030,19 @@ pub unsafe extern "C" fn put_8tap_sharp_regular_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    put_8tap_8bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
-        dst_ptr,
-        dst_stride,
-        src_ptr,
-        src_stride,
-        w,
-        h,
-        mx,
-        my,
-        bitdepth_max,
-        dst,
-        src,
-    )
+        put_8tap_8bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
     }
 }
 
@@ -2053,19 +2063,19 @@ pub unsafe extern "C" fn put_8tap_sharp_smooth_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    put_8tap_8bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
-        dst_ptr,
-        dst_stride,
-        src_ptr,
-        src_stride,
-        w,
-        h,
-        mx,
-        my,
-        bitdepth_max,
-        dst,
-        src,
-    )
+        put_8tap_8bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
     }
 }
 
@@ -2086,19 +2096,19 @@ pub unsafe extern "C" fn put_8tap_sharp_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    put_8tap_8bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
-        dst_ptr,
-        dst_stride,
-        src_ptr,
-        src_stride,
-        w,
-        h,
-        mx,
-        my,
-        bitdepth_max,
-        dst,
-        src,
-    )
+        put_8tap_8bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
     }
 }
 
@@ -2266,10 +2276,7 @@ unsafe fn v_filter_8tap_to_i16_avx2(
             let packed = _mm256_permute4x64_epi64(packed, 0b11011000);
 
             // Store 8 i16 values
-            _mm_storeu_si128(
-                dst.add(col) as *mut __m128i,
-                _mm256_castsi256_si128(packed),
-            );
+            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(packed));
 
             col += 8;
         }
@@ -2325,9 +2332,17 @@ pub unsafe extern "C" fn prep_8tap_regular_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    prep_8tap_8bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
-        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
-    )
+        prep_8tap_8bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
     }
 }
 
@@ -2346,9 +2361,17 @@ pub unsafe extern "C" fn prep_8tap_regular_smooth_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    prep_8tap_8bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
-        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
-    )
+        prep_8tap_8bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
     }
 }
 
@@ -2367,9 +2390,17 @@ pub unsafe extern "C" fn prep_8tap_regular_sharp_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    prep_8tap_8bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
-        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
-    )
+        prep_8tap_8bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
     }
 }
 
@@ -2388,9 +2419,17 @@ pub unsafe extern "C" fn prep_8tap_smooth_regular_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    prep_8tap_8bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
-        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
-    )
+        prep_8tap_8bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
     }
 }
 
@@ -2409,9 +2448,17 @@ pub unsafe extern "C" fn prep_8tap_smooth_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    prep_8tap_8bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
-        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
-    )
+        prep_8tap_8bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
     }
 }
 
@@ -2430,9 +2477,17 @@ pub unsafe extern "C" fn prep_8tap_smooth_sharp_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    prep_8tap_8bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
-        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
-    )
+        prep_8tap_8bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
     }
 }
 
@@ -2451,9 +2506,17 @@ pub unsafe extern "C" fn prep_8tap_sharp_regular_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    prep_8tap_8bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
-        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
-    )
+        prep_8tap_8bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
     }
 }
 
@@ -2472,9 +2535,17 @@ pub unsafe extern "C" fn prep_8tap_sharp_smooth_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    prep_8tap_8bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
-        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
-    )
+        prep_8tap_8bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
     }
 }
 
@@ -2493,9 +2564,17 @@ pub unsafe extern "C" fn prep_8tap_sharp_8bpc_avx2(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-    prep_8tap_8bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
-        tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src,
-    )
+        prep_8tap_8bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
     }
 }
 
@@ -2519,10 +2598,14 @@ unsafe fn h_filter_8tap_16bpc_avx2(
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         // Convert filter coefficients from i8 to i16 for pmaddwd
-        let coeff0 = _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
-        let coeff2 = _mm256_set1_epi32(((filter[3] as i16 as i32) << 16) | (filter[2] as i16 as u16 as i32));
-        let coeff4 = _mm256_set1_epi32(((filter[5] as i16 as i32) << 16) | (filter[4] as i16 as u16 as i32));
-        let coeff6 = _mm256_set1_epi32(((filter[7] as i16 as i32) << 16) | (filter[6] as i16 as u16 as i32));
+        let coeff0 =
+            _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
+        let coeff2 =
+            _mm256_set1_epi32(((filter[3] as i16 as i32) << 16) | (filter[2] as i16 as u16 as i32));
+        let coeff4 =
+            _mm256_set1_epi32(((filter[5] as i16 as i32) << 16) | (filter[4] as i16 as u16 as i32));
+        let coeff6 =
+            _mm256_set1_epi32(((filter[7] as i16 as i32) << 16) | (filter[6] as i16 as u16 as i32));
 
         let rnd = _mm256_set1_epi32((1 << sh) >> 1);
         let shift_count = _mm_cvtsi32_si128(sh);
@@ -2538,11 +2621,11 @@ unsafe fn h_filter_8tap_16bpc_avx2(
             let s0 = _mm256_loadu_si256(s.offset(-3) as *const __m256i); // pixels -3 to 12
             let s1 = _mm256_loadu_si256(s.offset(-2) as *const __m256i); // pixels -2 to 13
             let s2 = _mm256_loadu_si256(s.offset(-1) as *const __m256i); // pixels -1 to 14
-            let s3 = _mm256_loadu_si256(s as *const __m256i);            // pixels 0 to 15
-            let s4 = _mm256_loadu_si256(s.offset(1) as *const __m256i);  // pixels 1 to 16
-            let s5 = _mm256_loadu_si256(s.offset(2) as *const __m256i);  // pixels 2 to 17
-            let s6 = _mm256_loadu_si256(s.offset(3) as *const __m256i);  // pixels 3 to 18
-            let s7 = _mm256_loadu_si256(s.offset(4) as *const __m256i);  // pixels 4 to 19
+            let s3 = _mm256_loadu_si256(s as *const __m256i); // pixels 0 to 15
+            let s4 = _mm256_loadu_si256(s.offset(1) as *const __m256i); // pixels 1 to 16
+            let s5 = _mm256_loadu_si256(s.offset(2) as *const __m256i); // pixels 2 to 17
+            let s6 = _mm256_loadu_si256(s.offset(3) as *const __m256i); // pixels 3 to 18
+            let s7 = _mm256_loadu_si256(s.offset(4) as *const __m256i); // pixels 4 to 19
 
             // Interleave consecutive pixels for madd_epi16
             // madd_epi16 does: (a[2i] * b[2i]) + (a[2i+1] * b[2i+1]) -> 32-bit
@@ -2558,10 +2641,7 @@ unsafe fn h_filter_8tap_16bpc_avx2(
             let ma67 = _mm256_madd_epi16(p67, coeff6);
 
             // Sum all contributions (32-bit)
-            let sum = _mm256_add_epi32(
-                _mm256_add_epi32(ma01, ma23),
-                _mm256_add_epi32(ma45, ma67),
-            );
+            let sum = _mm256_add_epi32(_mm256_add_epi32(ma01, ma23), _mm256_add_epi32(ma45, ma67));
 
             // Add rounding and shift
             let result = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
@@ -2604,8 +2684,14 @@ unsafe fn v_filter_8tap_16bpc_avx2(
     unsafe {
         // Convert filter coefficients from i8 to i32 for multiplication
         let coeff: [i32; 8] = [
-            filter[0] as i32, filter[1] as i32, filter[2] as i32, filter[3] as i32,
-            filter[4] as i32, filter[5] as i32, filter[6] as i32, filter[7] as i32,
+            filter[0] as i32,
+            filter[1] as i32,
+            filter[2] as i32,
+            filter[3] as i32,
+            filter[4] as i32,
+            filter[5] as i32,
+            filter[6] as i32,
+            filter[7] as i32,
         ];
 
         let rnd = _mm256_set1_epi32((1 << sh) >> 1);
@@ -2701,8 +2787,14 @@ unsafe fn v_filter_8tap_16bpc_prep_avx2(
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         let coeff: [i32; 8] = [
-            filter[0] as i32, filter[1] as i32, filter[2] as i32, filter[3] as i32,
-            filter[4] as i32, filter[5] as i32, filter[6] as i32, filter[7] as i32,
+            filter[0] as i32,
+            filter[1] as i32,
+            filter[2] as i32,
+            filter[3] as i32,
+            filter[4] as i32,
+            filter[5] as i32,
+            filter[6] as i32,
+            filter[7] as i32,
         ];
 
         let rnd = _mm256_set1_epi32((1 << sh) >> 1);
@@ -2788,10 +2880,14 @@ unsafe fn h_filter_8tap_16bpc_put_avx2(
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         // Convert filter coefficients from i8 to i16 for pmaddwd
-        let coeff0 = _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
-        let coeff2 = _mm256_set1_epi32(((filter[3] as i16 as i32) << 16) | (filter[2] as i16 as u16 as i32));
-        let coeff4 = _mm256_set1_epi32(((filter[5] as i16 as i32) << 16) | (filter[4] as i16 as u16 as i32));
-        let coeff6 = _mm256_set1_epi32(((filter[7] as i16 as i32) << 16) | (filter[6] as i16 as u16 as i32));
+        let coeff0 =
+            _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
+        let coeff2 =
+            _mm256_set1_epi32(((filter[3] as i16 as i32) << 16) | (filter[2] as i16 as u16 as i32));
+        let coeff4 =
+            _mm256_set1_epi32(((filter[5] as i16 as i32) << 16) | (filter[4] as i16 as u16 as i32));
+        let coeff6 =
+            _mm256_set1_epi32(((filter[7] as i16 as i32) << 16) | (filter[6] as i16 as u16 as i32));
 
         let rnd = _mm256_set1_epi32(32); // (1 << 6) >> 1
         let shift_count = _mm_cvtsi32_si128(6);
@@ -2826,10 +2922,7 @@ unsafe fn h_filter_8tap_16bpc_put_avx2(
             let ma67 = _mm256_madd_epi16(p67, coeff6);
 
             // Sum all contributions
-            let sum = _mm256_add_epi32(
-                _mm256_add_epi32(ma01, ma23),
-                _mm256_add_epi32(ma45, ma67),
-            );
+            let sum = _mm256_add_epi32(_mm256_add_epi32(ma01, ma23), _mm256_add_epi32(ma45, ma67));
 
             // Add rounding, shift, and clamp
             let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
@@ -2875,8 +2968,14 @@ unsafe fn v_filter_8tap_16bpc_direct_avx2(
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         let coeff: [i32; 8] = [
-            filter[0] as i32, filter[1] as i32, filter[2] as i32, filter[3] as i32,
-            filter[4] as i32, filter[5] as i32, filter[6] as i32, filter[7] as i32,
+            filter[0] as i32,
+            filter[1] as i32,
+            filter[2] as i32,
+            filter[3] as i32,
+            filter[4] as i32,
+            filter[5] as i32,
+            filter[6] as i32,
+            filter[7] as i32,
         ];
 
         let c0 = _mm256_set1_epi32(coeff[0]);
@@ -2897,14 +2996,28 @@ unsafe fn v_filter_8tap_16bpc_direct_avx2(
 
         while col + 8 <= w {
             // Load 8 pixels from each of 8 rows (at offsets -3 to +4)
-            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-3 * src_stride).add(col) as *const __m128i));
-            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-2 * src_stride).add(col) as *const __m128i));
-            let p2 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-1 * src_stride).add(col) as *const __m128i));
+            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(-3 * src_stride).add(col) as *const __m128i
+            ));
+            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(-2 * src_stride).add(col) as *const __m128i
+            ));
+            let p2 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(-1 * src_stride).add(col) as *const __m128i
+            ));
             let p3 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
-            let p4 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(1 * src_stride).add(col) as *const __m128i));
-            let p5 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(2 * src_stride).add(col) as *const __m128i));
-            let p6 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(3 * src_stride).add(col) as *const __m128i));
-            let p7 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(4 * src_stride).add(col) as *const __m128i));
+            let p4 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(1 * src_stride).add(col) as *const __m128i
+            ));
+            let p5 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(2 * src_stride).add(col) as *const __m128i
+            ));
+            let p6 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(3 * src_stride).add(col) as *const __m128i
+            ));
+            let p7 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(4 * src_stride).add(col) as *const __m128i
+            ));
 
             // Multiply and accumulate
             let m0 = _mm256_mullo_epi32(p0, c0);
@@ -2949,7 +3062,6 @@ unsafe fn v_filter_8tap_16bpc_direct_avx2(
     }
 }
 
-
 /// Horizontal 8-tap filter for 16bpc prep (H-only case)
 /// Input is u16, output is i16 with PREP_BIAS subtracted
 #[cfg(target_arch = "x86_64")]
@@ -2966,10 +3078,14 @@ unsafe fn h_filter_8tap_16bpc_prep_direct_avx2(
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         // Convert filter coefficients from i8 to i16 for pmaddwd
-        let coeff0 = _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
-        let coeff2 = _mm256_set1_epi32(((filter[3] as i16 as i32) << 16) | (filter[2] as i16 as u16 as i32));
-        let coeff4 = _mm256_set1_epi32(((filter[5] as i16 as i32) << 16) | (filter[4] as i16 as u16 as i32));
-        let coeff6 = _mm256_set1_epi32(((filter[7] as i16 as i32) << 16) | (filter[6] as i16 as u16 as i32));
+        let coeff0 =
+            _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
+        let coeff2 =
+            _mm256_set1_epi32(((filter[3] as i16 as i32) << 16) | (filter[2] as i16 as u16 as i32));
+        let coeff4 =
+            _mm256_set1_epi32(((filter[5] as i16 as i32) << 16) | (filter[4] as i16 as u16 as i32));
+        let coeff6 =
+            _mm256_set1_epi32(((filter[7] as i16 as i32) << 16) | (filter[6] as i16 as u16 as i32));
 
         let rnd = _mm256_set1_epi32((1 << sh) >> 1);
         let shift_count = _mm_cvtsi32_si128(sh);
@@ -3003,10 +3119,7 @@ unsafe fn h_filter_8tap_16bpc_prep_direct_avx2(
             let ma67 = _mm256_madd_epi16(p67, coeff6);
 
             // Sum all contributions
-            let sum = _mm256_add_epi32(
-                _mm256_add_epi32(ma01, ma23),
-                _mm256_add_epi32(ma45, ma67),
-            );
+            let sum = _mm256_add_epi32(_mm256_add_epi32(ma01, ma23), _mm256_add_epi32(ma45, ma67));
 
             // Add rounding, shift, and subtract bias
             let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
@@ -3053,8 +3166,14 @@ unsafe fn v_filter_8tap_16bpc_prep_direct_avx2(
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         let coeff: [i32; 8] = [
-            filter[0] as i32, filter[1] as i32, filter[2] as i32, filter[3] as i32,
-            filter[4] as i32, filter[5] as i32, filter[6] as i32, filter[7] as i32,
+            filter[0] as i32,
+            filter[1] as i32,
+            filter[2] as i32,
+            filter[3] as i32,
+            filter[4] as i32,
+            filter[5] as i32,
+            filter[6] as i32,
+            filter[7] as i32,
         ];
 
         let c0 = _mm256_set1_epi32(coeff[0]);
@@ -3074,14 +3193,28 @@ unsafe fn v_filter_8tap_16bpc_prep_direct_avx2(
 
         while col + 8 <= w {
             // Load 8 pixels from each of 8 rows
-            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-3 * src_stride).add(col) as *const __m128i));
-            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-2 * src_stride).add(col) as *const __m128i));
-            let p2 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(-1 * src_stride).add(col) as *const __m128i));
+            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(-3 * src_stride).add(col) as *const __m128i
+            ));
+            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(-2 * src_stride).add(col) as *const __m128i
+            ));
+            let p2 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(-1 * src_stride).add(col) as *const __m128i
+            ));
             let p3 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
-            let p4 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(1 * src_stride).add(col) as *const __m128i));
-            let p5 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(2 * src_stride).add(col) as *const __m128i));
-            let p6 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(3 * src_stride).add(col) as *const __m128i));
-            let p7 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(4 * src_stride).add(col) as *const __m128i));
+            let p4 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(1 * src_stride).add(col) as *const __m128i
+            ));
+            let p5 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(2 * src_stride).add(col) as *const __m128i
+            ));
+            let p6 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(3 * src_stride).add(col) as *const __m128i
+            ));
+            let p7 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(4 * src_stride).add(col) as *const __m128i
+            ));
 
             // Multiply and accumulate
             let m0 = _mm256_mullo_epi32(p0, c0);
@@ -3287,7 +3420,15 @@ unsafe fn prep_8tap_16bpc_avx2_impl(
                 for y in 0..h {
                     let src_row = src.offset(y as isize * src_stride_elems);
                     let out_row = tmp.add(y * w);
-                    v_filter_8tap_16bpc_prep_direct_avx2(out_row, src_row, src_stride_elems, w, fv, sh, PREP_BIAS);
+                    v_filter_8tap_16bpc_prep_direct_avx2(
+                        out_row,
+                        src_row,
+                        src_stride_elems,
+                        w,
+                        fv,
+                        sh,
+                        PREP_BIAS,
+                    );
                 }
             }
             (None, None) => {
@@ -3328,7 +3469,17 @@ pub unsafe extern "C" fn put_8tap_16bpc_avx2<const FILTER: usize>(
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         put_8tap_16bpc_avx2_impl(
-            dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, h_filter, v_filter,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            h_filter,
+            v_filter,
         );
     }
 }
@@ -3361,91 +3512,289 @@ pub unsafe extern "C" fn prep_8tap_16bpc_avx2<const FILTER: usize>(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn put_8tap_regular_16bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
-    w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { put_8tap_16bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_16bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn put_8tap_regular_smooth_16bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
-    w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { put_8tap_16bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_16bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn put_8tap_regular_sharp_16bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
-    w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { put_8tap_16bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_16bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn put_8tap_smooth_regular_16bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
-    w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_16bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn put_8tap_smooth_16bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
-    w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { put_8tap_16bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_16bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn put_8tap_smooth_sharp_16bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
-    w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_16bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn put_8tap_sharp_regular_16bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
-    w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_16bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn put_8tap_sharp_smooth_16bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
-    w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { put_8tap_16bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_16bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn put_8tap_sharp_16bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize,
-    w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32,
-    dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { put_8tap_16bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_16bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 // 16bpc prep wrapper functions
@@ -3453,82 +3802,253 @@ pub unsafe extern "C" fn put_8tap_sharp_16bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_regular_16bpc_avx2(
-    tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_16bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_regular_smooth_16bpc_avx2(
-    tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_16bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_regular_sharp_16bpc_avx2(
-    tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_16bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_smooth_regular_16bpc_avx2(
-    tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_16bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_smooth_16bpc_avx2(
-    tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_16bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_smooth_sharp_16bpc_avx2(
-    tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_16bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_sharp_regular_16bpc_avx2(
-    tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_16bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_sharp_smooth_16bpc_avx2(
-    tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_16bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn prep_8tap_sharp_16bpc_avx2(
-    tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32,
-    bitdepth_max: i32, src: *const FFISafe<PicOffset>,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
 ) {
-    unsafe { prep_8tap_16bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_16bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 // ============================================================================
@@ -3550,13 +4070,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_16bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-unsafe fn h_filter_bilin_8bpc_avx2(
-    dst: *mut i16,
-    src: *const u8,
-    w: usize,
-    mx: usize,
-    sh: u8,
-) {
+unsafe fn h_filter_bilin_8bpc_avx2(dst: *mut i16, src: *const u8, w: usize, mx: usize, sh: u8) {
     // SAFETY: AVX2 is guaranteed by target_feature, caller ensures pointer validity
     unsafe {
         // Bilinear: pixel = (16 - mx) * src[x] + mx * src[x+1]
@@ -3700,12 +4214,7 @@ unsafe fn v_filter_bilin_8bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-unsafe fn h_bilin_8bpc_put_avx2(
-    dst: *mut u8,
-    src: *const u8,
-    w: usize,
-    mx: usize,
-) {
+unsafe fn h_bilin_8bpc_put_avx2(dst: *mut u8, src: *const u8, w: usize, mx: usize) {
     unsafe {
         let mx = mx as i8;
         let coeff0 = (16 - mx) as u8;
@@ -3811,7 +4320,6 @@ unsafe fn v_bilin_8bpc_direct_avx2(
         }
     }
 }
-
 
 /// Core bilinear filter implementation for 8bpc
 #[cfg(target_arch = "x86_64")]
@@ -3970,7 +4478,8 @@ unsafe fn prep_bilin_8bpc_avx2_impl(
                         let coeff1 = my as i32;
                         let pixel = coeff0 * r0 + coeff1 * r1;
                         // For prep, we keep intermediate precision
-                        let result = (pixel + (1 << (3 + intermediate_bits))) >> (4 + intermediate_bits);
+                        let result =
+                            (pixel + (1 << (3 + intermediate_bits))) >> (4 + intermediate_bits);
                         *dst_row.add(x) = ((result - 8192) << 4) as i16; // Apply PREP_BIAS adjustment
                     }
                 }
@@ -4106,7 +4615,8 @@ unsafe fn w_mask_8bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
                     // Process second pixel in pair for horizontal subsampling
                     x += 1;
                     let diff2 = tmp1_row[x].abs_diff(tmp2_row[x]);
-                    let n = std::cmp::min(38 + ((diff2.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
+                    let n =
+                        std::cmp::min(38 + ((diff2.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
 
                     let t1 = tmp1_row[x] as i32;
                     let t2 = tmp2_row[x] as i32;
@@ -4118,13 +4628,15 @@ unsafe fn w_mask_8bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
                     if SS_VER && (row_h & 1 != 0) {
                         // Vertical subsampling: average with previous row
                         let prev = *mask_ptr.add(mask_x);
-                        *mask_ptr.add(mask_x) = (((m as u16 + n as u16 + 2 - sign as u16) + prev as u16) >> 2) as u8;
+                        *mask_ptr.add(mask_x) =
+                            (((m as u16 + n as u16 + 2 - sign as u16) + prev as u16) >> 2) as u8;
                     } else if SS_VER {
                         // Even row: just store sum (will be averaged on odd row)
                         *mask_ptr.add(mask_x) = m + n;
                     } else {
                         // No vertical subsampling: average of horizontal pair
-                        *mask_ptr.add(mask_x) = ((m as u16 + n as u16 + 1 - sign as u16) >> 1) as u8;
+                        *mask_ptr.add(mask_x) =
+                            ((m as u16 + n as u16 + 1 - sign as u16) >> 1) as u8;
                     }
                 } else {
                     // No horizontal subsampling (444)
@@ -4253,7 +4765,8 @@ unsafe fn w_mask_16bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
                 if SS_HOR {
                     x += 1;
                     let diff2 = tmp1_row[x].abs_diff(tmp2_row[x]);
-                    let n = std::cmp::min(38 + ((diff2.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
+                    let n =
+                        std::cmp::min(38 + ((diff2.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
 
                     let t1 = tmp1_row[x] as i32;
                     let t2 = tmp2_row[x] as i32;
@@ -4263,11 +4776,13 @@ unsafe fn w_mask_16bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
                     let mask_x = x >> 1;
                     if SS_VER && (row_h & 1 != 0) {
                         let prev = *mask_ptr.add(mask_x);
-                        *mask_ptr.add(mask_x) = (((m as u16 + n as u16 + 2 - sign as u16) + prev as u16) >> 2) as u8;
+                        *mask_ptr.add(mask_x) =
+                            (((m as u16 + n as u16 + 2 - sign as u16) + prev as u16) >> 2) as u8;
                     } else if SS_VER {
                         *mask_ptr.add(mask_x) = m + n;
                     } else {
-                        *mask_ptr.add(mask_x) = ((m as u16 + n as u16 + 1 - sign as u16) >> 1) as u8;
+                        *mask_ptr.add(mask_x) =
+                            ((m as u16 + n as u16 + 1 - sign as u16) >> 1) as u8;
                     }
                 } else {
                     *mask_ptr.add(x) = m;
@@ -4297,7 +4812,17 @@ pub unsafe extern "C" fn w_mask_444_16bpc_avx2(
     _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
-        w_mask_16bpc_avx2_impl::<false, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max);
+        w_mask_16bpc_avx2_impl::<false, false>(
+            dst_ptr,
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+            bitdepth_max,
+        );
     }
 }
 
@@ -4316,7 +4841,17 @@ pub unsafe extern "C" fn w_mask_422_16bpc_avx2(
     _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
-        w_mask_16bpc_avx2_impl::<true, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max);
+        w_mask_16bpc_avx2_impl::<true, false>(
+            dst_ptr,
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+            bitdepth_max,
+        );
     }
 }
 
@@ -4335,7 +4870,17 @@ pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
     _dst: *const FFISafe<PicOffset>,
 ) {
     unsafe {
-        w_mask_16bpc_avx2_impl::<true, true>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max);
+        w_mask_16bpc_avx2_impl::<true, true>(
+            dst_ptr,
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+            bitdepth_max,
+        );
     }
 }
 
@@ -4348,12 +4893,7 @@ pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-unsafe fn h_bilin_16bpc_avx2(
-    dst: *mut i32,
-    src: *const u16,
-    w: usize,
-    mx: i32,
-) {
+unsafe fn h_bilin_16bpc_avx2(dst: *mut i32, src: *const u16, w: usize, mx: i32) {
     unsafe {
         // Bilinear weights: w0 = (16 - mx), w1 = mx
         let w0 = _mm256_set1_epi32(16 - mx);
@@ -4365,8 +4905,8 @@ unsafe fn h_bilin_16bpc_avx2(
         while col + 8 <= w {
             // Load 9 consecutive 16-bit pixels (8 output pixels need pixels 0..8)
             let s = src.add(col);
-            let p0_7 = _mm_loadu_si128(s as *const __m128i);           // pixels 0-7
-            let p1_8 = _mm_loadu_si128(s.add(1) as *const __m128i);    // pixels 1-8
+            let p0_7 = _mm_loadu_si128(s as *const __m128i); // pixels 0-7
+            let p1_8 = _mm_loadu_si128(s.add(1) as *const __m128i); // pixels 1-8
 
             // Zero-extend to 32-bit
             let p0_lo = _mm256_cvtepu16_epi32(p0_7);
@@ -4510,13 +5050,7 @@ unsafe fn v_bilin_16bpc_prep_avx2(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-unsafe fn h_bilin_16bpc_put_avx2(
-    dst: *mut u16,
-    src: *const u16,
-    w: usize,
-    mx: i32,
-    bd_max: i32,
-) {
+unsafe fn h_bilin_16bpc_put_avx2(dst: *mut u16, src: *const u16, w: usize, mx: i32, bd_max: i32) {
     unsafe {
         let w0 = _mm256_set1_epi32(16 - mx);
         let w1 = _mm256_set1_epi32(mx);
@@ -4587,7 +5121,9 @@ unsafe fn v_bilin_16bpc_direct_avx2(
         while col + 8 <= w {
             // Load from row 0 and row 1
             let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
-            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(src_stride).add(col) as *const __m128i));
+            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(src_stride).add(col) as *const __m128i
+            ));
 
             // (16 - my) * p0 + my * p1
             let term0 = _mm256_mullo_epi32(p0, w0);
@@ -4698,7 +5234,9 @@ unsafe fn v_bilin_16bpc_prep_direct_avx2(
         while col + 8 <= w {
             // Load from row 0 and row 1
             let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
-            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.offset(src_stride).add(col) as *const __m128i));
+            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                src.offset(src_stride).add(col) as *const __m128i
+            ));
 
             // (16 - my) * p0 + my * p1
             let term0 = _mm256_mullo_epi32(p0, w0);
@@ -4728,7 +5266,6 @@ unsafe fn v_bilin_16bpc_prep_direct_avx2(
         }
     }
 }
-
 
 /// Bilinear put for 16bpc
 #[cfg(target_arch = "x86_64")]
@@ -4869,7 +5406,9 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
             for y in 0..h {
                 let src_row = src.offset(y as isize * src_stride);
                 let dst_row = tmp.add(y * w);
-                v_bilin_16bpc_prep_direct_avx2(dst_row, src_row, src_stride, w, my as i32, prep_bias);
+                v_bilin_16bpc_prep_direct_avx2(
+                    dst_row, src_row, src_stride, w, my as i32, prep_bias,
+                );
             }
             // Simple copy to prep format
             for y in 0..h {
@@ -4883,7 +5422,6 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
         }
     }
 }
-
 
 // ============================================================================
 // Safe dispatch wrappers for x86_64 AVX2
@@ -4938,8 +5476,12 @@ pub fn w_avg_dispatch<BD: BitDepth>(
     let dst_ffi = FFISafe::new(&dst);
     unsafe {
         match BD::BPC {
-            BPC::BPC8 => w_avg_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi),
-            BPC::BPC16 => w_avg_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi),
+            BPC::BPC8 => {
+                w_avg_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
+            }
+            BPC::BPC16 => {
+                w_avg_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
+            }
         }
     }
     true
@@ -4967,8 +5509,12 @@ pub fn mask_dispatch<BD: BitDepth>(
     let dst_ffi = FFISafe::new(&dst);
     unsafe {
         match BD::BPC {
-            BPC::BPC8 => mask_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi),
-            BPC::BPC16 => mask_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi),
+            BPC::BPC8 => mask_8bpc_avx2(
+                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
+            ),
+            BPC::BPC16 => mask_16bpc_avx2(
+                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
+            ),
         }
     }
     true
@@ -5052,12 +5598,24 @@ pub fn w_mask_dispatch<BD: BitDepth>(
     let dst_ffi = FFISafe::new(&dst);
     unsafe {
         match (BD::BPC, layout) {
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_8bpc_avx2(
+                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+            ),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_8bpc_avx2(
+                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+            ),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_8bpc_avx2(
+                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+            ),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_16bpc_avx2(
+                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+            ),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_16bpc_avx2(
+                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+            ),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_16bpc_avx2(
+                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+            ),
         }
     }
     true
@@ -5089,26 +5647,66 @@ pub fn mc_put_dispatch<BD: BitDepth>(
     let src_ffi = FFISafe::new(&src);
     unsafe {
         match (BD::BPC, filter) {
-            (BPC::BPC8, Regular8Tap) => put_8tap_regular_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC8, RegularSmooth8Tap) => put_8tap_regular_smooth_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC8, RegularSharp8Tap) => put_8tap_regular_sharp_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC8, SmoothRegular8Tap) => put_8tap_smooth_regular_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC8, Smooth8Tap) => put_8tap_smooth_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC8, SmoothSharp8Tap) => put_8tap_smooth_sharp_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC8, SharpRegular8Tap) => put_8tap_sharp_regular_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC8, SharpSmooth8Tap) => put_8tap_sharp_smooth_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC8, Sharp8Tap) => put_8tap_sharp_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC8, Bilinear) => put_bilin_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC16, Regular8Tap) => put_8tap_regular_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC16, RegularSmooth8Tap) => put_8tap_regular_smooth_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC16, RegularSharp8Tap) => put_8tap_regular_sharp_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC16, SmoothRegular8Tap) => put_8tap_smooth_regular_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC16, Smooth8Tap) => put_8tap_smooth_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC16, SmoothSharp8Tap) => put_8tap_smooth_sharp_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC16, SharpRegular8Tap) => put_8tap_sharp_regular_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC16, SharpSmooth8Tap) => put_8tap_sharp_smooth_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC16, Sharp8Tap) => put_8tap_sharp_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            (BPC::BPC16, Bilinear) => put_bilin_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC8, Regular8Tap) => put_8tap_regular_8bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC8, RegularSmooth8Tap) => put_8tap_regular_smooth_8bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC8, RegularSharp8Tap) => put_8tap_regular_sharp_8bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC8, SmoothRegular8Tap) => put_8tap_smooth_regular_8bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC8, Smooth8Tap) => put_8tap_smooth_8bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC8, SmoothSharp8Tap) => put_8tap_smooth_sharp_8bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC8, SharpRegular8Tap) => put_8tap_sharp_regular_8bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC8, SharpSmooth8Tap) => put_8tap_sharp_smooth_8bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC8, Sharp8Tap) => put_8tap_sharp_8bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC8, Bilinear) => put_bilin_8bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC16, Regular8Tap) => put_8tap_regular_16bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC16, RegularSmooth8Tap) => put_8tap_regular_smooth_16bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC16, RegularSharp8Tap) => put_8tap_regular_sharp_16bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC16, SmoothRegular8Tap) => put_8tap_smooth_regular_16bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC16, Smooth8Tap) => put_8tap_smooth_16bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC16, SmoothSharp8Tap) => put_8tap_smooth_sharp_16bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC16, SharpRegular8Tap) => put_8tap_sharp_regular_16bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC16, SharpSmooth8Tap) => put_8tap_sharp_smooth_16bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC16, Sharp8Tap) => put_8tap_sharp_16bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
+            (BPC::BPC16, Bilinear) => put_bilin_16bpc_avx2(
+                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+            ),
         }
     }
     true
@@ -5138,26 +5736,66 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
     let src_ffi = FFISafe::new(&src);
     unsafe {
         match (BD::BPC, filter) {
-            (BPC::BPC8, Regular8Tap) => prep_8tap_regular_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC8, RegularSmooth8Tap) => prep_8tap_regular_smooth_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC8, RegularSharp8Tap) => prep_8tap_regular_sharp_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC8, SmoothRegular8Tap) => prep_8tap_smooth_regular_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC8, Smooth8Tap) => prep_8tap_smooth_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC8, SmoothSharp8Tap) => prep_8tap_smooth_sharp_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC8, SharpRegular8Tap) => prep_8tap_sharp_regular_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC8, SharpSmooth8Tap) => prep_8tap_sharp_smooth_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC8, Sharp8Tap) => prep_8tap_sharp_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC8, Bilinear) => prep_bilin_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC16, Regular8Tap) => prep_8tap_regular_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC16, RegularSmooth8Tap) => prep_8tap_regular_smooth_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC16, RegularSharp8Tap) => prep_8tap_regular_sharp_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC16, SmoothRegular8Tap) => prep_8tap_smooth_regular_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC16, Smooth8Tap) => prep_8tap_smooth_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC16, SmoothSharp8Tap) => prep_8tap_smooth_sharp_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC16, SharpRegular8Tap) => prep_8tap_sharp_regular_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC16, SharpSmooth8Tap) => prep_8tap_sharp_smooth_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC16, Sharp8Tap) => prep_8tap_sharp_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            (BPC::BPC16, Bilinear) => prep_bilin_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC8, Regular8Tap) => prep_8tap_regular_8bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC8, RegularSmooth8Tap) => prep_8tap_regular_smooth_8bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC8, RegularSharp8Tap) => prep_8tap_regular_sharp_8bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC8, SmoothRegular8Tap) => prep_8tap_smooth_regular_8bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC8, Smooth8Tap) => prep_8tap_smooth_8bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC8, SmoothSharp8Tap) => prep_8tap_smooth_sharp_8bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC8, SharpRegular8Tap) => prep_8tap_sharp_regular_8bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC8, SharpSmooth8Tap) => prep_8tap_sharp_smooth_8bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC8, Sharp8Tap) => {
+                prep_8tap_sharp_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
+            }
+            (BPC::BPC8, Bilinear) => {
+                prep_bilin_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
+            }
+            (BPC::BPC16, Regular8Tap) => prep_8tap_regular_16bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC16, RegularSmooth8Tap) => prep_8tap_regular_smooth_16bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC16, RegularSharp8Tap) => prep_8tap_regular_sharp_16bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC16, SmoothRegular8Tap) => prep_8tap_smooth_regular_16bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC16, Smooth8Tap) => prep_8tap_smooth_16bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC16, SmoothSharp8Tap) => prep_8tap_smooth_sharp_16bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC16, SharpRegular8Tap) => prep_8tap_sharp_regular_16bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC16, SharpSmooth8Tap) => prep_8tap_sharp_smooth_16bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC16, Sharp8Tap) => prep_8tap_sharp_16bpc_avx2(
+                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+            ),
+            (BPC::BPC16, Bilinear) => {
+                prep_bilin_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
+            }
         }
     }
     true
@@ -5166,47 +5804,96 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
 /// No SIMD for scaled variants on x86_64.
 #[cfg(target_arch = "x86_64")]
 pub fn mc_scaled_dispatch<BD: BitDepth>(
-    _filter: Filter2d, _dst: PicOffset, _src: PicOffset,
-    _w: i32, _h: i32, _mx: i32, _my: i32, _dx: i32, _dy: i32, _bd: BD,
-) -> bool { false }
+    _filter: Filter2d,
+    _dst: PicOffset,
+    _src: PicOffset,
+    _w: i32,
+    _h: i32,
+    _mx: i32,
+    _my: i32,
+    _dx: i32,
+    _dy: i32,
+    _bd: BD,
+) -> bool {
+    false
+}
 
 /// No SIMD for scaled variants on x86_64.
 #[cfg(target_arch = "x86_64")]
 pub fn mct_scaled_dispatch<BD: BitDepth>(
-    _filter: Filter2d, _tmp: &mut [i16], _src: PicOffset,
-    _w: i32, _h: i32, _mx: i32, _my: i32, _dx: i32, _dy: i32, _bd: BD,
-) -> bool { false }
+    _filter: Filter2d,
+    _tmp: &mut [i16],
+    _src: PicOffset,
+    _w: i32,
+    _h: i32,
+    _mx: i32,
+    _my: i32,
+    _dx: i32,
+    _dy: i32,
+    _bd: BD,
+) -> bool {
+    false
+}
 
 /// No SIMD for warp on x86_64.
 #[cfg(target_arch = "x86_64")]
 pub fn warp8x8_dispatch<BD: BitDepth>(
-    _dst: PicOffset, _src: PicOffset, _abcd: &[i16; 4],
-    _mx: i32, _my: i32, _bd: BD,
-) -> bool { false }
+    _dst: PicOffset,
+    _src: PicOffset,
+    _abcd: &[i16; 4],
+    _mx: i32,
+    _my: i32,
+    _bd: BD,
+) -> bool {
+    false
+}
 
 /// No SIMD for warp on x86_64.
 #[cfg(target_arch = "x86_64")]
 pub fn warp8x8t_dispatch<BD: BitDepth>(
-    _tmp: &mut [i16], _tmp_stride: usize, _src: PicOffset,
-    _abcd: &[i16; 4], _mx: i32, _my: i32, _bd: BD,
-) -> bool { false }
+    _tmp: &mut [i16],
+    _tmp_stride: usize,
+    _src: PicOffset,
+    _abcd: &[i16; 4],
+    _mx: i32,
+    _my: i32,
+    _bd: BD,
+) -> bool {
+    false
+}
 
 /// No SIMD for emu_edge on x86_64.
 #[cfg(target_arch = "x86_64")]
 pub fn emu_edge_dispatch<BD: BitDepth>(
-    _bw: isize, _bh: isize, _iw: isize, _ih: isize, _x: isize, _y: isize,
+    _bw: isize,
+    _bh: isize,
+    _iw: isize,
+    _ih: isize,
+    _x: isize,
+    _y: isize,
     _dst: &mut [BD::Pixel; crate::src::internal::EMU_EDGE_LEN],
     _dst_pxstride: usize,
     _src: &crate::include::dav1d::picture::Rav1dPictureDataComponent,
-) -> bool { false }
+) -> bool {
+    false
+}
 
 /// No SIMD for resize on x86_64.
 #[cfg(target_arch = "x86_64")]
 pub fn resize_dispatch<BD: BitDepth>(
-    _dst: crate::src::with_offset::WithOffset<crate::src::pic_or_buf::PicOrBuf<crate::src::align::AlignedVec64<u8>>>,
-    _src: PicOffset, _dst_w: usize, _h: usize, _src_w: usize,
-    _dx: i32, _mx: i32, _bd: BD,
-) -> bool { false }
+    _dst: crate::src::with_offset::WithOffset<
+        crate::src::pic_or_buf::PicOrBuf<crate::src::align::AlignedVec64<u8>>,
+    >,
+    _src: PicOffset,
+    _dst_w: usize,
+    _h: usize,
+    _src_w: usize,
+    _dx: i32,
+    _mx: i32,
+    _bd: BD,
+) -> bool {
+    false
+}
 
 #[cfg(test)]
 mod tests {

@@ -1,4 +1,3 @@
-
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::ToPrimitive;
@@ -15,8 +14,8 @@ use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::headers::Rav1dWarpedMotionParams;
 use crate::include::dav1d::headers::Rav1dWarpedMotionType;
-use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 use crate::include::dav1d::picture::PicOffset;
+use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 
 use crate::src::cdef_apply::rav1d_cdef_brow;
 use crate::src::ctx::CaseSet;
@@ -1442,7 +1441,14 @@ fn read_coef_tree<BD: BitDepth>(
                         "dq",
                     );
                 }
-                f.dsp.itx.itxfm_add[ytx as usize][txtp as usize].call::<BD>(ytx as usize, txtp as usize, y_dst, cf, eob, bd);
+                f.dsp.itx.itxfm_add[ytx as usize][txtp as usize].call::<BD>(
+                    ytx as usize,
+                    txtp as usize,
+                    y_dst,
+                    cf,
+                    eob,
+                    bd,
+                );
                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                     hex_dump_pic::<BD>(y_dst, t_dim.w as usize * 4, t_dim.h as usize * 4, "recon");
                 }
@@ -1854,10 +1860,12 @@ fn mc<BD: BitDepth>(
         let dy = f.svc[refidx][1].step;
         match dst {
             MaybeTempPixels::NonTemp { dst } => {
-                f.dsp.mc.mc_scaled[filter_2d].call::<BD>(filter_2d, dst, r#ref, w, h, mx, my, dx, dy, bd);
+                f.dsp.mc.mc_scaled[filter_2d]
+                    .call::<BD>(filter_2d, dst, r#ref, w, h, mx, my, dx, dy, bd);
             }
             MaybeTempPixels::Temp { tmp, tmp_stride: _ } => {
-                f.dsp.mc.mct_scaled[filter_2d].call::<BD>(filter_2d, tmp, r#ref, w, h, mx, my, dx, dy, bd);
+                f.dsp.mc.mct_scaled[filter_2d]
+                    .call::<BD>(filter_2d, tmp, r#ref, w, h, mx, my, dx, dy, bd);
             }
         }
     }
@@ -2347,8 +2355,14 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                     "dq",
                                 );
                             }
-                            f.dsp.itx.itxfm_add[intra.tx as usize][txtp as usize]
-                                .call::<BD>(intra.tx as usize, txtp as usize, y_dst, cf, eob, bd);
+                            f.dsp.itx.itxfm_add[intra.tx as usize][txtp as usize].call::<BD>(
+                                intra.tx as usize,
+                                txtp as usize,
+                                y_dst,
+                                cf,
+                                eob,
+                                bd,
+                            );
                             if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                                 hex_dump_pic::<BD>(
                                     y_dst,
@@ -2727,8 +2741,14 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                         "dq",
                                     );
                                 }
-                                f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize]
-                                    .call::<BD>(b.uvtx as usize, txtp as usize, uv_dst, cf, eob, bd);
+                                f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize].call::<BD>(
+                                    b.uvtx as usize,
+                                    txtp as usize,
+                                    uv_dst,
+                                    cf,
+                                    eob,
+                                    bd,
+                                );
                                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                                     hex_dump_pic::<BD>(
                                         uv_dst,
@@ -3611,7 +3631,9 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                                         "dq",
                                     );
                                 }
-                                f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize].call::<BD>(b.uvtx as usize, txtp as usize, 
+                                f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize].call::<BD>(
+                                    b.uvtx as usize,
+                                    txtp as usize,
                                     uv_dst + 4 * x as usize,
                                     cf,
                                     eob,

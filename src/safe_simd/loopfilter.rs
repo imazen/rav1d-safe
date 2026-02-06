@@ -56,8 +56,8 @@ unsafe fn loop_filter_4_8bpc_avx2(
     e: i32,
     i: i32,
     h: i32,
-    stridea: isize,   // stride between the 4 pixels we process
-    strideb: isize,   // stride along the edge (perpendicular to filter direction)
+    stridea: isize, // stride between the 4 pixels we process
+    strideb: isize, // stride along the edge (perpendicular to filter direction)
     wd: i32,
     bitdepth_max: i32,
 ) {
@@ -74,9 +74,7 @@ unsafe fn loop_filter_4_8bpc_avx2(
         let base = unsafe { dst.offset(idx * stridea) };
 
         // Helper to get pixel at offset from edge
-        let get_px = |offset: isize| -> i32 {
-            unsafe { *base.offset(strideb * offset) as i32 }
-        };
+        let get_px = |offset: isize| -> i32 { unsafe { *base.offset(strideb * offset) as i32 } };
         let set_px = |offset: isize, val: i32| {
             unsafe { *base.offset(strideb * offset) = val.clamp(0, bitdepth_max) as u8 };
         };
@@ -142,18 +140,66 @@ unsafe fn loop_filter_4_8bpc_avx2(
 
         if wd >= 16 && flat8out && flat8in {
             // Wide filter (16 taps)
-            set_px(-6, (p6 + p6 + p6 + p6 + p6 + p6 * 2 + p5 * 2 + p4 * 2 + p3 + p2 + p1 + p0 + q0 + 8) >> 4);
-            set_px(-5, (p6 + p6 + p6 + p6 + p6 + p5 * 2 + p4 * 2 + p3 * 2 + p2 + p1 + p0 + q0 + q1 + 8) >> 4);
-            set_px(-4, (p6 + p6 + p6 + p6 + p5 + p4 * 2 + p3 * 2 + p2 * 2 + p1 + p0 + q0 + q1 + q2 + 8) >> 4);
-            set_px(-3, (p6 + p6 + p6 + p5 + p4 + p3 * 2 + p2 * 2 + p1 * 2 + p0 + q0 + q1 + q2 + q3 + 8) >> 4);
-            set_px(-2, (p6 + p6 + p5 + p4 + p3 + p2 * 2 + p1 * 2 + p0 * 2 + q0 + q1 + q2 + q3 + q4 + 8) >> 4);
-            set_px(-1, (p6 + p5 + p4 + p3 + p2 + p1 * 2 + p0 * 2 + q0 * 2 + q1 + q2 + q3 + q4 + q5 + 8) >> 4);
-            set_px(0, (p5 + p4 + p3 + p2 + p1 + p0 * 2 + q0 * 2 + q1 * 2 + q2 + q3 + q4 + q5 + q6 + 8) >> 4);
-            set_px(1, (p4 + p3 + p2 + p1 + p0 + q0 * 2 + q1 * 2 + q2 * 2 + q3 + q4 + q5 + q6 + q6 + 8) >> 4);
-            set_px(2, (p3 + p2 + p1 + p0 + q0 + q1 * 2 + q2 * 2 + q3 * 2 + q4 + q5 + q6 + q6 + q6 + 8) >> 4);
-            set_px(3, (p2 + p1 + p0 + q0 + q1 + q2 * 2 + q3 * 2 + q4 * 2 + q5 + q6 + q6 + q6 + q6 + 8) >> 4);
-            set_px(4, (p1 + p0 + q0 + q1 + q2 + q3 * 2 + q4 * 2 + q5 * 2 + q6 + q6 + q6 + q6 + q6 + 8) >> 4);
-            set_px(5, (p0 + q0 + q1 + q2 + q3 + q4 * 2 + q5 * 2 + q6 * 2 + q6 + q6 + q6 + q6 + q6 + 8) >> 4);
+            set_px(
+                -6,
+                (p6 + p6 + p6 + p6 + p6 + p6 * 2 + p5 * 2 + p4 * 2 + p3 + p2 + p1 + p0 + q0 + 8)
+                    >> 4,
+            );
+            set_px(
+                -5,
+                (p6 + p6 + p6 + p6 + p6 + p5 * 2 + p4 * 2 + p3 * 2 + p2 + p1 + p0 + q0 + q1 + 8)
+                    >> 4,
+            );
+            set_px(
+                -4,
+                (p6 + p6 + p6 + p6 + p5 + p4 * 2 + p3 * 2 + p2 * 2 + p1 + p0 + q0 + q1 + q2 + 8)
+                    >> 4,
+            );
+            set_px(
+                -3,
+                (p6 + p6 + p6 + p5 + p4 + p3 * 2 + p2 * 2 + p1 * 2 + p0 + q0 + q1 + q2 + q3 + 8)
+                    >> 4,
+            );
+            set_px(
+                -2,
+                (p6 + p6 + p5 + p4 + p3 + p2 * 2 + p1 * 2 + p0 * 2 + q0 + q1 + q2 + q3 + q4 + 8)
+                    >> 4,
+            );
+            set_px(
+                -1,
+                (p6 + p5 + p4 + p3 + p2 + p1 * 2 + p0 * 2 + q0 * 2 + q1 + q2 + q3 + q4 + q5 + 8)
+                    >> 4,
+            );
+            set_px(
+                0,
+                (p5 + p4 + p3 + p2 + p1 + p0 * 2 + q0 * 2 + q1 * 2 + q2 + q3 + q4 + q5 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                1,
+                (p4 + p3 + p2 + p1 + p0 + q0 * 2 + q1 * 2 + q2 * 2 + q3 + q4 + q5 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                2,
+                (p3 + p2 + p1 + p0 + q0 + q1 * 2 + q2 * 2 + q3 * 2 + q4 + q5 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                3,
+                (p2 + p1 + p0 + q0 + q1 + q2 * 2 + q3 * 2 + q4 * 2 + q5 + q6 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                4,
+                (p1 + p0 + q0 + q1 + q2 + q3 * 2 + q4 * 2 + q5 * 2 + q6 + q6 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                5,
+                (p0 + q0 + q1 + q2 + q3 + q4 * 2 + q5 * 2 + q6 * 2 + q6 + q6 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
         } else if wd >= 8 && flat8in {
             // 8-tap filter
             set_px(-3, (p3 + p3 + p3 + 2 * p2 + p1 + p0 + q0 + 4) >> 3);
@@ -245,11 +291,11 @@ unsafe fn lpf_h_sb_y_8bpc_avx2_inner(
                 let i = lut.0.i[l as usize] as i32;
 
                 let idx = if vmask[2] & xy != 0 {
-                    16  // 4 << 2
+                    16 // 4 << 2
                 } else if vmask[1] & xy != 0 {
-                    8   // 4 << 1
+                    8 // 4 << 1
                 } else {
-                    4   // 4 << 0
+                    4 // 4 << 0
                 };
 
                 unsafe {
@@ -568,14 +614,18 @@ unsafe fn loop_filter_4_16bpc_avx2(
     e: i32,
     i: i32,
     h: i32,
-    stridea: isize,   // stride between the 4 pixels we process (in u16 units)
-    strideb: isize,   // stride along the edge (in u16 units)
+    stridea: isize, // stride between the 4 pixels we process (in u16 units)
+    strideb: isize, // stride along the edge (in u16 units)
     wd: i32,
     bitdepth_max: i32,
 ) {
     // For 16bpc, f = 1 << (bitdepth - 8) for flatness detection
     let bitdepth_min_8 = if bitdepth_max > 255 {
-        if bitdepth_max > 1023 { 4 } else { 2 }
+        if bitdepth_max > 1023 {
+            4
+        } else {
+            2
+        }
     } else {
         0
     };
@@ -584,9 +634,7 @@ unsafe fn loop_filter_4_16bpc_avx2(
     for idx in 0..4isize {
         let base = unsafe { dst.offset(idx * stridea) };
 
-        let get_px = |offset: isize| -> i32 {
-            unsafe { *base.offset(strideb * offset) as i32 }
-        };
+        let get_px = |offset: isize| -> i32 { unsafe { *base.offset(strideb * offset) as i32 } };
         let set_px = |offset: isize, val: i32| {
             unsafe { *base.offset(strideb * offset) = val.clamp(0, bitdepth_max) as u16 };
         };
@@ -652,18 +700,66 @@ unsafe fn loop_filter_4_16bpc_avx2(
 
         if wd >= 16 && flat8out && flat8in {
             // Wide filter (16 taps)
-            set_px(-6, (p6 + p6 + p6 + p6 + p6 + p6 * 2 + p5 * 2 + p4 * 2 + p3 + p2 + p1 + p0 + q0 + 8) >> 4);
-            set_px(-5, (p6 + p6 + p6 + p6 + p6 + p5 * 2 + p4 * 2 + p3 * 2 + p2 + p1 + p0 + q0 + q1 + 8) >> 4);
-            set_px(-4, (p6 + p6 + p6 + p6 + p5 + p4 * 2 + p3 * 2 + p2 * 2 + p1 + p0 + q0 + q1 + q2 + 8) >> 4);
-            set_px(-3, (p6 + p6 + p6 + p5 + p4 + p3 * 2 + p2 * 2 + p1 * 2 + p0 + q0 + q1 + q2 + q3 + 8) >> 4);
-            set_px(-2, (p6 + p6 + p5 + p4 + p3 + p2 * 2 + p1 * 2 + p0 * 2 + q0 + q1 + q2 + q3 + q4 + 8) >> 4);
-            set_px(-1, (p6 + p5 + p4 + p3 + p2 + p1 * 2 + p0 * 2 + q0 * 2 + q1 + q2 + q3 + q4 + q5 + 8) >> 4);
-            set_px(0, (p5 + p4 + p3 + p2 + p1 + p0 * 2 + q0 * 2 + q1 * 2 + q2 + q3 + q4 + q5 + q6 + 8) >> 4);
-            set_px(1, (p4 + p3 + p2 + p1 + p0 + q0 * 2 + q1 * 2 + q2 * 2 + q3 + q4 + q5 + q6 + q6 + 8) >> 4);
-            set_px(2, (p3 + p2 + p1 + p0 + q0 + q1 * 2 + q2 * 2 + q3 * 2 + q4 + q5 + q6 + q6 + q6 + 8) >> 4);
-            set_px(3, (p2 + p1 + p0 + q0 + q1 + q2 * 2 + q3 * 2 + q4 * 2 + q5 + q6 + q6 + q6 + q6 + 8) >> 4);
-            set_px(4, (p1 + p0 + q0 + q1 + q2 + q3 * 2 + q4 * 2 + q5 * 2 + q6 + q6 + q6 + q6 + q6 + 8) >> 4);
-            set_px(5, (p0 + q0 + q1 + q2 + q3 + q4 * 2 + q5 * 2 + q6 * 2 + q6 + q6 + q6 + q6 + q6 + 8) >> 4);
+            set_px(
+                -6,
+                (p6 + p6 + p6 + p6 + p6 + p6 * 2 + p5 * 2 + p4 * 2 + p3 + p2 + p1 + p0 + q0 + 8)
+                    >> 4,
+            );
+            set_px(
+                -5,
+                (p6 + p6 + p6 + p6 + p6 + p5 * 2 + p4 * 2 + p3 * 2 + p2 + p1 + p0 + q0 + q1 + 8)
+                    >> 4,
+            );
+            set_px(
+                -4,
+                (p6 + p6 + p6 + p6 + p5 + p4 * 2 + p3 * 2 + p2 * 2 + p1 + p0 + q0 + q1 + q2 + 8)
+                    >> 4,
+            );
+            set_px(
+                -3,
+                (p6 + p6 + p6 + p5 + p4 + p3 * 2 + p2 * 2 + p1 * 2 + p0 + q0 + q1 + q2 + q3 + 8)
+                    >> 4,
+            );
+            set_px(
+                -2,
+                (p6 + p6 + p5 + p4 + p3 + p2 * 2 + p1 * 2 + p0 * 2 + q0 + q1 + q2 + q3 + q4 + 8)
+                    >> 4,
+            );
+            set_px(
+                -1,
+                (p6 + p5 + p4 + p3 + p2 + p1 * 2 + p0 * 2 + q0 * 2 + q1 + q2 + q3 + q4 + q5 + 8)
+                    >> 4,
+            );
+            set_px(
+                0,
+                (p5 + p4 + p3 + p2 + p1 + p0 * 2 + q0 * 2 + q1 * 2 + q2 + q3 + q4 + q5 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                1,
+                (p4 + p3 + p2 + p1 + p0 + q0 * 2 + q1 * 2 + q2 * 2 + q3 + q4 + q5 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                2,
+                (p3 + p2 + p1 + p0 + q0 + q1 * 2 + q2 * 2 + q3 * 2 + q4 + q5 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                3,
+                (p2 + p1 + p0 + q0 + q1 + q2 * 2 + q3 * 2 + q4 * 2 + q5 + q6 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                4,
+                (p1 + p0 + q0 + q1 + q2 + q3 * 2 + q4 * 2 + q5 * 2 + q6 + q6 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                5,
+                (p0 + q0 + q1 + q2 + q3 + q4 * 2 + q5 * 2 + q6 * 2 + q6 + q6 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
         } else if wd >= 8 && flat8in {
             // 8-tap filter
             set_px(-3, (p3 + p3 + p3 + 2 * p2 + p1 + p0 + q0 + 4) >> 3);
@@ -953,7 +1049,7 @@ pub unsafe extern "C" fn lpf_h_sb_y_16bpc_avx2(
     unsafe {
         lpf_h_sb_y_16bpc_avx2_inner(
             dst_ptr as *mut u16,
-            stride as isize / 2,  // Convert byte stride to u16 stride
+            stride as isize / 2, // Convert byte stride to u16 stride
             mask,
             lvl_ptr,
             b4_stride as isize,
@@ -1101,28 +1197,100 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     unsafe {
         match (BD::BPC, is_y, is_v) {
             (BPC::BPC8, true, false) => lpf_h_sb_y_8bpc_avx2(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC8, true, true) => lpf_v_sb_y_8bpc_avx2(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC8, false, false) => lpf_h_sb_uv_8bpc_avx2(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC8, false, true) => lpf_v_sb_uv_8bpc_avx2(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC16, true, false) => lpf_h_sb_y_16bpc_avx2(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC16, true, true) => lpf_v_sb_y_16bpc_avx2(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC16, false, false) => lpf_h_sb_uv_16bpc_avx2(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC16, false, true) => lpf_v_sb_uv_16bpc_avx2(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
         }
     }

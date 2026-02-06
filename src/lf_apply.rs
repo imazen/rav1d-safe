@@ -397,7 +397,10 @@ fn filter_plane_cols_y<BD: BitDepth>(
             mask.each_ref().map(|[_, b]| b.get() as u32)
         };
         let lvl = |y| lvl + (4 * x + y);
-        lf_sb.y.h.call::<BD>(f, y_dst(x), &hmask, lvl(0), len, true, false);
+        lf_sb
+            .y
+            .h
+            .call::<BD>(f, y_dst(x), &hmask, lvl(0), len, true, false);
     }
 }
 
@@ -429,7 +432,10 @@ fn filter_plane_rows_y<BD: BitDepth>(
             .each_ref()
             .map(|[a, b]| a.get() as u32 | ((b.get() as u32) << 16));
         let lvl = |y| lvl + (4 * i * b4_stride + y);
-        lf_sb.y.v.call::<BD>(f, y_dst(i), &vmask, lvl(1), w, true, true);
+        lf_sb
+            .y
+            .v
+            .call::<BD>(f, y_dst(i), &vmask, lvl(1), w, true, true);
     }
 }
 
@@ -471,8 +477,14 @@ fn filter_plane_cols_uv<BD: BitDepth>(
         };
         let hmask = [hmask[0], hmask[1], 0];
         let lvl = |y| lvl + (4 * x + y);
-        lf_sb.uv.h.call::<BD>(f, u_dst(x), &hmask, lvl(2), len, false, false);
-        lf_sb.uv.h.call::<BD>(f, v_dst(x), &hmask, lvl(3), len, false, false);
+        lf_sb
+            .uv
+            .h
+            .call::<BD>(f, u_dst(x), &hmask, lvl(2), len, false, false);
+        lf_sb
+            .uv
+            .h
+            .call::<BD>(f, v_dst(x), &hmask, lvl(3), len, false, false);
     }
 }
 
@@ -509,8 +521,14 @@ fn filter_plane_rows_uv<BD: BitDepth>(
             .map(|[a, b]| a.get() as u32 | ((b.get() as u32) << (16 >> ss_hor)));
         let vmask = [vmask[0], vmask[1], 0];
         let lvl = |y| lvl + (4 * i * b4_stride + y);
-        lf_sb.uv.v.call::<BD>(f, u_dst(i), &vmask, lvl(2), w, false, true);
-        lf_sb.uv.v.call::<BD>(f, v_dst(i), &vmask, lvl(3), w, false, true);
+        lf_sb
+            .uv
+            .v
+            .call::<BD>(f, u_dst(i), &vmask, lvl(2), w, false, true);
+        lf_sb
+            .uv
+            .v
+            .call::<BD>(f, v_dst(i), &vmask, lvl(3), w, false, true);
     }
 }
 

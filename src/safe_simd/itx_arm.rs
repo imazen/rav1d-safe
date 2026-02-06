@@ -13,8 +13,8 @@ use core::arch::aarch64::*;
 use std::ffi::c_int;
 
 use crate::include::common::bitdepth::AsPrimitive;
-use crate::include::common::bitdepth::BitDepth8;
 use crate::include::common::bitdepth::BitDepth16;
+use crate::include::common::bitdepth::BitDepth8;
 use crate::include::common::bitdepth::DynCoef;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::intops::iclip;
@@ -164,7 +164,7 @@ unsafe fn inv_txfm_add_wht_wht_4x4_16bpc_inner(
 
 /// DCT4 1D transform constants
 const DCT4_C1: i32 = 2896; // cos(pi/8) * 4096
-const DCT4_C2: i32 = 2896; // cos(3pi/8) * 4096  
+const DCT4_C2: i32 = 2896; // cos(3pi/8) * 4096
 const DCT4_C3: i32 = 1567; // sin(pi/8) * 4096
 const DCT4_C4: i32 = 3784; // sin(3pi/8) * 4096
 
@@ -180,7 +180,7 @@ fn dct4_1d(in0: i32, in1: i32, in2: i32, in3: i32) -> [i32; 4] {
     // Stage 2 (DCT2)
     let s0 = t0 + t1;
     let s1 = t0 - t1;
-    
+
     // Rotation for t2, t3
     let s2 = ((t2 * 1567 + t3 * 3784) + 2048) >> 12;
     let s3 = ((t2 * 3784 - t3 * 1567) + 2048) >> 12;
@@ -221,7 +221,7 @@ unsafe fn inv_txfm_add_dct_dct_4x4_8bpc_inner(
         let in3 = tmp[3 * 4 + x];
 
         let out = dct4_1d(in0, in1, in2, in3);
-        
+
         // Round and add to destination
         for y in 0..4 {
             let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -272,7 +272,7 @@ unsafe fn inv_txfm_add_dct_dct_4x4_16bpc_inner(
         let in3 = tmp[3 * 4 + x];
 
         let out = dct4_1d(in0, in1, in2, in3);
-        
+
         for y in 0..4 {
             let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
             let d = unsafe { *dst_row.add(x) as i32 };
@@ -293,13 +293,13 @@ unsafe fn inv_txfm_add_dct_dct_4x4_16bpc_inner(
 // ============================================================================
 
 /// DCT8 1D transform constants
-const COS_PI_1_16: i32 = 4017;  // cos(pi/16) * 4096
-const COS_PI_2_16: i32 = 3784;  // cos(2*pi/16) * 4096
-const COS_PI_3_16: i32 = 3406;  // cos(3*pi/16) * 4096
-const COS_PI_4_16: i32 = 2896;  // cos(4*pi/16) * 4096 = sqrt(2)/2 * 4096
-const COS_PI_5_16: i32 = 2276;  // cos(5*pi/16) * 4096
-const COS_PI_6_16: i32 = 1567;  // cos(6*pi/16) * 4096
-const COS_PI_7_16: i32 = 799;   // cos(7*pi/16) * 4096
+const COS_PI_1_16: i32 = 4017; // cos(pi/16) * 4096
+const COS_PI_2_16: i32 = 3784; // cos(2*pi/16) * 4096
+const COS_PI_3_16: i32 = 3406; // cos(3*pi/16) * 4096
+const COS_PI_4_16: i32 = 2896; // cos(4*pi/16) * 4096 = sqrt(2)/2 * 4096
+const COS_PI_5_16: i32 = 2276; // cos(5*pi/16) * 4096
+const COS_PI_6_16: i32 = 1567; // cos(6*pi/16) * 4096
+const COS_PI_7_16: i32 = 799; // cos(7*pi/16) * 4096
 
 /// DCT8 1D transform
 #[inline(always)]
@@ -3138,18 +3138,18 @@ fn dct32_1d(input: &[i32; 32]) -> [i32; 32] {
 
     // DCT16 on even terms (t[0..16])
     let even_input = [
-        t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7],
-        t[8], t[9], t[10], t[11], t[12], t[13], t[14], t[15],
+        t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8], t[9], t[10], t[11], t[12], t[13],
+        t[14], t[15],
     ];
     let even_out = dct16_1d(&even_input);
 
     // Odd terms need rotation pairs (simplified version)
     // Using approximate constants for 32-point DCT
-    let c1 = 4091;  // cos(pi/64) * 4096
-    let c3 = 4076;  // cos(3pi/64) * 4096
-    let c5 = 4017;  // cos(5pi/64) * 4096
-    let c7 = 3920;  // cos(7pi/64) * 4096
-    let c9 = 3784;  // cos(9pi/64) * 4096
+    let c1 = 4091; // cos(pi/64) * 4096
+    let c3 = 4076; // cos(3pi/64) * 4096
+    let c5 = 4017; // cos(5pi/64) * 4096
+    let c7 = 3920; // cos(7pi/64) * 4096
+    let c9 = 3784; // cos(9pi/64) * 4096
     let c11 = 3612; // cos(11pi/64) * 4096
     let c13 = 3406; // cos(13pi/64) * 4096
     let c15 = 3166; // cos(15pi/64) * 4096
@@ -4658,73 +4658,133 @@ unsafe fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<4, 8>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity4_1d_arm, identity8_1d_arm, true,
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+        identity4_1d_arm,
+        identity8_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<8, 4>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity8_1d_arm, identity4_1d_arm, true,
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity4_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<4, 16>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity4_1d_arm, identity16_1d_arm, true,
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+        identity4_1d_arm,
+        identity16_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<16, 4>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity16_1d_arm, identity4_1d_arm, true,
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity4_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<8, 16>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity8_1d_arm, identity16_1d_arm, true,
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity16_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<16, 8>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity16_1d_arm, identity8_1d_arm, true,
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity8_1d_arm,
+        true,
     );
 }
 
@@ -4734,121 +4794,221 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_neon(
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_8bpc_inner::<8, 32>(
-        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
-        eob, bitdepth_max, identity8_1d_arm, identity32_1d_arm, true,
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity32_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<8, 32>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity8_1d_arm, identity32_1d_arm, true,
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity32_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_8bpc_inner::<32, 8>(
-        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
-        eob, bitdepth_max, identity32_1d_arm, identity8_1d_arm, true,
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity8_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<32, 8>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity32_1d_arm, identity8_1d_arm, true,
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity8_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_8bpc_inner::<16, 32>(
-        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
-        eob, bitdepth_max, identity16_1d_arm, identity32_1d_arm, true,
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity32_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<16, 32>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity16_1d_arm, identity32_1d_arm, true,
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity32_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_8bpc_inner::<32, 16>(
-        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
-        eob, bitdepth_max, identity32_1d_arm, identity16_1d_arm, true,
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity16_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<32, 16>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity32_1d_arm, identity16_1d_arm, true,
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity16_1d_arm,
+        true,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_8bpc_inner::<32, 32>(
-        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
-        eob, bitdepth_max, identity32_1d_arm, identity32_1d_arm, false,
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity32_1d_arm,
+        false,
     );
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
     identity_rect_16bpc_inner::<32, 32>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity32_1d_arm, identity32_1d_arm, false,
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity32_1d_arm,
+        false,
     );
 }
 
@@ -4857,7 +5017,11 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
 // ============================================================================
 
 unsafe fn inv_txfm_add_dct_identity_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
@@ -4866,9 +5030,13 @@ unsafe fn inv_txfm_add_dct_identity_4x4_8bpc_inner(
         let c2 = unsafe { *coeff.add(y + 8) as i32 };
         let c3 = unsafe { *coeff.add(y + 12) as i32 };
         let out = dct4_1d(c0, c1, c2, c3);
-        for x in 0..4 { tmp[y * 4 + x] = out[x]; }
+        for x in 0..4 {
+            tmp[y * 4 + x] = out[x];
+        }
     }
-    for x in 0..4 { identity4_1d_arm(&mut tmp[x..], 4); }
+    for x in 0..4 {
+        identity4_1d_arm(&mut tmp[x..], 4);
+    }
     for y in 0..4 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
         for x in 0..4 {
@@ -4877,22 +5045,41 @@ unsafe fn inv_txfm_add_dct_identity_4x4_8bpc_inner(
             unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 unsafe fn inv_txfm_add_identity_dct_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
         let mut row = [0i32; 4];
-        for x in 0..4 { row[x] = unsafe { *coeff.add(y + x * 4) as i32 }; }
+        for x in 0..4 {
+            row[x] = unsafe { *coeff.add(y + x * 4) as i32 };
+        }
         identity4_1d_arm(&mut row, 1);
-        for x in 0..4 { tmp[y * 4 + x] = row[x]; }
+        for x in 0..4 {
+            tmp[y * 4 + x] = row[x];
+        }
     }
     for x in 0..4 {
-        let out = dct4_1d(tmp[0 * 4 + x], tmp[1 * 4 + x], tmp[2 * 4 + x], tmp[3 * 4 + x]);
-        for y in 0..4 { tmp[y * 4 + x] = out[y]; }
+        let out = dct4_1d(
+            tmp[0 * 4 + x],
+            tmp[1 * 4 + x],
+            tmp[2 * 4 + x],
+            tmp[3 * 4 + x],
+        );
+        for y in 0..4 {
+            tmp[y * 4 + x] = out[y];
+        }
     }
     for y in 0..4 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -4902,21 +5089,35 @@ unsafe fn inv_txfm_add_identity_dct_4x4_8bpc_inner(
             unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 unsafe fn inv_txfm_add_adst_identity_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
         let out = adst4_1d(
-            unsafe { *coeff.add(y) as i32 }, unsafe { *coeff.add(y + 4) as i32 },
-            unsafe { *coeff.add(y + 8) as i32 }, unsafe { *coeff.add(y + 12) as i32 },
+            unsafe { *coeff.add(y) as i32 },
+            unsafe { *coeff.add(y + 4) as i32 },
+            unsafe { *coeff.add(y + 8) as i32 },
+            unsafe { *coeff.add(y + 12) as i32 },
         );
-        for x in 0..4 { tmp[y * 4 + x] = out[x]; }
+        for x in 0..4 {
+            tmp[y * 4 + x] = out[x];
+        }
     }
-    for x in 0..4 { identity4_1d_arm(&mut tmp[x..], 4); }
+    for x in 0..4 {
+        identity4_1d_arm(&mut tmp[x..], 4);
+    }
     for y in 0..4 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
         for x in 0..4 {
@@ -4925,22 +5126,41 @@ unsafe fn inv_txfm_add_adst_identity_4x4_8bpc_inner(
             unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 unsafe fn inv_txfm_add_identity_adst_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
         let mut row = [0i32; 4];
-        for x in 0..4 { row[x] = unsafe { *coeff.add(y + x * 4) as i32 }; }
+        for x in 0..4 {
+            row[x] = unsafe { *coeff.add(y + x * 4) as i32 };
+        }
         identity4_1d_arm(&mut row, 1);
-        for x in 0..4 { tmp[y * 4 + x] = row[x]; }
+        for x in 0..4 {
+            tmp[y * 4 + x] = row[x];
+        }
     }
     for x in 0..4 {
-        let out = adst4_1d(tmp[0 * 4 + x], tmp[1 * 4 + x], tmp[2 * 4 + x], tmp[3 * 4 + x]);
-        for y in 0..4 { tmp[y * 4 + x] = out[y]; }
+        let out = adst4_1d(
+            tmp[0 * 4 + x],
+            tmp[1 * 4 + x],
+            tmp[2 * 4 + x],
+            tmp[3 * 4 + x],
+        );
+        for y in 0..4 {
+            tmp[y * 4 + x] = out[y];
+        }
     }
     for y in 0..4 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -4950,21 +5170,35 @@ unsafe fn inv_txfm_add_identity_adst_4x4_8bpc_inner(
             unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 unsafe fn inv_txfm_add_flipadst_identity_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
         let out = flipadst4_1d(
-            unsafe { *coeff.add(y) as i32 }, unsafe { *coeff.add(y + 4) as i32 },
-            unsafe { *coeff.add(y + 8) as i32 }, unsafe { *coeff.add(y + 12) as i32 },
+            unsafe { *coeff.add(y) as i32 },
+            unsafe { *coeff.add(y + 4) as i32 },
+            unsafe { *coeff.add(y + 8) as i32 },
+            unsafe { *coeff.add(y + 12) as i32 },
         );
-        for x in 0..4 { tmp[y * 4 + x] = out[x]; }
+        for x in 0..4 {
+            tmp[y * 4 + x] = out[x];
+        }
     }
-    for x in 0..4 { identity4_1d_arm(&mut tmp[x..], 4); }
+    for x in 0..4 {
+        identity4_1d_arm(&mut tmp[x..], 4);
+    }
     for y in 0..4 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
         for x in 0..4 {
@@ -4973,22 +5207,41 @@ unsafe fn inv_txfm_add_flipadst_identity_4x4_8bpc_inner(
             unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 unsafe fn inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
         let mut row = [0i32; 4];
-        for x in 0..4 { row[x] = unsafe { *coeff.add(y + x * 4) as i32 }; }
+        for x in 0..4 {
+            row[x] = unsafe { *coeff.add(y + x * 4) as i32 };
+        }
         identity4_1d_arm(&mut row, 1);
-        for x in 0..4 { tmp[y * 4 + x] = row[x]; }
+        for x in 0..4 {
+            tmp[y * 4 + x] = row[x];
+        }
     }
     for x in 0..4 {
-        let out = flipadst4_1d(tmp[0 * 4 + x], tmp[1 * 4 + x], tmp[2 * 4 + x], tmp[3 * 4 + x]);
-        for y in 0..4 { tmp[y * 4 + x] = out[y]; }
+        let out = flipadst4_1d(
+            tmp[0 * 4 + x],
+            tmp[1 * 4 + x],
+            tmp[2 * 4 + x],
+            tmp[3 * 4 + x],
+        );
+        for y in 0..4 {
+            tmp[y * 4 + x] = out[y];
+        }
     }
     for y in 0..4 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -4998,70 +5251,158 @@ unsafe fn inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
             unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
-) { inv_txfm_add_dct_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+) {
+    inv_txfm_add_dct_identity_4x4_8bpc_inner(
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+    );
+}
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
-) { inv_txfm_add_identity_dct_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+) {
+    inv_txfm_add_identity_dct_4x4_8bpc_inner(
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+    );
+}
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
-) { inv_txfm_add_adst_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+) {
+    inv_txfm_add_adst_identity_4x4_8bpc_inner(
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+    );
+}
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
-) { inv_txfm_add_identity_adst_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+) {
+    inv_txfm_add_identity_adst_4x4_8bpc_inner(
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+    );
+}
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
-) { inv_txfm_add_flipadst_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+) {
+    inv_txfm_add_flipadst_identity_4x4_8bpc_inner(
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+    );
+}
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
-) { inv_txfm_add_identity_flipadst_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+) {
+    inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+    );
+}
 
 // ============================================================================
 // DCT_DCT 16x64 and 64x16
 // ============================================================================
 
 unsafe fn inv_txfm_add_dct_dct_16x64_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16 * 64];
     for y in 0..64 {
         let mut row = [0i32; 16];
-        for x in 0..16 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 64) as i32 }); }
+        for x in 0..16 {
+            row[x] = rect2_scale(unsafe { *coeff.add(y + x * 64) as i32 });
+        }
         let out = dct16_1d(&row);
-        for x in 0..16 { tmp[y * 16 + x] = (out[x] + 1) >> 1; }
+        for x in 0..16 {
+            tmp[y * 16 + x] = (out[x] + 1) >> 1;
+        }
     }
     for x in 0..16 {
         let mut col = [0i32; 64];
-        for y in 0..64 { col[y] = tmp[y * 16 + x]; }
+        for y in 0..64 {
+            col[y] = tmp[y * 16 + x];
+        }
         let out = dct64_1d(&col);
-        for y in 0..64 { tmp[y * 16 + x] = out[y]; }
+        for y in 0..64 {
+            tmp[y * 16 + x] = out[y];
+        }
     }
     for y in 0..64 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -5071,24 +5412,40 @@ unsafe fn inv_txfm_add_dct_dct_16x64_8bpc_inner(
             unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
         }
     }
-    for i in 0..(16 * 64) { unsafe { *coeff.add(i) = 0; } }
+    for i in 0..(16 * 64) {
+        unsafe {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 unsafe fn inv_txfm_add_dct_dct_16x64_16bpc_inner(
-    dst: *mut u16, dst_stride: isize, coeff: *mut i32, _eob: i32, bitdepth_max: i32,
+    dst: *mut u16,
+    dst_stride: isize,
+    coeff: *mut i32,
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16 * 64];
     for y in 0..64 {
         let mut row = [0i32; 16];
-        for x in 0..16 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 64) }); }
+        for x in 0..16 {
+            row[x] = rect2_scale(unsafe { *coeff.add(y + x * 64) });
+        }
         let out = dct16_1d(&row);
-        for x in 0..16 { tmp[y * 16 + x] = (out[x] + 1) >> 1; }
+        for x in 0..16 {
+            tmp[y * 16 + x] = (out[x] + 1) >> 1;
+        }
     }
     for x in 0..16 {
         let mut col = [0i32; 64];
-        for y in 0..64 { col[y] = tmp[y * 16 + x]; }
+        for y in 0..64 {
+            col[y] = tmp[y * 16 + x];
+        }
         let out = dct64_1d(&col);
-        for y in 0..64 { tmp[y * 16 + x] = out[y]; }
+        for y in 0..64 {
+            tmp[y * 16 + x] = out[y];
+        }
     }
     for y in 0..64 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -5098,24 +5455,40 @@ unsafe fn inv_txfm_add_dct_dct_16x64_16bpc_inner(
             unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u16 };
         }
     }
-    for i in 0..(16 * 64) { unsafe { *coeff.add(i) = 0; } }
+    for i in 0..(16 * 64) {
+        unsafe {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 unsafe fn inv_txfm_add_dct_dct_64x16_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 64 * 16];
     for y in 0..16 {
         let mut row = [0i32; 64];
-        for x in 0..64 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 16) as i32 }); }
+        for x in 0..64 {
+            row[x] = rect2_scale(unsafe { *coeff.add(y + x * 16) as i32 });
+        }
         let out = dct64_1d(&row);
-        for x in 0..64 { tmp[y * 64 + x] = (out[x] + 1) >> 1; }
+        for x in 0..64 {
+            tmp[y * 64 + x] = (out[x] + 1) >> 1;
+        }
     }
     for x in 0..64 {
         let mut col = [0i32; 16];
-        for y in 0..16 { col[y] = tmp[y * 64 + x]; }
+        for y in 0..16 {
+            col[y] = tmp[y * 64 + x];
+        }
         let out = dct16_1d(&col);
-        for y in 0..16 { tmp[y * 64 + x] = out[y]; }
+        for y in 0..16 {
+            tmp[y * 64 + x] = out[y];
+        }
     }
     for y in 0..16 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -5125,24 +5498,40 @@ unsafe fn inv_txfm_add_dct_dct_64x16_8bpc_inner(
             unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
         }
     }
-    for i in 0..(64 * 16) { unsafe { *coeff.add(i) = 0; } }
+    for i in 0..(64 * 16) {
+        unsafe {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 unsafe fn inv_txfm_add_dct_dct_64x16_16bpc_inner(
-    dst: *mut u16, dst_stride: isize, coeff: *mut i32, _eob: i32, bitdepth_max: i32,
+    dst: *mut u16,
+    dst_stride: isize,
+    coeff: *mut i32,
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 64 * 16];
     for y in 0..16 {
         let mut row = [0i32; 64];
-        for x in 0..64 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 16) }); }
+        for x in 0..64 {
+            row[x] = rect2_scale(unsafe { *coeff.add(y + x * 16) });
+        }
         let out = dct64_1d(&row);
-        for x in 0..64 { tmp[y * 64 + x] = (out[x] + 1) >> 1; }
+        for x in 0..64 {
+            tmp[y * 64 + x] = (out[x] + 1) >> 1;
+        }
     }
     for x in 0..64 {
         let mut col = [0i32; 16];
-        for y in 0..16 { col[y] = tmp[y * 64 + x]; }
+        for y in 0..16 {
+            col[y] = tmp[y * 64 + x];
+        }
         let out = dct16_1d(&col);
-        for y in 0..16 { tmp[y * 64 + x] = out[y]; }
+        for y in 0..16 {
+            tmp[y * 64 + x] = out[y];
+        }
     }
     for y in 0..16 {
         let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
@@ -5152,36 +5541,88 @@ unsafe fn inv_txfm_add_dct_dct_64x16_16bpc_inner(
             unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u16 };
         }
     }
-    for i in 0..(64 * 16) { unsafe { *coeff.add(i) = 0; } }
+    for i in 0..(64 * 16) {
+        unsafe {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
-) { inv_txfm_add_dct_dct_16x64_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+) {
+    inv_txfm_add_dct_dct_16x64_8bpc_inner(
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+    );
+}
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
-) { inv_txfm_add_dct_dct_16x64_16bpc_inner(dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max); }
+) {
+    inv_txfm_add_dct_dct_16x64_16bpc_inner(
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+    );
+}
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
-) { inv_txfm_add_dct_dct_64x16_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+) {
+    inv_txfm_add_dct_dct_64x16_8bpc_inner(
+        dst_ptr as *mut u8,
+        dst_stride,
+        coeff as *mut i16,
+        eob,
+        bitdepth_max,
+    );
+}
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
-) { inv_txfm_add_dct_dct_64x16_16bpc_inner(dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max); }
+) {
+    inv_txfm_add_dct_dct_64x16_16bpc_inner(
+        dst_ptr as *mut u16,
+        dst_stride / 2,
+        coeff as *mut i32,
+        eob,
+        bitdepth_max,
+    );
+}
 
 // ============================================================================
 // GENERIC TRANSFORM ENGINE
@@ -5191,18 +5632,25 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_neon(
 // combination, we use the existing 1D transform functions from itx_1d.rs and compose them
 // generically, exactly like the C fallback does.
 
-use std::num::NonZeroUsize;
-use std::cmp;
 use crate::src::itx_1d::*;
+use std::cmp;
+use std::num::NonZeroUsize;
 
 type Itx1dFn = fn(&mut [i32], NonZeroUsize, i32, i32);
 
 /// Generic 8bpc inverse transform: apply row_fn across rows, then col_fn down columns,
 /// then add residuals to dst pixels.
 unsafe fn inv_txfm_add_generic_8bpc(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, eob: i32, _bitdepth_max: i32,
-    w: usize, h: usize, shift: u8,
-    row_fn: Itx1dFn, col_fn: Itx1dFn,
+    dst: *mut u8,
+    dst_stride: isize,
+    coeff: *mut i16,
+    eob: i32,
+    _bitdepth_max: i32,
+    w: usize,
+    h: usize,
+    shift: u8,
+    row_fn: Itx1dFn,
+    col_fn: Itx1dFn,
     has_dc_only: bool,
 ) {
     let is_rect2 = w * 2 == h || h * 2 == w;
@@ -5211,8 +5659,12 @@ unsafe fn inv_txfm_add_generic_8bpc(
     // DC-only fast path
     if eob < has_dc_only as i32 {
         let mut dc = unsafe { *coeff as i32 };
-        unsafe { *coeff = 0; }
-        if is_rect2 { dc = (dc * 181 + 128) >> 8; }
+        unsafe {
+            *coeff = 0;
+        }
+        if is_rect2 {
+            dc = (dc * 181 + 128) >> 8;
+        }
         dc = (dc * 181 + 128) >> 8;
         dc = (dc + rnd) >> shift;
         dc = (dc * 181 + 128 + 2048) >> 12;
@@ -5220,7 +5672,9 @@ unsafe fn inv_txfm_add_generic_8bpc(
             let row = unsafe { dst.offset(y as isize * dst_stride) };
             for x in 0..w {
                 let p = unsafe { *row.add(x) } as i32 + dc;
-                unsafe { *row.add(x) = p.max(0).min(255) as u8; }
+                unsafe {
+                    *row.add(x) = p.max(0).min(255) as u8;
+                }
             }
         }
         return;
@@ -5247,11 +5701,20 @@ unsafe fn inv_txfm_add_generic_8bpc(
                 tmp[y * w + x] = unsafe { *coeff.add(y + x * sh) } as i32;
             }
         }
-        row_fn(&mut tmp[y * w..], 1.try_into().unwrap(), row_clip_min, row_clip_max);
+        row_fn(
+            &mut tmp[y * w..],
+            1.try_into().unwrap(),
+            row_clip_min,
+            row_clip_max,
+        );
     }
 
     // Clear coefficients
-    for i in 0..(sh * sw) { unsafe { *coeff.add(i) = 0; } }
+    for i in 0..(sh * sw) {
+        unsafe {
+            *coeff.add(i) = 0;
+        }
+    }
 
     // Apply shift + clip
     for i in 0..(w * sh) {
@@ -5260,7 +5723,12 @@ unsafe fn inv_txfm_add_generic_8bpc(
 
     // Column transforms
     for x in 0..w {
-        col_fn(&mut tmp[x..], w.try_into().unwrap(), col_clip_min, col_clip_max);
+        col_fn(
+            &mut tmp[x..],
+            w.try_into().unwrap(),
+            col_clip_min,
+            col_clip_max,
+        );
     }
 
     // Add to dst
@@ -5268,16 +5736,25 @@ unsafe fn inv_txfm_add_generic_8bpc(
         let row = unsafe { dst.offset(y as isize * dst_stride) };
         for x in 0..w {
             let p = unsafe { *row.add(x) } as i32 + ((tmp[y * w + x] + 8) >> 4);
-            unsafe { *row.add(x) = p.max(0).min(255) as u8; }
+            unsafe {
+                *row.add(x) = p.max(0).min(255) as u8;
+            }
         }
     }
 }
 
 /// Generic 16bpc inverse transform
 unsafe fn inv_txfm_add_generic_16bpc(
-    dst: *mut u16, dst_stride: isize, coeff: *mut i32, eob: i32, bitdepth_max: i32,
-    w: usize, h: usize, shift: u8,
-    row_fn: Itx1dFn, col_fn: Itx1dFn,
+    dst: *mut u16,
+    dst_stride: isize,
+    coeff: *mut i32,
+    eob: i32,
+    bitdepth_max: i32,
+    w: usize,
+    h: usize,
+    shift: u8,
+    row_fn: Itx1dFn,
+    col_fn: Itx1dFn,
     has_dc_only: bool,
 ) {
     let is_rect2 = w * 2 == h || h * 2 == w;
@@ -5286,8 +5763,12 @@ unsafe fn inv_txfm_add_generic_16bpc(
     // DC-only fast path
     if eob < has_dc_only as i32 {
         let mut dc = unsafe { *coeff };
-        unsafe { *coeff = 0; }
-        if is_rect2 { dc = (dc * 181 + 128) >> 8; }
+        unsafe {
+            *coeff = 0;
+        }
+        if is_rect2 {
+            dc = (dc * 181 + 128) >> 8;
+        }
         dc = (dc * 181 + 128) >> 8;
         dc = (dc + rnd) >> shift;
         dc = (dc * 181 + 128 + 2048) >> 12;
@@ -5295,7 +5776,9 @@ unsafe fn inv_txfm_add_generic_16bpc(
             let row = unsafe { dst.offset(y as isize * dst_stride) };
             for x in 0..w {
                 let p = unsafe { *row.add(x) } as i32 + dc;
-                unsafe { *row.add(x) = p.max(0).min(bitdepth_max) as u16; }
+                unsafe {
+                    *row.add(x) = p.max(0).min(bitdepth_max) as u16;
+                }
             }
         }
         return;
@@ -5322,11 +5805,20 @@ unsafe fn inv_txfm_add_generic_16bpc(
                 tmp[y * w + x] = unsafe { *coeff.add(y + x * sh) };
             }
         }
-        row_fn(&mut tmp[y * w..], 1.try_into().unwrap(), row_clip_min, row_clip_max);
+        row_fn(
+            &mut tmp[y * w..],
+            1.try_into().unwrap(),
+            row_clip_min,
+            row_clip_max,
+        );
     }
 
     // Clear coefficients
-    for i in 0..(sh * sw) { unsafe { *coeff.add(i) = 0; } }
+    for i in 0..(sh * sw) {
+        unsafe {
+            *coeff.add(i) = 0;
+        }
+    }
 
     // Apply shift + clip
     for i in 0..(w * sh) {
@@ -5335,7 +5827,12 @@ unsafe fn inv_txfm_add_generic_16bpc(
 
     // Column transforms
     for x in 0..w {
-        col_fn(&mut tmp[x..], w.try_into().unwrap(), col_clip_min, col_clip_max);
+        col_fn(
+            &mut tmp[x..],
+            w.try_into().unwrap(),
+            col_clip_min,
+            col_clip_max,
+        );
     }
 
     // Add to dst
@@ -5343,7 +5840,9 @@ unsafe fn inv_txfm_add_generic_16bpc(
         let row = unsafe { dst.offset(y as isize * dst_stride) };
         for x in 0..w {
             let p = unsafe { *row.add(x) } as i32 + ((tmp[y * w + x] + 8) >> 4);
-            unsafe { *row.add(x) = p.max(0).min(bitdepth_max) as u16; }
+            unsafe {
+                *row.add(x) = p.max(0).min(bitdepth_max) as u16;
+            }
         }
     }
 }
@@ -5638,9 +6137,8 @@ gen_itx_arm_8bpc!(identity, identity, 16, 8, false);
 // DISPATCH: Safe entry point for ITX SIMD dispatch on ARM
 // ============================================================================
 
-use crate::include::common::bitdepth::BPC;
 use crate::include::common::bitdepth::BitDepth;
-use crate::src::strided::Strided as _;
+use crate::include::common::bitdepth::BPC;
 use crate::src::levels::TxfmSize;
 use crate::src::levels::TxfmType;
 use crate::src::levels::ADST_ADST;
@@ -5660,6 +6158,7 @@ use crate::src::levels::V_ADST;
 use crate::src::levels::V_DCT;
 use crate::src::levels::V_FLIPADST;
 use crate::src::levels::WHT_WHT;
+use crate::src::strided::Strided as _;
 
 /// Macro to generate the per-arch/bpc direct dispatch functions for ITX.
 macro_rules! impl_itxfm_direct_dispatch {
@@ -5842,7 +6341,11 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     let dst_ffi = FFISafe::new(&dst);
 
     match BD::BPC {
-        BPC::BPC8 => itxfm_add_direct_arm_8bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi),
-        BPC::BPC16 => itxfm_add_direct_arm_16bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi),
+        BPC::BPC8 => itxfm_add_direct_arm_8bpc(
+            tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi,
+        ),
+        BPC::BPC16 => itxfm_add_direct_arm_16bpc(
+            tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi,
+        ),
     }
 }

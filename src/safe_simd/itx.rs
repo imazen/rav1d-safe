@@ -59,26 +59,34 @@ unsafe fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     let c_ptr = coeff;
     let row0 = unsafe {
         _mm_set_epi32(
-            *c_ptr.add(12) as i32, *c_ptr.add(8) as i32,
-            *c_ptr.add(4) as i32, *c_ptr.add(0) as i32
+            *c_ptr.add(12) as i32,
+            *c_ptr.add(8) as i32,
+            *c_ptr.add(4) as i32,
+            *c_ptr.add(0) as i32,
         )
     };
     let row1 = unsafe {
         _mm_set_epi32(
-            *c_ptr.add(13) as i32, *c_ptr.add(9) as i32,
-            *c_ptr.add(5) as i32, *c_ptr.add(1) as i32
+            *c_ptr.add(13) as i32,
+            *c_ptr.add(9) as i32,
+            *c_ptr.add(5) as i32,
+            *c_ptr.add(1) as i32,
         )
     };
     let row2 = unsafe {
         _mm_set_epi32(
-            *c_ptr.add(14) as i32, *c_ptr.add(10) as i32,
-            *c_ptr.add(6) as i32, *c_ptr.add(2) as i32
+            *c_ptr.add(14) as i32,
+            *c_ptr.add(10) as i32,
+            *c_ptr.add(6) as i32,
+            *c_ptr.add(2) as i32,
         )
     };
     let row3 = unsafe {
         _mm_set_epi32(
-            *c_ptr.add(15) as i32, *c_ptr.add(11) as i32,
-            *c_ptr.add(7) as i32, *c_ptr.add(3) as i32
+            *c_ptr.add(15) as i32,
+            *c_ptr.add(11) as i32,
+            *c_ptr.add(7) as i32,
+            *c_ptr.add(3) as i32,
         )
     };
 
@@ -196,10 +204,7 @@ unsafe fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
 /// Each 128-bit lane contains one row: [in0, in1, in2, in3] as i32
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-unsafe fn dct4_2rows_avx2(
-    rows01: __m256i,
-    rows23: __m256i,
-) -> (__m256i, __m256i) {
+unsafe fn dct4_2rows_avx2(rows01: __m256i, rows23: __m256i) -> (__m256i, __m256i) {
     // DCT4: t0 = (in0 + in2) * 181 + 128 >> 8
     //       t1 = (in0 - in2) * 181 + 128 >> 8
     //       t2 = (in1 * 1567 - in3 * (3784-4096) + 2048 >> 12) - in3
@@ -220,33 +225,33 @@ unsafe fn dct4_2rows_avx2(
     // t0 = (in0 + in2) * 181 + 128 >> 8
     let sum02_01 = _mm256_add_epi32(in0_01, in2_01);
     let t0_01 = _mm256_srai_epi32(
-            _mm256_add_epi32(_mm256_mullo_epi32(sum02_01, sqrt2), rnd8),
-            8
-        );
+        _mm256_add_epi32(_mm256_mullo_epi32(sum02_01, sqrt2), rnd8),
+        8,
+    );
 
     // t1 = (in0 - in2) * 181 + 128 >> 8
     let diff02_01 = _mm256_sub_epi32(in0_01, in2_01);
     let t1_01 = _mm256_srai_epi32(
-            _mm256_add_epi32(_mm256_mullo_epi32(diff02_01, sqrt2), rnd8),
-            8
-        );
+        _mm256_add_epi32(_mm256_mullo_epi32(diff02_01, sqrt2), rnd8),
+        8,
+    );
 
     // t2 = (in1 * 1567 - in3 * (3784-4096) + 2048 >> 12) - in3
     let mul1_1567_01 = _mm256_mullo_epi32(in1_01, c1567);
     let mul3_312_01 = _mm256_mullo_epi32(in3_01, c_312);
     let t2_inner_01 = _mm256_srai_epi32(
-            _mm256_add_epi32(_mm256_sub_epi32(mul1_1567_01, mul3_312_01), rnd12),
-            12
-        );
+        _mm256_add_epi32(_mm256_sub_epi32(mul1_1567_01, mul3_312_01), rnd12),
+        12,
+    );
     let t2_01 = _mm256_sub_epi32(t2_inner_01, in3_01);
 
     // t3 = (in1 * (3784-4096) + in3 * 1567 + 2048 >> 12) + in1
     let mul1_312_01 = _mm256_mullo_epi32(in1_01, c_312);
     let mul3_1567_01 = _mm256_mullo_epi32(in3_01, c1567);
     let t3_inner_01 = _mm256_srai_epi32(
-            _mm256_add_epi32(_mm256_add_epi32(mul1_312_01, mul3_1567_01), rnd12),
-            12
-        );
+        _mm256_add_epi32(_mm256_add_epi32(mul1_312_01, mul3_1567_01), rnd12),
+        12,
+    );
     let t3_01 = _mm256_add_epi32(t3_inner_01, in1_01);
 
     // Output: out0 = t0+t3, out1 = t1+t2, out2 = t1-t2, out3 = t0-t3
@@ -262,15 +267,15 @@ unsafe fn dct4_2rows_avx2(
     let mask3 = _mm256_set_epi32(-1i32, 0, 0, 0, -1i32, 0, 0, 0);
 
     let rows01_out = _mm256_or_si256(
-            _mm256_or_si256(
-                _mm256_and_si256(out0_01, mask0),
-                _mm256_and_si256(_mm256_shuffle_epi32(out1_01, 0b00_00_00_01), mask1)
-            ),
-            _mm256_or_si256(
-                _mm256_and_si256(_mm256_shuffle_epi32(out2_01, 0b00_00_10_00), mask2),
-                _mm256_and_si256(_mm256_shuffle_epi32(out3_01, 0b00_11_00_00), mask3)
-            )
-        );
+        _mm256_or_si256(
+            _mm256_and_si256(out0_01, mask0),
+            _mm256_and_si256(_mm256_shuffle_epi32(out1_01, 0b00_00_00_01), mask1),
+        ),
+        _mm256_or_si256(
+            _mm256_and_si256(_mm256_shuffle_epi32(out2_01, 0b00_00_10_00), mask2),
+            _mm256_and_si256(_mm256_shuffle_epi32(out3_01, 0b00_11_00_00), mask3),
+        ),
+    );
 
     // Same for rows23
     let in0_23 = _mm256_shuffle_epi32(rows23, 0b00_00_00_00);
@@ -280,30 +285,30 @@ unsafe fn dct4_2rows_avx2(
 
     let sum02_23 = _mm256_add_epi32(in0_23, in2_23);
     let t0_23 = _mm256_srai_epi32(
-            _mm256_add_epi32(_mm256_mullo_epi32(sum02_23, sqrt2), rnd8),
-            8
-        );
+        _mm256_add_epi32(_mm256_mullo_epi32(sum02_23, sqrt2), rnd8),
+        8,
+    );
 
     let diff02_23 = _mm256_sub_epi32(in0_23, in2_23);
     let t1_23 = _mm256_srai_epi32(
-            _mm256_add_epi32(_mm256_mullo_epi32(diff02_23, sqrt2), rnd8),
-            8
-        );
+        _mm256_add_epi32(_mm256_mullo_epi32(diff02_23, sqrt2), rnd8),
+        8,
+    );
 
     let mul1_1567_23 = _mm256_mullo_epi32(in1_23, c1567);
     let mul3_312_23 = _mm256_mullo_epi32(in3_23, c_312);
     let t2_inner_23 = _mm256_srai_epi32(
-            _mm256_add_epi32(_mm256_sub_epi32(mul1_1567_23, mul3_312_23), rnd12),
-            12
-        );
+        _mm256_add_epi32(_mm256_sub_epi32(mul1_1567_23, mul3_312_23), rnd12),
+        12,
+    );
     let t2_23 = _mm256_sub_epi32(t2_inner_23, in3_23);
 
     let mul1_312_23 = _mm256_mullo_epi32(in1_23, c_312);
     let mul3_1567_23 = _mm256_mullo_epi32(in3_23, c1567);
     let t3_inner_23 = _mm256_srai_epi32(
-            _mm256_add_epi32(_mm256_add_epi32(mul1_312_23, mul3_1567_23), rnd12),
-            12
-        );
+        _mm256_add_epi32(_mm256_add_epi32(mul1_312_23, mul3_1567_23), rnd12),
+        12,
+    );
     let t3_23 = _mm256_add_epi32(t3_inner_23, in1_23);
 
     let out0_23 = _mm256_add_epi32(t0_23, t3_23);
@@ -312,15 +317,15 @@ unsafe fn dct4_2rows_avx2(
     let out3_23 = _mm256_sub_epi32(t0_23, t3_23);
 
     let rows23_out = _mm256_or_si256(
-            _mm256_or_si256(
-                _mm256_and_si256(out0_23, mask0),
-                _mm256_and_si256(_mm256_shuffle_epi32(out1_23, 0b00_00_00_01), mask1)
-            ),
-            _mm256_or_si256(
-                _mm256_and_si256(_mm256_shuffle_epi32(out2_23, 0b00_00_10_00), mask2),
-                _mm256_and_si256(_mm256_shuffle_epi32(out3_23, 0b00_11_00_00), mask3)
-            )
-        );
+        _mm256_or_si256(
+            _mm256_and_si256(out0_23, mask0),
+            _mm256_and_si256(_mm256_shuffle_epi32(out1_23, 0b00_00_00_01), mask1),
+        ),
+        _mm256_or_si256(
+            _mm256_and_si256(_mm256_shuffle_epi32(out2_23, 0b00_00_10_00), mask2),
+            _mm256_and_si256(_mm256_shuffle_epi32(out3_23, 0b00_11_00_00), mask3),
+        ),
+    );
 
     (rows01_out, rows23_out)
 }
@@ -373,26 +378,34 @@ unsafe fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     let c_ptr = coeff;
     let row0 = unsafe {
         _mm_set_epi32(
-            *c_ptr.add(12) as i32, *c_ptr.add(8) as i32,
-            *c_ptr.add(4) as i32, *c_ptr.add(0) as i32
+            *c_ptr.add(12) as i32,
+            *c_ptr.add(8) as i32,
+            *c_ptr.add(4) as i32,
+            *c_ptr.add(0) as i32,
         )
     };
     let row1 = unsafe {
         _mm_set_epi32(
-            *c_ptr.add(13) as i32, *c_ptr.add(9) as i32,
-            *c_ptr.add(5) as i32, *c_ptr.add(1) as i32
+            *c_ptr.add(13) as i32,
+            *c_ptr.add(9) as i32,
+            *c_ptr.add(5) as i32,
+            *c_ptr.add(1) as i32,
         )
     };
     let row2 = unsafe {
         _mm_set_epi32(
-            *c_ptr.add(14) as i32, *c_ptr.add(10) as i32,
-            *c_ptr.add(6) as i32, *c_ptr.add(2) as i32
+            *c_ptr.add(14) as i32,
+            *c_ptr.add(10) as i32,
+            *c_ptr.add(6) as i32,
+            *c_ptr.add(2) as i32,
         )
     };
     let row3 = unsafe {
         _mm_set_epi32(
-            *c_ptr.add(15) as i32, *c_ptr.add(11) as i32,
-            *c_ptr.add(7) as i32, *c_ptr.add(3) as i32
+            *c_ptr.add(15) as i32,
+            *c_ptr.add(11) as i32,
+            *c_ptr.add(7) as i32,
+            *c_ptr.add(3) as i32,
         )
     };
 
@@ -841,7 +854,10 @@ pub unsafe fn inv_identity_add_8x8_8bpc_avx2(
         // Final shift: (+ 8) >> 4
         // Combined: (c * 4 + 8) >> 4 = (c + 2) >> 2
         let c_vec = unsafe { _mm_loadu_si128(coeffs.as_ptr() as *const __m128i) };
-        let c_shifted = _mm_srai_epi16(_mm_add_epi16(_mm_slli_epi16(c_vec, 2), _mm_set1_epi16(8)), 4);
+        let c_shifted = _mm_srai_epi16(
+            _mm_add_epi16(_mm_slli_epi16(c_vec, 2), _mm_set1_epi16(8)),
+            4,
+        );
 
         // Add to destination
         let sum = _mm_add_epi16(d16, c_shifted);
@@ -959,13 +975,25 @@ fn adst4_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
     let in2 = c[2 * stride];
     let in3 = c[3 * stride];
 
-    let out0 = ((1321 * in0 + (3803 - 4096) * in2 + (2482 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
-        + in2 + in3 + in1;
-    let out1 = (((2482 - 4096) * in0 - 1321 * in2 - (3803 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
-        + in0 - in3 + in1;
+    let out0 =
+        ((1321 * in0 + (3803 - 4096) * in2 + (2482 - 4096) * in3 + (3344 - 4096) * in1 + 2048)
+            >> 12)
+            + in2
+            + in3
+            + in1;
+    let out1 =
+        (((2482 - 4096) * in0 - 1321 * in2 - (3803 - 4096) * in3 + (3344 - 4096) * in1 + 2048)
+            >> 12)
+            + in0
+            - in3
+            + in1;
     let out2 = (209 * (in0 - in2 + in3) + 128) >> 8;
-    let out3 = (((3803 - 4096) * in0 + (2482 - 4096) * in2 - 1321 * in3 - (3344 - 4096) * in1 + 2048) >> 12)
-        + in0 + in2 - in1;
+    let out3 = (((3803 - 4096) * in0 + (2482 - 4096) * in2 - 1321 * in3 - (3344 - 4096) * in1
+        + 2048)
+        >> 12)
+        + in0
+        + in2
+        - in1;
 
     c[0 * stride] = clip(out0);
     c[1 * stride] = clip(out1);
@@ -983,13 +1011,25 @@ fn flipadst4_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
     let in2 = c[2 * stride];
     let in3 = c[3 * stride];
 
-    let out0 = ((1321 * in0 + (3803 - 4096) * in2 + (2482 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
-        + in2 + in3 + in1;
-    let out1 = (((2482 - 4096) * in0 - 1321 * in2 - (3803 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
-        + in0 - in3 + in1;
+    let out0 =
+        ((1321 * in0 + (3803 - 4096) * in2 + (2482 - 4096) * in3 + (3344 - 4096) * in1 + 2048)
+            >> 12)
+            + in2
+            + in3
+            + in1;
+    let out1 =
+        (((2482 - 4096) * in0 - 1321 * in2 - (3803 - 4096) * in3 + (3344 - 4096) * in1 + 2048)
+            >> 12)
+            + in0
+            - in3
+            + in1;
     let out2 = (209 * (in0 - in2 + in3) + 128) >> 8;
-    let out3 = (((3803 - 4096) * in0 + (2482 - 4096) * in2 - 1321 * in3 - (3344 - 4096) * in1 + 2048) >> 12)
-        + in0 + in2 - in1;
+    let out3 = (((3803 - 4096) * in0 + (2482 - 4096) * in2 - 1321 * in3 - (3344 - 4096) * in1
+        + 2048)
+        >> 12)
+        + in0
+        + in2
+        - in1;
 
     // Flip output
     c[0 * stride] = clip(out3);
@@ -1180,13 +1220,17 @@ unsafe fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
 
         // Load and scale coefficients
         let c_lo = _mm_set_epi32(
-                tmp[y * 8 + 3], tmp[y * 8 + 2],
-                tmp[y * 8 + 1], tmp[y * 8 + 0]
-            );
+            tmp[y * 8 + 3],
+            tmp[y * 8 + 2],
+            tmp[y * 8 + 1],
+            tmp[y * 8 + 0],
+        );
         let c_hi = _mm_set_epi32(
-                tmp[y * 8 + 7], tmp[y * 8 + 6],
-                tmp[y * 8 + 5], tmp[y * 8 + 4]
-            );
+            tmp[y * 8 + 7],
+            tmp[y * 8 + 6],
+            tmp[y * 8 + 5],
+            tmp[y * 8 + 4],
+        );
 
         // Final scaling: (c + 8) >> 4
         let c_lo_256 = _mm256_set_m128i(c_hi, c_lo);
@@ -1304,13 +1348,17 @@ unsafe fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
 
         // Load and scale coefficients
         let c_lo = _mm_set_epi32(
-                tmp[y * 8 + 3], tmp[y * 8 + 2],
-                tmp[y * 8 + 1], tmp[y * 8 + 0]
-            );
+            tmp[y * 8 + 3],
+            tmp[y * 8 + 2],
+            tmp[y * 8 + 1],
+            tmp[y * 8 + 0],
+        );
         let c_hi = _mm_set_epi32(
-                tmp[y * 8 + 7], tmp[y * 8 + 6],
-                tmp[y * 8 + 5], tmp[y * 8 + 4]
-            );
+            tmp[y * 8 + 7],
+            tmp[y * 8 + 6],
+            tmp[y * 8 + 5],
+            tmp[y * 8 + 4],
+        );
 
         // Final scaling: (c + 8) >> 4
         let c_lo_scaled = _mm_srai_epi32(_mm_add_epi32(c_lo, rnd_final), 4);
@@ -1420,11 +1468,23 @@ pub unsafe fn inv_identity_add_16x16_8bpc_avx2(
 
         // Load 16 transformed coefficients
         let c_vec = _mm256_set_epi16(
-                tmp[y][15] as i16, tmp[y][14] as i16, tmp[y][13] as i16, tmp[y][12] as i16,
-                tmp[y][11] as i16, tmp[y][10] as i16, tmp[y][9] as i16, tmp[y][8] as i16,
-                tmp[y][7] as i16, tmp[y][6] as i16, tmp[y][5] as i16, tmp[y][4] as i16,
-                tmp[y][3] as i16, tmp[y][2] as i16, tmp[y][1] as i16, tmp[y][0] as i16,
-            );
+            tmp[y][15] as i16,
+            tmp[y][14] as i16,
+            tmp[y][13] as i16,
+            tmp[y][12] as i16,
+            tmp[y][11] as i16,
+            tmp[y][10] as i16,
+            tmp[y][9] as i16,
+            tmp[y][8] as i16,
+            tmp[y][7] as i16,
+            tmp[y][6] as i16,
+            tmp[y][5] as i16,
+            tmp[y][4] as i16,
+            tmp[y][3] as i16,
+            tmp[y][2] as i16,
+            tmp[y][1] as i16,
+            tmp[y][0] as i16,
+        );
 
         // Add and clamp
         let sum = _mm256_add_epi16(d_lo, c_vec);
@@ -1728,8 +1788,10 @@ fn inv_txfm_16x16_inner(
     coeff: *const i16,
     row_transform: fn(&mut [i32], usize, i32, i32),
     col_transform: fn(&mut [i32], usize, i32, i32),
-    row_clip_min: i32, row_clip_max: i32,
-    col_clip_min: i32, col_clip_max: i32,
+    row_clip_min: i32,
+    row_clip_max: i32,
+    col_clip_min: i32,
+    col_clip_max: i32,
 ) {
     let rnd = 2;
     let shift = 2;
@@ -1777,16 +1839,24 @@ unsafe fn add_16x16_to_dst(
 
             // Load and scale coefficients (16 values)
             let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0]
+                tmp[y * 16 + 7],
+                tmp[y * 16 + 6],
+                tmp[y * 16 + 5],
+                tmp[y * 16 + 4],
+                tmp[y * 16 + 3],
+                tmp[y * 16 + 2],
+                tmp[y * 16 + 1],
+                tmp[y * 16 + 0],
             );
             let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
+                tmp[y * 16 + 15],
+                tmp[y * 16 + 14],
+                tmp[y * 16 + 13],
+                tmp[y * 16 + 12],
+                tmp[y * 16 + 11],
+                tmp[y * 16 + 10],
+                tmp[y * 16 + 9],
+                tmp[y * 16 + 8],
             );
 
             // Final scaling: (c + 8) >> 4
@@ -1841,11 +1911,18 @@ macro_rules! impl_16x16_transform {
 
             let mut tmp = [0i32; 256];
             inv_txfm_16x16_inner(
-                &mut tmp, coeff, $row_fn, $col_fn,
-                row_clip_min, row_clip_max,
-                col_clip_min, col_clip_max,
+                &mut tmp,
+                coeff,
+                $row_fn,
+                $col_fn,
+                row_clip_min,
+                row_clip_max,
+                col_clip_min,
+                col_clip_max,
             );
-            unsafe { add_16x16_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max); }
+            unsafe {
+                add_16x16_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max);
+            }
         }
     };
 }
@@ -1856,46 +1933,156 @@ macro_rules! impl_16x16_ffi_wrapper {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
-            dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-            eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+            dst_ptr: *mut DynPixel,
+            dst_stride: isize,
+            coeff: *mut DynCoef,
+            eob: c_int,
+            bitdepth_max: c_int,
+            _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-            unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+            unsafe {
+                $inner(
+                    dst_ptr as *mut u8,
+                    dst_stride,
+                    coeff as *mut i16,
+                    eob,
+                    bitdepth_max,
+                );
+            }
         }
     };
 }
 
 // Generate inner functions for all 16x16 transform combinations
-impl_16x16_transform!(inv_txfm_add_adst_dct_16x16_8bpc_avx2_inner, adst16_1d, dct16_1d);
-impl_16x16_transform!(inv_txfm_add_dct_adst_16x16_8bpc_avx2_inner, dct16_1d, adst16_1d);
-impl_16x16_transform!(inv_txfm_add_adst_adst_16x16_8bpc_avx2_inner, adst16_1d, adst16_1d);
-impl_16x16_transform!(inv_txfm_add_flipadst_dct_16x16_8bpc_avx2_inner, flipadst16_1d, dct16_1d);
-impl_16x16_transform!(inv_txfm_add_dct_flipadst_16x16_8bpc_avx2_inner, dct16_1d, flipadst16_1d);
-impl_16x16_transform!(inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2_inner, flipadst16_1d, flipadst16_1d);
-impl_16x16_transform!(inv_txfm_add_adst_flipadst_16x16_8bpc_avx2_inner, adst16_1d, flipadst16_1d);
-impl_16x16_transform!(inv_txfm_add_flipadst_adst_16x16_8bpc_avx2_inner, flipadst16_1d, adst16_1d);
-impl_16x16_transform!(inv_txfm_add_identity_dct_16x16_8bpc_avx2_inner, identity16_1d, dct16_1d);
-impl_16x16_transform!(inv_txfm_add_dct_identity_16x16_8bpc_avx2_inner, dct16_1d, identity16_1d);
-impl_16x16_transform!(inv_txfm_add_identity_adst_16x16_8bpc_avx2_inner, identity16_1d, adst16_1d);
-impl_16x16_transform!(inv_txfm_add_adst_identity_16x16_8bpc_avx2_inner, adst16_1d, identity16_1d);
-impl_16x16_transform!(inv_txfm_add_identity_flipadst_16x16_8bpc_avx2_inner, identity16_1d, flipadst16_1d);
-impl_16x16_transform!(inv_txfm_add_flipadst_identity_16x16_8bpc_avx2_inner, flipadst16_1d, identity16_1d);
+impl_16x16_transform!(
+    inv_txfm_add_adst_dct_16x16_8bpc_avx2_inner,
+    adst16_1d,
+    dct16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_dct_adst_16x16_8bpc_avx2_inner,
+    dct16_1d,
+    adst16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_adst_adst_16x16_8bpc_avx2_inner,
+    adst16_1d,
+    adst16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_flipadst_dct_16x16_8bpc_avx2_inner,
+    flipadst16_1d,
+    dct16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_dct_flipadst_16x16_8bpc_avx2_inner,
+    dct16_1d,
+    flipadst16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2_inner,
+    flipadst16_1d,
+    flipadst16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_adst_flipadst_16x16_8bpc_avx2_inner,
+    adst16_1d,
+    flipadst16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_flipadst_adst_16x16_8bpc_avx2_inner,
+    flipadst16_1d,
+    adst16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_identity_dct_16x16_8bpc_avx2_inner,
+    identity16_1d,
+    dct16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_dct_identity_16x16_8bpc_avx2_inner,
+    dct16_1d,
+    identity16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_identity_adst_16x16_8bpc_avx2_inner,
+    identity16_1d,
+    adst16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_adst_identity_16x16_8bpc_avx2_inner,
+    adst16_1d,
+    identity16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_identity_flipadst_16x16_8bpc_avx2_inner,
+    identity16_1d,
+    flipadst16_1d
+);
+impl_16x16_transform!(
+    inv_txfm_add_flipadst_identity_16x16_8bpc_avx2_inner,
+    flipadst16_1d,
+    identity16_1d
+);
 
 // Generate FFI wrappers
-impl_16x16_ffi_wrapper!(inv_txfm_add_adst_dct_16x16_8bpc_avx2, inv_txfm_add_adst_dct_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_dct_adst_16x16_8bpc_avx2, inv_txfm_add_dct_adst_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_adst_adst_16x16_8bpc_avx2, inv_txfm_add_adst_adst_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_flipadst_dct_16x16_8bpc_avx2, inv_txfm_add_flipadst_dct_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_dct_flipadst_16x16_8bpc_avx2, inv_txfm_add_dct_flipadst_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2, inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_adst_flipadst_16x16_8bpc_avx2, inv_txfm_add_adst_flipadst_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_flipadst_adst_16x16_8bpc_avx2, inv_txfm_add_flipadst_adst_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_identity_dct_16x16_8bpc_avx2, inv_txfm_add_identity_dct_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_dct_identity_16x16_8bpc_avx2, inv_txfm_add_dct_identity_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_identity_adst_16x16_8bpc_avx2, inv_txfm_add_identity_adst_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_adst_identity_16x16_8bpc_avx2, inv_txfm_add_adst_identity_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_identity_flipadst_16x16_8bpc_avx2, inv_txfm_add_identity_flipadst_16x16_8bpc_avx2_inner);
-impl_16x16_ffi_wrapper!(inv_txfm_add_flipadst_identity_16x16_8bpc_avx2, inv_txfm_add_flipadst_identity_16x16_8bpc_avx2_inner);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_adst_dct_16x16_8bpc_avx2,
+    inv_txfm_add_adst_dct_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_dct_adst_16x16_8bpc_avx2,
+    inv_txfm_add_dct_adst_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_adst_adst_16x16_8bpc_avx2,
+    inv_txfm_add_adst_adst_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_dct_16x16_8bpc_avx2,
+    inv_txfm_add_flipadst_dct_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_dct_flipadst_16x16_8bpc_avx2,
+    inv_txfm_add_dct_flipadst_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_adst_flipadst_16x16_8bpc_avx2,
+    inv_txfm_add_adst_flipadst_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_adst_16x16_8bpc_avx2,
+    inv_txfm_add_flipadst_adst_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_identity_dct_16x16_8bpc_avx2,
+    inv_txfm_add_identity_dct_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_dct_identity_16x16_8bpc_avx2,
+    inv_txfm_add_dct_identity_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_identity_adst_16x16_8bpc_avx2,
+    inv_txfm_add_identity_adst_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_adst_identity_16x16_8bpc_avx2,
+    inv_txfm_add_adst_identity_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_identity_flipadst_16x16_8bpc_avx2,
+    inv_txfm_add_identity_flipadst_16x16_8bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_identity_16x16_8bpc_avx2,
+    inv_txfm_add_flipadst_identity_16x16_8bpc_avx2_inner
+);
 
 /// Full 2D DCT_DCT 16x16 inverse transform with add-to-destination
 #[cfg(target_arch = "x86_64")]
@@ -1951,17 +2138,25 @@ unsafe fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
 
         // Load and scale coefficients (16 values)
         let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0]
-            );
+            tmp[y * 16 + 7],
+            tmp[y * 16 + 6],
+            tmp[y * 16 + 5],
+            tmp[y * 16 + 4],
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
-            );
+            tmp[y * 16 + 15],
+            tmp[y * 16 + 14],
+            tmp[y * 16 + 13],
+            tmp[y * 16 + 12],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
+        );
 
         // Final scaling: (c + 8) >> 4
         let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
@@ -2082,17 +2277,25 @@ unsafe fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
 
         // Load and scale coefficients (16 values)
         let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
-            );
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12]
-            );
+            tmp[y * 16 + 7],
+            tmp[y * 16 + 6],
+            tmp[y * 16 + 5],
+            tmp[y * 16 + 4],
+            tmp[y * 16 + 15],
+            tmp[y * 16 + 14],
+            tmp[y * 16 + 13],
+            tmp[y * 16 + 12],
+        );
 
         // Final scaling: (c + 8) >> 4
         let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
@@ -2203,11 +2406,11 @@ unsafe fn inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(
 
         // Load and scale coefficients
         let c = _mm_set_epi32(
-                (tmp[y * 4 + 3] + 8) >> 4,
-                (tmp[y * 4 + 2] + 8) >> 4,
-                (tmp[y * 4 + 1] + 8) >> 4,
-                (tmp[y * 4 + 0] + 8) >> 4
-            );
+            (tmp[y * 4 + 3] + 8) >> 4,
+            (tmp[y * 4 + 2] + 8) >> 4,
+            (tmp[y * 4 + 1] + 8) >> 4,
+            (tmp[y * 4 + 0] + 8) >> 4,
+        );
 
         let sum = _mm_add_epi32(d32, c);
         let sum16 = _mm_packs_epi32(sum, sum);
@@ -2301,13 +2504,17 @@ unsafe fn inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
 
         // Load and scale coefficients
         let c_lo = _mm_set_epi32(
-                tmp[y * 8 + 3], tmp[y * 8 + 2],
-                tmp[y * 8 + 1], tmp[y * 8 + 0]
-            );
+            tmp[y * 8 + 3],
+            tmp[y * 8 + 2],
+            tmp[y * 8 + 1],
+            tmp[y * 8 + 0],
+        );
         let c_hi = _mm_set_epi32(
-                tmp[y * 8 + 7], tmp[y * 8 + 6],
-                tmp[y * 8 + 5], tmp[y * 8 + 4]
-            );
+            tmp[y * 8 + 7],
+            tmp[y * 8 + 6],
+            tmp[y * 8 + 5],
+            tmp[y * 8 + 4],
+        );
 
         let c_lo_256 = _mm256_set_m128i(c_hi, c_lo);
         let c_scaled = _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4);
@@ -2406,11 +2613,11 @@ macro_rules! impl_4x8_transform {
                 let d32 = _mm_cvtepi16_epi32(d16);
 
                 let c = _mm_set_epi32(
-                        (tmp[y * 4 + 3] + 8) >> 4,
-                        (tmp[y * 4 + 2] + 8) >> 4,
-                        (tmp[y * 4 + 1] + 8) >> 4,
-                        (tmp[y * 4 + 0] + 8) >> 4
-                    );
+                    (tmp[y * 4 + 3] + 8) >> 4,
+                    (tmp[y * 4 + 2] + 8) >> 4,
+                    (tmp[y * 4 + 1] + 8) >> 4,
+                    (tmp[y * 4 + 0] + 8) >> 4,
+                );
 
                 let sum = _mm_add_epi32(d32, c);
                 let sum16 = _mm_packs_epi32(sum, sum);
@@ -2487,22 +2694,70 @@ macro_rules! impl_8x4_transform {
 // Generate 4x8 ADST variants
 impl_4x8_transform!(inv_txfm_add_adst_dct_4x8_8bpc_avx2_inner, adst4_1d, dct8_1d);
 impl_4x8_transform!(inv_txfm_add_dct_adst_4x8_8bpc_avx2_inner, dct4_1d, adst8_1d);
-impl_4x8_transform!(inv_txfm_add_adst_adst_4x8_8bpc_avx2_inner, adst4_1d, adst8_1d);
-impl_4x8_transform!(inv_txfm_add_flipadst_dct_4x8_8bpc_avx2_inner, flipadst4_1d, dct8_1d);
-impl_4x8_transform!(inv_txfm_add_dct_flipadst_4x8_8bpc_avx2_inner, dct4_1d, flipadst8_1d);
-impl_4x8_transform!(inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2_inner, flipadst4_1d, flipadst8_1d);
-impl_4x8_transform!(inv_txfm_add_adst_flipadst_4x8_8bpc_avx2_inner, adst4_1d, flipadst8_1d);
-impl_4x8_transform!(inv_txfm_add_flipadst_adst_4x8_8bpc_avx2_inner, flipadst4_1d, adst8_1d);
+impl_4x8_transform!(
+    inv_txfm_add_adst_adst_4x8_8bpc_avx2_inner,
+    adst4_1d,
+    adst8_1d
+);
+impl_4x8_transform!(
+    inv_txfm_add_flipadst_dct_4x8_8bpc_avx2_inner,
+    flipadst4_1d,
+    dct8_1d
+);
+impl_4x8_transform!(
+    inv_txfm_add_dct_flipadst_4x8_8bpc_avx2_inner,
+    dct4_1d,
+    flipadst8_1d
+);
+impl_4x8_transform!(
+    inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2_inner,
+    flipadst4_1d,
+    flipadst8_1d
+);
+impl_4x8_transform!(
+    inv_txfm_add_adst_flipadst_4x8_8bpc_avx2_inner,
+    adst4_1d,
+    flipadst8_1d
+);
+impl_4x8_transform!(
+    inv_txfm_add_flipadst_adst_4x8_8bpc_avx2_inner,
+    flipadst4_1d,
+    adst8_1d
+);
 
 // Generate 8x4 ADST variants
 impl_8x4_transform!(inv_txfm_add_adst_dct_8x4_8bpc_avx2_inner, adst8_1d, dct4_1d);
 impl_8x4_transform!(inv_txfm_add_dct_adst_8x4_8bpc_avx2_inner, dct8_1d, adst4_1d);
-impl_8x4_transform!(inv_txfm_add_adst_adst_8x4_8bpc_avx2_inner, adst8_1d, adst4_1d);
-impl_8x4_transform!(inv_txfm_add_flipadst_dct_8x4_8bpc_avx2_inner, flipadst8_1d, dct4_1d);
-impl_8x4_transform!(inv_txfm_add_dct_flipadst_8x4_8bpc_avx2_inner, dct8_1d, flipadst4_1d);
-impl_8x4_transform!(inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2_inner, flipadst8_1d, flipadst4_1d);
-impl_8x4_transform!(inv_txfm_add_adst_flipadst_8x4_8bpc_avx2_inner, adst8_1d, flipadst4_1d);
-impl_8x4_transform!(inv_txfm_add_flipadst_adst_8x4_8bpc_avx2_inner, flipadst8_1d, adst4_1d);
+impl_8x4_transform!(
+    inv_txfm_add_adst_adst_8x4_8bpc_avx2_inner,
+    adst8_1d,
+    adst4_1d
+);
+impl_8x4_transform!(
+    inv_txfm_add_flipadst_dct_8x4_8bpc_avx2_inner,
+    flipadst8_1d,
+    dct4_1d
+);
+impl_8x4_transform!(
+    inv_txfm_add_dct_flipadst_8x4_8bpc_avx2_inner,
+    dct8_1d,
+    flipadst4_1d
+);
+impl_8x4_transform!(
+    inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2_inner,
+    flipadst8_1d,
+    flipadst4_1d
+);
+impl_8x4_transform!(
+    inv_txfm_add_adst_flipadst_8x4_8bpc_avx2_inner,
+    adst8_1d,
+    flipadst4_1d
+);
+impl_8x4_transform!(
+    inv_txfm_add_flipadst_adst_8x4_8bpc_avx2_inner,
+    flipadst8_1d,
+    adst4_1d
+);
 
 // FFI wrappers for 4x8 ADST variants
 macro_rules! impl_4x8_ffi_wrapper {
@@ -2518,19 +2773,51 @@ macro_rules! impl_4x8_ffi_wrapper {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-            unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+            unsafe {
+                $inner(
+                    dst_ptr as *mut u8,
+                    dst_stride,
+                    coeff as *mut i16,
+                    eob,
+                    bitdepth_max,
+                );
+            }
         }
     };
 }
 
-impl_4x8_ffi_wrapper!(inv_txfm_add_adst_dct_4x8_8bpc_avx2, inv_txfm_add_adst_dct_4x8_8bpc_avx2_inner);
-impl_4x8_ffi_wrapper!(inv_txfm_add_dct_adst_4x8_8bpc_avx2, inv_txfm_add_dct_adst_4x8_8bpc_avx2_inner);
-impl_4x8_ffi_wrapper!(inv_txfm_add_adst_adst_4x8_8bpc_avx2, inv_txfm_add_adst_adst_4x8_8bpc_avx2_inner);
-impl_4x8_ffi_wrapper!(inv_txfm_add_flipadst_dct_4x8_8bpc_avx2, inv_txfm_add_flipadst_dct_4x8_8bpc_avx2_inner);
-impl_4x8_ffi_wrapper!(inv_txfm_add_dct_flipadst_4x8_8bpc_avx2, inv_txfm_add_dct_flipadst_4x8_8bpc_avx2_inner);
-impl_4x8_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2, inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2_inner);
-impl_4x8_ffi_wrapper!(inv_txfm_add_adst_flipadst_4x8_8bpc_avx2, inv_txfm_add_adst_flipadst_4x8_8bpc_avx2_inner);
-impl_4x8_ffi_wrapper!(inv_txfm_add_flipadst_adst_4x8_8bpc_avx2, inv_txfm_add_flipadst_adst_4x8_8bpc_avx2_inner);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_adst_dct_4x8_8bpc_avx2,
+    inv_txfm_add_adst_dct_4x8_8bpc_avx2_inner
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_dct_adst_4x8_8bpc_avx2,
+    inv_txfm_add_dct_adst_4x8_8bpc_avx2_inner
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_adst_adst_4x8_8bpc_avx2,
+    inv_txfm_add_adst_adst_4x8_8bpc_avx2_inner
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_dct_4x8_8bpc_avx2,
+    inv_txfm_add_flipadst_dct_4x8_8bpc_avx2_inner
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_dct_flipadst_4x8_8bpc_avx2,
+    inv_txfm_add_dct_flipadst_4x8_8bpc_avx2_inner
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2_inner
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_adst_flipadst_4x8_8bpc_avx2,
+    inv_txfm_add_adst_flipadst_4x8_8bpc_avx2_inner
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_adst_4x8_8bpc_avx2,
+    inv_txfm_add_flipadst_adst_4x8_8bpc_avx2_inner
+);
 
 // FFI wrappers for 8x4 ADST variants
 macro_rules! impl_8x4_ffi_wrapper {
@@ -2546,57 +2833,187 @@ macro_rules! impl_8x4_ffi_wrapper {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-            unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+            unsafe {
+                $inner(
+                    dst_ptr as *mut u8,
+                    dst_stride,
+                    coeff as *mut i16,
+                    eob,
+                    bitdepth_max,
+                );
+            }
         }
     };
 }
 
-impl_8x4_ffi_wrapper!(inv_txfm_add_adst_dct_8x4_8bpc_avx2, inv_txfm_add_adst_dct_8x4_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_dct_adst_8x4_8bpc_avx2, inv_txfm_add_dct_adst_8x4_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_adst_adst_8x4_8bpc_avx2, inv_txfm_add_adst_adst_8x4_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_flipadst_dct_8x4_8bpc_avx2, inv_txfm_add_flipadst_dct_8x4_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_dct_flipadst_8x4_8bpc_avx2, inv_txfm_add_dct_flipadst_8x4_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2, inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_adst_flipadst_8x4_8bpc_avx2, inv_txfm_add_adst_flipadst_8x4_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_flipadst_adst_8x4_8bpc_avx2, inv_txfm_add_flipadst_adst_8x4_8bpc_avx2_inner);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_adst_dct_8x4_8bpc_avx2,
+    inv_txfm_add_adst_dct_8x4_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_dct_adst_8x4_8bpc_avx2,
+    inv_txfm_add_dct_adst_8x4_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_adst_adst_8x4_8bpc_avx2,
+    inv_txfm_add_adst_adst_8x4_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_flipadst_dct_8x4_8bpc_avx2,
+    inv_txfm_add_flipadst_dct_8x4_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_dct_flipadst_8x4_8bpc_avx2,
+    inv_txfm_add_dct_flipadst_8x4_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_adst_flipadst_8x4_8bpc_avx2,
+    inv_txfm_add_adst_flipadst_8x4_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_flipadst_adst_8x4_8bpc_avx2,
+    inv_txfm_add_flipadst_adst_8x4_8bpc_avx2_inner
+);
 
 // IDTX for 4x8 and 8x4
-impl_4x8_transform!(inv_txfm_add_identity_identity_4x8_8bpc_avx2_inner, identity4_1d, identity8_1d);
-impl_8x4_transform!(inv_txfm_add_identity_identity_8x4_8bpc_avx2_inner, identity8_1d, identity4_1d);
-impl_4x8_ffi_wrapper!(inv_txfm_add_identity_identity_4x8_8bpc_avx2, inv_txfm_add_identity_identity_4x8_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_identity_identity_8x4_8bpc_avx2, inv_txfm_add_identity_identity_8x4_8bpc_avx2_inner);
+impl_4x8_transform!(
+    inv_txfm_add_identity_identity_4x8_8bpc_avx2_inner,
+    identity4_1d,
+    identity8_1d
+);
+impl_8x4_transform!(
+    inv_txfm_add_identity_identity_8x4_8bpc_avx2_inner,
+    identity8_1d,
+    identity4_1d
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_identity_identity_4x8_8bpc_avx2,
+    inv_txfm_add_identity_identity_4x8_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_identity_identity_8x4_8bpc_avx2,
+    inv_txfm_add_identity_identity_8x4_8bpc_avx2_inner
+);
 
 // H_DCT and V_DCT for 4x8 (identity+dct mixes)
-impl_4x8_transform!(inv_txfm_add_identity_dct_4x8_8bpc_avx2_inner, identity4_1d, dct8_1d);
-impl_4x8_transform!(inv_txfm_add_dct_identity_4x8_8bpc_avx2_inner, dct4_1d, identity8_1d);
-impl_4x8_ffi_wrapper!(inv_txfm_add_identity_dct_4x8_8bpc_avx2, inv_txfm_add_identity_dct_4x8_8bpc_avx2_inner);
-impl_4x8_ffi_wrapper!(inv_txfm_add_dct_identity_4x8_8bpc_avx2, inv_txfm_add_dct_identity_4x8_8bpc_avx2_inner);
+impl_4x8_transform!(
+    inv_txfm_add_identity_dct_4x8_8bpc_avx2_inner,
+    identity4_1d,
+    dct8_1d
+);
+impl_4x8_transform!(
+    inv_txfm_add_dct_identity_4x8_8bpc_avx2_inner,
+    dct4_1d,
+    identity8_1d
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_identity_dct_4x8_8bpc_avx2,
+    inv_txfm_add_identity_dct_4x8_8bpc_avx2_inner
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_dct_identity_4x8_8bpc_avx2,
+    inv_txfm_add_dct_identity_4x8_8bpc_avx2_inner
+);
 
 // H_DCT and V_DCT for 8x4
-impl_8x4_transform!(inv_txfm_add_identity_dct_8x4_8bpc_avx2_inner, identity8_1d, dct4_1d);
-impl_8x4_transform!(inv_txfm_add_dct_identity_8x4_8bpc_avx2_inner, dct8_1d, identity4_1d);
-impl_8x4_ffi_wrapper!(inv_txfm_add_identity_dct_8x4_8bpc_avx2, inv_txfm_add_identity_dct_8x4_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_dct_identity_8x4_8bpc_avx2, inv_txfm_add_dct_identity_8x4_8bpc_avx2_inner);
+impl_8x4_transform!(
+    inv_txfm_add_identity_dct_8x4_8bpc_avx2_inner,
+    identity8_1d,
+    dct4_1d
+);
+impl_8x4_transform!(
+    inv_txfm_add_dct_identity_8x4_8bpc_avx2_inner,
+    dct8_1d,
+    identity4_1d
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_identity_dct_8x4_8bpc_avx2,
+    inv_txfm_add_identity_dct_8x4_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_dct_identity_8x4_8bpc_avx2,
+    inv_txfm_add_dct_identity_8x4_8bpc_avx2_inner
+);
 
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 4x8
-impl_4x8_transform!(inv_txfm_add_identity_adst_4x8_8bpc_avx2_inner, identity4_1d, adst8_1d);
-impl_4x8_transform!(inv_txfm_add_adst_identity_4x8_8bpc_avx2_inner, adst4_1d, identity8_1d);
-impl_4x8_transform!(inv_txfm_add_identity_flipadst_4x8_8bpc_avx2_inner, identity4_1d, flipadst8_1d);
-impl_4x8_transform!(inv_txfm_add_flipadst_identity_4x8_8bpc_avx2_inner, flipadst4_1d, identity8_1d);
-impl_4x8_ffi_wrapper!(inv_txfm_add_identity_adst_4x8_8bpc_avx2, inv_txfm_add_identity_adst_4x8_8bpc_avx2_inner);
-impl_4x8_ffi_wrapper!(inv_txfm_add_adst_identity_4x8_8bpc_avx2, inv_txfm_add_adst_identity_4x8_8bpc_avx2_inner);
-impl_4x8_ffi_wrapper!(inv_txfm_add_identity_flipadst_4x8_8bpc_avx2, inv_txfm_add_identity_flipadst_4x8_8bpc_avx2_inner);
-impl_4x8_ffi_wrapper!(inv_txfm_add_flipadst_identity_4x8_8bpc_avx2, inv_txfm_add_flipadst_identity_4x8_8bpc_avx2_inner);
+impl_4x8_transform!(
+    inv_txfm_add_identity_adst_4x8_8bpc_avx2_inner,
+    identity4_1d,
+    adst8_1d
+);
+impl_4x8_transform!(
+    inv_txfm_add_adst_identity_4x8_8bpc_avx2_inner,
+    adst4_1d,
+    identity8_1d
+);
+impl_4x8_transform!(
+    inv_txfm_add_identity_flipadst_4x8_8bpc_avx2_inner,
+    identity4_1d,
+    flipadst8_1d
+);
+impl_4x8_transform!(
+    inv_txfm_add_flipadst_identity_4x8_8bpc_avx2_inner,
+    flipadst4_1d,
+    identity8_1d
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_identity_adst_4x8_8bpc_avx2,
+    inv_txfm_add_identity_adst_4x8_8bpc_avx2_inner
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_adst_identity_4x8_8bpc_avx2,
+    inv_txfm_add_adst_identity_4x8_8bpc_avx2_inner
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_identity_flipadst_4x8_8bpc_avx2,
+    inv_txfm_add_identity_flipadst_4x8_8bpc_avx2_inner
+);
+impl_4x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_identity_4x8_8bpc_avx2,
+    inv_txfm_add_flipadst_identity_4x8_8bpc_avx2_inner
+);
 
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 8x4
-impl_8x4_transform!(inv_txfm_add_identity_adst_8x4_8bpc_avx2_inner, identity8_1d, adst4_1d);
-impl_8x4_transform!(inv_txfm_add_adst_identity_8x4_8bpc_avx2_inner, adst8_1d, identity4_1d);
-impl_8x4_transform!(inv_txfm_add_identity_flipadst_8x4_8bpc_avx2_inner, identity8_1d, flipadst4_1d);
-impl_8x4_transform!(inv_txfm_add_flipadst_identity_8x4_8bpc_avx2_inner, flipadst8_1d, identity4_1d);
-impl_8x4_ffi_wrapper!(inv_txfm_add_identity_adst_8x4_8bpc_avx2, inv_txfm_add_identity_adst_8x4_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_adst_identity_8x4_8bpc_avx2, inv_txfm_add_adst_identity_8x4_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_identity_flipadst_8x4_8bpc_avx2, inv_txfm_add_identity_flipadst_8x4_8bpc_avx2_inner);
-impl_8x4_ffi_wrapper!(inv_txfm_add_flipadst_identity_8x4_8bpc_avx2, inv_txfm_add_flipadst_identity_8x4_8bpc_avx2_inner);
+impl_8x4_transform!(
+    inv_txfm_add_identity_adst_8x4_8bpc_avx2_inner,
+    identity8_1d,
+    adst4_1d
+);
+impl_8x4_transform!(
+    inv_txfm_add_adst_identity_8x4_8bpc_avx2_inner,
+    adst8_1d,
+    identity4_1d
+);
+impl_8x4_transform!(
+    inv_txfm_add_identity_flipadst_8x4_8bpc_avx2_inner,
+    identity8_1d,
+    flipadst4_1d
+);
+impl_8x4_transform!(
+    inv_txfm_add_flipadst_identity_8x4_8bpc_avx2_inner,
+    flipadst8_1d,
+    identity4_1d
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_identity_adst_8x4_8bpc_avx2,
+    inv_txfm_add_identity_adst_8x4_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_adst_identity_8x4_8bpc_avx2,
+    inv_txfm_add_adst_identity_8x4_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_identity_flipadst_8x4_8bpc_avx2,
+    inv_txfm_add_identity_flipadst_8x4_8bpc_avx2_inner
+);
+impl_8x4_ffi_wrapper!(
+    inv_txfm_add_flipadst_identity_8x4_8bpc_avx2,
+    inv_txfm_add_flipadst_identity_8x4_8bpc_avx2_inner
+);
 
 // ============================================================================
 // 8x16 and 16x8 ADST/FLIPADST variants
@@ -2654,13 +3071,17 @@ macro_rules! impl_8x16_transform {
                 let d16 = _mm_unpacklo_epi8(d, zero);
 
                 let c_lo = _mm_set_epi32(
-                        tmp[y * 8 + 3], tmp[y * 8 + 2],
-                        tmp[y * 8 + 1], tmp[y * 8 + 0]
-                    );
+                    tmp[y * 8 + 3],
+                    tmp[y * 8 + 2],
+                    tmp[y * 8 + 1],
+                    tmp[y * 8 + 0],
+                );
                 let c_hi = _mm_set_epi32(
-                        tmp[y * 8 + 7], tmp[y * 8 + 6],
-                        tmp[y * 8 + 5], tmp[y * 8 + 4]
-                    );
+                    tmp[y * 8 + 7],
+                    tmp[y * 8 + 6],
+                    tmp[y * 8 + 5],
+                    tmp[y * 8 + 4],
+                );
 
                 let c_lo_256 = _mm256_set_m128i(c_hi, c_lo);
                 let c_scaled = _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4);
@@ -2739,17 +3160,25 @@ macro_rules! impl_16x8_transform {
                 let d16 = _mm256_cvtepu8_epi16(d);
 
                 let c0 = _mm256_set_epi32(
-                        tmp[y * 16 + 7], tmp[y * 16 + 6],
-                        tmp[y * 16 + 5], tmp[y * 16 + 4],
-                        tmp[y * 16 + 3], tmp[y * 16 + 2],
-                        tmp[y * 16 + 1], tmp[y * 16 + 0]
-                    );
+                    tmp[y * 16 + 7],
+                    tmp[y * 16 + 6],
+                    tmp[y * 16 + 5],
+                    tmp[y * 16 + 4],
+                    tmp[y * 16 + 3],
+                    tmp[y * 16 + 2],
+                    tmp[y * 16 + 1],
+                    tmp[y * 16 + 0],
+                );
                 let c1 = _mm256_set_epi32(
-                        tmp[y * 16 + 15], tmp[y * 16 + 14],
-                        tmp[y * 16 + 13], tmp[y * 16 + 12],
-                        tmp[y * 16 + 11], tmp[y * 16 + 10],
-                        tmp[y * 16 + 9], tmp[y * 16 + 8]
-                    );
+                    tmp[y * 16 + 15],
+                    tmp[y * 16 + 14],
+                    tmp[y * 16 + 13],
+                    tmp[y * 16 + 12],
+                    tmp[y * 16 + 11],
+                    tmp[y * 16 + 10],
+                    tmp[y * 16 + 9],
+                    tmp[y * 16 + 8],
+                );
 
                 let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
                 let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -2763,7 +3192,9 @@ macro_rules! impl_16x8_transform {
                 let packed = _mm256_packus_epi16(clamped, clamped);
                 let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-                unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
+                unsafe {
+                    _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed))
+                };
             }
 
             // Clear coefficients
@@ -2778,24 +3209,88 @@ macro_rules! impl_16x8_transform {
 }
 
 // Generate 8x16 ADST inner functions
-impl_8x16_transform!(inv_txfm_add_adst_dct_8x16_8bpc_avx2_inner, adst8_1d, dct16_1d);
-impl_8x16_transform!(inv_txfm_add_dct_adst_8x16_8bpc_avx2_inner, dct8_1d, adst16_1d);
-impl_8x16_transform!(inv_txfm_add_adst_adst_8x16_8bpc_avx2_inner, adst8_1d, adst16_1d);
-impl_8x16_transform!(inv_txfm_add_flipadst_dct_8x16_8bpc_avx2_inner, flipadst8_1d, dct16_1d);
-impl_8x16_transform!(inv_txfm_add_dct_flipadst_8x16_8bpc_avx2_inner, dct8_1d, flipadst16_1d);
-impl_8x16_transform!(inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2_inner, flipadst8_1d, flipadst16_1d);
-impl_8x16_transform!(inv_txfm_add_adst_flipadst_8x16_8bpc_avx2_inner, adst8_1d, flipadst16_1d);
-impl_8x16_transform!(inv_txfm_add_flipadst_adst_8x16_8bpc_avx2_inner, flipadst8_1d, adst16_1d);
+impl_8x16_transform!(
+    inv_txfm_add_adst_dct_8x16_8bpc_avx2_inner,
+    adst8_1d,
+    dct16_1d
+);
+impl_8x16_transform!(
+    inv_txfm_add_dct_adst_8x16_8bpc_avx2_inner,
+    dct8_1d,
+    adst16_1d
+);
+impl_8x16_transform!(
+    inv_txfm_add_adst_adst_8x16_8bpc_avx2_inner,
+    adst8_1d,
+    adst16_1d
+);
+impl_8x16_transform!(
+    inv_txfm_add_flipadst_dct_8x16_8bpc_avx2_inner,
+    flipadst8_1d,
+    dct16_1d
+);
+impl_8x16_transform!(
+    inv_txfm_add_dct_flipadst_8x16_8bpc_avx2_inner,
+    dct8_1d,
+    flipadst16_1d
+);
+impl_8x16_transform!(
+    inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2_inner,
+    flipadst8_1d,
+    flipadst16_1d
+);
+impl_8x16_transform!(
+    inv_txfm_add_adst_flipadst_8x16_8bpc_avx2_inner,
+    adst8_1d,
+    flipadst16_1d
+);
+impl_8x16_transform!(
+    inv_txfm_add_flipadst_adst_8x16_8bpc_avx2_inner,
+    flipadst8_1d,
+    adst16_1d
+);
 
 // Generate 16x8 ADST inner functions
-impl_16x8_transform!(inv_txfm_add_adst_dct_16x8_8bpc_avx2_inner, adst16_1d, dct8_1d);
-impl_16x8_transform!(inv_txfm_add_dct_adst_16x8_8bpc_avx2_inner, dct16_1d, adst8_1d);
-impl_16x8_transform!(inv_txfm_add_adst_adst_16x8_8bpc_avx2_inner, adst16_1d, adst8_1d);
-impl_16x8_transform!(inv_txfm_add_flipadst_dct_16x8_8bpc_avx2_inner, flipadst16_1d, dct8_1d);
-impl_16x8_transform!(inv_txfm_add_dct_flipadst_16x8_8bpc_avx2_inner, dct16_1d, flipadst8_1d);
-impl_16x8_transform!(inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2_inner, flipadst16_1d, flipadst8_1d);
-impl_16x8_transform!(inv_txfm_add_adst_flipadst_16x8_8bpc_avx2_inner, adst16_1d, flipadst8_1d);
-impl_16x8_transform!(inv_txfm_add_flipadst_adst_16x8_8bpc_avx2_inner, flipadst16_1d, adst8_1d);
+impl_16x8_transform!(
+    inv_txfm_add_adst_dct_16x8_8bpc_avx2_inner,
+    adst16_1d,
+    dct8_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_dct_adst_16x8_8bpc_avx2_inner,
+    dct16_1d,
+    adst8_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_adst_adst_16x8_8bpc_avx2_inner,
+    adst16_1d,
+    adst8_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_flipadst_dct_16x8_8bpc_avx2_inner,
+    flipadst16_1d,
+    dct8_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_dct_flipadst_16x8_8bpc_avx2_inner,
+    dct16_1d,
+    flipadst8_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2_inner,
+    flipadst16_1d,
+    flipadst8_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_adst_flipadst_16x8_8bpc_avx2_inner,
+    adst16_1d,
+    flipadst8_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_flipadst_adst_16x8_8bpc_avx2_inner,
+    flipadst16_1d,
+    adst8_1d
+);
 
 /// FFI wrapper macro for 8x16 transforms
 macro_rules! impl_8x16_ffi_wrapper {
@@ -2852,62 +3347,208 @@ macro_rules! impl_16x8_ffi_wrapper {
 }
 
 // Generate 8x16 FFI wrappers
-impl_8x16_ffi_wrapper!(inv_txfm_add_adst_dct_8x16_8bpc_avx2, inv_txfm_add_adst_dct_8x16_8bpc_avx2_inner);
-impl_8x16_ffi_wrapper!(inv_txfm_add_dct_adst_8x16_8bpc_avx2, inv_txfm_add_dct_adst_8x16_8bpc_avx2_inner);
-impl_8x16_ffi_wrapper!(inv_txfm_add_adst_adst_8x16_8bpc_avx2, inv_txfm_add_adst_adst_8x16_8bpc_avx2_inner);
-impl_8x16_ffi_wrapper!(inv_txfm_add_flipadst_dct_8x16_8bpc_avx2, inv_txfm_add_flipadst_dct_8x16_8bpc_avx2_inner);
-impl_8x16_ffi_wrapper!(inv_txfm_add_dct_flipadst_8x16_8bpc_avx2, inv_txfm_add_dct_flipadst_8x16_8bpc_avx2_inner);
-impl_8x16_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2, inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2_inner);
-impl_8x16_ffi_wrapper!(inv_txfm_add_adst_flipadst_8x16_8bpc_avx2, inv_txfm_add_adst_flipadst_8x16_8bpc_avx2_inner);
-impl_8x16_ffi_wrapper!(inv_txfm_add_flipadst_adst_8x16_8bpc_avx2, inv_txfm_add_flipadst_adst_8x16_8bpc_avx2_inner);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_adst_dct_8x16_8bpc_avx2,
+    inv_txfm_add_adst_dct_8x16_8bpc_avx2_inner
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_dct_adst_8x16_8bpc_avx2,
+    inv_txfm_add_dct_adst_8x16_8bpc_avx2_inner
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_adst_adst_8x16_8bpc_avx2,
+    inv_txfm_add_adst_adst_8x16_8bpc_avx2_inner
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_dct_8x16_8bpc_avx2,
+    inv_txfm_add_flipadst_dct_8x16_8bpc_avx2_inner
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_dct_flipadst_8x16_8bpc_avx2,
+    inv_txfm_add_dct_flipadst_8x16_8bpc_avx2_inner
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2_inner
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_adst_flipadst_8x16_8bpc_avx2,
+    inv_txfm_add_adst_flipadst_8x16_8bpc_avx2_inner
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_adst_8x16_8bpc_avx2,
+    inv_txfm_add_flipadst_adst_8x16_8bpc_avx2_inner
+);
 
 // Generate 16x8 FFI wrappers
-impl_16x8_ffi_wrapper!(inv_txfm_add_adst_dct_16x8_8bpc_avx2, inv_txfm_add_adst_dct_16x8_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_dct_adst_16x8_8bpc_avx2, inv_txfm_add_dct_adst_16x8_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_adst_adst_16x8_8bpc_avx2, inv_txfm_add_adst_adst_16x8_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_flipadst_dct_16x8_8bpc_avx2, inv_txfm_add_flipadst_dct_16x8_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_dct_flipadst_16x8_8bpc_avx2, inv_txfm_add_dct_flipadst_16x8_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2, inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_adst_flipadst_16x8_8bpc_avx2, inv_txfm_add_adst_flipadst_16x8_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_flipadst_adst_16x8_8bpc_avx2, inv_txfm_add_flipadst_adst_16x8_8bpc_avx2_inner);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_adst_dct_16x8_8bpc_avx2,
+    inv_txfm_add_adst_dct_16x8_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_dct_adst_16x8_8bpc_avx2,
+    inv_txfm_add_dct_adst_16x8_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_adst_adst_16x8_8bpc_avx2,
+    inv_txfm_add_adst_adst_16x8_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_dct_16x8_8bpc_avx2,
+    inv_txfm_add_flipadst_dct_16x8_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_dct_flipadst_16x8_8bpc_avx2,
+    inv_txfm_add_dct_flipadst_16x8_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_adst_flipadst_16x8_8bpc_avx2,
+    inv_txfm_add_adst_flipadst_16x8_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_adst_16x8_8bpc_avx2,
+    inv_txfm_add_flipadst_adst_16x8_8bpc_avx2_inner
+);
 
 // IDTX for 8x16 and 16x8
-impl_8x16_transform!(inv_txfm_add_identity_identity_8x16_8bpc_avx2_inner, identity8_1d, identity16_1d);
-impl_16x8_transform!(inv_txfm_add_identity_identity_16x8_8bpc_avx2_inner, identity16_1d, identity8_1d);
-impl_8x16_ffi_wrapper!(inv_txfm_add_identity_identity_8x16_8bpc_avx2, inv_txfm_add_identity_identity_8x16_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_identity_identity_16x8_8bpc_avx2, inv_txfm_add_identity_identity_16x8_8bpc_avx2_inner);
+impl_8x16_transform!(
+    inv_txfm_add_identity_identity_8x16_8bpc_avx2_inner,
+    identity8_1d,
+    identity16_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_identity_identity_16x8_8bpc_avx2_inner,
+    identity16_1d,
+    identity8_1d
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_identity_identity_8x16_8bpc_avx2,
+    inv_txfm_add_identity_identity_8x16_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_identity_identity_16x8_8bpc_avx2,
+    inv_txfm_add_identity_identity_16x8_8bpc_avx2_inner
+);
 
 // H_DCT and V_DCT for 8x16
-impl_8x16_transform!(inv_txfm_add_identity_dct_8x16_8bpc_avx2_inner, identity8_1d, dct16_1d);
-impl_8x16_transform!(inv_txfm_add_dct_identity_8x16_8bpc_avx2_inner, dct8_1d, identity16_1d);
-impl_8x16_ffi_wrapper!(inv_txfm_add_identity_dct_8x16_8bpc_avx2, inv_txfm_add_identity_dct_8x16_8bpc_avx2_inner);
-impl_8x16_ffi_wrapper!(inv_txfm_add_dct_identity_8x16_8bpc_avx2, inv_txfm_add_dct_identity_8x16_8bpc_avx2_inner);
+impl_8x16_transform!(
+    inv_txfm_add_identity_dct_8x16_8bpc_avx2_inner,
+    identity8_1d,
+    dct16_1d
+);
+impl_8x16_transform!(
+    inv_txfm_add_dct_identity_8x16_8bpc_avx2_inner,
+    dct8_1d,
+    identity16_1d
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_identity_dct_8x16_8bpc_avx2,
+    inv_txfm_add_identity_dct_8x16_8bpc_avx2_inner
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_dct_identity_8x16_8bpc_avx2,
+    inv_txfm_add_dct_identity_8x16_8bpc_avx2_inner
+);
 
 // H_DCT and V_DCT for 16x8
-impl_16x8_transform!(inv_txfm_add_identity_dct_16x8_8bpc_avx2_inner, identity16_1d, dct8_1d);
-impl_16x8_transform!(inv_txfm_add_dct_identity_16x8_8bpc_avx2_inner, dct16_1d, identity8_1d);
-impl_16x8_ffi_wrapper!(inv_txfm_add_identity_dct_16x8_8bpc_avx2, inv_txfm_add_identity_dct_16x8_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_dct_identity_16x8_8bpc_avx2, inv_txfm_add_dct_identity_16x8_8bpc_avx2_inner);
+impl_16x8_transform!(
+    inv_txfm_add_identity_dct_16x8_8bpc_avx2_inner,
+    identity16_1d,
+    dct8_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_dct_identity_16x8_8bpc_avx2_inner,
+    dct16_1d,
+    identity8_1d
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_identity_dct_16x8_8bpc_avx2,
+    inv_txfm_add_identity_dct_16x8_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_dct_identity_16x8_8bpc_avx2,
+    inv_txfm_add_dct_identity_16x8_8bpc_avx2_inner
+);
 
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 8x16
-impl_8x16_transform!(inv_txfm_add_identity_adst_8x16_8bpc_avx2_inner, identity8_1d, adst16_1d);
-impl_8x16_transform!(inv_txfm_add_adst_identity_8x16_8bpc_avx2_inner, adst8_1d, identity16_1d);
-impl_8x16_transform!(inv_txfm_add_identity_flipadst_8x16_8bpc_avx2_inner, identity8_1d, flipadst16_1d);
-impl_8x16_transform!(inv_txfm_add_flipadst_identity_8x16_8bpc_avx2_inner, flipadst8_1d, identity16_1d);
-impl_8x16_ffi_wrapper!(inv_txfm_add_identity_adst_8x16_8bpc_avx2, inv_txfm_add_identity_adst_8x16_8bpc_avx2_inner);
-impl_8x16_ffi_wrapper!(inv_txfm_add_adst_identity_8x16_8bpc_avx2, inv_txfm_add_adst_identity_8x16_8bpc_avx2_inner);
-impl_8x16_ffi_wrapper!(inv_txfm_add_identity_flipadst_8x16_8bpc_avx2, inv_txfm_add_identity_flipadst_8x16_8bpc_avx2_inner);
-impl_8x16_ffi_wrapper!(inv_txfm_add_flipadst_identity_8x16_8bpc_avx2, inv_txfm_add_flipadst_identity_8x16_8bpc_avx2_inner);
+impl_8x16_transform!(
+    inv_txfm_add_identity_adst_8x16_8bpc_avx2_inner,
+    identity8_1d,
+    adst16_1d
+);
+impl_8x16_transform!(
+    inv_txfm_add_adst_identity_8x16_8bpc_avx2_inner,
+    adst8_1d,
+    identity16_1d
+);
+impl_8x16_transform!(
+    inv_txfm_add_identity_flipadst_8x16_8bpc_avx2_inner,
+    identity8_1d,
+    flipadst16_1d
+);
+impl_8x16_transform!(
+    inv_txfm_add_flipadst_identity_8x16_8bpc_avx2_inner,
+    flipadst8_1d,
+    identity16_1d
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_identity_adst_8x16_8bpc_avx2,
+    inv_txfm_add_identity_adst_8x16_8bpc_avx2_inner
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_adst_identity_8x16_8bpc_avx2,
+    inv_txfm_add_adst_identity_8x16_8bpc_avx2_inner
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_identity_flipadst_8x16_8bpc_avx2,
+    inv_txfm_add_identity_flipadst_8x16_8bpc_avx2_inner
+);
+impl_8x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_identity_8x16_8bpc_avx2,
+    inv_txfm_add_flipadst_identity_8x16_8bpc_avx2_inner
+);
 
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 16x8
-impl_16x8_transform!(inv_txfm_add_identity_adst_16x8_8bpc_avx2_inner, identity16_1d, adst8_1d);
-impl_16x8_transform!(inv_txfm_add_adst_identity_16x8_8bpc_avx2_inner, adst16_1d, identity8_1d);
-impl_16x8_transform!(inv_txfm_add_identity_flipadst_16x8_8bpc_avx2_inner, identity16_1d, flipadst8_1d);
-impl_16x8_transform!(inv_txfm_add_flipadst_identity_16x8_8bpc_avx2_inner, flipadst16_1d, identity8_1d);
-impl_16x8_ffi_wrapper!(inv_txfm_add_identity_adst_16x8_8bpc_avx2, inv_txfm_add_identity_adst_16x8_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_adst_identity_16x8_8bpc_avx2, inv_txfm_add_adst_identity_16x8_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_identity_flipadst_16x8_8bpc_avx2, inv_txfm_add_identity_flipadst_16x8_8bpc_avx2_inner);
-impl_16x8_ffi_wrapper!(inv_txfm_add_flipadst_identity_16x8_8bpc_avx2, inv_txfm_add_flipadst_identity_16x8_8bpc_avx2_inner);
+impl_16x8_transform!(
+    inv_txfm_add_identity_adst_16x8_8bpc_avx2_inner,
+    identity16_1d,
+    adst8_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_adst_identity_16x8_8bpc_avx2_inner,
+    adst16_1d,
+    identity8_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_identity_flipadst_16x8_8bpc_avx2_inner,
+    identity16_1d,
+    flipadst8_1d
+);
+impl_16x8_transform!(
+    inv_txfm_add_flipadst_identity_16x8_8bpc_avx2_inner,
+    flipadst16_1d,
+    identity8_1d
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_identity_adst_16x8_8bpc_avx2,
+    inv_txfm_add_identity_adst_16x8_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_adst_identity_16x8_8bpc_avx2,
+    inv_txfm_add_adst_identity_16x8_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_identity_flipadst_16x8_8bpc_avx2,
+    inv_txfm_add_identity_flipadst_16x8_8bpc_avx2_inner
+);
+impl_16x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_identity_16x8_8bpc_avx2,
+    inv_txfm_add_flipadst_identity_16x8_8bpc_avx2_inner
+);
 
 /// Full 2D DCT_DCT 8x8 inverse transform
 #[cfg(target_arch = "x86_64")]
@@ -2961,13 +3602,17 @@ unsafe fn inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
         let d16 = _mm_unpacklo_epi8(d, zero);
 
         let c_lo = _mm_set_epi32(
-                tmp[y * 8 + 3], tmp[y * 8 + 2],
-                tmp[y * 8 + 1], tmp[y * 8 + 0]
-            );
+            tmp[y * 8 + 3],
+            tmp[y * 8 + 2],
+            tmp[y * 8 + 1],
+            tmp[y * 8 + 0],
+        );
         let c_hi = _mm_set_epi32(
-                tmp[y * 8 + 7], tmp[y * 8 + 6],
-                tmp[y * 8 + 5], tmp[y * 8 + 4]
-            );
+            tmp[y * 8 + 7],
+            tmp[y * 8 + 6],
+            tmp[y * 8 + 5],
+            tmp[y * 8 + 4],
+        );
 
         let c_lo_256 = _mm256_set_m128i(c_hi, c_lo);
         let c_scaled = _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4);
@@ -3067,17 +3712,25 @@ unsafe fn inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
         let d16 = _mm256_cvtepu8_epi16(d);
 
         let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0]
-            );
+            tmp[y * 16 + 7],
+            tmp[y * 16 + 6],
+            tmp[y * 16 + 5],
+            tmp[y * 16 + 4],
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
-            );
+            tmp[y * 16 + 15],
+            tmp[y * 16 + 14],
+            tmp[y * 16 + 13],
+            tmp[y * 16 + 12],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
+        );
 
         let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
         let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -3182,17 +3835,25 @@ unsafe fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
         let d16 = _mm256_cvtepu8_epi16(d);
 
         let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0]
-            );
+            tmp[y * 16 + 7],
+            tmp[y * 16 + 6],
+            tmp[y * 16 + 5],
+            tmp[y * 16 + 4],
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
-            );
+            tmp[y * 16 + 15],
+            tmp[y * 16 + 14],
+            tmp[y * 16 + 13],
+            tmp[y * 16 + 12],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
+        );
 
         let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
         let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -3296,17 +3957,25 @@ unsafe fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
             let d16 = _mm256_cvtepu8_epi16(d);
 
             let c0 = _mm256_set_epi32(
-                    tmp[y * 32 + chunk_off + 7], tmp[y * 32 + chunk_off + 6],
-                    tmp[y * 32 + chunk_off + 5], tmp[y * 32 + chunk_off + 4],
-                    tmp[y * 32 + chunk_off + 3], tmp[y * 32 + chunk_off + 2],
-                    tmp[y * 32 + chunk_off + 1], tmp[y * 32 + chunk_off + 0]
-                );
+                tmp[y * 32 + chunk_off + 7],
+                tmp[y * 32 + chunk_off + 6],
+                tmp[y * 32 + chunk_off + 5],
+                tmp[y * 32 + chunk_off + 4],
+                tmp[y * 32 + chunk_off + 3],
+                tmp[y * 32 + chunk_off + 2],
+                tmp[y * 32 + chunk_off + 1],
+                tmp[y * 32 + chunk_off + 0],
+            );
             let c1 = _mm256_set_epi32(
-                    tmp[y * 32 + chunk_off + 15], tmp[y * 32 + chunk_off + 14],
-                    tmp[y * 32 + chunk_off + 13], tmp[y * 32 + chunk_off + 12],
-                    tmp[y * 32 + chunk_off + 11], tmp[y * 32 + chunk_off + 10],
-                    tmp[y * 32 + chunk_off + 9], tmp[y * 32 + chunk_off + 8]
-                );
+                tmp[y * 32 + chunk_off + 15],
+                tmp[y * 32 + chunk_off + 14],
+                tmp[y * 32 + chunk_off + 13],
+                tmp[y * 32 + chunk_off + 12],
+                tmp[y * 32 + chunk_off + 11],
+                tmp[y * 32 + chunk_off + 10],
+                tmp[y * 32 + chunk_off + 9],
+                tmp[y * 32 + chunk_off + 8],
+            );
 
             let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
             let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -3320,7 +3989,12 @@ unsafe fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-            unsafe { _mm_storeu_si128(dst_row.add(chunk_off) as *mut __m128i, _mm256_castsi256_si128(packed)) };
+            unsafe {
+                _mm_storeu_si128(
+                    dst_row.add(chunk_off) as *mut __m128i,
+                    _mm256_castsi256_si128(packed),
+                )
+            };
         }
     }
 
@@ -3408,17 +4082,25 @@ unsafe fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
         let d16 = _mm256_cvtepu8_epi16(d);
 
         let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0]
-            );
+            tmp[y * 16 + 7],
+            tmp[y * 16 + 6],
+            tmp[y * 16 + 5],
+            tmp[y * 16 + 4],
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
-            );
+            tmp[y * 16 + 15],
+            tmp[y * 16 + 14],
+            tmp[y * 16 + 13],
+            tmp[y * 16 + 12],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
+        );
 
         let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
         let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -3610,17 +4292,25 @@ unsafe fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
             let d16 = _mm256_cvtepu8_epi16(d);
 
             let c0 = _mm256_set_epi32(
-                    tmp[y * 32 + chunk_off + 7], tmp[y * 32 + chunk_off + 6],
-                    tmp[y * 32 + chunk_off + 5], tmp[y * 32 + chunk_off + 4],
-                    tmp[y * 32 + chunk_off + 3], tmp[y * 32 + chunk_off + 2],
-                    tmp[y * 32 + chunk_off + 1], tmp[y * 32 + chunk_off + 0]
-                );
+                tmp[y * 32 + chunk_off + 7],
+                tmp[y * 32 + chunk_off + 6],
+                tmp[y * 32 + chunk_off + 5],
+                tmp[y * 32 + chunk_off + 4],
+                tmp[y * 32 + chunk_off + 3],
+                tmp[y * 32 + chunk_off + 2],
+                tmp[y * 32 + chunk_off + 1],
+                tmp[y * 32 + chunk_off + 0],
+            );
             let c1 = _mm256_set_epi32(
-                    tmp[y * 32 + chunk_off + 15], tmp[y * 32 + chunk_off + 14],
-                    tmp[y * 32 + chunk_off + 13], tmp[y * 32 + chunk_off + 12],
-                    tmp[y * 32 + chunk_off + 11], tmp[y * 32 + chunk_off + 10],
-                    tmp[y * 32 + chunk_off + 9], tmp[y * 32 + chunk_off + 8]
-                );
+                tmp[y * 32 + chunk_off + 15],
+                tmp[y * 32 + chunk_off + 14],
+                tmp[y * 32 + chunk_off + 13],
+                tmp[y * 32 + chunk_off + 12],
+                tmp[y * 32 + chunk_off + 11],
+                tmp[y * 32 + chunk_off + 10],
+                tmp[y * 32 + chunk_off + 9],
+                tmp[y * 32 + chunk_off + 8],
+            );
 
             let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
             let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -3634,7 +4324,12 @@ unsafe fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-            unsafe { _mm_storeu_si128(dst_row.add(chunk_off) as *mut __m128i, _mm256_castsi256_si128(packed)) };
+            unsafe {
+                _mm_storeu_si128(
+                    dst_row.add(chunk_off) as *mut __m128i,
+                    _mm256_castsi256_si128(packed),
+                )
+            };
         }
     }
 
@@ -3729,17 +4424,25 @@ unsafe fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
             let d16 = _mm256_cvtepu8_epi16(d);
 
             let c0 = _mm256_set_epi32(
-                    tmp[y * 64 + chunk_off + 7], tmp[y * 64 + chunk_off + 6],
-                    tmp[y * 64 + chunk_off + 5], tmp[y * 64 + chunk_off + 4],
-                    tmp[y * 64 + chunk_off + 3], tmp[y * 64 + chunk_off + 2],
-                    tmp[y * 64 + chunk_off + 1], tmp[y * 64 + chunk_off + 0]
-                );
+                tmp[y * 64 + chunk_off + 7],
+                tmp[y * 64 + chunk_off + 6],
+                tmp[y * 64 + chunk_off + 5],
+                tmp[y * 64 + chunk_off + 4],
+                tmp[y * 64 + chunk_off + 3],
+                tmp[y * 64 + chunk_off + 2],
+                tmp[y * 64 + chunk_off + 1],
+                tmp[y * 64 + chunk_off + 0],
+            );
             let c1 = _mm256_set_epi32(
-                    tmp[y * 64 + chunk_off + 15], tmp[y * 64 + chunk_off + 14],
-                    tmp[y * 64 + chunk_off + 13], tmp[y * 64 + chunk_off + 12],
-                    tmp[y * 64 + chunk_off + 11], tmp[y * 64 + chunk_off + 10],
-                    tmp[y * 64 + chunk_off + 9], tmp[y * 64 + chunk_off + 8]
-                );
+                tmp[y * 64 + chunk_off + 15],
+                tmp[y * 64 + chunk_off + 14],
+                tmp[y * 64 + chunk_off + 13],
+                tmp[y * 64 + chunk_off + 12],
+                tmp[y * 64 + chunk_off + 11],
+                tmp[y * 64 + chunk_off + 10],
+                tmp[y * 64 + chunk_off + 9],
+                tmp[y * 64 + chunk_off + 8],
+            );
 
             let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
             let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -3753,7 +4456,12 @@ unsafe fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-            unsafe { _mm_storeu_si128(dst_row.add(chunk_off) as *mut __m128i, _mm256_castsi256_si128(packed)) };
+            unsafe {
+                _mm_storeu_si128(
+                    dst_row.add(chunk_off) as *mut __m128i,
+                    _mm256_castsi256_si128(packed),
+                )
+            };
         }
     }
 
@@ -3924,17 +4632,25 @@ unsafe fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
         let d16 = _mm256_cvtepu8_epi16(d);
 
         let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0]
-            );
+            tmp[y * 16 + 7],
+            tmp[y * 16 + 6],
+            tmp[y * 16 + 5],
+            tmp[y * 16 + 4],
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
-            );
+            tmp[y * 16 + 15],
+            tmp[y * 16 + 14],
+            tmp[y * 16 + 13],
+            tmp[y * 16 + 12],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
+        );
 
         let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
         let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -4097,17 +4813,25 @@ macro_rules! impl_16x4_transform {
                 let d16 = _mm256_cvtepu8_epi16(d);
 
                 let c0 = _mm256_set_epi32(
-                        tmp[y * 16 + 7], tmp[y * 16 + 6],
-                        tmp[y * 16 + 5], tmp[y * 16 + 4],
-                        tmp[y * 16 + 3], tmp[y * 16 + 2],
-                        tmp[y * 16 + 1], tmp[y * 16 + 0]
-                    );
+                    tmp[y * 16 + 7],
+                    tmp[y * 16 + 6],
+                    tmp[y * 16 + 5],
+                    tmp[y * 16 + 4],
+                    tmp[y * 16 + 3],
+                    tmp[y * 16 + 2],
+                    tmp[y * 16 + 1],
+                    tmp[y * 16 + 0],
+                );
                 let c1 = _mm256_set_epi32(
-                        tmp[y * 16 + 15], tmp[y * 16 + 14],
-                        tmp[y * 16 + 13], tmp[y * 16 + 12],
-                        tmp[y * 16 + 11], tmp[y * 16 + 10],
-                        tmp[y * 16 + 9], tmp[y * 16 + 8]
-                    );
+                    tmp[y * 16 + 15],
+                    tmp[y * 16 + 14],
+                    tmp[y * 16 + 13],
+                    tmp[y * 16 + 12],
+                    tmp[y * 16 + 11],
+                    tmp[y * 16 + 10],
+                    tmp[y * 16 + 9],
+                    tmp[y * 16 + 8],
+                );
 
                 let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
                 let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -4121,7 +4845,9 @@ macro_rules! impl_16x4_transform {
                 let packed = _mm256_packus_epi16(clamped, clamped);
                 let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-                unsafe { _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed)) };
+                unsafe {
+                    _mm_storeu_si128(dst_row as *mut __m128i, _mm256_castsi256_si128(packed))
+                };
             }
 
             // Clear coefficients
@@ -4136,24 +4862,88 @@ macro_rules! impl_16x4_transform {
 }
 
 // Generate 4x16 ADST inner functions
-impl_4x16_transform!(inv_txfm_add_adst_dct_4x16_8bpc_avx2_inner, adst4_1d, dct16_1d);
-impl_4x16_transform!(inv_txfm_add_dct_adst_4x16_8bpc_avx2_inner, dct4_1d, adst16_1d);
-impl_4x16_transform!(inv_txfm_add_adst_adst_4x16_8bpc_avx2_inner, adst4_1d, adst16_1d);
-impl_4x16_transform!(inv_txfm_add_flipadst_dct_4x16_8bpc_avx2_inner, flipadst4_1d, dct16_1d);
-impl_4x16_transform!(inv_txfm_add_dct_flipadst_4x16_8bpc_avx2_inner, dct4_1d, flipadst16_1d);
-impl_4x16_transform!(inv_txfm_add_flipadst_flipadst_4x16_8bpc_avx2_inner, flipadst4_1d, flipadst16_1d);
-impl_4x16_transform!(inv_txfm_add_adst_flipadst_4x16_8bpc_avx2_inner, adst4_1d, flipadst16_1d);
-impl_4x16_transform!(inv_txfm_add_flipadst_adst_4x16_8bpc_avx2_inner, flipadst4_1d, adst16_1d);
+impl_4x16_transform!(
+    inv_txfm_add_adst_dct_4x16_8bpc_avx2_inner,
+    adst4_1d,
+    dct16_1d
+);
+impl_4x16_transform!(
+    inv_txfm_add_dct_adst_4x16_8bpc_avx2_inner,
+    dct4_1d,
+    adst16_1d
+);
+impl_4x16_transform!(
+    inv_txfm_add_adst_adst_4x16_8bpc_avx2_inner,
+    adst4_1d,
+    adst16_1d
+);
+impl_4x16_transform!(
+    inv_txfm_add_flipadst_dct_4x16_8bpc_avx2_inner,
+    flipadst4_1d,
+    dct16_1d
+);
+impl_4x16_transform!(
+    inv_txfm_add_dct_flipadst_4x16_8bpc_avx2_inner,
+    dct4_1d,
+    flipadst16_1d
+);
+impl_4x16_transform!(
+    inv_txfm_add_flipadst_flipadst_4x16_8bpc_avx2_inner,
+    flipadst4_1d,
+    flipadst16_1d
+);
+impl_4x16_transform!(
+    inv_txfm_add_adst_flipadst_4x16_8bpc_avx2_inner,
+    adst4_1d,
+    flipadst16_1d
+);
+impl_4x16_transform!(
+    inv_txfm_add_flipadst_adst_4x16_8bpc_avx2_inner,
+    flipadst4_1d,
+    adst16_1d
+);
 
 // Generate 16x4 ADST inner functions
-impl_16x4_transform!(inv_txfm_add_adst_dct_16x4_8bpc_avx2_inner, adst16_1d, dct4_1d);
-impl_16x4_transform!(inv_txfm_add_dct_adst_16x4_8bpc_avx2_inner, dct16_1d, adst4_1d);
-impl_16x4_transform!(inv_txfm_add_adst_adst_16x4_8bpc_avx2_inner, adst16_1d, adst4_1d);
-impl_16x4_transform!(inv_txfm_add_flipadst_dct_16x4_8bpc_avx2_inner, flipadst16_1d, dct4_1d);
-impl_16x4_transform!(inv_txfm_add_dct_flipadst_16x4_8bpc_avx2_inner, dct16_1d, flipadst4_1d);
-impl_16x4_transform!(inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2_inner, flipadst16_1d, flipadst4_1d);
-impl_16x4_transform!(inv_txfm_add_adst_flipadst_16x4_8bpc_avx2_inner, adst16_1d, flipadst4_1d);
-impl_16x4_transform!(inv_txfm_add_flipadst_adst_16x4_8bpc_avx2_inner, flipadst16_1d, adst4_1d);
+impl_16x4_transform!(
+    inv_txfm_add_adst_dct_16x4_8bpc_avx2_inner,
+    adst16_1d,
+    dct4_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_dct_adst_16x4_8bpc_avx2_inner,
+    dct16_1d,
+    adst4_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_adst_adst_16x4_8bpc_avx2_inner,
+    adst16_1d,
+    adst4_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_flipadst_dct_16x4_8bpc_avx2_inner,
+    flipadst16_1d,
+    dct4_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_dct_flipadst_16x4_8bpc_avx2_inner,
+    dct16_1d,
+    flipadst4_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2_inner,
+    flipadst16_1d,
+    flipadst4_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_adst_flipadst_16x4_8bpc_avx2_inner,
+    adst16_1d,
+    flipadst4_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_flipadst_adst_16x4_8bpc_avx2_inner,
+    flipadst16_1d,
+    adst4_1d
+);
 
 /// FFI wrapper macro for 4x16 transforms
 macro_rules! impl_4x16_ffi_wrapper {
@@ -4210,62 +5000,208 @@ macro_rules! impl_16x4_ffi_wrapper {
 }
 
 // Generate 4x16 FFI wrappers
-impl_4x16_ffi_wrapper!(inv_txfm_add_adst_dct_4x16_8bpc_avx2, inv_txfm_add_adst_dct_4x16_8bpc_avx2_inner);
-impl_4x16_ffi_wrapper!(inv_txfm_add_dct_adst_4x16_8bpc_avx2, inv_txfm_add_dct_adst_4x16_8bpc_avx2_inner);
-impl_4x16_ffi_wrapper!(inv_txfm_add_adst_adst_4x16_8bpc_avx2, inv_txfm_add_adst_adst_4x16_8bpc_avx2_inner);
-impl_4x16_ffi_wrapper!(inv_txfm_add_flipadst_dct_4x16_8bpc_avx2, inv_txfm_add_flipadst_dct_4x16_8bpc_avx2_inner);
-impl_4x16_ffi_wrapper!(inv_txfm_add_dct_flipadst_4x16_8bpc_avx2, inv_txfm_add_dct_flipadst_4x16_8bpc_avx2_inner);
-impl_4x16_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_4x16_8bpc_avx2, inv_txfm_add_flipadst_flipadst_4x16_8bpc_avx2_inner);
-impl_4x16_ffi_wrapper!(inv_txfm_add_adst_flipadst_4x16_8bpc_avx2, inv_txfm_add_adst_flipadst_4x16_8bpc_avx2_inner);
-impl_4x16_ffi_wrapper!(inv_txfm_add_flipadst_adst_4x16_8bpc_avx2, inv_txfm_add_flipadst_adst_4x16_8bpc_avx2_inner);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_adst_dct_4x16_8bpc_avx2,
+    inv_txfm_add_adst_dct_4x16_8bpc_avx2_inner
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_dct_adst_4x16_8bpc_avx2,
+    inv_txfm_add_dct_adst_4x16_8bpc_avx2_inner
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_adst_adst_4x16_8bpc_avx2,
+    inv_txfm_add_adst_adst_4x16_8bpc_avx2_inner
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_dct_4x16_8bpc_avx2,
+    inv_txfm_add_flipadst_dct_4x16_8bpc_avx2_inner
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_dct_flipadst_4x16_8bpc_avx2,
+    inv_txfm_add_dct_flipadst_4x16_8bpc_avx2_inner
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_flipadst_4x16_8bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_4x16_8bpc_avx2_inner
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_adst_flipadst_4x16_8bpc_avx2,
+    inv_txfm_add_adst_flipadst_4x16_8bpc_avx2_inner
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_adst_4x16_8bpc_avx2,
+    inv_txfm_add_flipadst_adst_4x16_8bpc_avx2_inner
+);
 
 // Generate 16x4 FFI wrappers
-impl_16x4_ffi_wrapper!(inv_txfm_add_adst_dct_16x4_8bpc_avx2, inv_txfm_add_adst_dct_16x4_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_dct_adst_16x4_8bpc_avx2, inv_txfm_add_dct_adst_16x4_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_adst_adst_16x4_8bpc_avx2, inv_txfm_add_adst_adst_16x4_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_flipadst_dct_16x4_8bpc_avx2, inv_txfm_add_flipadst_dct_16x4_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_dct_flipadst_16x4_8bpc_avx2, inv_txfm_add_dct_flipadst_16x4_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2, inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_adst_flipadst_16x4_8bpc_avx2, inv_txfm_add_adst_flipadst_16x4_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_flipadst_adst_16x4_8bpc_avx2, inv_txfm_add_flipadst_adst_16x4_8bpc_avx2_inner);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_adst_dct_16x4_8bpc_avx2,
+    inv_txfm_add_adst_dct_16x4_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_dct_adst_16x4_8bpc_avx2,
+    inv_txfm_add_dct_adst_16x4_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_adst_adst_16x4_8bpc_avx2,
+    inv_txfm_add_adst_adst_16x4_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_flipadst_dct_16x4_8bpc_avx2,
+    inv_txfm_add_flipadst_dct_16x4_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_dct_flipadst_16x4_8bpc_avx2,
+    inv_txfm_add_dct_flipadst_16x4_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_adst_flipadst_16x4_8bpc_avx2,
+    inv_txfm_add_adst_flipadst_16x4_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_flipadst_adst_16x4_8bpc_avx2,
+    inv_txfm_add_flipadst_adst_16x4_8bpc_avx2_inner
+);
 
 // IDTX for 4x16 and 16x4
-impl_4x16_transform!(inv_txfm_add_identity_identity_4x16_8bpc_avx2_inner, identity4_1d, identity16_1d);
-impl_16x4_transform!(inv_txfm_add_identity_identity_16x4_8bpc_avx2_inner, identity16_1d, identity4_1d);
-impl_4x16_ffi_wrapper!(inv_txfm_add_identity_identity_4x16_8bpc_avx2, inv_txfm_add_identity_identity_4x16_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_identity_identity_16x4_8bpc_avx2, inv_txfm_add_identity_identity_16x4_8bpc_avx2_inner);
+impl_4x16_transform!(
+    inv_txfm_add_identity_identity_4x16_8bpc_avx2_inner,
+    identity4_1d,
+    identity16_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_identity_identity_16x4_8bpc_avx2_inner,
+    identity16_1d,
+    identity4_1d
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_identity_identity_4x16_8bpc_avx2,
+    inv_txfm_add_identity_identity_4x16_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_identity_identity_16x4_8bpc_avx2,
+    inv_txfm_add_identity_identity_16x4_8bpc_avx2_inner
+);
 
 // H_DCT and V_DCT for 4x16
-impl_4x16_transform!(inv_txfm_add_identity_dct_4x16_8bpc_avx2_inner, identity4_1d, dct16_1d);
-impl_4x16_transform!(inv_txfm_add_dct_identity_4x16_8bpc_avx2_inner, dct4_1d, identity16_1d);
-impl_4x16_ffi_wrapper!(inv_txfm_add_identity_dct_4x16_8bpc_avx2, inv_txfm_add_identity_dct_4x16_8bpc_avx2_inner);
-impl_4x16_ffi_wrapper!(inv_txfm_add_dct_identity_4x16_8bpc_avx2, inv_txfm_add_dct_identity_4x16_8bpc_avx2_inner);
+impl_4x16_transform!(
+    inv_txfm_add_identity_dct_4x16_8bpc_avx2_inner,
+    identity4_1d,
+    dct16_1d
+);
+impl_4x16_transform!(
+    inv_txfm_add_dct_identity_4x16_8bpc_avx2_inner,
+    dct4_1d,
+    identity16_1d
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_identity_dct_4x16_8bpc_avx2,
+    inv_txfm_add_identity_dct_4x16_8bpc_avx2_inner
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_dct_identity_4x16_8bpc_avx2,
+    inv_txfm_add_dct_identity_4x16_8bpc_avx2_inner
+);
 
 // H_DCT and V_DCT for 16x4
-impl_16x4_transform!(inv_txfm_add_identity_dct_16x4_8bpc_avx2_inner, identity16_1d, dct4_1d);
-impl_16x4_transform!(inv_txfm_add_dct_identity_16x4_8bpc_avx2_inner, dct16_1d, identity4_1d);
-impl_16x4_ffi_wrapper!(inv_txfm_add_identity_dct_16x4_8bpc_avx2, inv_txfm_add_identity_dct_16x4_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_dct_identity_16x4_8bpc_avx2, inv_txfm_add_dct_identity_16x4_8bpc_avx2_inner);
+impl_16x4_transform!(
+    inv_txfm_add_identity_dct_16x4_8bpc_avx2_inner,
+    identity16_1d,
+    dct4_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_dct_identity_16x4_8bpc_avx2_inner,
+    dct16_1d,
+    identity4_1d
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_identity_dct_16x4_8bpc_avx2,
+    inv_txfm_add_identity_dct_16x4_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_dct_identity_16x4_8bpc_avx2,
+    inv_txfm_add_dct_identity_16x4_8bpc_avx2_inner
+);
 
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 4x16
-impl_4x16_transform!(inv_txfm_add_identity_adst_4x16_8bpc_avx2_inner, identity4_1d, adst16_1d);
-impl_4x16_transform!(inv_txfm_add_adst_identity_4x16_8bpc_avx2_inner, adst4_1d, identity16_1d);
-impl_4x16_transform!(inv_txfm_add_identity_flipadst_4x16_8bpc_avx2_inner, identity4_1d, flipadst16_1d);
-impl_4x16_transform!(inv_txfm_add_flipadst_identity_4x16_8bpc_avx2_inner, flipadst4_1d, identity16_1d);
-impl_4x16_ffi_wrapper!(inv_txfm_add_identity_adst_4x16_8bpc_avx2, inv_txfm_add_identity_adst_4x16_8bpc_avx2_inner);
-impl_4x16_ffi_wrapper!(inv_txfm_add_adst_identity_4x16_8bpc_avx2, inv_txfm_add_adst_identity_4x16_8bpc_avx2_inner);
-impl_4x16_ffi_wrapper!(inv_txfm_add_identity_flipadst_4x16_8bpc_avx2, inv_txfm_add_identity_flipadst_4x16_8bpc_avx2_inner);
-impl_4x16_ffi_wrapper!(inv_txfm_add_flipadst_identity_4x16_8bpc_avx2, inv_txfm_add_flipadst_identity_4x16_8bpc_avx2_inner);
+impl_4x16_transform!(
+    inv_txfm_add_identity_adst_4x16_8bpc_avx2_inner,
+    identity4_1d,
+    adst16_1d
+);
+impl_4x16_transform!(
+    inv_txfm_add_adst_identity_4x16_8bpc_avx2_inner,
+    adst4_1d,
+    identity16_1d
+);
+impl_4x16_transform!(
+    inv_txfm_add_identity_flipadst_4x16_8bpc_avx2_inner,
+    identity4_1d,
+    flipadst16_1d
+);
+impl_4x16_transform!(
+    inv_txfm_add_flipadst_identity_4x16_8bpc_avx2_inner,
+    flipadst4_1d,
+    identity16_1d
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_identity_adst_4x16_8bpc_avx2,
+    inv_txfm_add_identity_adst_4x16_8bpc_avx2_inner
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_adst_identity_4x16_8bpc_avx2,
+    inv_txfm_add_adst_identity_4x16_8bpc_avx2_inner
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_identity_flipadst_4x16_8bpc_avx2,
+    inv_txfm_add_identity_flipadst_4x16_8bpc_avx2_inner
+);
+impl_4x16_ffi_wrapper!(
+    inv_txfm_add_flipadst_identity_4x16_8bpc_avx2,
+    inv_txfm_add_flipadst_identity_4x16_8bpc_avx2_inner
+);
 
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 16x4
-impl_16x4_transform!(inv_txfm_add_identity_adst_16x4_8bpc_avx2_inner, identity16_1d, adst4_1d);
-impl_16x4_transform!(inv_txfm_add_adst_identity_16x4_8bpc_avx2_inner, adst16_1d, identity4_1d);
-impl_16x4_transform!(inv_txfm_add_identity_flipadst_16x4_8bpc_avx2_inner, identity16_1d, flipadst4_1d);
-impl_16x4_transform!(inv_txfm_add_flipadst_identity_16x4_8bpc_avx2_inner, flipadst16_1d, identity4_1d);
-impl_16x4_ffi_wrapper!(inv_txfm_add_identity_adst_16x4_8bpc_avx2, inv_txfm_add_identity_adst_16x4_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_adst_identity_16x4_8bpc_avx2, inv_txfm_add_adst_identity_16x4_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_identity_flipadst_16x4_8bpc_avx2, inv_txfm_add_identity_flipadst_16x4_8bpc_avx2_inner);
-impl_16x4_ffi_wrapper!(inv_txfm_add_flipadst_identity_16x4_8bpc_avx2, inv_txfm_add_flipadst_identity_16x4_8bpc_avx2_inner);
+impl_16x4_transform!(
+    inv_txfm_add_identity_adst_16x4_8bpc_avx2_inner,
+    identity16_1d,
+    adst4_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_adst_identity_16x4_8bpc_avx2_inner,
+    adst16_1d,
+    identity4_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_identity_flipadst_16x4_8bpc_avx2_inner,
+    identity16_1d,
+    flipadst4_1d
+);
+impl_16x4_transform!(
+    inv_txfm_add_flipadst_identity_16x4_8bpc_avx2_inner,
+    flipadst16_1d,
+    identity4_1d
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_identity_adst_16x4_8bpc_avx2,
+    inv_txfm_add_identity_adst_16x4_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_adst_identity_16x4_8bpc_avx2,
+    inv_txfm_add_adst_identity_16x4_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_identity_flipadst_16x4_8bpc_avx2,
+    inv_txfm_add_identity_flipadst_16x4_8bpc_avx2_inner
+);
+impl_16x4_ffi_wrapper!(
+    inv_txfm_add_flipadst_identity_16x4_8bpc_avx2,
+    inv_txfm_add_flipadst_identity_16x4_8bpc_avx2_inner
+);
 
 /// Full 2D DCT_DCT 8x32 inverse transform
 #[cfg(target_arch = "x86_64")]
@@ -4405,17 +5341,25 @@ unsafe fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
             let d16 = _mm256_cvtepu8_epi16(d);
 
             let c0 = _mm256_set_epi32(
-                    tmp[y * 32 + chunk_off + 7], tmp[y * 32 + chunk_off + 6],
-                    tmp[y * 32 + chunk_off + 5], tmp[y * 32 + chunk_off + 4],
-                    tmp[y * 32 + chunk_off + 3], tmp[y * 32 + chunk_off + 2],
-                    tmp[y * 32 + chunk_off + 1], tmp[y * 32 + chunk_off + 0]
-                );
+                tmp[y * 32 + chunk_off + 7],
+                tmp[y * 32 + chunk_off + 6],
+                tmp[y * 32 + chunk_off + 5],
+                tmp[y * 32 + chunk_off + 4],
+                tmp[y * 32 + chunk_off + 3],
+                tmp[y * 32 + chunk_off + 2],
+                tmp[y * 32 + chunk_off + 1],
+                tmp[y * 32 + chunk_off + 0],
+            );
             let c1 = _mm256_set_epi32(
-                    tmp[y * 32 + chunk_off + 15], tmp[y * 32 + chunk_off + 14],
-                    tmp[y * 32 + chunk_off + 13], tmp[y * 32 + chunk_off + 12],
-                    tmp[y * 32 + chunk_off + 11], tmp[y * 32 + chunk_off + 10],
-                    tmp[y * 32 + chunk_off + 9], tmp[y * 32 + chunk_off + 8]
-                );
+                tmp[y * 32 + chunk_off + 15],
+                tmp[y * 32 + chunk_off + 14],
+                tmp[y * 32 + chunk_off + 13],
+                tmp[y * 32 + chunk_off + 12],
+                tmp[y * 32 + chunk_off + 11],
+                tmp[y * 32 + chunk_off + 10],
+                tmp[y * 32 + chunk_off + 9],
+                tmp[y * 32 + chunk_off + 8],
+            );
 
             let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
             let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -4429,7 +5373,12 @@ unsafe fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-            unsafe { _mm_storeu_si128(dst_row.add(chunk_off) as *mut __m128i, _mm256_castsi256_si128(packed)) };
+            unsafe {
+                _mm_storeu_si128(
+                    dst_row.add(chunk_off) as *mut __m128i,
+                    _mm256_castsi256_si128(packed),
+                )
+            };
         }
     }
 
@@ -4686,17 +5635,25 @@ unsafe fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
         let d16 = _mm256_cvtepu8_epi16(d);
 
         let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0]
-            );
+            tmp[y * 16 + 7],
+            tmp[y * 16 + 6],
+            tmp[y * 16 + 5],
+            tmp[y * 16 + 4],
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
-            );
+            tmp[y * 16 + 15],
+            tmp[y * 16 + 14],
+            tmp[y * 16 + 13],
+            tmp[y * 16 + 12],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
+        );
 
         let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
         let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -4803,17 +5760,25 @@ unsafe fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
             let d16 = _mm256_cvtepu8_epi16(d);
 
             let c0 = _mm256_set_epi32(
-                    tmp[y * 64 + chunk_off + 7], tmp[y * 64 + chunk_off + 6],
-                    tmp[y * 64 + chunk_off + 5], tmp[y * 64 + chunk_off + 4],
-                    tmp[y * 64 + chunk_off + 3], tmp[y * 64 + chunk_off + 2],
-                    tmp[y * 64 + chunk_off + 1], tmp[y * 64 + chunk_off + 0]
-                );
+                tmp[y * 64 + chunk_off + 7],
+                tmp[y * 64 + chunk_off + 6],
+                tmp[y * 64 + chunk_off + 5],
+                tmp[y * 64 + chunk_off + 4],
+                tmp[y * 64 + chunk_off + 3],
+                tmp[y * 64 + chunk_off + 2],
+                tmp[y * 64 + chunk_off + 1],
+                tmp[y * 64 + chunk_off + 0],
+            );
             let c1 = _mm256_set_epi32(
-                    tmp[y * 64 + chunk_off + 15], tmp[y * 64 + chunk_off + 14],
-                    tmp[y * 64 + chunk_off + 13], tmp[y * 64 + chunk_off + 12],
-                    tmp[y * 64 + chunk_off + 11], tmp[y * 64 + chunk_off + 10],
-                    tmp[y * 64 + chunk_off + 9], tmp[y * 64 + chunk_off + 8]
-                );
+                tmp[y * 64 + chunk_off + 15],
+                tmp[y * 64 + chunk_off + 14],
+                tmp[y * 64 + chunk_off + 13],
+                tmp[y * 64 + chunk_off + 12],
+                tmp[y * 64 + chunk_off + 11],
+                tmp[y * 64 + chunk_off + 10],
+                tmp[y * 64 + chunk_off + 9],
+                tmp[y * 64 + chunk_off + 8],
+            );
 
             let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
             let c1_scaled = _mm256_srai_epi32(_mm256_add_epi32(c1, rnd_final), 4);
@@ -4827,7 +5792,12 @@ unsafe fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-            unsafe { _mm_storeu_si128(dst_row.add(chunk_off) as *mut __m128i, _mm256_castsi256_si128(packed)) };
+            unsafe {
+                _mm_storeu_si128(
+                    dst_row.add(chunk_off) as *mut __m128i,
+                    _mm256_castsi256_si128(packed),
+                )
+            };
         }
     }
 
@@ -4918,13 +5888,25 @@ fn adst4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32) -> (i32, i32, i32, i3
     // out2 = (209 * (in0 - in2 + in3) + 128) >> 8
     // out3 = ((3803-4096)*in0 + (2482-4096)*in2 - 1321*in3 - (3344-4096)*in1 + 2048) >> 12 + in0 + in2 - in1
 
-    let out0 = ((1321 * in0 + (3803 - 4096) * in2 + (2482 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
-        + in2 + in3 + in1;
-    let out1 = (((2482 - 4096) * in0 - 1321 * in2 - (3803 - 4096) * in3 + (3344 - 4096) * in1 + 2048) >> 12)
-        + in0 - in3 + in1;
+    let out0 =
+        ((1321 * in0 + (3803 - 4096) * in2 + (2482 - 4096) * in3 + (3344 - 4096) * in1 + 2048)
+            >> 12)
+            + in2
+            + in3
+            + in1;
+    let out1 =
+        (((2482 - 4096) * in0 - 1321 * in2 - (3803 - 4096) * in3 + (3344 - 4096) * in1 + 2048)
+            >> 12)
+            + in0
+            - in3
+            + in1;
     let out2 = (209 * (in0 - in2 + in3) + 128) >> 8;
-    let out3 = (((3803 - 4096) * in0 + (2482 - 4096) * in2 - 1321 * in3 - (3344 - 4096) * in1 + 2048) >> 12)
-        + in0 + in2 - in1;
+    let out3 = (((3803 - 4096) * in0 + (2482 - 4096) * in2 - 1321 * in3 - (3344 - 4096) * in1
+        + 2048)
+        >> 12)
+        + in0
+        + in2
+        - in1;
 
     (out0, out1, out2, out3)
 }
@@ -5238,7 +6220,11 @@ pub unsafe fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(
         }
     }
 
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 /// DCT_FLIPADST 4x4: DCT on rows, FlipADST on columns
@@ -5287,7 +6273,11 @@ pub unsafe fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(
         }
     }
 
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 /// ADST_FLIPADST 4x4
@@ -5310,13 +6300,19 @@ pub unsafe fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
         let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
-        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
     }
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
         let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
-        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
     }
 
     for y in 0..4 {
@@ -5327,7 +6323,11 @@ pub unsafe fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(
             unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 /// FLIPADST_ADST 4x4
@@ -5350,13 +6350,19 @@ pub unsafe fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
         let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
-        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
     }
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
         let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
-        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
     }
 
     for y in 0..4 {
@@ -5367,7 +6373,11 @@ pub unsafe fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(
             unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 /// FLIPADST_FLIPADST 4x4
@@ -5390,13 +6400,19 @@ pub unsafe fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
         let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
-        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
     }
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
         let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
-        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
     }
 
     for y in 0..4 {
@@ -5407,58 +6423,122 @@ pub unsafe fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
             unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 // FFI wrappers for FlipADST variants
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe { inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    unsafe {
+        inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe { inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    unsafe {
+        inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe { inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    unsafe {
+        inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe { inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    unsafe {
+        inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe { inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    unsafe {
+        inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
 }
 
 // ============================================================================
@@ -5468,9 +6548,16 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2(
 /// ADST8 1D transform (scalar)
 #[inline(always)]
 fn adst8_1d_scalar(
-    in0: i32, in1: i32, in2: i32, in3: i32,
-    in4: i32, in5: i32, in6: i32, in7: i32,
-    min: i32, max: i32,
+    in0: i32,
+    in1: i32,
+    in2: i32,
+    in3: i32,
+    in4: i32,
+    in5: i32,
+    in6: i32,
+    in7: i32,
+    min: i32,
+    max: i32,
 ) -> (i32, i32, i32, i32, i32, i32, i32, i32) {
     let clip = |v: i32| v.clamp(min, max);
 
@@ -5517,20 +6604,35 @@ fn adst8_1d_scalar(
 /// FlipADST8 1D transform - ADST8 with reversed output
 #[inline(always)]
 fn flipadst8_1d_scalar(
-    in0: i32, in1: i32, in2: i32, in3: i32,
-    in4: i32, in5: i32, in6: i32, in7: i32,
-    min: i32, max: i32,
+    in0: i32,
+    in1: i32,
+    in2: i32,
+    in3: i32,
+    in4: i32,
+    in5: i32,
+    in6: i32,
+    in7: i32,
+    min: i32,
+    max: i32,
 ) -> (i32, i32, i32, i32, i32, i32, i32, i32) {
-    let (o0, o1, o2, o3, o4, o5, o6, o7) = adst8_1d_scalar(in0, in1, in2, in3, in4, in5, in6, in7, min, max);
+    let (o0, o1, o2, o3, o4, o5, o6, o7) =
+        adst8_1d_scalar(in0, in1, in2, in3, in4, in5, in6, in7, min, max);
     (o7, o6, o5, o4, o3, o2, o1, o0)
 }
 
 /// DCT8 1D transform (scalar)
 #[inline(always)]
 fn dct8_1d_scalar(
-    in0: i32, in1: i32, in2: i32, in3: i32,
-    in4: i32, in5: i32, in6: i32, in7: i32,
-    min: i32, max: i32,
+    in0: i32,
+    in1: i32,
+    in2: i32,
+    in3: i32,
+    in4: i32,
+    in5: i32,
+    in6: i32,
+    in7: i32,
+    min: i32,
+    max: i32,
 ) -> (i32, i32, i32, i32, i32, i32, i32, i32) {
     let clip = |v: i32| v.clamp(min, max);
 
@@ -5598,24 +6700,34 @@ macro_rules! impl_8x8_transform {
             let mut tmp = [[0i32; 8]; 8];
             for y in 0..8 {
                 let (o0, o1, o2, o3, o4, o5, o6, o7) = $row_fn(
-                    c[y][0], c[y][1], c[y][2], c[y][3],
-                    c[y][4], c[y][5], c[y][6], c[y][7],
-                    MIN, MAX
+                    c[y][0], c[y][1], c[y][2], c[y][3], c[y][4], c[y][5], c[y][6], c[y][7], MIN,
+                    MAX,
                 );
-                tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
-                tmp[y][4] = o4; tmp[y][5] = o5; tmp[y][6] = o6; tmp[y][7] = o7;
+                tmp[y][0] = o0;
+                tmp[y][1] = o1;
+                tmp[y][2] = o2;
+                tmp[y][3] = o3;
+                tmp[y][4] = o4;
+                tmp[y][5] = o5;
+                tmp[y][6] = o6;
+                tmp[y][7] = o7;
             }
 
             // Second pass: transform on columns
             let mut out = [[0i32; 8]; 8];
             for x in 0..8 {
                 let (o0, o1, o2, o3, o4, o5, o6, o7) = $col_fn(
-                    tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x],
-                    tmp[4][x], tmp[5][x], tmp[6][x], tmp[7][x],
-                    MIN, MAX
+                    tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], tmp[4][x], tmp[5][x], tmp[6][x],
+                    tmp[7][x], MIN, MAX,
                 );
-                out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
-                out[4][x] = o4; out[5][x] = o5; out[6][x] = o6; out[7][x] = o7;
+                out[0][x] = o0;
+                out[1][x] = o1;
+                out[2][x] = o2;
+                out[3][x] = o3;
+                out[4][x] = o4;
+                out[5][x] = o5;
+                out[6][x] = o6;
+                out[7][x] = o7;
             }
 
             // Add to destination with rounding
@@ -5639,14 +6751,46 @@ macro_rules! impl_8x8_transform {
 }
 
 // Generate all 8x8 ADST/FlipADST combinations
-impl_8x8_transform!(inv_txfm_add_adst_dct_8x8_8bpc_avx2_inner, adst8_1d_scalar, dct8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_dct_adst_8x8_8bpc_avx2_inner, dct8_1d_scalar, adst8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_adst_adst_8x8_8bpc_avx2_inner, adst8_1d_scalar, adst8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_flipadst_dct_8x8_8bpc_avx2_inner, flipadst8_1d_scalar, dct8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_dct_flipadst_8x8_8bpc_avx2_inner, dct8_1d_scalar, flipadst8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2_inner, flipadst8_1d_scalar, flipadst8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_adst_flipadst_8x8_8bpc_avx2_inner, adst8_1d_scalar, flipadst8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_flipadst_adst_8x8_8bpc_avx2_inner, flipadst8_1d_scalar, adst8_1d_scalar);
+impl_8x8_transform!(
+    inv_txfm_add_adst_dct_8x8_8bpc_avx2_inner,
+    adst8_1d_scalar,
+    dct8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_dct_adst_8x8_8bpc_avx2_inner,
+    dct8_1d_scalar,
+    adst8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_adst_adst_8x8_8bpc_avx2_inner,
+    adst8_1d_scalar,
+    adst8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_flipadst_dct_8x8_8bpc_avx2_inner,
+    flipadst8_1d_scalar,
+    dct8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_dct_flipadst_8x8_8bpc_avx2_inner,
+    dct8_1d_scalar,
+    flipadst8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2_inner,
+    flipadst8_1d_scalar,
+    flipadst8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_adst_flipadst_8x8_8bpc_avx2_inner,
+    adst8_1d_scalar,
+    flipadst8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_flipadst_adst_8x8_8bpc_avx2_inner,
+    flipadst8_1d_scalar,
+    adst8_1d_scalar
+);
 
 // FFI wrappers for 8x8 transforms
 macro_rules! impl_8x8_ffi_wrapper {
@@ -5654,23 +6798,59 @@ macro_rules! impl_8x8_ffi_wrapper {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
-            dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-            eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+            dst_ptr: *mut DynPixel,
+            dst_stride: isize,
+            coeff: *mut DynCoef,
+            eob: c_int,
+            bitdepth_max: c_int,
+            _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-            unsafe { $inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+            unsafe {
+                $inner(
+                    dst_ptr as *mut u8,
+                    dst_stride,
+                    coeff as *mut i16,
+                    eob,
+                    bitdepth_max,
+                );
+            }
         }
     };
 }
 
-impl_8x8_ffi_wrapper!(inv_txfm_add_adst_dct_8x8_8bpc_avx2, inv_txfm_add_adst_dct_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_dct_adst_8x8_8bpc_avx2, inv_txfm_add_dct_adst_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_adst_adst_8x8_8bpc_avx2, inv_txfm_add_adst_adst_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_flipadst_dct_8x8_8bpc_avx2, inv_txfm_add_flipadst_dct_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_dct_flipadst_8x8_8bpc_avx2, inv_txfm_add_dct_flipadst_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2, inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_adst_flipadst_8x8_8bpc_avx2, inv_txfm_add_adst_flipadst_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_flipadst_adst_8x8_8bpc_avx2, inv_txfm_add_flipadst_adst_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_adst_dct_8x8_8bpc_avx2,
+    inv_txfm_add_adst_dct_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_dct_adst_8x8_8bpc_avx2,
+    inv_txfm_add_dct_adst_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_adst_adst_8x8_8bpc_avx2,
+    inv_txfm_add_adst_adst_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_dct_8x8_8bpc_avx2,
+    inv_txfm_add_flipadst_dct_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_dct_flipadst_8x8_8bpc_avx2,
+    inv_txfm_add_dct_flipadst_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_adst_flipadst_8x8_8bpc_avx2,
+    inv_txfm_add_adst_flipadst_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_adst_8x8_8bpc_avx2,
+    inv_txfm_add_flipadst_adst_8x8_8bpc_avx2_inner
+);
 
 // ============================================================================
 // V_ADST/H_ADST TRANSFORMS (Identity + ADST combinations)
@@ -5710,14 +6890,20 @@ pub unsafe fn inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
         let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
-        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
     }
 
     // Second pass: ADST on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
         let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
-        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
     }
 
     for y in 0..4 {
@@ -5728,7 +6914,11 @@ pub unsafe fn inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(
             unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 /// H_ADST 4x4: ADST on rows, Identity on columns
@@ -5753,7 +6943,10 @@ pub unsafe fn inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
         let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
-        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
     }
 
     // Second pass: ADST on columns
@@ -5761,7 +6954,10 @@ pub unsafe fn inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
         let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
-        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
     }
 
     for y in 0..4 {
@@ -5772,7 +6968,11 @@ pub unsafe fn inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
             unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 /// V_FLIPADST 4x4: Identity on rows, FlipADST on columns
@@ -5795,13 +6995,19 @@ pub unsafe fn inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
         let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
-        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
     }
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
         let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
-        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
     }
 
     for y in 0..4 {
@@ -5812,7 +7018,11 @@ pub unsafe fn inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(
             unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 /// H_FLIPADST 4x4: Identity on rows, FlipADST on columns  
@@ -5835,13 +7045,19 @@ pub unsafe fn inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
         let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
-        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
     }
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
         let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
-        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
     }
 
     for y in 0..4 {
@@ -5852,48 +7068,100 @@ pub unsafe fn inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
             unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 // FFI wrappers for V/H ADST
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe { inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    unsafe {
+        inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe { inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    unsafe {
+        inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe { inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    unsafe {
+        inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe { inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    unsafe {
+        inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
 }
 
 // ============================================================================
@@ -5921,14 +7189,20 @@ pub unsafe fn inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
         let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
-        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
     }
 
     // Second pass: Identity on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
         let (o0, o1, o2, o3) = identity4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
-        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
     }
 
     for y in 0..4 {
@@ -5939,7 +7213,11 @@ pub unsafe fn inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
             unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 /// H_DCT 4x4: Identity on rows, DCT on columns
@@ -5963,14 +7241,20 @@ pub unsafe fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
         let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
-        tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+        tmp[y][0] = o0;
+        tmp[y][1] = o1;
+        tmp[y][2] = o2;
+        tmp[y][3] = o3;
     }
 
     // Second pass: DCT on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
         let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
-        out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+        out[0][x] = o0;
+        out[1][x] = o1;
+        out[2][x] = o2;
+        out[3][x] = o3;
     }
 
     for y in 0..4 {
@@ -5981,61 +7265,146 @@ pub unsafe fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
             unsafe { *dst_row.add(x) = val.clamp(0, 255) as u8 };
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    unsafe {
+        for i in 0..16 {
+            *coeff.add(i) = 0;
+        }
+    }
 }
 
 // FFI wrappers for V/H DCT
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe { inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    unsafe {
+        inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_avx2(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: c_int,
+    bitdepth_max: c_int,
+    _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe { inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    unsafe {
+        inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
+            dst_ptr as *mut u8,
+            dst_stride,
+            coeff as *mut i16,
+            eob,
+            bitdepth_max,
+        );
+    }
 }
 
 // ============================================================================
-// V/H ADST/DCT 8x8 TRANSFORMS  
+// V/H ADST/DCT 8x8 TRANSFORMS
 // ============================================================================
 
 /// Identity transform 8x8
 #[inline(always)]
 fn identity8_1d_scalar(
-    in0: i32, in1: i32, in2: i32, in3: i32,
-    in4: i32, in5: i32, in6: i32, in7: i32,
-    _min: i32, _max: i32,
+    in0: i32,
+    in1: i32,
+    in2: i32,
+    in3: i32,
+    in4: i32,
+    in5: i32,
+    in6: i32,
+    in7: i32,
+    _min: i32,
+    _max: i32,
 ) -> (i32, i32, i32, i32, i32, i32, i32, i32) {
     // For 8x8 identity: out = in * 2
-    (in0 * 2, in1 * 2, in2 * 2, in3 * 2, in4 * 2, in5 * 2, in6 * 2, in7 * 2)
+    (
+        in0 * 2,
+        in1 * 2,
+        in2 * 2,
+        in3 * 2,
+        in4 * 2,
+        in5 * 2,
+        in6 * 2,
+        in7 * 2,
+    )
 }
 
-
 // Use the macro to generate V/H transforms for 8x8
-impl_8x8_transform!(inv_txfm_add_identity_adst_8x8_8bpc_avx2_inner, identity8_1d_scalar, adst8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_adst_identity_8x8_8bpc_avx2_inner, adst8_1d_scalar, identity8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_identity_flipadst_8x8_8bpc_avx2_inner, identity8_1d_scalar, flipadst8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_flipadst_identity_8x8_8bpc_avx2_inner, flipadst8_1d_scalar, identity8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_identity_dct_8x8_8bpc_avx2_inner, identity8_1d_scalar, dct8_1d_scalar);
-impl_8x8_transform!(inv_txfm_add_dct_identity_8x8_8bpc_avx2_inner, dct8_1d_scalar, identity8_1d_scalar);
+impl_8x8_transform!(
+    inv_txfm_add_identity_adst_8x8_8bpc_avx2_inner,
+    identity8_1d_scalar,
+    adst8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_adst_identity_8x8_8bpc_avx2_inner,
+    adst8_1d_scalar,
+    identity8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_identity_flipadst_8x8_8bpc_avx2_inner,
+    identity8_1d_scalar,
+    flipadst8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_flipadst_identity_8x8_8bpc_avx2_inner,
+    flipadst8_1d_scalar,
+    identity8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_identity_dct_8x8_8bpc_avx2_inner,
+    identity8_1d_scalar,
+    dct8_1d_scalar
+);
+impl_8x8_transform!(
+    inv_txfm_add_dct_identity_8x8_8bpc_avx2_inner,
+    dct8_1d_scalar,
+    identity8_1d_scalar
+);
 
 // FFI wrappers
-impl_8x8_ffi_wrapper!(inv_txfm_add_identity_adst_8x8_8bpc_avx2, inv_txfm_add_identity_adst_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_adst_identity_8x8_8bpc_avx2, inv_txfm_add_adst_identity_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_identity_flipadst_8x8_8bpc_avx2, inv_txfm_add_identity_flipadst_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_flipadst_identity_8x8_8bpc_avx2, inv_txfm_add_flipadst_identity_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_identity_dct_8x8_8bpc_avx2, inv_txfm_add_identity_dct_8x8_8bpc_avx2_inner);
-impl_8x8_ffi_wrapper!(inv_txfm_add_dct_identity_8x8_8bpc_avx2, inv_txfm_add_dct_identity_8x8_8bpc_avx2_inner);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_identity_adst_8x8_8bpc_avx2,
+    inv_txfm_add_identity_adst_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_adst_identity_8x8_8bpc_avx2,
+    inv_txfm_add_adst_identity_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_identity_flipadst_8x8_8bpc_avx2,
+    inv_txfm_add_identity_flipadst_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_flipadst_identity_8x8_8bpc_avx2,
+    inv_txfm_add_flipadst_identity_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_identity_dct_8x8_8bpc_avx2,
+    inv_txfm_add_identity_dct_8x8_8bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper!(
+    inv_txfm_add_dct_identity_8x8_8bpc_avx2,
+    inv_txfm_add_dct_identity_8x8_8bpc_avx2_inner
+);
 
 // ============================================================================
 // 32x32 DCT TRANSFORMS
@@ -6228,8 +7597,10 @@ fn inv_txfm_32x32_inner(
     coeff: *const i16,
     row_transform: fn(&mut [i32], usize, i32, i32),
     col_transform: fn(&mut [i32], usize, i32, i32),
-    row_clip_min: i32, row_clip_max: i32,
-    col_clip_min: i32, col_clip_max: i32,
+    row_clip_min: i32,
+    row_clip_max: i32,
+    col_clip_min: i32,
+    col_clip_max: i32,
 ) {
     // For 32x32: row_shift = 2, col_shift = 4 (total 6)
     let rnd = 1;
@@ -6267,7 +7638,7 @@ unsafe fn add_32x32_to_dst(
     unsafe {
         let zero = _mm256_setzero_si256();
         let max_val = _mm256_set1_epi16(bitdepth_max as i16);
-        let rnd_final = _mm256_set1_epi32(4);  // (+ 4) >> 3 for 32x32
+        let rnd_final = _mm256_set1_epi32(4); // (+ 4) >> 3 for 32x32
 
         for y in 0..32 {
             let dst_row = dst.offset(y as isize * dst_stride);
@@ -6283,16 +7654,24 @@ unsafe fn add_32x32_to_dst(
 
                 // Load coefficients
                 let c0 = _mm256_set_epi32(
-                    tmp[y * 32 + x_base + 7], tmp[y * 32 + x_base + 6],
-                    tmp[y * 32 + x_base + 5], tmp[y * 32 + x_base + 4],
-                    tmp[y * 32 + x_base + 3], tmp[y * 32 + x_base + 2],
-                    tmp[y * 32 + x_base + 1], tmp[y * 32 + x_base + 0]
+                    tmp[y * 32 + x_base + 7],
+                    tmp[y * 32 + x_base + 6],
+                    tmp[y * 32 + x_base + 5],
+                    tmp[y * 32 + x_base + 4],
+                    tmp[y * 32 + x_base + 3],
+                    tmp[y * 32 + x_base + 2],
+                    tmp[y * 32 + x_base + 1],
+                    tmp[y * 32 + x_base + 0],
                 );
                 let c1 = _mm256_set_epi32(
-                    tmp[y * 32 + x_base + 15], tmp[y * 32 + x_base + 14],
-                    tmp[y * 32 + x_base + 13], tmp[y * 32 + x_base + 12],
-                    tmp[y * 32 + x_base + 11], tmp[y * 32 + x_base + 10],
-                    tmp[y * 32 + x_base + 9], tmp[y * 32 + x_base + 8]
+                    tmp[y * 32 + x_base + 15],
+                    tmp[y * 32 + x_base + 14],
+                    tmp[y * 32 + x_base + 13],
+                    tmp[y * 32 + x_base + 12],
+                    tmp[y * 32 + x_base + 11],
+                    tmp[y * 32 + x_base + 10],
+                    tmp[y * 32 + x_base + 9],
+                    tmp[y * 32 + x_base + 8],
                 );
 
                 // Final scaling: (c + 4) >> 3
@@ -6337,11 +7716,18 @@ unsafe fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
 
     let mut tmp = [0i32; 1024];
     inv_txfm_32x32_inner(
-        &mut tmp, coeff, dct32_1d, dct32_1d,
-        row_clip_min, row_clip_max,
-        col_clip_min, col_clip_max,
+        &mut tmp,
+        coeff,
+        dct32_1d,
+        dct32_1d,
+        row_clip_min,
+        row_clip_max,
+        col_clip_min,
+        col_clip_max,
     );
-    unsafe { add_32x32_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max); }
+    unsafe {
+        add_32x32_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max);
+    }
 }
 
 /// 32x32 IDTX inner function
@@ -6361,11 +7747,18 @@ unsafe fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
 
     let mut tmp = [0i32; 1024];
     inv_txfm_32x32_inner(
-        &mut tmp, coeff, identity32_1d, identity32_1d,
-        row_clip_min, row_clip_max,
-        col_clip_min, col_clip_max,
+        &mut tmp,
+        coeff,
+        identity32_1d,
+        identity32_1d,
+        row_clip_min,
+        row_clip_max,
+        col_clip_min,
+        col_clip_max,
     );
-    unsafe { add_32x32_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max); }
+    unsafe {
+        add_32x32_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max);
+    }
 }
 
 /// FFI wrapper for 32x32 DCT_DCT 8bpc
@@ -6433,7 +7826,7 @@ unsafe fn add_32x32_to_dst_16bpc(
     unsafe {
         let zero = _mm256_setzero_si256();
         let max_val = _mm256_set1_epi32(bitdepth_max);
-        let rnd_final = _mm256_set1_epi32(4);  // (+ 4) >> 3 for 32x32
+        let rnd_final = _mm256_set1_epi32(4); // (+ 4) >> 3 for 32x32
 
         for y in 0..32 {
             let dst_row = dst.add(y * stride_u16);
@@ -6450,12 +7843,16 @@ unsafe fn add_32x32_to_dst_16bpc(
 
                 // Load coefficients
                 let c_lo = _mm_set_epi32(
-                    tmp[y * 32 + x_base + 3], tmp[y * 32 + x_base + 2],
-                    tmp[y * 32 + x_base + 1], tmp[y * 32 + x_base + 0]
+                    tmp[y * 32 + x_base + 3],
+                    tmp[y * 32 + x_base + 2],
+                    tmp[y * 32 + x_base + 1],
+                    tmp[y * 32 + x_base + 0],
                 );
                 let c_hi = _mm_set_epi32(
-                    tmp[y * 32 + x_base + 7], tmp[y * 32 + x_base + 6],
-                    tmp[y * 32 + x_base + 5], tmp[y * 32 + x_base + 4]
+                    tmp[y * 32 + x_base + 7],
+                    tmp[y * 32 + x_base + 6],
+                    tmp[y * 32 + x_base + 5],
+                    tmp[y * 32 + x_base + 4],
                 );
 
                 // Combine to 256-bit for faster processing
@@ -6505,11 +7902,18 @@ unsafe fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
 
     let mut tmp = [0i32; 1024];
     inv_txfm_32x32_inner(
-        &mut tmp, coeff, dct32_1d, dct32_1d,
-        row_clip_min, row_clip_max,
-        col_clip_min, col_clip_max,
+        &mut tmp,
+        coeff,
+        dct32_1d,
+        dct32_1d,
+        row_clip_min,
+        row_clip_max,
+        col_clip_min,
+        col_clip_max,
     );
-    unsafe { add_32x32_to_dst_16bpc(dst, dst_stride, &tmp, coeff, bitdepth_max); }
+    unsafe {
+        add_32x32_to_dst_16bpc(dst, dst_stride, &tmp, coeff, bitdepth_max);
+    }
 }
 
 /// FFI wrapper for 32x32 DCT_DCT 16bpc
@@ -7155,8 +8559,10 @@ fn inv_txfm_64x64_inner(
     coeff: *const i16,
     row_transform: fn(&mut [i32], usize, i32, i32),
     col_transform: fn(&mut [i32], usize, i32, i32),
-    row_clip_min: i32, row_clip_max: i32,
-    col_clip_min: i32, col_clip_max: i32,
+    row_clip_min: i32,
+    row_clip_max: i32,
+    col_clip_min: i32,
+    col_clip_max: i32,
 ) {
     // For 64x64: no intermediate shift (shift in final output only)
     // Row transform
@@ -7191,7 +8597,7 @@ unsafe fn add_64x64_to_dst(
     unsafe {
         let zero = _mm256_setzero_si256();
         let max_val = _mm256_set1_epi16(bitdepth_max as i16);
-        let rnd_final = _mm256_set1_epi32(2);  // (+ 2) >> 2 for 64x64
+        let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2 for 64x64
 
         for y in 0..64 {
             let dst_row = dst.offset(y as isize * dst_stride);
@@ -7205,16 +8611,24 @@ unsafe fn add_64x64_to_dst(
                 let d16 = _mm256_cvtepu8_epi16(d);
 
                 let c0 = _mm256_set_epi32(
-                    tmp[y * 64 + x_base + 7], tmp[y * 64 + x_base + 6],
-                    tmp[y * 64 + x_base + 5], tmp[y * 64 + x_base + 4],
-                    tmp[y * 64 + x_base + 3], tmp[y * 64 + x_base + 2],
-                    tmp[y * 64 + x_base + 1], tmp[y * 64 + x_base + 0]
+                    tmp[y * 64 + x_base + 7],
+                    tmp[y * 64 + x_base + 6],
+                    tmp[y * 64 + x_base + 5],
+                    tmp[y * 64 + x_base + 4],
+                    tmp[y * 64 + x_base + 3],
+                    tmp[y * 64 + x_base + 2],
+                    tmp[y * 64 + x_base + 1],
+                    tmp[y * 64 + x_base + 0],
                 );
                 let c1 = _mm256_set_epi32(
-                    tmp[y * 64 + x_base + 15], tmp[y * 64 + x_base + 14],
-                    tmp[y * 64 + x_base + 13], tmp[y * 64 + x_base + 12],
-                    tmp[y * 64 + x_base + 11], tmp[y * 64 + x_base + 10],
-                    tmp[y * 64 + x_base + 9], tmp[y * 64 + x_base + 8]
+                    tmp[y * 64 + x_base + 15],
+                    tmp[y * 64 + x_base + 14],
+                    tmp[y * 64 + x_base + 13],
+                    tmp[y * 64 + x_base + 12],
+                    tmp[y * 64 + x_base + 11],
+                    tmp[y * 64 + x_base + 10],
+                    tmp[y * 64 + x_base + 9],
+                    tmp[y * 64 + x_base + 8],
                 );
 
                 // Final scaling: (c + 2) >> 2
@@ -7259,11 +8673,18 @@ unsafe fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
 
     let mut tmp = [0i32; 4096];
     inv_txfm_64x64_inner(
-        &mut tmp, coeff, dct64_1d, dct64_1d,
-        row_clip_min, row_clip_max,
-        col_clip_min, col_clip_max,
+        &mut tmp,
+        coeff,
+        dct64_1d,
+        dct64_1d,
+        row_clip_min,
+        row_clip_max,
+        col_clip_min,
+        col_clip_max,
     );
-    unsafe { add_64x64_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max); }
+    unsafe {
+        add_64x64_to_dst(dst, dst_stride, &tmp, coeff, bitdepth_max);
+    }
 }
 
 /// FFI wrapper for 64x64 DCT_DCT 8bpc
@@ -7308,7 +8729,7 @@ unsafe fn add_64x64_to_dst_16bpc(
     unsafe {
         let zero = _mm256_setzero_si256();
         let max_val = _mm256_set1_epi32(bitdepth_max);
-        let rnd_final = _mm256_set1_epi32(2);  // (+ 2) >> 2 for 64x64
+        let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2 for 64x64
 
         for y in 0..64 {
             let dst_row = dst.add(y * stride_u16);
@@ -7325,12 +8746,16 @@ unsafe fn add_64x64_to_dst_16bpc(
 
                 // Load coefficients
                 let c_lo = _mm_set_epi32(
-                    tmp[y * 64 + x_base + 3], tmp[y * 64 + x_base + 2],
-                    tmp[y * 64 + x_base + 1], tmp[y * 64 + x_base + 0]
+                    tmp[y * 64 + x_base + 3],
+                    tmp[y * 64 + x_base + 2],
+                    tmp[y * 64 + x_base + 1],
+                    tmp[y * 64 + x_base + 0],
                 );
                 let c_hi = _mm_set_epi32(
-                    tmp[y * 64 + x_base + 7], tmp[y * 64 + x_base + 6],
-                    tmp[y * 64 + x_base + 5], tmp[y * 64 + x_base + 4]
+                    tmp[y * 64 + x_base + 7],
+                    tmp[y * 64 + x_base + 6],
+                    tmp[y * 64 + x_base + 5],
+                    tmp[y * 64 + x_base + 4],
                 );
 
                 // Combine to 256-bit for faster processing
@@ -7380,11 +8805,18 @@ unsafe fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
 
     let mut tmp = [0i32; 4096];
     inv_txfm_64x64_inner(
-        &mut tmp, coeff, dct64_1d, dct64_1d,
-        row_clip_min, row_clip_max,
-        col_clip_min, col_clip_max,
+        &mut tmp,
+        coeff,
+        dct64_1d,
+        dct64_1d,
+        row_clip_min,
+        row_clip_max,
+        col_clip_min,
+        col_clip_max,
     );
-    unsafe { add_64x64_to_dst_16bpc(dst, dst_stride, &tmp, coeff, bitdepth_max); }
+    unsafe {
+        add_64x64_to_dst_16bpc(dst, dst_stride, &tmp, coeff, bitdepth_max);
+    }
 }
 
 /// FFI wrapper for 64x64 DCT_DCT 16bpc
@@ -7465,11 +8897,11 @@ unsafe fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
 
         // Load and scale coefficients
         let c = _mm_set_epi32(
-                (tmp[y * 4 + 3] + 8) >> 4,
-                (tmp[y * 4 + 2] + 8) >> 4,
-                (tmp[y * 4 + 1] + 8) >> 4,
-                (tmp[y * 4 + 0] + 8) >> 4
-            );
+            (tmp[y * 4 + 3] + 8) >> 4,
+            (tmp[y * 4 + 2] + 8) >> 4,
+            (tmp[y * 4 + 1] + 8) >> 4,
+            (tmp[y * 4 + 0] + 8) >> 4,
+        );
 
         let sum = _mm_add_epi32(d32, c);
         let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
@@ -7560,17 +8992,17 @@ unsafe fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
 
         // Load and scale coefficients
         let c_lo = _mm_set_epi32(
-                (tmp[y * 8 + 3] + 8) >> 4,
-                (tmp[y * 8 + 2] + 8) >> 4,
-                (tmp[y * 8 + 1] + 8) >> 4,
-                (tmp[y * 8 + 0] + 8) >> 4
-            );
+            (tmp[y * 8 + 3] + 8) >> 4,
+            (tmp[y * 8 + 2] + 8) >> 4,
+            (tmp[y * 8 + 1] + 8) >> 4,
+            (tmp[y * 8 + 0] + 8) >> 4,
+        );
         let c_hi = _mm_set_epi32(
-                (tmp[y * 8 + 7] + 8) >> 4,
-                (tmp[y * 8 + 6] + 8) >> 4,
-                (tmp[y * 8 + 5] + 8) >> 4,
-                (tmp[y * 8 + 4] + 8) >> 4
-            );
+            (tmp[y * 8 + 7] + 8) >> 4,
+            (tmp[y * 8 + 6] + 8) >> 4,
+            (tmp[y * 8 + 5] + 8) >> 4,
+            (tmp[y * 8 + 4] + 8) >> 4,
+        );
 
         let sum_lo = _mm_add_epi32(d_lo, c_lo);
         let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -7665,17 +9097,17 @@ unsafe fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
         let d_hi = _mm_unpackhi_epi16(d, zero);
 
         let c_lo = _mm_set_epi32(
-                (tmp[y * 8 + 3] + 8) >> 4,
-                (tmp[y * 8 + 2] + 8) >> 4,
-                (tmp[y * 8 + 1] + 8) >> 4,
-                (tmp[y * 8 + 0] + 8) >> 4
-            );
+            (tmp[y * 8 + 3] + 8) >> 4,
+            (tmp[y * 8 + 2] + 8) >> 4,
+            (tmp[y * 8 + 1] + 8) >> 4,
+            (tmp[y * 8 + 0] + 8) >> 4,
+        );
         let c_hi = _mm_set_epi32(
-                (tmp[y * 8 + 7] + 8) >> 4,
-                (tmp[y * 8 + 6] + 8) >> 4,
-                (tmp[y * 8 + 5] + 8) >> 4,
-                (tmp[y * 8 + 4] + 8) >> 4
-            );
+            (tmp[y * 8 + 7] + 8) >> 4,
+            (tmp[y * 8 + 6] + 8) >> 4,
+            (tmp[y * 8 + 5] + 8) >> 4,
+            (tmp[y * 8 + 4] + 8) >> 4,
+        );
 
         let sum_lo = _mm_add_epi32(d_lo, c_lo);
         let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -7775,17 +9207,25 @@ unsafe fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
         let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
         let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
-            );
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12]
-            );
+            tmp[y * 16 + 7],
+            tmp[y * 16 + 6],
+            tmp[y * 16 + 5],
+            tmp[y * 16 + 4],
+            tmp[y * 16 + 15],
+            tmp[y * 16 + 14],
+            tmp[y * 16 + 13],
+            tmp[y * 16 + 12],
+        );
 
         let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
         let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
@@ -7882,11 +9322,11 @@ unsafe fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
         let d32 = _mm_unpacklo_epi16(d, zero);
 
         let c = _mm_set_epi32(
-                (tmp[y * 4 + 3] + 8) >> 4,
-                (tmp[y * 4 + 2] + 8) >> 4,
-                (tmp[y * 4 + 1] + 8) >> 4,
-                (tmp[y * 4 + 0] + 8) >> 4
-            );
+            (tmp[y * 4 + 3] + 8) >> 4,
+            (tmp[y * 4 + 2] + 8) >> 4,
+            (tmp[y * 4 + 1] + 8) >> 4,
+            (tmp[y * 4 + 0] + 8) >> 4,
+        );
 
         let sum = _mm_add_epi32(d32, c);
         let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
@@ -7980,17 +9420,25 @@ unsafe fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
         let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
         let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
-            );
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12]
-            );
+            tmp[y * 16 + 7],
+            tmp[y * 16 + 6],
+            tmp[y * 16 + 5],
+            tmp[y * 16 + 4],
+            tmp[y * 16 + 15],
+            tmp[y * 16 + 14],
+            tmp[y * 16 + 13],
+            tmp[y * 16 + 12],
+        );
 
         let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
         let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
@@ -8082,7 +9530,7 @@ unsafe fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(4);  // (+ 4) >> 3 for 16x32
+    let rnd_final = _mm256_set1_epi32(4); // (+ 4) >> 3 for 16x32
 
     for y in 0..32 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -8094,17 +9542,25 @@ unsafe fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
         let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
         let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
-            );
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12]
-            );
+            tmp[y * 16 + 7],
+            tmp[y * 16 + 6],
+            tmp[y * 16 + 5],
+            tmp[y * 16 + 4],
+            tmp[y * 16 + 15],
+            tmp[y * 16 + 14],
+            tmp[y * 16 + 13],
+            tmp[y * 16 + 12],
+        );
 
         let c0_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c0, rnd_final));
         let c1_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c1, rnd_final));
@@ -8196,7 +9652,7 @@ unsafe fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(4);  // (+ 4) >> 3 for 32x16
+    let rnd_final = _mm256_set1_epi32(4); // (+ 4) >> 3 for 32x16
 
     for y in 0..16 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -8211,13 +9667,17 @@ unsafe fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
             let c_lo = _mm_set_epi32(
-                    tmp[y * 32 + x_base + 3], tmp[y * 32 + x_base + 2],
-                    tmp[y * 32 + x_base + 1], tmp[y * 32 + x_base + 0]
-                );
+                tmp[y * 32 + x_base + 3],
+                tmp[y * 32 + x_base + 2],
+                tmp[y * 32 + x_base + 1],
+                tmp[y * 32 + x_base + 0],
+            );
             let c_hi = _mm_set_epi32(
-                    tmp[y * 32 + x_base + 7], tmp[y * 32 + x_base + 6],
-                    tmp[y * 32 + x_base + 5], tmp[y * 32 + x_base + 4]
-                );
+                tmp[y * 32 + x_base + 7],
+                tmp[y * 32 + x_base + 6],
+                tmp[y * 32 + x_base + 5],
+                tmp[y * 32 + x_base + 4],
+            );
 
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
@@ -8319,17 +9779,17 @@ unsafe fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
 
         // (+ 4) >> 3 for 8x32
         let c_lo = _mm_set_epi32(
-                (tmp[y * 8 + 3] + 4) >> 3,
-                (tmp[y * 8 + 2] + 4) >> 3,
-                (tmp[y * 8 + 1] + 4) >> 3,
-                (tmp[y * 8 + 0] + 4) >> 3
-            );
+            (tmp[y * 8 + 3] + 4) >> 3,
+            (tmp[y * 8 + 2] + 4) >> 3,
+            (tmp[y * 8 + 1] + 4) >> 3,
+            (tmp[y * 8 + 0] + 4) >> 3,
+        );
         let c_hi = _mm_set_epi32(
-                (tmp[y * 8 + 7] + 4) >> 3,
-                (tmp[y * 8 + 6] + 4) >> 3,
-                (tmp[y * 8 + 5] + 4) >> 3,
-                (tmp[y * 8 + 4] + 4) >> 3
-            );
+            (tmp[y * 8 + 7] + 4) >> 3,
+            (tmp[y * 8 + 6] + 4) >> 3,
+            (tmp[y * 8 + 5] + 4) >> 3,
+            (tmp[y * 8 + 4] + 4) >> 3,
+        );
 
         let sum_lo = _mm_add_epi32(d_lo, c_lo);
         let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -8416,7 +9876,7 @@ unsafe fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(4);  // (+ 4) >> 3
+    let rnd_final = _mm256_set1_epi32(4); // (+ 4) >> 3
 
     for y in 0..8 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -8431,13 +9891,17 @@ unsafe fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
             let c_lo = _mm_set_epi32(
-                    tmp[y * 32 + x_base + 3], tmp[y * 32 + x_base + 2],
-                    tmp[y * 32 + x_base + 1], tmp[y * 32 + x_base + 0]
-                );
+                tmp[y * 32 + x_base + 3],
+                tmp[y * 32 + x_base + 2],
+                tmp[y * 32 + x_base + 1],
+                tmp[y * 32 + x_base + 0],
+            );
             let c_hi = _mm_set_epi32(
-                    tmp[y * 32 + x_base + 7], tmp[y * 32 + x_base + 6],
-                    tmp[y * 32 + x_base + 5], tmp[y * 32 + x_base + 4]
-                );
+                tmp[y * 32 + x_base + 7],
+                tmp[y * 32 + x_base + 6],
+                tmp[y * 32 + x_base + 5],
+                tmp[y * 32 + x_base + 4],
+            );
 
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
@@ -8526,7 +9990,7 @@ unsafe fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(2);  // (+ 2) >> 2
+    let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2
 
     for y in 0..64 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -8541,13 +10005,17 @@ unsafe fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
             let c_lo = _mm_set_epi32(
-                    tmp[y * 32 + x_base + 3], tmp[y * 32 + x_base + 2],
-                    tmp[y * 32 + x_base + 1], tmp[y * 32 + x_base + 0]
-                );
+                tmp[y * 32 + x_base + 3],
+                tmp[y * 32 + x_base + 2],
+                tmp[y * 32 + x_base + 1],
+                tmp[y * 32 + x_base + 0],
+            );
             let c_hi = _mm_set_epi32(
-                    tmp[y * 32 + x_base + 7], tmp[y * 32 + x_base + 6],
-                    tmp[y * 32 + x_base + 5], tmp[y * 32 + x_base + 4]
-                );
+                tmp[y * 32 + x_base + 7],
+                tmp[y * 32 + x_base + 6],
+                tmp[y * 32 + x_base + 5],
+                tmp[y * 32 + x_base + 4],
+            );
 
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
@@ -8636,7 +10104,7 @@ unsafe fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(2);  // (+ 2) >> 2
+    let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2
 
     for y in 0..32 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -8651,13 +10119,17 @@ unsafe fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
             let c_lo = _mm_set_epi32(
-                    tmp[y * 64 + x_base + 3], tmp[y * 64 + x_base + 2],
-                    tmp[y * 64 + x_base + 1], tmp[y * 64 + x_base + 0]
-                );
+                tmp[y * 64 + x_base + 3],
+                tmp[y * 64 + x_base + 2],
+                tmp[y * 64 + x_base + 1],
+                tmp[y * 64 + x_base + 0],
+            );
             let c_hi = _mm_set_epi32(
-                    tmp[y * 64 + x_base + 7], tmp[y * 64 + x_base + 6],
-                    tmp[y * 64 + x_base + 5], tmp[y * 64 + x_base + 4]
-                );
+                tmp[y * 64 + x_base + 7],
+                tmp[y * 64 + x_base + 6],
+                tmp[y * 64 + x_base + 5],
+                tmp[y * 64 + x_base + 4],
+            );
 
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
@@ -8746,7 +10218,7 @@ unsafe fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(2);  // (+ 2) >> 2
+    let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2
 
     for y in 0..64 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -8758,17 +10230,25 @@ unsafe fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
         let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
         let c0 = _mm256_set_epi32(
-                tmp[y * 16 + 3], tmp[y * 16 + 2],
-                tmp[y * 16 + 1], tmp[y * 16 + 0],
-                tmp[y * 16 + 11], tmp[y * 16 + 10],
-                tmp[y * 16 + 9], tmp[y * 16 + 8]
-            );
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y * 16 + 7], tmp[y * 16 + 6],
-                tmp[y * 16 + 5], tmp[y * 16 + 4],
-                tmp[y * 16 + 15], tmp[y * 16 + 14],
-                tmp[y * 16 + 13], tmp[y * 16 + 12]
-            );
+            tmp[y * 16 + 7],
+            tmp[y * 16 + 6],
+            tmp[y * 16 + 5],
+            tmp[y * 16 + 4],
+            tmp[y * 16 + 15],
+            tmp[y * 16 + 14],
+            tmp[y * 16 + 13],
+            tmp[y * 16 + 12],
+        );
 
         let c0_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c0, rnd_final));
         let c1_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c1, rnd_final));
@@ -8857,7 +10337,7 @@ unsafe fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(2);  // (+ 2) >> 2
+    let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2
 
     for y in 0..16 {
         let dst_row = unsafe { dst.add(y * stride_u16) };
@@ -8872,13 +10352,17 @@ unsafe fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
             let c_lo = _mm_set_epi32(
-                    tmp[y * 64 + x_base + 3], tmp[y * 64 + x_base + 2],
-                    tmp[y * 64 + x_base + 1], tmp[y * 64 + x_base + 0]
-                );
+                tmp[y * 64 + x_base + 3],
+                tmp[y * 64 + x_base + 2],
+                tmp[y * 64 + x_base + 1],
+                tmp[y * 64 + x_base + 0],
+            );
             let c_hi = _mm_set_epi32(
-                    tmp[y * 64 + x_base + 7], tmp[y * 64 + x_base + 6],
-                    tmp[y * 64 + x_base + 5], tmp[y * 64 + x_base + 4]
-                );
+                tmp[y * 64 + x_base + 7],
+                tmp[y * 64 + x_base + 6],
+                tmp[y * 64 + x_base + 5],
+                tmp[y * 64 + x_base + 4],
+            );
 
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
@@ -8958,24 +10442,34 @@ macro_rules! impl_8x8_transform_16bpc {
             let mut tmp = [[0i32; 8]; 8];
             for y in 0..8 {
                 let (o0, o1, o2, o3, o4, o5, o6, o7) = $row_fn(
-                    c[y][0], c[y][1], c[y][2], c[y][3],
-                    c[y][4], c[y][5], c[y][6], c[y][7],
-                    MIN, MAX
+                    c[y][0], c[y][1], c[y][2], c[y][3], c[y][4], c[y][5], c[y][6], c[y][7], MIN,
+                    MAX,
                 );
-                tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
-                tmp[y][4] = o4; tmp[y][5] = o5; tmp[y][6] = o6; tmp[y][7] = o7;
+                tmp[y][0] = o0;
+                tmp[y][1] = o1;
+                tmp[y][2] = o2;
+                tmp[y][3] = o3;
+                tmp[y][4] = o4;
+                tmp[y][5] = o5;
+                tmp[y][6] = o6;
+                tmp[y][7] = o7;
             }
 
             // Second pass: transform on columns
             let mut out = [[0i32; 8]; 8];
             for x in 0..8 {
                 let (o0, o1, o2, o3, o4, o5, o6, o7) = $col_fn(
-                    tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x],
-                    tmp[4][x], tmp[5][x], tmp[6][x], tmp[7][x],
-                    MIN, MAX
+                    tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], tmp[4][x], tmp[5][x], tmp[6][x],
+                    tmp[7][x], MIN, MAX,
                 );
-                out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
-                out[4][x] = o4; out[5][x] = o5; out[6][x] = o6; out[7][x] = o7;
+                out[0][x] = o0;
+                out[1][x] = o1;
+                out[2][x] = o2;
+                out[3][x] = o3;
+                out[4][x] = o4;
+                out[5][x] = o5;
+                out[6][x] = o6;
+                out[7][x] = o7;
             }
 
             // Add to destination with rounding
@@ -8999,14 +10493,46 @@ macro_rules! impl_8x8_transform_16bpc {
 }
 
 // Generate all 8x8 ADST/FlipADST combinations for 16bpc
-impl_8x8_transform_16bpc!(inv_txfm_add_adst_dct_8x8_16bpc_avx2_inner, adst8_1d_scalar, dct8_1d_scalar);
-impl_8x8_transform_16bpc!(inv_txfm_add_dct_adst_8x8_16bpc_avx2_inner, dct8_1d_scalar, adst8_1d_scalar);
-impl_8x8_transform_16bpc!(inv_txfm_add_adst_adst_8x8_16bpc_avx2_inner, adst8_1d_scalar, adst8_1d_scalar);
-impl_8x8_transform_16bpc!(inv_txfm_add_flipadst_dct_8x8_16bpc_avx2_inner, flipadst8_1d_scalar, dct8_1d_scalar);
-impl_8x8_transform_16bpc!(inv_txfm_add_dct_flipadst_8x8_16bpc_avx2_inner, dct8_1d_scalar, flipadst8_1d_scalar);
-impl_8x8_transform_16bpc!(inv_txfm_add_flipadst_flipadst_8x8_16bpc_avx2_inner, flipadst8_1d_scalar, flipadst8_1d_scalar);
-impl_8x8_transform_16bpc!(inv_txfm_add_adst_flipadst_8x8_16bpc_avx2_inner, adst8_1d_scalar, flipadst8_1d_scalar);
-impl_8x8_transform_16bpc!(inv_txfm_add_flipadst_adst_8x8_16bpc_avx2_inner, flipadst8_1d_scalar, adst8_1d_scalar);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_adst_dct_8x8_16bpc_avx2_inner,
+    adst8_1d_scalar,
+    dct8_1d_scalar
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_dct_adst_8x8_16bpc_avx2_inner,
+    dct8_1d_scalar,
+    adst8_1d_scalar
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_adst_adst_8x8_16bpc_avx2_inner,
+    adst8_1d_scalar,
+    adst8_1d_scalar
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_flipadst_dct_8x8_16bpc_avx2_inner,
+    flipadst8_1d_scalar,
+    dct8_1d_scalar
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_dct_flipadst_8x8_16bpc_avx2_inner,
+    dct8_1d_scalar,
+    flipadst8_1d_scalar
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_flipadst_flipadst_8x8_16bpc_avx2_inner,
+    flipadst8_1d_scalar,
+    flipadst8_1d_scalar
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_adst_flipadst_8x8_16bpc_avx2_inner,
+    adst8_1d_scalar,
+    flipadst8_1d_scalar
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_flipadst_adst_8x8_16bpc_avx2_inner,
+    flipadst8_1d_scalar,
+    adst8_1d_scalar
+);
 
 // FFI wrappers for 8x8 16bpc transforms
 macro_rules! impl_8x8_ffi_wrapper_16bpc {
@@ -9014,23 +10540,59 @@ macro_rules! impl_8x8_ffi_wrapper_16bpc {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
-            dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-            eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+            dst_ptr: *mut DynPixel,
+            dst_stride: isize,
+            coeff: *mut DynCoef,
+            eob: c_int,
+            bitdepth_max: c_int,
+            _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-            unsafe { $inner(dst_ptr as *mut u16, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+            unsafe {
+                $inner(
+                    dst_ptr as *mut u16,
+                    dst_stride,
+                    coeff as *mut i16,
+                    eob,
+                    bitdepth_max,
+                );
+            }
         }
     };
 }
 
-impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_adst_dct_8x8_16bpc_avx2, inv_txfm_add_adst_dct_8x8_16bpc_avx2_inner);
-impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_dct_adst_8x8_16bpc_avx2, inv_txfm_add_dct_adst_8x8_16bpc_avx2_inner);
-impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_adst_adst_8x8_16bpc_avx2, inv_txfm_add_adst_adst_8x8_16bpc_avx2_inner);
-impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_dct_8x8_16bpc_avx2, inv_txfm_add_flipadst_dct_8x8_16bpc_avx2_inner);
-impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_8x8_16bpc_avx2, inv_txfm_add_dct_flipadst_8x8_16bpc_avx2_inner);
-impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_8x8_16bpc_avx2, inv_txfm_add_flipadst_flipadst_8x8_16bpc_avx2_inner);
-impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_8x8_16bpc_avx2, inv_txfm_add_adst_flipadst_8x8_16bpc_avx2_inner);
-impl_8x8_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_8x8_16bpc_avx2, inv_txfm_add_flipadst_adst_8x8_16bpc_avx2_inner);
+impl_8x8_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_dct_8x8_16bpc_avx2,
+    inv_txfm_add_adst_dct_8x8_16bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_adst_8x8_16bpc_avx2,
+    inv_txfm_add_dct_adst_8x8_16bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_adst_8x8_16bpc_avx2,
+    inv_txfm_add_adst_adst_8x8_16bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_dct_8x8_16bpc_avx2,
+    inv_txfm_add_flipadst_dct_8x8_16bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_flipadst_8x8_16bpc_avx2,
+    inv_txfm_add_dct_flipadst_8x8_16bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_flipadst_8x8_16bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_8x8_16bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_flipadst_8x8_16bpc_avx2,
+    inv_txfm_add_adst_flipadst_8x8_16bpc_avx2_inner
+);
+impl_8x8_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_adst_8x8_16bpc_avx2,
+    inv_txfm_add_flipadst_adst_8x8_16bpc_avx2_inner
+);
 
 // ============================================================================
 // 4x4 ADST/FLIPADST TRANSFORMS 16bpc
@@ -9062,14 +10624,20 @@ macro_rules! impl_4x4_transform_16bpc {
             let mut tmp = [[0i32; 4]; 4];
             for y in 0..4 {
                 let (o0, o1, o2, o3) = $row_fn(c[y][0], c[y][1], c[y][2], c[y][3]);
-                tmp[y][0] = o0; tmp[y][1] = o1; tmp[y][2] = o2; tmp[y][3] = o3;
+                tmp[y][0] = o0;
+                tmp[y][1] = o1;
+                tmp[y][2] = o2;
+                tmp[y][3] = o3;
             }
 
             // Second pass: transform on columns
             let mut out = [[0i32; 4]; 4];
             for x in 0..4 {
                 let (o0, o1, o2, o3) = $col_fn(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
-                out[0][x] = o0; out[1][x] = o1; out[2][x] = o2; out[3][x] = o3;
+                out[0][x] = o0;
+                out[1][x] = o1;
+                out[2][x] = o2;
+                out[3][x] = o3;
             }
 
             // Add to destination with rounding
@@ -9093,14 +10661,46 @@ macro_rules! impl_4x4_transform_16bpc {
 }
 
 // Generate all 4x4 ADST/FlipADST combinations for 16bpc
-impl_4x4_transform_16bpc!(inv_txfm_add_adst_dct_4x4_16bpc_avx2_inner, adst4_1d_scalar, dct4_1d_scalar);
-impl_4x4_transform_16bpc!(inv_txfm_add_dct_adst_4x4_16bpc_avx2_inner, dct4_1d_scalar, adst4_1d_scalar);
-impl_4x4_transform_16bpc!(inv_txfm_add_adst_adst_4x4_16bpc_avx2_inner, adst4_1d_scalar, adst4_1d_scalar);
-impl_4x4_transform_16bpc!(inv_txfm_add_flipadst_dct_4x4_16bpc_avx2_inner, flipadst4_1d_scalar, dct4_1d_scalar);
-impl_4x4_transform_16bpc!(inv_txfm_add_dct_flipadst_4x4_16bpc_avx2_inner, dct4_1d_scalar, flipadst4_1d_scalar);
-impl_4x4_transform_16bpc!(inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2_inner, flipadst4_1d_scalar, flipadst4_1d_scalar);
-impl_4x4_transform_16bpc!(inv_txfm_add_adst_flipadst_4x4_16bpc_avx2_inner, adst4_1d_scalar, flipadst4_1d_scalar);
-impl_4x4_transform_16bpc!(inv_txfm_add_flipadst_adst_4x4_16bpc_avx2_inner, flipadst4_1d_scalar, adst4_1d_scalar);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_adst_dct_4x4_16bpc_avx2_inner,
+    adst4_1d_scalar,
+    dct4_1d_scalar
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_dct_adst_4x4_16bpc_avx2_inner,
+    dct4_1d_scalar,
+    adst4_1d_scalar
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_adst_adst_4x4_16bpc_avx2_inner,
+    adst4_1d_scalar,
+    adst4_1d_scalar
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_flipadst_dct_4x4_16bpc_avx2_inner,
+    flipadst4_1d_scalar,
+    dct4_1d_scalar
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_dct_flipadst_4x4_16bpc_avx2_inner,
+    dct4_1d_scalar,
+    flipadst4_1d_scalar
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2_inner,
+    flipadst4_1d_scalar,
+    flipadst4_1d_scalar
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_adst_flipadst_4x4_16bpc_avx2_inner,
+    adst4_1d_scalar,
+    flipadst4_1d_scalar
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_flipadst_adst_4x4_16bpc_avx2_inner,
+    flipadst4_1d_scalar,
+    adst4_1d_scalar
+);
 
 // FFI wrappers for 4x4 16bpc transforms
 macro_rules! impl_4x4_ffi_wrapper_16bpc {
@@ -9108,23 +10708,59 @@ macro_rules! impl_4x4_ffi_wrapper_16bpc {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
-            dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-            eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+            dst_ptr: *mut DynPixel,
+            dst_stride: isize,
+            coeff: *mut DynCoef,
+            eob: c_int,
+            bitdepth_max: c_int,
+            _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-            unsafe { $inner(dst_ptr as *mut u16, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+            unsafe {
+                $inner(
+                    dst_ptr as *mut u16,
+                    dst_stride,
+                    coeff as *mut i16,
+                    eob,
+                    bitdepth_max,
+                );
+            }
         }
     };
 }
 
-impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_adst_dct_4x4_16bpc_avx2, inv_txfm_add_adst_dct_4x4_16bpc_avx2_inner);
-impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_dct_adst_4x4_16bpc_avx2, inv_txfm_add_dct_adst_4x4_16bpc_avx2_inner);
-impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_adst_adst_4x4_16bpc_avx2, inv_txfm_add_adst_adst_4x4_16bpc_avx2_inner);
-impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_dct_4x4_16bpc_avx2, inv_txfm_add_flipadst_dct_4x4_16bpc_avx2_inner);
-impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_4x4_16bpc_avx2, inv_txfm_add_dct_flipadst_4x4_16bpc_avx2_inner);
-impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2, inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2_inner);
-impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_4x4_16bpc_avx2, inv_txfm_add_adst_flipadst_4x4_16bpc_avx2_inner);
-impl_4x4_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_4x4_16bpc_avx2, inv_txfm_add_flipadst_adst_4x4_16bpc_avx2_inner);
+impl_4x4_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_dct_4x4_16bpc_avx2,
+    inv_txfm_add_adst_dct_4x4_16bpc_avx2_inner
+);
+impl_4x4_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_adst_4x4_16bpc_avx2,
+    inv_txfm_add_dct_adst_4x4_16bpc_avx2_inner
+);
+impl_4x4_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_adst_4x4_16bpc_avx2,
+    inv_txfm_add_adst_adst_4x4_16bpc_avx2_inner
+);
+impl_4x4_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_dct_4x4_16bpc_avx2,
+    inv_txfm_add_flipadst_dct_4x4_16bpc_avx2_inner
+);
+impl_4x4_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_flipadst_4x4_16bpc_avx2,
+    inv_txfm_add_dct_flipadst_4x4_16bpc_avx2_inner
+);
+impl_4x4_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2_inner
+);
+impl_4x4_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_flipadst_4x4_16bpc_avx2,
+    inv_txfm_add_adst_flipadst_4x4_16bpc_avx2_inner
+);
+impl_4x4_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_adst_4x4_16bpc_avx2,
+    inv_txfm_add_flipadst_adst_4x4_16bpc_avx2_inner
+);
 
 // ============================================================================
 // 16x16 ADST/FLIPADST TRANSFORMS 16bpc
@@ -9158,18 +10794,26 @@ macro_rules! impl_16x16_transform_16bpc {
             let mut tmp = [[0i32; 16]; 16];
             for y in 0..16 {
                 let mut row = [0i32; 16];
-                for x in 0..16 { row[x] = c[y][x]; }
+                for x in 0..16 {
+                    row[x] = c[y][x];
+                }
                 $row_fn(&mut row, 1, MIN, MAX);
-                for x in 0..16 { tmp[y][x] = row[x]; }
+                for x in 0..16 {
+                    tmp[y][x] = row[x];
+                }
             }
 
             // Second pass: transform on columns
             let mut out = [[0i32; 16]; 16];
             for x in 0..16 {
                 let mut col = [0i32; 16];
-                for y in 0..16 { col[y] = tmp[y][x]; }
+                for y in 0..16 {
+                    col[y] = tmp[y][x];
+                }
                 $col_fn(&mut col, 1, MIN, MAX);
-                for y in 0..16 { out[y][x] = col[y]; }
+                for y in 0..16 {
+                    out[y][x] = col[y];
+                }
             }
 
             // Add to destination with rounding
@@ -9193,14 +10837,46 @@ macro_rules! impl_16x16_transform_16bpc {
 }
 
 // Generate key 16x16 ADST combinations for 16bpc
-impl_16x16_transform_16bpc!(inv_txfm_add_adst_dct_16x16_16bpc_avx2_inner, adst16_1d, dct16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_dct_adst_16x16_16bpc_avx2_inner, dct16_1d, adst16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_adst_adst_16x16_16bpc_avx2_inner, adst16_1d, adst16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_flipadst_dct_16x16_16bpc_avx2_inner, flipadst16_1d, dct16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_dct_flipadst_16x16_16bpc_avx2_inner, dct16_1d, flipadst16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2_inner, flipadst16_1d, flipadst16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_adst_flipadst_16x16_16bpc_avx2_inner, adst16_1d, flipadst16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_flipadst_adst_16x16_16bpc_avx2_inner, flipadst16_1d, adst16_1d);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_adst_dct_16x16_16bpc_avx2_inner,
+    adst16_1d,
+    dct16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_dct_adst_16x16_16bpc_avx2_inner,
+    dct16_1d,
+    adst16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_adst_adst_16x16_16bpc_avx2_inner,
+    adst16_1d,
+    adst16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_flipadst_dct_16x16_16bpc_avx2_inner,
+    flipadst16_1d,
+    dct16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_dct_flipadst_16x16_16bpc_avx2_inner,
+    dct16_1d,
+    flipadst16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2_inner,
+    flipadst16_1d,
+    flipadst16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_adst_flipadst_16x16_16bpc_avx2_inner,
+    adst16_1d,
+    flipadst16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_flipadst_adst_16x16_16bpc_avx2_inner,
+    flipadst16_1d,
+    adst16_1d
+);
 
 // FFI wrappers for 16x16 16bpc transforms
 macro_rules! impl_16x16_ffi_wrapper_16bpc {
@@ -9208,23 +10884,59 @@ macro_rules! impl_16x16_ffi_wrapper_16bpc {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
         pub unsafe extern "C" fn $wrapper(
-            dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-            eob: c_int, bitdepth_max: c_int, _coeff_len: u16,
+            dst_ptr: *mut DynPixel,
+            dst_stride: isize,
+            coeff: *mut DynCoef,
+            eob: c_int,
+            bitdepth_max: c_int,
+            _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-            unsafe { $inner(dst_ptr as *mut u16, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+            unsafe {
+                $inner(
+                    dst_ptr as *mut u16,
+                    dst_stride,
+                    coeff as *mut i16,
+                    eob,
+                    bitdepth_max,
+                );
+            }
         }
     };
 }
 
-impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_adst_dct_16x16_16bpc_avx2, inv_txfm_add_adst_dct_16x16_16bpc_avx2_inner);
-impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_dct_adst_16x16_16bpc_avx2, inv_txfm_add_dct_adst_16x16_16bpc_avx2_inner);
-impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_adst_adst_16x16_16bpc_avx2, inv_txfm_add_adst_adst_16x16_16bpc_avx2_inner);
-impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_dct_16x16_16bpc_avx2, inv_txfm_add_flipadst_dct_16x16_16bpc_avx2_inner);
-impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_16x16_16bpc_avx2, inv_txfm_add_dct_flipadst_16x16_16bpc_avx2_inner);
-impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2, inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2_inner);
-impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_16x16_16bpc_avx2, inv_txfm_add_adst_flipadst_16x16_16bpc_avx2_inner);
-impl_16x16_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_16x16_16bpc_avx2, inv_txfm_add_flipadst_adst_16x16_16bpc_avx2_inner);
+impl_16x16_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_dct_16x16_16bpc_avx2,
+    inv_txfm_add_adst_dct_16x16_16bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_adst_16x16_16bpc_avx2,
+    inv_txfm_add_dct_adst_16x16_16bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_adst_16x16_16bpc_avx2,
+    inv_txfm_add_adst_adst_16x16_16bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_dct_16x16_16bpc_avx2,
+    inv_txfm_add_flipadst_dct_16x16_16bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_flipadst_16x16_16bpc_avx2,
+    inv_txfm_add_dct_flipadst_16x16_16bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_flipadst_16x16_16bpc_avx2,
+    inv_txfm_add_adst_flipadst_16x16_16bpc_avx2_inner
+);
+impl_16x16_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_adst_16x16_16bpc_avx2,
+    inv_txfm_add_flipadst_adst_16x16_16bpc_avx2_inner
+);
 
 // ============================================================================
 // IDENTITY TRANSFORMS 16bpc
@@ -9406,9 +11118,7 @@ pub unsafe fn inv_identity_add_16x16_16bpc_avx2(
 
     // Identity16 scale factor: f(x) = 2*x + (x*1697 + 1024) >> 11
     // For 16x16, applied twice (row + col), then final (+ 8) >> 4
-    let identity16_scale = |v: i32| -> i32 {
-        2 * v + ((v * 1697 + 1024) >> 11)
-    };
+    let identity16_scale = |v: i32| -> i32 { 2 * v + ((v * 1697 + 1024) >> 11) };
 
     // First, transform all coefficients in-place
     let mut tmp = [[0i32; 16]; 16];
@@ -9443,13 +11153,13 @@ pub unsafe fn inv_identity_add_16x16_16bpc_avx2(
         let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
         let c0 = _mm256_set_epi32(
-                tmp[y][3], tmp[y][2], tmp[y][1], tmp[y][0],
-                tmp[y][11], tmp[y][10], tmp[y][9], tmp[y][8]
-            );
+            tmp[y][3], tmp[y][2], tmp[y][1], tmp[y][0], tmp[y][11], tmp[y][10], tmp[y][9],
+            tmp[y][8],
+        );
         let c1 = _mm256_set_epi32(
-                tmp[y][7], tmp[y][6], tmp[y][5], tmp[y][4],
-                tmp[y][15], tmp[y][14], tmp[y][13], tmp[y][12]
-            );
+            tmp[y][7], tmp[y][6], tmp[y][5], tmp[y][4], tmp[y][15], tmp[y][14], tmp[y][13],
+            tmp[y][12],
+        );
 
         let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
         let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
@@ -9519,11 +11229,18 @@ unsafe fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
 
     let mut tmp = [0i32; 1024];
     inv_txfm_32x32_inner(
-        &mut tmp, coeff, identity32_1d, identity32_1d,
-        row_clip_min, row_clip_max,
-        col_clip_min, col_clip_max,
+        &mut tmp,
+        coeff,
+        identity32_1d,
+        identity32_1d,
+        row_clip_min,
+        row_clip_max,
+        col_clip_min,
+        col_clip_max,
     );
-    unsafe { add_32x32_to_dst_16bpc(dst, dst_stride, &tmp, coeff, bitdepth_max); }
+    unsafe {
+        add_32x32_to_dst_16bpc(dst, dst_stride, &tmp, coeff, bitdepth_max);
+    }
 }
 
 /// FFI wrapper for 32x32 IDTX 16bpc
@@ -9604,11 +11321,11 @@ unsafe fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
 
         // Load and scale coefficients
         let c = _mm_set_epi32(
-                (tmp[y * 4 + 3] + 8) >> 4,
-                (tmp[y * 4 + 2] + 8) >> 4,
-                (tmp[y * 4 + 1] + 8) >> 4,
-                (tmp[y * 4 + 0] + 8) >> 4
-            );
+            (tmp[y * 4 + 3] + 8) >> 4,
+            (tmp[y * 4 + 2] + 8) >> 4,
+            (tmp[y * 4 + 1] + 8) >> 4,
+            (tmp[y * 4 + 0] + 8) >> 4,
+        );
 
         let sum = _mm_add_epi32(d32, c);
         let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
@@ -9699,17 +11416,17 @@ unsafe fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
 
         // Load and scale coefficients
         let c_lo = _mm_set_epi32(
-                (tmp[y * 8 + 3] + 8) >> 4,
-                (tmp[y * 8 + 2] + 8) >> 4,
-                (tmp[y * 8 + 1] + 8) >> 4,
-                (tmp[y * 8 + 0] + 8) >> 4
-            );
+            (tmp[y * 8 + 3] + 8) >> 4,
+            (tmp[y * 8 + 2] + 8) >> 4,
+            (tmp[y * 8 + 1] + 8) >> 4,
+            (tmp[y * 8 + 0] + 8) >> 4,
+        );
         let c_hi = _mm_set_epi32(
-                (tmp[y * 8 + 7] + 8) >> 4,
-                (tmp[y * 8 + 6] + 8) >> 4,
-                (tmp[y * 8 + 5] + 8) >> 4,
-                (tmp[y * 8 + 4] + 8) >> 4
-            );
+            (tmp[y * 8 + 7] + 8) >> 4,
+            (tmp[y * 8 + 6] + 8) >> 4,
+            (tmp[y * 8 + 5] + 8) >> 4,
+            (tmp[y * 8 + 4] + 8) >> 4,
+        );
 
         let sum_lo = _mm_add_epi32(d_lo, c_lo);
         let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -9802,17 +11519,17 @@ unsafe fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
 
         // Load and scale coefficients - 8x16 uses >> 4 for final shift
         let c_lo = _mm_set_epi32(
-                (tmp[y * 8 + 3] + 8) >> 4,
-                (tmp[y * 8 + 2] + 8) >> 4,
-                (tmp[y * 8 + 1] + 8) >> 4,
-                (tmp[y * 8 + 0] + 8) >> 4
-            );
+            (tmp[y * 8 + 3] + 8) >> 4,
+            (tmp[y * 8 + 2] + 8) >> 4,
+            (tmp[y * 8 + 1] + 8) >> 4,
+            (tmp[y * 8 + 0] + 8) >> 4,
+        );
         let c_hi = _mm_set_epi32(
-                (tmp[y * 8 + 7] + 8) >> 4,
-                (tmp[y * 8 + 6] + 8) >> 4,
-                (tmp[y * 8 + 5] + 8) >> 4,
-                (tmp[y * 8 + 4] + 8) >> 4
-            );
+            (tmp[y * 8 + 7] + 8) >> 4,
+            (tmp[y * 8 + 6] + 8) >> 4,
+            (tmp[y * 8 + 5] + 8) >> 4,
+            (tmp[y * 8 + 4] + 8) >> 4,
+        );
 
         let sum_lo = _mm_add_epi32(d_lo, c_lo);
         let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -9909,17 +11626,17 @@ unsafe fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
             let d_hi = _mm_unpackhi_epi16(d, zero);
 
             let c_lo = _mm_set_epi32(
-                    (tmp[y * 16 + x_base + 3] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 2] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 1] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 0] + 8) >> 4
-                );
+                (tmp[y * 16 + x_base + 3] + 8) >> 4,
+                (tmp[y * 16 + x_base + 2] + 8) >> 4,
+                (tmp[y * 16 + x_base + 1] + 8) >> 4,
+                (tmp[y * 16 + x_base + 0] + 8) >> 4,
+            );
             let c_hi = _mm_set_epi32(
-                    (tmp[y * 16 + x_base + 7] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 6] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 5] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 4] + 8) >> 4
-                );
+                (tmp[y * 16 + x_base + 7] + 8) >> 4,
+                (tmp[y * 16 + x_base + 6] + 8) >> 4,
+                (tmp[y * 16 + x_base + 5] + 8) >> 4,
+                (tmp[y * 16 + x_base + 4] + 8) >> 4,
+            );
 
             let sum_lo = _mm_add_epi32(d_lo, c_lo);
             let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -10012,11 +11729,11 @@ unsafe fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
 
         // Load and scale coefficients - 4x16 uses >> 4 for final shift
         let c = _mm_set_epi32(
-                (tmp[y * 4 + 3] + 8) >> 4,
-                (tmp[y * 4 + 2] + 8) >> 4,
-                (tmp[y * 4 + 1] + 8) >> 4,
-                (tmp[y * 4 + 0] + 8) >> 4
-            );
+            (tmp[y * 4 + 3] + 8) >> 4,
+            (tmp[y * 4 + 2] + 8) >> 4,
+            (tmp[y * 4 + 1] + 8) >> 4,
+            (tmp[y * 4 + 0] + 8) >> 4,
+        );
 
         let sum = _mm_add_epi32(d32, c);
         let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
@@ -10110,17 +11827,17 @@ unsafe fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
             let d_hi = _mm_unpackhi_epi16(d, zero);
 
             let c_lo = _mm_set_epi32(
-                    (tmp[y * 16 + x_base + 3] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 2] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 1] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 0] + 8) >> 4
-                );
+                (tmp[y * 16 + x_base + 3] + 8) >> 4,
+                (tmp[y * 16 + x_base + 2] + 8) >> 4,
+                (tmp[y * 16 + x_base + 1] + 8) >> 4,
+                (tmp[y * 16 + x_base + 0] + 8) >> 4,
+            );
             let c_hi = _mm_set_epi32(
-                    (tmp[y * 16 + x_base + 7] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 6] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 5] + 8) >> 4,
-                    (tmp[y * 16 + x_base + 4] + 8) >> 4
-                );
+                (tmp[y * 16 + x_base + 7] + 8) >> 4,
+                (tmp[y * 16 + x_base + 6] + 8) >> 4,
+                (tmp[y * 16 + x_base + 5] + 8) >> 4,
+                (tmp[y * 16 + x_base + 4] + 8) >> 4,
+            );
 
             let sum_lo = _mm_add_epi32(d_lo, c_lo);
             let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -10219,17 +11936,17 @@ unsafe fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
 
             // 16x32 uses >> 3 for final shift
             let c_lo = _mm_set_epi32(
-                    (tmp[y * 16 + x_base + 3] + 4) >> 3,
-                    (tmp[y * 16 + x_base + 2] + 4) >> 3,
-                    (tmp[y * 16 + x_base + 1] + 4) >> 3,
-                    (tmp[y * 16 + x_base + 0] + 4) >> 3
-                );
+                (tmp[y * 16 + x_base + 3] + 4) >> 3,
+                (tmp[y * 16 + x_base + 2] + 4) >> 3,
+                (tmp[y * 16 + x_base + 1] + 4) >> 3,
+                (tmp[y * 16 + x_base + 0] + 4) >> 3,
+            );
             let c_hi = _mm_set_epi32(
-                    (tmp[y * 16 + x_base + 7] + 4) >> 3,
-                    (tmp[y * 16 + x_base + 6] + 4) >> 3,
-                    (tmp[y * 16 + x_base + 5] + 4) >> 3,
-                    (tmp[y * 16 + x_base + 4] + 4) >> 3
-                );
+                (tmp[y * 16 + x_base + 7] + 4) >> 3,
+                (tmp[y * 16 + x_base + 6] + 4) >> 3,
+                (tmp[y * 16 + x_base + 5] + 4) >> 3,
+                (tmp[y * 16 + x_base + 4] + 4) >> 3,
+            );
 
             let sum_lo = _mm_add_epi32(d_lo, c_lo);
             let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -10328,17 +12045,17 @@ unsafe fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
 
             // 32x16 uses >> 3 for final shift
             let c_lo = _mm_set_epi32(
-                    (tmp[y * 32 + x_base + 3] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 2] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 1] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 0] + 4) >> 3
-                );
+                (tmp[y * 32 + x_base + 3] + 4) >> 3,
+                (tmp[y * 32 + x_base + 2] + 4) >> 3,
+                (tmp[y * 32 + x_base + 1] + 4) >> 3,
+                (tmp[y * 32 + x_base + 0] + 4) >> 3,
+            );
             let c_hi = _mm_set_epi32(
-                    (tmp[y * 32 + x_base + 7] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 6] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 5] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 4] + 4) >> 3
-                );
+                (tmp[y * 32 + x_base + 7] + 4) >> 3,
+                (tmp[y * 32 + x_base + 6] + 4) >> 3,
+                (tmp[y * 32 + x_base + 5] + 4) >> 3,
+                (tmp[y * 32 + x_base + 4] + 4) >> 3,
+            );
 
             let sum_lo = _mm_add_epi32(d_lo, c_lo);
             let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -10432,17 +12149,17 @@ unsafe fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
 
         // 8x32 uses >> 3 for final shift
         let c_lo = _mm_set_epi32(
-                (tmp[y * 8 + 3] + 4) >> 3,
-                (tmp[y * 8 + 2] + 4) >> 3,
-                (tmp[y * 8 + 1] + 4) >> 3,
-                (tmp[y * 8 + 0] + 4) >> 3
-            );
+            (tmp[y * 8 + 3] + 4) >> 3,
+            (tmp[y * 8 + 2] + 4) >> 3,
+            (tmp[y * 8 + 1] + 4) >> 3,
+            (tmp[y * 8 + 0] + 4) >> 3,
+        );
         let c_hi = _mm_set_epi32(
-                (tmp[y * 8 + 7] + 4) >> 3,
-                (tmp[y * 8 + 6] + 4) >> 3,
-                (tmp[y * 8 + 5] + 4) >> 3,
-                (tmp[y * 8 + 4] + 4) >> 3
-            );
+            (tmp[y * 8 + 7] + 4) >> 3,
+            (tmp[y * 8 + 6] + 4) >> 3,
+            (tmp[y * 8 + 5] + 4) >> 3,
+            (tmp[y * 8 + 4] + 4) >> 3,
+        );
 
         let sum_lo = _mm_add_epi32(d_lo, c_lo);
         let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -10539,17 +12256,17 @@ unsafe fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
 
             // 32x8 uses >> 3 for final shift
             let c_lo = _mm_set_epi32(
-                    (tmp[y * 32 + x_base + 3] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 2] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 1] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 0] + 4) >> 3
-                );
+                (tmp[y * 32 + x_base + 3] + 4) >> 3,
+                (tmp[y * 32 + x_base + 2] + 4) >> 3,
+                (tmp[y * 32 + x_base + 1] + 4) >> 3,
+                (tmp[y * 32 + x_base + 0] + 4) >> 3,
+            );
             let c_hi = _mm_set_epi32(
-                    (tmp[y * 32 + x_base + 7] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 6] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 5] + 4) >> 3,
-                    (tmp[y * 32 + x_base + 4] + 4) >> 3
-                );
+                (tmp[y * 32 + x_base + 7] + 4) >> 3,
+                (tmp[y * 32 + x_base + 6] + 4) >> 3,
+                (tmp[y * 32 + x_base + 5] + 4) >> 3,
+                (tmp[y * 32 + x_base + 4] + 4) >> 3,
+            );
 
             let sum_lo = _mm_add_epi32(d_lo, c_lo);
             let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -10647,11 +12364,11 @@ macro_rules! impl_4x8_transform_16bpc {
                 let d32 = _mm_unpacklo_epi16(d, zero);
 
                 let c = _mm_set_epi32(
-                        (tmp[y * 4 + 3] + 8) >> 4,
-                        (tmp[y * 4 + 2] + 8) >> 4,
-                        (tmp[y * 4 + 1] + 8) >> 4,
-                        (tmp[y * 4 + 0] + 8) >> 4
-                    );
+                    (tmp[y * 4 + 3] + 8) >> 4,
+                    (tmp[y * 4 + 2] + 8) >> 4,
+                    (tmp[y * 4 + 1] + 8) >> 4,
+                    (tmp[y * 4 + 0] + 8) >> 4,
+                );
 
                 let sum = _mm_add_epi32(d32, c);
                 let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
@@ -10721,17 +12438,17 @@ macro_rules! impl_8x4_transform_16bpc {
                 let d_hi = _mm_unpackhi_epi16(d, zero);
 
                 let c_lo = _mm_set_epi32(
-                        (tmp[y * 8 + 3] + 8) >> 4,
-                        (tmp[y * 8 + 2] + 8) >> 4,
-                        (tmp[y * 8 + 1] + 8) >> 4,
-                        (tmp[y * 8 + 0] + 8) >> 4
-                    );
+                    (tmp[y * 8 + 3] + 8) >> 4,
+                    (tmp[y * 8 + 2] + 8) >> 4,
+                    (tmp[y * 8 + 1] + 8) >> 4,
+                    (tmp[y * 8 + 0] + 8) >> 4,
+                );
                 let c_hi = _mm_set_epi32(
-                        (tmp[y * 8 + 7] + 8) >> 4,
-                        (tmp[y * 8 + 6] + 8) >> 4,
-                        (tmp[y * 8 + 5] + 8) >> 4,
-                        (tmp[y * 8 + 4] + 8) >> 4
-                    );
+                    (tmp[y * 8 + 7] + 8) >> 4,
+                    (tmp[y * 8 + 6] + 8) >> 4,
+                    (tmp[y * 8 + 5] + 8) >> 4,
+                    (tmp[y * 8 + 4] + 8) >> 4,
+                );
 
                 let sum_lo = _mm_add_epi32(d_lo, c_lo);
                 let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -10779,42 +12496,154 @@ macro_rules! impl_ffi_wrapper_16bpc {
 }
 
 // 4x8 ADST/FLIPADST variants 16bpc
-impl_4x8_transform_16bpc!(inv_txfm_add_adst_dct_4x8_16bpc_avx2_inner, adst4_1d, dct8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_dct_adst_4x8_16bpc_avx2_inner, dct4_1d, adst8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_adst_adst_4x8_16bpc_avx2_inner, adst4_1d, adst8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_flipadst_dct_4x8_16bpc_avx2_inner, flipadst4_1d, dct8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_dct_flipadst_4x8_16bpc_avx2_inner, dct4_1d, flipadst8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_flipadst_flipadst_4x8_16bpc_avx2_inner, flipadst4_1d, flipadst8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_adst_flipadst_4x8_16bpc_avx2_inner, adst4_1d, flipadst8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_flipadst_adst_4x8_16bpc_avx2_inner, flipadst4_1d, adst8_1d);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_adst_dct_4x8_16bpc_avx2_inner,
+    adst4_1d,
+    dct8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_dct_adst_4x8_16bpc_avx2_inner,
+    dct4_1d,
+    adst8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_adst_adst_4x8_16bpc_avx2_inner,
+    adst4_1d,
+    adst8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_flipadst_dct_4x8_16bpc_avx2_inner,
+    flipadst4_1d,
+    dct8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_dct_flipadst_4x8_16bpc_avx2_inner,
+    dct4_1d,
+    flipadst8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_flipadst_flipadst_4x8_16bpc_avx2_inner,
+    flipadst4_1d,
+    flipadst8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_adst_flipadst_4x8_16bpc_avx2_inner,
+    adst4_1d,
+    flipadst8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_flipadst_adst_4x8_16bpc_avx2_inner,
+    flipadst4_1d,
+    adst8_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_dct_4x8_16bpc_avx2, inv_txfm_add_adst_dct_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_adst_4x8_16bpc_avx2, inv_txfm_add_dct_adst_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_adst_4x8_16bpc_avx2, inv_txfm_add_adst_adst_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_dct_4x8_16bpc_avx2, inv_txfm_add_flipadst_dct_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_4x8_16bpc_avx2, inv_txfm_add_dct_flipadst_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_4x8_16bpc_avx2, inv_txfm_add_flipadst_flipadst_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_4x8_16bpc_avx2, inv_txfm_add_adst_flipadst_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_4x8_16bpc_avx2, inv_txfm_add_flipadst_adst_4x8_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_dct_4x8_16bpc_avx2,
+    inv_txfm_add_adst_dct_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_adst_4x8_16bpc_avx2,
+    inv_txfm_add_dct_adst_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_adst_4x8_16bpc_avx2,
+    inv_txfm_add_adst_adst_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_dct_4x8_16bpc_avx2,
+    inv_txfm_add_flipadst_dct_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_flipadst_4x8_16bpc_avx2,
+    inv_txfm_add_dct_flipadst_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_flipadst_4x8_16bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_flipadst_4x8_16bpc_avx2,
+    inv_txfm_add_adst_flipadst_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_adst_4x8_16bpc_avx2,
+    inv_txfm_add_flipadst_adst_4x8_16bpc_avx2_inner
+);
 
 // 8x4 ADST/FLIPADST variants 16bpc
-impl_8x4_transform_16bpc!(inv_txfm_add_adst_dct_8x4_16bpc_avx2_inner, adst8_1d, dct4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_dct_adst_8x4_16bpc_avx2_inner, dct8_1d, adst4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_adst_adst_8x4_16bpc_avx2_inner, adst8_1d, adst4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_flipadst_dct_8x4_16bpc_avx2_inner, flipadst8_1d, dct4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_dct_flipadst_8x4_16bpc_avx2_inner, dct8_1d, flipadst4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_flipadst_flipadst_8x4_16bpc_avx2_inner, flipadst8_1d, flipadst4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_adst_flipadst_8x4_16bpc_avx2_inner, adst8_1d, flipadst4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_flipadst_adst_8x4_16bpc_avx2_inner, flipadst8_1d, adst4_1d);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_adst_dct_8x4_16bpc_avx2_inner,
+    adst8_1d,
+    dct4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_dct_adst_8x4_16bpc_avx2_inner,
+    dct8_1d,
+    adst4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_adst_adst_8x4_16bpc_avx2_inner,
+    adst8_1d,
+    adst4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_flipadst_dct_8x4_16bpc_avx2_inner,
+    flipadst8_1d,
+    dct4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_dct_flipadst_8x4_16bpc_avx2_inner,
+    dct8_1d,
+    flipadst4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_flipadst_flipadst_8x4_16bpc_avx2_inner,
+    flipadst8_1d,
+    flipadst4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_adst_flipadst_8x4_16bpc_avx2_inner,
+    adst8_1d,
+    flipadst4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_flipadst_adst_8x4_16bpc_avx2_inner,
+    flipadst8_1d,
+    adst4_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_dct_8x4_16bpc_avx2, inv_txfm_add_adst_dct_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_adst_8x4_16bpc_avx2, inv_txfm_add_dct_adst_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_adst_8x4_16bpc_avx2, inv_txfm_add_adst_adst_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_dct_8x4_16bpc_avx2, inv_txfm_add_flipadst_dct_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_8x4_16bpc_avx2, inv_txfm_add_dct_flipadst_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_8x4_16bpc_avx2, inv_txfm_add_flipadst_flipadst_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_8x4_16bpc_avx2, inv_txfm_add_adst_flipadst_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_8x4_16bpc_avx2, inv_txfm_add_flipadst_adst_8x4_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_dct_8x4_16bpc_avx2,
+    inv_txfm_add_adst_dct_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_adst_8x4_16bpc_avx2,
+    inv_txfm_add_dct_adst_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_adst_8x4_16bpc_avx2,
+    inv_txfm_add_adst_adst_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_dct_8x4_16bpc_avx2,
+    inv_txfm_add_flipadst_dct_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_flipadst_8x4_16bpc_avx2,
+    inv_txfm_add_dct_flipadst_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_flipadst_8x4_16bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_flipadst_8x4_16bpc_avx2,
+    inv_txfm_add_adst_flipadst_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_adst_8x4_16bpc_avx2,
+    inv_txfm_add_flipadst_adst_8x4_16bpc_avx2_inner
+);
 
 /// Macro for 8x16 transform variants 16bpc
 macro_rules! impl_8x16_transform_16bpc {
@@ -10868,17 +12697,17 @@ macro_rules! impl_8x16_transform_16bpc {
                 let d_hi = _mm_unpackhi_epi16(d, zero);
 
                 let c_lo = _mm_set_epi32(
-                        (tmp[y * 8 + 3] + 8) >> 4,
-                        (tmp[y * 8 + 2] + 8) >> 4,
-                        (tmp[y * 8 + 1] + 8) >> 4,
-                        (tmp[y * 8 + 0] + 8) >> 4
-                    );
+                    (tmp[y * 8 + 3] + 8) >> 4,
+                    (tmp[y * 8 + 2] + 8) >> 4,
+                    (tmp[y * 8 + 1] + 8) >> 4,
+                    (tmp[y * 8 + 0] + 8) >> 4,
+                );
                 let c_hi = _mm_set_epi32(
-                        (tmp[y * 8 + 7] + 8) >> 4,
-                        (tmp[y * 8 + 6] + 8) >> 4,
-                        (tmp[y * 8 + 5] + 8) >> 4,
-                        (tmp[y * 8 + 4] + 8) >> 4
-                    );
+                    (tmp[y * 8 + 7] + 8) >> 4,
+                    (tmp[y * 8 + 6] + 8) >> 4,
+                    (tmp[y * 8 + 5] + 8) >> 4,
+                    (tmp[y * 8 + 4] + 8) >> 4,
+                );
 
                 let sum_lo = _mm_add_epi32(d_lo, c_lo);
                 let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -10955,17 +12784,17 @@ macro_rules! impl_16x8_transform_16bpc {
                     let d_hi = _mm_unpackhi_epi16(d, zero);
 
                     let c_lo = _mm_set_epi32(
-                            (tmp[y * 16 + x_base + 3] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 2] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 1] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 0] + 8) >> 4
-                        );
+                        (tmp[y * 16 + x_base + 3] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 2] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 1] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 0] + 8) >> 4,
+                    );
                     let c_hi = _mm_set_epi32(
-                            (tmp[y * 16 + x_base + 7] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 6] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 5] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 4] + 8) >> 4
-                        );
+                        (tmp[y * 16 + x_base + 7] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 6] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 5] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 4] + 8) >> 4,
+                    );
 
                     let sum_lo = _mm_add_epi32(d_lo, c_lo);
                     let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -10988,42 +12817,154 @@ macro_rules! impl_16x8_transform_16bpc {
 }
 
 // 8x16 ADST/FLIPADST variants 16bpc
-impl_8x16_transform_16bpc!(inv_txfm_add_adst_dct_8x16_16bpc_avx2_inner, adst8_1d, dct16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_dct_adst_8x16_16bpc_avx2_inner, dct8_1d, adst16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_adst_adst_8x16_16bpc_avx2_inner, adst8_1d, adst16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_flipadst_dct_8x16_16bpc_avx2_inner, flipadst8_1d, dct16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_dct_flipadst_8x16_16bpc_avx2_inner, dct8_1d, flipadst16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_flipadst_flipadst_8x16_16bpc_avx2_inner, flipadst8_1d, flipadst16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_adst_flipadst_8x16_16bpc_avx2_inner, adst8_1d, flipadst16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_flipadst_adst_8x16_16bpc_avx2_inner, flipadst8_1d, adst16_1d);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_adst_dct_8x16_16bpc_avx2_inner,
+    adst8_1d,
+    dct16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_dct_adst_8x16_16bpc_avx2_inner,
+    dct8_1d,
+    adst16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_adst_adst_8x16_16bpc_avx2_inner,
+    adst8_1d,
+    adst16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_flipadst_dct_8x16_16bpc_avx2_inner,
+    flipadst8_1d,
+    dct16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_dct_flipadst_8x16_16bpc_avx2_inner,
+    dct8_1d,
+    flipadst16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_flipadst_flipadst_8x16_16bpc_avx2_inner,
+    flipadst8_1d,
+    flipadst16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_adst_flipadst_8x16_16bpc_avx2_inner,
+    adst8_1d,
+    flipadst16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_flipadst_adst_8x16_16bpc_avx2_inner,
+    flipadst8_1d,
+    adst16_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_dct_8x16_16bpc_avx2, inv_txfm_add_adst_dct_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_adst_8x16_16bpc_avx2, inv_txfm_add_dct_adst_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_adst_8x16_16bpc_avx2, inv_txfm_add_adst_adst_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_dct_8x16_16bpc_avx2, inv_txfm_add_flipadst_dct_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_8x16_16bpc_avx2, inv_txfm_add_dct_flipadst_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_8x16_16bpc_avx2, inv_txfm_add_flipadst_flipadst_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_8x16_16bpc_avx2, inv_txfm_add_adst_flipadst_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_8x16_16bpc_avx2, inv_txfm_add_flipadst_adst_8x16_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_dct_8x16_16bpc_avx2,
+    inv_txfm_add_adst_dct_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_adst_8x16_16bpc_avx2,
+    inv_txfm_add_dct_adst_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_adst_8x16_16bpc_avx2,
+    inv_txfm_add_adst_adst_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_dct_8x16_16bpc_avx2,
+    inv_txfm_add_flipadst_dct_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_flipadst_8x16_16bpc_avx2,
+    inv_txfm_add_dct_flipadst_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_flipadst_8x16_16bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_flipadst_8x16_16bpc_avx2,
+    inv_txfm_add_adst_flipadst_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_adst_8x16_16bpc_avx2,
+    inv_txfm_add_flipadst_adst_8x16_16bpc_avx2_inner
+);
 
 // 16x8 ADST/FLIPADST variants 16bpc
-impl_16x8_transform_16bpc!(inv_txfm_add_adst_dct_16x8_16bpc_avx2_inner, adst16_1d, dct8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_dct_adst_16x8_16bpc_avx2_inner, dct16_1d, adst8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_adst_adst_16x8_16bpc_avx2_inner, adst16_1d, adst8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_flipadst_dct_16x8_16bpc_avx2_inner, flipadst16_1d, dct8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_dct_flipadst_16x8_16bpc_avx2_inner, dct16_1d, flipadst8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_flipadst_flipadst_16x8_16bpc_avx2_inner, flipadst16_1d, flipadst8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_adst_flipadst_16x8_16bpc_avx2_inner, adst16_1d, flipadst8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_flipadst_adst_16x8_16bpc_avx2_inner, flipadst16_1d, adst8_1d);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_adst_dct_16x8_16bpc_avx2_inner,
+    adst16_1d,
+    dct8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_dct_adst_16x8_16bpc_avx2_inner,
+    dct16_1d,
+    adst8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_adst_adst_16x8_16bpc_avx2_inner,
+    adst16_1d,
+    adst8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_flipadst_dct_16x8_16bpc_avx2_inner,
+    flipadst16_1d,
+    dct8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_dct_flipadst_16x8_16bpc_avx2_inner,
+    dct16_1d,
+    flipadst8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_flipadst_flipadst_16x8_16bpc_avx2_inner,
+    flipadst16_1d,
+    flipadst8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_adst_flipadst_16x8_16bpc_avx2_inner,
+    adst16_1d,
+    flipadst8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_flipadst_adst_16x8_16bpc_avx2_inner,
+    flipadst16_1d,
+    adst8_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_dct_16x8_16bpc_avx2, inv_txfm_add_adst_dct_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_adst_16x8_16bpc_avx2, inv_txfm_add_dct_adst_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_adst_16x8_16bpc_avx2, inv_txfm_add_adst_adst_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_dct_16x8_16bpc_avx2, inv_txfm_add_flipadst_dct_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_16x8_16bpc_avx2, inv_txfm_add_dct_flipadst_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_16x8_16bpc_avx2, inv_txfm_add_flipadst_flipadst_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_16x8_16bpc_avx2, inv_txfm_add_adst_flipadst_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_16x8_16bpc_avx2, inv_txfm_add_flipadst_adst_16x8_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_dct_16x8_16bpc_avx2,
+    inv_txfm_add_adst_dct_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_adst_16x8_16bpc_avx2,
+    inv_txfm_add_dct_adst_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_adst_16x8_16bpc_avx2,
+    inv_txfm_add_adst_adst_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_dct_16x8_16bpc_avx2,
+    inv_txfm_add_flipadst_dct_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_flipadst_16x8_16bpc_avx2,
+    inv_txfm_add_dct_flipadst_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_flipadst_16x8_16bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_flipadst_16x8_16bpc_avx2,
+    inv_txfm_add_adst_flipadst_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_adst_16x8_16bpc_avx2,
+    inv_txfm_add_flipadst_adst_16x8_16bpc_avx2_inner
+);
 
 /// Macro for 4x16 transform variants 16bpc
 macro_rules! impl_4x16_transform_16bpc {
@@ -11075,11 +13016,11 @@ macro_rules! impl_4x16_transform_16bpc {
                 let d32 = _mm_unpacklo_epi16(d, zero);
 
                 let c = _mm_set_epi32(
-                        (tmp[y * 4 + 3] + 8) >> 4,
-                        (tmp[y * 4 + 2] + 8) >> 4,
-                        (tmp[y * 4 + 1] + 8) >> 4,
-                        (tmp[y * 4 + 0] + 8) >> 4
-                    );
+                    (tmp[y * 4 + 3] + 8) >> 4,
+                    (tmp[y * 4 + 2] + 8) >> 4,
+                    (tmp[y * 4 + 1] + 8) >> 4,
+                    (tmp[y * 4 + 0] + 8) >> 4,
+                );
 
                 let sum = _mm_add_epi32(d32, c);
                 let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
@@ -11153,17 +13094,17 @@ macro_rules! impl_16x4_transform_16bpc {
                     let d_hi = _mm_unpackhi_epi16(d, zero);
 
                     let c_lo = _mm_set_epi32(
-                            (tmp[y * 16 + x_base + 3] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 2] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 1] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 0] + 8) >> 4
-                        );
+                        (tmp[y * 16 + x_base + 3] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 2] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 1] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 0] + 8) >> 4,
+                    );
                     let c_hi = _mm_set_epi32(
-                            (tmp[y * 16 + x_base + 7] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 6] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 5] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 4] + 8) >> 4
-                        );
+                        (tmp[y * 16 + x_base + 7] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 6] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 5] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 4] + 8) >> 4,
+                    );
 
                     let sum_lo = _mm_add_epi32(d_lo, c_lo);
                     let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -11186,136 +13127,500 @@ macro_rules! impl_16x4_transform_16bpc {
 }
 
 // 4x16 ADST/FLIPADST variants 16bpc
-impl_4x16_transform_16bpc!(inv_txfm_add_adst_dct_4x16_16bpc_avx2_inner, adst4_1d, dct16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_dct_adst_4x16_16bpc_avx2_inner, dct4_1d, adst16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_adst_adst_4x16_16bpc_avx2_inner, adst4_1d, adst16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_flipadst_dct_4x16_16bpc_avx2_inner, flipadst4_1d, dct16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_dct_flipadst_4x16_16bpc_avx2_inner, dct4_1d, flipadst16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_flipadst_flipadst_4x16_16bpc_avx2_inner, flipadst4_1d, flipadst16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_adst_flipadst_4x16_16bpc_avx2_inner, adst4_1d, flipadst16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_flipadst_adst_4x16_16bpc_avx2_inner, flipadst4_1d, adst16_1d);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_adst_dct_4x16_16bpc_avx2_inner,
+    adst4_1d,
+    dct16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_dct_adst_4x16_16bpc_avx2_inner,
+    dct4_1d,
+    adst16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_adst_adst_4x16_16bpc_avx2_inner,
+    adst4_1d,
+    adst16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_flipadst_dct_4x16_16bpc_avx2_inner,
+    flipadst4_1d,
+    dct16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_dct_flipadst_4x16_16bpc_avx2_inner,
+    dct4_1d,
+    flipadst16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_flipadst_flipadst_4x16_16bpc_avx2_inner,
+    flipadst4_1d,
+    flipadst16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_adst_flipadst_4x16_16bpc_avx2_inner,
+    adst4_1d,
+    flipadst16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_flipadst_adst_4x16_16bpc_avx2_inner,
+    flipadst4_1d,
+    adst16_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_dct_4x16_16bpc_avx2, inv_txfm_add_adst_dct_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_adst_4x16_16bpc_avx2, inv_txfm_add_dct_adst_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_adst_4x16_16bpc_avx2, inv_txfm_add_adst_adst_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_dct_4x16_16bpc_avx2, inv_txfm_add_flipadst_dct_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_4x16_16bpc_avx2, inv_txfm_add_dct_flipadst_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_4x16_16bpc_avx2, inv_txfm_add_flipadst_flipadst_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_4x16_16bpc_avx2, inv_txfm_add_adst_flipadst_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_4x16_16bpc_avx2, inv_txfm_add_flipadst_adst_4x16_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_dct_4x16_16bpc_avx2,
+    inv_txfm_add_adst_dct_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_adst_4x16_16bpc_avx2,
+    inv_txfm_add_dct_adst_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_adst_4x16_16bpc_avx2,
+    inv_txfm_add_adst_adst_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_dct_4x16_16bpc_avx2,
+    inv_txfm_add_flipadst_dct_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_flipadst_4x16_16bpc_avx2,
+    inv_txfm_add_dct_flipadst_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_flipadst_4x16_16bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_flipadst_4x16_16bpc_avx2,
+    inv_txfm_add_adst_flipadst_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_adst_4x16_16bpc_avx2,
+    inv_txfm_add_flipadst_adst_4x16_16bpc_avx2_inner
+);
 
 // 16x4 ADST/FLIPADST variants 16bpc
-impl_16x4_transform_16bpc!(inv_txfm_add_adst_dct_16x4_16bpc_avx2_inner, adst16_1d, dct4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_dct_adst_16x4_16bpc_avx2_inner, dct16_1d, adst4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_adst_adst_16x4_16bpc_avx2_inner, adst16_1d, adst4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_flipadst_dct_16x4_16bpc_avx2_inner, flipadst16_1d, dct4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_dct_flipadst_16x4_16bpc_avx2_inner, dct16_1d, flipadst4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_flipadst_flipadst_16x4_16bpc_avx2_inner, flipadst16_1d, flipadst4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_adst_flipadst_16x4_16bpc_avx2_inner, adst16_1d, flipadst4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_flipadst_adst_16x4_16bpc_avx2_inner, flipadst16_1d, adst4_1d);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_adst_dct_16x4_16bpc_avx2_inner,
+    adst16_1d,
+    dct4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_dct_adst_16x4_16bpc_avx2_inner,
+    dct16_1d,
+    adst4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_adst_adst_16x4_16bpc_avx2_inner,
+    adst16_1d,
+    adst4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_flipadst_dct_16x4_16bpc_avx2_inner,
+    flipadst16_1d,
+    dct4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_dct_flipadst_16x4_16bpc_avx2_inner,
+    dct16_1d,
+    flipadst4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_flipadst_flipadst_16x4_16bpc_avx2_inner,
+    flipadst16_1d,
+    flipadst4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_adst_flipadst_16x4_16bpc_avx2_inner,
+    adst16_1d,
+    flipadst4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_flipadst_adst_16x4_16bpc_avx2_inner,
+    flipadst16_1d,
+    adst4_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_dct_16x4_16bpc_avx2, inv_txfm_add_adst_dct_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_adst_16x4_16bpc_avx2, inv_txfm_add_dct_adst_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_adst_16x4_16bpc_avx2, inv_txfm_add_adst_adst_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_dct_16x4_16bpc_avx2, inv_txfm_add_flipadst_dct_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_flipadst_16x4_16bpc_avx2, inv_txfm_add_dct_flipadst_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_flipadst_16x4_16bpc_avx2, inv_txfm_add_flipadst_flipadst_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_flipadst_16x4_16bpc_avx2, inv_txfm_add_adst_flipadst_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_adst_16x4_16bpc_avx2, inv_txfm_add_flipadst_adst_16x4_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_dct_16x4_16bpc_avx2,
+    inv_txfm_add_adst_dct_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_adst_16x4_16bpc_avx2,
+    inv_txfm_add_dct_adst_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_adst_16x4_16bpc_avx2,
+    inv_txfm_add_adst_adst_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_dct_16x4_16bpc_avx2,
+    inv_txfm_add_flipadst_dct_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_flipadst_16x4_16bpc_avx2,
+    inv_txfm_add_dct_flipadst_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_flipadst_16x4_16bpc_avx2,
+    inv_txfm_add_flipadst_flipadst_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_flipadst_16x4_16bpc_avx2,
+    inv_txfm_add_adst_flipadst_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_adst_16x4_16bpc_avx2,
+    inv_txfm_add_flipadst_adst_16x4_16bpc_avx2_inner
+);
 
 // ============================================================================
 // Hybrid identity transforms for 16bpc (H_DCT, V_DCT, H_ADST, V_ADST, etc.)
 // ============================================================================
 
 // 4x8 hybrid identity transforms 16bpc
-impl_4x8_transform_16bpc!(inv_txfm_add_identity_dct_4x8_16bpc_avx2_inner, identity4_1d, dct8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_dct_identity_4x8_16bpc_avx2_inner, dct4_1d, identity8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_identity_adst_4x8_16bpc_avx2_inner, identity4_1d, adst8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_adst_identity_4x8_16bpc_avx2_inner, adst4_1d, identity8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_identity_flipadst_4x8_16bpc_avx2_inner, identity4_1d, flipadst8_1d);
-impl_4x8_transform_16bpc!(inv_txfm_add_flipadst_identity_4x8_16bpc_avx2_inner, flipadst4_1d, identity8_1d);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_identity_dct_4x8_16bpc_avx2_inner,
+    identity4_1d,
+    dct8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_dct_identity_4x8_16bpc_avx2_inner,
+    dct4_1d,
+    identity8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_identity_adst_4x8_16bpc_avx2_inner,
+    identity4_1d,
+    adst8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_adst_identity_4x8_16bpc_avx2_inner,
+    adst4_1d,
+    identity8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_identity_flipadst_4x8_16bpc_avx2_inner,
+    identity4_1d,
+    flipadst8_1d
+);
+impl_4x8_transform_16bpc!(
+    inv_txfm_add_flipadst_identity_4x8_16bpc_avx2_inner,
+    flipadst4_1d,
+    identity8_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_dct_4x8_16bpc_avx2, inv_txfm_add_identity_dct_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_identity_4x8_16bpc_avx2, inv_txfm_add_dct_identity_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_adst_4x8_16bpc_avx2, inv_txfm_add_identity_adst_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_identity_4x8_16bpc_avx2, inv_txfm_add_adst_identity_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_flipadst_4x8_16bpc_avx2, inv_txfm_add_identity_flipadst_4x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_identity_4x8_16bpc_avx2, inv_txfm_add_flipadst_identity_4x8_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_dct_4x8_16bpc_avx2,
+    inv_txfm_add_identity_dct_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_identity_4x8_16bpc_avx2,
+    inv_txfm_add_dct_identity_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_adst_4x8_16bpc_avx2,
+    inv_txfm_add_identity_adst_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_identity_4x8_16bpc_avx2,
+    inv_txfm_add_adst_identity_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_flipadst_4x8_16bpc_avx2,
+    inv_txfm_add_identity_flipadst_4x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_identity_4x8_16bpc_avx2,
+    inv_txfm_add_flipadst_identity_4x8_16bpc_avx2_inner
+);
 
 // 8x4 hybrid identity transforms 16bpc
-impl_8x4_transform_16bpc!(inv_txfm_add_identity_dct_8x4_16bpc_avx2_inner, identity8_1d, dct4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_dct_identity_8x4_16bpc_avx2_inner, dct8_1d, identity4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_identity_adst_8x4_16bpc_avx2_inner, identity8_1d, adst4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_adst_identity_8x4_16bpc_avx2_inner, adst8_1d, identity4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_identity_flipadst_8x4_16bpc_avx2_inner, identity8_1d, flipadst4_1d);
-impl_8x4_transform_16bpc!(inv_txfm_add_flipadst_identity_8x4_16bpc_avx2_inner, flipadst8_1d, identity4_1d);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_identity_dct_8x4_16bpc_avx2_inner,
+    identity8_1d,
+    dct4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_dct_identity_8x4_16bpc_avx2_inner,
+    dct8_1d,
+    identity4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_identity_adst_8x4_16bpc_avx2_inner,
+    identity8_1d,
+    adst4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_adst_identity_8x4_16bpc_avx2_inner,
+    adst8_1d,
+    identity4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_identity_flipadst_8x4_16bpc_avx2_inner,
+    identity8_1d,
+    flipadst4_1d
+);
+impl_8x4_transform_16bpc!(
+    inv_txfm_add_flipadst_identity_8x4_16bpc_avx2_inner,
+    flipadst8_1d,
+    identity4_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_dct_8x4_16bpc_avx2, inv_txfm_add_identity_dct_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_identity_8x4_16bpc_avx2, inv_txfm_add_dct_identity_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_adst_8x4_16bpc_avx2, inv_txfm_add_identity_adst_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_identity_8x4_16bpc_avx2, inv_txfm_add_adst_identity_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_flipadst_8x4_16bpc_avx2, inv_txfm_add_identity_flipadst_8x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_identity_8x4_16bpc_avx2, inv_txfm_add_flipadst_identity_8x4_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_dct_8x4_16bpc_avx2,
+    inv_txfm_add_identity_dct_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_identity_8x4_16bpc_avx2,
+    inv_txfm_add_dct_identity_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_adst_8x4_16bpc_avx2,
+    inv_txfm_add_identity_adst_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_identity_8x4_16bpc_avx2,
+    inv_txfm_add_adst_identity_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_flipadst_8x4_16bpc_avx2,
+    inv_txfm_add_identity_flipadst_8x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_identity_8x4_16bpc_avx2,
+    inv_txfm_add_flipadst_identity_8x4_16bpc_avx2_inner
+);
 
 // 8x16 hybrid identity transforms 16bpc
-impl_8x16_transform_16bpc!(inv_txfm_add_identity_dct_8x16_16bpc_avx2_inner, identity8_1d, dct16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_dct_identity_8x16_16bpc_avx2_inner, dct8_1d, identity16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_identity_adst_8x16_16bpc_avx2_inner, identity8_1d, adst16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_adst_identity_8x16_16bpc_avx2_inner, adst8_1d, identity16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_identity_flipadst_8x16_16bpc_avx2_inner, identity8_1d, flipadst16_1d);
-impl_8x16_transform_16bpc!(inv_txfm_add_flipadst_identity_8x16_16bpc_avx2_inner, flipadst8_1d, identity16_1d);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_identity_dct_8x16_16bpc_avx2_inner,
+    identity8_1d,
+    dct16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_dct_identity_8x16_16bpc_avx2_inner,
+    dct8_1d,
+    identity16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_identity_adst_8x16_16bpc_avx2_inner,
+    identity8_1d,
+    adst16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_adst_identity_8x16_16bpc_avx2_inner,
+    adst8_1d,
+    identity16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_identity_flipadst_8x16_16bpc_avx2_inner,
+    identity8_1d,
+    flipadst16_1d
+);
+impl_8x16_transform_16bpc!(
+    inv_txfm_add_flipadst_identity_8x16_16bpc_avx2_inner,
+    flipadst8_1d,
+    identity16_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_dct_8x16_16bpc_avx2, inv_txfm_add_identity_dct_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_identity_8x16_16bpc_avx2, inv_txfm_add_dct_identity_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_adst_8x16_16bpc_avx2, inv_txfm_add_identity_adst_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_identity_8x16_16bpc_avx2, inv_txfm_add_adst_identity_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_flipadst_8x16_16bpc_avx2, inv_txfm_add_identity_flipadst_8x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_identity_8x16_16bpc_avx2, inv_txfm_add_flipadst_identity_8x16_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_dct_8x16_16bpc_avx2,
+    inv_txfm_add_identity_dct_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_identity_8x16_16bpc_avx2,
+    inv_txfm_add_dct_identity_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_adst_8x16_16bpc_avx2,
+    inv_txfm_add_identity_adst_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_identity_8x16_16bpc_avx2,
+    inv_txfm_add_adst_identity_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_flipadst_8x16_16bpc_avx2,
+    inv_txfm_add_identity_flipadst_8x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_identity_8x16_16bpc_avx2,
+    inv_txfm_add_flipadst_identity_8x16_16bpc_avx2_inner
+);
 
 // 16x8 hybrid identity transforms 16bpc
-impl_16x8_transform_16bpc!(inv_txfm_add_identity_dct_16x8_16bpc_avx2_inner, identity16_1d, dct8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_dct_identity_16x8_16bpc_avx2_inner, dct16_1d, identity8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_identity_adst_16x8_16bpc_avx2_inner, identity16_1d, adst8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_adst_identity_16x8_16bpc_avx2_inner, adst16_1d, identity8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_identity_flipadst_16x8_16bpc_avx2_inner, identity16_1d, flipadst8_1d);
-impl_16x8_transform_16bpc!(inv_txfm_add_flipadst_identity_16x8_16bpc_avx2_inner, flipadst16_1d, identity8_1d);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_identity_dct_16x8_16bpc_avx2_inner,
+    identity16_1d,
+    dct8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_dct_identity_16x8_16bpc_avx2_inner,
+    dct16_1d,
+    identity8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_identity_adst_16x8_16bpc_avx2_inner,
+    identity16_1d,
+    adst8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_adst_identity_16x8_16bpc_avx2_inner,
+    adst16_1d,
+    identity8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_identity_flipadst_16x8_16bpc_avx2_inner,
+    identity16_1d,
+    flipadst8_1d
+);
+impl_16x8_transform_16bpc!(
+    inv_txfm_add_flipadst_identity_16x8_16bpc_avx2_inner,
+    flipadst16_1d,
+    identity8_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_dct_16x8_16bpc_avx2, inv_txfm_add_identity_dct_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_identity_16x8_16bpc_avx2, inv_txfm_add_dct_identity_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_adst_16x8_16bpc_avx2, inv_txfm_add_identity_adst_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_identity_16x8_16bpc_avx2, inv_txfm_add_adst_identity_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_flipadst_16x8_16bpc_avx2, inv_txfm_add_identity_flipadst_16x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_identity_16x8_16bpc_avx2, inv_txfm_add_flipadst_identity_16x8_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_dct_16x8_16bpc_avx2,
+    inv_txfm_add_identity_dct_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_identity_16x8_16bpc_avx2,
+    inv_txfm_add_dct_identity_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_adst_16x8_16bpc_avx2,
+    inv_txfm_add_identity_adst_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_identity_16x8_16bpc_avx2,
+    inv_txfm_add_adst_identity_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_flipadst_16x8_16bpc_avx2,
+    inv_txfm_add_identity_flipadst_16x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_identity_16x8_16bpc_avx2,
+    inv_txfm_add_flipadst_identity_16x8_16bpc_avx2_inner
+);
 
 // 4x16 hybrid identity transforms 16bpc
-impl_4x16_transform_16bpc!(inv_txfm_add_identity_dct_4x16_16bpc_avx2_inner, identity4_1d, dct16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_dct_identity_4x16_16bpc_avx2_inner, dct4_1d, identity16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_identity_adst_4x16_16bpc_avx2_inner, identity4_1d, adst16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_adst_identity_4x16_16bpc_avx2_inner, adst4_1d, identity16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_identity_flipadst_4x16_16bpc_avx2_inner, identity4_1d, flipadst16_1d);
-impl_4x16_transform_16bpc!(inv_txfm_add_flipadst_identity_4x16_16bpc_avx2_inner, flipadst4_1d, identity16_1d);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_identity_dct_4x16_16bpc_avx2_inner,
+    identity4_1d,
+    dct16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_dct_identity_4x16_16bpc_avx2_inner,
+    dct4_1d,
+    identity16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_identity_adst_4x16_16bpc_avx2_inner,
+    identity4_1d,
+    adst16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_adst_identity_4x16_16bpc_avx2_inner,
+    adst4_1d,
+    identity16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_identity_flipadst_4x16_16bpc_avx2_inner,
+    identity4_1d,
+    flipadst16_1d
+);
+impl_4x16_transform_16bpc!(
+    inv_txfm_add_flipadst_identity_4x16_16bpc_avx2_inner,
+    flipadst4_1d,
+    identity16_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_dct_4x16_16bpc_avx2, inv_txfm_add_identity_dct_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_identity_4x16_16bpc_avx2, inv_txfm_add_dct_identity_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_adst_4x16_16bpc_avx2, inv_txfm_add_identity_adst_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_identity_4x16_16bpc_avx2, inv_txfm_add_adst_identity_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_flipadst_4x16_16bpc_avx2, inv_txfm_add_identity_flipadst_4x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_identity_4x16_16bpc_avx2, inv_txfm_add_flipadst_identity_4x16_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_dct_4x16_16bpc_avx2,
+    inv_txfm_add_identity_dct_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_identity_4x16_16bpc_avx2,
+    inv_txfm_add_dct_identity_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_adst_4x16_16bpc_avx2,
+    inv_txfm_add_identity_adst_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_identity_4x16_16bpc_avx2,
+    inv_txfm_add_adst_identity_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_flipadst_4x16_16bpc_avx2,
+    inv_txfm_add_identity_flipadst_4x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_identity_4x16_16bpc_avx2,
+    inv_txfm_add_flipadst_identity_4x16_16bpc_avx2_inner
+);
 
 // 16x4 hybrid identity transforms 16bpc
-impl_16x4_transform_16bpc!(inv_txfm_add_identity_dct_16x4_16bpc_avx2_inner, identity16_1d, dct4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_dct_identity_16x4_16bpc_avx2_inner, dct16_1d, identity4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_identity_adst_16x4_16bpc_avx2_inner, identity16_1d, adst4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_adst_identity_16x4_16bpc_avx2_inner, adst16_1d, identity4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_identity_flipadst_16x4_16bpc_avx2_inner, identity16_1d, flipadst4_1d);
-impl_16x4_transform_16bpc!(inv_txfm_add_flipadst_identity_16x4_16bpc_avx2_inner, flipadst16_1d, identity4_1d);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_identity_dct_16x4_16bpc_avx2_inner,
+    identity16_1d,
+    dct4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_dct_identity_16x4_16bpc_avx2_inner,
+    dct16_1d,
+    identity4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_identity_adst_16x4_16bpc_avx2_inner,
+    identity16_1d,
+    adst4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_adst_identity_16x4_16bpc_avx2_inner,
+    adst16_1d,
+    identity4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_identity_flipadst_16x4_16bpc_avx2_inner,
+    identity16_1d,
+    flipadst4_1d
+);
+impl_16x4_transform_16bpc!(
+    inv_txfm_add_flipadst_identity_16x4_16bpc_avx2_inner,
+    flipadst16_1d,
+    identity4_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_dct_16x4_16bpc_avx2, inv_txfm_add_identity_dct_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_identity_16x4_16bpc_avx2, inv_txfm_add_dct_identity_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_adst_16x4_16bpc_avx2, inv_txfm_add_identity_adst_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_identity_16x4_16bpc_avx2, inv_txfm_add_adst_identity_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_flipadst_16x4_16bpc_avx2, inv_txfm_add_identity_flipadst_16x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_identity_16x4_16bpc_avx2, inv_txfm_add_flipadst_identity_16x4_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_dct_16x4_16bpc_avx2,
+    inv_txfm_add_identity_dct_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_identity_16x4_16bpc_avx2,
+    inv_txfm_add_dct_identity_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_adst_16x4_16bpc_avx2,
+    inv_txfm_add_identity_adst_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_identity_16x4_16bpc_avx2,
+    inv_txfm_add_adst_identity_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_flipadst_16x4_16bpc_avx2,
+    inv_txfm_add_identity_flipadst_16x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_identity_16x4_16bpc_avx2,
+    inv_txfm_add_flipadst_identity_16x4_16bpc_avx2_inner
+);
 
 // ============================================================================
 // Square hybrid identity transforms for 16bpc
@@ -11372,17 +13677,17 @@ macro_rules! impl_8x8_transform_16bpc {
                 let d_hi = _mm_unpackhi_epi16(d, zero);
 
                 let c_lo = _mm_set_epi32(
-                        (tmp[y * 8 + 3] + 8) >> 4,
-                        (tmp[y * 8 + 2] + 8) >> 4,
-                        (tmp[y * 8 + 1] + 8) >> 4,
-                        (tmp[y * 8 + 0] + 8) >> 4
-                    );
+                    (tmp[y * 8 + 3] + 8) >> 4,
+                    (tmp[y * 8 + 2] + 8) >> 4,
+                    (tmp[y * 8 + 1] + 8) >> 4,
+                    (tmp[y * 8 + 0] + 8) >> 4,
+                );
                 let c_hi = _mm_set_epi32(
-                        (tmp[y * 8 + 7] + 8) >> 4,
-                        (tmp[y * 8 + 6] + 8) >> 4,
-                        (tmp[y * 8 + 5] + 8) >> 4,
-                        (tmp[y * 8 + 4] + 8) >> 4
-                    );
+                    (tmp[y * 8 + 7] + 8) >> 4,
+                    (tmp[y * 8 + 6] + 8) >> 4,
+                    (tmp[y * 8 + 5] + 8) >> 4,
+                    (tmp[y * 8 + 4] + 8) >> 4,
+                );
 
                 let sum_lo = _mm_add_epi32(d_lo, c_lo);
                 let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -11404,19 +13709,61 @@ macro_rules! impl_8x8_transform_16bpc {
 }
 
 // 8x8 hybrid identity transforms 16bpc
-impl_8x8_transform_16bpc!(inv_txfm_add_identity_dct_8x8_16bpc_avx2_inner, identity8_1d, dct8_1d);
-impl_8x8_transform_16bpc!(inv_txfm_add_dct_identity_8x8_16bpc_avx2_inner, dct8_1d, identity8_1d);
-impl_8x8_transform_16bpc!(inv_txfm_add_identity_adst_8x8_16bpc_avx2_inner, identity8_1d, adst8_1d);
-impl_8x8_transform_16bpc!(inv_txfm_add_adst_identity_8x8_16bpc_avx2_inner, adst8_1d, identity8_1d);
-impl_8x8_transform_16bpc!(inv_txfm_add_identity_flipadst_8x8_16bpc_avx2_inner, identity8_1d, flipadst8_1d);
-impl_8x8_transform_16bpc!(inv_txfm_add_flipadst_identity_8x8_16bpc_avx2_inner, flipadst8_1d, identity8_1d);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_identity_dct_8x8_16bpc_avx2_inner,
+    identity8_1d,
+    dct8_1d
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_dct_identity_8x8_16bpc_avx2_inner,
+    dct8_1d,
+    identity8_1d
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_identity_adst_8x8_16bpc_avx2_inner,
+    identity8_1d,
+    adst8_1d
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_adst_identity_8x8_16bpc_avx2_inner,
+    adst8_1d,
+    identity8_1d
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_identity_flipadst_8x8_16bpc_avx2_inner,
+    identity8_1d,
+    flipadst8_1d
+);
+impl_8x8_transform_16bpc!(
+    inv_txfm_add_flipadst_identity_8x8_16bpc_avx2_inner,
+    flipadst8_1d,
+    identity8_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_dct_8x8_16bpc_avx2, inv_txfm_add_identity_dct_8x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_identity_8x8_16bpc_avx2, inv_txfm_add_dct_identity_8x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_adst_8x8_16bpc_avx2, inv_txfm_add_identity_adst_8x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_identity_8x8_16bpc_avx2, inv_txfm_add_adst_identity_8x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_flipadst_8x8_16bpc_avx2, inv_txfm_add_identity_flipadst_8x8_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_identity_8x8_16bpc_avx2, inv_txfm_add_flipadst_identity_8x8_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_dct_8x8_16bpc_avx2,
+    inv_txfm_add_identity_dct_8x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_identity_8x8_16bpc_avx2,
+    inv_txfm_add_dct_identity_8x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_adst_8x8_16bpc_avx2,
+    inv_txfm_add_identity_adst_8x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_identity_8x8_16bpc_avx2,
+    inv_txfm_add_adst_identity_8x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_flipadst_8x8_16bpc_avx2,
+    inv_txfm_add_identity_flipadst_8x8_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_identity_8x8_16bpc_avx2,
+    inv_txfm_add_flipadst_identity_8x8_16bpc_avx2_inner
+);
 
 /// Macro for 4x4 transform variants 16bpc
 macro_rules! impl_4x4_transform_16bpc {
@@ -11466,11 +13813,11 @@ macro_rules! impl_4x4_transform_16bpc {
                 let d32 = _mm_unpacklo_epi16(d, zero);
 
                 let c = _mm_set_epi32(
-                        (tmp[y * 4 + 3] + 8) >> 4,
-                        (tmp[y * 4 + 2] + 8) >> 4,
-                        (tmp[y * 4 + 1] + 8) >> 4,
-                        (tmp[y * 4 + 0] + 8) >> 4
-                    );
+                    (tmp[y * 4 + 3] + 8) >> 4,
+                    (tmp[y * 4 + 2] + 8) >> 4,
+                    (tmp[y * 4 + 1] + 8) >> 4,
+                    (tmp[y * 4 + 0] + 8) >> 4,
+                );
 
                 let sum = _mm_add_epi32(d32, c);
                 let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
@@ -11488,19 +13835,61 @@ macro_rules! impl_4x4_transform_16bpc {
 }
 
 // 4x4 hybrid identity transforms 16bpc
-impl_4x4_transform_16bpc!(inv_txfm_add_identity_dct_4x4_16bpc_avx2_inner, identity4_1d, dct4_1d);
-impl_4x4_transform_16bpc!(inv_txfm_add_dct_identity_4x4_16bpc_avx2_inner, dct4_1d, identity4_1d);
-impl_4x4_transform_16bpc!(inv_txfm_add_identity_adst_4x4_16bpc_avx2_inner, identity4_1d, adst4_1d);
-impl_4x4_transform_16bpc!(inv_txfm_add_adst_identity_4x4_16bpc_avx2_inner, adst4_1d, identity4_1d);
-impl_4x4_transform_16bpc!(inv_txfm_add_identity_flipadst_4x4_16bpc_avx2_inner, identity4_1d, flipadst4_1d);
-impl_4x4_transform_16bpc!(inv_txfm_add_flipadst_identity_4x4_16bpc_avx2_inner, flipadst4_1d, identity4_1d);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_identity_dct_4x4_16bpc_avx2_inner,
+    identity4_1d,
+    dct4_1d
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_dct_identity_4x4_16bpc_avx2_inner,
+    dct4_1d,
+    identity4_1d
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_identity_adst_4x4_16bpc_avx2_inner,
+    identity4_1d,
+    adst4_1d
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_adst_identity_4x4_16bpc_avx2_inner,
+    adst4_1d,
+    identity4_1d
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_identity_flipadst_4x4_16bpc_avx2_inner,
+    identity4_1d,
+    flipadst4_1d
+);
+impl_4x4_transform_16bpc!(
+    inv_txfm_add_flipadst_identity_4x4_16bpc_avx2_inner,
+    flipadst4_1d,
+    identity4_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_dct_4x4_16bpc_avx2, inv_txfm_add_identity_dct_4x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_identity_4x4_16bpc_avx2, inv_txfm_add_dct_identity_4x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_adst_4x4_16bpc_avx2, inv_txfm_add_identity_adst_4x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_identity_4x4_16bpc_avx2, inv_txfm_add_adst_identity_4x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_flipadst_4x4_16bpc_avx2, inv_txfm_add_identity_flipadst_4x4_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_identity_4x4_16bpc_avx2, inv_txfm_add_flipadst_identity_4x4_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_dct_4x4_16bpc_avx2,
+    inv_txfm_add_identity_dct_4x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_identity_4x4_16bpc_avx2,
+    inv_txfm_add_dct_identity_4x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_adst_4x4_16bpc_avx2,
+    inv_txfm_add_identity_adst_4x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_identity_4x4_16bpc_avx2,
+    inv_txfm_add_adst_identity_4x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_flipadst_4x4_16bpc_avx2,
+    inv_txfm_add_identity_flipadst_4x4_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_identity_4x4_16bpc_avx2,
+    inv_txfm_add_flipadst_identity_4x4_16bpc_avx2_inner
+);
 
 /// Macro for 16x16 transform variants 16bpc
 macro_rules! impl_16x16_transform_16bpc {
@@ -11555,17 +13944,17 @@ macro_rules! impl_16x16_transform_16bpc {
                     let d_hi = _mm_unpackhi_epi16(d, zero);
 
                     let c_lo = _mm_set_epi32(
-                            (tmp[y * 16 + x_base + 3] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 2] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 1] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 0] + 8) >> 4
-                        );
+                        (tmp[y * 16 + x_base + 3] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 2] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 1] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 0] + 8) >> 4,
+                    );
                     let c_hi = _mm_set_epi32(
-                            (tmp[y * 16 + x_base + 7] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 6] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 5] + 8) >> 4,
-                            (tmp[y * 16 + x_base + 4] + 8) >> 4
-                        );
+                        (tmp[y * 16 + x_base + 7] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 6] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 5] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 4] + 8) >> 4,
+                    );
 
                     let sum_lo = _mm_add_epi32(d_lo, c_lo);
                     let sum_hi = _mm_add_epi32(d_hi, c_hi);
@@ -11588,19 +13977,61 @@ macro_rules! impl_16x16_transform_16bpc {
 }
 
 // 16x16 hybrid identity transforms 16bpc
-impl_16x16_transform_16bpc!(inv_txfm_add_identity_dct_16x16_16bpc_avx2_inner, identity16_1d, dct16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_dct_identity_16x16_16bpc_avx2_inner, dct16_1d, identity16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_identity_adst_16x16_16bpc_avx2_inner, identity16_1d, adst16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_adst_identity_16x16_16bpc_avx2_inner, adst16_1d, identity16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_identity_flipadst_16x16_16bpc_avx2_inner, identity16_1d, flipadst16_1d);
-impl_16x16_transform_16bpc!(inv_txfm_add_flipadst_identity_16x16_16bpc_avx2_inner, flipadst16_1d, identity16_1d);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_identity_dct_16x16_16bpc_avx2_inner,
+    identity16_1d,
+    dct16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_dct_identity_16x16_16bpc_avx2_inner,
+    dct16_1d,
+    identity16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_identity_adst_16x16_16bpc_avx2_inner,
+    identity16_1d,
+    adst16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_adst_identity_16x16_16bpc_avx2_inner,
+    adst16_1d,
+    identity16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_identity_flipadst_16x16_16bpc_avx2_inner,
+    identity16_1d,
+    flipadst16_1d
+);
+impl_16x16_transform_16bpc!(
+    inv_txfm_add_flipadst_identity_16x16_16bpc_avx2_inner,
+    flipadst16_1d,
+    identity16_1d
+);
 
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_dct_16x16_16bpc_avx2, inv_txfm_add_identity_dct_16x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_dct_identity_16x16_16bpc_avx2, inv_txfm_add_dct_identity_16x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_adst_16x16_16bpc_avx2, inv_txfm_add_identity_adst_16x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_adst_identity_16x16_16bpc_avx2, inv_txfm_add_adst_identity_16x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_identity_flipadst_16x16_16bpc_avx2, inv_txfm_add_identity_flipadst_16x16_16bpc_avx2_inner);
-impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_identity_16x16_16bpc_avx2, inv_txfm_add_flipadst_identity_16x16_16bpc_avx2_inner);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_dct_16x16_16bpc_avx2,
+    inv_txfm_add_identity_dct_16x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_dct_identity_16x16_16bpc_avx2,
+    inv_txfm_add_dct_identity_16x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_adst_16x16_16bpc_avx2,
+    inv_txfm_add_identity_adst_16x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_adst_identity_16x16_16bpc_avx2,
+    inv_txfm_add_adst_identity_16x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_identity_flipadst_16x16_16bpc_avx2,
+    inv_txfm_add_identity_flipadst_16x16_16bpc_avx2_inner
+);
+impl_ffi_wrapper_16bpc!(
+    inv_txfm_add_flipadst_identity_16x16_16bpc_avx2,
+    inv_txfm_add_flipadst_identity_16x16_16bpc_avx2_inner
+);
 
 // ============================================================================
 // DISPATCH: Safe entry points for ITX SIMD dispatch
@@ -11610,7 +14041,6 @@ impl_ffi_wrapper_16bpc!(inv_txfm_add_flipadst_identity_16x16_16bpc_avx2, inv_txf
 // so that src/itx.rs can remain fully safe in the default build.
 
 use crate::include::common::bitdepth::BPC;
-use crate::src::strided::Strided as _;
 use crate::src::levels::TxfmSize;
 use crate::src::levels::TxfmType;
 use crate::src::levels::ADST_ADST;
@@ -11630,6 +14060,7 @@ use crate::src::levels::V_ADST;
 use crate::src::levels::V_DCT;
 use crate::src::levels::V_FLIPADST;
 use crate::src::levels::WHT_WHT;
+use crate::src::strided::Strided as _;
 
 /// Macro to generate the per-arch/bpc direct dispatch functions for ITX.
 /// Each generated function matches on (tx_size, tx_type) and calls the right SIMD function.
@@ -11837,7 +14268,11 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     let dst_ffi = FFISafe::new(&dst);
 
     match BD::BPC {
-        BPC::BPC8 => itxfm_add_direct_x86_8bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi),
-        BPC::BPC16 => itxfm_add_direct_x86_16bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi),
+        BPC::BPC8 => itxfm_add_direct_x86_8bpc(
+            tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi,
+        ),
+        BPC::BPC16 => itxfm_add_direct_x86_16bpc(
+            tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi,
+        ),
     }
 }

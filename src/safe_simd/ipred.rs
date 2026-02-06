@@ -12,7 +12,7 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-use libc::{ptrdiff_t, c_int};
+use libc::{c_int, ptrdiff_t};
 
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::picture::PicOffset;
@@ -57,7 +57,10 @@ pub unsafe extern "C" fn ipred_dc_128_8bpc_avx2(
                 x += 32;
             }
             while x + 16 <= width {
-                _mm_storeu_si128(dst_row.add(x) as *mut __m128i, _mm256_castsi256_si128(fill_val));
+                _mm_storeu_si128(
+                    dst_row.add(x) as *mut __m128i,
+                    _mm256_castsi256_si128(fill_val),
+                );
                 x += 16;
             }
             while x < width {
@@ -186,7 +189,10 @@ pub unsafe extern "C" fn ipred_h_8bpc_avx2(
                 x += 32;
             }
             while x + 16 <= width {
-                _mm_storeu_si128(dst_row.add(x) as *mut __m128i, _mm256_castsi256_si128(fill_val));
+                _mm_storeu_si128(
+                    dst_row.add(x) as *mut __m128i,
+                    _mm256_castsi256_si128(fill_val),
+                );
                 x += 16;
             }
             while x < width {
@@ -249,7 +255,10 @@ pub unsafe extern "C" fn ipred_dc_8bpc_avx2(
                 x += 32;
             }
             while x + 16 <= width {
-                _mm_storeu_si128(dst_row.add(x) as *mut __m128i, _mm256_castsi256_si128(fill_val));
+                _mm_storeu_si128(
+                    dst_row.add(x) as *mut __m128i,
+                    _mm256_castsi256_si128(fill_val),
+                );
                 x += 16;
             }
             while x < width {
@@ -303,7 +312,10 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_avx2(
                 x += 32;
             }
             while x + 16 <= width {
-                _mm_storeu_si128(dst_row.add(x) as *mut __m128i, _mm256_castsi256_si128(fill_val));
+                _mm_storeu_si128(
+                    dst_row.add(x) as *mut __m128i,
+                    _mm256_castsi256_si128(fill_val),
+                );
                 x += 16;
             }
             while x < width {
@@ -357,7 +369,10 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
                 x += 32;
             }
             while x + 16 <= width {
-                _mm_storeu_si128(dst_row.add(x) as *mut __m128i, _mm256_castsi256_si128(fill_val));
+                _mm_storeu_si128(
+                    dst_row.add(x) as *mut __m128i,
+                    _mm256_castsi256_si128(fill_val),
+                );
                 x += 16;
             }
             while x < width {
@@ -459,8 +474,8 @@ pub unsafe extern "C" fn ipred_paeth_8bpc_avx2(
                 let packed = _mm256_shuffle_epi8(
                     result,
                     _mm256_setr_epi8(
-                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12,
+                        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
                     ),
                 );
                 let lo = _mm256_castsi256_si128(packed);
@@ -572,8 +587,8 @@ pub unsafe extern "C" fn ipred_smooth_8bpc_avx2(
                 let packed = _mm256_shuffle_epi8(
                     result,
                     _mm256_setr_epi8(
-                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12,
+                        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
                     ),
                 );
                 let lo = _mm256_castsi256_si128(packed);
@@ -655,8 +670,8 @@ pub unsafe extern "C" fn ipred_smooth_v_8bpc_avx2(
                 let packed = _mm256_shuffle_epi8(
                     result,
                     _mm256_setr_epi8(
-                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12,
+                        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
                     ),
                 );
                 let lo = _mm256_castsi256_si128(packed);
@@ -734,8 +749,8 @@ pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
                 let packed = _mm256_shuffle_epi8(
                     result,
                     _mm256_setr_epi8(
-                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12,
+                        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
                     ),
                 );
                 let lo = _mm256_castsi256_si128(packed);
@@ -894,8 +909,9 @@ pub unsafe extern "C" fn ipred_z1_8bpc_avx2(
     // Determine if we need edge filtering/upsampling
     // For simplicity, this implementation handles the no-filter case only
     // Complex cases fall through to scalar
-    let upsample_above = enable_intra_edge_filter &&
-        (90 - angle) < 40 && (width + height as usize) <= (16 >> is_sm as usize);
+    let upsample_above = enable_intra_edge_filter
+        && (90 - angle) < 40
+        && (width + height as usize) <= (16 >> is_sm as usize);
 
     if upsample_above {
         // Upsampling case - use scalar fallback for now
@@ -1092,16 +1108,28 @@ pub unsafe extern "C" fn ipred_z2_8bpc_avx2(
     let dx = dav1d_dr_intra_derivative[((180 - angle) >> 1) as usize] as i32;
 
     // Check for upsampling - fall back to scalar for these complex cases
-    let upsample_left = enable_intra_edge_filter &&
-        (180 - angle) < 40 && (width + height) <= (16 >> is_sm as usize);
-    let upsample_above = enable_intra_edge_filter &&
-        (angle - 90) < 40 && (width + height) <= (16 >> is_sm as usize);
+    let upsample_left = enable_intra_edge_filter
+        && (180 - angle) < 40
+        && (width + height) <= (16 >> is_sm as usize);
+    let upsample_above =
+        enable_intra_edge_filter && (angle - 90) < 40 && (width + height) <= (16 >> is_sm as usize);
 
     if upsample_left || upsample_above {
         // Fall back to scalar for upsampled cases
         unsafe {
-            ipred_z2_scalar(dst, stride, tl, width, height, dx, dy,
-                           max_width, max_height, is_sm, enable_intra_edge_filter);
+            ipred_z2_scalar(
+                dst,
+                stride,
+                tl,
+                width,
+                height,
+                dx,
+                dy,
+                max_width,
+                max_height,
+                is_sm,
+                enable_intra_edge_filter,
+            );
         }
         return;
     }
@@ -1121,8 +1149,19 @@ pub unsafe extern "C" fn ipred_z2_8bpc_avx2(
     if filter_strength_above != 0 || filter_strength_left != 0 {
         // Fall back to scalar for filtered cases
         unsafe {
-            ipred_z2_scalar(dst, stride, tl, width, height, dx, dy,
-                           max_width, max_height, is_sm, enable_intra_edge_filter);
+            ipred_z2_scalar(
+                dst,
+                stride,
+                tl,
+                width,
+                height,
+                dx,
+                dy,
+                max_width,
+                max_height,
+                is_sm,
+                enable_intra_edge_filter,
+            );
         }
         return;
     }
@@ -1294,8 +1333,9 @@ pub unsafe extern "C" fn ipred_z3_8bpc_avx2(
     let dy = dav1d_dr_intra_derivative[((270 - angle) >> 1) as usize] as usize;
 
     // Check for upsampling - fall back to scalar
-    let upsample_left = enable_intra_edge_filter &&
-        (angle - 180) < 40 && (width as i32 + height) <= (16 >> is_sm as usize);
+    let upsample_left = enable_intra_edge_filter
+        && (angle - 180) < 40
+        && (width as i32 + height) <= (16 >> is_sm as usize);
 
     if upsample_left {
         unsafe { ipred_z3_scalar(dst, stride, tl, width, height, dy, true) };
@@ -1941,8 +1981,9 @@ pub unsafe extern "C" fn ipred_z1_16bpc_avx2(
     let dx = dav1d_dr_intra_derivative[(angle >> 1) as usize] as i32;
 
     // Determine if we need edge filtering/upsampling
-    let upsample_above = enable_intra_edge_filter &&
-        (90 - angle) < 40 && (width as i32 + height) <= (16 >> is_sm as usize);
+    let upsample_above = enable_intra_edge_filter
+        && (90 - angle) < 40
+        && (width as i32 + height) <= (16 >> is_sm as usize);
 
     if upsample_above {
         // Upsampling case - use scalar fallback
@@ -2111,15 +2152,27 @@ pub unsafe extern "C" fn ipred_z2_16bpc_avx2(
     let dx = dav1d_dr_intra_derivative[((180 - angle) >> 1) as usize] as i32;
 
     // Check for upsampling - fall back to scalar for these complex cases
-    let upsample_left = enable_intra_edge_filter &&
-        (180 - angle) < 40 && (width + height) <= (16 >> is_sm as usize);
-    let upsample_above = enable_intra_edge_filter &&
-        (angle - 90) < 40 && (width + height) <= (16 >> is_sm as usize);
+    let upsample_left = enable_intra_edge_filter
+        && (180 - angle) < 40
+        && (width + height) <= (16 >> is_sm as usize);
+    let upsample_above =
+        enable_intra_edge_filter && (angle - 90) < 40 && (width + height) <= (16 >> is_sm as usize);
 
     if upsample_left || upsample_above {
         unsafe {
-            ipred_z2_16bpc_scalar(dst, stride_u16, tl, width, height, dx, dy,
-                                  max_width, max_height, is_sm, enable_intra_edge_filter);
+            ipred_z2_16bpc_scalar(
+                dst,
+                stride_u16,
+                tl,
+                width,
+                height,
+                dx,
+                dy,
+                max_width,
+                max_height,
+                is_sm,
+                enable_intra_edge_filter,
+            );
         }
         return;
     }
@@ -2138,8 +2191,19 @@ pub unsafe extern "C" fn ipred_z2_16bpc_avx2(
 
     if filter_strength_above != 0 || filter_strength_left != 0 {
         unsafe {
-            ipred_z2_16bpc_scalar(dst, stride_u16, tl, width, height, dx, dy,
-                                  max_width, max_height, is_sm, enable_intra_edge_filter);
+            ipred_z2_16bpc_scalar(
+                dst,
+                stride_u16,
+                tl,
+                width,
+                height,
+                dx,
+                dy,
+                max_width,
+                max_height,
+                is_sm,
+                enable_intra_edge_filter,
+            );
         }
         return;
     }
@@ -2301,8 +2365,9 @@ pub unsafe extern "C" fn ipred_z3_16bpc_avx2(
     let dy = dav1d_dr_intra_derivative[((270 - angle) >> 1) as usize] as usize;
 
     // Check for upsampling - fall back to scalar
-    let upsample_left = enable_intra_edge_filter &&
-        (angle - 180) < 40 && (width as i32 + height) <= (16 >> is_sm as usize);
+    let upsample_left = enable_intra_edge_filter
+        && (angle - 180) < 40
+        && (width as i32 + height) <= (16 >> is_sm as usize);
 
     if upsample_left {
         unsafe { ipred_z3_16bpc_scalar(dst, stride_u16, tl, width, height, dy, true) };
@@ -2522,34 +2587,370 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid types.
     unsafe {
         match (BD::BPC, mode) {
-            (BPC::BPC8, 0) => ipred_dc_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 1) => ipred_v_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 2) => ipred_h_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 3) => ipred_dc_left_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 4) => ipred_dc_top_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 5) => ipred_dc_128_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 6) => ipred_z1_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 7) => ipred_z2_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 8) => ipred_z3_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 9) => ipred_smooth_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 10) => ipred_smooth_v_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 11) => ipred_smooth_h_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 12) => ipred_paeth_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC8, 13) => ipred_filter_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 0) => ipred_dc_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 1) => ipred_v_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 2) => ipred_h_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 3) => ipred_dc_left_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 4) => ipred_dc_top_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 5) => ipred_dc_128_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 6) => ipred_z1_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 7) => ipred_z2_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 8) => ipred_z3_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 9) => ipred_smooth_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 10) => ipred_smooth_v_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 11) => ipred_smooth_h_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 12) => ipred_paeth_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
-            (BPC::BPC16, 13) => ipred_filter_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 0) => ipred_dc_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 1) => ipred_v_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 2) => ipred_h_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 3) => ipred_dc_left_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 4) => ipred_dc_top_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 5) => ipred_dc_128_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 6) => ipred_z1_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 7) => ipred_z2_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 8) => ipred_z3_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 9) => ipred_smooth_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 10) => ipred_smooth_v_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 11) => ipred_smooth_h_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 12) => ipred_paeth_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC8, 13) => ipred_filter_8bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 0) => ipred_dc_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 1) => ipred_v_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 2) => ipred_h_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 3) => ipred_dc_left_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 4) => ipred_dc_top_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 5) => ipred_dc_128_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 6) => ipred_z1_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 7) => ipred_z2_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 8) => ipred_z3_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 9) => ipred_smooth_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 10) => ipred_smooth_v_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 11) => ipred_smooth_h_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 12) => ipred_paeth_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
+            (BPC::BPC16, 13) => ipred_filter_16bpc_avx2(
+                dst_ptr,
+                stride,
+                topleft_ptr,
+                width,
+                height,
+                angle,
+                max_width,
+                max_height,
+                bd_c,
+                topleft_off,
+                dst_ffi,
+            ),
             _ => return false,
         }
     }

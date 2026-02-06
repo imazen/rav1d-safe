@@ -161,7 +161,9 @@ fn lr_filter_direct<BD: BitDepth>(
         let w_usize = w as usize;
         let h_usize = h as usize;
         match variant {
-            0 | 1 => wiener_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
+            0 | 1 => {
+                wiener_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd)
+            }
             2 => sgr_5x5_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
             3 => sgr_3x3_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
             _ => sgr_mix_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
@@ -3660,24 +3662,18 @@ impl Rav1dLoopRestorationDSPContext {
                     loop_restoration_filter::Fn::new(safe_lr::wiener_filter7_8bpc_neon);
                 self.wiener[1] =
                     loop_restoration_filter::Fn::new(safe_lr::wiener_filter5_8bpc_neon);
-                self.sgr[0] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_5x5_8bpc_neon);
-                self.sgr[1] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_3x3_8bpc_neon);
-                self.sgr[2] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_mix_8bpc_neon);
+                self.sgr[0] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_5x5_8bpc_neon);
+                self.sgr[1] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_3x3_8bpc_neon);
+                self.sgr[2] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_mix_8bpc_neon);
             }
             BPC::BPC16 => {
                 self.wiener[0] =
                     loop_restoration_filter::Fn::new(safe_lr::wiener_filter7_16bpc_neon);
                 self.wiener[1] =
                     loop_restoration_filter::Fn::new(safe_lr::wiener_filter5_16bpc_neon);
-                self.sgr[0] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_5x5_16bpc_neon);
-                self.sgr[1] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_3x3_16bpc_neon);
-                self.sgr[2] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_mix_16bpc_neon);
+                self.sgr[0] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_5x5_16bpc_neon);
+                self.sgr[1] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_3x3_16bpc_neon);
+                self.sgr[2] = loop_restoration_filter::Fn::new(safe_lr::sgr_filter_mix_16bpc_neon);
             }
         }
 

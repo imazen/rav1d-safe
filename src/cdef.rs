@@ -31,7 +31,11 @@ use crate::include::common::bitdepth::bd_fn;
 #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]
 use crate::include::common::bitdepth::{bpc_fn, BPC};
 
-#[cfg(all(not(feature = "asm"), feature = "asm", any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(all(
+    not(feature = "asm"),
+    feature = "asm",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use crate::include::common::bitdepth::BPC;
 
 #[cfg(not(feature = "asm"))]
@@ -87,16 +91,34 @@ fn cdef_direct<BD: BitDepth>(
 ) {
     #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::cdef::cdef_filter_dispatch::<BD>(
-        variant, dst, left, top, bottom,
-        pri_strength, sec_strength, dir, damping, edges, bd,
+        variant,
+        dst,
+        left,
+        top,
+        bottom,
+        pri_strength,
+        sec_strength,
+        dir,
+        damping,
+        edges,
+        bd,
     ) {
         return;
     }
 
     #[cfg(target_arch = "aarch64")]
     if crate::src::safe_simd::cdef_arm::cdef_filter_dispatch::<BD>(
-        variant, dst, left, top, bottom,
-        pri_strength, sec_strength, dir, damping, edges, bd,
+        variant,
+        dst,
+        left,
+        top,
+        bottom,
+        pri_strength,
+        sec_strength,
+        dir,
+        damping,
+        edges,
+        bd,
     ) {
         return;
     }
@@ -109,7 +131,20 @@ fn cdef_direct<BD: BitDepth>(
             1 => (4, 8),
             _ => (4, 4),
         };
-        cdef_filter_block_rust(dst, left, top, bottom, pri_strength, sec_strength, dir, damping, w, h, edges, bd);
+        cdef_filter_block_rust(
+            dst,
+            left,
+            top,
+            bottom,
+            pri_strength,
+            sec_strength,
+            dir,
+            damping,
+            w,
+            h,
+            edges,
+            bd,
+        );
     }
 }
 
@@ -199,11 +234,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cdef_dir(
 /// Direct dispatch for cdef_dir - bypasses function pointer table.
 /// Selects optimal SIMD implementation at runtime based on CPU features.
 #[cfg(not(feature = "asm"))]
-fn cdef_dir_direct<BD: BitDepth>(
-    dst: PicOffset,
-    variance: &mut c_uint,
-    bd: BD,
-) -> c_int {
+fn cdef_dir_direct<BD: BitDepth>(dst: PicOffset, variance: &mut c_uint, bd: BD) -> c_int {
     #[cfg(target_arch = "x86_64")]
     if let Some(dir) = crate::src::safe_simd::cdef::cdef_dir_dispatch::<BD>(dst, variance, bd) {
         return dir;
@@ -220,12 +251,7 @@ fn cdef_dir_direct<BD: BitDepth>(
 }
 
 impl cdef_dir::Fn {
-    pub fn call<BD: BitDepth>(
-        &self,
-        dst: PicOffset,
-        variance: &mut c_uint,
-        bd: BD,
-    ) -> c_int {
+    pub fn call<BD: BitDepth>(&self, dst: PicOffset, variance: &mut c_uint, bd: BD) -> c_int {
         cfg_if::cfg_if! {
             if #[cfg(feature = "asm")] {
                 let dst_ptr = dst.as_ptr::<BD>().cast();
@@ -536,11 +562,7 @@ unsafe extern "C" fn cdef_find_dir_c_erased<BD: BitDepth>(
     cdef_find_dir_rust(img, variance, bd)
 }
 
-fn cdef_find_dir_rust<BD: BitDepth>(
-    img: PicOffset,
-    variance: &mut c_uint,
-    bd: BD,
-) -> c_int {
+fn cdef_find_dir_rust<BD: BitDepth>(img: PicOffset, variance: &mut c_uint, bd: BD) -> c_int {
     let bitdepth_min_8 = bd.bitdepth() - 8;
     let mut partial_sum_hv = [[0; 8]; 2];
     let mut partial_sum_diag = [[0; 15]; 2];

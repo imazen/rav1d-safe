@@ -5,8 +5,8 @@ use crate::include::common::intops::clip;
 use crate::include::common::intops::iclip;
 use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
-use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 use crate::include::dav1d::picture::PicOffset;
+use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 use crate::src::align::AlignedVec64;
 use crate::src::cpu::CpuFlags;
 use crate::src::enum_map::enum_map;
@@ -51,12 +51,7 @@ use crate::include::common::bitdepth::{bpc_fn, BPC};
 use crate::include::common::bitdepth::bpc_fn;
 
 #[inline(never)]
-fn put_rust<BD: BitDepth>(
-    dst: PicOffset,
-    src: PicOffset,
-    w: usize,
-    h: usize,
-) {
+fn put_rust<BD: BitDepth>(dst: PicOffset, src: PicOffset, w: usize, h: usize) {
     for y in 0..h {
         let src = src + y as isize * src.pixel_stride::<BD>();
         let dst = dst + y as isize * dst.pixel_stride::<BD>();
@@ -67,13 +62,7 @@ fn put_rust<BD: BitDepth>(
 }
 
 #[inline(never)]
-fn prep_rust<BD: BitDepth>(
-    tmp: &mut [i16],
-    src: PicOffset,
-    w: usize,
-    h: usize,
-    bd: BD,
-) {
+fn prep_rust<BD: BitDepth>(tmp: &mut [i16], src: PicOffset, w: usize, h: usize, bd: BD) {
     let intermediate_bits = bd.get_intermediate_bits();
     for y in 0..h {
         let src = src + y as isize * src.pixel_stride::<BD>();
@@ -124,12 +113,7 @@ fn filter_8tap_mid(mid: &[[i16; MID_STRIDE]], x: usize, f: &[i8; 8]) -> FilterRe
     FilterResult { pixel }
 }
 
-fn filter_8tap<BD: BitDepth>(
-    src: PicOffset,
-    x: usize,
-    f: &[i8; 8],
-    stride: isize,
-) -> FilterResult {
+fn filter_8tap<BD: BitDepth>(src: PicOffset, x: usize, f: &[i8; 8], stride: isize) -> FilterResult {
     let pixel = (0..f.len())
         .map(|y| {
             let px = *(src + x + (y as isize - 3) * stride).index::<BD>();
@@ -400,12 +384,7 @@ fn filter_bilin_mid(mid: &[[i16; MID_STRIDE]], x: usize, mxy: usize) -> FilterRe
     FilterResult { pixel }
 }
 
-fn filter_bilin<BD: BitDepth>(
-    src: PicOffset,
-    x: usize,
-    mxy: usize,
-    stride: isize,
-) -> FilterResult {
+fn filter_bilin<BD: BitDepth>(src: PicOffset, x: usize, mxy: usize, stride: isize) -> FilterResult {
     let src = |y: isize, x: usize| -> i32 { (*(src + x + y * stride).index::<BD>()).to::<i32>() };
     let x0 = src(0, x);
     let x1 = src(1, x);
@@ -633,9 +612,13 @@ fn avg_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, bd) { return; }
+    if crate::src::safe_simd::mc::avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, bd) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, bd) { return; }
+    if crate::src::safe_simd::mc_arm::avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, bd) {
+        return;
+    }
     #[allow(unreachable_code)]
     avg_rust(dst, tmp1, tmp2, w as usize, h as usize, bd);
 }
@@ -652,9 +635,13 @@ fn w_avg_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::w_avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, weight, bd) { return; }
+    if crate::src::safe_simd::mc::w_avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, weight, bd) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::w_avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, weight, bd) { return; }
+    if crate::src::safe_simd::mc_arm::w_avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, weight, bd) {
+        return;
+    }
     #[allow(unreachable_code)]
     w_avg_rust(dst, tmp1, tmp2, w as usize, h as usize, weight, bd);
 }
@@ -671,9 +658,13 @@ fn mask_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::mask_dispatch::<BD>(dst, tmp1, tmp2, w, h, mask, bd) { return; }
+    if crate::src::safe_simd::mc::mask_dispatch::<BD>(dst, tmp1, tmp2, w, h, mask, bd) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::mask_dispatch::<BD>(dst, tmp1, tmp2, w, h, mask, bd) { return; }
+    if crate::src::safe_simd::mc_arm::mask_dispatch::<BD>(dst, tmp1, tmp2, w, h, mask, bd) {
+        return;
+    }
     #[allow(unreachable_code)]
     mask_rust(dst, tmp1, tmp2, w as usize, h as usize, mask, bd);
 }
@@ -688,9 +679,13 @@ fn blend_direct<BD: BitDepth>(
     mask: &[u8],
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::blend_dispatch::<BD>(dst, tmp, w, h, mask) { return; }
+    if crate::src::safe_simd::mc::blend_dispatch::<BD>(dst, tmp, w, h, mask) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::blend_dispatch::<BD>(dst, tmp, w, h, mask) { return; }
+    if crate::src::safe_simd::mc_arm::blend_dispatch::<BD>(dst, tmp, w, h, mask) {
+        return;
+    }
     #[allow(unreachable_code)]
     blend_rust::<BD>(dst, tmp, w as usize, h as usize, mask);
 }
@@ -708,9 +703,13 @@ fn mc_put_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) { return; }
+    if crate::src::safe_simd::mc::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) { return; }
+    if crate::src::safe_simd::mc_arm::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
+        return;
+    }
     #[allow(unreachable_code)]
     {
         let w = w as usize;
@@ -737,9 +736,13 @@ fn mct_prep_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) { return; }
+    if crate::src::safe_simd::mc::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) { return; }
+    if crate::src::safe_simd::mc_arm::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
+        return;
+    }
     #[allow(unreachable_code)]
     {
         let w = w as usize;
@@ -769,9 +772,17 @@ fn mc_scaled_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::mc_scaled_dispatch::<BD>(filter, dst, src, w, h, mx, my, dx, dy, bd) { return; }
+    if crate::src::safe_simd::mc::mc_scaled_dispatch::<BD>(
+        filter, dst, src, w, h, mx, my, dx, dy, bd,
+    ) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::mc_scaled_dispatch::<BD>(filter, dst, src, w, h, mx, my, dx, dy, bd) { return; }
+    if crate::src::safe_simd::mc_arm::mc_scaled_dispatch::<BD>(
+        filter, dst, src, w, h, mx, my, dx, dy, bd,
+    ) {
+        return;
+    }
     #[allow(unreachable_code)]
     {
         let w = w as usize;
@@ -802,9 +813,17 @@ fn mct_scaled_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::mct_scaled_dispatch::<BD>(filter, tmp, src, w, h, mx, my, dx, dy, bd) { return; }
+    if crate::src::safe_simd::mc::mct_scaled_dispatch::<BD>(
+        filter, tmp, src, w, h, mx, my, dx, dy, bd,
+    ) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::mct_scaled_dispatch::<BD>(filter, tmp, src, w, h, mx, my, dx, dy, bd) { return; }
+    if crate::src::safe_simd::mc_arm::mct_scaled_dispatch::<BD>(
+        filter, tmp, src, w, h, mx, my, dx, dy, bd,
+    ) {
+        return;
+    }
     #[allow(unreachable_code)]
     {
         let w = w as usize;
@@ -831,9 +850,13 @@ fn blend_dir_direct<BD: BitDepth>(
     h: i32,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::blend_dir_dispatch::<BD>(is_h, dst, tmp, w, h) { return; }
+    if crate::src::safe_simd::mc::blend_dir_dispatch::<BD>(is_h, dst, tmp, w, h) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::blend_dir_dispatch::<BD>(is_h, dst, tmp, w, h) { return; }
+    if crate::src::safe_simd::mc_arm::blend_dir_dispatch::<BD>(is_h, dst, tmp, w, h) {
+        return;
+    }
     #[allow(unreachable_code)]
     if is_h {
         blend_h_rust::<BD>(dst, tmp, w as usize, h as usize);
@@ -856,9 +879,17 @@ fn w_mask_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::w_mask_dispatch::<BD>(layout, dst, tmp1, tmp2, w, h, mask, sign, bd) { return; }
+    if crate::src::safe_simd::mc::w_mask_dispatch::<BD>(
+        layout, dst, tmp1, tmp2, w, h, mask, sign, bd,
+    ) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::w_mask_dispatch::<BD>(layout, dst, tmp1, tmp2, w, h, mask, sign, bd) { return; }
+    if crate::src::safe_simd::mc_arm::w_mask_dispatch::<BD>(
+        layout, dst, tmp1, tmp2, w, h, mask, sign, bd,
+    ) {
+        return;
+    }
     #[allow(unreachable_code)]
     {
         let w = w as usize;
@@ -885,9 +916,13 @@ fn warp8x8_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::warp8x8_dispatch::<BD>(dst, src, abcd, mx, my, bd) { return; }
+    if crate::src::safe_simd::mc::warp8x8_dispatch::<BD>(dst, src, abcd, mx, my, bd) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::warp8x8_dispatch::<BD>(dst, src, abcd, mx, my, bd) { return; }
+    if crate::src::safe_simd::mc_arm::warp8x8_dispatch::<BD>(dst, src, abcd, mx, my, bd) {
+        return;
+    }
     #[allow(unreachable_code)]
     warp_affine_8x8_rust(dst, src, abcd, mx, my, bd);
 }
@@ -904,9 +939,15 @@ fn warp8x8t_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::warp8x8t_dispatch::<BD>(tmp, tmp_stride, src, abcd, mx, my, bd) { return; }
+    if crate::src::safe_simd::mc::warp8x8t_dispatch::<BD>(tmp, tmp_stride, src, abcd, mx, my, bd) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::warp8x8t_dispatch::<BD>(tmp, tmp_stride, src, abcd, mx, my, bd) { return; }
+    if crate::src::safe_simd::mc_arm::warp8x8t_dispatch::<BD>(
+        tmp, tmp_stride, src, abcd, mx, my, bd,
+    ) {
+        return;
+    }
     #[allow(unreachable_code)]
     warp_affine_8x8t_rust(tmp, tmp_stride, src, abcd, mx, my, bd);
 }
@@ -925,9 +966,17 @@ fn emu_edge_direct<BD: BitDepth>(
     src: &Rav1dPictureDataComponent,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::emu_edge_dispatch::<BD>(bw, bh, iw, ih, x, y, dst, dst_stride, src) { return; }
+    if crate::src::safe_simd::mc::emu_edge_dispatch::<BD>(
+        bw, bh, iw, ih, x, y, dst, dst_stride, src,
+    ) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::emu_edge_dispatch::<BD>(bw, bh, iw, ih, x, y, dst, dst_stride, src) { return; }
+    if crate::src::safe_simd::mc_arm::emu_edge_dispatch::<BD>(
+        bw, bh, iw, ih, x, y, dst, dst_stride, src,
+    ) {
+        return;
+    }
     #[allow(unreachable_code)]
     emu_edge_rust::<BD>(bw, bh, iw, ih, x, y, dst, dst_stride, src);
 }
@@ -945,9 +994,13 @@ fn resize_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::resize_dispatch::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd) { return; }
+    if crate::src::safe_simd::mc::resize_dispatch::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd) {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::mc_arm::resize_dispatch::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd) { return; }
+    if crate::src::safe_simd::mc_arm::resize_dispatch::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd) {
+        return;
+    }
     #[allow(unreachable_code)]
     resize_rust::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd);
 }
@@ -3237,11 +3290,7 @@ impl Rav1dMCDSPContext {
             return self.init_x86_safe_simd::<BD>(flags);
         }
 
-        #[cfg(all(
-            not(feature = "asm"),
-            feature = "asm",
-            target_arch = "aarch64"
-        ))]
+        #[cfg(all(not(feature = "asm"), feature = "asm", target_arch = "aarch64"))]
         {
             return self.init_arm_safe_simd::<BD>(flags);
         }

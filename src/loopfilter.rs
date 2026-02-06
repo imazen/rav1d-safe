@@ -85,12 +85,16 @@ fn loopfilter_sb_direct<BD: BitDepth>(
             (true, true) => loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::Y as usize }>(
                 dst, mask, lvl, b4_stride, lut, wh, bd,
             ),
-            (false, false) => loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::UV as usize }>(
-                dst, mask, lvl, b4_stride, lut, wh, bd,
-            ),
-            (false, true) => loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::UV as usize }>(
-                dst, mask, lvl, b4_stride, lut, wh, bd,
-            ),
+            (false, false) => {
+                loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::UV as usize }>(
+                    dst, mask, lvl, b4_stride, lut, wh, bd,
+                )
+            }
+            (false, true) => {
+                loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::UV as usize }>(
+                    dst, mask, lvl, b4_stride, lut, wh, bd,
+                )
+            }
         }
     }
 }
@@ -550,16 +554,24 @@ impl Rav1dLoopFilterDSPContext {
 
         match BD::BPC {
             BPC::BPC8 => {
-                self.loop_filter_sb.y.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_y_8bpc_avx2);
-                self.loop_filter_sb.y.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_y_8bpc_avx2);
-                self.loop_filter_sb.uv.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_uv_8bpc_avx2);
-                self.loop_filter_sb.uv.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_uv_8bpc_avx2);
+                self.loop_filter_sb.y.h =
+                    loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_y_8bpc_avx2);
+                self.loop_filter_sb.y.v =
+                    loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_y_8bpc_avx2);
+                self.loop_filter_sb.uv.h =
+                    loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_uv_8bpc_avx2);
+                self.loop_filter_sb.uv.v =
+                    loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_uv_8bpc_avx2);
             }
             BPC::BPC16 => {
-                self.loop_filter_sb.y.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_y_16bpc_avx2);
-                self.loop_filter_sb.y.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_y_16bpc_avx2);
-                self.loop_filter_sb.uv.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_uv_16bpc_avx2);
-                self.loop_filter_sb.uv.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_uv_16bpc_avx2);
+                self.loop_filter_sb.y.h =
+                    loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_y_16bpc_avx2);
+                self.loop_filter_sb.y.v =
+                    loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_y_16bpc_avx2);
+                self.loop_filter_sb.uv.h =
+                    loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_uv_16bpc_avx2);
+                self.loop_filter_sb.uv.v =
+                    loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_uv_16bpc_avx2);
             }
         }
 

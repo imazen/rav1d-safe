@@ -53,12 +53,7 @@ pub fn hex_fdump_pic<BD: BitDepth>(
 }
 
 #[inline]
-pub fn hex_dump_pic<BD: BitDepth>(
-    buf: PicOffset,
-    w: usize,
-    h: usize,
-    what: &str,
-) {
+pub fn hex_dump_pic<BD: BitDepth>(buf: PicOffset, w: usize, h: usize, what: &str) {
     hex_fdump_pic::<BD>(&mut stdout(), buf, w, h, what).unwrap();
 }
 

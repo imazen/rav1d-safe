@@ -402,7 +402,6 @@ wrap_fn_ptr!(unsafe extern "C" fn itxfm(
     _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
-
 /// Macro to generate the per-arch/bpc direct dispatch functions for ITX.
 /// Each generated function matches on (tx_size, tx_type) and calls the right SIMD function.
 #[cfg(all(not(feature = "asm"), feature = "asm"))]
@@ -668,8 +667,28 @@ fn itxfm_add_direct<BD: BitDepth>(
         use crate::src::cpu::CpuFlags;
         if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
             return match BD::BPC {
-                BPC::BPC8 => itxfm_add_direct_x86_8bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst),
-                BPC::BPC16 => itxfm_add_direct_x86_16bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst),
+                BPC::BPC8 => itxfm_add_direct_x86_8bpc(
+                    tx_size,
+                    tx_type,
+                    dst_ptr,
+                    dst_stride,
+                    coeff,
+                    eob,
+                    bitdepth_max,
+                    coeff_len,
+                    dst,
+                ),
+                BPC::BPC16 => itxfm_add_direct_x86_16bpc(
+                    tx_size,
+                    tx_type,
+                    dst_ptr,
+                    dst_stride,
+                    coeff,
+                    eob,
+                    bitdepth_max,
+                    coeff_len,
+                    dst,
+                ),
             };
         }
     }
@@ -677,14 +696,44 @@ fn itxfm_add_direct<BD: BitDepth>(
     #[cfg(target_arch = "aarch64")]
     {
         return match BD::BPC {
-            BPC::BPC8 => itxfm_add_direct_arm_8bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst),
-            BPC::BPC16 => itxfm_add_direct_arm_16bpc(tx_size, tx_type, dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst),
+            BPC::BPC8 => itxfm_add_direct_arm_8bpc(
+                tx_size,
+                tx_type,
+                dst_ptr,
+                dst_stride,
+                coeff,
+                eob,
+                bitdepth_max,
+                coeff_len,
+                dst,
+            ),
+            BPC::BPC16 => itxfm_add_direct_arm_16bpc(
+                tx_size,
+                tx_type,
+                dst_ptr,
+                dst_stride,
+                coeff,
+                eob,
+                bitdepth_max,
+                coeff_len,
+                dst,
+            ),
         };
     }
 
     #[allow(unreachable_code)]
     {
-        let _ = (tx_size, tx_type, dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst);
+        let _ = (
+            tx_size,
+            tx_type,
+            dst_ptr,
+            dst_stride,
+            coeff,
+            eob,
+            bitdepth_max,
+            coeff_len,
+            dst,
+        );
         false
     }
 }
@@ -733,11 +782,7 @@ pub struct Rav1dInvTxfmDSPContext {
     pub itxfm_add: [[itxfm::Fn; N_TX_TYPES_PLUS_LL]; TxfmSize::COUNT],
 }
 
-fn inv_txfm_add_wht_wht_4x4_rust<BD: BitDepth>(
-    dst: PicOffset,
-    coeff: &mut [BD::Coef],
-    bd: BD,
-) {
+fn inv_txfm_add_wht_wht_4x4_rust<BD: BitDepth>(dst: PicOffset, coeff: &mut [BD::Coef], bd: BD) {
     const H: usize = 4;
     const W: usize = 4;
 

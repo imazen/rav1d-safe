@@ -10,8 +10,14 @@
 #![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
 #![allow(clippy::all)]
-#![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(clippy::undocumented_unsafe_blocks))]
-#![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(clippy::missing_safety_doc))]
+#![cfg_attr(
+    any(feature = "asm", feature = "c-ffi"),
+    deny(clippy::undocumented_unsafe_blocks)
+)]
+#![cfg_attr(
+    any(feature = "asm", feature = "c-ffi"),
+    deny(clippy::missing_safety_doc)
+)]
 
 #[cfg(not(any(feature = "bitdepth_8", feature = "bitdepth_16")))]
 compile_error!("No bitdepths enabled. Enable one or more of the following features: `bitdepth_8`, `bitdepth_16`");
@@ -53,15 +59,15 @@ pub mod src {
     pub(crate) mod disjoint_mut;
     #[allow(unsafe_code)]
     mod ffi_safe;
-    pub(crate) mod pixels;
-    #[allow(unsafe_code)]
-    pub mod send_sync_non_null;
+    mod in_range;
     #[allow(unsafe_code)]
     pub(super) mod internal;
-    mod in_range;
     mod intra_edge;
     #[allow(unsafe_code)]
     pub(crate) mod log;
+    pub(crate) mod pixels;
+    #[allow(unsafe_code)]
+    pub mod send_sync_non_null;
     mod tables;
 
     // Data/picture management
@@ -74,15 +80,15 @@ pub mod src {
     mod filmgrain;
     mod ipred;
     mod itx;
+    #[allow(unsafe_code)]
+    mod lf_mask;
     mod loopfilter;
     mod looprestoration;
     mod mc;
     mod pal;
+    mod recon;
     #[allow(unsafe_code)]
     mod refmvs;
-    #[allow(unsafe_code)]
-    mod lf_mask;
-    mod recon;
 
     // Entropy coding (inline SIMD)
     #[allow(unsafe_code)]
@@ -108,14 +114,9 @@ pub mod src {
     pub(crate) mod enum_map;
     mod env;
     pub(crate) mod error;
+    mod extensions;
     mod fg_apply;
     mod getbits;
-    pub(crate) mod pic_or_buf;
-    pub(crate) mod relaxed_atomic;
-    pub(crate) mod strided;
-    pub(crate) mod with_offset;
-    pub(crate) mod wrap_fn_ptr;
-    mod extensions;
     mod ipred_prepare;
     mod iter;
     mod itx_1d;
@@ -124,11 +125,19 @@ pub mod src {
     mod lr_apply;
     mod mem;
     mod obu;
+    pub(crate) mod pic_or_buf;
     mod qm;
+    pub(crate) mod relaxed_atomic;
     mod scan;
+    pub(crate) mod strided;
     mod thread_task;
     mod warpmv;
     mod wedge;
+    pub(crate) mod with_offset;
+    pub(crate) mod wrap_fn_ptr;
+
+    #[cfg(test)]
+    mod decode_test;
 } // mod src
 
 pub use src::error::Dav1dResult;

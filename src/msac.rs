@@ -522,7 +522,11 @@ static MIN_PROB_16: [u16; 16] = [60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16,
 /// Uses parallel CDF probability calculation and comparison
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
     let c = (s.dif >> (EC_WIN_SIZE - 16)) as u32;
     let n = n_symbols as usize;
 
@@ -540,9 +544,8 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(s: &mut MsacContext, cdf: &mut [
 
     // Load min_prob values offset by (15 - n_symbols)
     let min_prob_offset = 15 - n;
-    let min_prob = unsafe {
-        _mm256_loadu_si256(MIN_PROB_16.as_ptr().add(min_prob_offset) as *const __m256i)
-    };
+    let min_prob =
+        unsafe { _mm256_loadu_si256(MIN_PROB_16.as_ptr().add(min_prob_offset) as *const __m256i) };
 
     // v = prod + min_prob
     let v = _mm256_add_epi16(prod, min_prob);
@@ -561,7 +564,11 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(s: &mut MsacContext, cdf: &mut [
     let val = (mask.trailing_zeros() >> 1) as u8;
 
     // Get u (previous v) and current v values for renormalization
-    let u = if val == 0 { s.rng } else { v_arr[val as usize - 1] as u32 };
+    let u = if val == 0 {
+        s.rng
+    } else {
+        v_arr[val as usize - 1] as u32
+    };
     let v_val = v_arr[val as usize] as u32;
 
     // Update CDF if enabled
@@ -592,7 +599,11 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(s: &mut MsacContext, cdf: &mut [
 /// SSE2 implementation of symbol_adapt8
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
 #[target_feature(enable = "sse2")]
-unsafe fn rav1d_msac_decode_symbol_adapt8_sse2(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+unsafe fn rav1d_msac_decode_symbol_adapt8_sse2(
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
     // For 8 symbols, SSE2 is sufficient
     // The overhead of SIMD setup may not be worth it for small n, use scalar
     rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
@@ -601,7 +612,11 @@ unsafe fn rav1d_msac_decode_symbol_adapt8_sse2(s: &mut MsacContext, cdf: &mut [u
 /// SSE2 implementation of symbol_adapt4
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
 #[target_feature(enable = "sse2")]
-unsafe fn rav1d_msac_decode_symbol_adapt4_sse2(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+unsafe fn rav1d_msac_decode_symbol_adapt4_sse2(
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
     // For 4 symbols, scalar is likely faster due to SIMD setup overhead
     rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
 }
@@ -612,7 +627,11 @@ static MIN_PROB_16_ARM: [u16; 16] = [60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20,
 
 /// NEON implementation of symbol_adapt16
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-unsafe fn rav1d_msac_decode_symbol_adapt16_neon(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+unsafe fn rav1d_msac_decode_symbol_adapt16_neon(
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
     let c = (s.dif >> (EC_WIN_SIZE - 16)) as u16;
     let n = n_symbols as usize;
 
@@ -676,7 +695,11 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_neon(s: &mut MsacContext, cdf: &mut [
     }
 
     // Get u and v values
-    let u = if val == 0 { s.rng } else { v_arr[val as usize - 1] as u32 };
+    let u = if val == 0 {
+        s.rng
+    } else {
+        v_arr[val as usize - 1] as u32
+    };
     let v_val = v_arr[val as usize] as u32;
 
     // Update CDF if enabled
@@ -706,13 +729,21 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_neon(s: &mut MsacContext, cdf: &mut [
 
 /// NEON implementation of symbol_adapt8 - uses scalar for simplicity
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-unsafe fn rav1d_msac_decode_symbol_adapt8_neon(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+unsafe fn rav1d_msac_decode_symbol_adapt8_neon(
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
     rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
 }
 
 /// NEON implementation of symbol_adapt4 - uses scalar for simplicity
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-unsafe fn rav1d_msac_decode_symbol_adapt4_neon(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+unsafe fn rav1d_msac_decode_symbol_adapt4_neon(
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
     rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols)
 }
 

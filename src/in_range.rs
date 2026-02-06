@@ -1,4 +1,3 @@
-
 use crate::src::const_fn::const_for;
 use crate::src::enum_map::DefaultValue;
 use std::fmt;

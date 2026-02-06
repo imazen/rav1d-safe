@@ -24,7 +24,7 @@ use crate::include::common::bitdepth::{DynEntry, DynPixel, DynScaling};
 use crate::include::dav1d::headers::{Dav1dFilmGrainData, Rav1dFilmGrainData};
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
-use crate::src::filmgrain::{GRAIN_HEIGHT, GRAIN_WIDTH, FG_BLOCK_SIZE};
+use crate::src::filmgrain::{FG_BLOCK_SIZE, GRAIN_HEIGHT, GRAIN_WIDTH};
 use crate::src::internal::GrainLut;
 use crate::src::tables::dav1d_gaussian_sequence;
 
@@ -396,11 +396,7 @@ pub unsafe extern "C" fn generate_grain_uv_444_16bpc_avx2(
 
 /// Compute grain offsets from random seed value
 #[inline(always)]
-fn grain_offsets(
-    randval: c_int,
-    is_subx: bool,
-    is_suby: bool,
-) -> (usize, usize) {
+fn grain_offsets(randval: c_int, is_subx: bool, is_suby: bool) -> (usize, usize) {
     let subx = is_subx as usize;
     let suby = is_suby as usize;
     let offx = 3 + (2 >> subx) * (3 + ((randval as usize) >> 4));
@@ -525,17 +521,11 @@ unsafe fn fgy_row_simd_8bpc(
         // For pmaddubsw, we need unsigned * signed layout
         // grain_lo is already sign-extended i16, but we need [g, 0, g, 0] bytes
         // Actually, we need the raw bytes for pmaddubsw
-        let grain_interleaved = _mm256_unpacklo_epi8(
-            _mm256_castsi128_si256(grain_bytes),
-            zero,
-        );
+        let grain_interleaved = _mm256_unpacklo_epi8(_mm256_castsi128_si256(grain_bytes), zero);
         // Fix: need to handle both lanes properly
         // Use insert to put high bytes in high lane
         let grain_128_hi = _mm_srli_si128(grain_bytes, 8);
-        let grain_interleaved_hi = _mm256_unpacklo_epi8(
-            _mm256_castsi128_si256(grain_128_hi),
-            zero,
-        );
+        let grain_interleaved_hi = _mm256_unpacklo_epi8(_mm256_castsi128_si256(grain_128_hi), zero);
         // Combine into one register
         let grain_combined = _mm256_inserti128_si256(
             grain_interleaved,
@@ -670,16 +660,28 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
                 let blended = blended.clamp(-128, 127);
                 let sc = *scaling.add(sv) as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                *dst_ptr.add(x) = ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u8;
+                *dst_ptr.add(x) =
+                    ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u8;
             }
 
             // SIMD for the rest
             fgy_row_simd_8bpc(
-                dst_ptr, src_ptr, scaling, grain_row,
-                bw, xstart,
-                mul, min_vec, max_vec,
-                &offsets, grain_lut, offy, y,
-                -128, 127, scaling_shift,
+                dst_ptr,
+                src_ptr,
+                scaling,
+                grain_row,
+                bw,
+                xstart,
+                mul,
+                min_vec,
+                max_vec,
+                &offsets,
+                grain_lut,
+                offy,
+                y,
+                -128,
+                127,
+                scaling_shift,
             );
         }
 
@@ -696,7 +698,8 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
                 let blended = blended.clamp(-128, 127);
                 let sc = *scaling.add(sv) as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                *dst_ptr.add(x) = ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u8;
+                *dst_ptr.add(x) =
+                    ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u8;
             }
 
             // Corner overlap (both x and y)
@@ -704,7 +707,8 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
                 let sv = *src_ptr.add(x) as usize;
 
                 let top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
-                let old_top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                let old_top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE]
+                    [prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let top = round2(old_top * W[x][0] + top * W[x][1], 5);
                 let top = top.clamp(-128, 127);
 
@@ -717,7 +721,8 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
                 let blended = blended.clamp(-128, 127);
                 let sc = *scaling.add(sv) as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                *dst_ptr.add(x) = ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u8;
+                *dst_ptr.add(x) =
+                    ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u8;
             }
         }
     }
@@ -824,7 +829,8 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_avx2(
                 let blended = blended.clamp(grain_min, grain_max);
                 let sc = *scaling.add(cmp::min(sv, (bitdepth_max as usize))) as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                *dst_ptr.add(x) = ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
+                *dst_ptr.add(x) =
+                    ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
             }
 
             // SIMD for main body - 16 pixels at a time
@@ -856,7 +862,8 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_avx2(
                 let grain = (*grain_lut)[offy + y][offx + x] as i32;
                 let sc = *scaling.add(sv) as i32;
                 let noise = round2(sc * grain, scaling_shift);
-                *dst_ptr.add(x) = ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
+                *dst_ptr.add(x) =
+                    ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
                 x += 1;
             }
         }
@@ -874,23 +881,27 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_avx2(
                 let blended = blended.clamp(grain_min, grain_max);
                 let sc = *scaling.add(sv) as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                *dst_ptr.add(x) = ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
+                *dst_ptr.add(x) =
+                    ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
             }
 
             for x in 0..xstart {
                 let sv = cmp::min(*src_ptr.add(x) as usize, bitdepth_max as usize);
                 let top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
-                let old_top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                let old_top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE]
+                    [prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let top = round2(old_top * W[x][0] + top * W[x][1], 5).clamp(grain_min, grain_max);
 
                 let grain = (*grain_lut)[offy + y][offx + x] as i32;
                 let old = (*grain_lut)[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let grain = round2(old * W[x][0] + grain * W[x][1], 5).clamp(grain_min, grain_max);
 
-                let blended = round2(top * W[y][0] + grain * W[y][1], 5).clamp(grain_min, grain_max);
+                let blended =
+                    round2(top * W[y][0] + grain * W[y][1], 5).clamp(grain_min, grain_max);
                 let sc = *scaling.add(sv) as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                *dst_ptr.add(x) = ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
+                *dst_ptr.add(x) =
+                    ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
             }
         }
     }
@@ -990,8 +1001,7 @@ unsafe fn fguv_inner_8bpc(
             let val = if data.chroma_scaling_from_luma {
                 avg
             } else {
-                let combined = avg * data.uv_luma_mult[uv]
-                    + src_val as i32 * data.uv_mult[uv];
+                let combined = avg * data.uv_luma_mult[uv] + src_val as i32 * data.uv_mult[uv];
                 ((combined >> 6) + data.uv_offset[uv]).clamp(0, 255)
             };
             let sc = *scaling.add(val as usize) as i32;
@@ -1027,19 +1037,47 @@ unsafe fn fguv_inner_8bpc(
                 let mut sc_hi_bytes = [0u8; 32];
 
                 for i in 0..8 {
-                    let val = compute_uv_scaling_val(src_ptr.add(x + i), luma_ptr.add((x + i) << sx), is_sx, data, uv, scaling);
+                    let val = compute_uv_scaling_val(
+                        src_ptr.add(x + i),
+                        luma_ptr.add((x + i) << sx),
+                        is_sx,
+                        data,
+                        uv,
+                        scaling,
+                    );
                     sc_lo_bytes[i * 2] = val;
                 }
                 for i in 0..8 {
-                    let val = compute_uv_scaling_val(src_ptr.add(x + 16 + i), luma_ptr.add((x + 16 + i) << sx), is_sx, data, uv, scaling);
+                    let val = compute_uv_scaling_val(
+                        src_ptr.add(x + 16 + i),
+                        luma_ptr.add((x + 16 + i) << sx),
+                        is_sx,
+                        data,
+                        uv,
+                        scaling,
+                    );
                     sc_lo_bytes[16 + i * 2] = val;
                 }
                 for i in 0..8 {
-                    let val = compute_uv_scaling_val(src_ptr.add(x + 8 + i), luma_ptr.add((x + 8 + i) << sx), is_sx, data, uv, scaling);
+                    let val = compute_uv_scaling_val(
+                        src_ptr.add(x + 8 + i),
+                        luma_ptr.add((x + 8 + i) << sx),
+                        is_sx,
+                        data,
+                        uv,
+                        scaling,
+                    );
                     sc_hi_bytes[i * 2] = val;
                 }
                 for i in 0..8 {
-                    let val = compute_uv_scaling_val(src_ptr.add(x + 24 + i), luma_ptr.add((x + 24 + i) << sx), is_sx, data, uv, scaling);
+                    let val = compute_uv_scaling_val(
+                        src_ptr.add(x + 24 + i),
+                        luma_ptr.add((x + 24 + i) << sx),
+                        is_sx,
+                        data,
+                        uv,
+                        scaling,
+                    );
                     sc_hi_bytes[16 + i * 2] = val;
                 }
 
@@ -1089,14 +1127,18 @@ unsafe fn fguv_inner_8bpc(
 
             for x in 0..xstart {
                 let top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
-                let old_top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5).clamp(grain_min, grain_max);
+                let old_top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
+                    [prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5)
+                    .clamp(grain_min, grain_max);
 
                 let grain = (*grain_lut)[offy + y][offx + x] as i32;
                 let old = (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                let grain = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
+                let grain =
+                    round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
 
-                let blended = round2(top * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
+                let blended =
+                    round2(top * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
                 *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
             }
         }
@@ -1165,8 +1207,8 @@ pub unsafe extern "C" fn fguv_32x32xn_i420_8bpc_avx2(
         luma_stride as isize,
         uv_pl != 0,
         is_id != 0,
-        true,  // is_sx
-        true,  // is_sy
+        true, // is_sx
+        true, // is_sy
     );
 }
 
@@ -1289,7 +1331,10 @@ unsafe fn fguv_inner_16bpc(
     let scaling_shift = data.scaling_shift;
 
     let (min_value, max_value): (i32, i32) = if data.clip_to_restricted_range {
-        (16 << bitdepth_min_8 as i32, (if is_id { 235 } else { 240 }) << bitdepth_min_8 as i32)
+        (
+            16 << bitdepth_min_8 as i32,
+            (if is_id { 235 } else { 240 }) << bitdepth_min_8 as i32,
+        )
     } else {
         (0, bitdepth_max as i32)
     };
@@ -1307,9 +1352,9 @@ unsafe fn fguv_inner_16bpc(
         let val = if data.chroma_scaling_from_luma {
             avg
         } else {
-            let combined = avg * data.uv_luma_mult[uv]
-                + src_val as i32 * data.uv_mult[uv];
-            ((combined >> 6) + data.uv_offset[uv] * (1 << bitdepth_min_8)).clamp(0, bitdepth_max as i32)
+            let combined = avg * data.uv_luma_mult[uv] + src_val as i32 * data.uv_mult[uv];
+            ((combined >> 6) + data.uv_offset[uv] * (1 << bitdepth_min_8))
+                .clamp(0, bitdepth_max as i32)
         };
         let sc = *scaling.add(cmp::min(val as usize, bitdepth_max as usize)) as i32;
         let noise = round2(sc * grain, scaling_shift);
@@ -1354,12 +1399,15 @@ unsafe fn fguv_inner_16bpc(
         for y in ystart..bh {
             let src_ptr = src.offset(y as isize * stride_u16).add(bx);
             let dst_ptr = dst.offset(y as isize * stride_u16).add(bx);
-            let luma_ptr = luma.offset((y << sy) as isize * luma_stride_u16).add(bx << sx);
+            let luma_ptr = luma
+                .offset((y << sy) as isize * luma_stride_u16)
+                .add(bx << sx);
 
             for x in 0..xstart {
                 let grain = (*grain_lut)[offy + y][offx + x] as i32;
                 let old = (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                let blended = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
+                let blended =
+                    round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
                 *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
             }
 
@@ -1372,25 +1420,32 @@ unsafe fn fguv_inner_16bpc(
         for y in 0..ystart {
             let src_ptr = src.offset(y as isize * stride_u16).add(bx);
             let dst_ptr = dst.offset(y as isize * stride_u16).add(bx);
-            let luma_ptr = luma.offset((y << sy) as isize * luma_stride_u16).add(bx << sx);
+            let luma_ptr = luma
+                .offset((y << sy) as isize * luma_stride_u16)
+                .add(bx << sx);
 
             for x in xstart..bw {
                 let grain = (*grain_lut)[offy + y][offx + x] as i32;
                 let old = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
-                let blended = round2(old * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
+                let blended =
+                    round2(old * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
                 *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
             }
 
             for x in 0..xstart {
                 let top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
-                let old_top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5).clamp(grain_min, grain_max);
+                let old_top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
+                    [prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5)
+                    .clamp(grain_min, grain_max);
 
                 let grain = (*grain_lut)[offy + y][offx + x] as i32;
                 let old = (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                let grain = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
+                let grain =
+                    round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
 
-                let blended = round2(top * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
+                let blended =
+                    round2(top * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
                 *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
             }
         }
@@ -1501,12 +1556,24 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     let bd_c = bd.into_c();
     unsafe {
         match (BD::BPC, layout) {
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => generate_grain_uv_420_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => generate_grain_uv_422_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => generate_grain_uv_444_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => generate_grain_uv_420_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => generate_grain_uv_422_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => generate_grain_uv_444_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => {
+                generate_grain_uv_420_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
+            }
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => {
+                generate_grain_uv_422_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
+            }
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => {
+                generate_grain_uv_444_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
+            }
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => {
+                generate_grain_uv_420_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
+            }
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => {
+                generate_grain_uv_422_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
+            }
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => {
+                generate_grain_uv_444_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c)
+            }
         }
     }
     true
@@ -1545,8 +1612,34 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     let src_row_ffi = FFISafe::new(&src_row);
     unsafe {
         match BD::BPC {
-            BPC::BPC8 => fgy_32x32xn_8bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, bd_c, dst_row_ffi, src_row_ffi),
-            BPC::BPC16 => fgy_32x32xn_16bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, bd_c, dst_row_ffi, src_row_ffi),
+            BPC::BPC8 => fgy_32x32xn_8bpc_avx2(
+                dst_row_ptr,
+                src_row_ptr,
+                stride,
+                data_c,
+                pw,
+                scaling_ptr,
+                grain_lut_ptr,
+                bh_c,
+                row_num_c,
+                bd_c,
+                dst_row_ffi,
+                src_row_ffi,
+            ),
+            BPC::BPC16 => fgy_32x32xn_16bpc_avx2(
+                dst_row_ptr,
+                src_row_ptr,
+                stride,
+                data_c,
+                pw,
+                scaling_ptr,
+                grain_lut_ptr,
+                bh_c,
+                row_num_c,
+                bd_c,
+                dst_row_ffi,
+                src_row_ffi,
+            ),
         }
     }
     true
@@ -1596,12 +1689,120 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     let luma_row_ffi = FFISafe::new(&luma_row);
     unsafe {
         match (BD::BPC, layout) {
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => fguv_32x32xn_i420_8bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => fguv_32x32xn_i422_8bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => fguv_32x32xn_i444_8bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => fguv_32x32xn_i420_16bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => fguv_32x32xn_i422_16bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => fguv_32x32xn_i444_16bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => fguv_32x32xn_i420_8bpc_avx2(
+                dst_row_ptr,
+                src_row_ptr,
+                stride,
+                data_c,
+                pw,
+                scaling_ptr,
+                grain_lut_ptr,
+                bh_c,
+                row_num_c,
+                luma_row_ptr,
+                luma_stride,
+                uv_pl,
+                is_id_c,
+                bd_c,
+                dst_row_ffi,
+                src_row_ffi,
+                luma_row_ffi,
+            ),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => fguv_32x32xn_i422_8bpc_avx2(
+                dst_row_ptr,
+                src_row_ptr,
+                stride,
+                data_c,
+                pw,
+                scaling_ptr,
+                grain_lut_ptr,
+                bh_c,
+                row_num_c,
+                luma_row_ptr,
+                luma_stride,
+                uv_pl,
+                is_id_c,
+                bd_c,
+                dst_row_ffi,
+                src_row_ffi,
+                luma_row_ffi,
+            ),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => fguv_32x32xn_i444_8bpc_avx2(
+                dst_row_ptr,
+                src_row_ptr,
+                stride,
+                data_c,
+                pw,
+                scaling_ptr,
+                grain_lut_ptr,
+                bh_c,
+                row_num_c,
+                luma_row_ptr,
+                luma_stride,
+                uv_pl,
+                is_id_c,
+                bd_c,
+                dst_row_ffi,
+                src_row_ffi,
+                luma_row_ffi,
+            ),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => fguv_32x32xn_i420_16bpc_avx2(
+                dst_row_ptr,
+                src_row_ptr,
+                stride,
+                data_c,
+                pw,
+                scaling_ptr,
+                grain_lut_ptr,
+                bh_c,
+                row_num_c,
+                luma_row_ptr,
+                luma_stride,
+                uv_pl,
+                is_id_c,
+                bd_c,
+                dst_row_ffi,
+                src_row_ffi,
+                luma_row_ffi,
+            ),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => fguv_32x32xn_i422_16bpc_avx2(
+                dst_row_ptr,
+                src_row_ptr,
+                stride,
+                data_c,
+                pw,
+                scaling_ptr,
+                grain_lut_ptr,
+                bh_c,
+                row_num_c,
+                luma_row_ptr,
+                luma_stride,
+                uv_pl,
+                is_id_c,
+                bd_c,
+                dst_row_ffi,
+                src_row_ffi,
+                luma_row_ffi,
+            ),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => fguv_32x32xn_i444_16bpc_avx2(
+                dst_row_ptr,
+                src_row_ptr,
+                stride,
+                data_c,
+                pw,
+                scaling_ptr,
+                grain_lut_ptr,
+                bh_c,
+                row_num_c,
+                luma_row_ptr,
+                luma_stride,
+                uv_pl,
+                is_id_c,
+                bd_c,
+                dst_row_ffi,
+                src_row_ffi,
+                luma_row_ffi,
+            ),
         }
     }
     true

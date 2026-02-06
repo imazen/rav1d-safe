@@ -58,9 +58,8 @@ fn loop_filter_core<BD: BitDepth>(
     for idx in 0..4isize {
         let base = unsafe { dst.offset(idx * stridea) };
 
-        let get_px = |offset: isize| -> i32 {
-            unsafe { (*base.offset(strideb * offset)).as_::<i32>() }
-        };
+        let get_px =
+            |offset: isize| -> i32 { unsafe { (*base.offset(strideb * offset)).as_::<i32>() } };
         let set_px = |offset: isize, val: i32| {
             unsafe {
                 *base.offset(strideb * offset) = iclip(val, 0, bitdepth_max).as_::<BD::Pixel>()
@@ -134,18 +133,66 @@ fn loop_filter_core<BD: BitDepth>(
 
         if wd >= 16 && flat8out && flat8in {
             // Wide 16-tap filter
-            set_px(-6, (p6 + p6 + p6 + p6 + p6 + p6 * 2 + p5 * 2 + p4 * 2 + p3 + p2 + p1 + p0 + q0 + 8) >> 4);
-            set_px(-5, (p6 + p6 + p6 + p6 + p6 + p5 * 2 + p4 * 2 + p3 * 2 + p2 + p1 + p0 + q0 + q1 + 8) >> 4);
-            set_px(-4, (p6 + p6 + p6 + p6 + p5 + p4 * 2 + p3 * 2 + p2 * 2 + p1 + p0 + q0 + q1 + q2 + 8) >> 4);
-            set_px(-3, (p6 + p6 + p6 + p5 + p4 + p3 * 2 + p2 * 2 + p1 * 2 + p0 + q0 + q1 + q2 + q3 + 8) >> 4);
-            set_px(-2, (p6 + p6 + p5 + p4 + p3 + p2 * 2 + p1 * 2 + p0 * 2 + q0 + q1 + q2 + q3 + q4 + 8) >> 4);
-            set_px(-1, (p6 + p5 + p4 + p3 + p2 + p1 * 2 + p0 * 2 + q0 * 2 + q1 + q2 + q3 + q4 + q5 + 8) >> 4);
-            set_px(0, (p5 + p4 + p3 + p2 + p1 + p0 * 2 + q0 * 2 + q1 * 2 + q2 + q3 + q4 + q5 + q6 + 8) >> 4);
-            set_px(1, (p4 + p3 + p2 + p1 + p0 + q0 * 2 + q1 * 2 + q2 * 2 + q3 + q4 + q5 + q6 + q6 + 8) >> 4);
-            set_px(2, (p3 + p2 + p1 + p0 + q0 + q1 * 2 + q2 * 2 + q3 * 2 + q4 + q5 + q6 + q6 + q6 + 8) >> 4);
-            set_px(3, (p2 + p1 + p0 + q0 + q1 + q2 * 2 + q3 * 2 + q4 * 2 + q5 + q6 + q6 + q6 + q6 + 8) >> 4);
-            set_px(4, (p1 + p0 + q0 + q1 + q2 + q3 * 2 + q4 * 2 + q5 * 2 + q6 + q6 + q6 + q6 + q6 + 8) >> 4);
-            set_px(5, (p0 + q0 + q1 + q2 + q3 + q4 * 2 + q5 * 2 + q6 * 2 + q6 + q6 + q6 + q6 + q6 + 8) >> 4);
+            set_px(
+                -6,
+                (p6 + p6 + p6 + p6 + p6 + p6 * 2 + p5 * 2 + p4 * 2 + p3 + p2 + p1 + p0 + q0 + 8)
+                    >> 4,
+            );
+            set_px(
+                -5,
+                (p6 + p6 + p6 + p6 + p6 + p5 * 2 + p4 * 2 + p3 * 2 + p2 + p1 + p0 + q0 + q1 + 8)
+                    >> 4,
+            );
+            set_px(
+                -4,
+                (p6 + p6 + p6 + p6 + p5 + p4 * 2 + p3 * 2 + p2 * 2 + p1 + p0 + q0 + q1 + q2 + 8)
+                    >> 4,
+            );
+            set_px(
+                -3,
+                (p6 + p6 + p6 + p5 + p4 + p3 * 2 + p2 * 2 + p1 * 2 + p0 + q0 + q1 + q2 + q3 + 8)
+                    >> 4,
+            );
+            set_px(
+                -2,
+                (p6 + p6 + p5 + p4 + p3 + p2 * 2 + p1 * 2 + p0 * 2 + q0 + q1 + q2 + q3 + q4 + 8)
+                    >> 4,
+            );
+            set_px(
+                -1,
+                (p6 + p5 + p4 + p3 + p2 + p1 * 2 + p0 * 2 + q0 * 2 + q1 + q2 + q3 + q4 + q5 + 8)
+                    >> 4,
+            );
+            set_px(
+                0,
+                (p5 + p4 + p3 + p2 + p1 + p0 * 2 + q0 * 2 + q1 * 2 + q2 + q3 + q4 + q5 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                1,
+                (p4 + p3 + p2 + p1 + p0 + q0 * 2 + q1 * 2 + q2 * 2 + q3 + q4 + q5 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                2,
+                (p3 + p2 + p1 + p0 + q0 + q1 * 2 + q2 * 2 + q3 * 2 + q4 + q5 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                3,
+                (p2 + p1 + p0 + q0 + q1 + q2 * 2 + q3 * 2 + q4 * 2 + q5 + q6 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                4,
+                (p1 + p0 + q0 + q1 + q2 + q3 * 2 + q4 * 2 + q5 * 2 + q6 + q6 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
+            set_px(
+                5,
+                (p0 + q0 + q1 + q2 + q3 + q4 * 2 + q5 * 2 + q6 * 2 + q6 + q6 + q6 + q6 + q6 + 8)
+                    >> 4,
+            );
         } else if wd >= 8 && flat8in {
             // 8-tap filter
             set_px(-3, (p3 + p3 + p3 + 2 * p2 + p1 + p0 + q0 + 4) >> 3);
@@ -205,9 +252,7 @@ fn lpf_h_sb_inner<BD: BitDepth, const YUV: usize>(
             continue;
         }
 
-        let vm = (vmask[0] >> x) & 1
-            | ((vmask[1] >> x) & 1) << 1
-            | ((vmask[2] >> x) & 1) << 2;
+        let vm = (vmask[0] >> x) & 1 | ((vmask[1] >> x) & 1) << 1 | ((vmask[2] >> x) & 1) << 2;
 
         if vm == 0 {
             continue;
@@ -259,9 +304,7 @@ fn lpf_v_sb_inner<BD: BitDepth, const YUV: usize>(
             continue;
         }
 
-        let vm = (vmask[0] >> y) & 1
-            | ((vmask[1] >> y) & 1) << 1
-            | ((vmask[2] >> y) & 1) << 2;
+        let vm = (vmask[0] >> y) & 1 | ((vmask[1] >> y) & 1) << 1 | ((vmask[2] >> y) & 1) << 2;
 
         if vm == 0 {
             continue;
@@ -541,28 +584,100 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     unsafe {
         match (BD::BPC, is_y, is_v) {
             (BPC::BPC8, true, false) => lpf_h_sb_y_8bpc_neon(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC8, true, true) => lpf_v_sb_y_8bpc_neon(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC8, false, false) => lpf_h_sb_uv_8bpc_neon(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC8, false, true) => lpf_v_sb_uv_8bpc_neon(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC16, true, false) => lpf_h_sb_y_16bpc_neon(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC16, true, true) => lpf_v_sb_y_16bpc_neon(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC16, false, false) => lpf_h_sb_uv_16bpc_neon(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
             (BPC::BPC16, false, true) => lpf_v_sb_uv_16bpc_neon(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bitdepth_max, dst_ffi, lvl_ffi,
+                dst_ptr,
+                stride,
+                mask,
+                lvl_ptr,
+                b4_stride,
+                lut,
+                w,
+                bitdepth_max,
+                dst_ffi,
+                lvl_ffi,
             ),
         }
     }
