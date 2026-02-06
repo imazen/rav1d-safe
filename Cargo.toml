@@ -46,6 +46,9 @@ asm_arm64_dotprod = ["asm"]
 asm_arm64_i8mm = ["asm"]
 asm_arm64_sve2 = ["asm"]
 
+# C FFI - enables extern "C" wrappers, c_arc, c_box, FFISafe, dav1d_* API
+# Without this or `asm`, the crate enforces #![forbid(unsafe_code)]
+c-ffi = []
 
 bitdepth_8 = []
 bitdepth_16 = []

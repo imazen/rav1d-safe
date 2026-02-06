@@ -4,10 +4,12 @@
     any(target_arch = "riscv32", target_arch = "riscv64"),
     feature(stdarch_riscv_feature_detection)
 )]
-#![deny(unsafe_op_in_unsafe_fn)]
+// When neither `asm` nor `c-ffi` is enabled, enforce zero unsafe code
+#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), forbid(unsafe_code))]
+#![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
 #![allow(clippy::all)]
-#![deny(clippy::undocumented_unsafe_blocks)]
-#![deny(clippy::missing_safety_doc)]
+#![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(clippy::undocumented_unsafe_blocks))]
+#![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(clippy::missing_safety_doc))]
 
 #[cfg(not(any(feature = "bitdepth_8", feature = "bitdepth_16")))]
 compile_error!("No bitdepths enabled. Enable one or more of the following features: `bitdepth_8`, `bitdepth_16`");
