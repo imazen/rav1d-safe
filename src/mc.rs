@@ -1435,6 +1435,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mc(
 ) -> ());
 
 impl mc::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         filter: Filter2d,
@@ -1487,6 +1488,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mc_scaled(
 ) -> ());
 
 impl mc_scaled::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         filter: Filter2d,
@@ -1537,6 +1539,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn warp8x8(
 ) -> ());
 
 impl warp8x8::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         dst: PicOffset,
@@ -1581,6 +1584,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mct(
 ) -> ());
 
 impl mct::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         filter: Filter2d,
@@ -1624,6 +1628,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mct_scaled(
 ) -> ());
 
 impl mct_scaled::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         filter: Filter2d,
@@ -1668,6 +1673,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn warp8x8t(
 ) -> ());
 
 impl warp8x8t::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         tmp: &mut [i16],
@@ -1711,6 +1717,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn avg(
 ) -> ());
 
 impl avg::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         dst: PicOffset,
@@ -1749,6 +1756,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn w_avg(
 ) -> ());
 
 impl w_avg::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         dst: PicOffset,
@@ -1787,6 +1795,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mask(
 ) -> ());
 
 impl mask::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         dst: PicOffset,
@@ -1827,6 +1836,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn w_mask(
 ) -> ());
 
 impl w_mask::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         layout: Rav1dPixelLayoutSubSampled,
@@ -1866,6 +1876,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn blend(
 ) -> ());
 
 impl blend::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         dst: PicOffset,
@@ -1900,6 +1911,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn blend_dir(
 ) -> ());
 
 impl blend_dir::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         is_h: bool,
@@ -1939,6 +1951,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn emu_edge(
 ) -> ());
 
 impl emu_edge::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         bw: isize,
@@ -1987,6 +2000,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn resize(
 ) -> ());
 
 impl resize::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         dst: WithOffset<PicOrBuf<AlignedVec64<u8>>>,

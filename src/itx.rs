@@ -403,6 +403,7 @@ wrap_fn_ptr!(unsafe extern "C" fn itxfm(
     _dst: *const FFISafe<PicOffset>,
 ) -> ());
 impl itxfm::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         tx_size: usize,

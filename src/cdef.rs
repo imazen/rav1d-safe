@@ -157,6 +157,7 @@ impl cdef::Fn {
     /// so in order to get access to pre-filter top pixels, use `top`.
     ///
     /// `variant`: 0 = 8x8 (444/luma), 1 = 4x8 (422), 2 = 4x4 (420)
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         variant: usize,
@@ -252,6 +253,7 @@ fn cdef_dir_direct<BD: BitDepth>(dst: PicOffset, variance: &mut c_uint, bd: BD) 
 }
 
 impl cdef_dir::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(&self, dst: PicOffset, variance: &mut c_uint, bd: BD) -> c_int {
         cfg_if::cfg_if! {
             if #[cfg(feature = "asm")] {

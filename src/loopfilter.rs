@@ -101,6 +101,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
 }
 
 impl loopfilter_sb::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         f: &Rav1dFrameData,

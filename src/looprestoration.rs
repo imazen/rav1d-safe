@@ -185,6 +185,7 @@ impl loop_restoration_filter::Fn {
     /// (which is 32 pixels for subsampled chroma and 64 pixels for luma).
     ///
     /// `variant`: 0 = wiener7, 1 = wiener5, 2 = sgr_5x5, 3 = sgr_3x3, 4 = sgr_mix
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         variant: usize,

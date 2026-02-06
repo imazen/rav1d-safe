@@ -206,6 +206,7 @@ fn intra_pred_direct<BD: BitDepth>(
 }
 
 impl angular_ipred::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         mode: usize,
@@ -304,6 +305,7 @@ fn cfl_ac_direct<BD: BitDepth>(
 }
 
 impl cfl_ac::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         layout: Rav1dPixelLayoutSubSampled,
@@ -369,6 +371,7 @@ fn cfl_pred_direct<BD: BitDepth>(
 }
 
 impl cfl_pred::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         mode: usize,
@@ -446,6 +449,7 @@ fn pal_pred_direct<BD: BitDepth>(
 }
 
 impl pal_pred::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         dst: PicOffset,

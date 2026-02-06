@@ -53,6 +53,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn generate_grain_y(
 ) -> ());
 
 impl generate_grain_y::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         buf: &mut GrainLut<BD::Entry>,
@@ -82,6 +83,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn generate_grain_uv(
 ) -> ());
 
 impl generate_grain_uv::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         layout: Rav1dPixelLayoutSubSampled,
@@ -124,6 +126,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn fgy_32x32xn(
 ) -> ());
 
 impl fgy_32x32xn::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         dst: &Rav1dPictureDataComponent,
@@ -197,6 +200,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn fguv_32x32xn(
 ) -> ());
 
 impl fguv_32x32xn::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         layout: Rav1dPixelLayoutSubSampled,
