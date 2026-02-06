@@ -3,8 +3,6 @@
 //! These use archmage tokens to safely invoke NEON intrinsics.
 //! The extern "C" wrappers are used for FFI compatibility with rav1d's dispatch system.
 
-#![allow(unsafe_op_in_unsafe_fn)]
-
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
@@ -116,12 +114,16 @@ pub unsafe extern "C" fn avg_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    // SAFETY: This function is only called through dispatch when NEON is available
-    let token = unsafe { Arm64::forge_token_dangerously() };
-
     let w = w as usize;
     let h = h as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+
+    // SAFETY: This function is only called through dispatch when NEON is available
+    // dst_ptr points to valid memory with proper alignment and size
+    let (token, dst) = unsafe {
+        let token = Arm64::forge_token_dangerously();
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+        (token, dst)
+    };
 
     avg_8bpc_inner(
         token,
@@ -217,11 +219,17 @@ pub unsafe extern "C" fn avg_16bpc_neon(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+
+    // SAFETY: This function is only called through dispatch when NEON is available
+    // dst_ptr points to valid memory with proper alignment and size
+    let (token, dst) = unsafe {
+        let token = Arm64::forge_token_dangerously();
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+        (token, dst)
+    };
 
     avg_16bpc_inner(
         token,
@@ -315,10 +323,15 @@ pub unsafe extern "C" fn w_avg_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+
+    // SAFETY: This function is only called through dispatch when NEON is available
+    let (token, dst) = unsafe {
+        let token = Arm64::forge_token_dangerously();
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+        (token, dst)
+    };
 
     w_avg_8bpc_inner(
         token,
@@ -406,11 +419,16 @@ pub unsafe extern "C" fn w_avg_16bpc_neon(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+
+    // SAFETY: This function is only called through dispatch when NEON is available
+    let (token, dst) = unsafe {
+        let token = Arm64::forge_token_dangerously();
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+        (token, dst)
+    };
 
     w_avg_16bpc_inner(
         token,
@@ -511,11 +529,16 @@ pub unsafe extern "C" fn mask_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = Arm64::forge_token_dangerously();
     let w = w as usize;
     let h = h as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
-    let mask = std::slice::from_raw_parts(mask_ptr, w * h);
+
+    // SAFETY: This function is only called through dispatch when NEON is available
+    let (token, dst, mask) = unsafe {
+        let token = Arm64::forge_token_dangerously();
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+        let mask = std::slice::from_raw_parts(mask_ptr, w * h);
+        (token, dst, mask)
+    };
 
     mask_8bpc_inner(
         token,
@@ -619,12 +642,17 @@ pub unsafe extern "C" fn mask_16bpc_neon(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = Arm64::forge_token_dangerously();
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
-    let mask = std::slice::from_raw_parts(mask_ptr, w * h);
+
+    // SAFETY: This function is only called through dispatch when NEON is available
+    let (token, dst, mask) = unsafe {
+        let token = Arm64::forge_token_dangerously();
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+        let mask = std::slice::from_raw_parts(mask_ptr, w * h);
+        (token, dst, mask)
+    };
 
     mask_16bpc_inner(
         token,
@@ -729,9 +757,14 @@ pub unsafe extern "C" fn blend_8bpc_neon(
 ) {
     let w = w as usize;
     let h = h as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
-    let tmp = std::slice::from_raw_parts(tmp as *const u8, w * h);
-    let mask = std::slice::from_raw_parts(mask_ptr, w * h);
+
+    // SAFETY: Pointers are valid and properly aligned
+    let (dst, tmp, mask) = unsafe {
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+        let tmp = std::slice::from_raw_parts(tmp as *const u8, w * h);
+        let mask = std::slice::from_raw_parts(mask_ptr, w * h);
+        (dst, tmp, mask)
+    };
 
     // blend formula: (dst * (64-m) + tmp * m + 32) >> 6
     for row in 0..h {
@@ -834,9 +867,15 @@ pub unsafe extern "C" fn blend_16bpc_neon(
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
-    let tmp = std::slice::from_raw_parts(tmp as *const u16, w * h);
-    let mask = std::slice::from_raw_parts(mask_ptr, w * h);
+
+    // SAFETY: Pointers are valid and properly aligned
+    let (dst, tmp, mask) = unsafe {
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+        let tmp = std::slice::from_raw_parts(tmp as *const u16, w * h);
+        let mask = std::slice::from_raw_parts(mask_ptr, w * h);
+        (dst, tmp, mask)
+
+    };
 
     // blend formula: (dst * (64-m) + tmp * m + 32) >> 6
     for row in 0..h {
@@ -959,8 +998,13 @@ pub unsafe extern "C" fn blend_v_8bpc_neon(
 
     let w = w as usize;
     let h = h as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
-    let tmp = std::slice::from_raw_parts(tmp as *const u8, w * h);
+
+    // SAFETY: Pointers are valid and properly aligned
+    let (dst, tmp) = unsafe {
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+        let tmp = std::slice::from_raw_parts(tmp as *const u8, w * h);
+        (dst, tmp)
+    };
     let mask = &dav1d_obmc_masks.0[w..];
     let dst_w = w * 3 >> 2;
 
@@ -1052,8 +1096,13 @@ pub unsafe extern "C" fn blend_v_16bpc_neon(
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
-    let tmp = std::slice::from_raw_parts(tmp as *const u16, w * h);
+
+    // SAFETY: Pointers are valid and properly aligned
+    let (dst, tmp) = unsafe {
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+        let tmp = std::slice::from_raw_parts(tmp as *const u16, w * h);
+        (dst, tmp)
+    };
     let mask = &dav1d_obmc_masks.0[w..];
     let dst_w = w * 3 >> 2;
 
@@ -1164,9 +1213,13 @@ pub unsafe extern "C" fn blend_h_8bpc_neon(
     let h = h as usize;
     let mask = &dav1d_obmc_masks.0[h..];
     let h_effective = h * 3 >> 2;
-    let dst =
-        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h_effective * dst_stride.unsigned_abs());
-    let tmp = std::slice::from_raw_parts(tmp as *const u8, w * h_effective);
+
+    // SAFETY: Pointers are valid and properly aligned
+    let (dst, tmp) = unsafe {
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h_effective * dst_stride.unsigned_abs());
+        let tmp = std::slice::from_raw_parts(tmp as *const u8, w * h_effective);
+        (dst, tmp)
+    };
 
     // blend_h formula: (dst * (64-m) + tmp * m + 32) >> 6
     for row in 0..h_effective {
@@ -1271,8 +1324,13 @@ pub unsafe extern "C" fn blend_h_16bpc_neon(
     let mask = &dav1d_obmc_masks.0[h..];
     let h_effective = h * 3 >> 2;
     let dst_stride_u16 = (dst_stride / 2) as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h_effective * dst_stride_u16);
-    let tmp = std::slice::from_raw_parts(tmp as *const u16, w * h_effective);
+
+    // SAFETY: Pointers are valid and properly aligned
+    let (dst, tmp) = unsafe {
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h_effective * dst_stride_u16);
+        let tmp = std::slice::from_raw_parts(tmp as *const u16, w * h_effective);
+        (dst, tmp)
+    };
 
     // blend_h formula: (dst * (64-m) + tmp * m + 32) >> 6
     for row in 0..h_effective {
@@ -1496,7 +1554,11 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
 ) {
     let w = w as usize;
     let h = h as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+
+    // SAFETY: Pointers are valid and properly aligned
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs())
+    };
 
     w_mask_8bpc_inner::<false, false>(
         dst,
@@ -1525,7 +1587,11 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
 ) {
     let w = w as usize;
     let h = h as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+
+    // SAFETY: Pointers are valid and properly aligned
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs())
+    };
 
     w_mask_8bpc_inner::<true, false>(
         dst,
@@ -1554,7 +1620,11 @@ pub unsafe extern "C" fn w_mask_420_8bpc_neon(
 ) {
     let w = w as usize;
     let h = h as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+
+    // SAFETY: Pointers are valid and properly aligned
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs())
+    };
 
     w_mask_8bpc_inner::<true, true>(
         dst,
@@ -1789,14 +1859,20 @@ pub unsafe extern "C" fn put_bilin_8bpc_neon(
     _dst: *const FFISafe<PicOffset>,
     _src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
-    let src = std::slice::from_raw_parts(
-        src_ptr as *const u8,
-        (h + 1) * src_stride.unsigned_abs() + w + 1,
-    );
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+
+    // SAFETY: This function is only called through dispatch when NEON is available
+    // Pointers are valid and properly aligned
+    let (token, src, dst) = unsafe {
+        let token = Arm64::forge_token_dangerously();
+        let src = std::slice::from_raw_parts(
+            src_ptr as *const u8,
+            (h + 1) * src_stride.unsigned_abs() + w + 1,
+        );
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
+        (token, src, dst)
+    };
 
     put_bilin_8bpc_inner(
         token,
@@ -2032,14 +2108,20 @@ pub unsafe extern "C" fn prep_bilin_8bpc_neon(
     _bitdepth_max: i32,
     _src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
-    let src = std::slice::from_raw_parts(
-        src_ptr as *const u8,
-        (h + 1) * src_stride.unsigned_abs() + w + 1,
-    );
-    let tmp_slice = std::slice::from_raw_parts_mut(tmp, h * w);
+
+    // SAFETY: This function is only called through dispatch when NEON is available
+    // Pointers are valid and properly aligned
+    let (token, src, tmp_slice) = unsafe {
+        let token = Arm64::forge_token_dangerously();
+        let src = std::slice::from_raw_parts(
+            src_ptr as *const u8,
+            (h + 1) * src_stride.unsigned_abs() + w + 1,
+        );
+        let tmp_slice = std::slice::from_raw_parts_mut(tmp, h * w);
+        (token, src, tmp_slice)
+    };
 
     prep_bilin_8bpc_inner(token, tmp_slice, src, src_stride as usize, w, h, mx, my);
 }
@@ -2162,13 +2244,19 @@ pub unsafe extern "C" fn put_bilin_16bpc_neon(
     _dst: *const FFISafe<PicOffset>,
     _src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
     let src_stride_u16 = (src_stride / 2) as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
-    let src = std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
+
+    // SAFETY: This function is only called through dispatch when NEON is available
+    // Pointers are valid and properly aligned
+    let (token, dst, src) = unsafe {
+        let token = Arm64::forge_token_dangerously();
+        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+        let src = std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
+        (token, dst, src)
+    };
 
     put_bilin_16bpc_inner(
         token,
@@ -2297,12 +2385,18 @@ pub unsafe extern "C" fn prep_bilin_16bpc_neon(
     _bitdepth_max: i32,
     _src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
     let w = w as usize;
     let h = h as usize;
     let src_stride_u16 = (src_stride / 2) as usize;
-    let src = std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
-    let tmp_slice = std::slice::from_raw_parts_mut(tmp, h * w);
+
+    // SAFETY: This function is only called through dispatch when NEON is available
+    // Pointers are valid and properly aligned
+    let (token, src, tmp_slice) = unsafe {
+        let token = Arm64::forge_token_dangerously();
+        let src = std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
+        let tmp_slice = std::slice::from_raw_parts_mut(tmp, h * w);
+        (token, src, tmp_slice)
+    };
 
     prep_bilin_16bpc_inner(token, tmp_slice, src, src_stride_u16, w, h, mx, my);
 }
@@ -2402,7 +2496,10 @@ pub unsafe extern "C" fn w_mask_444_16bpc_neon(
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+    // SAFETY: Pointers are valid and properly aligned
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16)
+    };
 
     w_mask_16bpc_inner::<false, false>(
         dst,
@@ -2433,7 +2530,10 @@ pub unsafe extern "C" fn w_mask_422_16bpc_neon(
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+    // SAFETY: Pointers are valid and properly aligned
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16)
+    };
 
     w_mask_16bpc_inner::<true, false>(
         dst,
@@ -2464,7 +2564,10 @@ pub unsafe extern "C" fn w_mask_420_16bpc_neon(
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
-    let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
+    // SAFETY: Pointers are valid and properly aligned
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16)
+    };
 
     w_mask_16bpc_inner::<true, true>(
         dst,

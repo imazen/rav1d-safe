@@ -1,5 +1,3 @@
-#![allow(unsafe_op_in_unsafe_fn)]
-
 //! Safe ARM NEON implementation of refmvs functions.
 //!
 //! splat_mv: Fills rows of RefMvsBlock arrays with a single value.
@@ -32,19 +30,19 @@ pub unsafe extern "C" fn splat_mv_neon(
 
     // Load the 16-byte aligned value (12 bytes data + 4 bytes padding)
     let rmv_ptr = rmv as *const Align16<RefMvsBlock> as *const u8;
-    let val128 = vld1q_u8(rmv_ptr);
+    let val128 = unsafe { vld1q_u8(rmv_ptr) };
 
     for y in 0..bh4 {
-        let row = *rr.add(y);
+        let row = unsafe { *rr.add(y) };
         if row.is_null() {
             continue;
         }
-        let base = (row as *mut u8).add(bx4 * 12);
+        let base = unsafe { (row as *mut u8).add(bx4 * 12) };
 
         // Each RefMvsBlock is 12 bytes. Store 16 bytes at stride 12.
         let mut i = 0;
         while i < bw4 {
-            vst1q_u8(base.add(i * 12), val128);
+            unsafe { vst1q_u8(base.add(i * 12), val128) };
             i += 1;
         }
     }
