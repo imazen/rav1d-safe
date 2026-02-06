@@ -533,11 +533,11 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_avx2(
 /// WHT4x4 - Walsh-Hadamard Transform
 /// Uses the correct formula from itx_1d.rs
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
-    dst: *mut u8,
+fn inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
@@ -552,16 +552,15 @@ unsafe fn inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
     // out2 = t1
     // out3 = t2 + t1
 
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     // Row transform: load from column-major, store row-major
     // Row y has coeffs at: coeff[y + 0*4], coeff[y + 1*4], coeff[y + 2*4], coeff[y + 3*4]
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 } >> 2;
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 } >> 2;
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 } >> 2;
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 } >> 2;
+        let in0 = coeff[y] as i32 >> 2;
+        let in1 = coeff[y + 4] as i32 >> 2;
+        let in2 = coeff[y + 8] as i32 >> 2;
+        let in3 = coeff[y + 12] as i32 >> 2;
 
         let t0 = in0 + in1;
         let t2 = in2 - in3;
@@ -597,19 +596,17 @@ unsafe fn inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
 
     // Add to destination (row-major in tmp)
     for y in 0..4 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         for x in 0..4 {
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let c = tmp[y * 4 + x];
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     // Clear coefficients
-    for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
-    }
+    coeff[..16].fill(0);
 }
 
 /// FFI wrapper for 4x4 WHT 8bpc
@@ -624,37 +621,43 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe {
-        inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
-            dst_ptr as *mut u8,
-            dst_stride,
-            coeff as *mut i16,
-            eob,
-            bitdepth_max,
-        );
-    }
+    let abs_stride = dst_stride.unsigned_abs();
+    let buf_size = 3 * abs_stride + 4;
+    let (base, dst_slice) = if dst_stride >= 0 {
+        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+    } else {
+        let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
+        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+    };
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// WHT4x4 16bpc - Walsh-Hadamard Transform
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i16,
+fn inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let stride_u16 = (dst_stride / 2) as usize;
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     // Row transform: load from column-major, store row-major
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 } >> 2;
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 } >> 2;
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 } >> 2;
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 } >> 2;
+        let in0 = coeff[y] as i32 >> 2;
+        let in1 = coeff[y + 4] as i32 >> 2;
+        let in2 = coeff[y + 8] as i32 >> 2;
+        let in3 = coeff[y + 12] as i32 >> 2;
 
         let t0 = in0 + in1;
         let t2 = in2 - in3;
@@ -689,19 +692,17 @@ unsafe fn inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
 
     // Add to destination
     for y in 0..4 {
-        let dst_row = unsafe { dst.add(y * stride_u16) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
         for x in 0..4 {
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let c = tmp[y * 4 + x];
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     // Clear coefficients
-    for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
-    }
+    coeff[..16].fill(0);
 }
 
 /// FFI wrapper for 4x4 WHT 16bpc
@@ -716,15 +717,24 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    unsafe {
-        inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
-            dst_ptr as *mut u16,
-            dst_stride,
-            coeff as *mut i16,
-            eob,
-            bitdepth_max,
-        );
-    }
+    let stride_u16 = dst_stride / 2;
+    let abs_stride_u16 = stride_u16.unsigned_abs();
+    let buf_size = 3 * abs_stride_u16 + 4;
+    let (base, dst_slice) = if stride_u16 >= 0 {
+        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, buf_size) })
+    } else {
+        let start = unsafe { (dst_ptr as *mut u16).offset(3 * stride_u16) };
+        (3 * abs_stride_u16, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+    };
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
+        dst_slice,
+        base,
+        stride_u16,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -5854,15 +5864,14 @@ mod tests {
         let mut dst = [128u8; 16];
         let stride = 4isize;
 
-        unsafe {
-            inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
-                dst.as_mut_ptr(),
-                stride,
-                coeff.as_mut_ptr(),
-                1,
-                255,
-            );
-        }
+        inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
+            &mut dst,
+            0,
+            stride,
+            &mut coeff,
+            1,
+            255,
+        );
 
         // Should have added DC to all pixels
         assert!(dst.iter().all(|&p| p >= 128));
