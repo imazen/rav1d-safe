@@ -1,3 +1,4 @@
+#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
 #[cfg(any(feature = "asm", feature = "c-ffi"))]
 use crate::include::common::validate::validate_input;
 use crate::include::dav1d::common::Rav1dDataProps;
