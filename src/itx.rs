@@ -282,6 +282,114 @@ unsafe extern "C" fn inv_txfm_add_c_erased<
     inv_txfm_add_rust::<W, H, TYPE, BD>(dst, coeff, eob, bd)
 }
 
+/// Scalar fallback for ITX when no function pointer table is available.
+/// Dispatches to `inv_txfm_add_rust` based on runtime (tx_size, tx_type).
+#[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+fn itxfm_add_scalar_fallback<BD: BitDepth>(
+    tx_size: usize,
+    tx_type: TxfmType,
+    dst: PicOffset,
+    coeff: &mut [BD::Coef],
+    eob: i32,
+    bd: BD,
+) {
+    macro_rules! call {
+        ($w:literal, $h:literal, $ty:expr) => {
+            inv_txfm_add_rust::<$w, $h, { $ty }, BD>(dst, coeff, eob, bd)
+        };
+    }
+    macro_rules! dispatch_type_16 {
+        ($w:literal, $h:literal) => {
+            match tx_type {
+                DCT_DCT => call!($w, $h, DCT_DCT),
+                IDTX => call!($w, $h, IDTX),
+                DCT_ADST => call!($w, $h, DCT_ADST),
+                ADST_DCT => call!($w, $h, ADST_DCT),
+                ADST_ADST => call!($w, $h, ADST_ADST),
+                DCT_FLIPADST => call!($w, $h, DCT_FLIPADST),
+                FLIPADST_DCT => call!($w, $h, FLIPADST_DCT),
+                FLIPADST_FLIPADST => call!($w, $h, FLIPADST_FLIPADST),
+                ADST_FLIPADST => call!($w, $h, ADST_FLIPADST),
+                FLIPADST_ADST => call!($w, $h, FLIPADST_ADST),
+                H_DCT => call!($w, $h, H_DCT),
+                V_DCT => call!($w, $h, V_DCT),
+                H_ADST => call!($w, $h, H_ADST),
+                V_ADST => call!($w, $h, V_ADST),
+                H_FLIPADST => call!($w, $h, H_FLIPADST),
+                V_FLIPADST => call!($w, $h, V_FLIPADST),
+                _ => unreachable!(),
+            }
+        };
+    }
+    macro_rules! dispatch_type_12 {
+        ($w:literal, $h:literal) => {
+            match tx_type {
+                DCT_DCT => call!($w, $h, DCT_DCT),
+                IDTX => call!($w, $h, IDTX),
+                DCT_ADST => call!($w, $h, DCT_ADST),
+                ADST_DCT => call!($w, $h, ADST_DCT),
+                ADST_ADST => call!($w, $h, ADST_ADST),
+                DCT_FLIPADST => call!($w, $h, DCT_FLIPADST),
+                FLIPADST_DCT => call!($w, $h, FLIPADST_DCT),
+                FLIPADST_FLIPADST => call!($w, $h, FLIPADST_FLIPADST),
+                ADST_FLIPADST => call!($w, $h, ADST_FLIPADST),
+                FLIPADST_ADST => call!($w, $h, FLIPADST_ADST),
+                H_DCT => call!($w, $h, H_DCT),
+                V_DCT => call!($w, $h, V_DCT),
+                _ => unreachable!(),
+            }
+        };
+    }
+    macro_rules! dispatch_type_2 {
+        ($w:literal, $h:literal) => {
+            match tx_type {
+                DCT_DCT => call!($w, $h, DCT_DCT),
+                IDTX => call!($w, $h, IDTX),
+                _ => unreachable!(),
+            }
+        };
+    }
+    macro_rules! dispatch_type_1 {
+        ($w:literal, $h:literal) => {
+            match tx_type {
+                DCT_DCT => call!($w, $h, DCT_DCT),
+                _ => unreachable!(),
+            }
+        };
+    }
+
+    use TxfmSize::*;
+    match tx_size {
+        x if x == S4x4 as usize => match tx_type {
+            WHT_WHT => call!(4, 4, WHT_WHT),
+            _ => dispatch_type_16!(4, 4),
+        },
+        // itx16 sizes (W*H <= 8*16 or 16x16)
+        x if x == R4x8 as usize => dispatch_type_16!(4, 8),
+        x if x == R8x4 as usize => dispatch_type_16!(8, 4),
+        x if x == S8x8 as usize => dispatch_type_16!(8, 8),
+        x if x == R4x16 as usize => dispatch_type_16!(4, 16),
+        x if x == R16x4 as usize => dispatch_type_16!(16, 4),
+        x if x == R8x16 as usize => dispatch_type_16!(8, 16),
+        x if x == R16x8 as usize => dispatch_type_16!(16, 8),
+        x if x == S16x16 as usize => dispatch_type_16!(16, 16),
+        // itx12 sizes (max_wh == 32)
+        x if x == R8x32 as usize => dispatch_type_12!(8, 32),
+        x if x == R32x8 as usize => dispatch_type_12!(32, 8),
+        x if x == R16x32 as usize => dispatch_type_12!(16, 32),
+        x if x == R32x16 as usize => dispatch_type_12!(32, 16),
+        x if x == S32x32 as usize => dispatch_type_12!(32, 32),
+        // itx2 sizes (max_wh == 64)
+        x if x == R16x64 as usize => dispatch_type_2!(16, 64),
+        x if x == R64x16 as usize => dispatch_type_2!(64, 16),
+        x if x == R32x64 as usize => dispatch_type_2!(32, 64),
+        x if x == R64x32 as usize => dispatch_type_2!(64, 32),
+        // itx1 sizes
+        x if x == S64x64 as usize => dispatch_type_1!(64, 64),
+        _ => unreachable!(),
+    }
+}
+
 wrap_fn_ptr!(unsafe extern "C" fn itxfm(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -600,15 +708,22 @@ impl itxfm::Fn {
                 let _ = (tx_size, tx_type);
                 // SAFETY: Fallback `fn inv_txfm_add_rust` is safe; asm is supposed to do the same.
                 unsafe { self.get()(dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) }
-            } else {
+            } else if #[cfg(feature = "c-ffi")] {
                 // Direct dispatch: bypass function pointer for SIMD implementations.
-                // Returns true if a SIMD function handled the call, false to fall through to scalar.
                 if itxfm_add_direct::<BD>(tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) {
                     return;
                 }
-                // Fall through to scalar (function pointer to inv_txfm_add_c_erased)
+                // Fall through to scalar via function pointer
                 // SAFETY: Fallback `fn inv_txfm_add_rust` is safe.
                 unsafe { self.get()(dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) }
+            } else {
+                // No function pointers: direct dispatch for SIMD, direct call for scalar.
+                let _ = (dst_ptr, dst_stride, coeff_ptr, bd_c, coeff_len, dst_ffi);
+                if itxfm_add_direct::<BD>(tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) {
+                    return;
+                }
+                // Scalar fallback
+                itxfm_add_scalar_fallback::<BD>(tx_size, tx_type as TxfmType, dst, coeff, eob, bd);
             }
         }
     }

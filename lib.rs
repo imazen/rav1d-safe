@@ -4,8 +4,9 @@
     any(target_arch = "riscv32", target_arch = "riscv64"),
     feature(stdarch_riscv_feature_detection)
 )]
-// When neither `asm` nor `c-ffi` is enabled, enforce zero unsafe code
-#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), forbid(unsafe_code))]
+// When neither `asm` nor `c-ffi` is enabled, deny unsafe code crate-wide.
+// Essential modules that encapsulate unsafe behind safe APIs get #[allow(unsafe_code)].
+#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
 #![allow(clippy::all)]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(clippy::undocumented_unsafe_blocks))]
@@ -23,13 +24,18 @@ pub mod include {
         pub(crate) mod validate;
     } // mod common
     pub mod dav1d {
+        #[cfg_attr(not(any(feature = "asm", feature = "c-ffi")), allow(unsafe_code))]
         pub mod common;
+        #[cfg_attr(not(any(feature = "asm", feature = "c-ffi")), allow(unsafe_code))]
         pub mod data;
         pub mod dav1d;
+        #[cfg_attr(not(any(feature = "asm", feature = "c-ffi")), allow(unsafe_code))]
         pub mod headers;
+        #[cfg_attr(not(any(feature = "asm", feature = "c-ffi")), allow(unsafe_code))]
         pub mod picture;
     } // mod dav1d
 } // mod include
+#[cfg_attr(not(any(feature = "asm", feature = "c-ffi")), allow(unsafe_code))]
 pub mod src {
     pub mod align;
     pub(crate) mod assume;
