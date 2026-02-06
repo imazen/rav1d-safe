@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 //! Safe SIMD implementation of pal_idx_finish using AVX2.
 //!
 //! Packs pairs of palette indices (4-bit each) into single bytes:
