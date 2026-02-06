@@ -140,6 +140,14 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 }
 ```
 
+## Safety Status
+
+**c-ffi decoupled from fn-ptr dispatch.** The `c-ffi` feature now only controls the 19 `dav1d_*` extern "C" entry points in `src/lib.rs`. Internal DSP dispatch uses direct function calls (no function pointers) when `asm` is disabled, regardless of `c-ffi`.
+
+**Modules still requiring `#[allow(unsafe_code)]`:** refmvs, lf_mask, msac (non-asm unsafe), plus core primitives (align, assume, c_arc, c_box, disjoint_mut, ffi_safe, send_sync_non_null, internal, log, picture) and safe_simd (target_feature).
+
+**DSP modules fully safe (no `#[allow(unsafe_code)]`):** cdef, filmgrain, ipred, itx, loopfilter, looprestoration, mc, pal, recon.
+
 ## Known Issues
 
 (none currently)
