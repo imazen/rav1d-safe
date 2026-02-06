@@ -3,7 +3,6 @@
 //! Replaces hand-written assembly with safe Rust intrinsics.
 
 #![allow(unused)]
-#![allow(unsafe_op_in_unsafe_fn)]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -40,25 +39,29 @@ pub unsafe extern "C" fn ipred_dc_128_8bpc_neon(
     let height = height as usize;
     let dst = dst_ptr as *mut u8;
 
-    unsafe {
-        let fill_val = vdupq_n_u8(128);
+    let fill_val = unsafe { vdupq_n_u8(128) };
 
-        for y in 0..height {
-            let dst_row = dst.offset(y as isize * stride);
+    for y in 0..height {
+        let dst_row = unsafe { dst.offset(y as isize * stride) };
 
-            let mut x = 0;
-            while x + 16 <= width {
+        let mut x = 0;
+        while x + 16 <= width {
+            unsafe {
                 vst1q_u8(dst_row.add(x), fill_val);
-                x += 16;
             }
-            while x + 8 <= width {
+            x += 16;
+        }
+        while x + 8 <= width {
+            unsafe {
                 vst1_u8(dst_row.add(x), vget_low_u8(fill_val));
-                x += 8;
             }
-            while x < width {
+            x += 8;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = 128;
-                x += 1;
             }
+            x += 1;
         }
     }
 }
@@ -83,25 +86,29 @@ pub unsafe extern "C" fn ipred_dc_128_16bpc_neon(
     let dst = dst_ptr as *mut u16;
     let fill = ((bitdepth_max + 1) / 2) as u16;
 
-    unsafe {
-        let fill_val = vdupq_n_u16(fill);
+    let fill_val = unsafe { vdupq_n_u16(fill) };
 
-        for y in 0..height {
-            let dst_row = dst.add(y * stride_u16);
+    for y in 0..height {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
 
-            let mut x = 0;
-            while x + 8 <= width {
+        let mut x = 0;
+        while x + 8 <= width {
+            unsafe {
                 vst1q_u16(dst_row.add(x), fill_val);
-                x += 8;
             }
-            while x + 4 <= width {
+            x += 8;
+        }
+        while x + 4 <= width {
+            unsafe {
                 vst1_u16(dst_row.add(x), vget_low_u16(fill_val));
-                x += 4;
             }
-            while x < width {
+            x += 4;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = fill;
-                x += 1;
             }
+            x += 1;
         }
     }
 }
@@ -129,27 +136,31 @@ pub unsafe extern "C" fn ipred_v_8bpc_neon(
     let height = height as usize;
     let dst = dst_ptr as *mut u8;
     // Top pixels are at topleft + 1
-    let top = (topleft as *const u8).add(1);
+    let top = unsafe { (topleft as *const u8).add(1) };
 
-    unsafe {
-        for y in 0..height {
-            let dst_row = dst.offset(y as isize * stride);
+    for y in 0..height {
+        let dst_row = unsafe { dst.offset(y as isize * stride) };
 
-            let mut x = 0;
-            while x + 16 <= width {
-                let top_vals = vld1q_u8(top.add(x));
+        let mut x = 0;
+        while x + 16 <= width {
+            let top_vals = unsafe { vld1q_u8(top.add(x)) };
+            unsafe {
                 vst1q_u8(dst_row.add(x), top_vals);
-                x += 16;
             }
-            while x + 8 <= width {
-                let top_vals = vld1_u8(top.add(x));
+            x += 16;
+        }
+        while x + 8 <= width {
+            let top_vals = unsafe { vld1_u8(top.add(x)) };
+            unsafe {
                 vst1_u8(dst_row.add(x), top_vals);
-                x += 8;
             }
-            while x < width {
+            x += 8;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = *top.add(x);
-                x += 1;
             }
+            x += 1;
         }
     }
 }
@@ -172,27 +183,31 @@ pub unsafe extern "C" fn ipred_v_16bpc_neon(
     let height = height as usize;
     let stride_u16 = (stride / 2) as usize;
     let dst = dst_ptr as *mut u16;
-    let top = (topleft as *const u16).add(1);
+    let top = unsafe { (topleft as *const u16).add(1) };
 
-    unsafe {
-        for y in 0..height {
-            let dst_row = dst.add(y * stride_u16);
+    for y in 0..height {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
 
-            let mut x = 0;
-            while x + 8 <= width {
-                let top_vals = vld1q_u16(top.add(x));
+        let mut x = 0;
+        while x + 8 <= width {
+            let top_vals = unsafe { vld1q_u16(top.add(x)) };
+            unsafe {
                 vst1q_u16(dst_row.add(x), top_vals);
-                x += 8;
             }
-            while x + 4 <= width {
-                let top_vals = vld1_u16(top.add(x));
+            x += 8;
+        }
+        while x + 4 <= width {
+            let top_vals = unsafe { vld1_u16(top.add(x)) };
+            unsafe {
                 vst1_u16(dst_row.add(x), top_vals);
-                x += 4;
             }
-            while x < width {
+            x += 4;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = *top.add(x);
-                x += 1;
             }
+            x += 1;
         }
     }
 }
@@ -222,25 +237,29 @@ pub unsafe extern "C" fn ipred_h_8bpc_neon(
     // Left pixels are at topleft - y
     let left = topleft as *const u8;
 
-    unsafe {
-        for y in 0..height {
-            let dst_row = dst.offset(y as isize * stride);
-            let left_val = *left.offset(-(y as isize + 1));
-            let fill_val = vdupq_n_u8(left_val);
+    for y in 0..height {
+        let dst_row = unsafe { dst.offset(y as isize * stride) };
+        let left_val = unsafe { *left.offset(-(y as isize + 1)) };
+        let fill_val = unsafe { vdupq_n_u8(left_val) };
 
-            let mut x = 0;
-            while x + 16 <= width {
+        let mut x = 0;
+        while x + 16 <= width {
+            unsafe {
                 vst1q_u8(dst_row.add(x), fill_val);
-                x += 16;
             }
-            while x + 8 <= width {
+            x += 16;
+        }
+        while x + 8 <= width {
+            unsafe {
                 vst1_u8(dst_row.add(x), vget_low_u8(fill_val));
-                x += 8;
             }
-            while x < width {
+            x += 8;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = left_val;
-                x += 1;
             }
+            x += 1;
         }
     }
 }
@@ -265,25 +284,29 @@ pub unsafe extern "C" fn ipred_h_16bpc_neon(
     let dst = dst_ptr as *mut u16;
     let left = topleft as *const u16;
 
-    unsafe {
-        for y in 0..height {
-            let dst_row = dst.add(y * stride_u16);
-            let left_val = *left.offset(-(y as isize + 1));
-            let fill_val = vdupq_n_u16(left_val);
+    for y in 0..height {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
+        let left_val = unsafe { *left.offset(-(y as isize + 1)) };
+        let fill_val = unsafe { vdupq_n_u16(left_val) };
 
-            let mut x = 0;
-            while x + 8 <= width {
+        let mut x = 0;
+        while x + 8 <= width {
+            unsafe {
                 vst1q_u16(dst_row.add(x), fill_val);
-                x += 8;
             }
-            while x + 4 <= width {
+            x += 8;
+        }
+        while x + 4 <= width {
+            unsafe {
                 vst1_u16(dst_row.add(x), vget_low_u16(fill_val));
-                x += 4;
             }
-            while x < width {
+            x += 4;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = left_val;
-                x += 1;
             }
+            x += 1;
         }
     }
 }
@@ -310,7 +333,7 @@ pub unsafe extern "C" fn ipred_dc_8bpc_neon(
     let width = width as usize;
     let height = height as usize;
     let dst = dst_ptr as *mut u8;
-    let top = (topleft as *const u8).add(1);
+    let top = unsafe { (topleft as *const u8).add(1) };
     let left = topleft as *const u8;
 
     // Calculate average of top and left pixels
@@ -324,25 +347,29 @@ pub unsafe extern "C" fn ipred_dc_8bpc_neon(
     let count = (width + height) as u32;
     let dc = ((sum + (count >> 1)) / count) as u8;
 
-    unsafe {
-        let fill_val = vdupq_n_u8(dc);
+    let fill_val = unsafe { vdupq_n_u8(dc) };
 
-        for y in 0..height {
-            let dst_row = dst.offset(y as isize * stride);
+    for y in 0..height {
+        let dst_row = unsafe { dst.offset(y as isize * stride) };
 
-            let mut x = 0;
-            while x + 16 <= width {
+        let mut x = 0;
+        while x + 16 <= width {
+            unsafe {
                 vst1q_u8(dst_row.add(x), fill_val);
-                x += 16;
             }
-            while x + 8 <= width {
+            x += 16;
+        }
+        while x + 8 <= width {
+            unsafe {
                 vst1_u8(dst_row.add(x), vget_low_u8(fill_val));
-                x += 8;
             }
-            while x < width {
+            x += 8;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = dc;
-                x += 1;
             }
+            x += 1;
         }
     }
 }
@@ -365,7 +392,7 @@ pub unsafe extern "C" fn ipred_dc_16bpc_neon(
     let height = height as usize;
     let stride_u16 = (stride / 2) as usize;
     let dst = dst_ptr as *mut u16;
-    let top = (topleft as *const u16).add(1);
+    let top = unsafe { (topleft as *const u16).add(1) };
     let left = topleft as *const u16;
 
     let mut sum = 0u32;
@@ -378,25 +405,29 @@ pub unsafe extern "C" fn ipred_dc_16bpc_neon(
     let count = (width + height) as u32;
     let dc = ((sum + (count >> 1)) / count) as u16;
 
-    unsafe {
-        let fill_val = vdupq_n_u16(dc);
+    let fill_val = unsafe { vdupq_n_u16(dc) };
 
-        for y in 0..height {
-            let dst_row = dst.add(y * stride_u16);
+    for y in 0..height {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
 
-            let mut x = 0;
-            while x + 8 <= width {
+        let mut x = 0;
+        while x + 8 <= width {
+            unsafe {
                 vst1q_u16(dst_row.add(x), fill_val);
-                x += 8;
             }
-            while x + 4 <= width {
+            x += 8;
+        }
+        while x + 4 <= width {
+            unsafe {
                 vst1_u16(dst_row.add(x), vget_low_u16(fill_val));
-                x += 4;
             }
-            while x < width {
+            x += 4;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = dc;
-                x += 1;
             }
+            x += 1;
         }
     }
 }
@@ -422,7 +453,7 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_neon(
     let width = width as usize;
     let height = height as usize;
     let dst = dst_ptr as *mut u8;
-    let top = (topleft as *const u8).add(1);
+    let top = unsafe { (topleft as *const u8).add(1) };
 
     let mut sum = 0u32;
     for i in 0..width {
@@ -430,25 +461,29 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_neon(
     }
     let dc = ((sum + (width as u32 >> 1)) / width as u32) as u8;
 
-    unsafe {
-        let fill_val = vdupq_n_u8(dc);
+    let fill_val = unsafe { vdupq_n_u8(dc) };
 
-        for y in 0..height {
-            let dst_row = dst.offset(y as isize * stride);
+    for y in 0..height {
+        let dst_row = unsafe { dst.offset(y as isize * stride) };
 
-            let mut x = 0;
-            while x + 16 <= width {
+        let mut x = 0;
+        while x + 16 <= width {
+            unsafe {
                 vst1q_u8(dst_row.add(x), fill_val);
-                x += 16;
             }
-            while x + 8 <= width {
+            x += 16;
+        }
+        while x + 8 <= width {
+            unsafe {
                 vst1_u8(dst_row.add(x), vget_low_u8(fill_val));
-                x += 8;
             }
-            while x < width {
+            x += 8;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = dc;
-                x += 1;
             }
+            x += 1;
         }
     }
 }
@@ -471,7 +506,7 @@ pub unsafe extern "C" fn ipred_dc_top_16bpc_neon(
     let height = height as usize;
     let stride_u16 = (stride / 2) as usize;
     let dst = dst_ptr as *mut u16;
-    let top = (topleft as *const u16).add(1);
+    let top = unsafe { (topleft as *const u16).add(1) };
 
     let mut sum = 0u32;
     for i in 0..width {
@@ -479,25 +514,29 @@ pub unsafe extern "C" fn ipred_dc_top_16bpc_neon(
     }
     let dc = ((sum + (width as u32 >> 1)) / width as u32) as u16;
 
-    unsafe {
-        let fill_val = vdupq_n_u16(dc);
+    let fill_val = unsafe { vdupq_n_u16(dc) };
 
-        for y in 0..height {
-            let dst_row = dst.add(y * stride_u16);
+    for y in 0..height {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
 
-            let mut x = 0;
-            while x + 8 <= width {
+        let mut x = 0;
+        while x + 8 <= width {
+            unsafe {
                 vst1q_u16(dst_row.add(x), fill_val);
-                x += 8;
             }
-            while x + 4 <= width {
+            x += 8;
+        }
+        while x + 4 <= width {
+            unsafe {
                 vst1_u16(dst_row.add(x), vget_low_u16(fill_val));
-                x += 4;
             }
-            while x < width {
+            x += 4;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = dc;
-                x += 1;
             }
+            x += 1;
         }
     }
 }
@@ -531,25 +570,29 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_neon(
     }
     let dc = ((sum + (height as u32 >> 1)) / height as u32) as u8;
 
-    unsafe {
-        let fill_val = vdupq_n_u8(dc);
+    let fill_val = unsafe { vdupq_n_u8(dc) };
 
-        for y in 0..height {
-            let dst_row = dst.offset(y as isize * stride);
+    for y in 0..height {
+        let dst_row = unsafe { dst.offset(y as isize * stride) };
 
-            let mut x = 0;
-            while x + 16 <= width {
+        let mut x = 0;
+        while x + 16 <= width {
+            unsafe {
                 vst1q_u8(dst_row.add(x), fill_val);
-                x += 16;
             }
-            while x + 8 <= width {
+            x += 16;
+        }
+        while x + 8 <= width {
+            unsafe {
                 vst1_u8(dst_row.add(x), vget_low_u8(fill_val));
-                x += 8;
             }
-            while x < width {
+            x += 8;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = dc;
-                x += 1;
             }
+            x += 1;
         }
     }
 }
@@ -580,25 +623,29 @@ pub unsafe extern "C" fn ipred_dc_left_16bpc_neon(
     }
     let dc = ((sum + (height as u32 >> 1)) / height as u32) as u16;
 
-    unsafe {
-        let fill_val = vdupq_n_u16(dc);
+    let fill_val = unsafe { vdupq_n_u16(dc) };
 
-        for y in 0..height {
-            let dst_row = dst.add(y * stride_u16);
+    for y in 0..height {
+        let dst_row = unsafe { dst.add(y * stride_u16) };
 
-            let mut x = 0;
-            while x + 8 <= width {
+        let mut x = 0;
+        while x + 8 <= width {
+            unsafe {
                 vst1q_u16(dst_row.add(x), fill_val);
-                x += 8;
             }
-            while x + 4 <= width {
+            x += 8;
+        }
+        while x + 4 <= width {
+            unsafe {
                 vst1_u16(dst_row.add(x), vget_low_u16(fill_val));
-                x += 4;
             }
-            while x < width {
+            x += 4;
+        }
+        while x < width {
+            unsafe {
                 *dst_row.add(x) = dc;
-                x += 1;
             }
+            x += 1;
         }
     }
 }
