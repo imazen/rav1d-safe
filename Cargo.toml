@@ -30,7 +30,7 @@ to_method = "1.1.0"
 zerocopy = { version = "0.7.32", features = ["derive"] }
 
 # Safe SIMD dependencies
-archmage = { version = "0.4.0", features = ["macros"] }
+archmage = { version = "0.5.0", features = ["macros"] }
 safe_unaligned_simd = "0.2.4"
 
 [build-dependencies]

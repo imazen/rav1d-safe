@@ -168,8 +168,8 @@ pub fn pal_idx_finish_dispatch(
     }
 }
 
-/// AVX2 implementation of pal_idx_finish - FFI wrapper.
-#[cfg(target_arch = "x86_64")]
+/// AVX2 implementation of pal_idx_finish - FFI wrapper (asm dispatch only).
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn pal_idx_finish_avx2(
     dst: *mut u8,

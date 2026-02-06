@@ -4,19 +4,19 @@ version = 4
 
 [[package]]
 name = "archmage"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c9fb5c235b8c9ee09d8f332472c32a1dae6cc4ed0bfb819651b438f9cec923c"
+checksum = "4d89e1ed9f58e616382257c15c001ea415a4d1f418dac6eb5b03dde1767b4d52"
 dependencies = [
  "archmage-macros",
- "bytemuck",
+ "safe_unaligned_simd",
 ]
 
 [[package]]
 name = "archmage-macros"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f6d4d20f79dde36c8d0d7ddd4bd6ea2ebd4aafa3119fd3bd831e6b30af3f251"
+checksum = "d7a39a707a76a33e2bd6663f987c2650af2ff0ad67a1c8c34da3f4b5d01a9f5a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -54,12 +54,6 @@ name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
-
-[[package]]
-name = "bytemuck"
-version = "1.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
 
 [[package]]
 name = "byteorder"
