@@ -49,6 +49,7 @@ use crate::src::strided::Strided as _;
 use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::cmp;
 use std::num::NonZeroUsize;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 use std::slice;
 
 #[cfg(all(
@@ -259,6 +260,7 @@ fn inv_txfm_add_rust<const W: usize, const H: usize, const TYPE: TxfmType, BD: B
 /// # Safety
 ///
 /// Must be called by [`itxfm::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn inv_txfm_add_c_erased<
     const W: usize,
@@ -403,7 +405,7 @@ wrap_fn_ptr!(unsafe extern "C" fn itxfm(
 
 /// Macro to generate the per-arch/bpc direct dispatch functions for ITX.
 /// Each generated function matches on (tx_size, tx_type) and calls the right SIMD function.
-#[cfg(not(feature = "asm"))]
+#[cfg(all(not(feature = "asm"), feature = "c-ffi"))]
 macro_rules! impl_itxfm_direct_dispatch {
     (
         fn $fn_name:ident, $mod_path:path,
@@ -418,7 +420,7 @@ macro_rules! impl_itxfm_direct_dispatch {
         h_flipadst_fn: $h_flipadst_fn:ident, v_flipadst_fn: $v_flipadst_fn:ident
     ) => {
         paste::paste! {
-            #[cfg(not(feature = "asm"))]
+            #[cfg(all(not(feature = "asm"), feature = "c-ffi"))]
             #[allow(non_upper_case_globals)]
             fn $fn_name(
                 tx_size: usize,
@@ -521,7 +523,7 @@ macro_rules! impl_itxfm_direct_dispatch {
 }
 
 // x86_64 8bpc direct dispatch
-#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+#[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
 impl_itxfm_direct_dispatch!(
     fn itxfm_add_direct_x86_8bpc, crate::src::safe_simd::itx,
     itx16: [
@@ -552,7 +554,7 @@ impl_itxfm_direct_dispatch!(
 );
 
 // x86_64 16bpc direct dispatch
-#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+#[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "x86_64"))]
 impl_itxfm_direct_dispatch!(
     fn itxfm_add_direct_x86_16bpc, crate::src::safe_simd::itx,
     itx16: [
@@ -584,7 +586,7 @@ impl_itxfm_direct_dispatch!(
 );
 
 // ARM aarch64 8bpc direct dispatch
-#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+#[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
 impl_itxfm_direct_dispatch!(
     fn itxfm_add_direct_arm_8bpc, crate::src::safe_simd::itx_arm,
     itx16: [
@@ -615,7 +617,7 @@ impl_itxfm_direct_dispatch!(
 );
 
 // ARM aarch64 16bpc direct dispatch
-#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+#[cfg(all(not(feature = "asm"), feature = "c-ffi", target_arch = "aarch64"))]
 impl_itxfm_direct_dispatch!(
     fn itxfm_add_direct_arm_16bpc, crate::src::safe_simd::itx_arm,
     itx16: [
@@ -647,7 +649,7 @@ impl_itxfm_direct_dispatch!(
 
 /// Direct dispatch for itxfm_add - bypasses function pointer table.
 /// Returns true if a SIMD function handled the call, false to fall through to scalar.
-#[cfg(not(feature = "asm"))]
+#[cfg(all(not(feature = "asm"), feature = "c-ffi"))]
 fn itxfm_add_direct<BD: BitDepth>(
     tx_size: usize,
     tx_type: usize,
@@ -696,19 +698,24 @@ impl itxfm::Fn {
         eob: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let coeff_len = coeff.len() as u16;
-        let coeff_ptr = coeff.as_mut_ptr().cast();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-
         cfg_if::cfg_if! {
             if #[cfg(feature = "asm")] {
                 let _ = (tx_size, tx_type);
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let coeff_len = coeff.len() as u16;
+                let coeff_ptr = coeff.as_mut_ptr().cast();
+                let bd_c = bd.into_c();
+                let dst_ffi = FFISafe::new(&dst);
                 // SAFETY: Fallback `fn inv_txfm_add_rust` is safe; asm is supposed to do the same.
                 unsafe { self.get()(dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) }
             } else if #[cfg(feature = "c-ffi")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let coeff_len = coeff.len() as u16;
+                let coeff_ptr = coeff.as_mut_ptr().cast();
+                let bd_c = bd.into_c();
+                let dst_ffi = FFISafe::new(&dst);
                 // Direct dispatch: bypass function pointer for SIMD implementations.
                 if itxfm_add_direct::<BD>(tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) {
                     return;
@@ -717,9 +724,17 @@ impl itxfm::Fn {
                 // SAFETY: Fallback `fn inv_txfm_add_rust` is safe.
                 unsafe { self.get()(dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) }
             } else {
-                // No function pointers: direct dispatch for SIMD, direct call for scalar.
-                let _ = (dst_ptr, dst_stride, coeff_ptr, bd_c, coeff_len, dst_ffi);
-                if itxfm_add_direct::<BD>(tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) {
+                // Safe path: no function pointers, no raw pointer creation needed here.
+                // safe_simd handles pointer creation internally.
+                let simd_handled = {
+                    #[cfg(target_arch = "x86_64")]
+                    { crate::src::safe_simd::itx::itxfm_add_dispatch::<BD>(tx_size, tx_type, dst, coeff, eob, bd) }
+                    #[cfg(target_arch = "aarch64")]
+                    { crate::src::safe_simd::itx_arm::itxfm_add_dispatch::<BD>(tx_size, tx_type, dst, coeff, eob, bd) }
+                    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+                    { let _ = (tx_size, tx_type, &dst, &coeff, eob, &bd); false }
+                };
+                if simd_handled {
                     return;
                 }
                 // Scalar fallback
@@ -885,6 +900,7 @@ macro_rules! assign_itx16_fn {
 }
 
 impl Rav1dInvTxfmDSPContext {
+    #[cfg(any(feature = "asm", feature = "c-ffi"))]
     const fn assign<const W: usize, const H: usize, BD: BitDepth>(mut self) -> Self {
         let tx = TxfmSize::from_wh(W, H) as usize;
 
@@ -935,31 +951,43 @@ impl Rav1dInvTxfmDSPContext {
     }
 
     pub const fn default<BD: BitDepth>() -> Self {
-        let mut c = Self {
-            itxfm_add: [[itxfm::Fn::DEFAULT; N_TX_TYPES_PLUS_LL]; TxfmSize::COUNT],
-        };
+        #[cfg(any(feature = "asm", feature = "c-ffi"))]
+        {
+            let mut c = Self {
+                itxfm_add: [[itxfm::Fn::DEFAULT; N_TX_TYPES_PLUS_LL]; TxfmSize::COUNT],
+            };
 
-        c = c.assign::<4, 4, BD>();
-        c = c.assign::<4, 8, BD>();
-        c = c.assign::<4, 16, BD>();
-        c = c.assign::<8, 4, BD>();
-        c = c.assign::<8, 8, BD>();
-        c = c.assign::<8, 16, BD>();
-        c = c.assign::<8, 32, BD>();
-        c = c.assign::<16, 4, BD>();
-        c = c.assign::<16, 8, BD>();
-        c = c.assign::<16, 16, BD>();
-        c = c.assign::<16, 32, BD>();
-        c = c.assign::<16, 64, BD>();
-        c = c.assign::<32, 8, BD>();
-        c = c.assign::<32, 16, BD>();
-        c = c.assign::<32, 32, BD>();
-        c = c.assign::<32, 64, BD>();
-        c = c.assign::<64, 16, BD>();
-        c = c.assign::<64, 32, BD>();
-        c = c.assign::<64, 64, BD>();
+            c = c.assign::<4, 4, BD>();
+            c = c.assign::<4, 8, BD>();
+            c = c.assign::<4, 16, BD>();
+            c = c.assign::<8, 4, BD>();
+            c = c.assign::<8, 8, BD>();
+            c = c.assign::<8, 16, BD>();
+            c = c.assign::<8, 32, BD>();
+            c = c.assign::<16, 4, BD>();
+            c = c.assign::<16, 8, BD>();
+            c = c.assign::<16, 16, BD>();
+            c = c.assign::<16, 32, BD>();
+            c = c.assign::<16, 64, BD>();
+            c = c.assign::<32, 8, BD>();
+            c = c.assign::<32, 16, BD>();
+            c = c.assign::<32, 32, BD>();
+            c = c.assign::<32, 64, BD>();
+            c = c.assign::<64, 16, BD>();
+            c = c.assign::<64, 32, BD>();
+            c = c.assign::<64, 64, BD>();
 
-        c
+            c
+        }
+
+        // In the neither build (no asm, no c-ffi), function pointers are unit structs.
+        // Dispatch is handled entirely by safe_simd::itx::itxfm_add_dispatch.
+        #[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+        {
+            Self {
+                itxfm_add: [[itxfm::Fn::DEFAULT; N_TX_TYPES_PLUS_LL]; TxfmSize::COUNT],
+            }
+        }
     }
 
     #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]

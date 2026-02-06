@@ -845,7 +845,7 @@ pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
                     flt_offset += FLT_INCR;
                 }
 
-                // Update topleft for next 4x2 block
+                // Update topleft for next 4x2 block (8bpc)
                 tl_pixel = p4;
             }
         }
@@ -2477,9 +2477,81 @@ pub unsafe extern "C" fn ipred_filter_16bpc_avx2(
                     flt_offset += FLT_INCR;
                 }
 
-                // Update topleft for next 4x2 block
+                // Update topleft for next 4x2 block (16bpc)
                 tl_pixel = p4;
             }
         }
     }
+}
+
+// ============================================================================
+// Safe dispatch wrapper for x86_64 AVX2
+// ============================================================================
+
+use crate::include::common::bitdepth::BitDepth;
+use crate::src::internal::SCRATCH_EDGE_LEN;
+use crate::src::strided::Strided as _;
+
+/// Safe dispatch for intra prediction. Returns true if SIMD was used.
+#[cfg(target_arch = "x86_64")]
+pub fn intra_pred_dispatch<BD: BitDepth>(
+    mode: usize,
+    dst: PicOffset,
+    topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
+    topleft_off: usize,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    max_width: c_int,
+    max_height: c_int,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+    use crate::src::cpu::CpuFlags;
+
+    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
+        return false;
+    }
+
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let stride = dst.stride();
+    let topleft_ptr = topleft[topleft_off..].as_ptr().cast();
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+
+    // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid types.
+    unsafe {
+        match (BD::BPC, mode) {
+            (BPC::BPC8, 0) => ipred_dc_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 1) => ipred_v_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 2) => ipred_h_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 3) => ipred_dc_left_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 4) => ipred_dc_top_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 5) => ipred_dc_128_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 6) => ipred_z1_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 7) => ipred_z2_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 8) => ipred_z3_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 9) => ipred_smooth_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 10) => ipred_smooth_v_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 11) => ipred_smooth_h_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 12) => ipred_paeth_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC8, 13) => ipred_filter_8bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 0) => ipred_dc_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 1) => ipred_v_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 2) => ipred_h_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 3) => ipred_dc_left_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 4) => ipred_dc_top_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 5) => ipred_dc_128_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 6) => ipred_z1_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 7) => ipred_z2_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 8) => ipred_z3_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 9) => ipred_smooth_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 10) => ipred_smooth_v_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 11) => ipred_smooth_h_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 12) => ipred_paeth_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            (BPC::BPC16, 13) => ipred_filter_16bpc_avx2(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi),
+            _ => return false,
+        }
+    }
+    true
 }

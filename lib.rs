@@ -71,16 +71,13 @@ pub mod src {
 
     // DSP dispatch modules (contain _erased functions and fn ptr dispatch)
     mod cdef;
-    #[allow(unsafe_code)]
     mod filmgrain;
-    #[allow(unsafe_code)]
     mod ipred;
     #[allow(unsafe_code)]
     mod itx;
     mod loopfilter;
     #[allow(unsafe_code)]
     mod looprestoration;
-    #[allow(unsafe_code)]
     mod mc;
     mod pal;
     #[allow(unsafe_code)]

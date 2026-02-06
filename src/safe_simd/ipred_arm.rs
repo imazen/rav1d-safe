@@ -919,15 +919,76 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_neon(
     
     let weights_hor = &dav1d_sm_weights.0[width..][..width];
     let right_val = unsafe { *tl.add(width) } as i32;
-    
+
     for y in 0..height {
         let dst_row = unsafe { dst.add(y * stride_u16) };
         let left_val = unsafe { *tl.offset(-(y as isize) - 1) } as i32;
-        
+
         for x in 0..width {
             let w_h = weights_hor[x] as i32;
             let pred = (w_h * left_val + (256 - w_h) * right_val + 128) >> 8;
             unsafe { *dst_row.add(x) = pred as u16; }
         }
     }
+}
+
+// ============================================================================
+// Safe dispatch wrapper for aarch64 NEON
+// ============================================================================
+
+use crate::include::common::bitdepth::BitDepth;
+use crate::src::internal::SCRATCH_EDGE_LEN;
+use crate::src::strided::Strided as _;
+
+/// Safe dispatch for intra prediction on ARM. Returns true if SIMD was used.
+/// NEON is always available on aarch64, so this always returns true for
+/// supported modes and false only for unimplemented modes (Z1, Z2, Z3, FILTER).
+#[cfg(target_arch = "aarch64")]
+pub fn intra_pred_dispatch<BD: BitDepth>(
+    mode: usize,
+    dst: PicOffset,
+    topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
+    topleft_off: usize,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    max_width: c_int,
+    max_height: c_int,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let stride = dst.stride();
+    let topleft_ptr = topleft[topleft_off..].as_ptr().cast();
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+
+    // SAFETY: NEON always available on aarch64. Pointers derived from valid types.
+    let handled = unsafe {
+        match (BD::BPC, mode) {
+            (BPC::BPC8, 0) => { ipred_dc_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC8, 1) => { ipred_v_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC8, 2) => { ipred_h_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC8, 3) => { ipred_dc_left_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC8, 4) => { ipred_dc_top_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC8, 5) => { ipred_dc_128_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC8, 9) => { ipred_smooth_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC8, 10) => { ipred_smooth_v_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC8, 11) => { ipred_smooth_h_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC8, 12) => { ipred_paeth_8bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC16, 0) => { ipred_dc_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC16, 1) => { ipred_v_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC16, 2) => { ipred_h_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC16, 3) => { ipred_dc_left_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC16, 4) => { ipred_dc_top_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC16, 5) => { ipred_dc_128_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC16, 9) => { ipred_smooth_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC16, 10) => { ipred_smooth_v_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC16, 11) => { ipred_smooth_h_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            (BPC::BPC16, 12) => { ipred_paeth_16bpc_neon(dst_ptr, stride, topleft_ptr, width, height, angle, max_width, max_height, bd_c, topleft_off, dst_ffi); true },
+            _ => false,
+        }
+    };
+    handled
 }

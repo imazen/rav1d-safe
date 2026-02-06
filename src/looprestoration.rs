@@ -1,5 +1,3 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
@@ -24,6 +22,7 @@ use std::ffi::c_uint;
 use std::iter;
 use std::mem;
 use std::ops::Add;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 use std::slice;
 use to_method::To;
 use zerocopy::AsBytes;
@@ -38,6 +37,9 @@ use crate::include::common::bitdepth::bd_fn;
 
 #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]
 use crate::include::common::bitdepth::bpc_fn;
+
+#[cfg(not(any(feature = "asm", feature = "c-ffi")))]
+use crate::src::enum_map::DefaultValue;
 
 bitflags! {
     #[derive(Clone, Copy)]
@@ -139,106 +141,16 @@ fn lr_filter_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    {
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-            let dst_stride = dst.stride();
-            let left_ptr = left[..h as usize].as_ptr().cast();
-            let lpf_ptr = lpf
-                .as_mut_ptr()
-                .cast::<BD::Pixel>()
-                .wrapping_offset(lpf_off)
-                .cast();
-            let bd_c = bd.into_c();
-            let dst_ffi = FFISafe::new(&dst);
-            let lpf_ffi = FFISafe::new(lpf);
-            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid types.
-            unsafe {
-                match (BD::BPC, variant) {
-                    (BPC::BPC8, 0) => crate::src::safe_simd::looprestoration::wiener_filter7_8bpc_avx2(
-                        dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                    ),
-                    (BPC::BPC8, 1) => crate::src::safe_simd::looprestoration::wiener_filter5_8bpc_avx2(
-                        dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                    ),
-                    (BPC::BPC8, 2) => crate::src::safe_simd::looprestoration::sgr_filter_5x5_8bpc_avx2(
-                        dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                    ),
-                    (BPC::BPC8, 3) => crate::src::safe_simd::looprestoration::sgr_filter_3x3_8bpc_avx2(
-                        dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                    ),
-                    (BPC::BPC8, _) => crate::src::safe_simd::looprestoration::sgr_filter_mix_8bpc_avx2(
-                        dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                    ),
-                    (BPC::BPC16, 0) => crate::src::safe_simd::looprestoration::wiener_filter7_16bpc_avx2(
-                        dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                    ),
-                    (BPC::BPC16, 1) => crate::src::safe_simd::looprestoration::wiener_filter5_16bpc_avx2(
-                        dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                    ),
-                    (BPC::BPC16, 2) => crate::src::safe_simd::looprestoration::sgr_filter_5x5_16bpc_avx2(
-                        dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                    ),
-                    (BPC::BPC16, 3) => crate::src::safe_simd::looprestoration::sgr_filter_3x3_16bpc_avx2(
-                        dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                    ),
-                    (BPC::BPC16, _) => crate::src::safe_simd::looprestoration::sgr_filter_mix_16bpc_avx2(
-                        dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                    ),
-                }
-            }
-            return;
-        }
+    if crate::src::safe_simd::looprestoration::lr_filter_dispatch::<BD>(
+        variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
+    ) {
+        return;
     }
 
     #[cfg(target_arch = "aarch64")]
-    {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let left_ptr = left[..h as usize].as_ptr().cast();
-        let lpf_ptr = lpf
-            .as_mut_ptr()
-            .cast::<BD::Pixel>()
-            .wrapping_offset(lpf_off)
-            .cast();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        let lpf_ffi = FFISafe::new(lpf);
-        // SAFETY: NEON always available on aarch64. Pointers from valid types.
-        unsafe {
-            match (BD::BPC, variant) {
-                (BPC::BPC8, 0) => crate::src::safe_simd::looprestoration_arm::wiener_filter7_8bpc_neon(
-                    dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                ),
-                (BPC::BPC8, 1) => crate::src::safe_simd::looprestoration_arm::wiener_filter5_8bpc_neon(
-                    dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                ),
-                (BPC::BPC8, 2) => crate::src::safe_simd::looprestoration_arm::sgr_filter_5x5_8bpc_neon(
-                    dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                ),
-                (BPC::BPC8, 3) => crate::src::safe_simd::looprestoration_arm::sgr_filter_3x3_8bpc_neon(
-                    dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                ),
-                (BPC::BPC8, _) => crate::src::safe_simd::looprestoration_arm::sgr_filter_mix_8bpc_neon(
-                    dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                ),
-                (BPC::BPC16, 0) => crate::src::safe_simd::looprestoration_arm::wiener_filter7_16bpc_neon(
-                    dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                ),
-                (BPC::BPC16, 1) => crate::src::safe_simd::looprestoration_arm::wiener_filter5_16bpc_neon(
-                    dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                ),
-                (BPC::BPC16, 2) => crate::src::safe_simd::looprestoration_arm::sgr_filter_5x5_16bpc_neon(
-                    dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                ),
-                (BPC::BPC16, 3) => crate::src::safe_simd::looprestoration_arm::sgr_filter_3x3_16bpc_neon(
-                    dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                ),
-                (BPC::BPC16, _) => crate::src::safe_simd::looprestoration_arm::sgr_filter_mix_16bpc_neon(
-                    dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
-                ),
-            }
-        }
+    if crate::src::safe_simd::looprestoration_arm::lr_filter_dispatch::<BD>(
+        variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
+    ) {
         return;
     }
 
@@ -489,6 +401,7 @@ pub(crate) fn padding<BD: BitDepth>(
 /// [`offset_from`].
 ///
 /// [`offset_from`]: https://doc.rust-lang.org/stable/std/primitive.pointer.html#method.offset_from
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 fn reconstruct_lpf_offset<BD: BitDepth>(
     lpf: &DisjointMut<AlignedVec64<u8>>,
     ptr: *const BD::Pixel,
@@ -500,6 +413,7 @@ fn reconstruct_lpf_offset<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn wiener_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -916,6 +830,7 @@ fn selfguided_filter<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn sgr_5x5_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -982,6 +897,7 @@ fn sgr_5x5_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn sgr_3x3_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -1043,6 +959,7 @@ fn sgr_3x3_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn sgr_mix_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -3551,13 +3468,22 @@ mod neon_erased {
 
 impl Rav1dLoopRestorationDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
-        Self {
-            wiener: [loop_restoration_filter::Fn::new(wiener_c_erased::<BD>); 2],
-            sgr: [
-                loop_restoration_filter::Fn::new(sgr_5x5_c_erased::<BD>),
-                loop_restoration_filter::Fn::new(sgr_3x3_c_erased::<BD>),
-                loop_restoration_filter::Fn::new(sgr_mix_c_erased::<BD>),
-            ],
+        cfg_if::cfg_if! {
+            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+                Self {
+                    wiener: [loop_restoration_filter::Fn::new(wiener_c_erased::<BD>); 2],
+                    sgr: [
+                        loop_restoration_filter::Fn::new(sgr_5x5_c_erased::<BD>),
+                        loop_restoration_filter::Fn::new(sgr_3x3_c_erased::<BD>),
+                        loop_restoration_filter::Fn::new(sgr_mix_c_erased::<BD>),
+                    ],
+                }
+            } else {
+                Self {
+                    wiener: [loop_restoration_filter::Fn::DEFAULT; 2],
+                    sgr: [loop_restoration_filter::Fn::DEFAULT; 3],
+                }
+            }
         }
     }
 

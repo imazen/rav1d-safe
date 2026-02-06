@@ -14,6 +14,7 @@ use std::ffi::c_int;
 use std::slice;
 
 use crate::include::common::bitdepth::AsPrimitive;
+use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::BitDepth8;
 use crate::include::common::bitdepth::BitDepth16;
 use crate::include::common::bitdepth::DynPixel;
@@ -1186,4 +1187,70 @@ pub unsafe extern "C" fn sgr_filter_mix_16bpc_neon(
     let lpf_off = (lpf_ptr as isize - lpf.as_byte_mut_ptr() as isize) / 2;
 
     sgr_mix_16bpc_inner(p, left, lpf, lpf_off, w as usize, h as usize, params, edges, bitdepth_max);
+}
+
+/// Safe dispatch for lr_filter on aarch64. Returns true if NEON was used.
+#[cfg(target_arch = "aarch64")]
+pub fn lr_filter_dispatch<BD: BitDepth>(
+    variant: usize,
+    dst: PicOffset,
+    left: &[LeftPixelRow<BD::Pixel>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: c_int,
+    h: c_int,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let dst_stride = dst.stride();
+    let left_ptr = left[..h as usize].as_ptr().cast();
+    let lpf_ptr = lpf
+        .as_mut_ptr()
+        .cast::<BD::Pixel>()
+        .wrapping_offset(lpf_off)
+        .cast();
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+    let lpf_ffi = FFISafe::new(lpf);
+
+    // SAFETY: NEON always available on aarch64. Pointers derived from valid types.
+    unsafe {
+        match (BD::BPC, variant) {
+            (BPC::BPC8, 0) => wiener_filter7_8bpc_neon(
+                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
+            ),
+            (BPC::BPC8, 1) => wiener_filter5_8bpc_neon(
+                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
+            ),
+            (BPC::BPC8, 2) => sgr_filter_5x5_8bpc_neon(
+                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
+            ),
+            (BPC::BPC8, 3) => sgr_filter_3x3_8bpc_neon(
+                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
+            ),
+            (BPC::BPC8, _) => sgr_filter_mix_8bpc_neon(
+                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
+            ),
+            (BPC::BPC16, 0) => wiener_filter7_16bpc_neon(
+                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
+            ),
+            (BPC::BPC16, 1) => wiener_filter5_16bpc_neon(
+                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
+            ),
+            (BPC::BPC16, 2) => sgr_filter_5x5_16bpc_neon(
+                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
+            ),
+            (BPC::BPC16, 3) => sgr_filter_3x3_16bpc_neon(
+                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
+            ),
+            (BPC::BPC16, _) => sgr_filter_mix_16bpc_neon(
+                dst_ptr, dst_stride, left_ptr, lpf_ptr, w, h, params, edges, bd_c, dst_ffi, lpf_ffi,
+            ),
+        }
+    }
+    true
 }

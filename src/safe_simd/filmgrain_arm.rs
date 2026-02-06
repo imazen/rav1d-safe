@@ -944,3 +944,150 @@ macro_rules! fguv_16bpc_wrapper {
 fguv_16bpc_wrapper!(fguv_32x32xn_i420_16bpc_neon, true, true);
 fguv_16bpc_wrapper!(fguv_32x32xn_i422_16bpc_neon, true, false);
 fguv_16bpc_wrapper!(fguv_32x32xn_i444_16bpc_neon, false, false);
+
+// ============================================================================
+// Safe dispatch wrappers — encapsulate unsafe pointer creation and FFI calls
+// ============================================================================
+
+use crate::include::common::bitdepth::{BitDepth, BPC};
+use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
+use crate::include::dav1d::picture::Rav1dPictureDataComponent;
+use crate::src::strided::Strided as _;
+
+/// Safe dispatch for generate_grain_y (aarch64 NEON).
+/// NEON is always available on aarch64, so this always dispatches and returns true.
+#[cfg(target_arch = "aarch64")]
+pub fn generate_grain_y_dispatch<BD: BitDepth>(
+    buf: &mut GrainLut<BD::Entry>,
+    data: &Rav1dFilmGrainData,
+    bd: BD,
+) -> bool {
+    let buf_ptr = std::ptr::from_mut(buf).cast();
+    let data_c = &data.clone().into();
+    let bd_c = bd.into_c();
+    unsafe {
+        match BD::BPC {
+            BPC::BPC8 => generate_grain_y_8bpc_neon(buf_ptr, data_c, bd_c),
+            BPC::BPC16 => generate_grain_y_16bpc_neon(buf_ptr, data_c, bd_c),
+        }
+    }
+    true
+}
+
+/// Safe dispatch for generate_grain_uv (aarch64 NEON).
+/// NEON is always available on aarch64, so this always dispatches and returns true.
+#[cfg(target_arch = "aarch64")]
+pub fn generate_grain_uv_dispatch<BD: BitDepth>(
+    layout: Rav1dPixelLayoutSubSampled,
+    buf: &mut GrainLut<BD::Entry>,
+    buf_y: &GrainLut<BD::Entry>,
+    data: &Rav1dFilmGrainData,
+    is_uv: bool,
+    bd: BD,
+) -> bool {
+    let buf_ptr = std::ptr::from_mut(buf).cast();
+    let buf_y_ptr = std::ptr::from_ref(buf_y).cast();
+    let data_c = &data.clone().into();
+    let uv: intptr_t = is_uv.into();
+    let bd_c = bd.into_c();
+    unsafe {
+        match (BD::BPC, layout) {
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => generate_grain_uv_420_8bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => generate_grain_uv_422_8bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => generate_grain_uv_444_8bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => generate_grain_uv_420_16bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => generate_grain_uv_422_16bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => generate_grain_uv_444_16bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
+        }
+    }
+    true
+}
+
+/// Safe dispatch for fgy_32x32xn (aarch64 NEON).
+/// NEON is always available on aarch64, so this always dispatches and returns true.
+#[cfg(target_arch = "aarch64")]
+pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
+    dst: &Rav1dPictureDataComponent,
+    src: &Rav1dPictureDataComponent,
+    data: &Rav1dFilmGrainData,
+    pw: usize,
+    scaling: &BD::Scaling,
+    grain_lut: &GrainLut<BD::Entry>,
+    bh: usize,
+    row_num: usize,
+    bd: BD,
+) -> bool {
+    let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
+    let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
+    let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
+    let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
+    let src_row_ptr = src_row.as_ptr::<BD>().cast();
+    let stride = dst.stride();
+    let data_c = &data.clone().into();
+    let scaling_ptr = std::ptr::from_ref(scaling).cast();
+    let grain_lut_ptr = std::ptr::from_ref(grain_lut).cast();
+    let bh_c = bh as c_int;
+    let row_num_c = row_num as c_int;
+    let bd_c = bd.into_c();
+    let dst_row_ffi = FFISafe::new(&dst_row);
+    let src_row_ffi = FFISafe::new(&src_row);
+    unsafe {
+        match BD::BPC {
+            BPC::BPC8 => fgy_32x32xn_8bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, bd_c, dst_row_ffi, src_row_ffi),
+            BPC::BPC16 => fgy_32x32xn_16bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, bd_c, dst_row_ffi, src_row_ffi),
+        }
+    }
+    true
+}
+
+/// Safe dispatch for fguv_32x32xn (aarch64 NEON).
+/// NEON is always available on aarch64, so this always dispatches and returns true.
+#[cfg(target_arch = "aarch64")]
+pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
+    layout: Rav1dPixelLayoutSubSampled,
+    dst: &Rav1dPictureDataComponent,
+    src: &Rav1dPictureDataComponent,
+    data: &Rav1dFilmGrainData,
+    pw: usize,
+    scaling: &BD::Scaling,
+    grain_lut: &GrainLut<BD::Entry>,
+    bh: usize,
+    row_num: usize,
+    luma: &Rav1dPictureDataComponent,
+    is_uv: bool,
+    is_id: bool,
+    bd: BD,
+) -> bool {
+    let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
+    let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
+    let dst_row = dst.with_offset::<BD>() + (row_strides * dst.pixel_stride::<BD>() >> ss_y);
+    let src_row = src.with_offset::<BD>() + (row_strides * src.pixel_stride::<BD>() >> ss_y);
+    let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
+    let src_row_ptr = src_row.as_ptr::<BD>().cast();
+    let stride = dst.stride();
+    let data_c = &data.clone().into();
+    let scaling_ptr = (scaling as *const BD::Scaling).cast();
+    let grain_lut_ptr = (grain_lut as *const GrainLut<BD::Entry>).cast();
+    let bh_c = bh as c_int;
+    let row_num_c = row_num as c_int;
+    let luma_row = luma.with_offset::<BD>() + (row_strides * luma.pixel_stride::<BD>());
+    let luma_row_ptr = luma_row.as_ptr::<BD>().cast();
+    let luma_stride = luma.stride();
+    let uv_pl = is_uv as c_int;
+    let is_id_c = is_id as c_int;
+    let bd_c = bd.into_c();
+    let dst_row_ffi = FFISafe::new(&dst_row);
+    let src_row_ffi = FFISafe::new(&src_row);
+    let luma_row_ffi = FFISafe::new(&luma_row);
+    unsafe {
+        match (BD::BPC, layout) {
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => fguv_32x32xn_i420_8bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => fguv_32x32xn_i422_8bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => fguv_32x32xn_i444_8bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => fguv_32x32xn_i420_16bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => fguv_32x32xn_i422_16bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => fguv_32x32xn_i444_16bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
+        }
+    }
+    true
+}

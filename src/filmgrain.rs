@@ -1,5 +1,3 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynEntry;
@@ -11,7 +9,6 @@ use crate::include::dav1d::headers::Rav1dFilmGrainData;
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 use crate::include::dav1d::picture::PicOffset;
-use crate::src::assume::assume;
 use crate::src::cpu::CpuFlags;
 use crate::src::enum_map::enum_map;
 use crate::src::enum_map::enum_map_ty;
@@ -30,6 +27,7 @@ use std::mem;
 use std::ops::Add;
 use std::ops::Shl;
 use std::ops::Shr;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 use std::ptr;
 use to_method::To;
 
@@ -273,37 +271,12 @@ fn generate_grain_y_direct<BD: BitDepth>(
     data: &Rav1dFilmGrainData,
     bd: BD,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let buf_ptr = ptr::from_mut(buf).cast();
-            let data_c = &data.clone().into();
-            let bd_c = bd.into_c();
-            use crate::src::safe_simd::filmgrain as safe_fg;
-            unsafe {
-                match BD::BPC {
-                    BPC::BPC8 => safe_fg::generate_grain_y_8bpc_avx2(buf_ptr, data_c, bd_c),
-                    BPC::BPC16 => safe_fg::generate_grain_y_16bpc_avx2(buf_ptr, data_c, bd_c),
-                }
-            }
-            return;
-        }
+    if crate::src::safe_simd::filmgrain::generate_grain_y_dispatch::<BD>(buf, data, bd) {
+        return;
     }
-
     #[cfg(target_arch = "aarch64")]
-    {
-        let buf_ptr = ptr::from_mut(buf).cast();
-        let data_c = &data.clone().into();
-        let bd_c = bd.into_c();
-        use crate::src::safe_simd::filmgrain_arm as safe_fg_arm;
-        unsafe {
-            match BD::BPC {
-                BPC::BPC8 => safe_fg_arm::generate_grain_y_8bpc_neon(buf_ptr, data_c, bd_c),
-                BPC::BPC16 => safe_fg_arm::generate_grain_y_16bpc_neon(buf_ptr, data_c, bd_c),
-            }
-        }
+    if crate::src::safe_simd::filmgrain_arm::generate_grain_y_dispatch::<BD>(buf, data, bd) {
         return;
     }
 
@@ -322,49 +295,12 @@ fn generate_grain_uv_direct<BD: BitDepth>(
     is_uv: bool,
     bd: BD,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let buf_ptr = ptr::from_mut(buf).cast();
-            let buf_y_ptr = ptr::from_ref(buf_y).cast();
-            let data_c = &data.clone().into();
-            let uv: intptr_t = is_uv.into();
-            let bd_c = bd.into_c();
-            use crate::src::safe_simd::filmgrain as safe_fg;
-            unsafe {
-                match (BD::BPC, layout) {
-                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => safe_fg::generate_grain_uv_420_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => safe_fg::generate_grain_uv_422_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => safe_fg::generate_grain_uv_444_8bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => safe_fg::generate_grain_uv_420_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => safe_fg::generate_grain_uv_422_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => safe_fg::generate_grain_uv_444_16bpc_avx2(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-                }
-            }
-            return;
-        }
+    if crate::src::safe_simd::filmgrain::generate_grain_uv_dispatch::<BD>(layout, buf, buf_y, data, is_uv, bd) {
+        return;
     }
-
     #[cfg(target_arch = "aarch64")]
-    {
-        let buf_ptr = ptr::from_mut(buf).cast();
-        let buf_y_ptr = ptr::from_ref(buf_y).cast();
-        let data_c = &data.clone().into();
-        let uv: intptr_t = is_uv.into();
-        let bd_c = bd.into_c();
-        use crate::src::safe_simd::filmgrain_arm as safe_fg_arm;
-        unsafe {
-            match (BD::BPC, layout) {
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => safe_fg_arm::generate_grain_uv_420_8bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => safe_fg_arm::generate_grain_uv_422_8bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => safe_fg_arm::generate_grain_uv_444_8bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => safe_fg_arm::generate_grain_uv_420_16bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => safe_fg_arm::generate_grain_uv_422_16bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => safe_fg_arm::generate_grain_uv_444_16bpc_neon(buf_ptr, buf_y_ptr, data_c, uv, bd_c),
-            }
-        }
+    if crate::src::safe_simd::filmgrain_arm::generate_grain_uv_dispatch::<BD>(layout, buf, buf_y, data, is_uv, bd) {
         return;
     }
 
@@ -393,59 +329,12 @@ fn fgy_32x32xn_direct<BD: BitDepth>(
     row_num: usize,
     bd: BD,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
-            let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
-            let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
-            let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
-            let src_row_ptr = src_row.as_ptr::<BD>().cast();
-            let stride = dst.stride();
-            let data_c = &data.clone().into();
-            let scaling_ptr = ptr::from_ref(scaling).cast();
-            let grain_lut_ptr = ptr::from_ref(grain_lut).cast();
-            let bh_c = bh as c_int;
-            let row_num_c = row_num as c_int;
-            let bd_c = bd.into_c();
-            let dst_row_ffi = FFISafe::new(&dst_row);
-            let src_row_ffi = FFISafe::new(&src_row);
-            use crate::src::safe_simd::filmgrain as safe_fg;
-            unsafe {
-                match BD::BPC {
-                    BPC::BPC8 => safe_fg::fgy_32x32xn_8bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, bd_c, dst_row_ffi, src_row_ffi),
-                    BPC::BPC16 => safe_fg::fgy_32x32xn_16bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, bd_c, dst_row_ffi, src_row_ffi),
-                }
-            }
-            return;
-        }
+    if crate::src::safe_simd::filmgrain::fgy_32x32xn_dispatch::<BD>(dst, src, data, pw, scaling, grain_lut, bh, row_num, bd) {
+        return;
     }
-
     #[cfg(target_arch = "aarch64")]
-    {
-        let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
-        let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
-        let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
-        let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
-        let src_row_ptr = src_row.as_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let data_c = &data.clone().into();
-        let scaling_ptr = ptr::from_ref(scaling).cast();
-        let grain_lut_ptr = ptr::from_ref(grain_lut).cast();
-        let bh_c = bh as c_int;
-        let row_num_c = row_num as c_int;
-        let bd_c = bd.into_c();
-        let dst_row_ffi = FFISafe::new(&dst_row);
-        let src_row_ffi = FFISafe::new(&src_row);
-        use crate::src::safe_simd::filmgrain_arm as safe_fg_arm;
-        unsafe {
-            match BD::BPC {
-                BPC::BPC8 => safe_fg_arm::fgy_32x32xn_8bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, bd_c, dst_row_ffi, src_row_ffi),
-                BPC::BPC16 => safe_fg_arm::fgy_32x32xn_16bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, bd_c, dst_row_ffi, src_row_ffi),
-            }
-        }
+    if crate::src::safe_simd::filmgrain_arm::fgy_32x32xn_dispatch::<BD>(dst, src, data, pw, scaling, grain_lut, bh, row_num, bd) {
         return;
     }
 
@@ -476,81 +365,12 @@ fn fguv_32x32xn_direct<BD: BitDepth>(
     is_id: bool,
     bd: BD,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
-            let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
-            let dst_row = dst.with_offset::<BD>() + (row_strides * dst.pixel_stride::<BD>() >> ss_y);
-            let src_row = src.with_offset::<BD>() + (row_strides * src.pixel_stride::<BD>() >> ss_y);
-            let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
-            let src_row_ptr = src_row.as_ptr::<BD>().cast();
-            let stride = dst.stride();
-            let data_c = &data.clone().into();
-            let scaling_ptr = (scaling as *const BD::Scaling).cast();
-            let grain_lut_ptr = (grain_lut as *const GrainLut<BD::Entry>).cast();
-            let bh_c = bh as c_int;
-            let row_num_c = row_num as c_int;
-            let luma_row = luma.with_offset::<BD>() + (row_strides * luma.pixel_stride::<BD>());
-            let luma_row_ptr = luma_row.as_ptr::<BD>().cast();
-            let luma_stride = luma.stride();
-            let uv_pl = is_uv as c_int;
-            let is_id_c = is_id as c_int;
-            let bd_c = bd.into_c();
-            let dst_row_ffi = FFISafe::new(&dst_row);
-            let src_row_ffi = FFISafe::new(&src_row);
-            let luma_row_ffi = FFISafe::new(&luma_row);
-            use crate::src::safe_simd::filmgrain as safe_fg;
-            unsafe {
-                match (BD::BPC, layout) {
-                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => safe_fg::fguv_32x32xn_i420_8bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => safe_fg::fguv_32x32xn_i422_8bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => safe_fg::fguv_32x32xn_i444_8bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => safe_fg::fguv_32x32xn_i420_16bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => safe_fg::fguv_32x32xn_i422_16bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => safe_fg::fguv_32x32xn_i444_16bpc_avx2(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-                }
-            }
-            return;
-        }
+    if crate::src::safe_simd::filmgrain::fguv_32x32xn_dispatch::<BD>(layout, dst, src, data, pw, scaling, grain_lut, bh, row_num, luma, is_uv, is_id, bd) {
+        return;
     }
-
     #[cfg(target_arch = "aarch64")]
-    {
-        let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
-        let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
-        let dst_row = dst.with_offset::<BD>() + (row_strides * dst.pixel_stride::<BD>() >> ss_y);
-        let src_row = src.with_offset::<BD>() + (row_strides * src.pixel_stride::<BD>() >> ss_y);
-        let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
-        let src_row_ptr = src_row.as_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let data_c = &data.clone().into();
-        let scaling_ptr = (scaling as *const BD::Scaling).cast();
-        let grain_lut_ptr = (grain_lut as *const GrainLut<BD::Entry>).cast();
-        let bh_c = bh as c_int;
-        let row_num_c = row_num as c_int;
-        let luma_row = luma.with_offset::<BD>() + (row_strides * luma.pixel_stride::<BD>());
-        let luma_row_ptr = luma_row.as_ptr::<BD>().cast();
-        let luma_stride = luma.stride();
-        let uv_pl = is_uv as c_int;
-        let is_id_c = is_id as c_int;
-        let bd_c = bd.into_c();
-        let dst_row_ffi = FFISafe::new(&dst_row);
-        let src_row_ffi = FFISafe::new(&src_row);
-        let luma_row_ffi = FFISafe::new(&luma_row);
-        use crate::src::safe_simd::filmgrain_arm as safe_fg_arm;
-        unsafe {
-            match (BD::BPC, layout) {
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => safe_fg_arm::fguv_32x32xn_i420_8bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => safe_fg_arm::fguv_32x32xn_i422_8bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => safe_fg_arm::fguv_32x32xn_i444_8bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => safe_fg_arm::fguv_32x32xn_i420_16bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => safe_fg_arm::fguv_32x32xn_i422_16bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => safe_fg_arm::fguv_32x32xn_i444_16bpc_neon(dst_row_ptr, src_row_ptr, stride, data_c, pw, scaling_ptr, grain_lut_ptr, bh_c, row_num_c, luma_row_ptr, luma_stride, uv_pl, is_id_c, bd_c, dst_row_ffi, src_row_ffi, luma_row_ffi),
-            }
-        }
+    if crate::src::safe_simd::filmgrain_arm::fguv_32x32xn_dispatch::<BD>(layout, dst, src, data, pw, scaling, grain_lut, bh, row_num, luma, is_uv, is_id, bd) {
         return;
     }
 
@@ -611,6 +431,7 @@ fn row_seed(rows: usize, row_num: usize, data: &Rav1dFilmGrainData) -> [c_uint; 
 /// # Safety
 ///
 /// Must be called by [`generate_grain_y::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn generate_grain_y_c_erased<BD: BitDepth>(
     buf: *mut GrainLut<DynEntry>,
@@ -776,12 +597,9 @@ fn generate_grain_uv_rust<BD: BitDepth>(
                         let mut luma = 0;
                         let (luma_y, luma_x) = is_sub.luma((y, x));
                         const _: () = IsSub::check_buf_index_all(&None::<GrainLut<()>>);
-                        // The optimizer is not smart enough to deduce this on its own.
-                        // SAFETY: The above static check checks all maximum index possibilities.
-                        unsafe {
-                            assume(luma_y < GRAIN_HEIGHT + 1 - 1);
-                            assume(luma_x < GRAIN_WIDTH - 1);
-                        }
+                        // The static check above proves these bounds at compile time.
+                        assert!(luma_y < GRAIN_HEIGHT + 1 - 1);
+                        assert!(luma_x < GRAIN_WIDTH - 1);
                         for i in 0..1 + is_sub.y as usize {
                             for j in 0..1 + is_sub.x as usize {
                                 luma += buf_y[luma_y + i][luma_x + j].as_::<c_int>();
@@ -807,6 +625,7 @@ fn generate_grain_uv_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`generate_grain_uv::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 #[inline(never)]
 unsafe extern "C" fn generate_grain_uv_c_erased<
@@ -857,6 +676,7 @@ fn sample_lut<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`fgy_32x32xn::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn fgy_32x32xn_c_erased<BD: BitDepth>(
     _dst_row_ptr: *mut DynPixel,
@@ -1186,6 +1006,7 @@ fn fguv_32x32xn_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`fguv_32x32xn::Fn::call`].
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 #[deny(unsafe_op_in_unsafe_fn)]
 #[inline(never)]
 unsafe extern "C" fn fguv_32x32xn_c_erased<
@@ -1594,19 +1415,38 @@ mod neon {
 
 impl Rav1dFilmGrainDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
-        Self {
-            generate_grain_y: generate_grain_y::Fn::new(generate_grain_y_c_erased::<BD>),
-            generate_grain_uv: enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
-                I420 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 420, true, true>),
-                I422 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 422, true, false>),
-                I444 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 444, false, false>),
-            }),
-            fgy_32x32xn: fgy_32x32xn::Fn::new(fgy_32x32xn_c_erased::<BD>),
-            fguv_32x32xn: enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
-                I420 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 420, true, true>),
-                I422 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 422, true, false>),
-                I444 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 444, false, false>),
-            }),
+        cfg_if::cfg_if! {
+            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+                Self {
+                    generate_grain_y: generate_grain_y::Fn::new(generate_grain_y_c_erased::<BD>),
+                    generate_grain_uv: enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
+                        I420 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 420, true, true>),
+                        I422 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 422, true, false>),
+                        I444 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 444, false, false>),
+                    }),
+                    fgy_32x32xn: fgy_32x32xn::Fn::new(fgy_32x32xn_c_erased::<BD>),
+                    fguv_32x32xn: enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
+                        I420 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 420, true, true>),
+                        I422 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 422, true, false>),
+                        I444 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 444, false, false>),
+                    }),
+                }
+            } else {
+                Self {
+                    generate_grain_y: generate_grain_y::Fn::DEFAULT,
+                    generate_grain_uv: enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
+                        I420 => generate_grain_uv::Fn::DEFAULT,
+                        I422 => generate_grain_uv::Fn::DEFAULT,
+                        I444 => generate_grain_uv::Fn::DEFAULT,
+                    }),
+                    fgy_32x32xn: fgy_32x32xn::Fn::DEFAULT,
+                    fguv_32x32xn: enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
+                        I420 => fguv_32x32xn::Fn::DEFAULT,
+                        I422 => fguv_32x32xn::Fn::DEFAULT,
+                        I444 => fguv_32x32xn::Fn::DEFAULT,
+                    }),
+                }
+            }
         }
     }
 

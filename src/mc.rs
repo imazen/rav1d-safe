@@ -1,5 +1,3 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
@@ -32,8 +30,11 @@ use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::cmp;
 use std::ffi::c_int;
 use std::iter;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 use std::mem;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 use std::ptr;
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 use std::slice;
 use to_method::To;
 
@@ -622,9 +623,6 @@ fn prep_bilin_scaled_rust<BD: BitDepth>(
 }
 
 /// Direct dispatch for avg - bypasses function pointer table.
-///
-/// Selects optimal SIMD implementation at runtime based on CPU features.
-/// Used when `feature = "asm"` is disabled for zero-overhead direct calls.
 #[cfg(not(feature = "asm"))]
 fn avg_direct<BD: BitDepth>(
     dst: PicOffset,
@@ -634,52 +632,10 @@ fn avg_direct<BD: BitDepth>(
     h: i32,
     bd: BD,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-            let dst_stride = dst.stride();
-            let bd_c = bd.into_c();
-            let dst_ffi = FFISafe::new(&dst);
-            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid dst.
-            unsafe {
-                match BD::BPC {
-                    BPC::BPC8 => crate::src::safe_simd::mc::avg_8bpc_avx2(
-                        dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi,
-                    ),
-                    BPC::BPC16 => crate::src::safe_simd::mc::avg_16bpc_avx2(
-                        dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi,
-                    ),
-                }
-            }
-            return;
-        }
-    }
-
+    if crate::src::safe_simd::mc::avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, bd) { return; }
     #[cfg(target_arch = "aarch64")]
-    {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        // SAFETY: NEON always available on aarch64. Pointers from valid dst.
-        unsafe {
-            match BD::BPC {
-                BPC::BPC8 => crate::src::safe_simd::mc_arm::avg_8bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi,
-                ),
-                BPC::BPC16 => crate::src::safe_simd::mc_arm::avg_16bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi,
-                ),
-            }
-        }
-        return;
-    }
-
-    // Scalar fallback
+    if crate::src::safe_simd::mc_arm::avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, bd) { return; }
     #[allow(unreachable_code)]
     avg_rust(dst, tmp1, tmp2, w as usize, h as usize, bd);
 }
@@ -695,49 +651,10 @@ fn w_avg_direct<BD: BitDepth>(
     weight: i32,
     bd: BD,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-            let dst_stride = dst.stride();
-            let bd_c = bd.into_c();
-            let dst_ffi = FFISafe::new(&dst);
-            unsafe {
-                match BD::BPC {
-                    BPC::BPC8 => crate::src::safe_simd::mc::w_avg_8bpc_avx2(
-                        dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi,
-                    ),
-                    BPC::BPC16 => crate::src::safe_simd::mc::w_avg_16bpc_avx2(
-                        dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi,
-                    ),
-                }
-            }
-            return;
-        }
-    }
-
+    if crate::src::safe_simd::mc::w_avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, weight, bd) { return; }
     #[cfg(target_arch = "aarch64")]
-    {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        unsafe {
-            match BD::BPC {
-                BPC::BPC8 => crate::src::safe_simd::mc_arm::w_avg_8bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi,
-                ),
-                BPC::BPC16 => crate::src::safe_simd::mc_arm::w_avg_16bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi,
-                ),
-            }
-        }
-        return;
-    }
-
+    if crate::src::safe_simd::mc_arm::w_avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, weight, bd) { return; }
     #[allow(unreachable_code)]
     w_avg_rust(dst, tmp1, tmp2, w as usize, h as usize, weight, bd);
 }
@@ -753,51 +670,10 @@ fn mask_direct<BD: BitDepth>(
     mask: &[u8],
     bd: BD,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-            let dst_stride = dst.stride();
-            let mask_ptr = mask[..(w * h) as usize].as_ptr();
-            let bd_c = bd.into_c();
-            let dst_ffi = FFISafe::new(&dst);
-            unsafe {
-                match BD::BPC {
-                    BPC::BPC8 => crate::src::safe_simd::mc::mask_8bpc_avx2(
-                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
-                    ),
-                    BPC::BPC16 => crate::src::safe_simd::mc::mask_16bpc_avx2(
-                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
-                    ),
-                }
-            }
-            return;
-        }
-    }
-
+    if crate::src::safe_simd::mc::mask_dispatch::<BD>(dst, tmp1, tmp2, w, h, mask, bd) { return; }
     #[cfg(target_arch = "aarch64")]
-    {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let mask_ptr = mask[..(w * h) as usize].as_ptr();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        unsafe {
-            match BD::BPC {
-                BPC::BPC8 => crate::src::safe_simd::mc_arm::mask_8bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
-                ),
-                BPC::BPC16 => crate::src::safe_simd::mc_arm::mask_16bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
-                ),
-            }
-        }
-        return;
-    }
-
+    if crate::src::safe_simd::mc_arm::mask_dispatch::<BD>(dst, tmp1, tmp2, w, h, mask, bd) { return; }
     #[allow(unreachable_code)]
     mask_rust(dst, tmp1, tmp2, w as usize, h as usize, mask, bd);
 }
@@ -811,62 +687,15 @@ fn blend_direct<BD: BitDepth>(
     h: i32,
     mask: &[u8],
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-            let dst_stride = dst.stride();
-            let tmp_ptr = ptr::from_ref(tmp).cast();
-            let mask_ptr = mask[..(w * h) as usize].as_ptr();
-            let dst_ffi = FFISafe::new(&dst);
-            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid dst.
-            unsafe {
-                match BD::BPC {
-                    BPC::BPC8 => crate::src::safe_simd::mc::blend_8bpc_avx2(
-                        dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi,
-                    ),
-                    BPC::BPC16 => crate::src::safe_simd::mc::blend_16bpc_avx2(
-                        dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi,
-                    ),
-                }
-            }
-            return;
-        }
-    }
-
+    if crate::src::safe_simd::mc::blend_dispatch::<BD>(dst, tmp, w, h, mask) { return; }
     #[cfg(target_arch = "aarch64")]
-    {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let tmp_ptr = ptr::from_ref(tmp).cast();
-        let mask_ptr = mask[..(w * h) as usize].as_ptr();
-        let dst_ffi = FFISafe::new(&dst);
-        // SAFETY: NEON always available on aarch64. Pointers from valid dst.
-        unsafe {
-            match BD::BPC {
-                BPC::BPC8 => crate::src::safe_simd::mc_arm::blend_8bpc_neon(
-                    dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi,
-                ),
-                BPC::BPC16 => crate::src::safe_simd::mc_arm::blend_16bpc_neon(
-                    dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi,
-                ),
-            }
-        }
-        return;
-    }
-
-    // Scalar fallback
+    if crate::src::safe_simd::mc_arm::blend_dispatch::<BD>(dst, tmp, w, h, mask) { return; }
     #[allow(unreachable_code)]
     blend_rust::<BD>(dst, tmp, w as usize, h as usize, mask);
 }
 
 /// Direct dispatch for mc (put) - bypasses function pointer table.
-///
-/// Selects optimal SIMD implementation at runtime based on CPU features and Filter2d variant.
-/// Used when `feature = "asm"` is disabled for zero-overhead direct calls.
 #[cfg(not(feature = "asm"))]
 fn mc_put_direct<BD: BitDepth>(
     filter: Filter2d,
@@ -878,90 +707,10 @@ fn mc_put_direct<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-            let dst_stride = dst.stride();
-            let src_ptr = src.as_ptr::<BD>().cast();
-            let src_stride = src.stride();
-            let bd_c = bd.into_c();
-            let dst_ffi = FFISafe::new(&dst);
-            let src_ffi = FFISafe::new(&src);
-            use crate::src::safe_simd::mc as safe_mc;
-            use Filter2d::*;
-            // SAFETY: AVX2 verified by CpuFlags check. Pointers derived from valid dst/src.
-            unsafe {
-                match (BD::BPC, filter) {
-                    (BPC::BPC8, Regular8Tap) => safe_mc::put_8tap_regular_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC8, RegularSmooth8Tap) => safe_mc::put_8tap_regular_smooth_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC8, RegularSharp8Tap) => safe_mc::put_8tap_regular_sharp_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC8, SmoothRegular8Tap) => safe_mc::put_8tap_smooth_regular_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC8, Smooth8Tap) => safe_mc::put_8tap_smooth_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC8, SmoothSharp8Tap) => safe_mc::put_8tap_smooth_sharp_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC8, SharpRegular8Tap) => safe_mc::put_8tap_sharp_regular_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC8, SharpSmooth8Tap) => safe_mc::put_8tap_sharp_smooth_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC8, Sharp8Tap) => safe_mc::put_8tap_sharp_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC8, Bilinear) => safe_mc::put_bilin_8bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC16, Regular8Tap) => safe_mc::put_8tap_regular_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC16, RegularSmooth8Tap) => safe_mc::put_8tap_regular_smooth_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC16, RegularSharp8Tap) => safe_mc::put_8tap_regular_sharp_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC16, SmoothRegular8Tap) => safe_mc::put_8tap_smooth_regular_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC16, Smooth8Tap) => safe_mc::put_8tap_smooth_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC16, SmoothSharp8Tap) => safe_mc::put_8tap_smooth_sharp_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC16, SharpRegular8Tap) => safe_mc::put_8tap_sharp_regular_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC16, SharpSmooth8Tap) => safe_mc::put_8tap_sharp_smooth_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC16, Sharp8Tap) => safe_mc::put_8tap_sharp_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                    (BPC::BPC16, Bilinear) => safe_mc::put_bilin_16bpc_avx2(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                }
-            }
-            return;
-        }
-    }
-
+    if crate::src::safe_simd::mc::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) { return; }
     #[cfg(target_arch = "aarch64")]
-    {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        let src_ffi = FFISafe::new(&src);
-        use crate::src::safe_simd::mc_arm as safe_mc_arm;
-        use Filter2d::*;
-        // SAFETY: NEON always available on aarch64. Pointers from valid dst/src.
-        unsafe {
-            match (BD::BPC, filter) {
-                (BPC::BPC8, Regular8Tap) => safe_mc_arm::put_8tap_regular_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC8, RegularSmooth8Tap) => safe_mc_arm::put_8tap_regular_smooth_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC8, RegularSharp8Tap) => safe_mc_arm::put_8tap_regular_sharp_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC8, SmoothRegular8Tap) => safe_mc_arm::put_8tap_smooth_regular_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC8, Smooth8Tap) => safe_mc_arm::put_8tap_smooth_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC8, SmoothSharp8Tap) => safe_mc_arm::put_8tap_smooth_sharp_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC8, SharpRegular8Tap) => safe_mc_arm::put_8tap_sharp_regular_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC8, SharpSmooth8Tap) => safe_mc_arm::put_8tap_sharp_smooth_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC8, Sharp8Tap) => safe_mc_arm::put_8tap_sharp_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC8, Bilinear) => safe_mc_arm::put_bilin_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC16, Regular8Tap) => safe_mc_arm::put_8tap_regular_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC16, RegularSmooth8Tap) => safe_mc_arm::put_8tap_regular_smooth_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC16, RegularSharp8Tap) => safe_mc_arm::put_8tap_regular_sharp_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC16, SmoothRegular8Tap) => safe_mc_arm::put_8tap_smooth_regular_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC16, Smooth8Tap) => safe_mc_arm::put_8tap_smooth_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC16, SmoothSharp8Tap) => safe_mc_arm::put_8tap_smooth_sharp_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC16, SharpRegular8Tap) => safe_mc_arm::put_8tap_sharp_regular_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC16, SharpSmooth8Tap) => safe_mc_arm::put_8tap_sharp_smooth_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC16, Sharp8Tap) => safe_mc_arm::put_8tap_sharp_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-                (BPC::BPC16, Bilinear) => safe_mc_arm::put_bilin_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
-            }
-        }
-        return;
-    }
-
-    // Scalar fallback
+    if crate::src::safe_simd::mc_arm::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) { return; }
     #[allow(unreachable_code)]
     {
         let w = w as usize;
@@ -987,84 +736,10 @@ fn mct_prep_direct<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
-            let src_ptr = src.as_ptr::<BD>().cast();
-            let src_stride = src.stride();
-            let bd_c = bd.into_c();
-            let src_ffi = FFISafe::new(&src);
-            use crate::src::safe_simd::mc as safe_mc;
-            use Filter2d::*;
-            unsafe {
-                match (BD::BPC, filter) {
-                    (BPC::BPC8, Regular8Tap) => safe_mc::prep_8tap_regular_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC8, RegularSmooth8Tap) => safe_mc::prep_8tap_regular_smooth_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC8, RegularSharp8Tap) => safe_mc::prep_8tap_regular_sharp_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC8, SmoothRegular8Tap) => safe_mc::prep_8tap_smooth_regular_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC8, Smooth8Tap) => safe_mc::prep_8tap_smooth_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC8, SmoothSharp8Tap) => safe_mc::prep_8tap_smooth_sharp_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC8, SharpRegular8Tap) => safe_mc::prep_8tap_sharp_regular_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC8, SharpSmooth8Tap) => safe_mc::prep_8tap_sharp_smooth_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC8, Sharp8Tap) => safe_mc::prep_8tap_sharp_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC8, Bilinear) => safe_mc::prep_bilin_8bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC16, Regular8Tap) => safe_mc::prep_8tap_regular_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC16, RegularSmooth8Tap) => safe_mc::prep_8tap_regular_smooth_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC16, RegularSharp8Tap) => safe_mc::prep_8tap_regular_sharp_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC16, SmoothRegular8Tap) => safe_mc::prep_8tap_smooth_regular_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC16, Smooth8Tap) => safe_mc::prep_8tap_smooth_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC16, SmoothSharp8Tap) => safe_mc::prep_8tap_smooth_sharp_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC16, SharpRegular8Tap) => safe_mc::prep_8tap_sharp_regular_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC16, SharpSmooth8Tap) => safe_mc::prep_8tap_sharp_smooth_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC16, Sharp8Tap) => safe_mc::prep_8tap_sharp_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                    (BPC::BPC16, Bilinear) => safe_mc::prep_bilin_16bpc_avx2(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                }
-            }
-            return;
-        }
-    }
-
+    if crate::src::safe_simd::mc::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) { return; }
     #[cfg(target_arch = "aarch64")]
-    {
-        let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd_c = bd.into_c();
-        let src_ffi = FFISafe::new(&src);
-        use crate::src::safe_simd::mc_arm as safe_mc_arm;
-        use Filter2d::*;
-        unsafe {
-            match (BD::BPC, filter) {
-                (BPC::BPC8, Regular8Tap) => safe_mc_arm::prep_8tap_regular_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC8, RegularSmooth8Tap) => safe_mc_arm::prep_8tap_regular_smooth_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC8, RegularSharp8Tap) => safe_mc_arm::prep_8tap_regular_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC8, SmoothRegular8Tap) => safe_mc_arm::prep_8tap_smooth_regular_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC8, Smooth8Tap) => safe_mc_arm::prep_8tap_smooth_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC8, SmoothSharp8Tap) => safe_mc_arm::prep_8tap_smooth_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC8, SharpRegular8Tap) => safe_mc_arm::prep_8tap_sharp_regular_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC8, SharpSmooth8Tap) => safe_mc_arm::prep_8tap_sharp_smooth_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC8, Sharp8Tap) => safe_mc_arm::prep_8tap_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC8, Bilinear) => safe_mc_arm::prep_bilin_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC16, Regular8Tap) => safe_mc_arm::prep_8tap_regular_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC16, RegularSmooth8Tap) => safe_mc_arm::prep_8tap_regular_smooth_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC16, RegularSharp8Tap) => safe_mc_arm::prep_8tap_regular_sharp_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC16, SmoothRegular8Tap) => safe_mc_arm::prep_8tap_smooth_regular_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC16, Smooth8Tap) => safe_mc_arm::prep_8tap_smooth_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC16, SmoothSharp8Tap) => safe_mc_arm::prep_8tap_smooth_sharp_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC16, SharpRegular8Tap) => safe_mc_arm::prep_8tap_sharp_regular_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC16, SharpSmooth8Tap) => safe_mc_arm::prep_8tap_sharp_smooth_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC16, Sharp8Tap) => safe_mc_arm::prep_8tap_sharp_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-                (BPC::BPC16, Bilinear) => safe_mc_arm::prep_bilin_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
-            }
-        }
-        return;
-    }
-
-    // Scalar fallback
+    if crate::src::safe_simd::mc_arm::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) { return; }
     #[allow(unreachable_code)]
     {
         let w = w as usize;
@@ -1080,7 +755,6 @@ fn mct_prep_direct<BD: BitDepth>(
 }
 
 /// Direct dispatch for mc_scaled (put_scaled) - bypasses function pointer table.
-/// No SIMD implementations exist for scaled variants; calls scalar Rust fallback directly.
 #[cfg(not(feature = "asm"))]
 fn mc_scaled_direct<BD: BitDepth>(
     filter: Filter2d,
@@ -1094,20 +768,26 @@ fn mc_scaled_direct<BD: BitDepth>(
     dy: i32,
     bd: BD,
 ) {
-    let w = w as usize;
-    let h = h as usize;
-    let mx = mx as usize;
-    let my = my as usize;
-    let dx = dx as usize;
-    let dy = dy as usize;
-    match filter {
-        Filter2d::Bilinear => put_bilin_scaled_rust(dst, src, w, h, mx, my, dx, dy, bd),
-        _ => put_8tap_scaled_rust(dst, src, w, h, mx, my, dx, dy, filter.hv(), bd),
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::mc_scaled_dispatch::<BD>(filter, dst, src, w, h, mx, my, dx, dy, bd) { return; }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::mc_scaled_dispatch::<BD>(filter, dst, src, w, h, mx, my, dx, dy, bd) { return; }
+    #[allow(unreachable_code)]
+    {
+        let w = w as usize;
+        let h = h as usize;
+        let mx = mx as usize;
+        let my = my as usize;
+        let dx = dx as usize;
+        let dy = dy as usize;
+        match filter {
+            Filter2d::Bilinear => put_bilin_scaled_rust(dst, src, w, h, mx, my, dx, dy, bd),
+            _ => put_8tap_scaled_rust(dst, src, w, h, mx, my, dx, dy, filter.hv(), bd),
+        }
     }
 }
 
 /// Direct dispatch for mct_scaled (prep_scaled) - bypasses function pointer table.
-/// No SIMD implementations exist for scaled variants; calls scalar Rust fallback directly.
 #[cfg(not(feature = "asm"))]
 fn mct_scaled_direct<BD: BitDepth>(
     filter: Filter2d,
@@ -1121,16 +801,23 @@ fn mct_scaled_direct<BD: BitDepth>(
     dy: i32,
     bd: BD,
 ) {
-    let w = w as usize;
-    let h = h as usize;
-    let mx = mx as usize;
-    let my = my as usize;
-    let dx = dx as usize;
-    let dy = dy as usize;
-    let tmp = &mut tmp[..w * h];
-    match filter {
-        Filter2d::Bilinear => prep_bilin_scaled_rust(tmp, src, w, h, mx, my, dx, dy, bd),
-        _ => prep_8tap_scaled_rust(tmp, src, w, h, mx, my, dx, dy, filter.hv(), bd),
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::mct_scaled_dispatch::<BD>(filter, tmp, src, w, h, mx, my, dx, dy, bd) { return; }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::mct_scaled_dispatch::<BD>(filter, tmp, src, w, h, mx, my, dx, dy, bd) { return; }
+    #[allow(unreachable_code)]
+    {
+        let w = w as usize;
+        let h = h as usize;
+        let mx = mx as usize;
+        let my = my as usize;
+        let dx = dx as usize;
+        let dy = dy as usize;
+        let tmp = &mut tmp[..w * h];
+        match filter {
+            Filter2d::Bilinear => prep_bilin_scaled_rust(tmp, src, w, h, mx, my, dx, dy, bd),
+            _ => prep_8tap_scaled_rust(tmp, src, w, h, mx, my, dx, dy, filter.hv(), bd),
+        }
     }
 }
 
@@ -1143,48 +830,10 @@ fn blend_dir_direct<BD: BitDepth>(
     w: i32,
     h: i32,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-            let dst_stride = dst.stride();
-            let tmp_ptr = ptr::from_ref(tmp).cast();
-            let dst_ffi = FFISafe::new(&dst);
-            use crate::src::safe_simd::mc as safe_mc;
-            unsafe {
-                match (BD::BPC, is_h) {
-                    (BPC::BPC8, true) => safe_mc::blend_h_8bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                    (BPC::BPC8, false) => safe_mc::blend_v_8bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                    (BPC::BPC16, true) => safe_mc::blend_h_16bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                    (BPC::BPC16, false) => safe_mc::blend_v_16bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                }
-            }
-            return;
-        }
-    }
-
+    if crate::src::safe_simd::mc::blend_dir_dispatch::<BD>(is_h, dst, tmp, w, h) { return; }
     #[cfg(target_arch = "aarch64")]
-    {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let tmp_ptr = ptr::from_ref(tmp).cast();
-        let dst_ffi = FFISafe::new(&dst);
-        use crate::src::safe_simd::mc_arm as safe_mc_arm;
-        unsafe {
-            match (BD::BPC, is_h) {
-                (BPC::BPC8, true) => safe_mc_arm::blend_h_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                (BPC::BPC8, false) => safe_mc_arm::blend_v_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                (BPC::BPC16, true) => safe_mc_arm::blend_h_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                (BPC::BPC16, false) => safe_mc_arm::blend_v_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-            }
-        }
-        return;
-    }
-
-    // Scalar fallback
+    if crate::src::safe_simd::mc_arm::blend_dir_dispatch::<BD>(is_h, dst, tmp, w, h) { return; }
     #[allow(unreachable_code)]
     if is_h {
         blend_h_rust::<BD>(dst, tmp, w as usize, h as usize);
@@ -1206,52 +855,10 @@ fn w_mask_direct<BD: BitDepth>(
     sign: i32,
     bd: BD,
 ) {
-    use crate::include::common::bitdepth::BPC;
-
     #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-            let dst_stride = dst.stride();
-            let bd_c = bd.into_c();
-            let dst_ffi = FFISafe::new(&dst);
-            use crate::src::safe_simd::mc as safe_mc;
-            unsafe {
-                match (BD::BPC, layout) {
-                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => safe_mc::w_mask_420_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => safe_mc::w_mask_422_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => safe_mc::w_mask_444_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => safe_mc::w_mask_420_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => safe_mc::w_mask_422_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => safe_mc::w_mask_444_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-                }
-            }
-            return;
-        }
-    }
-
+    if crate::src::safe_simd::mc::w_mask_dispatch::<BD>(layout, dst, tmp1, tmp2, w, h, mask, sign, bd) { return; }
     #[cfg(target_arch = "aarch64")]
-    {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        use crate::src::safe_simd::mc_arm as safe_mc_arm;
-        unsafe {
-            match (BD::BPC, layout) {
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => safe_mc_arm::w_mask_420_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => safe_mc_arm::w_mask_422_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => safe_mc_arm::w_mask_444_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => safe_mc_arm::w_mask_420_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => safe_mc_arm::w_mask_422_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => safe_mc_arm::w_mask_444_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
-            }
-        }
-        return;
-    }
-
-    // Scalar fallback
+    if crate::src::safe_simd::mc_arm::w_mask_dispatch::<BD>(layout, dst, tmp1, tmp2, w, h, mask, sign, bd) { return; }
     #[allow(unreachable_code)]
     {
         let w = w as usize;
@@ -1268,7 +875,6 @@ fn w_mask_direct<BD: BitDepth>(
 }
 
 /// Direct dispatch for warp8x8 - bypasses function pointer table.
-/// No safe SIMD implementation available; calls scalar Rust fallback directly.
 #[cfg(not(feature = "asm"))]
 fn warp8x8_direct<BD: BitDepth>(
     dst: PicOffset,
@@ -1278,11 +884,15 @@ fn warp8x8_direct<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::warp8x8_dispatch::<BD>(dst, src, abcd, mx, my, bd) { return; }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::warp8x8_dispatch::<BD>(dst, src, abcd, mx, my, bd) { return; }
+    #[allow(unreachable_code)]
     warp_affine_8x8_rust(dst, src, abcd, mx, my, bd);
 }
 
 /// Direct dispatch for warp8x8t - bypasses function pointer table.
-/// No safe SIMD implementation available; calls scalar Rust fallback directly.
 #[cfg(not(feature = "asm"))]
 fn warp8x8t_direct<BD: BitDepth>(
     tmp: &mut [i16],
@@ -1293,11 +903,15 @@ fn warp8x8t_direct<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::warp8x8t_dispatch::<BD>(tmp, tmp_stride, src, abcd, mx, my, bd) { return; }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::warp8x8t_dispatch::<BD>(tmp, tmp_stride, src, abcd, mx, my, bd) { return; }
+    #[allow(unreachable_code)]
     warp_affine_8x8t_rust(tmp, tmp_stride, src, abcd, mx, my, bd);
 }
 
 /// Direct dispatch for emu_edge - bypasses function pointer table.
-/// No SIMD implementation available; calls scalar Rust fallback directly.
 #[cfg(not(feature = "asm"))]
 fn emu_edge_direct<BD: BitDepth>(
     bw: isize,
@@ -1310,11 +924,15 @@ fn emu_edge_direct<BD: BitDepth>(
     dst_stride: usize,
     src: &Rav1dPictureDataComponent,
 ) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::emu_edge_dispatch::<BD>(bw, bh, iw, ih, x, y, dst, dst_stride, src) { return; }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::emu_edge_dispatch::<BD>(bw, bh, iw, ih, x, y, dst, dst_stride, src) { return; }
+    #[allow(unreachable_code)]
     emu_edge_rust::<BD>(bw, bh, iw, ih, x, y, dst, dst_stride, src);
 }
 
 /// Direct dispatch for resize - bypasses function pointer table.
-/// No SIMD implementation available; calls scalar Rust fallback directly.
 #[cfg(not(feature = "asm"))]
 fn resize_direct<BD: BitDepth>(
     dst: WithOffset<PicOrBuf<AlignedVec64<u8>>>,
@@ -1326,6 +944,11 @@ fn resize_direct<BD: BitDepth>(
     mx: i32,
     bd: BD,
 ) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::resize_dispatch::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd) { return; }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::resize_dispatch::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd) { return; }
+    #[allow(unreachable_code)]
     resize_rust::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd);
 }
 
@@ -2368,6 +1991,7 @@ pub struct Rav1dMCDSPContext {
 ///
 /// Must be called by [`mc::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn put_c_erased<BD: BitDepth, const FILTER: usize>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2402,6 +2026,7 @@ unsafe extern "C" fn put_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`mc_scaled::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn put_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2440,6 +2065,7 @@ unsafe extern "C" fn put_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`mct::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn prep_c_erased<BD: BitDepth, const FILTER: usize>(
     tmp: *mut i16,
     _src_ptr: *const DynPixel,
@@ -2472,6 +2098,7 @@ unsafe extern "C" fn prep_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`mct_scaled::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn prep_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
     tmp: *mut i16,
     _src_ptr: *const DynPixel,
@@ -2508,6 +2135,7 @@ unsafe extern "C" fn prep_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`avg::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn avg_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2530,6 +2158,7 @@ unsafe extern "C" fn avg_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`w_avg::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn w_avg_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2553,6 +2182,7 @@ unsafe extern "C" fn w_avg_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`mask::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn mask_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2578,6 +2208,7 @@ unsafe extern "C" fn mask_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`w_mask::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn w_mask_c_erased<const SS_HOR: bool, const SS_VER: bool, BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2604,6 +2235,7 @@ unsafe extern "C" fn w_mask_c_erased<const SS_HOR: bool, const SS_VER: bool, BD:
 ///
 /// Must be called by [`blend::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn blend_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2628,6 +2260,7 @@ unsafe extern "C" fn blend_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`blend_dir::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn blend_v_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2649,6 +2282,7 @@ unsafe extern "C" fn blend_v_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`blend_dir::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn blend_h_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2670,6 +2304,7 @@ unsafe extern "C" fn blend_h_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`warp8x8::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn warp_affine_8x8_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2694,6 +2329,7 @@ unsafe extern "C" fn warp_affine_8x8_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`warp8x8t::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn warp_affine_8x8t_c_erased<BD: BitDepth>(
     tmp: *mut i16,
     tmp_stride: usize,
@@ -2715,6 +2351,7 @@ unsafe extern "C" fn warp_affine_8x8t_c_erased<BD: BitDepth>(
 }
 
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn emu_edge_c_erased<BD: BitDepth>(
     bw: isize,
     bh: isize,
@@ -2737,6 +2374,7 @@ unsafe extern "C" fn emu_edge_c_erased<BD: BitDepth>(
     emu_edge_rust::<BD>(bw, bh, iw, ih, x, y, dst, dst_stride, r#ref)
 }
 
+#[cfg(any(feature = "asm", feature = "c-ffi"))]
 unsafe extern "C" fn resize_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -2764,70 +2402,102 @@ unsafe extern "C" fn resize_c_erased<BD: BitDepth>(
 
 impl Rav1dMCDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
-        Self {
-            mc: enum_map!(Filter2d => mc::Fn; match key {
-                Regular8Tap => mc::Fn::new(put_c_erased::<BD, {Regular8Tap as _}>),
-                RegularSmooth8Tap => mc::Fn::new(put_c_erased::<BD, {RegularSmooth8Tap as _}>),
-                RegularSharp8Tap => mc::Fn::new(put_c_erased::<BD, {RegularSharp8Tap as _}>),
-                SharpRegular8Tap => mc::Fn::new(put_c_erased::<BD, {SharpRegular8Tap as _}>),
-                SharpSmooth8Tap => mc::Fn::new(put_c_erased::<BD, {SharpSmooth8Tap as _}>),
-                Sharp8Tap => mc::Fn::new(put_c_erased::<BD, {Sharp8Tap as _}>),
-                SmoothRegular8Tap => mc::Fn::new(put_c_erased::<BD, {SmoothRegular8Tap as _}>),
-                Smooth8Tap => mc::Fn::new(put_c_erased::<BD, {Smooth8Tap as _}>),
-                SmoothSharp8Tap => mc::Fn::new(put_c_erased::<BD, {SmoothSharp8Tap as _}>),
-                Bilinear => mc::Fn::new(put_c_erased::<BD, {Bilinear as _}>),
-            }),
-            mct: enum_map!(Filter2d => mct::Fn; match key {
-                Regular8Tap => mct::Fn::new(prep_c_erased::<BD, {Regular8Tap as _}>),
-                RegularSmooth8Tap => mct::Fn::new(prep_c_erased::<BD, {RegularSmooth8Tap as _}>),
-                RegularSharp8Tap => mct::Fn::new(prep_c_erased::<BD, {RegularSharp8Tap as _}>),
-                SharpRegular8Tap => mct::Fn::new(prep_c_erased::<BD, {SharpRegular8Tap as _}>),
-                SharpSmooth8Tap => mct::Fn::new(prep_c_erased::<BD, {SharpSmooth8Tap as _}>),
-                Sharp8Tap => mct::Fn::new(prep_c_erased::<BD, {Sharp8Tap as _}>),
-                SmoothRegular8Tap => mct::Fn::new(prep_c_erased::<BD, {SmoothRegular8Tap as _}>),
-                Smooth8Tap => mct::Fn::new(prep_c_erased::<BD, {Smooth8Tap as _}>),
-                SmoothSharp8Tap => mct::Fn::new(prep_c_erased::<BD, {SmoothSharp8Tap as _}>),
-                Bilinear => mct::Fn::new(prep_c_erased::<BD, {Bilinear as _}>),
-            }),
-            mc_scaled: enum_map!(Filter2d => mc_scaled::Fn; match key {
-                Regular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Regular8Tap as _}>),
-                RegularSmooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {RegularSmooth8Tap as _}>),
-                RegularSharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {RegularSharp8Tap as _}>),
-                SharpRegular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SharpRegular8Tap as _}>),
-                SharpSmooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SharpSmooth8Tap as _}>),
-                Sharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Sharp8Tap as _}>),
-                SmoothRegular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SmoothRegular8Tap as _}>),
-                Smooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Smooth8Tap as _}>),
-                SmoothSharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SmoothSharp8Tap as _}>),
-                Bilinear => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Bilinear as _}>),
-            }),
-            mct_scaled: enum_map!(Filter2d => mct_scaled::Fn; match key {
-                Regular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Regular8Tap as _}>),
-                RegularSmooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {RegularSmooth8Tap as _}>),
-                RegularSharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {RegularSharp8Tap as _}>),
-                SharpRegular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SharpRegular8Tap as _}>),
-                SharpSmooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SharpSmooth8Tap as _}>),
-                Sharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Sharp8Tap as _}>),
-                SmoothRegular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SmoothRegular8Tap as _}>),
-                Smooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Smooth8Tap as _}>),
-                SmoothSharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SmoothSharp8Tap as _}>),
-                Bilinear => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Bilinear as _}>),
-            }),
-            avg: avg::Fn::new(avg_c_erased::<BD>),
-            w_avg: w_avg::Fn::new(w_avg_c_erased::<BD>),
-            mask: mask::Fn::new(mask_c_erased::<BD>),
-            w_mask: enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                I420 => w_mask::Fn::new(w_mask_c_erased::<true, true, BD>),
-                I422 => w_mask::Fn::new(w_mask_c_erased::<true, false, BD>),
-                I444 => w_mask::Fn::new(w_mask_c_erased::<false, false, BD>),
-            }),
-            blend: blend::Fn::new(blend_c_erased::<BD>),
-            blend_v: blend_dir::Fn::new(blend_v_c_erased::<BD>),
-            blend_h: blend_dir::Fn::new(blend_h_c_erased::<BD>),
-            warp8x8: warp8x8::Fn::new(warp_affine_8x8_c_erased::<BD>),
-            warp8x8t: warp8x8t::Fn::new(warp_affine_8x8t_c_erased::<BD>),
-            emu_edge: emu_edge::Fn::new(emu_edge_c_erased::<BD>),
-            resize: resize::Fn::new(resize_c_erased::<BD>),
+        cfg_if::cfg_if! {
+            if #[cfg(any(feature = "asm", feature = "c-ffi"))] {
+                Self {
+                    mc: enum_map!(Filter2d => mc::Fn; match key {
+                        Regular8Tap => mc::Fn::new(put_c_erased::<BD, {Regular8Tap as _}>),
+                        RegularSmooth8Tap => mc::Fn::new(put_c_erased::<BD, {RegularSmooth8Tap as _}>),
+                        RegularSharp8Tap => mc::Fn::new(put_c_erased::<BD, {RegularSharp8Tap as _}>),
+                        SharpRegular8Tap => mc::Fn::new(put_c_erased::<BD, {SharpRegular8Tap as _}>),
+                        SharpSmooth8Tap => mc::Fn::new(put_c_erased::<BD, {SharpSmooth8Tap as _}>),
+                        Sharp8Tap => mc::Fn::new(put_c_erased::<BD, {Sharp8Tap as _}>),
+                        SmoothRegular8Tap => mc::Fn::new(put_c_erased::<BD, {SmoothRegular8Tap as _}>),
+                        Smooth8Tap => mc::Fn::new(put_c_erased::<BD, {Smooth8Tap as _}>),
+                        SmoothSharp8Tap => mc::Fn::new(put_c_erased::<BD, {SmoothSharp8Tap as _}>),
+                        Bilinear => mc::Fn::new(put_c_erased::<BD, {Bilinear as _}>),
+                    }),
+                    mct: enum_map!(Filter2d => mct::Fn; match key {
+                        Regular8Tap => mct::Fn::new(prep_c_erased::<BD, {Regular8Tap as _}>),
+                        RegularSmooth8Tap => mct::Fn::new(prep_c_erased::<BD, {RegularSmooth8Tap as _}>),
+                        RegularSharp8Tap => mct::Fn::new(prep_c_erased::<BD, {RegularSharp8Tap as _}>),
+                        SharpRegular8Tap => mct::Fn::new(prep_c_erased::<BD, {SharpRegular8Tap as _}>),
+                        SharpSmooth8Tap => mct::Fn::new(prep_c_erased::<BD, {SharpSmooth8Tap as _}>),
+                        Sharp8Tap => mct::Fn::new(prep_c_erased::<BD, {Sharp8Tap as _}>),
+                        SmoothRegular8Tap => mct::Fn::new(prep_c_erased::<BD, {SmoothRegular8Tap as _}>),
+                        Smooth8Tap => mct::Fn::new(prep_c_erased::<BD, {Smooth8Tap as _}>),
+                        SmoothSharp8Tap => mct::Fn::new(prep_c_erased::<BD, {SmoothSharp8Tap as _}>),
+                        Bilinear => mct::Fn::new(prep_c_erased::<BD, {Bilinear as _}>),
+                    }),
+                    mc_scaled: enum_map!(Filter2d => mc_scaled::Fn; match key {
+                        Regular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Regular8Tap as _}>),
+                        RegularSmooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {RegularSmooth8Tap as _}>),
+                        RegularSharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {RegularSharp8Tap as _}>),
+                        SharpRegular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SharpRegular8Tap as _}>),
+                        SharpSmooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SharpSmooth8Tap as _}>),
+                        Sharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Sharp8Tap as _}>),
+                        SmoothRegular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SmoothRegular8Tap as _}>),
+                        Smooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Smooth8Tap as _}>),
+                        SmoothSharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SmoothSharp8Tap as _}>),
+                        Bilinear => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Bilinear as _}>),
+                    }),
+                    mct_scaled: enum_map!(Filter2d => mct_scaled::Fn; match key {
+                        Regular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Regular8Tap as _}>),
+                        RegularSmooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {RegularSmooth8Tap as _}>),
+                        RegularSharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {RegularSharp8Tap as _}>),
+                        SharpRegular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SharpRegular8Tap as _}>),
+                        SharpSmooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SharpSmooth8Tap as _}>),
+                        Sharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Sharp8Tap as _}>),
+                        SmoothRegular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SmoothRegular8Tap as _}>),
+                        Smooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Smooth8Tap as _}>),
+                        SmoothSharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SmoothSharp8Tap as _}>),
+                        Bilinear => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Bilinear as _}>),
+                    }),
+                    avg: avg::Fn::new(avg_c_erased::<BD>),
+                    w_avg: w_avg::Fn::new(w_avg_c_erased::<BD>),
+                    mask: mask::Fn::new(mask_c_erased::<BD>),
+                    w_mask: enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                        I420 => w_mask::Fn::new(w_mask_c_erased::<true, true, BD>),
+                        I422 => w_mask::Fn::new(w_mask_c_erased::<true, false, BD>),
+                        I444 => w_mask::Fn::new(w_mask_c_erased::<false, false, BD>),
+                    }),
+                    blend: blend::Fn::new(blend_c_erased::<BD>),
+                    blend_v: blend_dir::Fn::new(blend_v_c_erased::<BD>),
+                    blend_h: blend_dir::Fn::new(blend_h_c_erased::<BD>),
+                    warp8x8: warp8x8::Fn::new(warp_affine_8x8_c_erased::<BD>),
+                    warp8x8t: warp8x8t::Fn::new(warp_affine_8x8t_c_erased::<BD>),
+                    emu_edge: emu_edge::Fn::new(emu_edge_c_erased::<BD>),
+                    resize: resize::Fn::new(resize_c_erased::<BD>),
+                }
+            } else {
+                Self {
+                    mc: enum_map!(Filter2d => mc::Fn; match key {
+                        _ => mc::Fn::DEFAULT,
+                    }),
+                    mct: enum_map!(Filter2d => mct::Fn; match key {
+                        _ => mct::Fn::DEFAULT,
+                    }),
+                    mc_scaled: enum_map!(Filter2d => mc_scaled::Fn; match key {
+                        _ => mc_scaled::Fn::DEFAULT,
+                    }),
+                    mct_scaled: enum_map!(Filter2d => mct_scaled::Fn; match key {
+                        _ => mct_scaled::Fn::DEFAULT,
+                    }),
+                    avg: avg::Fn::DEFAULT,
+                    w_avg: w_avg::Fn::DEFAULT,
+                    mask: mask::Fn::DEFAULT,
+                    w_mask: enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                        _ => w_mask::Fn::DEFAULT,
+                    }),
+                    blend: blend::Fn::DEFAULT,
+                    blend_v: blend_dir::Fn::DEFAULT,
+                    blend_h: blend_dir::Fn::DEFAULT,
+                    warp8x8: warp8x8::Fn::DEFAULT,
+                    warp8x8t: warp8x8t::Fn::DEFAULT,
+                    emu_edge: emu_edge::Fn::DEFAULT,
+                    resize: resize::Fn::DEFAULT,
+                }
+            }
         }
     }
 

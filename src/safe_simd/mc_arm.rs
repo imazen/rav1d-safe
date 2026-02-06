@@ -14,13 +14,18 @@ use archmage::{arcane, Arm64, SimdToken};
 #[cfg(target_arch = "aarch64")]
 use safe_unaligned_simd::aarch64 as safe_simd;
 
+use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::headers::Rav1dFilterMode;
+#[cfg(target_arch = "aarch64")]
+use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::COMPINTER_LEN;
 use crate::src::internal::SCRATCH_INTER_INTRA_BUF_LEN;
 use crate::src::internal::SCRATCH_LAP_LEN;
+#[cfg(target_arch = "aarch64")]
+use crate::src::internal::SEG_MASK_LEN;
 use crate::src::levels::Filter2d;
 use crate::src::tables::dav1d_mc_subpel_filters;
 
@@ -3916,3 +3921,294 @@ define_prep_8tap_16bpc!(prep_8tap_smooth_sharp_16bpc_neon, Filter2d::SmoothSharp
 define_prep_8tap_16bpc!(prep_8tap_sharp_regular_16bpc_neon, Filter2d::SharpRegular8Tap);
 define_prep_8tap_16bpc!(prep_8tap_sharp_smooth_16bpc_neon, Filter2d::SharpSmooth8Tap);
 define_prep_8tap_16bpc!(prep_8tap_sharp_16bpc_neon, Filter2d::Sharp8Tap);
+
+// ============================================================================
+// Safe dispatch wrappers for aarch64 NEON
+// NEON is always available on aarch64, so these always return true.
+// ============================================================================
+
+#[cfg(target_arch = "aarch64")]
+pub fn avg_dispatch<BD: BitDepth>(
+    dst: PicOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let dst_stride = dst.stride();
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+    unsafe {
+        match BD::BPC {
+            BPC::BPC8 => avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
+            BPC::BPC16 => avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
+        }
+    }
+    true
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn w_avg_dispatch<BD: BitDepth>(
+    dst: PicOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    weight: i32,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let dst_stride = dst.stride();
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+    unsafe {
+        match BD::BPC {
+            BPC::BPC8 => w_avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi),
+            BPC::BPC16 => w_avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi),
+        }
+    }
+    true
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn mask_dispatch<BD: BitDepth>(
+    dst: PicOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &[u8],
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let dst_stride = dst.stride();
+    let mask_ptr = mask[..(w * h) as usize].as_ptr();
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+    unsafe {
+        match BD::BPC {
+            BPC::BPC8 => mask_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi),
+            BPC::BPC16 => mask_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi),
+        }
+    }
+    true
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn blend_dispatch<BD: BitDepth>(
+    dst: PicOffset,
+    tmp: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN],
+    w: i32,
+    h: i32,
+    mask: &[u8],
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let dst_stride = dst.stride();
+    let tmp_ptr = std::ptr::from_ref(tmp).cast();
+    let mask_ptr = mask[..(w * h) as usize].as_ptr();
+    let dst_ffi = FFISafe::new(&dst);
+    unsafe {
+        match BD::BPC {
+            BPC::BPC8 => blend_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
+            BPC::BPC16 => blend_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
+        }
+    }
+    true
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn blend_dir_dispatch<BD: BitDepth>(
+    is_h: bool,
+    dst: PicOffset,
+    tmp: &[BD::Pixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let dst_stride = dst.stride();
+    let tmp_ptr = std::ptr::from_ref(tmp).cast();
+    let dst_ffi = FFISafe::new(&dst);
+    unsafe {
+        match (BD::BPC, is_h) {
+            (BPC::BPC8, true) => blend_h_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+            (BPC::BPC8, false) => blend_v_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+            (BPC::BPC16, true) => blend_h_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+            (BPC::BPC16, false) => blend_v_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+        }
+    }
+    true
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn w_mask_dispatch<BD: BitDepth>(
+    layout: Rav1dPixelLayoutSubSampled,
+    dst: PicOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let dst_stride = dst.stride();
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+    unsafe {
+        match (BD::BPC, layout) {
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi),
+        }
+    }
+    true
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn mc_put_dispatch<BD: BitDepth>(
+    filter: Filter2d,
+    dst: PicOffset,
+    src: PicOffset,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+    use Filter2d::*;
+    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let dst_stride = dst.stride();
+    let src_ptr = src.as_ptr::<BD>().cast();
+    let src_stride = src.stride();
+    let bd_c = bd.into_c();
+    let dst_ffi = FFISafe::new(&dst);
+    let src_ffi = FFISafe::new(&src);
+    unsafe {
+        match (BD::BPC, filter) {
+            (BPC::BPC8, Regular8Tap) => put_8tap_regular_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC8, RegularSmooth8Tap) => put_8tap_regular_smooth_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC8, RegularSharp8Tap) => put_8tap_regular_sharp_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC8, SmoothRegular8Tap) => put_8tap_smooth_regular_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC8, Smooth8Tap) => put_8tap_smooth_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC8, SmoothSharp8Tap) => put_8tap_smooth_sharp_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC8, SharpRegular8Tap) => put_8tap_sharp_regular_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC8, SharpSmooth8Tap) => put_8tap_sharp_smooth_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC8, Sharp8Tap) => put_8tap_sharp_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC8, Bilinear) => put_bilin_8bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC16, Regular8Tap) => put_8tap_regular_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC16, RegularSmooth8Tap) => put_8tap_regular_smooth_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC16, RegularSharp8Tap) => put_8tap_regular_sharp_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC16, SmoothRegular8Tap) => put_8tap_smooth_regular_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC16, Smooth8Tap) => put_8tap_smooth_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC16, SmoothSharp8Tap) => put_8tap_smooth_sharp_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC16, SharpRegular8Tap) => put_8tap_sharp_regular_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC16, SharpSmooth8Tap) => put_8tap_sharp_smooth_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC16, Sharp8Tap) => put_8tap_sharp_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+            (BPC::BPC16, Bilinear) => put_bilin_16bpc_neon(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi),
+        }
+    }
+    true
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn mct_prep_dispatch<BD: BitDepth>(
+    filter: Filter2d,
+    tmp: &mut [i16],
+    src: PicOffset,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+    use Filter2d::*;
+    let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
+    let src_ptr = src.as_ptr::<BD>().cast();
+    let src_stride = src.stride();
+    let bd_c = bd.into_c();
+    let src_ffi = FFISafe::new(&src);
+    unsafe {
+        match (BD::BPC, filter) {
+            (BPC::BPC8, Regular8Tap) => prep_8tap_regular_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC8, RegularSmooth8Tap) => prep_8tap_regular_smooth_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC8, RegularSharp8Tap) => prep_8tap_regular_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC8, SmoothRegular8Tap) => prep_8tap_smooth_regular_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC8, Smooth8Tap) => prep_8tap_smooth_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC8, SmoothSharp8Tap) => prep_8tap_smooth_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC8, SharpRegular8Tap) => prep_8tap_sharp_regular_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC8, SharpSmooth8Tap) => prep_8tap_sharp_smooth_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC8, Sharp8Tap) => prep_8tap_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC8, Bilinear) => prep_bilin_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC16, Regular8Tap) => prep_8tap_regular_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC16, RegularSmooth8Tap) => prep_8tap_regular_smooth_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC16, RegularSharp8Tap) => prep_8tap_regular_sharp_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC16, SmoothRegular8Tap) => prep_8tap_smooth_regular_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC16, Smooth8Tap) => prep_8tap_smooth_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC16, SmoothSharp8Tap) => prep_8tap_smooth_sharp_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC16, SharpRegular8Tap) => prep_8tap_sharp_regular_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC16, SharpSmooth8Tap) => prep_8tap_sharp_smooth_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC16, Sharp8Tap) => prep_8tap_sharp_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+            (BPC::BPC16, Bilinear) => prep_bilin_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi),
+        }
+    }
+    true
+}
+
+/// No SIMD for scaled variants on aarch64.
+#[cfg(target_arch = "aarch64")]
+pub fn mc_scaled_dispatch<BD: BitDepth>(
+    _filter: Filter2d, _dst: PicOffset, _src: PicOffset,
+    _w: i32, _h: i32, _mx: i32, _my: i32, _dx: i32, _dy: i32, _bd: BD,
+) -> bool { false }
+
+/// No SIMD for scaled variants on aarch64.
+#[cfg(target_arch = "aarch64")]
+pub fn mct_scaled_dispatch<BD: BitDepth>(
+    _filter: Filter2d, _tmp: &mut [i16], _src: PicOffset,
+    _w: i32, _h: i32, _mx: i32, _my: i32, _dx: i32, _dy: i32, _bd: BD,
+) -> bool { false }
+
+/// No SIMD for warp on aarch64.
+#[cfg(target_arch = "aarch64")]
+pub fn warp8x8_dispatch<BD: BitDepth>(
+    _dst: PicOffset, _src: PicOffset, _abcd: &[i16; 4],
+    _mx: i32, _my: i32, _bd: BD,
+) -> bool { false }
+
+/// No SIMD for warp on aarch64.
+#[cfg(target_arch = "aarch64")]
+pub fn warp8x8t_dispatch<BD: BitDepth>(
+    _tmp: &mut [i16], _tmp_stride: usize, _src: PicOffset,
+    _abcd: &[i16; 4], _mx: i32, _my: i32, _bd: BD,
+) -> bool { false }
+
+/// No SIMD for emu_edge on aarch64.
+#[cfg(target_arch = "aarch64")]
+pub fn emu_edge_dispatch<BD: BitDepth>(
+    _bw: isize, _bh: isize, _iw: isize, _ih: isize, _x: isize, _y: isize,
+    _dst: &mut [BD::Pixel; crate::src::internal::EMU_EDGE_LEN],
+    _dst_pxstride: usize,
+    _src: &crate::include::dav1d::picture::Rav1dPictureDataComponent,
+) -> bool { false }
+
+/// No SIMD for resize on aarch64.
+#[cfg(target_arch = "aarch64")]
+pub fn resize_dispatch<BD: BitDepth>(
+    _dst: crate::src::with_offset::WithOffset<crate::src::pic_or_buf::PicOrBuf<crate::src::align::AlignedVec64<u8>>>,
+    _src: PicOffset, _dst_w: usize, _h: usize, _src_w: usize,
+    _dx: i32, _mx: i32, _bd: BD,
+) -> bool { false }
