@@ -148,6 +148,44 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 **DSP modules fully safe (no `#[allow(unsafe_code)]`):** cdef, filmgrain, ipred, itx, loopfilter, looprestoration, mc, pal, recon.
 
+## TODO: CI & Parity Testing
+
+### GitHub Actions Workflows
+
+Build matrix: `{x86_64, aarch64, wasm32-wasi (simd128)} × {linux, macos, windows}`
+
+Workflow must include:
+- `cargo build --no-default-features --features "bitdepth_8,bitdepth_16"` (pure safe)
+- `cargo build --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"` (safe + C API)
+- `cargo test --release`
+- `cargo fmt --check`
+- `cargo clippy --all-targets -- -D warnings`
+- Code coverage via `cargo-llvm-cov` uploaded to codecov
+- aarch64 cross-check via `cargo check --target aarch64-unknown-linux-gnu`
+- wasm32 simd128 build check
+
+### Decode Parity Testing
+
+Side-by-side decode with reference decoders to ensure exact pixel-level parity:
+1. **dav1d (C)** — primary reference. Decode same bitstream with both dav1d and rav1d-safe, compare output frame-by-frame. Must be bit-exact (no film grain) or statistically identical (with film grain, same seed).
+2. **libaom** — secondary reference. The AV1 reference decoder. Useful for catching bugs that both dav1d and rav1d might share.
+
+### Test Video Suite
+
+Need to find and clone:
+- **AV1 conformance test vectors** — `aomedia.googlesource.com/aom-testing` or the IETF conformance suite
+- **dav1d test suite** — `code.videolan.org/videolan/dav1d-test-data`
+- Coverage should include: all profiles (main/high/professional), all bit depths (8/10/12), all chroma subsampling (420/422/444), film grain, screen content coding, intra-only, inter, SVC, error resilience
+
+### Parity Test Harness
+
+Build a test binary or integration test that:
+1. Takes an IVF/OBU/webm input
+2. Decodes with rav1d-safe (via Rust API)
+3. Decodes with dav1d (via C FFI or subprocess)
+4. Compares output YUV planes byte-for-byte
+5. Reports any mismatches with frame number, plane, coordinates
+
 ## Known Issues
 
 (none currently)
