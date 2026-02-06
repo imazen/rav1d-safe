@@ -6639,8 +6639,8 @@ fn dct8_1d_scalar(
     // First do DCT4 on even samples
     let t0 = ((in0 + in4) * 181 + 128) >> 8;
     let t1 = ((in0 - in4) * 181 + 128) >> 8;
-    let t2 = (((in2 * 1567 - in6 * (3784 - 4096) + 2048) >> 12) - in6);
-    let t3 = (((in2 * (3784 - 4096) + in6 * 1567 + 2048) >> 12) + in2);
+    let t2 = ((in2 * 1567 - in6 * (3784 - 4096) + 2048) >> 12) - in6;
+    let t3 = ((in2 * (3784 - 4096) + in6 * 1567 + 2048) >> 12) + in2;
 
     let t0a = clip(t0 + t3);
     let t1a = clip(t1 + t2);
@@ -6648,18 +6648,18 @@ fn dct8_1d_scalar(
     let t3a = clip(t0 - t3);
 
     // Then do the 8-point specific part
-    let t4a = (((in1 * 799 - in7 * (4017 - 4096) + 2048) >> 12) - in7);
-    let t5a = ((in5 * 1703 - in3 * 1138 + 1024) >> 11);
-    let t6a = ((in5 * 1138 + in3 * 1703 + 1024) >> 11);
-    let t7a = (((in1 * (4017 - 4096) + in7 * 799 + 2048) >> 12) + in1);
+    let t4a = ((in1 * 799 - in7 * (4017 - 4096) + 2048) >> 12) - in7;
+    let t5a = (in5 * 1703 - in3 * 1138 + 1024) >> 11;
+    let t6a = (in5 * 1138 + in3 * 1703 + 1024) >> 11;
+    let t7a = ((in1 * (4017 - 4096) + in7 * 799 + 2048) >> 12) + in1;
 
     let t4 = clip(t4a + t5a);
     let t5 = clip(t4a - t5a);
     let t7 = clip(t7a + t6a);
     let t6 = clip(t7a - t6a);
 
-    let t5b = (((t6 - t5) * 181 + 128) >> 8);
-    let t6b = (((t6 + t5) * 181 + 128) >> 8);
+    let t5b = ((t6 - t5) * 181 + 128) >> 8;
+    let t6b = ((t6 + t5) * 181 + 128) >> 8;
 
     (
         clip(t0a + t7),

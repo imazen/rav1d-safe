@@ -318,7 +318,7 @@ unsafe fn wiener_filter5_16bpc_avx2_inner(
 /// Reconstructs lpf offset from pointer
 fn reconstruct_lpf_offset(lpf: &DisjointMut<AlignedVec64<u8>>, ptr: *const u8) -> isize {
     let base = lpf.as_mut_ptr();
-    (ptr as isize - base as isize)
+    ptr as isize - base as isize
 }
 
 /// FFI wrapper for Wiener filter 7-tap 8bpc
@@ -390,7 +390,7 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
 /// Reconstructs lpf offset from pointer for 16bpc
 fn reconstruct_lpf_offset_16bpc(lpf: &DisjointMut<AlignedVec64<u8>>, ptr: *const u16) -> isize {
     let base = lpf.as_mut_ptr().cast::<u16>();
-    (ptr as isize - base as isize) / 2 // Divide by sizeof(u16)
+    ptr as isize - base as isize / 2 // Divide by sizeof(u16)
 }
 
 /// FFI wrapper for Wiener filter 7-tap 16bpc

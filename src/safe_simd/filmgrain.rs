@@ -817,7 +817,7 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_avx2(
                 let old = (*grain_lut)[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let blended = round2(old * W[x][0] + grain * W[x][1], 5);
                 let blended = blended.clamp(grain_min, grain_max);
-                let sc = *scaling.add(cmp::min(sv, (bitdepth_max as usize))) as i32;
+                let sc = *scaling.add(cmp::min(sv, bitdepth_max as usize)) as i32;
                 let noise = round2(sc * blended, scaling_shift);
                 *dst_ptr.add(x) =
                     ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
