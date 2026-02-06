@@ -10610,21 +10610,19 @@ impl_8x8_ffi_wrapper_16bpc!(
 macro_rules! impl_4x4_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-        #[target_feature(enable = "avx2")]
-        pub unsafe fn $name(
-            dst: *mut u16,
-            dst_stride: isize,
-            coeff: *mut i16,
+        pub fn $name(
+            dst: &mut [u16],
+            dst_base: usize,
+            dst_stride_u16: isize,
+            coeff: &mut [i16],
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            let stride_u16 = (dst_stride / 2) as usize;
-
             // Load coefficients (row-major)
             let mut c = [[0i32; 4]; 4];
             for y in 0..4 {
                 for x in 0..4 {
-                    c[y][x] = unsafe { *coeff.add(y * 4 + x) } as i32;
+                    c[y][x] = coeff[y * 4 + x] as i32;
                 }
             }
 
@@ -10650,20 +10648,16 @@ macro_rules! impl_4x4_transform_16bpc {
 
             // Add to destination with rounding
             for y in 0..4 {
-                let dst_row = unsafe { dst.add(y * stride_u16) };
+                let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
                 for x in 0..4 {
-                    let pixel = unsafe { *dst_row.add(x) } as i32;
+                    let pixel = dst[row_off + x] as i32;
                     let val = pixel + ((out[y][x] + 8) >> 4);
-                    unsafe { *dst_row.add(x) = val.clamp(0, bitdepth_max) as u16 };
+                    dst[row_off + x] = val.clamp(0, bitdepth_max) as u16;
                 }
             }
 
             // Clear coefficients
-            unsafe {
-                for i in 0..16 {
-                    *coeff.add(i) = 0;
-                }
-            }
+            coeff[..16].fill(0);
         }
     };
 }
@@ -10724,15 +10718,18 @@ macro_rules! impl_4x4_ffi_wrapper_16bpc {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-            unsafe {
-                $inner(
-                    dst_ptr as *mut u16,
-                    dst_stride,
-                    coeff as *mut i16,
-                    eob,
-                    bitdepth_max,
-                );
-            }
+            let stride_u16 = dst_stride / 2;
+            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+            let abs_stride = stride_u16.unsigned_abs();
+            let (dst_slice, dst_base) = if stride_u16 >= 0 {
+                let len = 3 * abs_stride + 4;
+                (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+            } else {
+                let len = 3 * abs_stride + 4;
+                let start = unsafe { (dst_ptr as *mut u16).offset(3 * stride_u16) };
+                (unsafe { std::slice::from_raw_parts_mut(start, len) }, 3 * abs_stride)
+            };
+            $inner(dst_slice, dst_base, stride_u16, coeff_slice, eob, bitdepth_max);
         }
     };
 }
