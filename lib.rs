@@ -73,10 +73,8 @@ pub mod src {
     mod cdef;
     mod filmgrain;
     mod ipred;
-    #[allow(unsafe_code)]
     mod itx;
     mod loopfilter;
-    #[allow(unsafe_code)]
     mod looprestoration;
     mod mc;
     mod pal;
