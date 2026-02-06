@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 #[rustfmt::skip]
 pub static dav1d_dq_tbl: [[[u16; 2]; 256]; 3] = [
     [

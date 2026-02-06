@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 use parking_lot::Mutex;
 
 pub struct MemPool<T> {

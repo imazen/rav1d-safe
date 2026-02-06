@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::headers::Rav1dWarpedMotionParams;
 use crate::include::dav1d::headers::Rav1dWarpedMotionType;

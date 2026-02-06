@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 use std::marker::PhantomData;
 use std::ops::Index;
 use std::ops::IndexMut;

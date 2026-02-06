@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 use crate::include::common::bitdepth::BitDepth;
 use std::ops::Deref;
 use std::ops::DerefMut;

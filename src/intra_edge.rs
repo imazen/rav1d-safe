@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::src::enum_map::DefaultValue;
 use crate::src::levels::BlockLevel;

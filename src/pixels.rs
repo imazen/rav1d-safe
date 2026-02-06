@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 use crate::include::common::bitdepth::BitDepth;
 use crate::src::disjoint_mut::AsMutPtr;
 use crate::src::disjoint_mut::DisjointMut;

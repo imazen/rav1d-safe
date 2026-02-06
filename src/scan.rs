@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 use crate::src::align::Align32;
 use crate::src::in_range::InRange;
 use crate::src::levels::TxfmSize;

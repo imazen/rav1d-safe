@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 use crate::include::common::attributes::ctz;
 use crate::include::common::bitdepth::BPC;
 use crate::include::common::intops::apply_sign64;

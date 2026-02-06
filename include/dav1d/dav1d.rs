@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 use crate::include::dav1d::picture::Dav1dPicAllocator;
 use crate::include::dav1d::picture::Rav1dPicAllocator;
 use crate::src::c_arc::RawArc;
