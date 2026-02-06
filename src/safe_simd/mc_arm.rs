@@ -19,6 +19,7 @@ use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
+use crate::src::strided::Strided as _;
 use crate::src::internal::COMPINTER_LEN;
 use crate::src::internal::SCRATCH_INTER_INTRA_BUF_LEN;
 use crate::src::internal::SCRATCH_LAP_LEN;
@@ -1348,8 +1349,6 @@ pub unsafe extern "C" fn blend_h_16bpc_neon(
 // ============================================================================
 // W_MASK - Weighted mask blend (compound prediction with per-pixel masking)
 // ============================================================================
-
-use crate::src::internal::SEG_MASK_LEN;
 
 /// Core w_mask implementation for 8bpc
 /// SS_HOR and SS_VER control subsampling: 444=(false,false), 422=(true,false), 420=(true,true)
