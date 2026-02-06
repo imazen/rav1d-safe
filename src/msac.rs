@@ -514,9 +514,13 @@ fn rav1d_msac_decode_hi_tok_rust(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 
 // Safe SIMD implementations (used when asm feature is disabled)
 // ============================================================================
 
-/// min_prob table: EC_MIN_PROB * (n - i - 1) for symbol_adapt functions
+/// min_prob table: EC_MIN_PROB * (n - i) for symbol_adapt functions.
+/// Padded to 31 entries so any offset in 0..16 can safely load 16 values via SIMD.
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-static MIN_PROB_16: [u16; 16] = [60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16, 12, 8, 4, 0];
+static MIN_PROB_16: [u16; 31] = [
+    60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16, 12, 8, 4, 0, // valid entries
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // padding
+];
 
 /// AVX2 implementation of symbol_adapt16
 /// Uses parallel CDF probability calculation and comparison
@@ -559,17 +563,27 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_avx2(
     let max_cv = _mm256_max_epu16(c_vec, v);
     let cmp = _mm256_cmpeq_epi16(max_cv, c_vec);
 
-    // Get mask and count trailing zeros to find first symbol where c < v
+    // Get mask and count trailing zeros to find first symbol where c >= v[i].
+    // CDF probabilities are decreasing, so mask is 0...01...1 (zeros then ones).
+    // trailing_zeros finds the first 1 bit = first lane where c >= v.
+    // When c < v[i] for all lanes, mask is 0 and trailing_zeros returns 32;
+    // clamp to n_symbols (the last valid symbol index).
     let mask = _mm256_movemask_epi8(cmp) as u32;
-    let val = (mask.trailing_zeros() >> 1) as u8;
+    let val = std::cmp::min((mask.trailing_zeros() >> 1) as u8, n_symbols);
 
-    // Get u (previous v) and current v values for renormalization
+    // Get u (previous v) and current v values for renormalization.
+    // When val == n_symbols, v_val should be 0 (past the last CDF entry),
+    // matching the scalar behavior where the loop would have exhausted all symbols.
     let u = if val == 0 {
         s.rng
     } else {
         v_arr[val as usize - 1] as u32
     };
-    let v_val = v_arr[val as usize] as u32;
+    let v_val = if val >= n_symbols {
+        0u32
+    } else {
+        v_arr[val as usize] as u32
+    };
 
     // Update CDF if enabled
     if s.allow_update_cdf() {
@@ -623,7 +637,12 @@ unsafe fn rav1d_msac_decode_symbol_adapt4_sse2(
 
 // NEON implementations for aarch64
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-static MIN_PROB_16_ARM: [u16; 16] = [60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16, 12, 8, 4, 0];
+/// min_prob table: EC_MIN_PROB * (n - i) for symbol_adapt functions.
+/// Padded to 31 entries so any offset in 0..16 can safely load 16 values via SIMD.
+static MIN_PROB_16_ARM: [u16; 31] = [
+    60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16, 12, 8, 4, 0, // valid entries
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // padding
+];
 
 /// NEON implementation of symbol_adapt16
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
