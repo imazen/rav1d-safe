@@ -144,9 +144,14 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 **Crate-level deny(unsafe_code) when asm disabled.** `lib.rs` has `#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]` — compiler-enforced safety for the entire non-asm path.
 
-**47/80 modules have explicit `deny(unsafe_code)`:**
-- 35 unconditionally safe (decode, recon, lf_mask, lf_apply, ctx, obu, cdf, etc.)
-- 12 conditionally safe when asm disabled (cdef, filmgrain, ipred, itx, loopfilter, looprestoration, mc, pal, data, tables, cpu, safe_simd/pal)
+**DisjointMut extracted to separate crate** (`crates/disjoint-mut/`):
+- Provably safe abstraction (like RefCell for ranges) with always-on bounds checking
+- Main crate re-exports + adds AlignedVec-specific impls
+- Enables future `forbid(unsafe_code)` at crate level
+
+**55/80 modules have explicit safety annotations:**
+- 42 with `forbid(unsafe_code)` — permanent, compiler-enforced (decode, recon, lf_mask, lf_apply, ctx, obu, cdf, managed, etc.)
+- 13 with conditional deny when asm disabled (cdef, filmgrain, ipred, itx, loopfilter, looprestoration, mc, pal, data, tables, cpu, safe_simd/pal, safe_simd/pixel_access)
 
 **FFI wrappers gated behind `feature = "asm"`** in: cdef, cdef_arm, loopfilter, loopfilter_arm, looprestoration, looprestoration_arm, filmgrain, filmgrain_arm, pal.
 
@@ -171,7 +176,7 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 **Location:** `src/managed.rs` (~970 lines, 100% safe Rust)
 
-A fully safe, zero-copy API for decoding AV1 video. Enforced by `#![deny(unsafe_code)]`.
+A fully safe, zero-copy API for decoding AV1 video. Enforced by `#![forbid(unsafe_code)]`.
 
 **Key types:**
 - `Decoder` - safe wrapper around `Rav1dContext` (new/with_settings/decode/flush/drop)
