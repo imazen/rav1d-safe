@@ -14,7 +14,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use rav1d_safe::managed::{Decoder, Settings};
+//! use rav1d_safe::src::managed::{Decoder, Settings, Planes};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut decoder = Decoder::new()?;
@@ -259,7 +259,7 @@ impl From<DecodeFrameType> for Rav1dDecodeFrameType {
 /// # Example
 ///
 /// ```no_run
-/// use rav1d_safe::managed::Decoder;
+/// use rav1d_safe::src::managed::Decoder;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut decoder = Decoder::new()?;
@@ -296,7 +296,7 @@ impl Decoder {
     /// # Example
     ///
     /// ```no_run
-    /// # use rav1d_safe::managed::Decoder;
+    /// # use rav1d_safe::src::managed::Decoder;
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let mut decoder = Decoder::new()?;
     /// let data = b"..."; // AV1 OBU data
