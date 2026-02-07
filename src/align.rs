@@ -266,29 +266,7 @@ impl<T: Copy, C: AlignedByteChunk> Default for AlignedVec<T, C> {
 pub type AlignedVec32<T> = AlignedVec<T, Align32<[u8; 32]>>;
 pub type AlignedVec64<T> = AlignedVec<T, Align64<[u8; 64]>>;
 
-/// SAFETY: We never materialize a `&mut [T]` since we
-/// only materialize a `&mut AlignedVec<T, _>` and call [`AlignedVec::as_mut_ptr`] on it,
-/// which calls [`Vec::as_mut_ptr`] and never materializes a `&mut [V]`.
-unsafe impl<T: Copy, C: AlignedByteChunk> AsMutPtr for AlignedVec<T, C> {
-    type Target = T;
-
-    unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
-        // SAFETY: `.as_mut_ptr()` does not materialize a `&mut` to
-        // the underlying slice, so we can still allow `&`s into this slice.
-        let ptr = unsafe { &mut *ptr }.as_mut_ptr();
-
-        // SAFETY: `AlignedVec` stores `C`s internally,
-        // so `*mut T` is really `*mut C`.
-        // Since it's stored in a `Vec`, it's aligned.
-        unsafe { assume(ptr.cast::<C>().is_aligned()) };
-
-        ptr
-    }
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
+// AsMutPtr impl for AlignedVec is in src/disjoint_mut.rs
 
 #[test]
 #[should_panic]
