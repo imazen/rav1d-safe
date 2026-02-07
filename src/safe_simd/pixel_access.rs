@@ -113,6 +113,16 @@ pub fn reinterpret_slice<Src: AsBytes, Dst: FromBytes>(src: &[Src]) -> Option<&[
     Some(r.into_slice())
 }
 
+/// Safely reinterpret a mutable slice using zerocopy.
+#[inline(always)]
+pub fn reinterpret_slice_mut<Src: AsBytes + FromBytes, Dst: AsBytes + FromBytes>(
+    src: &mut [Src],
+) -> Option<&mut [Dst]> {
+    let bytes = src.as_bytes_mut();
+    let r: Ref<&mut [u8], [Dst]> = Ref::new_slice(bytes)?;
+    Some(r.into_mut_slice())
+}
+
 /// Safely reinterpret a fixed-size array reference using zerocopy.
 /// The source and destination must have the same byte size.
 #[inline(always)]
