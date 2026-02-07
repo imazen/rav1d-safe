@@ -152,7 +152,18 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 **Archmage conversions complete:** cdef constrain_avx2, msac symbol_adapt16 AVX2.
 
-**Remaining unsafe in safe_simd:** Raw pointer pixel access in inner SIMD functions (mc, itx, ipred, cdef, etc.). These need slice-based pixel access to become safe.
+**Feature flags:**
+- `unchecked` - Use unchecked slice access in SIMD hot paths (skips bounds checks)
+- `src/safe_simd/pixel_access.rs` - Helper module for checked/unchecked slice access
+
+**Unsafe reduction progress (safe_simd/):**
+- cdef.rs: Padding functions converted to safe DisjointMut slice access (top/bottom)
+- cdef_arm.rs: Same conversion for ARM NEON path
+- loopfilter.rs: Dispatch function fully safe (lvl + dst via slice access)
+- Remaining: Raw pointer pixel access in inner SIMD functions (mc, itx, ipred, etc.)
+  - SIMD intrinsics (`_mm256_storeu_si256` etc.) are inherently unsafe
+  - Inner functions take raw pointers; need signature changes to accept slices
+  - FFI wrappers in ipred/mc/itx not gated behind `feature = "asm"` (always compiled)
 
 **c-ffi decoupled from fn-ptr dispatch.** The `c-ffi` feature now only controls the 19 `dav1d_*` extern "C" entry points in `src/lib.rs`. Internal DSP dispatch uses direct function calls (no function pointers) when `asm` is disabled.
 
