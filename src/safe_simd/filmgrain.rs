@@ -1,4 +1,5 @@
 //! Safe SIMD implementations of film grain synthesis functions
+#![allow(deprecated)] // FFI wrappers need to forge tokens
 //!
 //! Film grain synthesis adds artificial grain to decoded video to match
 //! the artistic intent of the original content.
@@ -18,15 +19,11 @@ use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
 
-use libc::{intptr_t, ptrdiff_t};
 
 #[cfg(target_arch = "x86_64")]
 use archmage::{arcane, Desktop64, SimdToken};
 
-use crate::include::common::bitdepth::{DynEntry, DynPixel, DynScaling};
-use crate::include::dav1d::headers::{Dav1dFilmGrainData, Rav1dFilmGrainData};
-use crate::include::dav1d::picture::PicOffset;
-use crate::src::ffi_safe::FFISafe;
+use crate::include::dav1d::headers::Rav1dFilmGrainData;
 use crate::src::filmgrain::{FG_BLOCK_SIZE, GRAIN_HEIGHT, GRAIN_WIDTH};
 use crate::src::internal::GrainLut;
 use crate::src::tables::dav1d_gaussian_sequence;

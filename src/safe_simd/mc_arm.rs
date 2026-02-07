@@ -1,4 +1,5 @@
 //! Safe SIMD implementations of motion compensation functions for ARM NEON
+#![allow(deprecated)] // FFI wrappers need to forge tokens
 //!
 //! These use archmage tokens to safely invoke NEON intrinsics.
 //! The extern "C" wrappers are used for FFI compatibility with rav1d's dispatch system.

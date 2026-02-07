@@ -1,4 +1,5 @@
 //! Safe SIMD implementations for Loop Restoration
+#![allow(deprecated)] // FFI wrappers need to forge tokens
 //!
 //! Loop restoration applies two types of filtering:
 //! 1. Wiener filter - 7-tap or 5-tap separable filter

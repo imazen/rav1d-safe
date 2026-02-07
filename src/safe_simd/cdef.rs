@@ -41,7 +41,6 @@ use std::cmp;
 /// Formula: sign(diff) * min(|diff|, max(0, threshold - (|diff| >> shift)))
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[inline]
 fn constrain_avx2(_t: Desktop64, diff: __m256i, threshold: __m256i, shift: __m128i) -> __m256i {
     let zero = _mm256_setzero_si256();
 

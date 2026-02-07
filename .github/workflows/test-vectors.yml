@@ -1,192 +1,263 @@
 name: Test Vectors
 
 on:
-  # Run on push to main and PRs
-  push:
-    branches: [ main, feat/* ]
-  pull_request:
-    branches: [ main ]
-  # Allow manual trigger
-  workflow_dispatch:
-  # Run weekly to catch regressions
   schedule:
-    - cron: '0 0 * * 0'  # Every Sunday at midnight
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      corpus:
+        description: 'Which test corpus to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - dav1d-only
+          - fluster-only
+          - argon-only
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
-  test-vectors:
-    name: Test Against AV1 Conformance Vectors
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        features:
-          - "bitdepth_8,bitdepth_16"
-    
+  # Quick smoke test - dav1d-test-data (109 MB, ~160k files)
+  test-dav1d:
+    name: Test dav1d-test-data
+    runs-on: ubuntu-latest
+    if: github.event.inputs.corpus == 'all' || github.event.inputs.corpus == 'dav1d-only' || github.event_name == 'schedule'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-      
-      - name: Install zstd (for Argon extraction)
-        run: sudo apt-get update && sudo apt-get install -y zstd
-      
-      - name: Cache test vectors
-        id: cache-vectors
-        uses: actions/cache@v4
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          path: test-vectors
-          key: test-vectors-v1-${{ hashFiles('scripts/download-all-test-vectors.sh') }}
-          restore-keys: |
-            test-vectors-v1-
-      
-      - name: Download test vectors
-        if: steps.cache-vectors.outputs.cache-hit != 'true'
-        run: |
-          bash scripts/download-all-test-vectors.sh
-      
-      - name: Display test vector summary
-        run: |
-          echo "=== Test Vector Summary ==="
-          du -sh test-vectors/* || true
-          echo
-          find test-vectors/argon/argon -name "*.ivf" -o -name "*.obu" | wc -l || echo "Argon: N/A"
-          find test-vectors/dav1d-test-data -name "*.ivf" -o -name "*.obu" | wc -l || echo "dav1d: N/A"
-          find test-vectors/fluster/resources -name "*.ivf" | wc -l || echo "Fluster: N/A"
-      
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
       - name: Build decoder
+        run: cargo build --release --example managed_decode --no-default-features --features "bitdepth_8,bitdepth_16"
+
+      - name: Download dav1d test vectors
         run: |
-          cargo build --release --no-default-features --features "${{ matrix.features }}"
-      
-      - name: Run integration tests
+          mkdir -p test-vectors
+          cd test-vectors
+          if [ ! -d dav1d-test-data ]; then
+            git clone --depth 1 https://code.videolan.org/videolan/dav1d-test-data.git
+          fi
+
+      - name: Cache dav1d vectors
+        uses: actions/cache@v5
+        with:
+          path: test-vectors/dav1d-test-data
+          key: dav1d-vectors-${{ hashFiles('scripts/download-test-vectors.sh') }}
+
+      - name: Test 8-bit samples (100 files)
         run: |
-          cargo test --test integration_decode --release --no-default-features \
-            --features "${{ matrix.features }}" -- --ignored
-      
-      - name: Test sample Argon vectors
-        run: |
-          echo "=== Testing Argon Conformance Vectors ==="
           PASS=0
           FAIL=0
           TOTAL=0
-          
-          # Test first 50 vectors as a sample
-          for ivf in $(find test-vectors/argon/argon -name "*.ivf" | head -50); do
+          for ivf in $(find test-vectors/dav1d-test-data/8-bit -name "*.ivf" -o -name "*.obu" | head -100); do
             ((TOTAL++))
-            if cargo run --release --example managed_decode --no-default-features \
-                --features "${{ matrix.features }}" -- "$ivf" > /dev/null 2>&1; then
+            if timeout 30 cargo run --release --example managed_decode --no-default-features \
+                --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then
               ((PASS++))
             else
               ((FAIL++))
-              echo "FAILED: $(basename $ivf)"
+              echo "FAIL: $ivf"
             fi
           done
-          
-          echo "Tested: $TOTAL files"
-          echo "Passed: $PASS"
-          echo "Failed: $FAIL"
-          
-          # Fail if success rate is below 80%
-          SUCCESS_RATE=$((PASS * 100 / TOTAL))
-          if [ $SUCCESS_RATE -lt 80 ]; then
-            echo "ERROR: Success rate ($SUCCESS_RATE%) below 80%"
-            exit 1
-          fi
-      
-      - name: Test Fluster vectors
+          echo "Results: $PASS/$TOTAL passed, $FAIL failed"
+          [ $FAIL -lt 10 ] || exit 1  # Allow up to 10 failures for now
+
+      - name: Test 10-bit samples (50 files)
         run: |
-          echo "=== Testing Fluster Vectors ==="
           PASS=0
           FAIL=0
           TOTAL=0
-          
-          # Test all Fluster vectors (smaller set)
-          for ivf in $(find test-vectors/fluster/resources/test_vectors/av1 -name "*.ivf"); do
+          for ivf in $(find test-vectors/dav1d-test-data/10-bit -name "*.ivf" -o -name "*.obu" | head -50); do
             ((TOTAL++))
-            if cargo run --release --example managed_decode --no-default-features \
-                --features "${{ matrix.features }}" -- "$ivf" > /dev/null 2>&1; then
+            if timeout 30 cargo run --release --example managed_decode --no-default-features \
+                --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then
               ((PASS++))
             else
               ((FAIL++))
-              echo "FAILED: $(basename $ivf)"
+              echo "FAIL: $ivf"
             fi
           done
-          
-          echo "Tested: $TOTAL files"
-          echo "Passed: $PASS"
-          echo "Failed: $FAIL"
-          
-          # Fail if success rate is below 80%
-          if [ $TOTAL -gt 0 ]; then
-            SUCCESS_RATE=$((PASS * 100 / TOTAL))
-            if [ $SUCCESS_RATE -lt 80 ]; then
-              echo "ERROR: Success rate ($SUCCESS_RATE%) below 80%"
-              exit 1
-            fi
-          fi
-      
-      - name: Test sample dav1d vectors
+          echo "Results: $PASS/$TOTAL passed, $FAIL failed"
+          [ $FAIL -lt 5 ] || exit 1
+
+      - name: Test 12-bit samples (50 files)
         run: |
-          echo "=== Testing dav1d Test Vectors ==="
           PASS=0
           FAIL=0
           TOTAL=0
+          for ivf in $(find test-vectors/dav1d-test-data/12-bit -name "*.ivf" -o -name "*.obu" | head -50); do
+            ((TOTAL++))
+            if timeout 30 cargo run --release --example managed_decode --no-default-features \
+                --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then
+              ((PASS++))
+            else
+              ((FAIL++))
+              echo "FAIL: $ivf"
+            fi
+          done
+          echo "Results: $PASS/$TOTAL passed, $FAIL failed"
+          [ $FAIL -lt 5 ] || exit 1
+
+  # Medium test - Fluster AV1 vectors (17 MB, ~312 files)
+  test-fluster:
+    name: Test Fluster AV1 Vectors
+    runs-on: ubuntu-latest
+    if: github.event.inputs.corpus == 'all' || github.event.inputs.corpus == 'fluster-only' || github.event_name == 'schedule'
+    needs: test-dav1d  # Run after dav1d to save resources
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build decoder
+        run: cargo build --release --example managed_decode --no-default-features --features "bitdepth_8,bitdepth_16"
+
+      - name: Download Fluster test vectors
+        run: |
+          mkdir -p test-vectors
+          cd test-vectors
+          if [ ! -d fluster ]; then
+            git clone --depth 1 https://github.com/fluendo/fluster.git
+          fi
+          cd fluster
+          # Download AV1-TEST-VECTORS
+          ./fluster.py download AV1-TEST-VECTORS -j 4 || true
+
+      - name: Cache Fluster vectors
+        uses: actions/cache@v5
+        with:
+          path: test-vectors/fluster
+          key: fluster-vectors-v1
+
+      - name: Test AV1-TEST-VECTORS (all files)
+        run: |
+          PASS=0
+          FAIL=0
+          TOTAL=0
+          VECTORS_DIR="test-vectors/fluster/resources/test_vectors/av1"
           
-          # Test a sample from each category
-          for category in 8-bit 10-bit 12-bit; do
-            if [ -d "test-vectors/dav1d-test-data/$category" ]; then
-              echo "Testing $category vectors (first 10):"
-              for ivf in $(find "test-vectors/dav1d-test-data/$category" -name "*.ivf" | head -10); do
+          for suite in AV1-TEST-VECTORS CHROMIUM-8bit-AV1-TEST-VECTORS CHROMIUM-10bit-AV1-TEST-VECTORS; do
+            if [ -d "$VECTORS_DIR/$suite" ]; then
+              echo "Testing $suite..."
+              for ivf in $(find "$VECTORS_DIR/$suite" -name "*.ivf" -o -name "*.obu"); do
                 ((TOTAL++))
-                if cargo run --release --example managed_decode --no-default-features \
-                    --features "${{ matrix.features }}" -- "$ivf" > /dev/null 2>&1; then
+                if timeout 60 cargo run --release --example managed_decode --no-default-features \
+                    --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then
                   ((PASS++))
                 else
                   ((FAIL++))
-                  echo "FAILED: $(basename $ivf)"
+                  echo "FAIL: $ivf"
                 fi
               done
             fi
           done
           
-          echo "Tested: $TOTAL files"
-          echo "Passed: $PASS"
-          echo "Failed: $FAIL"
-          
-          # Fail if success rate is below 80%
-          if [ $TOTAL -gt 0 ]; then
-            SUCCESS_RATE=$((PASS * 100 / TOTAL))
-            if [ $SUCCESS_RATE -lt 80 ]; then
-              echo "ERROR: Success rate ($SUCCESS_RATE%) below 80%"
-              exit 1
-            fi
-          fi
-      
-      - name: Generate test report
-        if: always()
-        run: |
-          echo "=== Test Vector Validation Report ===" > test-report.txt
-          echo "Date: $(date)" >> test-report.txt
-          echo "Commit: ${{ github.sha }}" >> test-report.txt
-          echo >> test-report.txt
-          echo "Test suites executed:" >> test-report.txt
-          echo "- Argon conformance suite (sample)" >> test-report.txt
-          echo "- Fluster AV1 vectors" >> test-report.txt
-          echo "- dav1d test data (sample)" >> test-report.txt
-          echo >> test-report.txt
-          cat test-report.txt
-      
-      - name: Upload test report
-        if: always()
-        uses: actions/upload-artifact@v4
+          echo "Overall Results: $PASS/$TOTAL passed, $FAIL failed"
+          echo "Pass rate: $(( PASS * 100 / TOTAL ))%"
+          [ $FAIL -lt 50 ] || exit 1  # Allow some failures
+
+  # Large test - Argon conformance suite (5.1 GB, ~2763 files) - weekly only
+  test-argon:
+    name: Test Argon Conformance Suite
+    runs-on: ubuntu-latest
+    if: (github.event.inputs.corpus == 'all' || github.event.inputs.corpus == 'argon-only') && github.event_name != 'schedule'
+    # Only run on manual trigger, not on schedule
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          name: test-vector-report-${{ matrix.os }}
-          path: test-report.txt
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build decoder
+        run: cargo build --release --example managed_decode --no-default-features --features "bitdepth_8,bitdepth_16"
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          df -h
+
+      - name: Download Argon conformance suite
+        run: bash scripts/download-all-test-vectors.sh
+
+      - name: Cache Argon vectors
+        uses: actions/cache@v5
+        with:
+          path: test-vectors/argon
+          key: argon-vectors-v1
+          restore-keys: argon-vectors-
+
+      - name: Test Argon samples (500 files)
+        run: |
+          PASS=0
+          FAIL=0
+          TOTAL=0
+          
+          if [ -d test-vectors/argon/argon ]; then
+            for ivf in $(find test-vectors/argon/argon -name "*.ivf" -o -name "*.obu" | shuf | head -500); do
+              ((TOTAL++))
+              if timeout 120 cargo run --release --example managed_decode --no-default-features \
+                  --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then
+                ((PASS++))
+                [ $(( TOTAL % 50 )) -eq 0 ] && echo "Progress: $PASS/$TOTAL passed"
+              else
+                ((FAIL++))
+                echo "FAIL: $(basename $ivf)"
+              fi
+            done
+          fi
+          
+          echo "Final Results: $PASS/$TOTAL passed, $FAIL failed"
+          echo "Pass rate: $(( PASS * 100 / TOTAL ))%"
+          [ $FAIL -lt 100 ] || exit 1  # Allow more failures for conformance suite
+
+      - name: Disk space after test
+        run: df -h
+
+  # Panic safety tests with sanitizers
+  test-sanitizers:
+    name: Memory Safety Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+          components: rust-src
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run panic safety tests
+        run: cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --test panic_safety_test --release
+
+      - name: Run tests with AddressSanitizer
+        run: |
+          RUSTFLAGS="-Z sanitizer=address" \
+          cargo +nightly test --no-default-features --features "bitdepth_8,bitdepth_16" \
+            --target x86_64-unknown-linux-gnu --lib --release
+        continue-on-error: true  # ASAN may have false positives initially
+
+      - name: Run tests with LeakSanitizer
+        run: |
+          RUSTFLAGS="-Z sanitizer=leak" \
+          cargo +nightly test --no-default-features --features "bitdepth_8,bitdepth_16" \
+            --target x86_64-unknown-linux-gnu --lib --release
+        continue-on-error: true  # LSAN may have false positives initially

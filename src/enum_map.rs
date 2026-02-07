@@ -109,6 +109,7 @@ macro_rules! enum_map {
         let mut i = 0;
         while i < <$K>::VALUES.len() {
             let key = <$K>::VALUES[i];
+            #[allow(unused_imports)]
             use $K::*;
             let value = match key { $($t)* };
             a[key as usize] = value;
