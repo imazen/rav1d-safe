@@ -10,7 +10,7 @@
 //! - Different filter widths (4, 6, 8, 16 pixels)
 //! - Horizontal and vertical edge filtering
 //!
-//! This module uses safe slice-based pixel access. The only unsafe boundary
+//! This module uses safe slice-based pixel access. The dispatch function is fully safe.
 //! is in `loopfilter_sb_dispatch` where raw pointers from PicOffset/DisjointMut
 //! are converted to slices. All inner functions are fully safe.
 
@@ -1336,42 +1336,31 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
         return false;
     }
 
-    // Create safe slices from the raw pointers. This is the single unsafe boundary.
-    // Everything below this point is fully safe.
-
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast::<u8>();
     assert!(lvl.offset <= lvl.data.len());
 
-    // SAFETY: lvl.data is a valid DisjointMut<Vec<u8>>, and lvl.offset is in bounds (checked above).
-    // We reinterpret the u8 data starting at lvl.offset as &[[u8; 4]] for the level array.
-    // The lvl data is laid out as consecutive [u8; 4] entries.
-    let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };
-    let lvl_ptr = lvl_ptr.cast::<[u8; 4]>();
+    // Safe slice access for lvl data: reinterpret u8 data as &[[u8; 4]] entries
     let lvl_remaining_bytes = lvl.data.len() - lvl.offset;
     let lvl_len = lvl_remaining_bytes / 4;
-    let lvl_slice = unsafe { std::slice::from_raw_parts(lvl_ptr, lvl_len) };
+    let lvl_guard = lvl.data.slice_as::<_, [u8; 4]>((lvl.offset.., ..lvl_len));
+    let lvl_slice: &[[u8; 4]] = &lvl_guard;
 
     match BD::BPC {
         BPC::BPC8 => {
-            // For 8bpc, the stride is in bytes (= pixels).
-            // The dst_ptr points somewhere in the middle of the picture buffer.
-            // We need to create a slice that covers the accessible range.
-            // The filter accesses pixels at offsets from -7*stride to well beyond the base.
-            // We use a very conservative size based on the picture stride and superblock size.
-            let byte_stride = stride.unsigned_abs() as usize;
-            // Max 32 edges * 4 pixels per edge = 128 pixels along stridea direction
-            // Max 7 pixels reach in strideb direction (on each side)
-            // Conservative: cover 128 * stride + 8 bytes in each direction
-            let reach_before = 7 * byte_stride + 7; // pixels before dst_ptr we might access
-            let reach_after = 128 * byte_stride + 7; // pixels after dst_ptr
+            use crate::include::common::bitdepth::BitDepth8;
 
-            // SAFETY: dst_ptr is derived from a valid PicOffset, which points into a picture
-            // buffer. The reach calculations are conservative upper bounds. The actual accesses
-            // are controlled by the vmask bits and filter width.
-            let buf_start = unsafe { dst_ptr.sub(reach_before) };
-            let buf_len = reach_before + reach_after;
-            let buf = unsafe { std::slice::from_raw_parts_mut(buf_start, buf_len) };
-            let base = reach_before; // dst_ptr is at this offset within buf
+            // For 8bpc, the stride is in bytes (= pixels).
+            // The filter accesses pixels at offsets from -7*stride to well beyond the base.
+            let byte_stride = stride.unsigned_abs() as usize;
+            let reach_before = 7 * byte_stride + 7;
+            let reach_after = 128 * byte_stride + 7;
+
+            // Safe slice access: get a mutable guard covering the full filter reach
+            let start_pixel = dst.offset.wrapping_sub(reach_before);
+            let total_pixels = reach_before + reach_after;
+            let mut buf_guard =
+                dst.data.slice_mut::<BitDepth8, _>((start_pixel.., ..total_pixels));
+            let buf: &mut [u8] = &mut *buf_guard;
+            let base = reach_before;
 
             match (is_y, is_v) {
                 (true, false) => lpf_h_sb_y_8bpc_inner(
@@ -1421,14 +1410,18 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             }
         }
         BPC::BPC16 => {
-            let dst_u16 = dst_ptr as *mut u16;
+            use crate::include::common::bitdepth::BitDepth16;
+
             let u16_stride = (stride / 2).unsigned_abs() as usize;
             let reach_before = 7 * u16_stride + 7;
             let reach_after = 128 * u16_stride + 7;
 
-            let buf_start = unsafe { dst_u16.sub(reach_before) };
-            let buf_len = reach_before + reach_after;
-            let buf = unsafe { std::slice::from_raw_parts_mut(buf_start, buf_len) };
+            // Safe slice access: get a mutable guard covering the full filter reach
+            let start_pixel = dst.offset.wrapping_sub(reach_before);
+            let total_pixels = reach_before + reach_after;
+            let mut buf_guard =
+                dst.data.slice_mut::<BitDepth16, _>((start_pixel.., ..total_pixels));
+            let buf: &mut [u16] = &mut *buf_guard;
             let base = reach_before;
 
             match (is_y, is_v) {
