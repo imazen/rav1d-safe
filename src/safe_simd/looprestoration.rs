@@ -1583,8 +1583,8 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
     let left_16 =
         || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u16>]) };
 
-    // SAFETY: AVX2 verified by CpuFlags check above
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    // Safe: AVX2 verified by CpuFlags check above, summon() does runtime check
+    let token = Desktop64::summon().expect("AVX2 required (verified by CpuFlags)");
 
     match (BD::BPC, variant) {
         (BPC::BPC8, 0) => {

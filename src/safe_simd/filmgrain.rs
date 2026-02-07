@@ -1778,7 +1778,7 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     };
 
     // Call inner functions directly, bypassing FFI wrappers.
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    let token = Desktop64::summon().expect("AVX2 required (verified by CpuFlags)");
     match BD::BPC {
         BPC::BPC8 => fguv_inner_8bpc(
             token,
