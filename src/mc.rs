@@ -3064,7 +3064,6 @@ impl Rav1dMCDSPContext {
     /// Uses Rust intrinsics via archmage/safe_unaligned_simd instead.
     #[cfg(all(
         not(feature = "asm"),
-        feature = "asm",
         any(target_arch = "x86", target_arch = "x86_64")
     ))]
     #[inline(always)]

@@ -291,6 +291,7 @@ pub unsafe extern "C" fn avg_8bpc_sse4(
 ///
 /// - dst_ptr must be valid for writing w*h bytes
 /// - tmp1 and tmp2 must contain at least w*h elements
+#[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn avg_scalar(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -569,6 +570,7 @@ pub unsafe extern "C" fn w_avg_16bpc_avx2(
 /// # Safety
 ///
 /// Same as w_avg_8bpc_avx2.
+#[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn w_avg_scalar(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -863,6 +865,7 @@ pub unsafe extern "C" fn mask_16bpc_avx2(
 }
 
 /// Scalar fallback for mask
+#[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn mask_scalar(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -7610,8 +7613,8 @@ pub fn avg_dispatch<BD: BitDepth>(
     let dst_ffi = FFISafe::new(&dst);
     unsafe {
         match BD::BPC {
-            BPC::BPC8 => avg_8bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
-            BPC::BPC16 => avg_16bpc_avx2(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
+            BPC::BPC8 => avg_8bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp1, tmp2, w, h),
+            BPC::BPC16 => avg_16bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c)
         }
     }
     true
@@ -7671,12 +7674,8 @@ pub fn mask_dispatch<BD: BitDepth>(
     let dst_ffi = FFISafe::new(&dst);
     unsafe {
         match BD::BPC {
-            BPC::BPC8 => mask_8bpc_avx2(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
-            ),
-            BPC::BPC16 => mask_16bpc_avx2(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
-            ),
+            BPC::BPC8 => mask_8bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr),
+            BPC::BPC16 => mask_16bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c),
         }
     }
     true
@@ -7728,10 +7727,10 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
     let dst_ffi = FFISafe::new(&dst);
     unsafe {
         match (BD::BPC, is_h) {
-            (BPC::BPC8, true) => blend_h_8bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-            (BPC::BPC8, false) => blend_v_8bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-            (BPC::BPC16, true) => blend_h_16bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-            (BPC::BPC16, false) => blend_v_16bpc_avx2(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+            (BPC::BPC8, true) => blend_h_8bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp_ptr, w, h),
+            (BPC::BPC8, false) => blend_v_8bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp_ptr, w, h),
+            (BPC::BPC16, true) => blend_h_16bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp_ptr, w, h),
+            (BPC::BPC16, false) => blend_v_16bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp_ptr, w, h),
         }
     }
     true
@@ -7760,24 +7759,12 @@ pub fn w_mask_dispatch<BD: BitDepth>(
     let dst_ffi = FFISafe::new(&dst);
     unsafe {
         match (BD::BPC, layout) {
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_8bpc_avx2(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_8bpc_avx2(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_8bpc_avx2(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_16bpc_avx2(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_16bpc_avx2(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_16bpc_avx2(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_8bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_8bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign),
+            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_8bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_16bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_16bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c),
+            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_16bpc_avx2_inner(Desktop64::summon().unwrap(), dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c),
         }
     }
     true
