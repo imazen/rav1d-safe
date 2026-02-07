@@ -1,6 +1,9 @@
 use rav1d_safe::src::managed::{Decoder, Planes};
-use std::fs;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::PathBuf;
+
+mod ivf_parser;
 
 fn test_vectors_dir() -> PathBuf {
     let target_dir = std::env::var("CARGO_TARGET_DIR")
@@ -8,14 +11,14 @@ fn test_vectors_dir() -> PathBuf {
     PathBuf::from(target_dir).join("test-vectors")
 }
 
-fn find_small_test_vector() -> Option<PathBuf> {
+fn find_test_ivf() -> Option<PathBuf> {
     let dav1d_data = test_vectors_dir().join("dav1d-test-data");
 
-    // Try to find a small OBU test vector (raw OBU data, no container)
+    // Look for small IVF test files
     let candidates = [
-        "10-bit/argon/test185_302.obu",
-        "10-bit/argon/test5606.obu",
-        "12-bit/argon/test16153.obu",
+        "10-bit/film_grain/clip_0.ivf",
+        "10-bit/film_grain/clip_1.ivf",
+        "8-bit/hdr/hdr10plus_metadata.ivf",
     ];
 
     for candidate in &candidates {
@@ -31,7 +34,7 @@ fn find_small_test_vector() -> Option<PathBuf> {
 #[test]
 #[ignore] // Only run when test vectors are available
 fn test_decode_real_bitstream() {
-    let vector_path = match find_small_test_vector() {
+    let vector_path = match find_test_ivf() {
         Some(path) => path,
         None => {
             eprintln!("No test vectors found. Run: bash scripts/download-test-vectors.sh");
@@ -41,20 +44,26 @@ fn test_decode_real_bitstream() {
 
     eprintln!("Testing with: {}", vector_path.display());
 
-    let data = fs::read(&vector_path).expect("Failed to read test vector");
-
-    // OBU format contains raw AV1 bitstream data
+    let file = File::open(&vector_path).expect("Failed to open test vector");
+    let mut reader = BufReader::new(file);
+    
+    // Parse IVF file to extract raw OBU frames
+    let frames = ivf_parser::parse_all_frames(&mut reader)
+        .expect("Failed to parse IVF file");
+    
+    eprintln!("IVF file contains {} frames", frames.len());
+    
     let mut decoder = Decoder::new().expect("Failed to create decoder");
-
-    // Feed the data in chunks to test streaming
-    const CHUNK_SIZE: usize = 4096;
     let mut frames_decoded = 0;
 
-    for chunk in data.chunks(CHUNK_SIZE) {
-        match decoder.decode(chunk) {
+    // Feed each frame's OBU data to the decoder
+    for (i, ivf_frame) in frames.iter().enumerate() {
+        eprintln!("Processing IVF frame {} ({} bytes)", i, ivf_frame.data.len());
+        
+        match decoder.decode(&ivf_frame.data) {
             Ok(Some(frame)) => {
                 frames_decoded += 1;
-                eprintln!("Frame {}: {}x{} @ {}-bit",
+                eprintln!("  Decoded frame {}: {}x{} @ {}-bit",
                          frames_decoded,
                          frame.width(),
                          frame.height(),
@@ -83,10 +92,10 @@ fn test_decode_real_bitstream() {
                 }
             }
             Ok(None) => {
-                // Need more data
+                eprintln!("  Need more data for frame {}", i);
             }
             Err(e) => {
-                eprintln!("Decode error: {}", e);
+                eprintln!("  Decode error on frame {}: {}", i, e);
             }
         }
     }
@@ -111,10 +120,10 @@ fn test_decode_real_bitstream() {
 fn test_decode_hdr_metadata() {
     let dav1d_data = test_vectors_dir().join("dav1d-test-data");
 
-    // Try to find an HDR test vector (OBU format)
+    // Look for HDR test vectors
     let hdr_candidates = [
-        "10-bit/argon/test185_302.obu",
-        "12-bit/argon/test16153.obu",
+        "10-bit/film_grain/clip_0.ivf",
+        "8-bit/hdr/hdr10plus_metadata.ivf",
     ];
 
     for candidate in &hdr_candidates {
@@ -125,12 +134,17 @@ fn test_decode_hdr_metadata() {
 
         eprintln!("Testing HDR with: {}", path.display());
 
-        let data = fs::read(&path).expect("Failed to read test vector");
+        let file = File::open(&path).expect("Failed to open test vector");
+        let mut reader = BufReader::new(file);
+        
+        let frames = ivf_parser::parse_all_frames(&mut reader)
+            .expect("Failed to parse IVF file");
+        
         let mut decoder = Decoder::new().expect("Failed to create decoder");
 
         // Decode first frame
-        for chunk in data.chunks(8192) {
-            if let Ok(Some(frame)) = decoder.decode(chunk) {
+        for ivf_frame in &frames {
+            if let Ok(Some(frame)) = decoder.decode(&ivf_frame.data) {
                 // Check color info
                 let color = frame.color_info();
                 eprintln!("  Primaries: {:?}", color.primaries);
@@ -160,7 +174,17 @@ fn test_decode_hdr_metadata() {
 }
 
 #[test]
-fn test_row_iteration() {
-    // This test doesn't need real bitstream - just verify the API compiles
-    // Real test would use a decoded frame
+fn test_ivf_parser() {
+    // Test IVF parser with a real file if available
+    if let Some(path) = find_test_ivf() {
+        let file = File::open(&path).expect("Failed to open test vector");
+        let mut reader = BufReader::new(file);
+        
+        let header = ivf_parser::parse_ivf_header(&mut reader)
+            .expect("Failed to parse IVF header");
+        
+        eprintln!("IVF header: {:?}", header);
+        assert!(header.width > 0);
+        assert!(header.height > 0);
+    }
 }

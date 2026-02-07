@@ -103,7 +103,15 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// Decoder configuration settings
 #[derive(Clone, Debug)]
 pub struct Settings {
-    /// Number of threads (0 = auto-detect based on CPU cores)
+    /// Number of threads for decoding
+    ///
+    /// * `0` = auto-detect (enables frame threading for better performance but asynchronous behavior)
+    /// * `1` = single-threaded (default, simpler synchronous behavior)
+    /// * `2+` = multi-threaded with frame threading
+    ///
+    /// With frame threading enabled (threads >= 2 or threads == 0), `decode()` may return `None`
+    /// even when complete frame data is provided, as frames are processed asynchronously.
+    /// Call `decode()` or `flush()` multiple times to drain buffered frames.
     pub threads: u32,
 
     /// Apply film grain synthesis during decoding
@@ -134,7 +142,12 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            threads: 0,
+            // Use single-threaded decoding by default for simpler, deterministic behavior.
+            // With threads=0 (auto), frame threading is enabled which causes decode() to
+            // return None even when a complete frame has been provided, because frame threads
+            // need time to process. Users can set threads=0 for better performance but must
+            // handle the asynchronous behavior by calling decode() or flush() multiple times.
+            threads: 1,
             apply_grain: true,
             frame_size_limit: 0,
             all_layers: true,
