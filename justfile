@@ -91,3 +91,15 @@ test-argon:
             --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1 \
             && echo "✓ $(basename $ivf)" || echo "✗ $(basename $ivf)"
     done
+
+# Run tests with AddressSanitizer (requires nightly)
+test-asan:
+    RUSTFLAGS="-Z sanitizer=address" cargo +nightly test --no-default-features --features "bitdepth_8,bitdepth_16" --target x86_64-unknown-linux-gnu
+
+# Run tests with LeakSanitizer (requires nightly)
+test-lsan:
+    RUSTFLAGS="-Z sanitizer=leak" cargo +nightly test --no-default-features --features "bitdepth_8,bitdepth_16" --target x86_64-unknown-linux-gnu
+
+# Run panic safety tests specifically
+test-panic:
+    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --test panic_safety_test --release

@@ -55,7 +55,7 @@ if [ -d "$TEST_VECTORS_DIR/argon/argon" ]; then
     PASS_COUNT=0
     FAIL_COUNT=0
     
-    for ivf in $(find "$ARGON_DIR" -name "*.ivf" | head -20); do
+    for ivf in $(find "$ARGON_DIR" -name "*.ivf" -o -name "*.obu" | head -20); do
         ((SAMPLE_COUNT++))
         if cargo run --release --example managed_decode --no-default-features \
             --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then

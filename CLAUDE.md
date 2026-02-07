@@ -421,87 +421,75 @@ Build a test binary or integration test that:
 
 ## Known Issues - Managed API
 
-### Critical: Dav1dDataGuard Missing (Memory Leak on Panic)
+### ✅ RESOLVED: Panic Safety and Memory Management
 
-**Status:** 🔴 **MUST FIX before production**
+**Status:** ✅ **VERIFIED SAFE**
 
-**Problem:** `Dav1dData` does not implement `Drop`. If `decode()` panics after `dav1d_data_wrap` but before consuming all data, the internal `RawCArc` reference leaks.
+The managed API (`src/managed.rs`) uses the safe `Rav1dData` wrapper with `CArc<[u8]>` (Arc-based smart pointer), not the unsafe `Dav1dData` C FFI struct. The implementation is panic-safe:
 
-**Location:** `src/managed.rs` - `Decoder::decode()` method
-
-**Solution:** Implement RAII guard:
-
-```rust
-struct Dav1dDataGuard(Dav1dData);
-
-impl Dav1dDataGuard {
-    fn new(data: &[u8]) -> Result<Self, Error> {
-        let mut dav1d_data = Dav1dData::default();
-        unsafe {
-            let result = dav1d_data_wrap(
-                NonNull::new(&mut dav1d_data),
-                NonNull::new(data.as_ptr() as *mut u8),
-                data.len(),
-                Some(null_free),
-                None,
-            );
-            if result.0 < 0 {
-                return Err(Error::DecodeFailed(result.0));
-            }
-        }
-        Ok(Self(dav1d_data))
-    }
-    
-    fn as_mut(&mut self) -> &mut Dav1dData {
-        &mut self.0
-    }
-}
-
-impl Drop for Dav1dDataGuard {
-    fn drop(&mut self) {
-        unsafe {
-            dav1d_data_unref(NonNull::new(&mut self.0));
-        }
-    }
-}
-```
+1. **Automatic cleanup via RAII**: `Rav1dData` contains `Option<CArc<[u8]>>` which properly implements Drop through Arc's reference counting
+2. **Panic safety verified**: Stack unwinding correctly drops `Rav1dData`, cleaning up resources even on panic
+3. **No manual memory management**: The managed API never calls `dav1d_data_wrap`/`dav1d_data_unref` directly
 
 **Testing:**
-- Add panic safety test that panics during decode
-- Run with LeakSanitizer (LSAN)
-- Verify no leaks with valgrind
+- `tests/panic_safety_test.rs` - 4 tests verifying panic safety and proper Drop behavior
+- All tests pass under normal operation and panic conditions
+- Memory leak detection via ASAN/LSAN can be added to CI for additional verification
 
-### Medium Priority: Memory Leak Tests
+**Note:** The unsafe `Dav1dData` C FFI struct (used when `feature = "c-ffi"` is enabled) does NOT implement Drop and could leak on panic. However, this is not used by the managed API and only affects direct C FFI users who must manage `dav1d_data_unref` manually.
 
-**Status:** ⚠️ Recommended
+### Recommended: Memory Leak Detection in CI
 
-**Need:**
-1. Valgrind/ASAN integration in CI
-2. Drop tests verifying memory returns to baseline
-3. Panic safety tests
+**Status:** ⚠️ Enhancement
 
-**Example test:**
-```rust
-#[test]
-fn test_decoder_drop_frees_memory() {
-    let initial = get_memory_usage();
-    {
-        let mut decoder = Decoder::new().unwrap();
-        decoder.decode(test_data).unwrap();
-    }
-    let final_usage = get_memory_usage();
-    assert_eq!(initial, final_usage, "memory leaked");
-}
+While the managed API is structurally sound, adding ASAN/LSAN to CI would provide additional confidence:
+
+**Justfile additions:**
+```bash
+# Run tests with AddressSanitizer
+test-asan:
+    RUSTFLAGS="-Z sanitizer=address" cargo +nightly test --no-default-features --features "bitdepth_8,bitdepth_16" --target x86_64-unknown-linux-gnu
+
+# Run tests with LeakSanitizer
+test-lsan:
+    RUSTFLAGS="-Z sanitizer=leak" cargo +nightly test --no-default-features --features "bitdepth_8,bitdepth_16" --target x86_64-unknown-linux-gnu
 ```
 
-### Low Priority: Thread Pool Cleanup Audit
+**CI workflow addition:**
+```yaml
+- name: Run tests with ASAN
+  run: |
+    rustup toolchain install nightly
+    RUSTFLAGS="-Z sanitizer=address" cargo +nightly test --no-default-features --features "bitdepth_8,bitdepth_16" --target x86_64-unknown-linux-gnu
+```
 
-**Status:** ℹ️ Verify
+### Recommended: Thread Pool Cleanup Verification
 
-**Need:** Audit `Rav1dContext` thread pool cleanup logic
-- Check `Arc<TaskThreadData>` drop implementation  
-- Verify worker threads join properly on context drop
+**Status:** ℹ️ Low Priority
+
+The `Rav1dContext` manages a thread pool for frame threading. While the Drop implementation appears correct, explicit verification would be valuable:
+
+**Areas to verify:**
+- `Arc<TaskThreadData>` drop implementation in `src/internal.rs`
+- Worker threads join properly on context drop
 - No hanging threads or leaked thread handles
 
-**Location:** `src/internal.rs` - `Rav1dContext` drop logic
+**Test approach:**
+```rust
+#[test]
+fn test_decoder_thread_cleanup() {
+    let initial_threads = thread_count();
+    {
+        let mut decoder = Decoder::with_settings(Settings {
+            threads: 0, // Auto-detect cores
+            ..Default::default()
+        }).unwrap();
+        decoder.decode(test_data).unwrap();
+    }
+    // Give OS time to clean up threads
+    thread::sleep(Duration::from_millis(100));
+    let final_threads = thread_count();
+    assert_eq!(initial_threads, final_threads);
+}
+```
 
