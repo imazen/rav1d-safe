@@ -819,7 +819,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
 
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointMutGuard<'a, T, V> {
     #[track_caller]
-    pub fn new(parent: &'a DisjointMut<T>, slice: &'a mut V, bounds: Bounds) -> Self {
+    pub(crate) fn new(parent: &'a DisjointMut<T>, slice: &'a mut V, bounds: Bounds) -> Self {
         if parent.bounds.is_some() {
             parent.add_mut_bounds(checked::DisjointMutBounds::new(bounds.clone(), true));
             Self {
@@ -849,7 +849,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
 
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointImmutGuard<'a, T, V> {
     #[track_caller]
-    pub fn new(parent: &'a DisjointMut<T>, slice: &'a V, bounds: Bounds) -> Self {
+    pub(crate) fn new(parent: &'a DisjointMut<T>, slice: &'a V, bounds: Bounds) -> Self {
         if parent.bounds.is_some() {
             parent.add_immut_bounds(checked::DisjointMutBounds::new(bounds.clone(), false));
             Self {
