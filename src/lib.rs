@@ -1,3 +1,10 @@
+// Progressive safety levels:
+// - Default (no features): forbid(unsafe_code) - maximum safety, single-threaded
+// - quite-safe: Allow sound abstractions (Arc, Mutex, threading)
+// - unchecked: Allow unchecked slice access
+// - c-ffi: Allow C FFI functions
+// - asm: Allow hand-written assembly
+#![cfg_attr(not(feature = "quite-safe"), forbid(unsafe_code))]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 #[cfg(feature = "bitdepth_16")]
