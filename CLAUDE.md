@@ -421,6 +421,22 @@ Build a test binary or integration test that:
 
 ## Known Issues - Managed API
 
+### ✅ RESOLVED: Thread Cleanup and Joining
+
+**Status:** ✅ **FIXED** (Commit 2e49d9c)
+
+Fixed architecture flaw where worker thread JoinHandles were stored inside Arc<Rav1dContext>, creating circular ownership that prevented proper thread cleanup.
+
+**Solution:** Moved JoinHandles out of Arc and into Decoder struct. Decoder::drop() now signals workers to die and joins them synchronously.
+
+**Verification:**
+- All thread cleanup tests pass (run with `--test-threads=1`)
+- No deadlocks
+- No thread leaks
+- Proper panic propagation
+
+See THREAD_FIX_COMPLETE.md for full implementation details.
+
 ### ✅ RESOLVED: Panic Safety and Memory Management
 
 **Status:** ✅ **VERIFIED SAFE**
