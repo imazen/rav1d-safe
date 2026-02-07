@@ -509,3 +509,42 @@ fn test_decoder_thread_cleanup() {
 }
 ```
 
+
+## Path to Full deny(unsafe_code)
+
+**Current Status:**
+- ✅ Crate-level `deny(unsafe_code)` when asm/c-ffi disabled
+- ✅ 49/82 modules unconditionally safe
+- ✅ 13/82 modules conditionally safe (FFI wrappers gated)
+- ⚠️ ~20 SIMD modules need migration
+
+**Infrastructure Ready:**
+- ✅ `safe_unaligned_simd = "0.2.4"` - safe SIMD load/store
+- ✅ `src/safe_simd/pixel_access.rs` - safe slice helpers
+- ✅ `unchecked` feature - zero-overhead option
+
+**Work Remaining:**
+1. Migrate inner SIMD functions to take slices instead of raw pointers
+2. Use `pixel_access::row_slice()` helpers for stride access
+3. Keep FFI wrappers unsafe (gated behind `feature = "asm"`)
+4. Add `#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]` per module
+
+**Estimate:** 2-5 days of focused work (~20 modules × 1-2 hours)
+
+**Performance:** Zero overhead with `unchecked` feature (uses `get_unchecked`)
+
+See `REAL_UNSAFE_ANALYSIS.md` for details.
+
+## ARM SIMD Features
+
+**Currently Implemented:**
+- ✅ **NEON** - Full Rust intrinsic support, safe with safe_unaligned_simd
+  - Used in all current ARM SIMD modules (mc_arm, ipred_arm, etc.)
+
+**Not Implemented (Would Need C ASM):**
+- ⚠️ **SVE/SVE2** - Scalable Vector Extension (not yet in rav1d-safe)
+- ⚠️ **I8MM** - Int8 Matrix Multiply (not yet in rav1d-safe)
+- ⚠️ **DOTPROD** - Dot Product instructions (not yet in rav1d-safe)
+
+If we implement SVE2/I8MM/DOTPROD in the future, those would require C asm or remain unsafe.
+
