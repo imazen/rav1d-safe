@@ -398,7 +398,7 @@ pub enum MotionMode {
     Warp = 2,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Default)]
 #[repr(C)]
 pub struct Av1BlockIntra {
     pub y_mode: u8,
@@ -448,7 +448,7 @@ impl From<MaskedInterIntraPredMode> for InterIntraPredMode {
     }
 }
 
-#[derive(Clone, Default, FromZeroes, FromBytes, AsBytes)]
+#[derive(Clone, Copy, Default, FromZeroes, FromBytes, AsBytes)]
 #[repr(C)]
 pub struct Av1BlockInter1d {
     pub mv: [Mv; 2],
@@ -469,7 +469,7 @@ impl Av1BlockInter1d {
     }
 }
 
-#[derive(Clone, FromZeroes, FromBytes, AsBytes)]
+#[derive(Clone, Copy, FromZeroes, FromBytes, AsBytes)]
 #[repr(C)]
 pub struct Av1BlockInter2d {
     pub mv2d: Mv,
@@ -479,7 +479,7 @@ pub struct Av1BlockInter2d {
     pub matrix: [i16; 4],
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Av1BlockInterNd {
     /// Make [`Av1BlockInter1d`] the field instead of [`Av1BlockInter2d`]
@@ -516,7 +516,7 @@ impl From<Av1BlockInter2d> for Av1BlockInterNd {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Av1BlockInter {
     pub nd: Av1BlockInterNd,
@@ -532,6 +532,7 @@ pub struct Av1BlockInter {
     pub tx_split1: u16,
 }
 
+#[derive(Clone, Copy)]
 pub enum Av1BlockIntraInter {
     Intra(Av1BlockIntra),
     Inter(Av1BlockInter),
@@ -589,7 +590,7 @@ impl Display for SegmentId {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 #[repr(C)]
 pub struct Av1Block {
     pub bl: BlockLevel,

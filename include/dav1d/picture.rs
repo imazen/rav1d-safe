@@ -17,7 +17,7 @@ use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::include::dav1d::headers::Rav1dSequenceHeader;
 use crate::src::assume::assume;
 use crate::src::c_arc::RawArc;
-use crate::src::disjoint_mut::AsMutPtr;
+use crate::src::disjoint_mut::ExternalAsMutPtr;
 use crate::src::disjoint_mut::DisjointImmutGuard;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::disjoint_mut::DisjointMutGuard;
@@ -199,7 +199,7 @@ impl Rav1dPictureDataComponentInner {
 }
 
 // SAFETY: We only store the raw pointer, so we never materialize a `&mut`.
-unsafe impl AsMutPtr for Rav1dPictureDataComponentInner {
+unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
     type Target = u8;
 
     #[inline] // Inline so callers can see the assume.

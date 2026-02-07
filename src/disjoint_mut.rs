@@ -16,6 +16,7 @@ pub use disjoint_mut::DisjointMutArcSlice;
 pub use disjoint_mut::DisjointMutGuard;
 pub use disjoint_mut::DisjointMutIndex;
 pub use disjoint_mut::DisjointMutSlice;
+pub use disjoint_mut::ExternalAsMutPtr;
 pub use disjoint_mut::Resizable;
 pub use disjoint_mut::ResizableWith;
 pub use disjoint_mut::SliceBounds;
@@ -38,7 +39,7 @@ impl<V: Copy, C: AlignedByteChunk> Resizable for AlignedVec<V, C> {
 /// SAFETY: We never materialize a `&mut [T]` since we
 /// only materialize a `&mut AlignedVec<T, _>` and call [`AlignedVec::as_mut_ptr`] on it,
 /// which calls [`Vec::as_mut_ptr`] and never materializes a `&mut [V]`.
-unsafe impl<T: Copy, C: AlignedByteChunk> AsMutPtr for AlignedVec<T, C> {
+unsafe impl<T: Copy, C: AlignedByteChunk> ExternalAsMutPtr for AlignedVec<T, C> {
     type Target = T;
 
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {

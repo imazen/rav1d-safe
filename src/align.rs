@@ -7,7 +7,7 @@
 //! specific aligment for use with SIMD instructions).
 
 use crate::src::assume::assume;
-use crate::src::disjoint_mut::AsMutPtr;
+use crate::src::disjoint_mut::ExternalAsMutPtr;
 use std::marker::PhantomData;
 use std::mem;
 use std::mem::MaybeUninit;
@@ -102,7 +102,7 @@ macro_rules! def_align {
         impl AlignedByteChunk for $name<[u8; $align]> {}
 
         /// SAFETY: We never materialize a `&mut [V]` since we do a direct cast.
-        unsafe impl<V, const N: usize> AsMutPtr for $name<[V; N]> {
+        unsafe impl<V: Copy, const N: usize> ExternalAsMutPtr for $name<[V; N]> {
             type Target = V;
 
             unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut V {

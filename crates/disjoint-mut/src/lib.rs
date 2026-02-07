@@ -69,7 +69,7 @@ use zerocopy::FromBytes;
 ///
 /// For audited hot paths, use [`DisjointMut::dangerously_unchecked`] to skip tracking.
 pub struct DisjointMut<T: ?Sized + AsMutPtr> {
-    bounds: Option<checked::DisjointMutAllBounds>,
+    tracker: Option<checked::BorrowTracker>,
 
     inner: UnsafeCell<T>,
 }
@@ -83,14 +83,9 @@ unsafe impl<T: ?Sized + AsMutPtr + Send> Send for DisjointMut<T> {}
 /// to `T`'s elements through a shared `&DisjointMut<T>` reference.
 /// Thus, sharing/`Send`ing a `&DisjointMut<T>` across threads is safe.
 ///
-/// Disjointness is checked at runtime by default. With `dangerously_unchecked()`,
-/// disjointness must be manually guaranteed by the caller.
-///
-/// Furthermore, all `T`s used have `AsMutPtr::Target`s
-/// that are provenanceless, i.e. they have no internal references or pointers
-/// or integers that hold pointer provenance.
-/// Thus, a data race due the lack of runtime disjointness checking
-/// would only result in wrong results, and cannot result in memory safety issues.
+/// In checked mode (default), the borrow tracker prevents overlapping borrows,
+/// so no data races are possible. In unchecked mode (`dangerously_unchecked`),
+/// the caller guarantees disjointness via the `unsafe` constructor contract.
 unsafe impl<T: ?Sized + AsMutPtr + Sync> Sync for DisjointMut<T> {}
 
 impl<T: AsMutPtr + Default> Default for DisjointMut<T> {
@@ -103,7 +98,7 @@ impl<T: AsMutPtr> DisjointMut<T> {
     pub const fn new(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
-            bounds: Some(checked::DisjointMutAllBounds::new()),
+            tracker: Some(checked::BorrowTracker::new()),
         }
     }
 
@@ -117,15 +112,29 @@ impl<T: AsMutPtr> DisjointMut<T> {
     pub const unsafe fn dangerously_unchecked(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
-            bounds: None,
+            tracker: None,
         }
     }
 
     /// Returns `true` if this instance performs runtime overlap checking.
     pub const fn is_checked(&self) -> bool {
-        self.bounds.is_some()
+        self.tracker.is_some()
     }
 
+    /// Returns a raw pointer to the inner container.
+    ///
+    /// This bypasses the borrow tracker entirely. The pointer is safe to
+    /// *read through* for accessing container metadata (e.g. stride, length)
+    /// that doesn't alias with element data. Dereferencing as `&mut` or writing
+    /// through it requires the caller to uphold disjointness manually.
+    ///
+    /// # Why this exists
+    ///
+    /// Some containers store metadata alongside the data pointer (e.g.
+    /// `Rav1dPictureDataComponentInner` stores stride). Accessing that metadata
+    /// doesn't conflict with element borrows, so requiring a guard would be
+    /// unnecessarily restrictive.
+    ///
     /// # Safety
     ///
     /// The returned ptr has the safety requirements of [`UnsafeCell::get`].
@@ -148,36 +157,37 @@ pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
 
     phantom: PhantomData<&'a DisjointMut<T>>,
 
+    /// Reference to parent for borrow removal on drop.
+    /// `None` when parent was created with `dangerously_unchecked`.
     parent: Option<&'a DisjointMut<T>>,
-    bounds: checked::DisjointMutBounds,
+    /// Unique ID for this borrow registration.
+    borrow_id: checked::BorrowId,
 }
 
 impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
     #[inline] // Inline to see alignment to potentially elide checks.
     fn cast_slice<V: AsBytes + FromBytes>(self) -> DisjointMutGuard<'a, T, [V]> {
         // We don't want to drop the old guard, because we aren't changing or
-        // removing the bounds from parent here.
+        // removing the borrow from parent here.
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
         DisjointMutGuard {
             slice: V::mut_slice_from(bytes).unwrap(),
             phantom: old_guard.phantom,
             parent: old_guard.parent,
-            bounds: mem::take(&mut old_guard.bounds),
+            borrow_id: old_guard.borrow_id,
         }
     }
 
     #[inline] // Inline to see alignment to potentially elide checks.
     fn cast<V: AsBytes + FromBytes>(self) -> DisjointMutGuard<'a, T, V> {
-        // We don't want to drop the old guard, because we aren't changing or
-        // removing the bounds from parent here.
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
         DisjointMutGuard {
             slice: V::mut_from(bytes).unwrap(),
             phantom: old_guard.phantom,
             parent: old_guard.parent,
-            bounds: mem::take(&mut old_guard.bounds),
+            borrow_id: old_guard.borrow_id,
         }
     }
 }
@@ -202,35 +212,31 @@ pub struct DisjointImmutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
     phantom: PhantomData<&'a DisjointMut<T>>,
 
     parent: Option<&'a DisjointMut<T>>,
-    bounds: checked::DisjointMutBounds,
+    borrow_id: checked::BorrowId,
 }
 
 impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
-    #[inline] // Inline to see alignment to potentially elide checks.
+    #[inline]
     fn cast_slice<V: FromBytes>(self) -> DisjointImmutGuard<'a, T, [V]> {
-        // We don't want to drop the old guard, because we aren't changing or
-        // removing the bounds from parent here.
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
         DisjointImmutGuard {
             slice: V::slice_from(bytes).unwrap(),
             phantom: old_guard.phantom,
             parent: old_guard.parent,
-            bounds: mem::take(&mut old_guard.bounds),
+            borrow_id: old_guard.borrow_id,
         }
     }
 
-    #[inline] // Inline to see alignment to potentially elide checks.
+    #[inline]
     fn cast<V: FromBytes>(self) -> DisjointImmutGuard<'a, T, V> {
-        // We don't want to drop the old guard, because we aren't changing or
-        // removing the bounds from parent here.
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
         DisjointImmutGuard {
             slice: V::ref_from(bytes).unwrap(),
             phantom: old_guard.phantom,
             parent: old_guard.parent,
-            bounds: mem::take(&mut old_guard.bounds),
+            borrow_id: old_guard.borrow_id,
         }
     }
 }
@@ -244,8 +250,22 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Deref for DisjointImmutGuard<'a, T, V>
 }
 
 // =============================================================================
-// AsMutPtr trait
+// AsMutPtr trait (sealed — only implemented for types in this crate)
 // =============================================================================
+
+mod sealed {
+    /// Sealing trait — prevents external implementations of [`AsMutPtr`](super::AsMutPtr).
+    ///
+    /// This is critical for soundness: an incorrect `AsMutPtr` impl could return
+    /// a pointer to invalid memory, causing UB that the runtime checker cannot catch.
+    /// By sealing the trait, we ensure only audited impls in this crate exist.
+    pub trait Sealed {}
+
+    impl<V: Copy> Sealed for Vec<V> {}
+    impl<V: Copy, const N: usize> Sealed for [V; N] {}
+    impl<V: Copy> Sealed for [V] {}
+    impl<V: Copy> Sealed for Box<[V]> {}
+}
 
 /// Convert from a mutable pointer to a collection to a mutable pointer to the
 /// underlying slice without ever creating a mutable reference to the slice.
@@ -258,8 +278,14 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Deref for DisjointImmutGuard<'a, T, V>
 ///
 /// This trait must not ever create a mutable reference to the underlying slice,
 /// as it may be (partially) immutably borrowed concurrently.
-pub unsafe trait AsMutPtr {
-    type Target;
+///
+/// # Sealed
+///
+/// This trait is sealed and cannot be implemented outside of this crate.
+/// External types can use the [`ExternalAsMutPtr`] unsafe trait to opt in,
+/// which requires `Copy` element types for data-race safety.
+pub unsafe trait AsMutPtr: sealed::Sealed {
+    type Target: Copy;
 
     /// Convert a mutable pointer to a collection to a mutable pointer to the
     /// underlying slice.
@@ -295,6 +321,46 @@ pub unsafe trait AsMutPtr {
     fn len(&self) -> usize;
 }
 
+/// Opt-in trait for external types to participate in [`DisjointMut`].
+///
+/// Implement this trait for your container type so it can be used with
+/// `DisjointMut<YourType>`. The `Target` type must be `Copy` to ensure
+/// data races (from the TOCTOU window) cannot cause memory safety issues
+/// beyond producing incorrect values.
+///
+/// # Safety
+///
+/// Same requirements as [`AsMutPtr`]:
+/// - Must not create a mutable reference to the underlying slice
+/// - Returned pointer must be valid for the collection's length
+/// - `len()` must return the correct length
+pub unsafe trait ExternalAsMutPtr {
+    type Target: Copy;
+
+    /// # Safety
+    ///
+    /// Same as [`AsMutPtr::as_mut_ptr`].
+    unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target;
+
+    fn len(&self) -> usize;
+}
+
+// Blanket seal for external types
+impl<T: ExternalAsMutPtr> sealed::Sealed for T {}
+
+// Blanket AsMutPtr for external types
+unsafe impl<T: ExternalAsMutPtr> AsMutPtr for T {
+    type Target = T::Target;
+
+    unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
+        unsafe { <T as ExternalAsMutPtr>::as_mut_ptr(ptr) }
+    }
+
+    fn len(&self) -> usize {
+        <T as ExternalAsMutPtr>::len(self)
+    }
+}
+
 // =============================================================================
 // Core index/index_mut methods
 // =============================================================================
@@ -310,12 +376,27 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         self.len() == 0
     }
 
+    /// Returns a raw pointer to the underlying element data, bypassing the tracker.
+    ///
+    /// # Why this exists (instead of using guard `.as_ptr()`)
+    ///
+    /// FFI boundaries (assembly calls, C interop) need raw pointers. Creating a
+    /// tracked guard for the entire buffer would be wrong — assembly code may only
+    /// touch a subset, and pointer arithmetic happens on the callee side. This
+    /// method provides the base pointer for such offset calculations.
+    ///
+    /// Similarly, some code needs pointer identity checks (e.g. `ptr == other_ptr`)
+    /// without actually borrowing data.
+    ///
+    /// The pointer requires `unsafe` to dereference, so the caller accepts
+    /// responsibility for disjointness — same as any raw pointer in Rust.
     pub fn as_mut_slice(&self) -> *mut [<T as AsMutPtr>::Target] {
         // SAFETY: The inner cell is safe to access immutably. We never create a
         // mutable reference to the inner value.
         unsafe { AsMutPtr::as_mut_slice(self.inner.get()) }
     }
 
+    /// Returns a raw pointer to the first element. See [`Self::as_mut_slice`] for rationale.
     pub fn as_mut_ptr(&self) -> *mut <T as AsMutPtr>::Target {
         // SAFETY: The inner cell is safe to access immutably. We never create a
         // mutable reference to the inner value.
@@ -328,9 +409,8 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
 
     /// Mutably borrow a slice or element.
     ///
-    /// This mutable borrow is checked at runtime to ensure that no other borrows
-    /// from this collection overlap with the mutably borrowed region for the
-    /// lifetime of that mutable borrow (unless created with `dangerously_unchecked`).
+    /// Atomically checks for overlaps and creates the reference under a single
+    /// lock acquisition — no TOCTOU gap between validation and reference creation.
     #[inline] // Inline to see bounds checks in order to potentially elide them.
     #[track_caller]
     pub fn index_mut<'a, I>(&'a self, index: I) -> DisjointMutGuard<'a, T, I::Output>
@@ -339,19 +419,27 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         I: DisjointMutIndex<[<T as AsMutPtr>::Target]>,
     {
         let bounds = index.clone().into();
-        // SAFETY: The safety preconditions of `index` and `index_mut` imply
-        // that the indexed region we are mutably borrowing is not concurrently
-        // borrowed and will not be borrowed during the lifetime of the returned
-        // reference.
+        // Register the borrow BEFORE creating the reference.
+        // The tracker's add_mut() holds the lock during validation.
+        let borrow_id = match &self.tracker {
+            Some(tracker) => tracker.add_mut(&bounds),
+            None => checked::BorrowId::UNCHECKED,
+        };
+        // SAFETY: The borrow has been registered (or we're unchecked).
+        // The indexed region is guaranteed disjoint from all other active borrows.
         let slice = unsafe { &mut *index.get_mut(self.as_mut_slice()) };
-        DisjointMutGuard::new(self, slice, bounds)
+        DisjointMutGuard {
+            slice,
+            parent: self.tracker.as_ref().map(|_| self),
+            borrow_id,
+            phantom: PhantomData,
+        }
     }
 
     /// Immutably borrow a slice or element.
     ///
-    /// This immutable borrow is checked at runtime to ensure that no other
-    /// mutable borrows from this collection overlap with the returned
-    /// immutably borrowed region (unless created with `dangerously_unchecked`).
+    /// Atomically checks for overlapping mutable borrows and creates the reference
+    /// under a single lock acquisition.
     #[inline] // Inline to see bounds checks in order to potentially elide them.
     #[track_caller]
     pub fn index<'a, I>(&'a self, index: I) -> DisjointImmutGuard<'a, T, I::Output>
@@ -360,12 +448,18 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         I: DisjointMutIndex<[<T as AsMutPtr>::Target]>,
     {
         let bounds = index.clone().into();
-        // SAFETY: The safety preconditions of `index` and `index_mut` imply
-        // that the indexed region we are immutably borrowing is not
-        // concurrently mutably borrowed and will not be mutably borrowed during
-        // the lifetime of the returned reference.
+        let borrow_id = match &self.tracker {
+            Some(tracker) => tracker.add_immut(&bounds),
+            None => checked::BorrowId::UNCHECKED,
+        };
+        // SAFETY: The borrow has been registered (or we're unchecked).
         let slice = unsafe { &*index.get_mut(self.as_mut_slice()).cast_const() };
-        DisjointImmutGuard::new(self, slice, bounds)
+        DisjointImmutGuard {
+            slice,
+            parent: self.tracker.as_ref().map(|_| self),
+            borrow_id,
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -677,194 +771,146 @@ where
 }
 
 // =============================================================================
-// Bounds tracking types (always compiled, conditionally used at runtime)
+// Bounds tracking (single mutex, holds lock during reference creation)
 // =============================================================================
 
 mod checked {
     use super::*;
     use parking_lot::Mutex;
-    use std::backtrace::Backtrace;
-    use std::backtrace::BacktraceStatus;
     use std::fmt::Debug;
     use std::panic::Location;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::thread;
     use std::thread::ThreadId;
 
+    /// Monotonic ID generator for borrow records.
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+    /// A unique identifier for a borrow registration.
+    #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+    pub(super) struct BorrowId(u64);
+
+    impl BorrowId {
+        fn next() -> Self {
+            Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
+        }
+
+        /// Sentinel value for unchecked guards.
+        pub const UNCHECKED: Self = Self(u64::MAX);
+    }
+
     #[derive(Debug)]
-    pub(super) struct DisjointMutBounds {
-        pub(super) bounds: Bounds,
-        pub(super) mutable: bool,
+    struct BorrowRecord {
+        id: BorrowId,
+        bounds: Bounds,
+        mutable: bool,
         location: &'static Location<'static>,
-        backtrace: Backtrace,
         thread: ThreadId,
     }
 
-    impl Default for DisjointMutBounds {
-        fn default() -> Self {
-            Self {
-                bounds: Default::default(),
-                mutable: Default::default(),
-                location: Location::caller(),
-                backtrace: Backtrace::disabled(),
-                thread: thread::current().id(),
-            }
-        }
-    }
-
-    impl PartialEq for DisjointMutBounds {
-        fn eq(&self, other: &Self) -> bool {
-            self.bounds == other.bounds
-                && self.mutable == other.mutable
-                && self.location == other.location
-                && self.thread == other.thread
-        }
-    }
-
-    impl DisjointMutBounds {
-        #[track_caller]
-        pub fn new(bounds: Bounds, mutable: bool) -> Self {
-            Self {
-                bounds,
-                mutable,
-                location: Location::caller(),
-                backtrace: Backtrace::capture(),
-                thread: thread::current().id(),
-            }
-        }
-
-        pub fn check_overlaps(&self, existing: &Self) {
-            if !self.bounds.overlaps(&existing.bounds) {
-                return;
-            }
-            panic!("\toverlapping DisjointMut:\n current: {self}\nexisting: {existing}");
-        }
-    }
-
-    impl Display for DisjointMutBounds {
+    impl Display for BorrowRecord {
         fn fmt(&self, f: &mut Formatter) -> fmt::Result {
             let Self {
+                id: _,
                 bounds,
                 mutable,
                 location,
-                backtrace,
                 thread,
             } = self;
             let mutable = if *mutable { "&mut" } else { "   &" };
-            write!(f, "{mutable} _[{bounds}] on {thread:?} at {location}")?;
-            if backtrace.status() == BacktraceStatus::Captured {
-                write!(f, ":\nstack backtrace:\n{backtrace}")?;
-            }
-            Ok(())
+            write!(f, "{mutable} _[{bounds}] on {thread:?} at {location}")
         }
     }
 
-    #[derive(Default)]
-    pub(super) struct DisjointMutAllBounds {
-        pub(super) mutable: Mutex<Vec<DisjointMutBounds>>,
-        pub(super) immutable: Mutex<Vec<DisjointMutBounds>>,
+    /// All active borrows for a single `DisjointMut` instance.
+    pub(super) struct BorrowTracker {
+        borrows: Mutex<Vec<BorrowRecord>>,
     }
 
-    impl DisjointMutAllBounds {
+    impl Default for BorrowTracker {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl BorrowTracker {
         pub const fn new() -> Self {
             Self {
-                mutable: Mutex::new(Vec::new()),
-                immutable: Mutex::new(Vec::new()),
+                borrows: Mutex::new(Vec::new()),
             }
         }
-    }
-}
 
-impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
-    #[track_caller]
-    fn add_mut_bounds(&self, current: checked::DisjointMutBounds) {
-        let bounds = self.bounds.as_ref().unwrap();
-        for existing in bounds.immutable.lock().iter() {
-            current.check_overlaps(existing);
+        /// Register a mutable borrow. Must be called while holding the lock
+        /// (i.e., before creating the `&mut` reference).
+        ///
+        /// Returns the BorrowId for later removal.
+        #[track_caller]
+        pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
+            let id = BorrowId::next();
+            let record = BorrowRecord {
+                id,
+                bounds: bounds.clone(),
+                mutable: true,
+                location: Location::caller(),
+                thread: thread::current().id(),
+            };
+            let mut borrows = self.borrows.lock();
+            // Check against ALL existing borrows (both mut and immut)
+            for existing in borrows.iter() {
+                if bounds.overlaps(&existing.bounds) {
+                    panic!(
+                        "\toverlapping DisjointMut:\n current: {record}\nexisting: {existing}"
+                    );
+                }
+            }
+            borrows.push(record);
+            id
         }
-        let mut mut_bounds = bounds.mutable.lock();
-        for existing in mut_bounds.iter() {
-            current.check_overlaps(existing);
-        }
-        mut_bounds.push(current);
-    }
 
-    #[track_caller]
-    fn add_immut_bounds(&self, current: checked::DisjointMutBounds) {
-        let bounds = self.bounds.as_ref().unwrap();
-        let mut_bounds = bounds.mutable.lock();
-        for existing in mut_bounds.iter() {
-            current.check_overlaps(existing);
+        /// Register an immutable borrow.
+        #[track_caller]
+        pub fn add_immut(&self, bounds: &Bounds) -> BorrowId {
+            let id = BorrowId::next();
+            let record = BorrowRecord {
+                id,
+                bounds: bounds.clone(),
+                mutable: false,
+                location: Location::caller(),
+                thread: thread::current().id(),
+            };
+            let mut borrows = self.borrows.lock();
+            // Only check against mutable borrows
+            for existing in borrows.iter() {
+                if existing.mutable && bounds.overlaps(&existing.bounds) {
+                    panic!(
+                        "\toverlapping DisjointMut:\n current: {record}\nexisting: {existing}"
+                    );
+                }
+            }
+            borrows.push(record);
+            id
         }
-        bounds.immutable.lock().push(current);
-    }
 
-    fn remove_bound(&self, bound: &checked::DisjointMutBounds) {
-        let bounds = self.bounds.as_ref().unwrap();
-        let mut all_bounds = if bound.mutable {
-            bounds.mutable.lock()
-        } else {
-            bounds.immutable.lock()
-        };
-        let idx = all_bounds
-            .iter()
-            .position(|r| r == bound)
-            .expect("Expected range to be in the active ranges");
-        all_bounds.remove(idx);
+        /// Remove a borrow by its unique ID.
+        pub fn remove(&self, id: BorrowId) {
+            let mut borrows = self.borrows.lock();
+            let idx = borrows
+                .iter()
+                .position(|r| r.id == id)
+                .expect("BorrowId not found in active borrows");
+            borrows.remove(idx);
+        }
     }
 }
 
 // =============================================================================
-// Guard constructors — runtime-dispatched checked/unchecked
+// Guard Drop impls — deregister borrow on drop
 // =============================================================================
-
-impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointMutGuard<'a, T, V> {
-    #[track_caller]
-    pub(crate) fn new(parent: &'a DisjointMut<T>, slice: &'a mut V, bounds: Bounds) -> Self {
-        if parent.bounds.is_some() {
-            parent.add_mut_bounds(checked::DisjointMutBounds::new(bounds.clone(), true));
-            Self {
-                slice,
-                parent: Some(parent),
-                bounds: checked::DisjointMutBounds::new(bounds, true),
-                phantom: PhantomData,
-            }
-        } else {
-            Self {
-                slice,
-                parent: None,
-                bounds: Default::default(),
-                phantom: PhantomData,
-            }
-        }
-    }
-}
 
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
     fn drop(&mut self) {
         if let Some(parent) = self.parent {
-            parent.remove_bound(&self.bounds);
-        }
-    }
-}
-
-impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointImmutGuard<'a, T, V> {
-    #[track_caller]
-    pub(crate) fn new(parent: &'a DisjointMut<T>, slice: &'a V, bounds: Bounds) -> Self {
-        if parent.bounds.is_some() {
-            parent.add_immut_bounds(checked::DisjointMutBounds::new(bounds.clone(), false));
-            Self {
-                slice,
-                parent: Some(parent),
-                bounds: checked::DisjointMutBounds::new(bounds, false),
-                phantom: PhantomData,
-            }
-        } else {
-            Self {
-                slice,
-                parent: None,
-                bounds: Default::default(),
-                phantom: PhantomData,
-            }
+            parent.tracker.as_ref().unwrap().remove(self.borrow_id);
         }
     }
 }
@@ -872,7 +918,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointImmutGuard<'a, T, V> {
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointImmutGuard<'a, T, V> {
     fn drop(&mut self) {
         if let Some(parent) = self.parent {
-            parent.remove_bound(&self.bounds);
+            parent.tracker.as_ref().unwrap().remove(self.borrow_id);
         }
     }
 }
@@ -948,7 +994,7 @@ impl<T: AsMutPtr + ResizableWith> DisjointMut<T> {
 /// SAFETY: We never materialize a `&mut [V]` since we
 /// only materialize a `&mut Vec<V>` and call [`Vec::as_mut_ptr`] on it,
 /// which never materializes a `&mut [V]`.
-unsafe impl<V> AsMutPtr for Vec<V> {
+unsafe impl<V: Copy> AsMutPtr for Vec<V> {
     type Target = V;
 
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
@@ -965,7 +1011,7 @@ unsafe impl<V> AsMutPtr for Vec<V> {
 }
 
 /// SAFETY: We never materialize a `&mut [V]` since we do a direct cast.
-unsafe impl<V, const N: usize> AsMutPtr for [V; N] {
+unsafe impl<V: Copy, const N: usize> AsMutPtr for [V; N] {
     type Target = V;
 
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut V {
@@ -978,7 +1024,7 @@ unsafe impl<V, const N: usize> AsMutPtr for [V; N] {
 }
 
 /// SAFETY: We never materialize a `&mut [V]` since we do a direct unsizing cast.
-unsafe impl<V> AsMutPtr for [V] {
+unsafe impl<V: Copy> AsMutPtr for [V] {
     type Target = V;
 
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
@@ -992,7 +1038,7 @@ unsafe impl<V> AsMutPtr for [V] {
 
 /// SAFETY: We never materialize a `&mut [V]` since we use [`addr_of_mut!`]
 /// to create a `*mut [V]` directly, which we then unsize cast.
-unsafe impl<V> AsMutPtr for Box<[V]> {
+unsafe impl<V: Copy> AsMutPtr for Box<[V]> {
     type Target = V;
 
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
@@ -1017,11 +1063,11 @@ pub type DisjointMutSlice<T> = DisjointMut<Box<[T]>>;
 /// An `Arc<[_]>` can be created, but adding a [`DisjointMut`] in between
 /// requires boxing since `DisjointMut` has tracking fields.
 #[derive(Clone)]
-pub struct DisjointMutArcSlice<T> {
+pub struct DisjointMutArcSlice<T: Copy> {
     pub inner: Arc<DisjointMutSlice<T>>,
 }
 
-impl<T> FromIterator<T> for DisjointMutArcSlice<T> {
+impl<T: Copy> FromIterator<T> for DisjointMutArcSlice<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let box_slice = iter.into_iter().collect::<Box<[_]>>();
         Self {
@@ -1030,7 +1076,7 @@ impl<T> FromIterator<T> for DisjointMutArcSlice<T> {
     }
 }
 
-impl<T> Default for DisjointMutArcSlice<T> {
+impl<T: Copy> Default for DisjointMutArcSlice<T> {
     fn default() -> Self {
         [].into_iter().collect()
     }
