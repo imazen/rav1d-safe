@@ -850,3 +850,223 @@ impl ImageProxy {
 - **WASM Target** - Ensure API works in wasm32-unknown-unknown (no threads)
 - **Embedded Support** - Consider `no_std` variant with `alloc` only
 - **Benches** - Compare performance of managed API vs direct FFI
+
+## Memory Leak Analysis
+
+### Potential Leak Scenarios
+
+#### 1. Explicit `std::mem::forget` (Expected Behavior)
+
+```rust
+let frame = decoder.decode(data)?.unwrap();
+std::mem::forget(frame);  // Leaks the Arc<Rav1dPicture>
+```
+
+**Status:** This is "safe" in Rust's definition (not UB) but leaks memory. This is standard Rust behavior - `forget` is safe but leaks resources. **Not a bug in the API.**
+
+#### 2. Arc Reference Cycles (Not Possible)
+
+The design prevents cycles:
+- `Decoder` holds `Arc<Rav1dContext>`
+- `Frame` holds `Arc<Rav1dPicture>`  
+- `PlaneView` borrows from `Frame` with lifetime `'a`
+- No back-references from picture to context
+
+**Status:** Cycles are structurally impossible. **No leak risk.**
+
+#### 3. Panic During Decode (CRITICAL - Needs Fix)
+
+Current zenavif pattern has a leak on panic:
+
+```rust
+// Create and wrap data
+let mut dav1d_data = Dav1dData::default();
+dav1d_data_wrap(/* ... */)?;  // Creates internal CArc reference
+
+// If panic occurs here, dav1d_data goes out of scope
+// but Dav1dData has no Drop impl!
+// The internal CArc reference is leaked
+
+dav1d_send_data(ctx, &mut dav1d_data)?;
+```
+
+**Problem:** `Dav1dData` does not implement `Drop`. If the function returns early (error or panic) after `dav1d_data_wrap` but before consuming all data, the internal `RawCArc` reference is leaked.
+
+**Solution:** Add RAII guard:
+
+```rust
+struct Dav1dDataGuard(Dav1dData);
+
+impl Dav1dDataGuard {
+    fn new(data: &[u8]) -> Result<Self, Error> {
+        let mut dav1d_data = Dav1dData::default();
+        unsafe {
+            let result = dav1d_data_wrap(
+                NonNull::new(&mut dav1d_data),
+                NonNull::new(data.as_ptr() as *mut u8),
+                data.len(),
+                Some(null_free),
+                None,
+            );
+            if result.0 < 0 {
+                return Err(Error::DecodeFailed(result.0));
+            }
+        }
+        Ok(Self(dav1d_data))
+    }
+    
+    fn as_mut(&mut self) -> &mut Dav1dData {
+        &mut self.0
+    }
+}
+
+impl Drop for Dav1dDataGuard {
+    fn drop(&mut self) {
+        // SAFETY: self.0 was initialized by dav1d_data_wrap
+        unsafe {
+            dav1d_data_unref(NonNull::new(&mut self.0));
+        }
+    }
+}
+```
+
+Then use it:
+```rust
+pub fn decode(&mut self, data: &[u8]) -> Result<Option<Frame>, Error> {
+    let mut guard = Dav1dDataGuard::new(data)?;
+    // Now safe even if we panic - Drop will clean up
+    
+    loop {
+        let result = unsafe { 
+            dav1d_send_data(Some(self.ctx), NonNull::new(guard.as_mut())) 
+        };
+        // ... rest of logic
+    }
+    // Guard drops here, cleaning up automatically
+}
+```
+
+**Status:** MUST FIX before considering the API leak-free.
+
+#### 4. Internal Drop Implementation Bugs (Existing Risk)
+
+If `Drop` impls for `Rav1dContext`, `Rav1dPicture`, or `Rav1dPictureData` have bugs, memory could leak. These are complex internal structures with threading, allocators, etc.
+
+**Status:** Existing rav1d-safe risk, not introduced by managed API. Should be verified with:
+- Valgrind memcheck
+- AddressSanitizer (ASAN)
+- LeakSanitizer (LSAN)
+
+#### 5. Thread Pool Cleanup (Potential Issue)
+
+`Rav1dContext` contains thread pools (`task_thread: Arc<TaskThreadData>`). If worker threads don't join properly on drop, resources could leak.
+
+Looking at the code:
+```rust
+pub struct Rav1dContext {
+    pub(crate) task_thread: Arc<TaskThreadData>,
+    // ...
+}
+```
+
+**Status:** Needs verification. The `Arc<TaskThreadData>` should handle cleanup when all references drop, but thread join logic must be correct.
+
+#### 6. FFI Callback Lifetime Violations (Prevented by Design)
+
+The null_free callback pattern is safe because:
+1. Input `data: &[u8]` is borrowed, can't be dropped during function
+2. We loop until all data is consumed (`dav1d_data.sz == 0`)
+3. Don't return until decoder releases the reference
+4. The borrow checker ensures `data` lives for the function duration
+
+**Status:** Safe by construction, no leak risk.
+
+### Memory Leak Prevention Checklist
+
+- [x] **Arc cycles prevented** - Structural guarantees
+- [x] **Lifetimes enforce validity** - Borrow checker prevents use-after-free
+- [ ] **RAII guards for FFI resources** - **NEEDS IMPLEMENTATION** (Dav1dDataGuard)
+- [ ] **Drop impls tested** - Need valgrind/ASAN verification
+- [ ] **Panic safety tested** - Need tests that panic during decode
+- [ ] **Thread cleanup verified** - Need to audit task_thread drop logic
+
+### Recommendations for Zero-Leak Guarantee
+
+1. **Add Dav1dDataGuard** (critical)
+   - Wraps `Dav1dData` with RAII cleanup
+   - Ensures `dav1d_data_unref` called even on panic
+   
+2. **Add Drop Tests**
+   ```rust
+   #[test]
+   fn test_decoder_drop_frees_memory() {
+       let initial = get_memory_usage();
+       {
+           let mut decoder = Decoder::new().unwrap();
+           decoder.decode(test_data).unwrap();
+           // decoder and frame dropped here
+       }
+       let final_usage = get_memory_usage();
+       assert_eq!(initial, final_usage, "memory leaked");
+   }
+   ```
+
+3. **Add Panic Safety Tests**
+   ```rust
+   #[test]
+   #[should_panic]
+   fn test_panic_during_decode_no_leak() {
+       let mut decoder = Decoder::new().unwrap();
+       // Inject panic during decode
+       decoder.decode(malformed_data).unwrap();
+   }
+   // Run with LSAN to verify no leaks
+   ```
+
+4. **Valgrind/ASAN Integration Tests**
+   ```bash
+   # In CI
+   cargo build --release
+   valgrind --leak-check=full --error-exitcode=1 \
+       ./target/release/managed_api_tests
+   ```
+
+5. **Document Leak Guarantees**
+   ```rust
+   /// # Memory Safety
+   /// 
+   /// This API guarantees no memory leaks under normal operation:
+   /// - All resources are RAII-guarded with proper Drop impls
+   /// - Panic-safe: resources cleaned up even on unwind
+   /// - No reference cycles possible by design
+   /// 
+   /// **Exception:** `std::mem::forget` will leak (standard Rust behavior)
+   ```
+
+### Comparison to C FFI
+
+The managed API is **strictly safer** than direct C FFI:
+
+| Scenario | C FFI | Managed API |
+|----------|-------|-------------|
+| Forget to call `dav1d_close` | ❌ Leak | ✅ Drop handles it |
+| Forget to call `dav1d_picture_unref` | ❌ Leak | ✅ Drop handles it |
+| Forget to call `dav1d_data_unref` | ❌ Leak | ✅ Guard handles it (after fix) |
+| Early return on error | ❌ May leak | ✅ Drop/guards clean up |
+| Panic during decode | ❌ Leak | ✅ Drop/guards clean up (after fix) |
+| Use-after-free | ❌ Possible | ✅ Prevented by borrow checker |
+| Double-free | ❌ Possible | ✅ Prevented by ownership |
+
+### Conclusion
+
+**Current Status:** The proposed API has one leak scenario (panic during decode) that MUST be fixed with `Dav1dDataGuard`.
+
+**After Fix:** With proper RAII guards and verified Drop impls, the managed API can provide **zero-leak guarantees** (except for explicit `std::mem::forget`).
+
+**Action Items:**
+1. Implement `Dav1dDataGuard` wrapper
+2. Add comprehensive Drop tests with memory checking
+3. Add panic safety tests
+4. Integrate valgrind/ASAN into CI
+5. Document memory safety guarantees in rustdoc
+
