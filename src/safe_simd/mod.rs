@@ -6,6 +6,7 @@
 //! Used automatically when built without `--features asm`.
 
 pub mod partial_simd;
+pub mod pixel_access;
 
 pub mod mc;
 

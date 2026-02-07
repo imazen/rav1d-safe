@@ -53,6 +53,9 @@ c-ffi = []
 bitdepth_8 = []
 bitdepth_16 = []
 
+# Use unchecked slice access in SIMD hot paths (skips bounds checks for performance)
+unchecked = []
+
 [profile.dev]
 panic = "abort"
 
