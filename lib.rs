@@ -138,6 +138,12 @@ pub mod src {
 
     #[cfg(test)]
     mod decode_test;
+
+    // === Managed Safe API ===
+    /// 100% safe Rust API for AV1 decoding
+    ///
+    /// This module provides a fully safe, zero-copy API wrapping rav1d's internal decoder.
+    pub mod managed;
 } // mod src
 
 pub use src::error::Dav1dResult;
