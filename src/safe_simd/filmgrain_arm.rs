@@ -1275,11 +1275,25 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     row_num: usize,
     bd: BD,
 ) -> bool {
+    use zerocopy::AsBytes;
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
     let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
-    let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
-    let src_row_ptr = src_row.as_ptr::<BD>().cast();
+
+    // Create tracked guards instead of using Pixels trait
+    let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
+    let dst_row_ptr = {
+        let bytes = dst_guard.as_bytes_mut();
+        let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
+        &mut bytes[base_byte] as *mut u8 as *mut DynPixel
+    };
+    let (src_guard, src_base) = src_row.full_guard::<BD>();
+    let src_row_ptr = {
+        let bytes = src_guard.as_bytes();
+        let base_byte = src_base * std::mem::size_of::<BD::Pixel>();
+        &bytes[base_byte] as *const u8 as *const DynPixel
+    };
+
     let stride = dst.stride();
     let data_c = &data.clone().into();
     let scaling_ptr = std::ptr::from_ref(scaling).cast();
@@ -1342,16 +1356,34 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     is_id: bool,
     bd: BD,
 ) -> bool {
+    use zerocopy::AsBytes;
     let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + (row_strides * dst.pixel_stride::<BD>() >> ss_y);
     let src_row = src.with_offset::<BD>() + (row_strides * src.pixel_stride::<BD>() >> ss_y);
-    let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
-    let src_row_ptr = src_row.as_ptr::<BD>().cast();
+
+    // Create tracked guards instead of using Pixels trait
+    let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
+    let dst_row_ptr = {
+        let bytes = dst_guard.as_bytes_mut();
+        let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
+        &mut bytes[base_byte] as *mut u8 as *mut DynPixel
+    };
+    let (src_guard, src_base) = src_row.full_guard::<BD>();
+    let src_row_ptr = {
+        let bytes = src_guard.as_bytes();
+        let base_byte = src_base * std::mem::size_of::<BD::Pixel>();
+        &bytes[base_byte] as *const u8 as *const DynPixel
+    };
     let stride = dst.stride();
     let scaling_ptr = (scaling as *const BD::Scaling).cast::<u8>();
     let luma_row = luma.with_offset::<BD>() + (row_strides * luma.pixel_stride::<BD>());
-    let luma_row_ptr = luma_row.as_ptr::<BD>().cast();
+    let (luma_guard, luma_base) = luma_row.full_guard::<BD>();
+    let luma_row_ptr = {
+        let bytes = luma_guard.as_bytes();
+        let base_byte = luma_base * std::mem::size_of::<BD::Pixel>();
+        &bytes[base_byte] as *const u8 as *const DynPixel
+    };
     let luma_stride = luma.stride();
 
     let (is_sx, is_sy) = match layout {

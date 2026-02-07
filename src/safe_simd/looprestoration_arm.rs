@@ -24,6 +24,7 @@ use crate::src::align::AlignedVec64;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::looprestoration::{padding, LooprestorationParams, LrEdgeFlags};
+#[cfg(feature = "asm")]
 use crate::src::pixels::Pixels;
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_sgr_x_by_x;

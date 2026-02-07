@@ -73,6 +73,7 @@ use crate::src::msac::rav1d_msac_decode_symbol_adapt4;
 use crate::src::msac::rav1d_msac_decode_symbol_adapt8;
 use crate::src::msac::MsacContext;
 use crate::src::picture::Rav1dThreadPicture;
+#[cfg(feature = "asm")]
 use crate::src::pixels::Pixels as _;
 use crate::src::scan::dav1d_scans;
 use crate::src::strided::Strided as _;

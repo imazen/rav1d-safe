@@ -598,8 +598,16 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     is_v: bool,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
+    use zerocopy::AsBytes;
 
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast::<BD::Pixel>();
+    // Loopfilter accesses pixels at negative offsets from the base pointer
+    // (filtering across block boundaries), so use full_guard_mut.
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+    let dst_ptr = {
+        let bytes = dst_guard.as_bytes_mut();
+        let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
+        &mut bytes[base_byte] as *mut u8 as *mut BD::Pixel
+    };
     assert!(lvl.offset <= lvl.data.len());
     // SAFETY: `lvl.offset` is in bounds, checked above.
     let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };

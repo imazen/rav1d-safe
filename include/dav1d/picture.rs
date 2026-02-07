@@ -26,6 +26,7 @@ use crate::src::error::Dav1dResult;
 use crate::src::error::Rav1dError;
 use crate::src::error::Rav1dError::EINVAL;
 use crate::src::error::Rav1dResult;
+#[cfg(feature = "asm")]
 use crate::src::pixels::Pixels;
 use crate::src::send_sync_non_null::SendSyncNonNull;
 use crate::src::strided::Strided;
@@ -227,6 +228,7 @@ unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
 
 pub struct Rav1dPictureDataComponent(DisjointMut<Rav1dPictureDataComponentInner>);
 
+#[cfg(feature = "asm")]
 impl Pixels for Rav1dPictureDataComponent {
     fn byte_len(&self) -> usize {
         self.0.len()
@@ -245,6 +247,16 @@ impl Strided for Rav1dPictureDataComponent {
 }
 
 impl Rav1dPictureDataComponent {
+    /// Length in number of bytes.
+    pub fn byte_len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Determine if two components reference the same underlying data.
+    pub fn ref_eq(&self, other: &Self) -> bool {
+        self.0.as_mut_ptr() == other.0.as_mut_ptr()
+    }
+
     pub fn wrap_buf<BD: BitDepth>(buf: &mut [BD::Pixel], stride: usize) -> Self {
         Self(DisjointMut::new(
             Rav1dPictureDataComponentInner::wrap_buf::<BD>(buf, stride),
@@ -467,6 +479,20 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     ) {
         let total_pixels = self.data.pixel_len::<BD>();
         let guard = self.data.slice_mut::<BD, _>((0.., ..total_pixels));
+        (guard, self.offset)
+    }
+
+    /// Create a tracked immutable guard covering the entire picture component.
+    #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn full_guard<BD: BitDepth>(
+        &self,
+    ) -> (
+        DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
+        usize,
+    ) {
+        let total_pixels = self.data.pixel_len::<BD>();
+        let guard = self.data.slice::<BD, _>((0.., ..total_pixels));
         (guard, self.offset)
     }
 }

@@ -7995,7 +7995,16 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     eob: i32,
     bd: BD,
 ) -> bool {
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    use crate::src::levels::TxfmSize;
+    use zerocopy::AsBytes;
+
+    // Get transform dimensions for tracked guard
+    let txfm = TxfmSize::from_repr(tx_size).unwrap_or_default();
+    let (w, h) = txfm.to_wh();
+
+    // Create tracked guard — ensures borrow tracker knows about this access
+    let (mut dst_guard, _dst_base) = dst.strided_slice_mut::<BD>(w, h);
+    let dst_ptr: *mut DynPixel = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
     let dst_stride = dst.stride();
     let coeff_len = coeff.len() as u16;
     let coeff_ptr = coeff.as_mut_ptr().cast();

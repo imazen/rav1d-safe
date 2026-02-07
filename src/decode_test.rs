@@ -12,6 +12,7 @@
 #[cfg(test)]
 #[allow(unsafe_code)]
 mod tests {
+    use crate::include::common::bitdepth::BitDepth8;
     use crate::include::dav1d::data::Rav1dData;
     use crate::include::dav1d::dav1d::Rav1dSettings;
     use crate::include::dav1d::headers::Rav1dPixelLayout;
@@ -23,7 +24,6 @@ mod tests {
     use crate::src::lib::rav1d_get_picture;
     use crate::src::lib::rav1d_open;
     use crate::src::lib::rav1d_send_data;
-    use crate::src::pixels::Pixels;
     use std::env;
     use std::fs;
     use std::sync::Arc;
@@ -178,8 +178,9 @@ mod tests {
             let bytes_per_pixel = if bpc > 8 { 2usize } else { 1 };
             let row_bytes = plane_w * bytes_per_pixel;
 
-            let ptr = component.as_byte_mut_ptr();
             let byte_len = component.byte_len();
+            let guard = component.slice::<BitDepth8, _>((0.., ..byte_len));
+            let all_bytes: &[u8] = &guard;
 
             let start = if stride < 0 { byte_len - abs_stride } else { 0 };
 
@@ -190,9 +191,7 @@ mod tests {
                     start + row * abs_stride
                 };
 
-                // SAFETY: Reading pixel data within allocated buffer bounds.
-                let row_slice =
-                    unsafe { std::slice::from_raw_parts(ptr.add(row_start), row_bytes) };
+                let row_slice = &all_bytes[row_start..row_start + row_bytes];
                 output.extend_from_slice(row_slice);
             }
         }

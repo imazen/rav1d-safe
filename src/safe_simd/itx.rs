@@ -14474,12 +14474,20 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::src::cpu::CpuFlags;
+    use crate::src::levels::TxfmSize;
+    use zerocopy::AsBytes;
 
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return false;
     }
 
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    // Get transform dimensions for tracked guard
+    let txfm = TxfmSize::from_repr(tx_size).unwrap_or_default();
+    let (w, h) = txfm.to_wh();
+
+    // Create tracked guard — ensures borrow tracker knows about this access
+    let (mut dst_guard, _dst_base) = dst.strided_slice_mut::<BD>(w, h);
+    let dst_ptr: *mut DynPixel = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
     let dst_stride = dst.stride();
     let coeff_len = coeff.len() as u16;
     let coeff_ptr = coeff.as_mut_ptr().cast();

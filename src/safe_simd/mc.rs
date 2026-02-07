@@ -7585,7 +7585,10 @@ pub fn avg_dispatch<BD: BitDepth>(
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return false;
     }
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    use zerocopy::AsBytes;
+    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
     let dst_stride = dst.stride();
     let bd_c = bd.into_c();
     let _dst_ffi = FFISafe::new(&dst);
@@ -7630,7 +7633,10 @@ pub fn w_avg_dispatch<BD: BitDepth>(
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return false;
     }
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    use zerocopy::AsBytes;
+    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
     let dst_stride = dst.stride();
     let bd_c = bd.into_c();
     let dst_ffi = FFISafe::new(&dst);
@@ -7662,7 +7668,10 @@ pub fn mask_dispatch<BD: BitDepth>(
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return false;
     }
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    use zerocopy::AsBytes;
+    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
     let dst_stride = dst.stride();
     let mask_ptr = mask[..(w * h) as usize].as_ptr();
     let bd_c = bd.into_c();
@@ -7708,7 +7717,10 @@ pub fn blend_dispatch<BD: BitDepth>(
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return false;
     }
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    use zerocopy::AsBytes;
+    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
     let dst_stride = dst.stride();
     let tmp_ptr = std::ptr::from_ref(tmp).cast();
     let mask_ptr = mask[..(w * h) as usize].as_ptr();
@@ -7735,7 +7747,10 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return false;
     }
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    use zerocopy::AsBytes;
+    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
     let dst_stride = dst.stride();
     let tmp_ptr = std::ptr::from_ref(tmp).cast();
     let _dst_ffi = FFISafe::new(&dst);
@@ -7795,7 +7810,10 @@ pub fn w_mask_dispatch<BD: BitDepth>(
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return false;
     }
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    use zerocopy::AsBytes;
+    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
     let dst_stride = dst.stride();
     let bd_c = bd.into_c();
     let _dst_ffi = FFISafe::new(&dst);
@@ -7892,9 +7910,14 @@ pub fn mc_put_dispatch<BD: BitDepth>(
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return false;
     }
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    use zerocopy::AsBytes;
+    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
     let dst_stride = dst.stride();
-    let src_ptr = src.as_ptr::<BD>().cast();
+    let (src_guard, _src_base) = src.full_guard::<BD>();
+    let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
+    let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
     let src_stride = src.stride();
     let bd_c = bd.into_c();
     let dst_ffi = FFISafe::new(&dst);
@@ -7984,7 +8007,10 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
         return false;
     }
     let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
-    let src_ptr = src.as_ptr::<BD>().cast();
+    use zerocopy::AsBytes;
+    let (src_guard, _src_base) = src.full_guard::<BD>();
+    let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
+    let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
     let src_stride = src.stride();
     let bd_c = bd.into_c();
     let src_ffi = FFISafe::new(&src);
