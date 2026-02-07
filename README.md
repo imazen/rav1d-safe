@@ -1,6 +1,43 @@
 # rav1d
 
+[![CI](https://github.com/memorysafety/rav1d/workflows/CI/badge.svg)](https://github.com/memorysafety/rav1d/actions)
+[![License](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
+
 **rav1d** is an AV1 cross-platform decoder, open-source, and focused on speed
+and correctness. It is a Rust port of
+[dav1d](https://code.videolan.org/videolan/dav1d).
+
+## Safe Rust API
+
+rav1d now includes a **100% safe Rust API** for decoding AV1 video (`src/managed.rs`).
+No `unsafe` code required! Features:
+
+- **Zero-copy** pixel access via type-safe views
+- **HDR metadata** support (HDR10, HLG, mastering display, content light level)
+- **Type-safe** color space handling
+- **Multi-threaded** decoding with configurable thread pools
+- Both **8-bit** and **10/12-bit** support
+
+```rust
+use rav1d_safe::src::managed::{Decoder, Planes};
+
+let mut decoder = Decoder::new()?;
+if let Some(frame) = decoder.decode(obu_data)? {
+    match frame.planes() {
+        Planes::Depth8(planes) => {
+            for row in planes.y().rows() {
+                // Process 8-bit luma row
+            }
+        }
+        Planes::Depth16(planes) => {
+            let pixel = planes.y().pixel(0, 0); // Zero-copy 16-bit access
+        }
+    }
+}
+```
+
+See `examples/managed_decode.rs` for a complete example.
+
 and correctness. It is a Rust port of
 [dav1d](https://code.videolan.org/videolan/dav1d).
 
