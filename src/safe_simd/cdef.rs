@@ -273,48 +273,67 @@ fn padding_8bpc(
         }
     }
 
-    // Handle top edge
+    // Handle top edge (safe slice access via DisjointMut)
     if edges.contains(CdefEdgeFlags::HAVE_TOP) {
-        let top_ptr = top.as_ptr::<BitDepth8>();
-        for dy in 0..2 {
+        // Adjust offset by -2 so index 0 corresponds to 2 pixels left of block
+        let x_start = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
+            0usize
+        } else {
+            2
+        };
+        let x_end = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
+            w + 4
+        } else {
+            w + 2
+        };
+        for dy in 0..2usize {
             let row_offset = tmp_offset - (2 - dy) * TMP_STRIDE;
-            let start_x = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
-                -2i32
-            } else {
-                0
+            let top_row = WithOffset {
+                data: top.data,
+                offset: top.offset.wrapping_sub(2).wrapping_add_signed(dy as isize * stride),
             };
-            let end_x = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
-                w as i32 + 2
-            } else {
-                w as i32
-            };
-
-            for x in start_x..end_x {
-                let px = unsafe { *top_ptr.offset(dy as isize * stride + x as isize) };
-                tmp[(row_offset as isize + x as isize) as usize] = px as u16;
+            let slice = top_row.data.slice_as::<_, u8>((top_row.offset.., ..x_end));
+            for x in x_start..x_end {
+                tmp[row_offset + x - 2] = slice[x] as u16;
             }
         }
     }
 
-    // Handle bottom edge
+    // Handle bottom edge (safe slice access via DisjointMut/PicOrBuf)
     if edges.contains(CdefEdgeFlags::HAVE_BOTTOM) {
-        let bottom_ptr = bottom.wrapping_as_ptr::<BitDepth8>();
-        for dy in 0..2 {
+        let x_start = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
+            0usize
+        } else {
+            2
+        };
+        let x_end = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
+            w + 4
+        } else {
+            w + 2
+        };
+        for dy in 0..2usize {
             let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
-            let start_x = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
-                -2i32
-            } else {
-                0
+            let bottom_row = WithOffset {
+                data: bottom.data,
+                offset: bottom
+                    .offset
+                    .wrapping_sub(2)
+                    .wrapping_add_signed(dy as isize * stride),
             };
-            let end_x = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
-                w as i32 + 2
-            } else {
-                w as i32
+            let slice = match bottom_row.data {
+                PicOrBuf::Pic(pic) => {
+                    let guard =
+                        pic.slice::<BitDepth8, _>((bottom_row.offset.., ..x_end));
+                    // Copy into tmp inline since guard lifetime is limited
+                    for x in x_start..x_end {
+                        tmp[row_offset + x - 2] = guard[x] as u16;
+                    }
+                    continue;
+                }
+                PicOrBuf::Buf(buf) => buf.slice_as::<_, u8>((bottom_row.offset.., ..x_end)),
             };
-
-            for x in start_x..end_x {
-                let px = unsafe { *bottom_ptr.offset(dy as isize * stride + x as isize) };
-                tmp[(row_offset as isize + x as isize) as usize] = px as u16;
+            for x in x_start..x_end {
+                tmp[row_offset + x - 2] = slice[x] as u16;
             }
         }
     }
@@ -857,8 +876,6 @@ fn padding_16bpc(
     use crate::include::common::bitdepth::BitDepth16;
 
     let _bd = BitDepth16::new(bitdepth_max as u16);
-    let stride_u16 = dst.pixel_stride::<BitDepth16>() / 2;
-
     // Fill temporary buffer with CDEF_VERY_LARGE
     let very_large = (bitdepth_max as u16) * 4; // ~4x max value
     tmp.iter_mut().for_each(|x| *x = very_large);
@@ -894,51 +911,74 @@ fn padding_16bpc(
         }
     }
 
-    // Handle top edge
+    // Handle top edge (safe slice access via DisjointMut)
     if edges.contains(CdefEdgeFlags::HAVE_TOP) {
-        let top_ptr = top.as_ptr::<BitDepth16>() as *const u16;
-        let _stride = dst.pixel_stride::<BitDepth16>();
-        for dy in 0..2 {
+        let pixel_stride = dst.pixel_stride::<BitDepth16>();
+        let x_start = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
+            0usize
+        } else {
+            2
+        };
+        let x_end = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
+            w + 4
+        } else {
+            w + 2
+        };
+        for dy in 0..2usize {
             let row_offset = tmp_offset - (2 - dy) * TMP_STRIDE;
-            let start_x = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
-                -2i32
-            } else {
-                0
+            let top_row = WithOffset {
+                data: top.data,
+                offset: top
+                    .offset
+                    .wrapping_sub(2)
+                    .wrapping_add_signed(dy as isize * pixel_stride),
             };
-            let end_x = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
-                w as i32 + 2
-            } else {
-                w as i32
-            };
-
-            for x in start_x..end_x {
-                let px = unsafe { *top_ptr.offset(dy as isize * stride_u16 as isize + x as isize) };
-                tmp[(row_offset as isize + x as isize) as usize] = px;
+            let slice = top_row
+                .data
+                .slice_as::<_, u16>((top_row.offset.., ..x_end));
+            for x in x_start..x_end {
+                tmp[row_offset + x - 2] = slice[x];
             }
         }
     }
 
-    // Handle bottom edge
+    // Handle bottom edge (safe slice access via DisjointMut/PicOrBuf)
     if edges.contains(CdefEdgeFlags::HAVE_BOTTOM) {
-        let bottom_ptr = bottom.wrapping_as_ptr::<BitDepth16>() as *const u16;
-        let _stride = dst.pixel_stride::<BitDepth16>();
-        for dy in 0..2 {
+        let pixel_stride = dst.pixel_stride::<BitDepth16>();
+        let x_start = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
+            0usize
+        } else {
+            2
+        };
+        let x_end = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
+            w + 4
+        } else {
+            w + 2
+        };
+        for dy in 0..2usize {
             let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
-            let start_x = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
-                -2i32
-            } else {
-                0
+            let bottom_row = WithOffset {
+                data: bottom.data,
+                offset: bottom
+                    .offset
+                    .wrapping_sub(2)
+                    .wrapping_add_signed(dy as isize * pixel_stride),
             };
-            let end_x = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
-                w as i32 + 2
-            } else {
-                w as i32
+            let slice = match bottom_row.data {
+                PicOrBuf::Pic(pic) => {
+                    let guard =
+                        pic.slice::<BitDepth16, _>((bottom_row.offset.., ..x_end));
+                    for x in x_start..x_end {
+                        tmp[row_offset + x - 2] = guard[x];
+                    }
+                    continue;
+                }
+                PicOrBuf::Buf(buf) => {
+                    buf.slice_as::<_, u16>((bottom_row.offset.., ..x_end))
+                }
             };
-
-            for x in start_x..end_x {
-                let px =
-                    unsafe { *bottom_ptr.offset(dy as isize * stride_u16 as isize + x as isize) };
-                tmp[(row_offset as isize + x as isize) as usize] = px;
+            for x in x_start..x_end {
+                tmp[row_offset + x - 2] = slice[x];
             }
         }
     }
