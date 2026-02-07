@@ -3199,8 +3199,6 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 width as usize,
                 height as usize,
                 angle as i32,
-                max_width as i32,
-                max_height as i32,
             ),
             (BPC::BPC8, 7) => ipred_z2_8bpc_inner(
                 token,
@@ -3221,8 +3219,6 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 width as usize,
                 height as usize,
                 angle as i32,
-                max_width as i32,
-                max_height as i32,
             ),
             (BPC::BPC8, 9) => ipred_smooth_8bpc_inner(
                 token,
@@ -3264,6 +3260,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 width as usize,
                 height as usize,
                 angle as i32,
+                topleft_off,
             ),
             (BPC::BPC16, 0) => ipred_dc_16bpc_inner(
                 token,
@@ -3321,9 +3318,6 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 width as usize,
                 height as usize,
                 angle as i32,
-                max_width as i32,
-                max_height as i32,
-                bd_c as i32,
             ),
             (BPC::BPC16, 7) => ipred_z2_16bpc_inner(
                 token,
@@ -3335,7 +3329,6 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 angle as i32,
                 max_width as i32,
                 max_height as i32,
-                bd_c as i32,
             ),
             (BPC::BPC16, 8) => ipred_z3_16bpc_inner(
                 token,
@@ -3345,9 +3338,6 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 width as usize,
                 height as usize,
                 angle as i32,
-                max_width as i32,
-                max_height as i32,
-                bd_c as i32,
             ),
             (BPC::BPC16, 9) => ipred_smooth_16bpc_inner(
                 token,
@@ -3390,6 +3380,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 height as usize,
                 angle as i32,
                 bd_c as i32,
+                topleft_off,
             ),
             _ => return false,
         }
