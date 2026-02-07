@@ -1,4 +1,4 @@
-use rav1d_safe::src::managed::{Decoder, Settings, Planes};
+use rav1d_safe::src::managed::{Decoder, Planes, Settings};
 use std::env;
 use std::fs;
 
@@ -78,8 +78,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match frame.planes() {
                     Planes::Depth8(planes) => {
                         let y_plane = planes.y();
-                        println!("  Y plane: {}x{} stride={}",
-                                 y_plane.width(), y_plane.height(), y_plane.stride());
+                        println!(
+                            "  Y plane: {}x{} stride={}",
+                            y_plane.width(),
+                            y_plane.height(),
+                            y_plane.stride()
+                        );
 
                         // Sample some pixels
                         if y_plane.width() > 0 && y_plane.height() > 0 {
@@ -100,8 +104,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Planes::Depth16(planes) => {
                         let y_plane = planes.y();
-                        println!("  Y plane (16-bit): {}x{} stride={}",
-                                 y_plane.width(), y_plane.height(), y_plane.stride());
+                        println!(
+                            "  Y plane (16-bit): {}x{} stride={}",
+                            y_plane.width(),
+                            y_plane.height(),
+                            y_plane.stride()
+                        );
 
                         // Sample some pixels
                         if y_plane.width() > 0 && y_plane.height() > 0 {

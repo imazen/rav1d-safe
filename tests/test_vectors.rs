@@ -2,9 +2,9 @@
 //!
 //! Downloads and caches AV1 conformance test vectors from standard sources.
 
-use std::path::{Path, PathBuf};
-use std::fs;
 use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// Test vector sources
 pub struct TestVectorSource {
@@ -29,8 +29,7 @@ pub const AV1_CONFORMANCE_VECTORS: &[TestVectorSource] = &[
 /// Get the test vectors cache directory
 pub fn test_vectors_dir() -> PathBuf {
     // Use CARGO_TARGET_DIR/test-vectors or fall back to target/test-vectors
-    let target_dir = env::var("CARGO_TARGET_DIR")
-        .unwrap_or_else(|_| "target".to_string());
+    let target_dir = env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
     Path::new(&target_dir).join("test-vectors")
 }
 
@@ -38,21 +37,24 @@ pub fn test_vectors_dir() -> PathBuf {
 pub fn download_test_vector(source: &TestVectorSource) -> std::io::Result<PathBuf> {
     let cache_dir = test_vectors_dir();
     fs::create_dir_all(&cache_dir)?;
-    
+
     let local_path = cache_dir.join(source.name);
-    
+
     if local_path.exists() {
         // TODO: Verify hash if provided
         return Ok(local_path);
     }
-    
+
     eprintln!("Downloading test vector: {}", source.name);
     eprintln!("  from: {}", source.url);
-    
+
     // Download would happen here - for now, just return error
     Err(std::io::Error::new(
         std::io::ErrorKind::NotFound,
-        format!("Test vector {} not found and download not implemented", source.name),
+        format!(
+            "Test vector {} not found and download not implemented",
+            source.name
+        ),
     ))
 }
 

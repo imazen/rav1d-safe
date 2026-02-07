@@ -3062,10 +3062,7 @@ impl Rav1dMCDSPContext {
 
     /// Safe SIMD initialization for x86/x86_64 without hand-written assembly.
     /// Uses Rust intrinsics via archmage/safe_unaligned_simd instead.
-    #[cfg(all(
-        not(feature = "asm"),
-        any(target_arch = "x86", target_arch = "x86_64")
-    ))]
+    #[cfg(all(not(feature = "asm"), any(target_arch = "x86", target_arch = "x86_64")))]
     #[inline(always)]
     const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
         use crate::include::common::bitdepth::BPC;

@@ -1,4 +1,4 @@
-use rav1d_safe::src::managed::{Decoder, Settings, Planes};
+use rav1d_safe::src::managed::{Decoder, Planes, Settings};
 
 #[test]
 fn test_decoder_creation() {
@@ -17,7 +17,10 @@ fn test_decoder_with_custom_settings() {
     };
 
     let decoder = Decoder::with_settings(settings);
-    assert!(decoder.is_ok(), "Failed to create decoder with custom settings");
+    assert!(
+        decoder.is_ok(),
+        "Failed to create decoder with custom settings"
+    );
 }
 
 #[test]

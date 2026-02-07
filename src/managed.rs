@@ -45,12 +45,11 @@
 
 #![deny(unsafe_code)]
 
-use crate::include::common::bitdepth::{BitDepth8, BitDepth16};
-use crate::include::dav1d::dav1d::{Rav1dSettings, Rav1dDecodeFrameType, Rav1dInloopFilterType};
+use crate::include::common::bitdepth::{BitDepth16, BitDepth8};
 use crate::include::dav1d::data::Rav1dData;
+use crate::include::dav1d::dav1d::{Rav1dDecodeFrameType, Rav1dInloopFilterType, Rav1dSettings};
 use crate::include::dav1d::headers::{
-    Rav1dColorPrimaries, Rav1dMatrixCoefficients, Rav1dPixelLayout,
-    Rav1dTransferCharacteristics,
+    Rav1dColorPrimaries, Rav1dMatrixCoefficients, Rav1dPixelLayout, Rav1dTransferCharacteristics,
 };
 use crate::include::dav1d::picture::{Rav1dPicture, Rav1dPictureDataComponentInner};
 use crate::src::c_arc::CArc;
@@ -426,20 +425,26 @@ impl Frame {
 
     /// HDR content light level metadata, if present
     pub fn content_light(&self) -> Option<ContentLightLevel> {
-        self.inner.content_light.as_ref().map(|arc| ContentLightLevel {
-            max_content_light_level: arc.max_content_light_level,
-            max_frame_average_light_level: arc.max_frame_average_light_level,
-        })
+        self.inner
+            .content_light
+            .as_ref()
+            .map(|arc| ContentLightLevel {
+                max_content_light_level: arc.max_content_light_level,
+                max_frame_average_light_level: arc.max_frame_average_light_level,
+            })
     }
 
     /// HDR mastering display metadata, if present
     pub fn mastering_display(&self) -> Option<MasteringDisplay> {
-        self.inner.mastering_display.as_ref().map(|arc| MasteringDisplay {
-            primaries: arc.primaries,
-            white_point: arc.white_point,
-            max_luminance: arc.max_luminance,
-            min_luminance: arc.min_luminance,
-        })
+        self.inner
+            .mastering_display
+            .as_ref()
+            .map(|arc| MasteringDisplay {
+                primaries: arc.primaries,
+                white_point: arc.white_point,
+                max_luminance: arc.max_luminance,
+                min_luminance: arc.min_luminance,
+            })
     }
 
     /// Timestamp from input data (arbitrary units)
@@ -493,7 +498,12 @@ pub struct Planes8<'a> {
 impl<'a> Planes8<'a> {
     /// Y (luma) plane as a 2D strided view
     pub fn y(&self) -> PlaneView8<'a> {
-        let data = self.frame.inner.data.as_ref().expect("missing picture data");
+        let data = self
+            .frame
+            .inner
+            .data
+            .as_ref()
+            .expect("missing picture data");
         let guard = data.data[0].slice::<BitDepth8, _>(..);
 
         PlaneView8 {
@@ -511,7 +521,12 @@ impl<'a> Planes8<'a> {
         }
 
         let (w, h) = self.chroma_dimensions();
-        let data = self.frame.inner.data.as_ref().expect("missing picture data");
+        let data = self
+            .frame
+            .inner
+            .data
+            .as_ref()
+            .expect("missing picture data");
         let guard = data.data[1].slice::<BitDepth8, _>(..);
 
         Some(PlaneView8 {
@@ -529,7 +544,12 @@ impl<'a> Planes8<'a> {
         }
 
         let (w, h) = self.chroma_dimensions();
-        let data = self.frame.inner.data.as_ref().expect("missing picture data");
+        let data = self
+            .frame
+            .inner
+            .data
+            .as_ref()
+            .expect("missing picture data");
         let guard = data.data[2].slice::<BitDepth8, _>(..);
 
         Some(PlaneView8 {
@@ -560,7 +580,12 @@ pub struct Planes16<'a> {
 impl<'a> Planes16<'a> {
     /// Y (luma) plane as a 2D strided view
     pub fn y(&self) -> PlaneView16<'a> {
-        let data = self.frame.inner.data.as_ref().expect("missing picture data");
+        let data = self
+            .frame
+            .inner
+            .data
+            .as_ref()
+            .expect("missing picture data");
         let guard = data.data[0].slice::<BitDepth16, _>(..);
 
         PlaneView16 {
@@ -578,7 +603,12 @@ impl<'a> Planes16<'a> {
         }
 
         let (w, h) = self.chroma_dimensions();
-        let data = self.frame.inner.data.as_ref().expect("missing picture data");
+        let data = self
+            .frame
+            .inner
+            .data
+            .as_ref()
+            .expect("missing picture data");
         let guard = data.data[1].slice::<BitDepth16, _>(..);
 
         Some(PlaneView16 {
@@ -596,7 +626,12 @@ impl<'a> Planes16<'a> {
         }
 
         let (w, h) = self.chroma_dimensions();
-        let data = self.frame.inner.data.as_ref().expect("missing picture data");
+        let data = self
+            .frame
+            .inner
+            .data
+            .as_ref()
+            .expect("missing picture data");
         let guard = data.data[2].slice::<BitDepth16, _>(..);
 
         Some(PlaneView16 {
@@ -636,7 +671,12 @@ impl<'a> PlaneView8<'a> {
     ///
     /// Panics if `y >= height`.
     pub fn row(&self, y: usize) -> &[u8] {
-        assert!(y < self.height, "row index {} out of bounds (height: {})", y, self.height);
+        assert!(
+            y < self.height,
+            "row index {} out of bounds (height: {})",
+            y,
+            self.height
+        );
         let start = y * self.stride;
         &self.guard[start..start + self.width]
     }
@@ -650,7 +690,10 @@ impl<'a> PlaneView8<'a> {
         assert!(
             x < self.width && y < self.height,
             "pixel coordinates ({}, {}) out of bounds ({}x{})",
-            x, y, self.width, self.height
+            x,
+            y,
+            self.width,
+            self.height
         );
         self.guard[y * self.stride + x]
     }
@@ -693,7 +736,12 @@ impl<'a> PlaneView16<'a> {
     ///
     /// Panics if `y >= height`.
     pub fn row(&self, y: usize) -> &[u16] {
-        assert!(y < self.height, "row index {} out of bounds (height: {})", y, self.height);
+        assert!(
+            y < self.height,
+            "row index {} out of bounds (height: {})",
+            y,
+            self.height
+        );
         let start = y * self.stride;
         &self.guard[start..start + self.width]
     }
@@ -707,7 +755,10 @@ impl<'a> PlaneView16<'a> {
         assert!(
             x < self.width && y < self.height,
             "pixel coordinates ({}, {}) out of bounds ({}x{})",
-            x, y, self.width, self.height
+            x,
+            y,
+            self.width,
+            self.height
         );
         self.guard[y * self.stride + x]
     }

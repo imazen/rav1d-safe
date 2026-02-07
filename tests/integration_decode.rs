@@ -6,8 +6,7 @@ use std::path::PathBuf;
 mod ivf_parser;
 
 fn test_vectors_dir() -> PathBuf {
-    let target_dir = std::env::var("CARGO_TARGET_DIR")
-        .unwrap_or_else(|_| "target".to_string());
+    let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
     PathBuf::from(target_dir).join("test-vectors")
 }
 
@@ -46,28 +45,33 @@ fn test_decode_real_bitstream() {
 
     let file = File::open(&vector_path).expect("Failed to open test vector");
     let mut reader = BufReader::new(file);
-    
+
     // Parse IVF file to extract raw OBU frames
-    let frames = ivf_parser::parse_all_frames(&mut reader)
-        .expect("Failed to parse IVF file");
-    
+    let frames = ivf_parser::parse_all_frames(&mut reader).expect("Failed to parse IVF file");
+
     eprintln!("IVF file contains {} frames", frames.len());
-    
+
     let mut decoder = Decoder::new().expect("Failed to create decoder");
     let mut frames_decoded = 0;
 
     // Feed each frame's OBU data to the decoder
     for (i, ivf_frame) in frames.iter().enumerate() {
-        eprintln!("Processing IVF frame {} ({} bytes)", i, ivf_frame.data.len());
-        
+        eprintln!(
+            "Processing IVF frame {} ({} bytes)",
+            i,
+            ivf_frame.data.len()
+        );
+
         match decoder.decode(&ivf_frame.data) {
             Ok(Some(frame)) => {
                 frames_decoded += 1;
-                eprintln!("  Decoded frame {}: {}x{} @ {}-bit",
-                         frames_decoded,
-                         frame.width(),
-                         frame.height(),
-                         frame.bit_depth());
+                eprintln!(
+                    "  Decoded frame {}: {}x{} @ {}-bit",
+                    frames_decoded,
+                    frame.width(),
+                    frame.height(),
+                    frame.bit_depth()
+                );
 
                 // Verify we can access pixel data
                 match frame.planes() {
@@ -136,10 +140,9 @@ fn test_decode_hdr_metadata() {
 
         let file = File::open(&path).expect("Failed to open test vector");
         let mut reader = BufReader::new(file);
-        
-        let frames = ivf_parser::parse_all_frames(&mut reader)
-            .expect("Failed to parse IVF file");
-        
+
+        let frames = ivf_parser::parse_all_frames(&mut reader).expect("Failed to parse IVF file");
+
         let mut decoder = Decoder::new().expect("Failed to create decoder");
 
         // Decode first frame
@@ -179,10 +182,9 @@ fn test_ivf_parser() {
     if let Some(path) = find_test_ivf() {
         let file = File::open(&path).expect("Failed to open test vector");
         let mut reader = BufReader::new(file);
-        
-        let header = ivf_parser::parse_ivf_header(&mut reader)
-            .expect("Failed to parse IVF header");
-        
+
+        let header = ivf_parser::parse_ivf_header(&mut reader).expect("Failed to parse IVF header");
+
         eprintln!("IVF header: {:?}", header);
         assert!(header.width > 0);
         assert!(header.height > 0);

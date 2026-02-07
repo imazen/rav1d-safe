@@ -1420,9 +1420,8 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
     let w = w as usize;
     let h = h as usize;
     use crate::src::safe_simd::pixel_access::reinterpret_slice;
-    let left_8 = || -> &[LeftPixelRow<u8>] {
-        reinterpret_slice(left).expect("BD::Pixel layout matches u8")
-    };
+    let left_8 =
+        || -> &[LeftPixelRow<u8>] { reinterpret_slice(left).expect("BD::Pixel layout matches u8") };
     let left_16 = || -> &[LeftPixelRow<u16>] {
         reinterpret_slice(left).expect("BD::Pixel layout matches u16")
     };

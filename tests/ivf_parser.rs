@@ -24,23 +24,32 @@ pub struct IvfFrame {
 pub fn parse_ivf_header<R: Read>(reader: &mut R) -> io::Result<IvfHeader> {
     let mut header = [0u8; 32];
     reader.read_exact(&mut header)?;
-    
+
     // Check signature "DKIF"
     if &header[0..4] != b"DKIF" {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Not an IVF file"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Not an IVF file",
+        ));
     }
-    
+
     // Check version (should be 0)
     let version = u16::from_le_bytes([header[4], header[5]]);
     if version != 0 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Unsupported IVF version"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Unsupported IVF version",
+        ));
     }
-    
+
     // Check codec "AV01"
     if &header[8..12] != b"AV01" {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Not an AV1 IVF file"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Not an AV1 IVF file",
+        ));
     }
-    
+
     Ok(IvfHeader {
         width: u16::from_le_bytes([header[12], header[13]]),
         height: u16::from_le_bytes([header[14], header[15]]),
@@ -52,21 +61,21 @@ pub fn parse_ivf_header<R: Read>(reader: &mut R) -> io::Result<IvfHeader> {
 
 pub fn parse_ivf_frame<R: Read>(reader: &mut R) -> io::Result<Option<IvfFrame>> {
     let mut frame_header = [0u8; 12];
-    
+
     // Try to read frame header, return None on EOF
     match reader.read_exact(&mut frame_header) {
         Ok(_) => {}
         Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(e) => return Err(e),
     }
-    
+
     let frame_size = u32::from_le_bytes([
         frame_header[0],
         frame_header[1],
         frame_header[2],
         frame_header[3],
     ]) as usize;
-    
+
     let timestamp = u64::from_le_bytes([
         frame_header[4],
         frame_header[5],
@@ -77,21 +86,21 @@ pub fn parse_ivf_frame<R: Read>(reader: &mut R) -> io::Result<Option<IvfFrame>> 
         frame_header[10],
         frame_header[11],
     ]);
-    
+
     let mut data = vec![0u8; frame_size];
     reader.read_exact(&mut data)?;
-    
+
     Ok(Some(IvfFrame { data, timestamp }))
 }
 
 pub fn parse_all_frames<R: Read>(reader: &mut R) -> io::Result<Vec<IvfFrame>> {
     // Skip IVF header
     parse_ivf_header(reader)?;
-    
+
     let mut frames = Vec::new();
     while let Some(frame) = parse_ivf_frame(reader)? {
         frames.push(frame);
     }
-    
+
     Ok(frames)
 }

@@ -19,7 +19,6 @@ use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
 
-
 #[cfg(target_arch = "x86_64")]
 use archmage::{arcane, Desktop64, SimdToken};
 
@@ -1790,8 +1789,7 @@ fn fgy_inner_8bpc(
                 let blended = blended.clamp(-128, 127);
                 let sc = scaling[sv] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                dst[base + x] =
-                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
+                dst[base + x] = ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
             }
 
             // SIMD for the rest
@@ -1824,8 +1822,7 @@ fn fgy_inner_8bpc(
                 let blended = blended.clamp(-128, 127);
                 let sc = scaling[sv] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                dst[base + x] =
-                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
+                dst[base + x] = ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
             }
 
             // Corner overlap (both x and y)
@@ -1833,8 +1830,8 @@ fn fgy_inner_8bpc(
                 let sv = src[base + x] as usize;
 
                 let top = grain_lut[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
-                let old_top = grain_lut[prev_offy + y + FG_BLOCK_SIZE]
-                    [prev_offx + x + FG_BLOCK_SIZE] as i32;
+                let old_top =
+                    grain_lut[prev_offy + y + FG_BLOCK_SIZE][prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let top = round2(old_top * W[x][0] + top * W[x][1], 5).clamp(-128, 127);
 
                 let grain = grain_lut[offy + y][offx + x] as i32;
@@ -1844,8 +1841,7 @@ fn fgy_inner_8bpc(
                 let blended = round2(top * W[y][0] + grain * W[y][1], 5).clamp(-128, 127);
                 let sc = scaling[sv] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                dst[base + x] =
-                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
+                dst[base + x] = ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
             }
         }
     }
@@ -1890,9 +1886,7 @@ fn fgy_inner_16bpc(
     let min_vec = _mm256_set1_epi16(min_value as i16);
     let max_vec = _mm256_set1_epi16(max_value as i16);
 
-    let row_off = |y: usize| -> usize {
-        (y as isize * stride_u16) as usize
-    };
+    let row_off = |y: usize| -> usize { (y as isize * stride_u16) as usize };
 
     for bx in (0..pw).step_by(FG_BLOCK_SIZE) {
         let bw = cmp::min(FG_BLOCK_SIZE, pw - bx);
@@ -1937,11 +1931,11 @@ fn fgy_inner_16bpc(
                 let sv = src[base + x] as usize;
                 let grain = grain_lut[offy + y][offx + x] as i32;
                 let old = grain_lut[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
-                let blended = round2(old * W[x][0] + grain * W[x][1], 5).clamp(grain_min, grain_max);
+                let blended =
+                    round2(old * W[x][0] + grain * W[x][1], 5).clamp(grain_min, grain_max);
                 let sc = scaling[cmp::min(sv, bitdepth_max as usize)] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                dst[base + x] =
-                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
+                dst[base + x] = ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
             }
 
             // SIMD 16 pixels at a time
@@ -1962,7 +1956,8 @@ fn fgy_inner_16bpc(
                 let result = _mm256_add_epi16(src_vec, noise);
                 let result = _mm256_max_epi16(result, min_vec);
                 let result = _mm256_min_epi16(result, max_vec);
-                let dst_chunk: &mut [u16; 16] = (&mut dst[base + x..base + x + 16]).try_into().unwrap();
+                let dst_chunk: &mut [u16; 16] =
+                    (&mut dst[base + x..base + x + 16]).try_into().unwrap();
                 safe_simd::_mm256_storeu_si256(dst_chunk, result);
                 x += 16;
             }
@@ -1973,8 +1968,7 @@ fn fgy_inner_16bpc(
                 let grain = grain_lut[offy + y][offx + x] as i32;
                 let sc = scaling[sv] as i32;
                 let noise = round2(sc * grain, scaling_shift);
-                dst[base + x] =
-                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
+                dst[base + x] = ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
                 x += 1;
             }
         }
@@ -1987,29 +1981,29 @@ fn fgy_inner_16bpc(
                 let sv = cmp::min(src[base + x] as usize, bitdepth_max as usize);
                 let grain = grain_lut[offy + y][offx + x] as i32;
                 let old = grain_lut[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
-                let blended = round2(old * W[y][0] + grain * W[y][1], 5).clamp(grain_min, grain_max);
+                let blended =
+                    round2(old * W[y][0] + grain * W[y][1], 5).clamp(grain_min, grain_max);
                 let sc = scaling[sv] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                dst[base + x] =
-                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
+                dst[base + x] = ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
             }
 
             for x in 0..xstart {
                 let sv = cmp::min(src[base + x] as usize, bitdepth_max as usize);
                 let top = grain_lut[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
-                let old_top = grain_lut[prev_offy + y + FG_BLOCK_SIZE]
-                    [prev_offx + x + FG_BLOCK_SIZE] as i32;
+                let old_top =
+                    grain_lut[prev_offy + y + FG_BLOCK_SIZE][prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let top = round2(old_top * W[x][0] + top * W[x][1], 5).clamp(grain_min, grain_max);
 
                 let grain = grain_lut[offy + y][offx + x] as i32;
                 let old = grain_lut[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let grain = round2(old * W[x][0] + grain * W[x][1], 5).clamp(grain_min, grain_max);
 
-                let blended = round2(top * W[y][0] + grain * W[y][1], 5).clamp(grain_min, grain_max);
+                let blended =
+                    round2(top * W[y][0] + grain * W[y][1], 5).clamp(grain_min, grain_max);
                 let sc = scaling[sv] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                dst[base + x] =
-                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
+                dst[base + x] = ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
             }
         }
     }
@@ -2150,8 +2144,8 @@ fn fguv_inner_safe_8bpc(
             for x in 0..xstart {
                 let grain = grain_lut[offy + y][offx + x] as i32;
                 let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                let blended = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5)
-                    .clamp(grain_min, grain_max);
+                let blended =
+                    round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
                 dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
 
@@ -2168,26 +2162,46 @@ fn fguv_inner_safe_8bpc(
 
                 for i in 0..8 {
                     sc_lo_bytes[i * 2] = compute_uv_scaling_val_safe(
-                        src[base + x + i], luma, luma_base + ((x + i) << sx),
-                        is_sx, data, uv, scaling,
+                        src[base + x + i],
+                        luma,
+                        luma_base + ((x + i) << sx),
+                        is_sx,
+                        data,
+                        uv,
+                        scaling,
                     );
                 }
                 for i in 0..8 {
                     sc_lo_bytes[16 + i * 2] = compute_uv_scaling_val_safe(
-                        src[base + x + 16 + i], luma, luma_base + ((x + 16 + i) << sx),
-                        is_sx, data, uv, scaling,
+                        src[base + x + 16 + i],
+                        luma,
+                        luma_base + ((x + 16 + i) << sx),
+                        is_sx,
+                        data,
+                        uv,
+                        scaling,
                     );
                 }
                 for i in 0..8 {
                     sc_hi_bytes[i * 2] = compute_uv_scaling_val_safe(
-                        src[base + x + 8 + i], luma, luma_base + ((x + 8 + i) << sx),
-                        is_sx, data, uv, scaling,
+                        src[base + x + 8 + i],
+                        luma,
+                        luma_base + ((x + 8 + i) << sx),
+                        is_sx,
+                        data,
+                        uv,
+                        scaling,
                     );
                 }
                 for i in 0..8 {
                     sc_hi_bytes[16 + i * 2] = compute_uv_scaling_val_safe(
-                        src[base + x + 24 + i], luma, luma_base + ((x + 24 + i) << sx),
-                        is_sx, data, uv, scaling,
+                        src[base + x + 24 + i],
+                        luma,
+                        luma_base + ((x + 24 + i) << sx),
+                        is_sx,
+                        data,
+                        uv,
+                        scaling,
                     );
                 }
 
@@ -2213,7 +2227,8 @@ fn fguv_inner_safe_8bpc(
                 let result = _mm256_max_epu8(result, min_vec);
                 let result = _mm256_min_epu8(result, max_vec);
 
-                let dst_arr: &mut [u8; 32] = (&mut dst[base + x..base + x + 32]).try_into().unwrap();
+                let dst_arr: &mut [u8; 32] =
+                    (&mut dst[base + x..base + x + 32]).try_into().unwrap();
                 safe_simd::_mm256_storeu_si256(dst_arr, result);
                 x += 32;
             }
@@ -2234,8 +2249,8 @@ fn fguv_inner_safe_8bpc(
             for x in xstart..bw {
                 let grain = grain_lut[offy + y][offx + x] as i32;
                 let old = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
-                let blended = round2(old * W[sy][y][0] + grain * W[sy][y][1], 5)
-                    .clamp(grain_min, grain_max);
+                let blended =
+                    round2(old * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
                 dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
 
@@ -2248,11 +2263,11 @@ fn fguv_inner_safe_8bpc(
 
                 let grain = grain_lut[offy + y][offx + x] as i32;
                 let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                let grain = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5)
-                    .clamp(grain_min, grain_max);
+                let grain =
+                    round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
 
-                let blended = round2(top * W[sy][y][0] + grain * W[sy][y][1], 5)
-                    .clamp(grain_min, grain_max);
+                let blended =
+                    round2(top * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
                 dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
         }
@@ -2369,8 +2384,8 @@ fn fguv_inner_safe_16bpc(
             for x in 0..xstart {
                 let grain = grain_lut[offy + y][offx + x] as i32;
                 let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                let blended = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5)
-                    .clamp(grain_min, grain_max);
+                let blended =
+                    round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
                 dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
 
@@ -2387,8 +2402,8 @@ fn fguv_inner_safe_16bpc(
             for x in xstart..bw {
                 let grain = grain_lut[offy + y][offx + x] as i32;
                 let old = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
-                let blended = round2(old * W[sy][y][0] + grain * W[sy][y][1], 5)
-                    .clamp(grain_min, grain_max);
+                let blended =
+                    round2(old * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
                 dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
 
@@ -2401,11 +2416,11 @@ fn fguv_inner_safe_16bpc(
 
                 let grain = grain_lut[offy + y][offx + x] as i32;
                 let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                let grain = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5)
-                    .clamp(grain_min, grain_max);
+                let grain =
+                    round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
 
-                let blended = round2(top * W[sy][y][0] + grain * W[sy][y][1], 5)
-                    .clamp(grain_min, grain_max);
+                let blended =
+                    round2(top * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
                 dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
         }

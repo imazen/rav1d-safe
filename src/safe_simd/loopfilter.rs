@@ -1357,8 +1357,9 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             // Safe slice access: get a mutable guard covering the full filter reach
             let start_pixel = dst.offset.wrapping_sub(reach_before);
             let total_pixels = reach_before + reach_after;
-            let mut buf_guard =
-                dst.data.slice_mut::<BitDepth8, _>((start_pixel.., ..total_pixels));
+            let mut buf_guard = dst
+                .data
+                .slice_mut::<BitDepth8, _>((start_pixel.., ..total_pixels));
             let buf: &mut [u8] = &mut *buf_guard;
             let base = reach_before;
 
@@ -1419,8 +1420,9 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             // Safe slice access: get a mutable guard covering the full filter reach
             let start_pixel = dst.offset.wrapping_sub(reach_before);
             let total_pixels = reach_before + reach_after;
-            let mut buf_guard =
-                dst.data.slice_mut::<BitDepth16, _>((start_pixel.., ..total_pixels));
+            let mut buf_guard = dst
+                .data
+                .slice_mut::<BitDepth16, _>((start_pixel.., ..total_pixels));
             let buf: &mut [u16] = &mut *buf_guard;
             let base = reach_before;
 
