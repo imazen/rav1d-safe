@@ -529,11 +529,16 @@ impl<'a> Planes8<'a> {
             .expect("missing picture data");
         let guard = data.data[0].slice::<BitDepth8, _>(..);
 
+        let stride = self.frame.inner.stride[0] as usize;
+        // Calculate actual height from buffer size to handle cases where
+        // the reported height exceeds the allocated buffer (e.g., with gainmaps)
+        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+
         PlaneView8 {
             guard,
-            stride: self.frame.inner.stride[0] as usize,
+            stride,
             width: self.frame.width() as usize,
-            height: self.frame.height() as usize,
+            height: actual_height,
         }
     }
 
@@ -543,7 +548,7 @@ impl<'a> Planes8<'a> {
             return None;
         }
 
-        let (w, h) = self.chroma_dimensions();
+        let (w, _) = self.chroma_dimensions();
         let data = self
             .frame
             .inner
@@ -552,11 +557,15 @@ impl<'a> Planes8<'a> {
             .expect("missing picture data");
         let guard = data.data[1].slice::<BitDepth8, _>(..);
 
+        let stride = self.frame.inner.stride[1] as usize;
+        // Calculate actual height from buffer size
+        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+
         Some(PlaneView8 {
             guard,
-            stride: self.frame.inner.stride[1] as usize,
+            stride,
             width: w,
-            height: h,
+            height: actual_height,
         })
     }
 
@@ -566,7 +575,7 @@ impl<'a> Planes8<'a> {
             return None;
         }
 
-        let (w, h) = self.chroma_dimensions();
+        let (w, _) = self.chroma_dimensions();
         let data = self
             .frame
             .inner
@@ -575,11 +584,15 @@ impl<'a> Planes8<'a> {
             .expect("missing picture data");
         let guard = data.data[2].slice::<BitDepth8, _>(..);
 
+        let stride = self.frame.inner.stride[1] as usize;
+        // Calculate actual height from buffer size
+        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+
         Some(PlaneView8 {
             guard,
-            stride: self.frame.inner.stride[1] as usize,
+            stride,
             width: w,
-            height: h,
+            height: actual_height,
         })
     }
 
@@ -611,11 +624,16 @@ impl<'a> Planes16<'a> {
             .expect("missing picture data");
         let guard = data.data[0].slice::<BitDepth16, _>(..);
 
+        let stride = self.frame.inner.stride[0] as usize;
+        // Calculate actual height from buffer size to handle cases where
+        // the reported height exceeds the allocated buffer (e.g., with gainmaps)
+        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+
         PlaneView16 {
             guard,
-            stride: self.frame.inner.stride[0] as usize,
+            stride,
             width: self.frame.width() as usize,
-            height: self.frame.height() as usize,
+            height: actual_height,
         }
     }
 
@@ -625,7 +643,7 @@ impl<'a> Planes16<'a> {
             return None;
         }
 
-        let (w, h) = self.chroma_dimensions();
+        let (w, _) = self.chroma_dimensions();
         let data = self
             .frame
             .inner
@@ -634,11 +652,15 @@ impl<'a> Planes16<'a> {
             .expect("missing picture data");
         let guard = data.data[1].slice::<BitDepth16, _>(..);
 
+        let stride = self.frame.inner.stride[1] as usize;
+        // Calculate actual height from buffer size
+        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+
         Some(PlaneView16 {
             guard,
-            stride: self.frame.inner.stride[1] as usize,
+            stride,
             width: w,
-            height: h,
+            height: actual_height,
         })
     }
 
@@ -648,7 +670,7 @@ impl<'a> Planes16<'a> {
             return None;
         }
 
-        let (w, h) = self.chroma_dimensions();
+        let (w, _) = self.chroma_dimensions();
         let data = self
             .frame
             .inner
@@ -657,11 +679,15 @@ impl<'a> Planes16<'a> {
             .expect("missing picture data");
         let guard = data.data[2].slice::<BitDepth16, _>(..);
 
+        let stride = self.frame.inner.stride[1] as usize;
+        // Calculate actual height from buffer size
+        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+
         Some(PlaneView16 {
             guard,
-            stride: self.frame.inner.stride[1] as usize,
+            stride,
             width: w,
-            height: h,
+            height: actual_height,
         })
     }
 
