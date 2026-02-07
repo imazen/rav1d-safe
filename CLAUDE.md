@@ -365,3 +365,90 @@ Build a test binary or integration test that:
 - Use `#[target_feature(enable = "avx2")]` for FFI wrappers
 - Shift intrinsics require const generics: `_mm256_srai_epi32::<11>(sum)`
 - Mark inner implementations `unsafe fn` with explicit `unsafe {}` blocks
+
+## Known Issues - Managed API
+
+### Critical: Dav1dDataGuard Missing (Memory Leak on Panic)
+
+**Status:** 🔴 **MUST FIX before production**
+
+**Problem:** `Dav1dData` does not implement `Drop`. If `decode()` panics after `dav1d_data_wrap` but before consuming all data, the internal `RawCArc` reference leaks.
+
+**Location:** `src/managed.rs` - `Decoder::decode()` method
+
+**Solution:** Implement RAII guard:
+
+```rust
+struct Dav1dDataGuard(Dav1dData);
+
+impl Dav1dDataGuard {
+    fn new(data: &[u8]) -> Result<Self, Error> {
+        let mut dav1d_data = Dav1dData::default();
+        unsafe {
+            let result = dav1d_data_wrap(
+                NonNull::new(&mut dav1d_data),
+                NonNull::new(data.as_ptr() as *mut u8),
+                data.len(),
+                Some(null_free),
+                None,
+            );
+            if result.0 < 0 {
+                return Err(Error::DecodeFailed(result.0));
+            }
+        }
+        Ok(Self(dav1d_data))
+    }
+    
+    fn as_mut(&mut self) -> &mut Dav1dData {
+        &mut self.0
+    }
+}
+
+impl Drop for Dav1dDataGuard {
+    fn drop(&mut self) {
+        unsafe {
+            dav1d_data_unref(NonNull::new(&mut self.0));
+        }
+    }
+}
+```
+
+**Testing:**
+- Add panic safety test that panics during decode
+- Run with LeakSanitizer (LSAN)
+- Verify no leaks with valgrind
+
+### Medium Priority: Memory Leak Tests
+
+**Status:** ⚠️ Recommended
+
+**Need:**
+1. Valgrind/ASAN integration in CI
+2. Drop tests verifying memory returns to baseline
+3. Panic safety tests
+
+**Example test:**
+```rust
+#[test]
+fn test_decoder_drop_frees_memory() {
+    let initial = get_memory_usage();
+    {
+        let mut decoder = Decoder::new().unwrap();
+        decoder.decode(test_data).unwrap();
+    }
+    let final_usage = get_memory_usage();
+    assert_eq!(initial, final_usage, "memory leaked");
+}
+```
+
+### Low Priority: Thread Pool Cleanup Audit
+
+**Status:** ℹ️ Verify
+
+**Need:** Audit `Rav1dContext` thread pool cleanup logic
+- Check `Arc<TaskThreadData>` drop implementation  
+- Verify worker threads join properly on context drop
+- No hanging threads or leaked thread handles
+
+**Location:** `src/internal.rs` - `Rav1dContext` drop logic
+
