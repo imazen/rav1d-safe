@@ -361,11 +361,6 @@ impl Decoder {
     }
 }
 
-impl Drop for Decoder {
-    fn drop(&mut self) {
-        crate::src::lib::rav1d_close(self.ctx.clone());
-    }
-}
 
 /// A decoded AV1 frame with zero-copy access to pixel data
 ///
@@ -987,3 +982,4 @@ impl MasteringDisplay {
         ]
     }
 }
+

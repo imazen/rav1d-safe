@@ -341,7 +341,7 @@ pub(crate) struct Rav1dContextRefs {
 
 pub(crate) enum Rav1dContextTaskType {
     /// Worker thread in a multi-threaded context.
-    Worker(JoinHandle<()>),
+    Worker(Option<JoinHandle<()>>),
     /// Main thread in a single-threaded context. There are no worker threads so
     /// we need to store a Rav1dTaskContext for work that requires it.
     // This Rav1dTaskContext is heap-allocated because we don't want to bloat
@@ -444,6 +444,7 @@ unsafe impl Send for Rav1dContext {}
 // SAFETY: TODO(SJC): Remove when Rav1dContext is thread-safe.
 // Thread safety is managed externally by the caller's API contract.
 unsafe impl Sync for Rav1dContext {}
+
 
 #[derive(Default)]
 #[repr(C)]

@@ -248,7 +248,7 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
                     .name(format!("rav1d-worker-{n}"))
                     .spawn(|| rav1d_worker_task(thread_data_copy))
                     .unwrap();
-                Rav1dContextTaskType::Worker(handle)
+                Rav1dContextTaskType::Worker(Some(handle))
             } else {
                 Rav1dContextTaskType::Single(Mutex::new(Box::new(Rav1dTaskContext::new(
                     thread_data_copy,
@@ -274,7 +274,9 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
         task_thread,
         state,
         tc,
-        ..Default::default()
+        flush: Default::default(),
+        dsp: Default::default(),
+        picture_pool: Default::default(),
     };
 
     // TODO fallible allocation
@@ -290,7 +292,7 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
     let c = c;
 
     for tc in c.tc.iter() {
-        if let Rav1dContextTaskType::Worker(handle) = &tc.task {
+        if let Rav1dContextTaskType::Worker(Some(handle)) = &tc.task {
             // Unpark each thread once we set its `thread_data.c`.
             *tc.thread_data.c.lock() = Some(Arc::clone(&c));
             handle.thread().unpark();
@@ -746,7 +748,7 @@ pub unsafe extern "C" fn dav1d_close(c_out: Option<NonNull<Option<Dav1dContext>>
 }
 
 impl Rav1dContext {
-    fn tell_worker_threads_to_die(&self) {
+    pub(crate) fn tell_worker_threads_to_die(&self) {
         if self.tc.is_empty() {
             return;
         }
