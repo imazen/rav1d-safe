@@ -208,6 +208,90 @@ if let Some(frame) = decoder.decode(obu_data)? {
 
 **Tests:** `tests/managed_api_test.rs` (decoder creation, settings, empty data)
 
+## CI & Testing Infrastructure
+
+### GitHub Actions Workflows (.github/workflows/ci.yml)
+
+**Build Matrix:**
+- OS: ubuntu-latest, windows-latest, macos-latest, ubuntu-24.04-arm
+- Features: `bitdepth_8,bitdepth_16` (safe-simd) and `asm,bitdepth_8,bitdepth_16`
+- Builds: debug + release
+- Tests: unit tests + integration tests (with test vectors)
+
+**Quality Checks:**
+- Clippy: `-D warnings` on all targets
+- Format: `cargo fmt --check`
+- Cross-compile: aarch64-unknown-linux-gnu, x86_64-unknown-linux-musl
+- Coverage: `cargo-llvm-cov` → codecov upload
+
+**Test Vectors:**
+- Downloads dav1d-test-data repository (~160k+ test files)
+- Caches in `target/test-vectors/`
+- Organized: 8-bit/, 10-bit/, 12-bit/, oss-fuzz/
+- Includes: conformance, film grain, HDR, argon samples
+
+### Test Infrastructure
+
+**Integration Tests (tests/integration_decode.rs):**
+- `test_decode_real_bitstream` - decode OBU files via managed API
+- `test_decode_hdr_metadata` - extract HDR metadata (CLL, mastering display)
+- Uses dav1d-test-data vectors
+- Marked `#[ignore]` until OBU format issue resolved
+
+**Test Vector Management (tests/test_vectors.rs):**
+- Download/cache infrastructure
+- SHA256 verification support
+- Extensible for multiple sources (AOM, dav1d, conformance)
+
+**Download Script (scripts/download-test-vectors.sh):**
+- Clones dav1d-test-data repository
+- Future: AOM test data from Google Cloud Storage
+- Cached downloads with size reporting
+
+### Examples
+
+**examples/managed_decode.rs:**
+- Full managed API demonstration
+- Decodes IVF/OBU files
+- Displays frame info, color metadata, HDR data
+- Sample pixel access (8-bit and 16-bit)
+
+### Justfile Commands
+
+```bash
+just build               # Safe-SIMD build
+just build-asm           # ASM build
+just test                # Run tests
+just download-vectors    # Fetch test vectors
+just test-integration    # Integration tests with vectors
+just clippy              # Lint checks
+just fmt / fmt-check     # Format code / check formatting
+just check               # All checks (fmt, clippy, test)
+just cross-aarch64       # Cross-compile check
+just doc                 # Generate and open docs
+just coverage            # HTML coverage report
+just ci                  # Run all CI checks locally
+```
+
+### Current Status
+
+- ✅ CI workflow configured (not yet pushed to GitHub)
+- ✅ Test vectors downloaded (dav1d-test-data cloned)
+- ✅ Integration test infrastructure in place
+- ✅ Managed API unit tests pass (3/3)
+- ⚠️ Integration tests pending OBU format investigation
+- ✅ Justfile for common tasks
+- ✅ Example demonstrating managed API
+
+### TODO: Decode Parity Testing
+
+Need to investigate OBU decoding via managed API:
+- Current status: EINVAL errors when feeding OBU data
+- May need IVF parser or sequence header handling
+- Compare with C API decode path
+- Consider using existing test infrastructure from rav1d/dav1d
+
+
 ## TODO: CI & Parity Testing
 
 ### GitHub Actions Workflows
