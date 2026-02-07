@@ -251,6 +251,11 @@ impl Rav1dPictureDataComponent {
         ))
     }
 
+    /// Length in number of [`BitDepth::Pixel`]s.
+    pub fn pixel_len<BD: BitDepth>(&self) -> usize {
+        self.0.len() / mem::size_of::<BD::Pixel>()
+    }
+
     pub fn pixel_offset<BD: BitDepth>(&self) -> usize {
         let stride = self.stride();
         if stride >= 0 {
@@ -386,6 +391,83 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         len: usize,
     ) -> DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]> {
         self.data.slice_mut::<BD, _>((self.offset.., ..len))
+    }
+
+    /// Create a tracked mutable guard covering a strided w×h pixel region.
+    ///
+    /// Handles both positive and negative strides. The returned guard covers
+    /// all pixels that would be accessed by iterating h rows with the given
+    /// pixel stride, each row being w pixels wide.
+    ///
+    /// Returns `(guard, base_offset_within_guard)` where `base_offset_within_guard`
+    /// is the index within the guard's slice that corresponds to `self.offset`.
+    #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn strided_slice_mut<BD: BitDepth>(
+        &self,
+        w: usize,
+        h: usize,
+    ) -> (
+        DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
+        usize,
+    ) {
+        let pxstride = self.data.pixel_stride::<BD>();
+        if pxstride >= 0 {
+            let total = if h == 0 { 0 } else { (h - 1) * pxstride as usize + w };
+            let guard = self.data.slice_mut::<BD, _>((self.offset.., ..total));
+            (guard, 0)
+        } else {
+            let abs_stride = pxstride.unsigned_abs();
+            let total = if h == 0 { 0 } else { (h - 1) * abs_stride + w };
+            let start = self.offset - (h - 1) * abs_stride;
+            let guard = self.data.slice_mut::<BD, _>((start.., ..total));
+            // base_offset = how far into the guard our logical row 0 is
+            (guard, (h - 1) * abs_stride)
+        }
+    }
+
+    /// Create a tracked immutable guard covering a strided w×h pixel region.
+    #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn strided_slice<BD: BitDepth>(
+        &self,
+        w: usize,
+        h: usize,
+    ) -> (
+        DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
+        usize,
+    ) {
+        let pxstride = self.data.pixel_stride::<BD>();
+        if pxstride >= 0 {
+            let total = if h == 0 { 0 } else { (h - 1) * pxstride as usize + w };
+            let guard = self.data.slice::<BD, _>((self.offset.., ..total));
+            (guard, 0)
+        } else {
+            let abs_stride = pxstride.unsigned_abs();
+            let total = if h == 0 { 0 } else { (h - 1) * abs_stride + w };
+            let start = self.offset - (h - 1) * abs_stride;
+            let guard = self.data.slice::<BD, _>((start.., ..total));
+            (guard, (h - 1) * abs_stride)
+        }
+    }
+
+    /// Create a tracked mutable guard covering the entire picture component.
+    ///
+    /// Returns `(guard, offset_within_guard)` where the offset corresponds to
+    /// this PicOffset's logical position within the full guard.
+    /// Use this when the access pattern is complex (e.g., loopfilter accessing
+    /// negative offsets from the base pointer).
+    #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn full_guard_mut<BD: BitDepth>(
+        &self,
+    ) -> (
+        DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
+        usize,
+    ) {
+        let total_pixels = self.data.pixel_len::<BD>();
+        let guard = self.data.slice_mut::<BD, _>((0.., ..total_pixels));
+        (guard, self.offset)
     }
 }
 

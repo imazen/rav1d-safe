@@ -131,3 +131,39 @@ pub fn reinterpret_ref<Src: AsBytes, Dst: FromBytes>(src: &Src) -> Option<&Dst> 
     let r: Ref<&[u8], Dst> = Ref::new(bytes)?;
     Some(r.into_ref())
 }
+
+/// Convert a raw pixel pointer + stride into a `(&mut [T], base_offset)` pair.
+///
+/// The returned slice covers the entire strided w×h region.
+/// `base_offset` is the index within the slice corresponding to `ptr` (row 0).
+///
+/// For positive strides: slice starts at `ptr`, `base_offset = 0`.
+/// For negative strides: slice starts at `ptr + (h-1)*stride` (the lowest address),
+///   and `base_offset = (h-1) * abs(stride)`.
+///
+/// # Safety
+///
+/// - `ptr` must be valid for the strided w×h region
+/// - For positive stride: `ptr[0 .. (h-1)*stride + w]` must be valid
+/// - For negative stride: `ptr[(h-1)*stride .. w]` must be valid
+#[cfg(feature = "asm")]
+#[inline(always)]
+pub unsafe fn strided_slice_from_ptr<'a, T>(
+    ptr: *mut T,
+    stride: isize,
+    w: usize,
+    h: usize,
+) -> (&'a mut [T], usize) {
+    if h == 0 {
+        return (&mut [], 0);
+    }
+    let abs_stride = stride.unsigned_abs();
+    let total = (h - 1) * abs_stride + w;
+    if stride >= 0 {
+        (std::slice::from_raw_parts_mut(ptr, total), 0)
+    } else {
+        let base = (h - 1) * abs_stride;
+        let start = ptr.offset(-((base) as isize));
+        (std::slice::from_raw_parts_mut(start, total), base)
+    }
+}
