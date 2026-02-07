@@ -1578,10 +1578,13 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
 
     let w = w as usize;
     let h = h as usize;
-    let left_8 =
-        || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u8>]) };
-    let left_16 =
-        || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u16>]) };
+    use crate::src::safe_simd::pixel_access::reinterpret_slice;
+    let left_8 = || -> &[LeftPixelRow<u8>] {
+        reinterpret_slice(left).expect("BD::Pixel layout matches u8")
+    };
+    let left_16 = || -> &[LeftPixelRow<u16>] {
+        reinterpret_slice(left).expect("BD::Pixel layout matches u16")
+    };
 
     // Safe: AVX2 verified by CpuFlags check above, summon() does runtime check
     let token = Desktop64::summon().expect("AVX2 required (verified by CpuFlags)");

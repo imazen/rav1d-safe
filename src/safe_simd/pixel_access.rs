@@ -6,6 +6,8 @@
 
 #![cfg_attr(not(feature = "unchecked"), deny(unsafe_code))]
 
+use zerocopy::{AsBytes, FromBytes, Ref};
+
 /// Get an immutable slice from a buffer at a given offset.
 #[inline(always)]
 pub fn row_slice(buf: &[u8], offset: usize, len: usize) -> &[u8] {
@@ -95,4 +97,27 @@ pub fn idx_mut<T>(buf: &mut [T], i: usize) -> &mut T {
     }
     #[cfg(not(feature = "unchecked"))]
     &mut buf[i]
+}
+
+/// Safely reinterpret a slice of `[Src; N]` as a slice of `[Dst; N]`
+/// when both types have the same size and both implement zerocopy traits.
+///
+/// This is used to convert `&[LeftPixelRow<BD::Pixel>]` to `&[LeftPixelRow<u8>]`
+/// or `&[LeftPixelRow<u16>]` in dispatch functions where the BPC is known at runtime.
+///
+/// Returns None if the byte layout doesn't match (wrong element size).
+#[inline(always)]
+pub fn reinterpret_slice<Src: AsBytes, Dst: FromBytes>(src: &[Src]) -> Option<&[Dst]> {
+    let bytes = src.as_bytes();
+    let r: Ref<&[u8], [Dst]> = Ref::new_slice(bytes)?;
+    Some(r.into_slice())
+}
+
+/// Safely reinterpret a fixed-size array reference using zerocopy.
+/// The source and destination must have the same byte size.
+#[inline(always)]
+pub fn reinterpret_ref<Src: AsBytes, Dst: FromBytes>(src: &Src) -> Option<&Dst> {
+    let bytes = src.as_bytes();
+    let r: Ref<&[u8], Dst> = Ref::new(bytes)?;
+    Some(r.into_ref())
 }

@@ -1469,7 +1469,9 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
     // Left pointer cast is safe because LeftPixelRow2px<BD::Pixel> has same layout for u8/u16.
     match (BD::BPC, variant) {
         (BPC::BPC8, 0) => {
-            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]) };
+            let left: &[LeftPixelRow2px<u8>; 8] =
+                crate::src::safe_simd::pixel_access::reinterpret_ref(left)
+                    .expect("BD::Pixel layout matches u8");
             cdef_filter_8x8_8bpc_avx2_inner(
                 dst,
                 left,
@@ -1483,7 +1485,9 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
             );
         }
         (BPC::BPC8, 1) => {
-            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]) };
+            let left: &[LeftPixelRow2px<u8>; 8] =
+                crate::src::safe_simd::pixel_access::reinterpret_ref(left)
+                    .expect("BD::Pixel layout matches u8");
             cdef_filter_4x8_8bpc_avx2_inner(
                 dst,
                 left,
@@ -1497,7 +1501,9 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
             );
         }
         (BPC::BPC8, _) => {
-            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]) };
+            let left: &[LeftPixelRow2px<u8>; 8] =
+                crate::src::safe_simd::pixel_access::reinterpret_ref(left)
+                    .expect("BD::Pixel layout matches u8");
             cdef_filter_4x4_8bpc_avx2_inner(
                 dst,
                 left,
@@ -1511,7 +1517,9 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
             );
         }
         (BPC::BPC16, 0) => {
-            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]) };
+            let left: &[LeftPixelRow2px<u16>; 8] =
+                crate::src::safe_simd::pixel_access::reinterpret_ref(left)
+                    .expect("BD::Pixel layout matches u16");
             cdef_filter_8x8_16bpc_avx2_inner(
                 dst,
                 left,
@@ -1526,7 +1534,9 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
             );
         }
         (BPC::BPC16, 1) => {
-            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]) };
+            let left: &[LeftPixelRow2px<u16>; 8] =
+                crate::src::safe_simd::pixel_access::reinterpret_ref(left)
+                    .expect("BD::Pixel layout matches u16");
             cdef_filter_4x8_16bpc_avx2_inner(
                 dst,
                 left,
@@ -1541,7 +1551,9 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
             );
         }
         (BPC::BPC16, _) => {
-            let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]) };
+            let left: &[LeftPixelRow2px<u16>; 8] =
+                crate::src::safe_simd::pixel_access::reinterpret_ref(left)
+                    .expect("BD::Pixel layout matches u16");
             cdef_filter_4x4_16bpc_avx2_inner(
                 dst,
                 left,
