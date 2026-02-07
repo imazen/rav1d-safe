@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 use crate::include::common::attributes::clz;
 use crate::include::common::attributes::clzll;
 use crate::include::common::bitdepth::AsPrimitive;

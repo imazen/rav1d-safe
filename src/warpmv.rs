@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 use crate::include::common::intops::apply_sign;
 use crate::include::common::intops::apply_sign64;
 use crate::include::common::intops::iclip;

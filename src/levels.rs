@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::src::align::ArrayDefault;

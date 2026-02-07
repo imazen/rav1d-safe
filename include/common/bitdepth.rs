@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 use crate::include::common::intops::clip;
 use crate::src::align::Align16;
 use crate::src::align::Align8;

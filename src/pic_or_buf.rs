@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 use crate::src::disjoint_mut::AsMutPtr;
 use crate::src::disjoint_mut::DisjointMut;

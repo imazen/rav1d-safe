@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 use std::ffi::c_int;
 use std::ffi::c_uint;
 use strum::FromRepr;

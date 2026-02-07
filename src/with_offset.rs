@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 use crate::include::common::bitdepth::BitDepth;
 use crate::src::pixels::Pixels;
 use crate::src::strided::Strided;

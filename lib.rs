@@ -5,8 +5,9 @@
     feature(stdarch_riscv_feature_detection)
 )]
 // When neither `asm` nor `c-ffi` is enabled, deny unsafe code crate-wide.
-// Modules that encapsulate unsafe behind safe APIs get #[allow(unsafe_code)].
-// As modules are made fully safe, their #[allow] annotations should be removed.
+// 42 modules use #![forbid(unsafe_code)] (compiler-enforced, permanent).
+// 13 modules use conditional deny (safe when asm disabled).
+// Remaining modules with #[allow(unsafe_code)] encapsulate unsafe behind safe APIs.
 #![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
 #![allow(clippy::all)]
@@ -80,7 +81,6 @@ pub mod src {
     mod filmgrain;
     mod ipred;
     mod itx;
-    #[allow(unsafe_code)]
     mod lf_mask;
     mod loopfilter;
     mod looprestoration;

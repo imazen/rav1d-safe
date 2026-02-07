@@ -43,7 +43,7 @@
 //! # }
 //! ```
 
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use crate::include::common::bitdepth::{BitDepth16, BitDepth8};
 use crate::include::dav1d::data::Rav1dData;
