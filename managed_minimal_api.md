@@ -1070,3 +1070,59 @@ The managed API is **strictly safer** than direct C FFI:
 4. Integrate valgrind/ASAN into CI
 5. Document memory safety guarantees in rustdoc
 
+
+## Audit: Existing `mem::forget` Usage in rav1d-safe
+
+Searched codebase for all uses of `mem::forget()`:
+
+### 1. `src/picture.rs` - `dav1d_default_picture_alloc()`
+
+```rust
+// The caller will create the real `Rav1dPicture` from the `Dav1dPicture` fields set above,
+// so we don't want to drop the `Rav1dPicture` we created for convenience here.
+mem::forget(p);
+```
+
+**Status:** ✅ **Correct and necessary**
+
+**Context:** Picture allocator callback that transfers ownership from Rust to C FFI.
+- Creates temporary `Rav1dPicture` for size calculations
+- Writes data to C `Dav1dPicture` structure (`p_c`)
+- Must forget Rust struct to avoid double-free
+- Ownership transferred to caller via `allocator_data` field
+
+**Verdict:** Intentional, correct use of `forget` for FFI ownership transfer. Not a leak - the memory is managed via `allocator_data` field which has proper Drop cleanup.
+
+### 2. `src/c_arc.rs` - Comment only
+
+```rust
+// We don't call `Self::into_arc` since that's consuming,
+// so we'd have to `mem::forget` the `Arc`
+// and also do a redundant dereference.
+```
+
+**Status:** ✅ **Not actual code, just explaining why they DON'T use forget**
+
+**Verdict:** This is documentation of an alternative approach they chose NOT to take. No actual `mem::forget` call here.
+
+### 3. `include/dav1d/headers.rs` - Comment only
+
+```rust
+// if we add fields and forget to update them here.
+```
+
+**Status:** ✅ **English word "forget", not code**
+
+**Verdict:** Just a comment about maintaining code. No `mem::forget` call.
+
+## Summary of Audit
+
+**Total `mem::forget` calls found:** 1
+
+**All uses justified:** ✅ Yes
+
+The single use in `dav1d_default_picture_alloc()` is a correct FFI ownership transfer pattern. The memory is NOT leaked - it's transferred to the C structure's `allocator_data` field, which has Drop cleanup via `SendSyncNonNull::from_box`.
+
+**No problematic forget usage found.**
+
+The managed API proposal does not introduce any new `forget` calls. The only leak scenario from `forget` would be user code explicitly calling `std::mem::forget(decoder)` or `std::mem::forget(frame)`, which is expected Rust behavior.
