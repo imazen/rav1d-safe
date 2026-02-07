@@ -1,67 +1,75 @@
 # rav1d-safe justfile
 
-# Lint allows for the ported codebase
-asm_allows := "-A dead-code -A unused-imports -A unpredictable-function-pointer-comparisons -A mismatched-lifetime-syntaxes"
-safe_allows := "-A dead-code -A unused-imports -A unused-variables -A unused-mut -A unused-parens -A private-interfaces -A mismatched-lifetime-syntaxes"
+# Default recipe - show available commands
+default:
+    @just --list
 
-# ── Build ───────────────────────────────────────────────────────────
+# Build without ASM (pure safe Rust + SIMD)
+build:
+    cargo build --no-default-features --features "bitdepth_8,bitdepth_16" --release
 
-# Build safe-simd (no asm)
-build-safe:
-    RUSTFLAGS="-D warnings {{safe_allows}}" cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16"
-
-# Build with asm
+# Build with ASM (original rav1d behavior)
 build-asm:
-    RUSTFLAGS="-D warnings {{asm_allows}}" cargo build --release --features "asm,bitdepth_8,bitdepth_16"
+    cargo build --features "asm,bitdepth_8,bitdepth_16" --release
 
-# Build safe-simd + c-ffi
-build-cffi:
-    RUSTFLAGS="-D warnings {{safe_allows}}" cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"
-
-# ── Test ────────────────────────────────────────────────────────────
-
-# Run unit tests (safe-simd)
+# Run all tests
 test:
-    RUSTFLAGS="-D warnings {{safe_allows}}" cargo test --lib --release --no-default-features --features "bitdepth_8,bitdepth_16"
+    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release
 
-# Run unit tests (asm)
-test-asm:
-    RUSTFLAGS="-D warnings {{asm_allows}}" cargo test --lib --release --features "asm,bitdepth_8,bitdepth_16"
+# Download test vectors
+download-vectors:
+    bash scripts/download-test-vectors.sh
 
-# Run decode parity test with an IVF file
-# Usage: just test-decode /path/to/file.ivf
-test-decode ivf:
-    RUSTFLAGS="{{safe_allows}}" RAV1D_TEST_IVF={{ivf}} cargo test --lib --release --no-default-features --features "bitdepth_8,bitdepth_16" -- decode_test_ivf --nocapture
+# Run integration tests (requires test vectors)
+test-integration: download-vectors
+    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --test integration_decode -- --ignored
 
-# Run decode test with asm (reference)
-test-decode-asm ivf:
-    RUSTFLAGS="{{asm_allows}}" RAV1D_TEST_IVF={{ivf}} cargo test --lib --release --features "asm,bitdepth_8,bitdepth_16" -- decode_test_ivf --nocapture
-
-# ── Lint ────────────────────────────────────────────────────────────
-
-# Format check
-fmt:
-    cargo fmt --check
-
-# Format fix
-fmt-fix:
-    cargo fmt
-
-# Clippy (safe-simd)
+# Run clippy lints
 clippy:
-    cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" -- -D warnings {{safe_allows}}
+    cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
 
-# Clippy (asm)
-clippy-asm:
-    cargo clippy --features "asm,bitdepth_8,bitdepth_16" -- -D warnings {{asm_allows}}
+# Check code formatting
+fmt-check:
+    cargo fmt --all -- --check
 
-# ── Cross ───────────────────────────────────────────────────────────
+# Format code
+fmt:
+    cargo fmt --all
 
-# Cross-check aarch64
-check-aarch64:
-    RUSTFLAGS="-D warnings {{safe_allows}}" cargo check --target aarch64-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16"
+# Run all checks (fmt, clippy, test)
+check: fmt-check clippy test
 
-# ── CI (run everything) ────────────────────────────────────────────
+# Cross-compile for aarch64
+cross-aarch64:
+    cargo check --target aarch64-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16"
 
-# Run the full CI suite locally
-ci: fmt clippy clippy-asm build-safe build-asm build-cffi test test-asm check-aarch64
+# Generate documentation
+doc:
+    cargo doc --no-default-features --features "bitdepth_8,bitdepth_16" --no-deps --open
+
+# Clean build artifacts
+clean:
+    cargo clean
+
+# Benchmark via zenavif (requires zenavif in ../zenavif)
+bench-zenavif:
+    #!/usr/bin/env bash
+    cd ../zenavif || exit 1
+    touch src/lib.rs
+    cargo build --release --example decode_avif
+    echo "Running 20 decodes..."
+    time for i in {1..20}; do \
+        ./target/release/examples/decode_avif ../aom-decode/tests/test.avif /dev/null 2>/dev/null; \
+    done
+
+# Run managed API example
+example-managed:
+    cargo run --example managed_decode --no-default-features --features "bitdepth_8,bitdepth_16"
+
+# Coverage report
+coverage:
+    cargo llvm-cov --no-default-features --features "bitdepth_8,bitdepth_16" --html
+    @echo "Open target/llvm-cov/html/index.html"
+
+# Run CI checks locally
+ci: fmt-check clippy test test-integration
