@@ -1,0 +1,192 @@
+name: Test Vectors
+
+on:
+  # Run on push to main and PRs
+  push:
+    branches: [ main, feat/* ]
+  pull_request:
+    branches: [ main ]
+  # Allow manual trigger
+  workflow_dispatch:
+  # Run weekly to catch regressions
+  schedule:
+    - cron: '0 0 * * 0'  # Every Sunday at midnight
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-vectors:
+    name: Test Against AV1 Conformance Vectors
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        features:
+          - "bitdepth_8,bitdepth_16"
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Install zstd (for Argon extraction)
+        run: sudo apt-get update && sudo apt-get install -y zstd
+      
+      - name: Cache test vectors
+        id: cache-vectors
+        uses: actions/cache@v4
+        with:
+          path: test-vectors
+          key: test-vectors-v1-${{ hashFiles('scripts/download-all-test-vectors.sh') }}
+          restore-keys: |
+            test-vectors-v1-
+      
+      - name: Download test vectors
+        if: steps.cache-vectors.outputs.cache-hit != 'true'
+        run: |
+          bash scripts/download-all-test-vectors.sh
+      
+      - name: Display test vector summary
+        run: |
+          echo "=== Test Vector Summary ==="
+          du -sh test-vectors/* || true
+          echo
+          find test-vectors/argon/argon -name "*.ivf" -o -name "*.obu" | wc -l || echo "Argon: N/A"
+          find test-vectors/dav1d-test-data -name "*.ivf" -o -name "*.obu" | wc -l || echo "dav1d: N/A"
+          find test-vectors/fluster/resources -name "*.ivf" | wc -l || echo "Fluster: N/A"
+      
+      - name: Build decoder
+        run: |
+          cargo build --release --no-default-features --features "${{ matrix.features }}"
+      
+      - name: Run integration tests
+        run: |
+          cargo test --test integration_decode --release --no-default-features \
+            --features "${{ matrix.features }}" -- --ignored
+      
+      - name: Test sample Argon vectors
+        run: |
+          echo "=== Testing Argon Conformance Vectors ==="
+          PASS=0
+          FAIL=0
+          TOTAL=0
+          
+          # Test first 50 vectors as a sample
+          for ivf in $(find test-vectors/argon/argon -name "*.ivf" | head -50); do
+            ((TOTAL++))
+            if cargo run --release --example managed_decode --no-default-features \
+                --features "${{ matrix.features }}" -- "$ivf" > /dev/null 2>&1; then
+              ((PASS++))
+            else
+              ((FAIL++))
+              echo "FAILED: $(basename $ivf)"
+            fi
+          done
+          
+          echo "Tested: $TOTAL files"
+          echo "Passed: $PASS"
+          echo "Failed: $FAIL"
+          
+          # Fail if success rate is below 80%
+          SUCCESS_RATE=$((PASS * 100 / TOTAL))
+          if [ $SUCCESS_RATE -lt 80 ]; then
+            echo "ERROR: Success rate ($SUCCESS_RATE%) below 80%"
+            exit 1
+          fi
+      
+      - name: Test Fluster vectors
+        run: |
+          echo "=== Testing Fluster Vectors ==="
+          PASS=0
+          FAIL=0
+          TOTAL=0
+          
+          # Test all Fluster vectors (smaller set)
+          for ivf in $(find test-vectors/fluster/resources/test_vectors/av1 -name "*.ivf"); do
+            ((TOTAL++))
+            if cargo run --release --example managed_decode --no-default-features \
+                --features "${{ matrix.features }}" -- "$ivf" > /dev/null 2>&1; then
+              ((PASS++))
+            else
+              ((FAIL++))
+              echo "FAILED: $(basename $ivf)"
+            fi
+          done
+          
+          echo "Tested: $TOTAL files"
+          echo "Passed: $PASS"
+          echo "Failed: $FAIL"
+          
+          # Fail if success rate is below 80%
+          if [ $TOTAL -gt 0 ]; then
+            SUCCESS_RATE=$((PASS * 100 / TOTAL))
+            if [ $SUCCESS_RATE -lt 80 ]; then
+              echo "ERROR: Success rate ($SUCCESS_RATE%) below 80%"
+              exit 1
+            fi
+          fi
+      
+      - name: Test sample dav1d vectors
+        run: |
+          echo "=== Testing dav1d Test Vectors ==="
+          PASS=0
+          FAIL=0
+          TOTAL=0
+          
+          # Test a sample from each category
+          for category in 8-bit 10-bit 12-bit; do
+            if [ -d "test-vectors/dav1d-test-data/$category" ]; then
+              echo "Testing $category vectors (first 10):"
+              for ivf in $(find "test-vectors/dav1d-test-data/$category" -name "*.ivf" | head -10); do
+                ((TOTAL++))
+                if cargo run --release --example managed_decode --no-default-features \
+                    --features "${{ matrix.features }}" -- "$ivf" > /dev/null 2>&1; then
+                  ((PASS++))
+                else
+                  ((FAIL++))
+                  echo "FAILED: $(basename $ivf)"
+                fi
+              done
+            fi
+          done
+          
+          echo "Tested: $TOTAL files"
+          echo "Passed: $PASS"
+          echo "Failed: $FAIL"
+          
+          # Fail if success rate is below 80%
+          if [ $TOTAL -gt 0 ]; then
+            SUCCESS_RATE=$((PASS * 100 / TOTAL))
+            if [ $SUCCESS_RATE -lt 80 ]; then
+              echo "ERROR: Success rate ($SUCCESS_RATE%) below 80%"
+              exit 1
+            fi
+          fi
+      
+      - name: Generate test report
+        if: always()
+        run: |
+          echo "=== Test Vector Validation Report ===" > test-report.txt
+          echo "Date: $(date)" >> test-report.txt
+          echo "Commit: ${{ github.sha }}" >> test-report.txt
+          echo >> test-report.txt
+          echo "Test suites executed:" >> test-report.txt
+          echo "- Argon conformance suite (sample)" >> test-report.txt
+          echo "- Fluster AV1 vectors" >> test-report.txt
+          echo "- dav1d test data (sample)" >> test-report.txt
+          echo >> test-report.txt
+          cat test-report.txt
+      
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-vector-report-${{ matrix.os }}
+          path: test-report.txt

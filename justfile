@@ -73,3 +73,21 @@ coverage:
 
 # Run CI checks locally
 ci: fmt-check clippy test test-integration
+
+# Download all test vectors (Argon, dav1d, Fluster)
+download-all-vectors:
+    bash scripts/download-all-test-vectors.sh
+
+# Run comprehensive test vector validation
+test-all-vectors:
+    bash scripts/test-all-vectors.sh
+
+# Test against Argon conformance suite
+test-argon:
+    #!/bin/bash
+    echo "Testing against Argon conformance suite..."
+    for ivf in $(find test-vectors/argon/argon -name "*.ivf" | head -100); do
+        cargo run --release --example managed_decode --no-default-features \
+            --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1 \
+            && echo "✓ $(basename $ivf)" || echo "✗ $(basename $ivf)"
+    done

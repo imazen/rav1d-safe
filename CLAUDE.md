@@ -312,6 +312,59 @@ just ci                  # Run all CI checks locally
 - Frame threading requires polling `decode()` or `flush()` multiple times
 
 
+## Test Vectors
+
+All test vectors are located in `test-vectors/` (gitignored, not committed to repo).
+
+### Download All Test Vectors
+
+```bash
+bash scripts/download-all-test-vectors.sh
+```
+
+This downloads:
+- **dav1d-test-data**: ~160,000+ files, 109MB
+- **Argon conformance suite**: ~2,763 files, 5.1GB
+- **Fluster AV1 vectors**: ~312 IVF files, 17MB
+- **Total**: ~5.2GB
+
+### Test Vector Sources
+
+| Source | Location | Files | Size | Description |
+|--------|----------|-------|------|-------------|
+| **dav1d-test-data** | `test-vectors/dav1d-test-data/` | ~160k | 109MB | VideoLAN test suite (8/10/12-bit, film grain, HDR, argon, oss-fuzz) |
+| **Argon Suite** | `test-vectors/argon/argon/` | 2,763 | 5.1GB | Formal verification conformance suite (exercises every AV1 spec equation) |
+| **AV1-TEST-VECTORS** | `test-vectors/fluster/resources/test_vectors/av1/AV1-TEST-VECTORS/` | 240 | 7.5MB | Google Cloud Storage test vectors |
+| **Chromium 8-bit** | `test-vectors/fluster/resources/test_vectors/av1/CHROMIUM-8bit-AV1-TEST-VECTORS/` | 36 | 2.4MB | Chromium 8-bit test vectors |
+| **Chromium 10-bit** | `test-vectors/fluster/resources/test_vectors/av1/CHROMIUM-10bit-AV1-TEST-VECTORS/` | 36 | 2.0MB | Chromium 10-bit test vectors |
+
+### Test Vector URLs
+
+**Primary Sources:**
+- dav1d: `https://code.videolan.org/videolan/dav1d-test-data.git`
+- Argon: `https://streams.videolan.org/argon/argon.tar.zst`
+- AOM: `https://storage.googleapis.com/aom-test-data/`
+- Chromium: `https://storage.googleapis.com/chromiumos-test-assets-public/tast/cros/video/test_vectors/av1/`
+
+**Fluster Framework:**
+- Repo: `https://github.com/fluendo/fluster`
+- Manages downloading and running test suites
+- Supports multiple decoders (dav1d, libaom, FFmpeg, GStreamer, etc.)
+
+### Running Tests Against All Vectors
+
+```bash
+# Integration tests (uses dav1d-test-data)
+just test-integration
+
+# Run against Fluster vectors
+cd test-vectors/fluster
+./fluster.py run -d rav1d-safe AV1-TEST-VECTORS
+
+# Run against Argon suite
+# TODO: Create argon test runner
+```
+
 ## TODO: CI & Parity Testing
 
 ### GitHub Actions Workflows
