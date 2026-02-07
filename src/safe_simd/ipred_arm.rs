@@ -1020,14 +1020,22 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
+    use zerocopy::AsBytes;
 
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let w = width as usize;
+    let h = height as usize;
     let stride = dst.stride();
-    let topleft_ptr = topleft[topleft_off..].as_ptr().cast();
     let bd_c = bd.into_c();
     let dst_ffi = FFISafe::new(&dst);
 
-    // SAFETY: NEON always available on aarch64. Pointers derived from valid types.
+    // Create tracked guard — ensures borrow tracker knows about this access
+    let (mut dst_guard, _dst_base) = dst.strided_slice_mut::<BD>(w, h);
+    // Get pointer from guard's slice (tracked, not from Pixels)
+    let dst_ptr: *mut DynPixel = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+    // topleft is already a safe slice, get pointer for FFI
+    let topleft_ptr: *const DynPixel = topleft.as_bytes()[topleft_off * std::mem::size_of::<BD::Pixel>()..].as_ptr() as *const DynPixel;
+
+    // SAFETY: NEON always available on aarch64. Pointers derived from tracked guard.
     let handled = unsafe {
         match (BD::BPC, mode) {
             (BPC::BPC8, 0) => {
