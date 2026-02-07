@@ -79,7 +79,7 @@ mod tests {
             apply_grain: false, // Disable grain for deterministic pixel comparison
             ..Default::default()
         };
-        let ctx = rav1d_open(&settings).expect("Failed to open decoder");
+        let (ctx, _handles) = rav1d_open(&settings).expect("Failed to open decoder");
 
         let mut pixel_data: Vec<u8> = Vec::new();
         let mut frame_count = 0usize;

@@ -104,7 +104,6 @@ use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use std::thread::JoinHandle;
 use strum::FromRepr;
 use zerocopy::AsBytes;
 use zerocopy::FromBytes;
@@ -341,7 +340,7 @@ pub(crate) struct Rav1dContextRefs {
 
 pub(crate) enum Rav1dContextTaskType {
     /// Worker thread in a multi-threaded context.
-    Worker(Option<JoinHandle<()>>),
+    Worker,
     /// Main thread in a single-threaded context. There are no worker threads so
     /// we need to store a Rav1dTaskContext for work that requires it.
     // This Rav1dTaskContext is heap-allocated because we don't want to bloat

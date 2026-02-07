@@ -272,6 +272,7 @@ impl From<DecodeFrameType> for Rav1dDecodeFrameType {
 /// ```
 pub struct Decoder {
     ctx: Arc<Rav1dContext>,
+    worker_handles: Vec<std::thread::JoinHandle<()>>,
 }
 
 impl Decoder {
@@ -283,8 +284,12 @@ impl Decoder {
     /// Create a decoder with custom settings
     pub fn with_settings(settings: Settings) -> Result<Self> {
         let rav1d_settings: Rav1dSettings = settings.into();
-        let ctx = crate::src::lib::rav1d_open(&rav1d_settings).map_err(|_| Error::InitFailed)?;
-        Ok(Self { ctx })
+        let (ctx, worker_handles) =
+            crate::src::lib::rav1d_open(&rav1d_settings).map_err(|_| Error::InitFailed)?;
+        Ok(Self {
+            ctx,
+            worker_handles,
+        })
     }
 
     /// Decode AV1 OBU data from a byte slice
@@ -361,6 +366,29 @@ impl Decoder {
     }
 }
 
+impl Drop for Decoder {
+    fn drop(&mut self) {
+        // Signal worker threads to exit
+        self.ctx.tell_worker_threads_to_die();
+
+        // Join all worker threads synchronously
+        // This is safe because:
+        // 1. We're on the main thread (Decoder is not Send)
+        // 2. Workers have been signaled to exit via tell_worker_threads_to_die
+        // 3. We own the JoinHandles, not the workers themselves
+        for handle in self.worker_handles.drain(..) {
+            match handle.join() {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("rav1d worker thread panicked during shutdown: {:?}", e);
+                }
+            }
+        }
+
+        // Now drop the Arc<Rav1dContext>
+        // Workers have exited, so we're likely the last Arc holder
+    }
+}
 
 /// A decoded AV1 frame with zero-copy access to pixel data
 ///

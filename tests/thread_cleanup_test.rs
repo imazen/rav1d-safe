@@ -2,6 +2,9 @@
 //!
 //! These tests ensure that when a multi-threaded decoder is dropped,
 //! all worker threads are properly joined and don't leak.
+//!
+//! IMPORTANT: Run these tests serially to avoid thread count interference:
+//! `cargo test --test thread_cleanup_test -- --test-threads=1`
 
 use rav1d_safe::src::managed::{Decoder, Settings};
 use std::time::Duration;

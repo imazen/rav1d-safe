@@ -51,6 +51,9 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::Once;
 use std::thread;
+use std::thread::JoinHandle;
+#[cfg(feature = "c-ffi")]
+use std::time::Duration;
 
 #[cold]
 fn init_internal() {
@@ -172,7 +175,9 @@ pub unsafe extern "C" fn dav1d_get_frame_delay(s: Option<NonNull<Dav1dSettings>>
 }
 
 #[cold]
-pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
+pub(crate) fn rav1d_open(
+    s: &Rav1dSettings,
+) -> Rav1dResult<(Arc<Rav1dContext>, Vec<JoinHandle<()>>)> {
     static initted: Once = Once::new();
     initted.call_once(|| init_internal());
 
@@ -236,6 +241,7 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
         ..Default::default()
     });
 
+    let mut worker_handles = Vec::new();
     let tc = (0..n_tc)
         .map(|n| {
             let task_thread = Arc::clone(&task_thread);
@@ -248,7 +254,8 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
                     .name(format!("rav1d-worker-{n}"))
                     .spawn(|| rav1d_worker_task(thread_data_copy))
                     .unwrap();
-                Rav1dContextTaskType::Worker(Some(handle))
+                worker_handles.push(handle);
+                Rav1dContextTaskType::Worker
             } else {
                 Rav1dContextTaskType::Single(Mutex::new(Box::new(Rav1dTaskContext::new(
                     thread_data_copy,
@@ -291,15 +298,18 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
     }
     let c = c;
 
+    // Set context reference and unpark worker threads
+    let mut handle_idx = 0;
     for tc in c.tc.iter() {
-        if let Rav1dContextTaskType::Worker(Some(handle)) = &tc.task {
+        if let Rav1dContextTaskType::Worker = &tc.task {
             // Unpark each thread once we set its `thread_data.c`.
             *tc.thread_data.c.lock() = Some(Arc::clone(&c));
-            handle.thread().unpark();
+            worker_handles[handle_idx].thread().unpark();
+            handle_idx += 1;
         }
     }
 
-    Ok(c)
+    Ok((c, worker_handles))
 }
 
 /// # Safety
@@ -321,9 +331,34 @@ pub unsafe extern "C" fn dav1d_open(
         // SAFETY: `s` is safe to read from.
         let s = unsafe { s.as_ptr().read() };
         let s = s.try_into()?;
-        let c = rav1d_open(&s).inspect_err(|_| {
+        let (c, handles) = rav1d_open(&s).inspect_err(|_| {
             *c_out = None;
         })?;
+
+        // Spawn janitor thread to join worker handles on shutdown
+        // C FFI can't properly manage Rust JoinHandles, so we spawn a helper thread
+        if !handles.is_empty() {
+            let ctx_clone = Arc::clone(&c);
+            thread::spawn(move || {
+                // Wait for die signal on all worker threads
+                loop {
+                    let all_died = ctx_clone.tc.iter().all(|tc| {
+                        matches!(tc.task, Rav1dContextTaskType::Single(_))
+                            || tc.thread_data.die.get()
+                    });
+                    if all_died {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+
+                // Join all worker threads
+                for handle in handles {
+                    let _ = handle.join();
+                }
+            });
+        }
+
         *c_out = Some(RawArc::from_arc(c));
         Ok(())
     })()
