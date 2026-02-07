@@ -187,6 +187,16 @@ A fully safe, zero-copy API for decoding AV1 video. Enforced by `#![deny(unsafe_
 - `ContentLightLevel` - HDR max/avg nits
 - `MasteringDisplay` - SMPTE 2086 with nit conversion helpers
 
+**Input format:**
+- Expects raw OBU (Open Bitstream Unit) data, not container formats
+- For IVF files, use an IVF parser to extract OBU frames (see `tests/ivf_parser.rs`)
+- For Annex B or Section 5 low overhead formats, additional parsing may be needed
+
+**Threading:**
+- Default: `threads: 1` (single-threaded, deterministic, synchronous)
+- `threads: 0`: Auto-detect cores (frame threading, better performance, asynchronous)
+- With frame threading, `decode()` may return `None` for complete frames (call again or `flush()`)
+
 **Usage example:**
 ```rust
 use rav1d_safe::src::managed::Decoder;
@@ -206,7 +216,9 @@ if let Some(frame) = decoder.decode(obu_data)? {
 }
 ```
 
-**Tests:** `tests/managed_api_test.rs` (decoder creation, settings, empty data)
+**Tests:**
+- `tests/managed_api_test.rs` - unit tests (decoder creation, settings, empty data)
+- `tests/integration_decode.rs` - integration tests with real IVF test vectors (2/2 passing)
 
 ## CI & Testing Infrastructure
 
@@ -279,17 +291,25 @@ just ci                  # Run all CI checks locally
 - ✅ Test vectors downloaded (dav1d-test-data cloned)
 - ✅ Integration test infrastructure in place
 - ✅ Managed API unit tests pass (3/3)
-- ⚠️ Integration tests pending OBU format investigation
+- ✅ **Integration tests PASS (2/2)** - OBU decoding issue RESOLVED
+  - Added IVF container parser for test vectors
+  - Fixed managed API threading defaults (threads=1 for deterministic behavior)
+  - Successfully decodes 64x64 10-bit frames with HDR metadata
 - ✅ Justfile for common tasks
 - ✅ Example demonstrating managed API
 
-### TODO: Decode Parity Testing
+### Integration Test Infrastructure
 
-Need to investigate OBU decoding via managed API:
-- Current status: EINVAL errors when feeding OBU data
-- May need IVF parser or sequence header handling
-- Compare with C API decode path
-- Consider using existing test infrastructure from rav1d/dav1d
+**IVF Parser (tests/ivf_parser.rs):**
+- Parses IVF container format (DKIF signature)
+- Extracts raw OBU frames from IVF files
+- Used by integration tests to feed proper OBU data to decoder
+
+**Threading Behavior:**
+- Managed API defaults to `threads: 1` (single-threaded, deterministic)
+- `threads: 0` enables frame threading (better performance, asynchronous behavior)
+- With frame threading, `decode()` may return `None` even with complete frames
+- Frame threading requires polling `decode()` or `flush()` multiple times
 
 
 ## TODO: CI & Parity Testing
