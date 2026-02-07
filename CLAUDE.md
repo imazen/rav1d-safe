@@ -167,6 +167,47 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 **c-ffi decoupled from fn-ptr dispatch.** The `c-ffi` feature now only controls the 19 `dav1d_*` extern "C" entry points in `src/lib.rs`. Internal DSP dispatch uses direct function calls (no function pointers) when `asm` is disabled.
 
+## Managed Safe API
+
+**Location:** `src/managed.rs` (~970 lines, 100% safe Rust)
+
+A fully safe, zero-copy API for decoding AV1 video. Enforced by `#![deny(unsafe_code)]`.
+
+**Key types:**
+- `Decoder` - safe wrapper around `Rav1dContext` (new/with_settings/decode/flush/drop)
+- `Settings` - type-safe configuration with `InloopFilters`, `DecodeFrameType` enums
+- `Frame` - decoded frame with metadata (width, height, bit depth, color info, HDR)
+- `Planes` - enum dispatching to `Planes8`/`Planes16` for type-safe pixel access
+- `PlaneView8`/`PlaneView16` - zero-copy 2D strided views holding `DisjointImmutGuard`
+- `Error` - simple error enum with `From<Rav1dError>` (no thiserror dependency)
+
+**Color/HDR metadata:**
+- `ColorPrimaries`, `TransferCharacteristics`, `MatrixCoefficients` - color space info
+- `ColorRange` - Limited vs Full
+- `ContentLightLevel` - HDR max/avg nits
+- `MasteringDisplay` - SMPTE 2086 with nit conversion helpers
+
+**Usage example:**
+```rust
+use rav1d_safe::src::managed::Decoder;
+
+let mut decoder = Decoder::new()?;
+if let Some(frame) = decoder.decode(obu_data)? {
+    match frame.planes() {
+        Planes::Depth8(planes) => {
+            for row in planes.y().rows() {
+                // Process 8-bit row
+            }
+        }
+        Planes::Depth16(planes) => {
+            let pixel = planes.y().pixel(0, 0);
+        }
+    }
+}
+```
+
+**Tests:** `tests/managed_api_test.rs` (decoder creation, settings, empty data)
+
 ## TODO: CI & Parity Testing
 
 ### GitHub Actions Workflows
