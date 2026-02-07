@@ -11,8 +11,8 @@
 //! range doesn't overlap with any outstanding borrow. This makes `DisjointMut` a
 //! **sound safe abstraction**: safe code cannot cause undefined behavior.
 //!
-//! The `unchecked` feature disables runtime tracking for production performance.
-//! When enabled, callers must manually ensure disjointness (like the original code).
+//! For performance-critical code that has been audited for correctness, the
+//! `dangerously_unchecked()` unsafe constructor skips runtime tracking.
 //!
 //! # Example
 //!
@@ -63,15 +63,13 @@ use zerocopy::FromBytes;
 /// vectors.
 ///
 /// Indexing returns a guard which acts as a lock for the borrowed region.
-/// When the `unchecked` feature is **not** enabled (default), borrows are
-/// validated at runtime to ensure that mutably borrowed regions are actually
-/// disjoint with all other borrows for the lifetime of the returned guard.
-/// This makes `DisjointMut` a provably safe abstraction (like `RefCell`).
-#[derive(Default)]
-#[cfg_attr(feature = "unchecked", repr(transparent))]
+/// By default, borrows are validated at runtime to ensure that mutably borrowed
+/// regions are actually disjoint with all other borrows for the lifetime of the
+/// returned guard. This makes `DisjointMut` a provably safe abstraction (like `RefCell`).
+///
+/// For audited hot paths, use [`DisjointMut::dangerously_unchecked`] to skip tracking.
 pub struct DisjointMut<T: ?Sized + AsMutPtr> {
-    #[cfg(not(feature = "unchecked"))]
-    bounds: checked::DisjointMutAllBounds,
+    bounds: Option<checked::DisjointMutAllBounds>,
 
     inner: UnsafeCell<T>,
 }
@@ -85,8 +83,8 @@ unsafe impl<T: ?Sized + AsMutPtr + Send> Send for DisjointMut<T> {}
 /// to `T`'s elements through a shared `&DisjointMut<T>` reference.
 /// Thus, sharing/`Send`ing a `&DisjointMut<T>` across threads is safe.
 ///
-/// The disjointness is checked at runtime by default. With the `unchecked`
-/// feature, disjointness must be manually guaranteed by the caller.
+/// Disjointness is checked at runtime by default. With `dangerously_unchecked()`,
+/// disjointness must be manually guaranteed by the caller.
 ///
 /// Furthermore, all `T`s used have `AsMutPtr::Target`s
 /// that are provenanceless, i.e. they have no internal references or pointers
@@ -95,13 +93,37 @@ unsafe impl<T: ?Sized + AsMutPtr + Send> Send for DisjointMut<T> {}
 /// would only result in wrong results, and cannot result in memory safety issues.
 unsafe impl<T: ?Sized + AsMutPtr + Sync> Sync for DisjointMut<T> {}
 
+impl<T: AsMutPtr + Default> Default for DisjointMut<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
 impl<T: AsMutPtr> DisjointMut<T> {
     pub const fn new(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
-            #[cfg(not(feature = "unchecked"))]
-            bounds: checked::DisjointMutAllBounds::new(),
+            bounds: Some(checked::DisjointMutAllBounds::new()),
         }
+    }
+
+    /// Create a `DisjointMut` without runtime overlap checking.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that all borrows obtained from this instance
+    /// are truly disjoint: no mutable borrow may overlap with any other borrow.
+    /// Violating this causes undefined behavior (aliasing `&mut`).
+    pub const unsafe fn dangerously_unchecked(value: T) -> Self {
+        Self {
+            inner: UnsafeCell::new(value),
+            bounds: None,
+        }
+    }
+
+    /// Returns `true` if this instance performs runtime overlap checking.
+    pub const fn is_checked(&self) -> bool {
+        self.bounds.is_some()
     }
 
     /// # Safety
@@ -121,15 +143,12 @@ impl<T: AsMutPtr> DisjointMut<T> {
 // Guard types
 // =============================================================================
 
-#[cfg_attr(feature = "unchecked", repr(transparent))]
 pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
     slice: &'a mut V,
 
     phantom: PhantomData<&'a DisjointMut<T>>,
 
-    #[cfg(not(feature = "unchecked"))]
-    parent: &'a DisjointMut<T>,
-    #[cfg(not(feature = "unchecked"))]
+    parent: Option<&'a DisjointMut<T>>,
     bounds: checked::DisjointMutBounds,
 }
 
@@ -143,9 +162,7 @@ impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
         DisjointMutGuard {
             slice: V::mut_slice_from(bytes).unwrap(),
             phantom: old_guard.phantom,
-            #[cfg(not(feature = "unchecked"))]
             parent: old_guard.parent,
-            #[cfg(not(feature = "unchecked"))]
             bounds: mem::take(&mut old_guard.bounds),
         }
     }
@@ -159,9 +176,7 @@ impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
         DisjointMutGuard {
             slice: V::mut_from(bytes).unwrap(),
             phantom: old_guard.phantom,
-            #[cfg(not(feature = "unchecked"))]
             parent: old_guard.parent,
-            #[cfg(not(feature = "unchecked"))]
             bounds: mem::take(&mut old_guard.bounds),
         }
     }
@@ -181,15 +196,12 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DerefMut for DisjointMutGuard<'a, T, V
     }
 }
 
-#[cfg_attr(feature = "unchecked", repr(transparent))]
 pub struct DisjointImmutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
     slice: &'a V,
 
     phantom: PhantomData<&'a DisjointMut<T>>,
 
-    #[cfg(not(feature = "unchecked"))]
-    parent: &'a DisjointMut<T>,
-    #[cfg(not(feature = "unchecked"))]
+    parent: Option<&'a DisjointMut<T>>,
     bounds: checked::DisjointMutBounds,
 }
 
@@ -203,9 +215,7 @@ impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
         DisjointImmutGuard {
             slice: V::slice_from(bytes).unwrap(),
             phantom: old_guard.phantom,
-            #[cfg(not(feature = "unchecked"))]
             parent: old_guard.parent,
-            #[cfg(not(feature = "unchecked"))]
             bounds: mem::take(&mut old_guard.bounds),
         }
     }
@@ -219,9 +229,7 @@ impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
         DisjointImmutGuard {
             slice: V::ref_from(bytes).unwrap(),
             phantom: old_guard.phantom,
-            #[cfg(not(feature = "unchecked"))]
             parent: old_guard.parent,
-            #[cfg(not(feature = "unchecked"))]
             bounds: mem::take(&mut old_guard.bounds),
         }
     }
@@ -320,11 +328,11 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
 
     /// Mutably borrow a slice or element.
     ///
-    /// This mutable borrow is checked at runtime (unless the `unchecked` feature
-    /// is enabled) to ensure that no other borrows from this collection overlap
-    /// with the mutably borrowed region for the lifetime of that mutable borrow.
+    /// This mutable borrow is checked at runtime to ensure that no other borrows
+    /// from this collection overlap with the mutably borrowed region for the
+    /// lifetime of that mutable borrow (unless created with `dangerously_unchecked`).
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(not(feature = "unchecked"), track_caller)]
+    #[track_caller]
     pub fn index_mut<'a, I>(&'a self, index: I) -> DisjointMutGuard<'a, T, I::Output>
     where
         I: Into<Bounds> + Clone,
@@ -341,11 +349,11 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
 
     /// Immutably borrow a slice or element.
     ///
-    /// This immutable borrow is checked at runtime (unless the `unchecked` feature
-    /// is enabled) to ensure that no other mutable borrows from this collection
-    /// overlap with the returned immutably borrowed region.
+    /// This immutable borrow is checked at runtime to ensure that no other
+    /// mutable borrows from this collection overlap with the returned
+    /// immutably borrowed region (unless created with `dangerously_unchecked`).
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(not(feature = "unchecked"), track_caller)]
+    #[track_caller]
     pub fn index<'a, I>(&'a self, index: I) -> DisjointImmutGuard<'a, T, I::Output>
     where
         I: Into<Bounds> + Clone,
@@ -379,7 +387,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
 
     /// Mutably borrow a slice of a convertible type.
     #[inline]
-    #[cfg_attr(not(feature = "unchecked"), track_caller)]
+    #[track_caller]
     pub fn mut_slice_as<'a, I, V>(&'a self, index: I) -> DisjointMutGuard<'a, T, [V]>
     where
         I: SliceBounds,
@@ -392,7 +400,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
 
     /// Mutably borrow an element of a convertible type.
     #[inline]
-    #[cfg_attr(not(feature = "unchecked"), track_caller)]
+    #[track_caller]
     pub fn mut_element_as<'a, V>(&'a self, index: usize) -> DisjointMutGuard<'a, T, V>
     where
         V: AsBytes + FromBytes,
@@ -403,7 +411,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
 
     /// Immutably borrow a slice of a convertible type.
     #[inline]
-    #[cfg_attr(not(feature = "unchecked"), track_caller)]
+    #[track_caller]
     pub fn slice_as<'a, I, V>(&'a self, index: I) -> DisjointImmutGuard<'a, T, [V]>
     where
         I: SliceBounds,
@@ -416,7 +424,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
 
     /// Immutably borrow an element of a convertible type.
     #[inline]
-    #[cfg_attr(not(feature = "unchecked"), track_caller)]
+    #[track_caller]
     pub fn element_as<'a, V>(&'a self, index: usize) -> DisjointImmutGuard<'a, T, V>
     where
         V: FromBytes,
@@ -617,7 +625,7 @@ impl<T> DisjointMutIndex<[T]> for usize {
     type Output = <[T] as Index<usize>>::Output;
 
     #[inline]
-    #[cfg_attr(not(feature = "unchecked"), track_caller)]
+    #[track_caller]
     unsafe fn get_mut(self, slice: *mut [T]) -> *mut Self::Output {
         let index = self;
         let len = slice.len();
@@ -627,7 +635,7 @@ impl<T> DisjointMutIndex<[T]> for usize {
             unsafe { (slice as *mut T).add(index) }
         } else {
             #[inline(never)]
-            #[cfg_attr(not(feature = "unchecked"), track_caller)]
+            #[track_caller]
             fn out_of_bounds(index: usize, len: usize) -> ! {
                 panic!("index out of bounds: the len is {len} but the index is {index}")
             }
@@ -643,7 +651,7 @@ where
     type Output = <[T] as Index<Range<usize>>>::Output;
 
     #[inline]
-    #[cfg_attr(not(feature = "unchecked"), track_caller)]
+    #[track_caller]
     unsafe fn get_mut(self, slice: *mut [T]) -> *mut Self::Output {
         let len = slice.len();
         let Range { start, end } = self.to_range(len);
@@ -653,7 +661,7 @@ where
             ptr::slice_from_raw_parts_mut(data, end - start)
         } else {
             #[inline(never)]
-            #[cfg_attr(not(feature = "unchecked"), track_caller)]
+            #[track_caller]
             fn out_of_bounds(start: usize, end: usize, len: usize) -> ! {
                 if start > end {
                     panic!("slice index starts at {start} but ends at {end}");
@@ -669,37 +677,9 @@ where
 }
 
 // =============================================================================
-// Unchecked (release) guard constructors — no bounds tracking
+// Bounds tracking types (always compiled, conditionally used at runtime)
 // =============================================================================
 
-#[cfg(feature = "unchecked")]
-mod unchecked {
-    use super::*;
-
-    impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointMutGuard<'a, T, V> {
-        pub fn new(_parent: &'a DisjointMut<T>, slice: &'a mut V, _bounds: Bounds) -> Self {
-            Self {
-                slice,
-                phantom: PhantomData,
-            }
-        }
-    }
-
-    impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointImmutGuard<'a, T, V> {
-        pub fn new(_parent: &'a DisjointMut<T>, slice: &'a V, _bounds: Bounds) -> Self {
-            Self {
-                slice,
-                phantom: PhantomData,
-            }
-        }
-    }
-}
-
-// =============================================================================
-// Checked (default) guard constructors — always-on bounds tracking
-// =============================================================================
-
-#[cfg(not(feature = "unchecked"))]
 mod checked {
     use super::*;
     use parking_lot::Mutex;
@@ -712,8 +692,8 @@ mod checked {
 
     #[derive(Debug)]
     pub(super) struct DisjointMutBounds {
-        bounds: Bounds,
-        mutable: bool,
+        pub(super) bounds: Bounds,
+        pub(super) mutable: bool,
         location: &'static Location<'static>,
         backtrace: Backtrace,
         thread: ThreadId,
@@ -779,9 +759,9 @@ mod checked {
     }
 
     #[derive(Default)]
-    pub struct DisjointMutAllBounds {
-        mutable: Mutex<Vec<DisjointMutBounds>>,
-        immutable: Mutex<Vec<DisjointMutBounds>>,
+    pub(super) struct DisjointMutAllBounds {
+        pub(super) mutable: Mutex<Vec<DisjointMutBounds>>,
+        pub(super) immutable: Mutex<Vec<DisjointMutBounds>>,
     }
 
     impl DisjointMutAllBounds {
@@ -792,80 +772,107 @@ mod checked {
             }
         }
     }
+}
 
-    impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
-        #[track_caller]
-        fn add_mut_bounds(&self, current: DisjointMutBounds) {
-            for existing in self.bounds.immutable.lock().iter() {
-                current.check_overlaps(existing);
-            }
-            let mut mut_bounds = self.bounds.mutable.lock();
-            for existing in mut_bounds.iter() {
-                current.check_overlaps(existing);
-            }
-            mut_bounds.push(current);
+impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
+    #[track_caller]
+    fn add_mut_bounds(&self, current: checked::DisjointMutBounds) {
+        let bounds = self.bounds.as_ref().unwrap();
+        for existing in bounds.immutable.lock().iter() {
+            current.check_overlaps(existing);
         }
-
-        #[track_caller]
-        fn add_immut_bounds(&self, current: DisjointMutBounds) {
-            let mut_bounds = self.bounds.mutable.lock();
-            for existing in mut_bounds.iter() {
-                current.check_overlaps(existing);
-            }
-            self.bounds.immutable.lock().push(current);
+        let mut mut_bounds = bounds.mutable.lock();
+        for existing in mut_bounds.iter() {
+            current.check_overlaps(existing);
         }
-
-        fn remove_bound(&self, bounds: &DisjointMutBounds) {
-            let mut all_bounds = if bounds.mutable {
-                self.bounds.mutable.lock()
-            } else {
-                self.bounds.immutable.lock()
-            };
-            let idx = all_bounds
-                .iter()
-                .position(|r| r == bounds)
-                .expect("Expected range {range:?} to be in the active ranges");
-            all_bounds.remove(idx);
-        }
+        mut_bounds.push(current);
     }
 
-    impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointMutGuard<'a, T, V> {
-        #[track_caller]
-        pub fn new(parent: &'a DisjointMut<T>, slice: &'a mut V, bounds: Bounds) -> Self {
-            parent.add_mut_bounds(DisjointMutBounds::new(bounds.clone(), true));
-            let bounds = DisjointMutBounds::new(bounds, true);
+    #[track_caller]
+    fn add_immut_bounds(&self, current: checked::DisjointMutBounds) {
+        let bounds = self.bounds.as_ref().unwrap();
+        let mut_bounds = bounds.mutable.lock();
+        for existing in mut_bounds.iter() {
+            current.check_overlaps(existing);
+        }
+        bounds.immutable.lock().push(current);
+    }
+
+    fn remove_bound(&self, bound: &checked::DisjointMutBounds) {
+        let bounds = self.bounds.as_ref().unwrap();
+        let mut all_bounds = if bound.mutable {
+            bounds.mutable.lock()
+        } else {
+            bounds.immutable.lock()
+        };
+        let idx = all_bounds
+            .iter()
+            .position(|r| r == bound)
+            .expect("Expected range to be in the active ranges");
+        all_bounds.remove(idx);
+    }
+}
+
+// =============================================================================
+// Guard constructors — runtime-dispatched checked/unchecked
+// =============================================================================
+
+impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointMutGuard<'a, T, V> {
+    #[track_caller]
+    pub fn new(parent: &'a DisjointMut<T>, slice: &'a mut V, bounds: Bounds) -> Self {
+        if parent.bounds.is_some() {
+            parent.add_mut_bounds(checked::DisjointMutBounds::new(bounds.clone(), true));
             Self {
-                parent,
                 slice,
-                bounds,
+                parent: Some(parent),
+                bounds: checked::DisjointMutBounds::new(bounds, true),
+                phantom: PhantomData,
+            }
+        } else {
+            Self {
+                slice,
+                parent: None,
+                bounds: Default::default(),
                 phantom: PhantomData,
             }
         }
     }
+}
 
-    impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
-        fn drop(&mut self) {
-            self.parent.remove_bound(&self.bounds);
+impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
+    fn drop(&mut self) {
+        if let Some(parent) = self.parent {
+            parent.remove_bound(&self.bounds);
         }
     }
+}
 
-    impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointImmutGuard<'a, T, V> {
-        #[track_caller]
-        pub fn new(parent: &'a DisjointMut<T>, slice: &'a V, bounds: Bounds) -> Self {
-            parent.add_immut_bounds(DisjointMutBounds::new(bounds.clone(), false));
-            let bounds = DisjointMutBounds::new(bounds, false);
+impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointImmutGuard<'a, T, V> {
+    #[track_caller]
+    pub fn new(parent: &'a DisjointMut<T>, slice: &'a V, bounds: Bounds) -> Self {
+        if parent.bounds.is_some() {
+            parent.add_immut_bounds(checked::DisjointMutBounds::new(bounds.clone(), false));
             Self {
-                parent,
                 slice,
-                bounds,
+                parent: Some(parent),
+                bounds: checked::DisjointMutBounds::new(bounds, false),
+                phantom: PhantomData,
+            }
+        } else {
+            Self {
+                slice,
+                parent: None,
+                bounds: Default::default(),
                 phantom: PhantomData,
             }
         }
     }
+}
 
-    impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointImmutGuard<'a, T, V> {
-        fn drop(&mut self) {
-            self.parent.remove_bound(&self.bounds);
+impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointImmutGuard<'a, T, V> {
+    fn drop(&mut self) {
+        if let Some(parent) = self.parent {
+            parent.remove_bound(&self.bounds);
         }
     }
 }
@@ -1002,22 +1009,13 @@ unsafe impl<V> AsMutPtr for Box<[V]> {
 // DisjointMutSlice and DisjointMutArcSlice
 // =============================================================================
 
-/// In checked mode, we need `Box<[T]>` so `DisjointMut` can have its extra fields.
-/// In unchecked mode, `DisjointMut` is `#[repr(transparent)]` around `UnsafeCell`,
-/// so we can transmute `Arc<[T]>` → `Arc<DisjointMut<[T]>>`.
-#[cfg(not(feature = "unchecked"))]
+/// `DisjointMut` always has tracking fields, so we use `Box<[T]>` as the
+/// backing store for slice-based DisjointMut instances.
 pub type DisjointMutSlice<T> = DisjointMut<Box<[T]>>;
 
-#[cfg(feature = "unchecked")]
-pub type DisjointMutSlice<T> = DisjointMut<[T]>;
-
 /// A wrapper around an [`Arc`] of a [`DisjointMut`] slice.
-/// An `Arc<[_]>` can be created, but adding a [`DisjointMut`] in between complicates it.
-/// When `unchecked`, [`DisjointMut`] is `#[repr(transparent)]`
-/// around an [`UnsafeCell`], which is also `#[repr(transparent)]`,
-/// so we can just [`std::mem::transmute`] things.
-/// But when checked, [`DisjointMut`] has other fields,
-/// so we can't do this, so we add a [`Box`] around the slice.
+/// An `Arc<[_]>` can be created, but adding a [`DisjointMut`] in between
+/// requires boxing since `DisjointMut` has tracking fields.
 #[derive(Clone)]
 pub struct DisjointMutArcSlice<T> {
     pub inner: Arc<DisjointMutSlice<T>>,
@@ -1025,29 +1023,10 @@ pub struct DisjointMutArcSlice<T> {
 
 impl<T> FromIterator<T> for DisjointMutArcSlice<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        #[cfg(not(feature = "unchecked"))]
-        let inner = {
-            let box_slice = iter.into_iter().collect::<Box<[_]>>();
-            Arc::new(DisjointMut::new(box_slice))
-        };
-        #[cfg(feature = "unchecked")]
-        let inner = {
-            use std::mem;
-
-            let arc_slice = iter.into_iter().collect::<Arc<[_]>>();
-
-            // Do our best to check that `DisjointMut` is in fact `#[repr(transparent)]`.
-            const {
-                type A = Vec<u8>; // Some concrete sized type.
-                assert!(mem::size_of::<DisjointMut<A>>() == mem::size_of::<A>());
-                assert!(mem::align_of::<DisjointMut<A>>() == mem::align_of::<A>());
-            }
-
-            // SAFETY: When unchecked, `DisjointMut` is `#[repr(transparent)]`,
-            // containing only an `UnsafeCell`, which is also `#[repr(transparent)]`.
-            unsafe { Arc::from_raw(Arc::into_raw(arc_slice) as *const DisjointMut<[_]>) }
-        };
-        Self { inner }
+        let box_slice = iter.into_iter().collect::<Box<[_]>>();
+        Self {
+            inner: Arc::new(DisjointMut::new(box_slice)),
+        }
     }
 }
 
@@ -1073,7 +1052,7 @@ fn test_overlapping_immut() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "unchecked"), should_panic)]
+#[should_panic]
 fn test_overlapping_mut() {
     let mut v: DisjointMut<Vec<u8>> = Default::default();
     v.resize(10, 0u8);

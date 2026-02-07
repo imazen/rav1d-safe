@@ -7,12 +7,7 @@ description = "A provably safe abstraction for concurrent disjoint mutable acces
 license = "BSD-2-Clause"
 
 [features]
-# Default: bounds checking always on (provably safe, like RefCell)
 default = []
-
-# Skip runtime bounds checking for production performance.
-# SAFETY: Callers must ensure all borrows are truly disjoint.
-unchecked = []
 
 [dependencies]
 parking_lot = "0.12.2"
