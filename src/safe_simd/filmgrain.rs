@@ -931,11 +931,13 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_avx2(
                     let top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
                     let old_top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE]
                         [prev_offx + x + FG_BLOCK_SIZE] as i32;
-                    let top = round2(old_top * W[x][0] + top * W[x][1], 5).clamp(grain_min, grain_max);
+                    let top =
+                        round2(old_top * W[x][0] + top * W[x][1], 5).clamp(grain_min, grain_max);
 
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
                     let old = (*grain_lut)[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
-                    let grain = round2(old * W[x][0] + grain * W[x][1], 5).clamp(grain_min, grain_max);
+                    let grain =
+                        round2(old * W[x][0] + grain * W[x][1], 5).clamp(grain_min, grain_max);
 
                     let blended =
                         round2(top * W[y][0] + grain * W[y][1], 5).clamp(grain_min, grain_max);
@@ -1194,17 +1196,18 @@ fn fguv_inner_8bpc(
                 unsafe {
                     let top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
                     let old_top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
-                        [prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                        [prev_offx + x + (FG_BLOCK_SIZE >> sx)]
+                        as i32;
                     let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5)
                         .clamp(grain_min, grain_max);
 
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
                     let old = (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                    let grain =
-                        round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
+                    let grain = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5)
+                        .clamp(grain_min, grain_max);
 
-                    let blended =
-                        round2(top * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
+                    let blended = round2(top * W[sy][y][0] + grain * W[sy][y][1], 5)
+                        .clamp(grain_min, grain_max);
                     *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
                 }
             }
@@ -1277,8 +1280,8 @@ pub unsafe extern "C" fn fguv_32x32xn_i420_8bpc_avx2(
         luma_stride as isize,
         uv_pl != 0,
         is_id != 0,
-        true,  // is_sx
-        true,  // is_sy
+        true, // is_sx
+        true, // is_sy
     );
 }
 
@@ -1485,8 +1488,8 @@ fn fguv_inner_16bpc(
                 unsafe {
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
                     let old = (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                    let blended =
-                        round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
+                    let blended = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5)
+                        .clamp(grain_min, grain_max);
                     *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
                 }
             }
@@ -1513,8 +1516,8 @@ fn fguv_inner_16bpc(
                 unsafe {
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
                     let old = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
-                    let blended =
-                        round2(old * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
+                    let blended = round2(old * W[sy][y][0] + grain * W[sy][y][1], 5)
+                        .clamp(grain_min, grain_max);
                     *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
                 }
             }
@@ -1523,17 +1526,18 @@ fn fguv_inner_16bpc(
                 unsafe {
                     let top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
                     let old_top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
-                        [prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                        [prev_offx + x + (FG_BLOCK_SIZE >> sx)]
+                        as i32;
                     let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5)
                         .clamp(grain_min, grain_max);
 
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
                     let old = (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
-                    let grain =
-                        round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
+                    let grain = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5)
+                        .clamp(grain_min, grain_max);
 
-                    let blended =
-                        round2(top * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
+                    let blended = round2(top * W[sy][y][0] + grain * W[sy][y][1], 5)
+                        .clamp(grain_min, grain_max);
                     *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
                 }
             }
@@ -1543,7 +1547,7 @@ fn fguv_inner_16bpc(
 
 macro_rules! fguv_16bpc_wrapper {
     ($name:ident, $is_sx:expr, $is_sy:expr) => {
-#[cfg(all(feature = "asm", target_arch = "x86_64"))]
+        #[cfg(all(feature = "asm", target_arch = "x86_64"))]
         pub unsafe extern "C" fn $name(
             dst_row_ptr: *mut DynPixel,
             src_row_ptr: *const DynPixel,
@@ -1802,7 +1806,8 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
             data,
             pw,
             scaling_ptr,
-            grain_lut as *const GrainLut<BD::Entry> as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+            grain_lut as *const GrainLut<BD::Entry>
+                as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
             bh,
             row_num,
             luma_row_ptr as *const u16,

@@ -41,7 +41,15 @@ const PW_1024: i16 = 1024;
 /// - tmp1 and tmp2 must contain at least w*h elements
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn avg_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32) {
+unsafe fn avg_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u8;
@@ -151,7 +159,16 @@ pub unsafe extern "C" fn avg_8bpc_avx2(
 /// Same as avg_8bpc_avx2, plus bitdepth_max must be correct for the content.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn avg_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32, bitdepth_max: i32) {
+unsafe fn avg_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    bitdepth_max: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u16;
@@ -321,7 +338,16 @@ const PW_2048: i16 = 2048;
 /// Same requirements as avg_8bpc_avx2, plus weight must be in [0, 16].
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn w_avg_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32, weight: i32) {
+unsafe fn w_avg_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    weight: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u8;
@@ -423,7 +449,17 @@ pub unsafe extern "C" fn w_avg_8bpc_avx2(
 /// Same as w_avg_8bpc_avx2.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn w_avg_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32, weight: i32, bitdepth_max: i32) {
+unsafe fn w_avg_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    weight: i32,
+    bitdepth_max: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u16;
@@ -513,7 +549,19 @@ pub unsafe extern "C" fn w_avg_16bpc_avx2(
     _dst: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { w_avg_16bpc_avx2_inner(token, dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bitdepth_max) }
+    unsafe {
+        w_avg_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            weight,
+            bitdepth_max,
+        )
+    }
 }
 
 /// Scalar fallback for w_avg
@@ -572,7 +620,16 @@ pub unsafe extern "C" fn w_avg_scalar(
 /// - mask values must be in [0, 64]
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn mask_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32, mask_ptr: *const u8) {
+unsafe fn mask_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask_ptr: *const u8,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u8;
@@ -685,7 +742,17 @@ pub unsafe extern "C" fn mask_8bpc_avx2(
 /// Mask blend for 16-bit pixels
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn mask_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32, mask_ptr: *const u8, bitdepth_max: i32) {
+unsafe fn mask_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask_ptr: *const u8,
+    bitdepth_max: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u16;
@@ -780,7 +847,19 @@ pub unsafe extern "C" fn mask_16bpc_avx2(
     _dst: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { mask_16bpc_avx2_inner(token, dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bitdepth_max) }
+    unsafe {
+        mask_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask_ptr,
+            bitdepth_max,
+        )
+    }
 }
 
 /// Scalar fallback for mask
@@ -837,7 +916,15 @@ use crate::src::internal::{SCRATCH_INTER_INTRA_BUF_LEN, SCRATCH_LAP_LEN};
 /// - tmp and mask must be valid for reading w*h elements
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn blend_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN], w: i32, h: i32, mask_ptr: *const u8) {
+unsafe fn blend_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN],
+    w: i32,
+    h: i32,
+    mask_ptr: *const u8,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u8;
@@ -927,7 +1014,15 @@ pub unsafe extern "C" fn blend_8bpc_avx2(
 /// Blend pixels for 16-bit
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn blend_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN], w: i32, h: i32, mask_ptr: *const u8) {
+unsafe fn blend_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN],
+    w: i32,
+    h: i32,
+    mask_ptr: *const u8,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u16;
@@ -1025,7 +1120,14 @@ use crate::src::tables::dav1d_obmc_masks;
 /// Uses predefined obmc_masks table for blend weights.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn blend_v_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp: *const [DynPixel; SCRATCH_LAP_LEN], w: i32, h: i32) {
+unsafe fn blend_v_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u8;
@@ -1106,7 +1208,14 @@ pub unsafe extern "C" fn blend_v_8bpc_avx2(
 /// Horizontal blend (overlapped block motion compensation)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn blend_h_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp: *const [DynPixel; SCRATCH_LAP_LEN], w: i32, h: i32) {
+unsafe fn blend_h_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u8;
@@ -1187,7 +1296,14 @@ pub unsafe extern "C" fn blend_h_8bpc_avx2(
 /// 16-bit blend_v
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn blend_v_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp: *const [DynPixel; SCRATCH_LAP_LEN], w: i32, h: i32) {
+unsafe fn blend_v_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u16;
@@ -1272,7 +1388,14 @@ pub unsafe extern "C" fn blend_v_16bpc_avx2(
 /// 16-bit blend_h
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn blend_h_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp: *const [DynPixel; SCRATCH_LAP_LEN], w: i32, h: i32) {
+unsafe fn blend_h_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let dst = dst_ptr as *mut u16;
@@ -1383,7 +1506,14 @@ fn get_filter(m: usize, d: usize, filter_idx: usize) -> Option<&'static [i8; 8]>
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn h_filter_8tap_8bpc_avx2_inner(_token: Desktop64, dst: *mut i16, src: *const u8, w: usize, filter: &[i8; 8], sh: u8) {
+unsafe fn h_filter_8tap_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst: *mut i16,
+    src: *const u8,
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
     // SAFETY: All operations inside this block require AVX2 which is guaranteed
     // by the target_feature attribute, and pointer operations are valid per caller contract.
     unsafe {
@@ -1492,7 +1622,15 @@ unsafe fn h_filter_8tap_8bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_filter_8tap_8bpc_avx2_inner(_token: Desktop64, dst: *mut u8, mid: &[[i16; MID_STRIDE]], w: usize, filter: &[i8; 8], sh: u8, max: i32) {
+unsafe fn v_filter_8tap_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    mid: &[[i16; MID_STRIDE]],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+    max: i32,
+) {
     // SAFETY: All operations inside this block require AVX2 which is guaranteed
     // by the target_feature attribute, and pointer operations are valid per caller contract.
     unsafe {
@@ -1612,8 +1750,13 @@ fn get_filter_coeff(m: usize, d: usize, filter_type: Rav1dFilterMode) -> Option<
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn h_filter_8tap_8bpc_put_avx2_inner(_token: Desktop64, dst: *mut u8, src: *const u8, // already offset by -3
-    w: usize, filter: &[i8; 8]) {
+unsafe fn h_filter_8tap_8bpc_put_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    src: *const u8, // already offset by -3
+    w: usize,
+    filter: &[i8; 8],
+) {
     unsafe {
         // Broadcast filter coefficients for maddubs
         let coeff_01 =
@@ -1704,8 +1847,12 @@ unsafe fn h_filter_8tap_8bpc_put_avx2(
     filter: &[i8; 8],
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { h_filter_8tap_8bpc_put_avx2_inner(token, dst, src, // already offset by -3
-    w, filter) }
+    unsafe {
+        h_filter_8tap_8bpc_put_avx2_inner(
+            token, dst, src, // already offset by -3
+            w, filter,
+        )
+    }
 }
 
 /// Vertical 8-tap filter for 8bpc put (V-only case)  
@@ -1713,8 +1860,14 @@ unsafe fn h_filter_8tap_8bpc_put_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_filter_8tap_8bpc_direct_avx2_inner(_token: Desktop64, dst: *mut u8, src: *const u8, // already positioned at (y-3, 0)
-    src_stride: isize, w: usize, filter: &[i8; 8]) {
+unsafe fn v_filter_8tap_8bpc_direct_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    src: *const u8, // already positioned at (y-3, 0)
+    src_stride: isize,
+    w: usize,
+    filter: &[i8; 8],
+) {
     unsafe {
         let c0 = _mm256_set1_epi32(filter[0] as i32);
         let c1 = _mm256_set1_epi32(filter[1] as i32);
@@ -1807,8 +1960,12 @@ unsafe fn v_filter_8tap_8bpc_direct_avx2(
     filter: &[i8; 8],
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { v_filter_8tap_8bpc_direct_avx2_inner(token, dst, src, // already positioned at (y-3, 0)
-    src_stride, w, filter) }
+    unsafe {
+        v_filter_8tap_8bpc_direct_avx2_inner(
+            token, dst, src, // already positioned at (y-3, 0)
+            src_stride, w, filter,
+        )
+    }
 }
 
 /// Generic 8-tap put function for 8bpc
@@ -1826,7 +1983,19 @@ unsafe fn v_filter_8tap_8bpc_direct_avx2(
 /// - src_ptr must be valid for reading (w+7)*(h+7) bytes (with proper padding)
 #[cfg(target_arch = "x86_64")]
 #[rite]
-unsafe fn put_8tap_8bpc_avx2_impl_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, h_filter_type: Rav1dFilterMode, v_filter_type: Rav1dFilterMode) {
+unsafe fn put_8tap_8bpc_avx2_impl_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    h_filter_type: Rav1dFilterMode,
+    v_filter_type: Rav1dFilterMode,
+) {
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -1909,7 +2078,21 @@ unsafe fn put_8tap_8bpc_avx2_impl(
     v_filter_type: Rav1dFilterMode,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_8bpc_avx2_impl_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, h_filter_type, v_filter_type) }
+    unsafe {
+        put_8tap_8bpc_avx2_impl_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            h_filter_type,
+            v_filter_type,
+        )
+    }
 }
 
 /// Generic put_8tap function wrapper with Filter2d const generic
@@ -1944,7 +2127,20 @@ pub unsafe extern "C" fn put_8tap_8bpc_avx2<const FILTER: usize>(
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_regular_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_regular_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         put_8tap_8bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
@@ -1979,12 +2175,40 @@ pub unsafe extern "C" fn put_8tap_regular_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_regular_8bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_regular_8bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_regular_smooth_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_regular_smooth_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         put_8tap_8bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
@@ -2019,12 +2243,40 @@ pub unsafe extern "C" fn put_8tap_regular_smooth_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_regular_smooth_8bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_regular_smooth_8bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_regular_sharp_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_regular_sharp_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         put_8tap_8bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
@@ -2059,12 +2311,40 @@ pub unsafe extern "C" fn put_8tap_regular_sharp_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_regular_sharp_8bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_regular_sharp_8bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_smooth_regular_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_smooth_regular_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         put_8tap_8bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
@@ -2099,12 +2379,40 @@ pub unsafe extern "C" fn put_8tap_smooth_regular_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_smooth_regular_8bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_smooth_regular_8bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_smooth_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_smooth_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         put_8tap_8bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
@@ -2139,12 +2447,40 @@ pub unsafe extern "C" fn put_8tap_smooth_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_smooth_8bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_smooth_8bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_smooth_sharp_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_smooth_sharp_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         put_8tap_8bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
@@ -2179,12 +2515,40 @@ pub unsafe extern "C" fn put_8tap_smooth_sharp_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_smooth_sharp_8bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_smooth_sharp_8bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_sharp_regular_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_sharp_regular_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         put_8tap_8bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
@@ -2219,12 +2583,40 @@ pub unsafe extern "C" fn put_8tap_sharp_regular_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_sharp_regular_8bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_sharp_regular_8bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_sharp_smooth_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_sharp_smooth_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         put_8tap_8bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
@@ -2259,12 +2651,40 @@ pub unsafe extern "C" fn put_8tap_sharp_smooth_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_sharp_smooth_8bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_sharp_smooth_8bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_sharp_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_sharp_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         put_8tap_8bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
@@ -2299,7 +2719,22 @@ pub unsafe extern "C" fn put_8tap_sharp_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_sharp_8bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_sharp_8bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 // =============================================================================
@@ -2317,7 +2752,18 @@ pub unsafe extern "C" fn put_8tap_sharp_8bpc_avx2(
 /// - src_ptr must be valid for reading (w+7)*(h+7) bytes (with proper padding)
 #[cfg(target_arch = "x86_64")]
 #[rite]
-unsafe fn prep_8tap_8bpc_avx2_impl_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, h_filter_type: Rav1dFilterMode, v_filter_type: Rav1dFilterMode) {
+unsafe fn prep_8tap_8bpc_avx2_impl_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    h_filter_type: Rav1dFilterMode,
+    v_filter_type: Rav1dFilterMode,
+) {
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -2409,14 +2855,34 @@ unsafe fn prep_8tap_8bpc_avx2_impl(
     v_filter_type: Rav1dFilterMode,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_8bpc_avx2_impl_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, h_filter_type, v_filter_type) }
+    unsafe {
+        prep_8tap_8bpc_avx2_impl_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            h_filter_type,
+            v_filter_type,
+        )
+    }
 }
 
 /// Vertical 8-tap filter to i16 output (for prep functions)
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_filter_8tap_to_i16_avx2_inner(_token: Desktop64, mid: &[[i16; MID_STRIDE]], dst: *mut i16, w: usize, filter: &[i8; 8], sh: u8) {
+unsafe fn v_filter_8tap_to_i16_avx2_inner(
+    _token: Desktop64,
+    mid: &[[i16; MID_STRIDE]],
+    dst: *mut i16,
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
     // SAFETY: All operations require AVX2 which is guaranteed by target_feature
     unsafe {
         let rnd = _mm256_set1_epi32((1i32 << sh) >> 1);
@@ -2524,7 +2990,18 @@ pub unsafe extern "C" fn prep_8tap_8bpc_avx2<const FILTER: usize>(
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_regular_8bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_regular_8bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         prep_8tap_8bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
@@ -2555,12 +3032,36 @@ pub unsafe extern "C" fn prep_8tap_regular_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_regular_8bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_regular_8bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_regular_smooth_8bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_regular_smooth_8bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         prep_8tap_8bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
@@ -2591,12 +3092,36 @@ pub unsafe extern "C" fn prep_8tap_regular_smooth_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_regular_smooth_8bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_regular_smooth_8bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_regular_sharp_8bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_regular_sharp_8bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         prep_8tap_8bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
@@ -2627,12 +3152,36 @@ pub unsafe extern "C" fn prep_8tap_regular_sharp_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_regular_sharp_8bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_regular_sharp_8bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_smooth_regular_8bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_smooth_regular_8bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         prep_8tap_8bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
@@ -2663,12 +3212,36 @@ pub unsafe extern "C" fn prep_8tap_smooth_regular_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_smooth_regular_8bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_smooth_regular_8bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_smooth_8bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_smooth_8bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         prep_8tap_8bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
@@ -2699,12 +3272,36 @@ pub unsafe extern "C" fn prep_8tap_smooth_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_smooth_8bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_smooth_8bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_smooth_sharp_8bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_smooth_sharp_8bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         prep_8tap_8bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
@@ -2735,12 +3332,36 @@ pub unsafe extern "C" fn prep_8tap_smooth_sharp_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_smooth_sharp_8bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_smooth_sharp_8bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_sharp_regular_8bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_sharp_regular_8bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         prep_8tap_8bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
@@ -2771,12 +3392,36 @@ pub unsafe extern "C" fn prep_8tap_sharp_regular_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_sharp_regular_8bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_sharp_regular_8bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_sharp_smooth_8bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_sharp_smooth_8bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         prep_8tap_8bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
@@ -2807,12 +3452,36 @@ pub unsafe extern "C" fn prep_8tap_sharp_smooth_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_sharp_smooth_8bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_sharp_smooth_8bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_sharp_8bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_sharp_8bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         prep_8tap_8bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
@@ -2843,7 +3512,20 @@ pub unsafe extern "C" fn prep_8tap_sharp_8bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_sharp_8bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_sharp_8bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 // =============================================================================
@@ -2856,7 +3538,14 @@ pub unsafe extern "C" fn prep_8tap_sharp_8bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn h_filter_8tap_16bpc_avx2_inner(_token: Desktop64, dst: *mut i32, src: *const u16, w: usize, filter: &[i8; 8], sh: i32) {
+unsafe fn h_filter_8tap_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst: *mut i32,
+    src: *const u16,
+    w: usize,
+    filter: &[i8; 8],
+    sh: i32,
+) {
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         // Convert filter coefficients from i8 to i16 for pmaddwd
@@ -2947,7 +3636,16 @@ unsafe fn h_filter_8tap_16bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_filter_8tap_16bpc_avx2_inner(_token: Desktop64, dst: *mut u16, mid: &[[i32; MID_STRIDE]], w: usize, y: usize, filter: &[i8; 8], sh: i32, max: i32) {
+unsafe fn v_filter_8tap_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u16,
+    mid: &[[i32; MID_STRIDE]],
+    w: usize,
+    y: usize,
+    filter: &[i8; 8],
+    sh: i32,
+    max: i32,
+) {
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         // Convert filter coefficients from i8 to i32 for multiplication
@@ -3059,7 +3757,16 @@ unsafe fn v_filter_8tap_16bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_filter_8tap_16bpc_prep_avx2_inner(_token: Desktop64, dst: *mut i16, mid: &[[i32; MID_STRIDE]], w: usize, y: usize, filter: &[i8; 8], sh: i32, prep_bias: i32) {
+unsafe fn v_filter_8tap_16bpc_prep_avx2_inner(
+    _token: Desktop64,
+    dst: *mut i16,
+    mid: &[[i32; MID_STRIDE]],
+    w: usize,
+    y: usize,
+    filter: &[i8; 8],
+    sh: i32,
+    prep_bias: i32,
+) {
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         let coeff: [i32; 8] = [
@@ -3162,7 +3869,14 @@ unsafe fn v_filter_8tap_16bpc_prep_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn h_filter_8tap_16bpc_put_avx2_inner(_token: Desktop64, dst: *mut u16, src: *const u16, w: usize, filter: &[i8; 8], max: i32) {
+unsafe fn h_filter_8tap_16bpc_put_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u16,
+    src: *const u16,
+    w: usize,
+    filter: &[i8; 8],
+    max: i32,
+) {
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         // Convert filter coefficients from i8 to i16 for pmaddwd
@@ -3257,7 +3971,15 @@ unsafe fn h_filter_8tap_16bpc_put_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_filter_8tap_16bpc_direct_avx2_inner(_token: Desktop64, dst: *mut u16, src: *const u16, src_stride: isize, w: usize, filter: &[i8; 8], max: i32) {
+unsafe fn v_filter_8tap_16bpc_direct_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u16,
+    src: *const u16,
+    src_stride: isize,
+    w: usize,
+    filter: &[i8; 8],
+    max: i32,
+) {
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         let coeff: [i32; 8] = [
@@ -3375,7 +4097,15 @@ unsafe fn v_filter_8tap_16bpc_direct_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn h_filter_8tap_16bpc_prep_direct_avx2_inner(_token: Desktop64, dst: *mut i16, src: *const u16, w: usize, filter: &[i8; 8], sh: i32, prep_bias: i32) {
+unsafe fn h_filter_8tap_16bpc_prep_direct_avx2_inner(
+    _token: Desktop64,
+    dst: *mut i16,
+    src: *const u16,
+    w: usize,
+    filter: &[i8; 8],
+    sh: i32,
+    prep_bias: i32,
+) {
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         // Convert filter coefficients from i8 to i16 for pmaddwd
@@ -3470,7 +4200,16 @@ unsafe fn h_filter_8tap_16bpc_prep_direct_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_filter_8tap_16bpc_prep_direct_avx2_inner(_token: Desktop64, dst: *mut i16, src: *const u16, src_stride: isize, w: usize, filter: &[i8; 8], sh: i32, prep_bias: i32) {
+unsafe fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
+    _token: Desktop64,
+    dst: *mut i16,
+    src: *const u16,
+    src_stride: isize,
+    w: usize,
+    filter: &[i8; 8],
+    sh: i32,
+    prep_bias: i32,
+) {
     // SAFETY: AVX2 guaranteed by target_feature
     unsafe {
         let coeff: [i32; 8] = [
@@ -3580,7 +4319,11 @@ unsafe fn v_filter_8tap_16bpc_prep_direct_avx2(
     prep_bias: i32,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { v_filter_8tap_16bpc_prep_direct_avx2_inner(token, dst, src, src_stride, w, filter, sh, prep_bias) }
+    unsafe {
+        v_filter_8tap_16bpc_prep_direct_avx2_inner(
+            token, dst, src, src_stride, w, filter, sh, prep_bias,
+        )
+    }
 }
 
 /// Generic 8-tap put function for 16bpc
@@ -3588,7 +4331,20 @@ unsafe fn v_filter_8tap_16bpc_prep_direct_avx2(
 /// Similar to 8bpc but handles 16-bit pixels and different intermediate scaling
 #[cfg(target_arch = "x86_64")]
 #[rite]
-unsafe fn put_8tap_16bpc_avx2_impl_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, h_filter_type: Rav1dFilterMode, v_filter_type: Rav1dFilterMode) {
+unsafe fn put_8tap_16bpc_avx2_impl_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    h_filter_type: Rav1dFilterMode,
+    v_filter_type: Rav1dFilterMode,
+) {
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -3677,13 +4433,39 @@ unsafe fn put_8tap_16bpc_avx2_impl(
     v_filter_type: Rav1dFilterMode,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_16bpc_avx2_impl_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, h_filter_type, v_filter_type) }
+    unsafe {
+        put_8tap_16bpc_avx2_impl_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            h_filter_type,
+            v_filter_type,
+        )
+    }
 }
 
 /// Generic 8-tap prep function for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[rite]
-unsafe fn prep_8tap_16bpc_avx2_impl_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, h_filter_type: Rav1dFilterMode, v_filter_type: Rav1dFilterMode) {
+unsafe fn prep_8tap_16bpc_avx2_impl_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    h_filter_type: Rav1dFilterMode,
+    v_filter_type: Rav1dFilterMode,
+) {
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -3782,7 +4564,20 @@ unsafe fn prep_8tap_16bpc_avx2_impl(
     v_filter_type: Rav1dFilterMode,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_16bpc_avx2_impl_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, h_filter_type, v_filter_type) }
+    unsafe {
+        prep_8tap_16bpc_avx2_impl_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            h_filter_type,
+            v_filter_type,
+        )
+    }
 }
 
 /// Generic put_8tap function wrapper for 16bpc
@@ -3849,7 +4644,20 @@ pub unsafe extern "C" fn prep_8tap_16bpc_avx2<const FILTER: usize>(
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_regular_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_regular_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         put_8tap_16bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
             dst_ptr,
@@ -3883,12 +4691,40 @@ pub unsafe extern "C" fn put_8tap_regular_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_regular_16bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_regular_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_regular_smooth_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_regular_smooth_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         put_8tap_16bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
             dst_ptr,
@@ -3922,12 +4758,40 @@ pub unsafe extern "C" fn put_8tap_regular_smooth_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_regular_smooth_16bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_regular_smooth_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_regular_sharp_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_regular_sharp_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         put_8tap_16bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
             dst_ptr,
@@ -3961,12 +4825,40 @@ pub unsafe extern "C" fn put_8tap_regular_sharp_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_regular_sharp_16bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_regular_sharp_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_smooth_regular_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_smooth_regular_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         put_8tap_16bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
             dst_ptr,
@@ -4000,12 +4892,40 @@ pub unsafe extern "C" fn put_8tap_smooth_regular_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_smooth_regular_16bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_smooth_regular_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_smooth_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_smooth_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         put_8tap_16bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
             dst_ptr,
@@ -4039,12 +4959,40 @@ pub unsafe extern "C" fn put_8tap_smooth_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_smooth_16bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_smooth_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_smooth_sharp_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_smooth_sharp_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         put_8tap_16bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
             dst_ptr,
@@ -4078,12 +5026,40 @@ pub unsafe extern "C" fn put_8tap_smooth_sharp_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_smooth_sharp_16bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_smooth_sharp_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_sharp_regular_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_sharp_regular_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         put_8tap_16bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
             dst_ptr,
@@ -4117,12 +5093,40 @@ pub unsafe extern "C" fn put_8tap_sharp_regular_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_sharp_regular_16bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_sharp_regular_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_sharp_smooth_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_sharp_smooth_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         put_8tap_16bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
             dst_ptr,
@@ -4156,12 +5160,40 @@ pub unsafe extern "C" fn put_8tap_sharp_smooth_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_sharp_smooth_16bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_sharp_smooth_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_8tap_sharp_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, dst: *const FFISafe<PicOffset>, src: *const FFISafe<PicOffset>) {
+unsafe fn put_8tap_sharp_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         put_8tap_16bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
             dst_ptr,
@@ -4195,14 +5227,40 @@ pub unsafe extern "C" fn put_8tap_sharp_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_8tap_sharp_16bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max, dst, src) }
+    unsafe {
+        put_8tap_sharp_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            dst,
+            src,
+        )
+    }
 }
 
 // 16bpc prep wrapper functions
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_regular_16bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_regular_16bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         prep_8tap_16bpc_avx2::<{ Filter2d::Regular8Tap as usize }>(
             tmp,
@@ -4232,12 +5290,36 @@ pub unsafe extern "C" fn prep_8tap_regular_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_regular_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_regular_16bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_regular_smooth_16bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_regular_smooth_16bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         prep_8tap_16bpc_avx2::<{ Filter2d::RegularSmooth8Tap as usize }>(
             tmp,
@@ -4267,12 +5349,36 @@ pub unsafe extern "C" fn prep_8tap_regular_smooth_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_regular_smooth_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_regular_smooth_16bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_regular_sharp_16bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_regular_sharp_16bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         prep_8tap_16bpc_avx2::<{ Filter2d::RegularSharp8Tap as usize }>(
             tmp,
@@ -4302,12 +5408,36 @@ pub unsafe extern "C" fn prep_8tap_regular_sharp_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_regular_sharp_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_regular_sharp_16bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_smooth_regular_16bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_smooth_regular_16bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         prep_8tap_16bpc_avx2::<{ Filter2d::SmoothRegular8Tap as usize }>(
             tmp,
@@ -4337,12 +5467,36 @@ pub unsafe extern "C" fn prep_8tap_smooth_regular_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_smooth_regular_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_smooth_regular_16bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_smooth_16bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_smooth_16bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         prep_8tap_16bpc_avx2::<{ Filter2d::Smooth8Tap as usize }>(
             tmp,
@@ -4372,12 +5526,36 @@ pub unsafe extern "C" fn prep_8tap_smooth_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_smooth_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_smooth_16bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_smooth_sharp_16bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_smooth_sharp_16bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         prep_8tap_16bpc_avx2::<{ Filter2d::SmoothSharp8Tap as usize }>(
             tmp,
@@ -4407,12 +5585,36 @@ pub unsafe extern "C" fn prep_8tap_smooth_sharp_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_smooth_sharp_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_smooth_sharp_16bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_sharp_regular_16bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_sharp_regular_16bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         prep_8tap_16bpc_avx2::<{ Filter2d::SharpRegular8Tap as usize }>(
             tmp,
@@ -4442,12 +5644,36 @@ pub unsafe extern "C" fn prep_8tap_sharp_regular_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_sharp_regular_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_sharp_regular_16bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_sharp_smooth_16bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_sharp_smooth_16bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         prep_8tap_16bpc_avx2::<{ Filter2d::SharpSmooth8Tap as usize }>(
             tmp,
@@ -4477,12 +5703,36 @@ pub unsafe extern "C" fn prep_8tap_sharp_smooth_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_sharp_smooth_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_sharp_smooth_16bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_8tap_sharp_16bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32, src: *const FFISafe<PicOffset>) {
+unsafe fn prep_8tap_sharp_16bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+    src: *const FFISafe<PicOffset>,
+) {
     unsafe {
         prep_8tap_16bpc_avx2::<{ Filter2d::Sharp8Tap as usize }>(
             tmp,
@@ -4512,7 +5762,20 @@ pub unsafe extern "C" fn prep_8tap_sharp_16bpc_avx2(
     src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { prep_8tap_sharp_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, src) }
+    unsafe {
+        prep_8tap_sharp_16bpc_avx2_inner(
+            token,
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            src,
+        )
+    }
 }
 
 // ============================================================================
@@ -4534,7 +5797,14 @@ pub unsafe extern "C" fn prep_8tap_sharp_16bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn h_filter_bilin_8bpc_avx2_inner(_token: Desktop64, dst: *mut i16, src: *const u8, w: usize, mx: usize, sh: u8) {
+unsafe fn h_filter_bilin_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst: *mut i16,
+    src: *const u8,
+    w: usize,
+    mx: usize,
+    sh: u8,
+) {
     // SAFETY: AVX2 is guaranteed by target_feature, caller ensures pointer validity
     unsafe {
         // Bilinear: pixel = (16 - mx) * src[x] + mx * src[x+1]
@@ -4614,7 +5884,15 @@ unsafe fn h_filter_bilin_8bpc_avx2(dst: *mut i16, src: *const u8, w: usize, mx: 
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_filter_bilin_8bpc_avx2_inner(_token: Desktop64, dst: *mut u8, mid: &[&[i16]], w: usize, my: usize, sh: u8, bd_max: i16) {
+unsafe fn v_filter_bilin_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    mid: &[&[i16]],
+    w: usize,
+    my: usize,
+    sh: u8,
+    bd_max: i16,
+) {
     // SAFETY: AVX2 is guaranteed by target_feature, caller ensures pointer validity
     unsafe {
         let my = my as i16;
@@ -4694,7 +5972,13 @@ unsafe fn v_filter_bilin_8bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn h_bilin_8bpc_put_avx2_inner(_token: Desktop64, dst: *mut u8, src: *const u8, w: usize, mx: usize) {
+unsafe fn h_bilin_8bpc_put_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    src: *const u8,
+    w: usize,
+    mx: usize,
+) {
     unsafe {
         let mx = mx as i8;
         let coeff0 = (16 - mx) as u8;
@@ -4756,7 +6040,14 @@ unsafe fn h_bilin_8bpc_put_avx2(dst: *mut u8, src: *const u8, w: usize, mx: usiz
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_bilin_8bpc_direct_avx2_inner(_token: Desktop64, dst: *mut u8, src0: *const u8, src1: *const u8, w: usize, my: usize) {
+unsafe fn v_bilin_8bpc_direct_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u8,
+    src0: *const u8,
+    src1: *const u8,
+    w: usize,
+    my: usize,
+) {
     unsafe {
         let my = my as i8;
         let coeff0 = (16 - my) as u8;
@@ -4820,7 +6111,17 @@ unsafe fn v_bilin_8bpc_direct_avx2(
 /// Core bilinear filter implementation for 8bpc
 #[cfg(target_arch = "x86_64")]
 #[rite]
-unsafe fn put_bilin_8bpc_avx2_impl_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32) {
+unsafe fn put_bilin_8bpc_avx2_impl_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -4906,13 +6207,27 @@ unsafe fn put_bilin_8bpc_avx2_impl(
     my: i32,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_bilin_8bpc_avx2_impl_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my) }
+    unsafe {
+        put_bilin_8bpc_avx2_impl_inner(
+            token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my,
+        )
+    }
 }
 
 /// Bilinear put for 8bpc - extern "C" wrapper
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_bilin_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32) {
+unsafe fn put_bilin_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         put_bilin_8bpc_avx2_impl(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my);
@@ -4935,14 +6250,27 @@ pub unsafe extern "C" fn put_bilin_8bpc_avx2(
     _src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_bilin_8bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my) }
+    unsafe {
+        put_bilin_8bpc_avx2_inner(
+            token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my,
+        )
+    }
 }
 
 /// Core bilinear prep implementation for 8bpc
 /// Outputs to i16 intermediate buffer (prep format)
 #[cfg(target_arch = "x86_64")]
 #[rite]
-unsafe fn prep_bilin_8bpc_avx2_impl_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32) {
+unsafe fn prep_bilin_8bpc_avx2_impl_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -5050,7 +6378,16 @@ unsafe fn prep_bilin_8bpc_avx2_impl(
 /// Bilinear prep for 8bpc - extern "C" wrapper
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_bilin_8bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32) {
+unsafe fn prep_bilin_8bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
         prep_bilin_8bpc_avx2_impl(tmp, src_ptr, src_stride, w, h, mx, my);
@@ -5180,7 +6517,17 @@ unsafe fn w_mask_8bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
 /// w_mask for 4:4:4 (no subsampling)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn w_mask_444_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32, mask: &mut [u8; SEG_MASK_LEN], sign: i32) {
+unsafe fn w_mask_444_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+) {
     unsafe {
         w_mask_8bpc_avx2_impl::<false, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign);
     }
@@ -5207,7 +6554,17 @@ pub unsafe extern "C" fn w_mask_444_8bpc_avx2(
 /// w_mask for 4:2:2 (horizontal subsampling only)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn w_mask_422_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32, mask: &mut [u8; SEG_MASK_LEN], sign: i32) {
+unsafe fn w_mask_422_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+) {
     unsafe {
         w_mask_8bpc_avx2_impl::<true, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign);
     }
@@ -5234,7 +6591,17 @@ pub unsafe extern "C" fn w_mask_422_8bpc_avx2(
 /// w_mask for 4:2:0 (horizontal and vertical subsampling)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn w_mask_420_8bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32, mask: &mut [u8; SEG_MASK_LEN], sign: i32) {
+unsafe fn w_mask_420_8bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+) {
     unsafe {
         w_mask_8bpc_avx2_impl::<true, true>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign);
     }
@@ -5344,7 +6711,18 @@ unsafe fn w_mask_16bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn w_mask_444_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32, mask: &mut [u8; SEG_MASK_LEN], sign: i32, bitdepth_max: i32) {
+unsafe fn w_mask_444_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+    bitdepth_max: i32,
+) {
     unsafe {
         w_mask_16bpc_avx2_impl::<false, false>(
             dst_ptr,
@@ -5375,12 +6753,36 @@ pub unsafe extern "C" fn w_mask_444_16bpc_avx2(
     _dst: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { w_mask_444_16bpc_avx2_inner(token, dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max) }
+    unsafe {
+        w_mask_444_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+            bitdepth_max,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn w_mask_422_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32, mask: &mut [u8; SEG_MASK_LEN], sign: i32, bitdepth_max: i32) {
+unsafe fn w_mask_422_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+    bitdepth_max: i32,
+) {
     unsafe {
         w_mask_16bpc_avx2_impl::<true, false>(
             dst_ptr,
@@ -5411,12 +6813,36 @@ pub unsafe extern "C" fn w_mask_422_16bpc_avx2(
     _dst: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { w_mask_422_16bpc_avx2_inner(token, dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max) }
+    unsafe {
+        w_mask_422_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+            bitdepth_max,
+        )
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn w_mask_420_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, tmp1: &[i16; COMPINTER_LEN], tmp2: &[i16; COMPINTER_LEN], w: i32, h: i32, mask: &mut [u8; SEG_MASK_LEN], sign: i32, bitdepth_max: i32) {
+unsafe fn w_mask_420_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+    bitdepth_max: i32,
+) {
     unsafe {
         w_mask_16bpc_avx2_impl::<true, true>(
             dst_ptr,
@@ -5447,7 +6873,20 @@ pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
     _dst: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { w_mask_420_16bpc_avx2_inner(token, dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max) }
+    unsafe {
+        w_mask_420_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+            bitdepth_max,
+        )
+    }
 }
 
 // ============================================================================
@@ -5459,7 +6898,13 @@ pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn h_bilin_16bpc_avx2_inner(_token: Desktop64, dst: *mut i32, src: *const u16, w: usize, mx: i32) {
+unsafe fn h_bilin_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst: *mut i32,
+    src: *const u16,
+    w: usize,
+    mx: i32,
+) {
     unsafe {
         // Bilinear weights: w0 = (16 - mx), w1 = mx
         let w0 = _mm256_set1_epi32(16 - mx);
@@ -5510,7 +6955,16 @@ unsafe fn h_bilin_16bpc_avx2(dst: *mut i32, src: *const u16, w: usize, mx: i32) 
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_bilin_16bpc_avx2_inner(_token: Desktop64, dst: *mut u16, mid: &[[i32; MID_STRIDE]], w: usize, y: usize, my: i32, sh: i32, max: i32) {
+unsafe fn v_bilin_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u16,
+    mid: &[[i32; MID_STRIDE]],
+    w: usize,
+    y: usize,
+    my: i32,
+    sh: i32,
+    max: i32,
+) {
     unsafe {
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
@@ -5576,7 +7030,16 @@ unsafe fn v_bilin_16bpc_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_bilin_16bpc_prep_avx2_inner(_token: Desktop64, dst: *mut i16, mid: &[[i32; MID_STRIDE]], w: usize, y: usize, my: i32, sh: i32, prep_bias: i32) {
+unsafe fn v_bilin_16bpc_prep_avx2_inner(
+    _token: Desktop64,
+    dst: *mut i16,
+    mid: &[[i32; MID_STRIDE]],
+    w: usize,
+    y: usize,
+    my: i32,
+    sh: i32,
+    prep_bias: i32,
+) {
     unsafe {
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
@@ -5640,7 +7103,14 @@ unsafe fn v_bilin_16bpc_prep_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn h_bilin_16bpc_put_avx2_inner(_token: Desktop64, dst: *mut u16, src: *const u16, w: usize, mx: i32, bd_max: i32) {
+unsafe fn h_bilin_16bpc_put_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u16,
+    src: *const u16,
+    w: usize,
+    mx: i32,
+    bd_max: i32,
+) {
     unsafe {
         let w0 = _mm256_set1_epi32(16 - mx);
         let w1 = _mm256_set1_epi32(mx);
@@ -5698,7 +7168,15 @@ unsafe fn h_bilin_16bpc_put_avx2(dst: *mut u16, src: *const u16, w: usize, mx: i
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_bilin_16bpc_direct_avx2_inner(_token: Desktop64, dst: *mut u16, src: *const u16, src_stride: isize, w: usize, my: i32, bd_max: i32) {
+unsafe fn v_bilin_16bpc_direct_avx2_inner(
+    _token: Desktop64,
+    dst: *mut u16,
+    src: *const u16,
+    src_stride: isize,
+    w: usize,
+    my: i32,
+    bd_max: i32,
+) {
     unsafe {
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
@@ -5765,7 +7243,14 @@ unsafe fn v_bilin_16bpc_direct_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn h_bilin_16bpc_prep_direct_avx2_inner(_token: Desktop64, dst: *mut i16, src: *const u16, w: usize, mx: i32, prep_bias: i32) {
+unsafe fn h_bilin_16bpc_prep_direct_avx2_inner(
+    _token: Desktop64,
+    dst: *mut i16,
+    src: *const u16,
+    w: usize,
+    mx: i32,
+    prep_bias: i32,
+) {
     unsafe {
         let w0 = _mm256_set1_epi32(16 - mx);
         let w1 = _mm256_set1_epi32(mx);
@@ -5828,7 +7313,15 @@ unsafe fn h_bilin_16bpc_prep_direct_avx2(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline]
-unsafe fn v_bilin_16bpc_prep_direct_avx2_inner(_token: Desktop64, dst: *mut i16, src: *const u16, src_stride: isize, w: usize, my: i32, prep_bias: i32) {
+unsafe fn v_bilin_16bpc_prep_direct_avx2_inner(
+    _token: Desktop64,
+    dst: *mut i16,
+    src: *const u16,
+    src_stride: isize,
+    w: usize,
+    my: i32,
+    prep_bias: i32,
+) {
     unsafe {
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
@@ -5892,7 +7385,18 @@ unsafe fn v_bilin_16bpc_prep_direct_avx2(
 /// Bilinear put for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn put_bilin_16bpc_avx2_inner(_token: Desktop64, dst_ptr: *mut DynPixel, dst_stride: isize, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32, bitdepth_max: i32) {
+unsafe fn put_bilin_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -5970,13 +7474,35 @@ pub unsafe extern "C" fn put_bilin_16bpc_avx2(
     _src: *const FFISafe<PicOffset>,
 ) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { put_bilin_16bpc_avx2_inner(token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bitdepth_max) }
+    unsafe {
+        put_bilin_16bpc_avx2_inner(
+            token,
+            dst_ptr,
+            dst_stride,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+        )
+    }
 }
 
 /// Bilinear prep for 16bpc (scalar implementation)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-unsafe fn prep_bilin_16bpc_avx2_inner(_token: Desktop64, tmp: *mut i16, src_ptr: *const DynPixel, src_stride: isize, w: i32, h: i32, mx: i32, my: i32) {
+unsafe fn prep_bilin_16bpc_avx2_inner(
+    _token: Desktop64,
+    tmp: *mut i16,
+    src_ptr: *const DynPixel,
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+) {
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;

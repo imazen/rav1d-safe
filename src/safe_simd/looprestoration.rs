@@ -1578,23 +1578,79 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
 
     let w = w as usize;
     let h = h as usize;
-    let left_8 = || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u8>]) };
-    let left_16 = || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u16>]) };
+    let left_8 =
+        || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u8>]) };
+    let left_16 =
+        || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u16>]) };
 
     // SAFETY: AVX2 verified by CpuFlags check above
     let token = unsafe { Desktop64::forge_token_dangerously() };
 
     match (BD::BPC, variant) {
-        (BPC::BPC8, 0) => wiener_filter7_8bpc_avx2_inner(token, dst, left_8(), lpf, lpf_off, w, h, params, edges),
-        (BPC::BPC8, 1) => wiener_filter5_8bpc_avx2_inner(token, dst, left_8(), lpf, lpf_off, w, h, params, edges),
+        (BPC::BPC8, 0) => {
+            wiener_filter7_8bpc_avx2_inner(token, dst, left_8(), lpf, lpf_off, w, h, params, edges)
+        }
+        (BPC::BPC8, 1) => {
+            wiener_filter5_8bpc_avx2_inner(token, dst, left_8(), lpf, lpf_off, w, h, params, edges)
+        }
         (BPC::BPC8, 2) => sgr_5x5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
         (BPC::BPC8, 3) => sgr_3x3_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
         (BPC::BPC8, _) => sgr_mix_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
-        (BPC::BPC16, 0) => wiener_filter7_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
-        (BPC::BPC16, 1) => wiener_filter5_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
-        (BPC::BPC16, 2) => sgr_5x5_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
-        (BPC::BPC16, 3) => sgr_3x3_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
-        (BPC::BPC16, _) => sgr_mix_16bpc_avx2_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd.into_c()),
+        (BPC::BPC16, 0) => wiener_filter7_16bpc_avx2_inner(
+            dst,
+            left_16(),
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bd.into_c(),
+        ),
+        (BPC::BPC16, 1) => wiener_filter5_16bpc_avx2_inner(
+            dst,
+            left_16(),
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bd.into_c(),
+        ),
+        (BPC::BPC16, 2) => sgr_5x5_16bpc_avx2_inner(
+            dst,
+            left_16(),
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bd.into_c(),
+        ),
+        (BPC::BPC16, 3) => sgr_3x3_16bpc_avx2_inner(
+            dst,
+            left_16(),
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bd.into_c(),
+        ),
+        (BPC::BPC16, _) => sgr_mix_16bpc_avx2_inner(
+            dst,
+            left_16(),
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bd.into_c(),
+        ),
     }
     true
 }

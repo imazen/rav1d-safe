@@ -1431,45 +1431,87 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
         (BPC::BPC8, 0) => {
             let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]) };
             cdef_filter_8x8_8bpc_avx2_inner(
-                dst, left, &top, &bottom,
-                pri_strength, sec_strength, dir, damping, edges,
+                dst,
+                left,
+                &top,
+                &bottom,
+                pri_strength,
+                sec_strength,
+                dir,
+                damping,
+                edges,
             );
         }
         (BPC::BPC8, 1) => {
             let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]) };
             cdef_filter_4x8_8bpc_avx2_inner(
-                dst, left, &top, &bottom,
-                pri_strength, sec_strength, dir, damping, edges,
+                dst,
+                left,
+                &top,
+                &bottom,
+                pri_strength,
+                sec_strength,
+                dir,
+                damping,
+                edges,
             );
         }
         (BPC::BPC8, _) => {
             let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]) };
             cdef_filter_4x4_8bpc_avx2_inner(
-                dst, left, &top, &bottom,
-                pri_strength, sec_strength, dir, damping, edges,
+                dst,
+                left,
+                &top,
+                &bottom,
+                pri_strength,
+                sec_strength,
+                dir,
+                damping,
+                edges,
             );
         }
         (BPC::BPC16, 0) => {
             let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]) };
             cdef_filter_8x8_16bpc_avx2_inner(
-                dst, left, &top, &bottom,
-                pri_strength, sec_strength, dir, damping, edges,
+                dst,
+                left,
+                &top,
+                &bottom,
+                pri_strength,
+                sec_strength,
+                dir,
+                damping,
+                edges,
                 bd.into_c(),
             );
         }
         (BPC::BPC16, 1) => {
             let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]) };
             cdef_filter_4x8_16bpc_avx2_inner(
-                dst, left, &top, &bottom,
-                pri_strength, sec_strength, dir, damping, edges,
+                dst,
+                left,
+                &top,
+                &bottom,
+                pri_strength,
+                sec_strength,
+                dir,
+                damping,
+                edges,
                 bd.into_c(),
             );
         }
         (BPC::BPC16, _) => {
             let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]) };
             cdef_filter_4x4_16bpc_avx2_inner(
-                dst, left, &top, &bottom,
-                pri_strength, sec_strength, dir, damping, edges,
+                dst,
+                left,
+                &top,
+                &bottom,
+                pri_strength,
+                sec_strength,
+                dir,
+                damping,
+                edges,
                 bd.into_c(),
             );
         }

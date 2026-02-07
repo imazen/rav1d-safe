@@ -78,9 +78,7 @@ fn loop_filter_4_8bpc(
     for idx in 0..4isize {
         let edge = signed_idx(base, idx * stridea);
 
-        let get_px = |offset: isize| -> i32 {
-            buf[signed_idx(edge, strideb * offset)] as i32
-        };
+        let get_px = |offset: isize| -> i32 { buf[signed_idx(edge, strideb * offset)] as i32 };
 
         let p1 = get_px(-2);
         let p0 = get_px(-1);
@@ -323,7 +321,17 @@ fn lpf_h_sb_y_8bpc_inner(
                     4
                 };
 
-                loop_filter_4_8bpc(buf, dst_offset, e, i, h, stridea, strideb, idx, bitdepth_max);
+                loop_filter_4_8bpc(
+                    buf,
+                    dst_offset,
+                    e,
+                    i,
+                    h,
+                    stridea,
+                    strideb,
+                    idx,
+                    bitdepth_max,
+                );
             }
         }
 
@@ -381,7 +389,17 @@ fn lpf_v_sb_y_8bpc_inner(
                     4
                 };
 
-                loop_filter_4_8bpc(buf, dst_offset, e, i, h, stridea, strideb, idx, bitdepth_max);
+                loop_filter_4_8bpc(
+                    buf,
+                    dst_offset,
+                    e,
+                    i,
+                    h,
+                    stridea,
+                    strideb,
+                    idx,
+                    bitdepth_max,
+                );
             }
         }
 
@@ -433,7 +451,17 @@ fn lpf_h_sb_uv_8bpc_inner(
 
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
 
-                loop_filter_4_8bpc(buf, dst_offset, e, i, h, stridea, strideb, idx, bitdepth_max);
+                loop_filter_4_8bpc(
+                    buf,
+                    dst_offset,
+                    e,
+                    i,
+                    h,
+                    stridea,
+                    strideb,
+                    idx,
+                    bitdepth_max,
+                );
             }
         }
 
@@ -485,7 +513,17 @@ fn lpf_v_sb_uv_8bpc_inner(
 
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
 
-                loop_filter_4_8bpc(buf, dst_offset, e, i, h, stridea, strideb, idx, bitdepth_max);
+                loop_filter_4_8bpc(
+                    buf,
+                    dst_offset,
+                    e,
+                    i,
+                    h,
+                    stridea,
+                    strideb,
+                    idx,
+                    bitdepth_max,
+                );
             }
         }
 
@@ -517,8 +555,19 @@ pub unsafe extern "C" fn lpf_h_sb_y_8bpc_avx2(
     // Determine buffer size needed: conservative upper bound
     let buf_len = compute_buf_len_u8(stride as isize, w);
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
-    lpf_h_sb_y_8bpc_inner(buf, 0, stride as isize, mask, lvl, b4_stride as isize, lut, w, bitdepth_max);
+    let lvl =
+        unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
+    lpf_h_sb_y_8bpc_inner(
+        buf,
+        0,
+        stride as isize,
+        mask,
+        lvl,
+        b4_stride as isize,
+        lut,
+        w,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for Y vertical filter
@@ -538,8 +587,19 @@ pub unsafe extern "C" fn lpf_v_sb_y_8bpc_avx2(
 ) {
     let buf_len = compute_buf_len_u8(stride as isize, w);
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
-    lpf_v_sb_y_8bpc_inner(buf, 0, stride as isize, mask, lvl, b4_stride as isize, lut, w, bitdepth_max);
+    let lvl =
+        unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
+    lpf_v_sb_y_8bpc_inner(
+        buf,
+        0,
+        stride as isize,
+        mask,
+        lvl,
+        b4_stride as isize,
+        lut,
+        w,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for UV horizontal filter
@@ -559,8 +619,19 @@ pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_avx2(
 ) {
     let buf_len = compute_buf_len_u8(stride as isize, w);
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
-    lpf_h_sb_uv_8bpc_inner(buf, 0, stride as isize, mask, lvl, b4_stride as isize, lut, w, bitdepth_max);
+    let lvl =
+        unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
+    lpf_h_sb_uv_8bpc_inner(
+        buf,
+        0,
+        stride as isize,
+        mask,
+        lvl,
+        b4_stride as isize,
+        lut,
+        w,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for UV vertical filter
@@ -580,8 +651,19 @@ pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_avx2(
 ) {
     let buf_len = compute_buf_len_u8(stride as isize, w);
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
-    lpf_v_sb_uv_8bpc_inner(buf, 0, stride as isize, mask, lvl, b4_stride as isize, lut, w, bitdepth_max);
+    let lvl =
+        unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
+    lpf_v_sb_uv_8bpc_inner(
+        buf,
+        0,
+        stride as isize,
+        mask,
+        lvl,
+        b4_stride as isize,
+        lut,
+        w,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -615,9 +697,7 @@ fn loop_filter_4_16bpc(
     for idx in 0..4isize {
         let edge = signed_idx(base, idx * stridea);
 
-        let get_px = |offset: isize| -> i32 {
-            buf[signed_idx(edge, strideb * offset)] as i32
-        };
+        let get_px = |offset: isize| -> i32 { buf[signed_idx(edge, strideb * offset)] as i32 };
 
         let p1 = get_px(-2);
         let p0 = get_px(-1);
@@ -844,7 +924,17 @@ fn lpf_h_sb_y_16bpc_inner(
                     4
                 };
 
-                loop_filter_4_16bpc(buf, dst_offset, e, i, h, stridea, strideb, idx, bitdepth_max);
+                loop_filter_4_16bpc(
+                    buf,
+                    dst_offset,
+                    e,
+                    i,
+                    h,
+                    stridea,
+                    strideb,
+                    idx,
+                    bitdepth_max,
+                );
             }
         }
 
@@ -903,7 +993,17 @@ fn lpf_v_sb_y_16bpc_inner(
                     4
                 };
 
-                loop_filter_4_16bpc(buf, dst_offset, e, i, h, stridea, strideb, idx, bitdepth_max);
+                loop_filter_4_16bpc(
+                    buf,
+                    dst_offset,
+                    e,
+                    i,
+                    h,
+                    stridea,
+                    strideb,
+                    idx,
+                    bitdepth_max,
+                );
             }
         }
 
@@ -955,7 +1055,17 @@ fn lpf_h_sb_uv_16bpc_inner(
 
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
 
-                loop_filter_4_16bpc(buf, dst_offset, e, i, h, stridea, strideb, idx, bitdepth_max);
+                loop_filter_4_16bpc(
+                    buf,
+                    dst_offset,
+                    e,
+                    i,
+                    h,
+                    stridea,
+                    strideb,
+                    idx,
+                    bitdepth_max,
+                );
             }
         }
 
@@ -1008,7 +1118,17 @@ fn lpf_v_sb_uv_16bpc_inner(
 
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
 
-                loop_filter_4_16bpc(buf, dst_offset, e, i, h, stridea, strideb, idx, bitdepth_max);
+                loop_filter_4_16bpc(
+                    buf,
+                    dst_offset,
+                    e,
+                    i,
+                    h,
+                    stridea,
+                    strideb,
+                    idx,
+                    bitdepth_max,
+                );
             }
         }
 
@@ -1039,8 +1159,19 @@ pub unsafe extern "C" fn lpf_h_sb_y_16bpc_avx2(
 ) {
     let buf_len = compute_buf_len_u16(stride as isize, w);
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, buf_len) };
-    let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
-    lpf_h_sb_y_16bpc_inner(buf, 0, stride as isize / 2, mask, lvl, b4_stride as isize, lut, w, bitdepth_max);
+    let lvl =
+        unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
+    lpf_h_sb_y_16bpc_inner(
+        buf,
+        0,
+        stride as isize / 2,
+        mask,
+        lvl,
+        b4_stride as isize,
+        lut,
+        w,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for Y vertical filter 16bpc
@@ -1060,8 +1191,19 @@ pub unsafe extern "C" fn lpf_v_sb_y_16bpc_avx2(
 ) {
     let buf_len = compute_buf_len_u16(stride as isize, w);
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, buf_len) };
-    let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
-    lpf_v_sb_y_16bpc_inner(buf, 0, stride as isize / 2, mask, lvl, b4_stride as isize, lut, w, bitdepth_max);
+    let lvl =
+        unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
+    lpf_v_sb_y_16bpc_inner(
+        buf,
+        0,
+        stride as isize / 2,
+        mask,
+        lvl,
+        b4_stride as isize,
+        lut,
+        w,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for UV horizontal filter 16bpc
@@ -1081,8 +1223,19 @@ pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_avx2(
 ) {
     let buf_len = compute_buf_len_u16(stride as isize, w);
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, buf_len) };
-    let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
-    lpf_h_sb_uv_16bpc_inner(buf, 0, stride as isize / 2, mask, lvl, b4_stride as isize, lut, w, bitdepth_max);
+    let lvl =
+        unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
+    lpf_h_sb_uv_16bpc_inner(
+        buf,
+        0,
+        stride as isize / 2,
+        mask,
+        lvl,
+        b4_stride as isize,
+        lut,
+        w,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for UV vertical filter 16bpc
@@ -1102,8 +1255,19 @@ pub unsafe extern "C" fn lpf_v_sb_uv_16bpc_avx2(
 ) {
     let buf_len = compute_buf_len_u16(stride as isize, w);
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, buf_len) };
-    let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
-    lpf_v_sb_uv_16bpc_inner(buf, 0, stride as isize / 2, mask, lvl, b4_stride as isize, lut, w, bitdepth_max);
+    let lvl =
+        unsafe { std::slice::from_raw_parts(lvl_ptr, compute_lvl_len(b4_stride as isize, w)) };
+    lpf_v_sb_uv_16bpc_inner(
+        buf,
+        0,
+        stride as isize / 2,
+        mask,
+        lvl,
+        b4_stride as isize,
+        lut,
+        w,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -1211,16 +1375,48 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             match (is_y, is_v) {
                 (true, false) => lpf_h_sb_y_8bpc_inner(
-                    buf, base, stride as isize, mask, lvl_slice, b4_stride, lut, w, bitdepth_max,
+                    buf,
+                    base,
+                    stride as isize,
+                    mask,
+                    lvl_slice,
+                    b4_stride,
+                    lut,
+                    w,
+                    bitdepth_max,
                 ),
                 (true, true) => lpf_v_sb_y_8bpc_inner(
-                    buf, base, stride as isize, mask, lvl_slice, b4_stride, lut, w, bitdepth_max,
+                    buf,
+                    base,
+                    stride as isize,
+                    mask,
+                    lvl_slice,
+                    b4_stride,
+                    lut,
+                    w,
+                    bitdepth_max,
                 ),
                 (false, false) => lpf_h_sb_uv_8bpc_inner(
-                    buf, base, stride as isize, mask, lvl_slice, b4_stride, lut, w, bitdepth_max,
+                    buf,
+                    base,
+                    stride as isize,
+                    mask,
+                    lvl_slice,
+                    b4_stride,
+                    lut,
+                    w,
+                    bitdepth_max,
                 ),
                 (false, true) => lpf_v_sb_uv_8bpc_inner(
-                    buf, base, stride as isize, mask, lvl_slice, b4_stride, lut, w, bitdepth_max,
+                    buf,
+                    base,
+                    stride as isize,
+                    mask,
+                    lvl_slice,
+                    b4_stride,
+                    lut,
+                    w,
+                    bitdepth_max,
                 ),
             }
         }
@@ -1237,16 +1433,48 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             match (is_y, is_v) {
                 (true, false) => lpf_h_sb_y_16bpc_inner(
-                    buf, base, stride as isize / 2, mask, lvl_slice, b4_stride, lut, w, bitdepth_max,
+                    buf,
+                    base,
+                    stride as isize / 2,
+                    mask,
+                    lvl_slice,
+                    b4_stride,
+                    lut,
+                    w,
+                    bitdepth_max,
                 ),
                 (true, true) => lpf_v_sb_y_16bpc_inner(
-                    buf, base, stride as isize / 2, mask, lvl_slice, b4_stride, lut, w, bitdepth_max,
+                    buf,
+                    base,
+                    stride as isize / 2,
+                    mask,
+                    lvl_slice,
+                    b4_stride,
+                    lut,
+                    w,
+                    bitdepth_max,
                 ),
                 (false, false) => lpf_h_sb_uv_16bpc_inner(
-                    buf, base, stride as isize / 2, mask, lvl_slice, b4_stride, lut, w, bitdepth_max,
+                    buf,
+                    base,
+                    stride as isize / 2,
+                    mask,
+                    lvl_slice,
+                    b4_stride,
+                    lut,
+                    w,
+                    bitdepth_max,
                 ),
                 (false, true) => lpf_v_sb_uv_16bpc_inner(
-                    buf, base, stride as isize / 2, mask, lvl_slice, b4_stride, lut, w, bitdepth_max,
+                    buf,
+                    base,
+                    stride as isize / 2,
+                    mask,
+                    lvl_slice,
+                    b4_stride,
+                    lut,
+                    w,
+                    bitdepth_max,
                 ),
             }
         }

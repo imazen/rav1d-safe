@@ -964,17 +964,33 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
         BPC::BPC8 => {
             let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u8>; 8]) };
             cdef_filter_block_8bpc_inner(
-                dst, left, &top, &bottom,
-                pri_strength, sec_strength, dir, damping, edges,
-                w, h,
+                dst,
+                left,
+                &top,
+                &bottom,
+                pri_strength,
+                sec_strength,
+                dir,
+                damping,
+                edges,
+                w,
+                h,
             );
         }
         BPC::BPC16 => {
             let left = unsafe { &*(left as *const _ as *const [LeftPixelRow2px<u16>; 8]) };
             cdef_filter_block_16bpc_inner(
-                dst, left, &top, &bottom,
-                pri_strength, sec_strength, dir, damping, edges,
-                w, h,
+                dst,
+                left,
+                &top,
+                &bottom,
+                pri_strength,
+                sec_strength,
+                dir,
+                damping,
+                edges,
+                w,
+                h,
                 bd.into_c(),
             );
         }

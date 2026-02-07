@@ -9,9 +9,9 @@
 
 #![allow(unused_imports)]
 
+use archmage::{arcane, Desktop64, SimdToken};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
-use archmage::{arcane, Desktop64, SimdToken};
 
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
@@ -44,7 +44,8 @@ const SQRT2_HALF: i32 = 181; // sqrt(2) * 128
 /// Uses AVX2 to process all 4 rows simultaneously
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -347,9 +348,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -366,7 +368,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_avx2(
 /// Full 2D DCT_DCT 4x4 inverse transform with add-to-destination (16bpc)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize, // stride in bytes
     coeff: *mut i16,
@@ -517,9 +520,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -624,14 +628,18 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
@@ -721,15 +729,19 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride_u16 = dst_stride / 2;
     let abs_stride_u16 = stride_u16.unsigned_abs();
     let buf_size = 3 * abs_stride_u16 + 4;
     let (base, dst_slice) = if stride_u16 >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u16, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u16).offset(3 * stride_u16) };
-        (3 * abs_stride_u16, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride_u16, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
@@ -749,7 +761,8 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_avx2(
 /// Identity transform - just scale by sqrt(2) and add to dst
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-pub fn inv_identity_add_4x4_8bpc_avx2(_token: Desktop64,
+pub fn inv_identity_add_4x4_8bpc_avx2(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -820,9 +833,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_identity_add_4x4_8bpc_avx2(_token, 
+        inv_identity_add_4x4_8bpc_avx2(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -842,7 +856,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_avx2(
 /// Plus final shift: (+ 8) >> 4
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-pub fn inv_identity_add_8x8_8bpc_avx2(_token: Desktop64,
+pub fn inv_identity_add_8x8_8bpc_avx2(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -904,9 +919,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_identity_add_8x8_8bpc_avx2(_token, 
+        inv_identity_add_8x8_8bpc_avx2(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -1181,7 +1197,8 @@ fn flipadst8_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
 /// Full 2D DCT_DCT 8x8 inverse transform with add-to-destination
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -1289,9 +1306,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -1308,7 +1326,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_avx2(
 /// 8x8 DCT_DCT for 16bpc (10/12-bit pixels)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize, // stride in bytes
     coeff: *mut i16,
@@ -1417,9 +1436,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -1439,7 +1459,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_avx2(
 /// Plus final shift: (+ 8) >> 4
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-pub fn inv_identity_add_16x16_8bpc_avx2(_token: Desktop64,
+pub fn inv_identity_add_16x16_8bpc_avx2(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -1539,9 +1560,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_identity_add_16x16_8bpc_avx2(_token, 
+        inv_identity_add_16x16_8bpc_avx2(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -1838,7 +1860,8 @@ fn inv_txfm_16x16_inner(
 /// Add transformed coefficients to destination with SIMD
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn add_16x16_to_dst(_token: Desktop64,
+fn add_16x16_to_dst(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     tmp: &[i32; 256],
@@ -1917,7 +1940,8 @@ macro_rules! impl_16x16_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u8,
             dst_stride: isize,
             coeff: *mut i16,
@@ -1961,7 +1985,7 @@ macro_rules! impl_16x16_ffi_wrapper {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             unsafe {
                 $inner(
                     _token,
@@ -2109,7 +2133,8 @@ impl_16x16_ffi_wrapper!(
 /// Full 2D DCT_DCT 16x16 inverse transform with add-to-destination
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -2222,9 +2247,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -2241,7 +2267,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_avx2(
 /// 16x16 DCT_DCT for 16bpc (10/12-bit pixels)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize, // stride in bytes
     coeff: *mut i16,
@@ -2360,9 +2387,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -2379,7 +2407,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_avx2(
 /// Full 2D DCT_DCT 4x8 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -2463,9 +2492,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -2478,7 +2508,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_avx2(
 /// Full 2D DCT_DCT 8x4 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -2574,9 +2605,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -2595,7 +2627,8 @@ macro_rules! impl_4x8_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u8,
             dst_stride: isize,
             coeff: *mut i16,
@@ -2665,7 +2698,8 @@ macro_rules! impl_8x4_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u8,
             dst_stride: isize,
             coeff: *mut i16,
@@ -2799,7 +2833,7 @@ macro_rules! impl_4x8_ffi_wrapper {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             unsafe {
                 $inner(
                     _token,
@@ -2861,7 +2895,7 @@ macro_rules! impl_8x4_ffi_wrapper {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             unsafe {
                 $inner(
                     _token,
@@ -3054,7 +3088,8 @@ macro_rules! impl_8x16_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u8,
             dst_stride: isize,
             coeff: *mut i16,
@@ -3143,7 +3178,8 @@ macro_rules! impl_16x8_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u8,
             dst_stride: isize,
             coeff: *mut i16,
@@ -3336,7 +3372,7 @@ macro_rules! impl_8x16_ffi_wrapper {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             unsafe {
                 $inner(
                     _token,
@@ -3365,7 +3401,7 @@ macro_rules! impl_16x8_ffi_wrapper {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             unsafe {
                 $inner(
                     _token,
@@ -3587,7 +3623,8 @@ impl_16x8_ffi_wrapper!(
 /// Full 2D DCT_DCT 8x8 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -3683,9 +3720,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -3698,7 +3736,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_avx2(
 /// Full 2D DCT_DCT 16x8 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -3803,9 +3842,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -3822,7 +3862,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_avx2(
 /// Full 2D DCT_DCT 16x32 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -3927,9 +3968,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -3942,7 +3984,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_avx2(
 /// Full 2D DCT_DCT 32x16 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -4056,9 +4099,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -4075,7 +4119,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_avx2(
 /// 16x32 IDTX inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -4176,9 +4221,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -4191,7 +4237,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_avx2(
 /// 32x16 IDTX inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -4256,9 +4303,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -4271,7 +4319,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_avx2(
 /// Full 2D DCT_DCT 32x64 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -4394,9 +4443,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -4409,7 +4459,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_avx2(
 /// Full 2D DCT_DCT 64x32 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -4527,9 +4578,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -4546,7 +4598,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_avx2(
 /// Full 2D DCT_DCT 4x16 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -4613,9 +4666,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -4628,7 +4682,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_avx2(
 /// Full 2D DCT_DCT 16x4 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -4731,9 +4786,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -4752,7 +4808,8 @@ macro_rules! impl_4x16_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u8,
             dst_stride: isize,
             coeff: *mut i16,
@@ -4812,7 +4869,8 @@ macro_rules! impl_16x4_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u8,
             dst_stride: isize,
             coeff: *mut i16,
@@ -5003,7 +5061,7 @@ macro_rules! impl_4x16_ffi_wrapper {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             unsafe {
                 $inner(
                     _token,
@@ -5032,7 +5090,7 @@ macro_rules! impl_16x4_ffi_wrapper {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             unsafe {
                 $inner(
                     _token,
@@ -5254,7 +5312,8 @@ impl_16x4_ffi_wrapper!(
 /// Full 2D DCT_DCT 8x32 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -5323,9 +5382,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -5338,7 +5398,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_avx2(
 /// Full 2D DCT_DCT 32x8 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -5452,9 +5513,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -5471,7 +5533,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_avx2(
 /// 8x32 IDTX inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -5534,9 +5597,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -5549,7 +5613,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_avx2(
 /// 32x8 IDTX inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -5612,9 +5677,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -5631,7 +5697,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_avx2(
 /// Full 2D DCT_DCT 16x64 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -5743,9 +5810,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -5758,7 +5826,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_avx2(
 /// Full 2D DCT_DCT 64x16 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -5875,9 +5944,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -5908,14 +5978,7 @@ mod tests {
         let mut dst = [128u8; 16];
         let stride = 4isize;
 
-        inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
-            &mut dst,
-            0,
-            stride,
-            &mut coeff,
-            1,
-            255,
-        );
+        inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(&mut dst, 0, stride, &mut coeff, 1, 255);
 
         // Should have added DC to all pixels
         assert!(dst.iter().all(|&p| p >= 128));
@@ -6147,14 +6210,18 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner(
@@ -6179,14 +6246,18 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner(
@@ -6211,14 +6282,18 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
@@ -6490,18 +6565,27 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(
-        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
     );
 }
 
@@ -6516,18 +6600,27 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(
-        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
     );
 }
 
@@ -6542,18 +6635,27 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(
-        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
     );
 }
 
@@ -6568,18 +6670,27 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(
-        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
     );
 }
 
@@ -6594,18 +6705,27 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
-        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
     );
 }
 
@@ -6746,7 +6866,8 @@ macro_rules! impl_8x8_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        pub fn $name(_token: Desktop64,
+        pub fn $name(
+            _token: Desktop64,
             dst: *mut u8,
             dst_stride: isize,
             coeff: *mut i16,
@@ -6874,7 +6995,7 @@ macro_rules! impl_8x8_ffi_wrapper {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             unsafe {
                 $inner(
                     _token,
@@ -7139,18 +7260,27 @@ pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
-        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
     );
 }
 
@@ -7165,18 +7295,27 @@ pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(
-        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
     );
 }
 
@@ -7191,18 +7330,27 @@ pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
-        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
     );
 }
 
@@ -7217,18 +7365,27 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(
-        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
     );
 }
 
@@ -7344,18 +7501,27 @@ pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
-        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
     );
 }
 
@@ -7370,18 +7536,27 @@ pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
-        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
     );
 }
 
@@ -7696,7 +7871,8 @@ fn inv_txfm_32x32_inner(
 /// Add transformed coefficients to destination with SIMD (32x32)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn add_32x32_to_dst(_token: Desktop64,
+fn add_32x32_to_dst(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     tmp: &[i32; 1024],
@@ -7770,7 +7946,8 @@ fn add_32x32_to_dst(_token: Desktop64,
 /// 32x32 DCT_DCT inner function
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -7801,7 +7978,8 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(_token: Desktop64,
 /// 32x32 IDTX inner function
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -7841,9 +8019,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -7865,9 +8044,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -7884,7 +8064,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_avx2(
 /// Add transformed coefficients to destination with SIMD (32x32 16bpc)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn add_32x32_to_dst_16bpc(_token: Desktop64,
+fn add_32x32_to_dst_16bpc(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize, // stride in bytes
     tmp: &[i32; 1024],
@@ -7957,7 +8138,8 @@ fn add_32x32_to_dst_16bpc(_token: Desktop64,
 /// 32x32 DCT_DCT inner function for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -7998,9 +8180,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -8658,7 +8841,8 @@ fn inv_txfm_64x64_inner(
 /// Add transformed coefficients to destination with SIMD (64x64)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn add_64x64_to_dst(_token: Desktop64,
+fn add_64x64_to_dst(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     tmp: &[i32; 4096],
@@ -8730,7 +8914,8 @@ fn add_64x64_to_dst(_token: Desktop64,
 /// 64x64 DCT_DCT inner function
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u8,
     dst_stride: isize,
     coeff: *mut i16,
@@ -8770,9 +8955,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u8,
             dst_stride,
             coeff as *mut i16,
@@ -8789,7 +8975,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_avx2(
 /// Add transformed coefficients to destination with SIMD (64x64 16bpc)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn add_64x64_to_dst_16bpc(_token: Desktop64,
+fn add_64x64_to_dst_16bpc(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     tmp: &[i32; 4096],
@@ -8862,7 +9049,8 @@ fn add_64x64_to_dst_16bpc(_token: Desktop64,
 /// 64x64 DCT_DCT inner function for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -8903,9 +9091,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -8922,7 +9111,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_avx2(
 /// 4x8 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -9002,9 +9192,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -9017,7 +9208,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_avx2(
 /// 8x4 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -9106,9 +9298,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -9121,7 +9314,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_avx2(
 /// 8x16 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -9214,9 +9408,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -9229,7 +9424,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_avx2(
 /// 16x8 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -9338,9 +9534,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -9353,7 +9550,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_avx2(
 /// 4x16 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -9433,9 +9631,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -9448,7 +9647,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_avx2(
 /// 16x4 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -9553,9 +9753,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -9568,7 +9769,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_avx2(
 /// 16x32 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -9676,9 +9878,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -9691,7 +9894,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_avx2(
 /// 32x16 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -9794,9 +9998,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -9809,7 +10014,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_16bpc_avx2(
 /// 8x32 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -9902,9 +10108,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -9917,7 +10124,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_avx2(
 /// 32x8 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -10020,9 +10228,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -10035,7 +10244,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_avx2(
 /// 32x64 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -10135,9 +10345,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -10150,7 +10361,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_avx2(
 /// 64x32 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -10250,9 +10462,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -10265,7 +10478,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_avx2(
 /// 16x64 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -10370,9 +10584,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -10385,7 +10600,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_avx2(
 /// 64x16 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -10485,9 +10701,10 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(_token, 
+        inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -10506,7 +10723,8 @@ macro_rules! impl_8x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        pub fn $name(_token: Desktop64,
+        pub fn $name(
+            _token: Desktop64,
             dst: *mut u16,
             dst_stride: isize,
             coeff: *mut i16,
@@ -10635,7 +10853,7 @@ macro_rules! impl_8x8_ffi_wrapper_16bpc {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             unsafe {
                 $inner(
                     _token,
@@ -10799,19 +11017,32 @@ macro_rules! impl_4x4_ffi_wrapper_16bpc {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride_u16 = dst_stride / 2;
             let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
             let abs_stride = stride_u16.unsigned_abs();
             let (dst_slice, dst_base) = if stride_u16 >= 0 {
                 let len = 3 * abs_stride + 4;
-                (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+                (
+                    unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+                    0usize,
+                )
             } else {
                 let len = 3 * abs_stride + 4;
                 let start = unsafe { (dst_ptr as *mut u16).offset(3 * stride_u16) };
-                (unsafe { std::slice::from_raw_parts_mut(start, len) }, 3 * abs_stride)
+                (
+                    unsafe { std::slice::from_raw_parts_mut(start, len) },
+                    3 * abs_stride,
+                )
             };
-            $inner(dst_slice, dst_base, stride_u16, coeff_slice, eob, bitdepth_max);
+            $inner(
+                dst_slice,
+                dst_base,
+                stride_u16,
+                coeff_slice,
+                eob,
+                bitdepth_max,
+            );
         }
     };
 }
@@ -10858,7 +11089,8 @@ macro_rules! impl_16x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        pub fn $name(_token: Desktop64,
+        pub fn $name(
+            _token: Desktop64,
             dst: *mut u16,
             dst_stride: isize,
             coeff: *mut i16,
@@ -10979,7 +11211,7 @@ macro_rules! impl_16x16_ffi_wrapper_16bpc {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             unsafe {
                 $inner(
                     _token,
@@ -11034,7 +11266,8 @@ impl_16x16_ffi_wrapper_16bpc!(
 /// 4x4 IDTX (identity transform) for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-pub fn inv_identity_add_4x4_16bpc_avx2(_token: Desktop64,
+pub fn inv_identity_add_4x4_16bpc_avx2(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -11099,9 +11332,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_identity_add_4x4_16bpc_avx2(_token, 
+        inv_identity_add_4x4_16bpc_avx2(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -11114,7 +11348,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_avx2(
 /// 8x8 IDTX (identity transform) for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-pub fn inv_identity_add_8x8_16bpc_avx2(_token: Desktop64,
+pub fn inv_identity_add_8x8_16bpc_avx2(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -11182,9 +11417,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_identity_add_8x8_16bpc_avx2(_token, 
+        inv_identity_add_8x8_16bpc_avx2(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -11197,7 +11433,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_avx2(
 /// 16x16 IDTX (identity transform) for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-pub fn inv_identity_add_16x16_16bpc_avx2(_token: Desktop64,
+pub fn inv_identity_add_16x16_16bpc_avx2(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -11287,9 +11524,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_identity_add_16x16_16bpc_avx2(_token, 
+        inv_identity_add_16x16_16bpc_avx2(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -11306,7 +11544,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_avx2(
 /// 32x32 IDTX inner function for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -11347,9 +11586,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -11366,7 +11606,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_avx2(
 /// 4x8 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -11446,9 +11687,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -11461,7 +11703,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_avx2(
 /// 8x4 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -11550,9 +11793,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -11565,7 +11809,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_avx2(
 /// 8x16 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -11655,9 +11900,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -11670,7 +11916,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_avx2(
 /// 16x8 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -11764,9 +12011,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -11779,7 +12027,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_avx2(
 /// 4x16 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -11859,9 +12108,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -11874,7 +12124,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_avx2(
 /// 16x4 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -11967,9 +12218,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -11982,7 +12234,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_avx2(
 /// 16x32 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -12077,9 +12330,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -12092,7 +12346,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_avx2(
 /// 32x16 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -12187,9 +12442,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -12202,7 +12458,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_avx2(
 /// 8x32 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -12291,9 +12548,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -12306,7 +12564,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_avx2(
 /// 32x8 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(_token: Desktop64,
+fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: *mut u16,
     dst_stride: isize,
     coeff: *mut i16,
@@ -12400,9 +12659,10 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+    let _token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe {
-        inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(_token, 
+        inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
+            _token,
             dst_ptr as *mut u16,
             dst_stride,
             coeff as *mut i16,
@@ -12421,7 +12681,8 @@ macro_rules! impl_4x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u16,
             dst_stride: isize,
             coeff: *mut i16,
@@ -12494,7 +12755,8 @@ macro_rules! impl_8x4_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u16,
             dst_stride: isize,
             coeff: *mut i16,
@@ -12585,7 +12847,7 @@ macro_rules! impl_ffi_wrapper_16bpc {
             _coeff_len: u16,
             _dst: *const FFISafe<PicOffset>,
         ) {
-        let _token = unsafe { Desktop64::forge_token_dangerously() };
+            let _token = unsafe { Desktop64::forge_token_dangerously() };
             unsafe {
                 $inner(
                     _token,
@@ -12755,7 +13017,8 @@ macro_rules! impl_8x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u16,
             dst_stride: isize,
             coeff: *mut i16,
@@ -12838,7 +13101,8 @@ macro_rules! impl_16x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u16,
             dst_stride: isize,
             coeff: *mut i16,
@@ -13076,7 +13340,8 @@ macro_rules! impl_4x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u16,
             dst_stride: isize,
             coeff: *mut i16,
@@ -13149,7 +13414,8 @@ macro_rules! impl_16x4_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u16,
             dst_stride: isize,
             coeff: *mut i16,
@@ -13736,7 +14002,8 @@ macro_rules! impl_8x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u16,
             dst_stride: isize,
             coeff: *mut i16,
@@ -13875,7 +14142,8 @@ macro_rules! impl_4x4_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u16,
             dst_stride: isize,
             coeff: *mut i16,
@@ -14001,7 +14269,8 @@ macro_rules! impl_16x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
-        fn $name(_token: Desktop64,
+        fn $name(
+            _token: Desktop64,
             dst: *mut u16,
             dst_stride: isize,
             coeff: *mut i16,

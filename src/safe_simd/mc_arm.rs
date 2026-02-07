@@ -19,13 +19,13 @@ use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
-use crate::src::strided::Strided as _;
 use crate::src::internal::COMPINTER_LEN;
 use crate::src::internal::SCRATCH_INTER_INTRA_BUF_LEN;
 use crate::src::internal::SCRATCH_LAP_LEN;
 #[cfg(target_arch = "aarch64")]
 use crate::src::internal::SEG_MASK_LEN;
 use crate::src::levels::Filter2d;
+use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_mc_subpel_filters;
 
 // ============================================================================
@@ -875,7 +875,6 @@ pub unsafe extern "C" fn blend_16bpc_neon(
         let tmp = std::slice::from_raw_parts(tmp as *const u16, w * h);
         let mask = std::slice::from_raw_parts(mask_ptr, w * h);
         (dst, tmp, mask)
-
     };
 
     // blend formula: (dst * (64-m) + tmp * m + 32) >> 6
@@ -1217,7 +1216,10 @@ pub unsafe extern "C" fn blend_h_8bpc_neon(
 
     // SAFETY: Pointers are valid and properly aligned
     let (dst, tmp) = unsafe {
-        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h_effective * dst_stride.unsigned_abs());
+        let dst = std::slice::from_raw_parts_mut(
+            dst_ptr as *mut u8,
+            h_effective * dst_stride.unsigned_abs(),
+        );
         let tmp = std::slice::from_raw_parts(tmp as *const u8, w * h_effective);
         (dst, tmp)
     };
@@ -2253,7 +2255,8 @@ pub unsafe extern "C" fn put_bilin_16bpc_neon(
     let (token, dst, src) = unsafe {
         let token = Arm64::forge_token_dangerously();
         let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
-        let src = std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
+        let src =
+            std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
         (token, dst, src)
     };
 
@@ -2392,7 +2395,8 @@ pub unsafe extern "C" fn prep_bilin_16bpc_neon(
     // Pointers are valid and properly aligned
     let (token, src, tmp_slice) = unsafe {
         let token = Arm64::forge_token_dangerously();
-        let src = std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
+        let src =
+            std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
         let tmp_slice = std::slice::from_raw_parts_mut(tmp, h * w);
         (token, src, tmp_slice)
     };
@@ -2496,9 +2500,7 @@ pub unsafe extern "C" fn w_mask_444_16bpc_neon(
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
     // SAFETY: Pointers are valid and properly aligned
-    let dst = unsafe {
-        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16)
-    };
+    let dst = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16) };
 
     w_mask_16bpc_inner::<false, false>(
         dst,
@@ -2530,9 +2532,7 @@ pub unsafe extern "C" fn w_mask_422_16bpc_neon(
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
     // SAFETY: Pointers are valid and properly aligned
-    let dst = unsafe {
-        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16)
-    };
+    let dst = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16) };
 
     w_mask_16bpc_inner::<true, false>(
         dst,
@@ -2564,9 +2564,7 @@ pub unsafe extern "C" fn w_mask_420_16bpc_neon(
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
     // SAFETY: Pointers are valid and properly aligned
-    let dst = unsafe {
-        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16)
-    };
+    let dst = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16) };
 
     w_mask_16bpc_inner::<true, true>(
         dst,

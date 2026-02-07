@@ -2540,7 +2540,6 @@ impl Rav1dIntraPredDSPContext {
     #[inline(always)]
     #[cfg(not(feature = "asm"))]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
-
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
         {
             let _ = flags;

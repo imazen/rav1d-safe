@@ -911,7 +911,6 @@ impl Rav1dInvTxfmDSPContext {
 
     /// Safe SIMD 16bpc initialization
 
-
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags, bpc: u8) -> Self {
         #[cfg(feature = "asm")]
@@ -925,8 +924,6 @@ impl Rav1dInvTxfmDSPContext {
                 return self.init_arm::<BD>(flags, bpc);
             }
         }
-
-
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
         {

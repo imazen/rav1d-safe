@@ -17,9 +17,9 @@ use std::slice;
 
 // x86_64 SIMD intrinsics for safe_simd implementations
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-use core::arch::x86_64::*;
-#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
 use archmage::{arcane, Desktop64, SimdToken};
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+use core::arch::x86_64::*;
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
 use safe_unaligned_simd::x86_64 as safe_simd;
 
@@ -554,7 +554,9 @@ fn rav1d_msac_decode_symbol_adapt16_avx2(
 
     // Load min_prob values offset by (15 - n_symbols)
     let min_prob_offset = 15 - n;
-    let min_prob_arr: &[u16; 16] = MIN_PROB_16[min_prob_offset..min_prob_offset + 16].try_into().unwrap();
+    let min_prob_arr: &[u16; 16] = MIN_PROB_16[min_prob_offset..min_prob_offset + 16]
+        .try_into()
+        .unwrap();
     let min_prob = safe_simd::_mm256_loadu_si256(min_prob_arr);
 
     // v = prod + min_prob
@@ -615,7 +617,6 @@ fn rav1d_msac_decode_symbol_adapt16_avx2(
 
     val
 }
-
 
 // NEON implementations for aarch64
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
@@ -727,7 +728,6 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_neon(
 
     val
 }
-
 
 impl MsacContext {
     pub fn new(data: CArc<[u8]>, disable_cdf_update_flag: bool, dsp: &Rav1dMsacDSPContext) -> Self {

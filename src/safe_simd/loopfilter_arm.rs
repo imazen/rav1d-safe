@@ -608,16 +608,44 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     // Call inner functions directly, bypassing FFI wrappers.
     match (is_y, is_v) {
         (true, false) => lpf_h_sb_inner::<BD, 0>(
-            dst_ptr, stride as isize, mask, lvl_ptr, b4_stride, &lut.0, w, bitdepth_max,
+            dst_ptr,
+            stride as isize,
+            mask,
+            lvl_ptr,
+            b4_stride,
+            &lut.0,
+            w,
+            bitdepth_max,
         ),
         (true, true) => lpf_v_sb_inner::<BD, 0>(
-            dst_ptr, stride as isize, mask, lvl_ptr, b4_stride, &lut.0, w, bitdepth_max,
+            dst_ptr,
+            stride as isize,
+            mask,
+            lvl_ptr,
+            b4_stride,
+            &lut.0,
+            w,
+            bitdepth_max,
         ),
         (false, false) => lpf_h_sb_inner::<BD, 1>(
-            dst_ptr, stride as isize, mask, lvl_ptr, b4_stride, &lut.0, w, bitdepth_max,
+            dst_ptr,
+            stride as isize,
+            mask,
+            lvl_ptr,
+            b4_stride,
+            &lut.0,
+            w,
+            bitdepth_max,
         ),
         (false, true) => lpf_v_sb_inner::<BD, 1>(
-            dst_ptr, stride as isize, mask, lvl_ptr, b4_stride, &lut.0, w, bitdepth_max,
+            dst_ptr,
+            stride as isize,
+            mask,
+            lvl_ptr,
+            b4_stride,
+            &lut.0,
+            w,
+            bitdepth_max,
         ),
     }
     true

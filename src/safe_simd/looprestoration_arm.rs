@@ -1419,26 +1419,38 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
 
     let w = w as usize;
     let h = h as usize;
-    let left_8 = || {
-        unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u8>]) }
-    };
-    let left_16 = || {
-        unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u16>]) }
-    };
+    let left_8 =
+        || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u8>]) };
+    let left_16 =
+        || unsafe { &*(left as *const [LeftPixelRow<BD::Pixel>] as *const [LeftPixelRow<u16>]) };
     let bd_c = bd.into_c();
 
     // Call inner functions directly, bypassing FFI wrappers.
     match (BD::BPC, variant) {
-        (BPC::BPC8, 0) => wiener_filter_8bpc_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges, 7),
-        (BPC::BPC8, 1) => wiener_filter_8bpc_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges, 5),
+        (BPC::BPC8, 0) => {
+            wiener_filter_8bpc_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges, 7)
+        }
+        (BPC::BPC8, 1) => {
+            wiener_filter_8bpc_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges, 5)
+        }
         (BPC::BPC8, 2) => sgr_5x5_8bpc_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
         (BPC::BPC8, 3) => sgr_3x3_8bpc_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
         (BPC::BPC8, _) => sgr_mix_8bpc_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
-        (BPC::BPC16, 0) => wiener_filter_16bpc_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, 7, bd_c),
-        (BPC::BPC16, 1) => wiener_filter_16bpc_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, 5, bd_c),
-        (BPC::BPC16, 2) => sgr_5x5_16bpc_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd_c),
-        (BPC::BPC16, 3) => sgr_3x3_16bpc_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd_c),
-        (BPC::BPC16, _) => sgr_mix_16bpc_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd_c),
+        (BPC::BPC16, 0) => {
+            wiener_filter_16bpc_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, 7, bd_c)
+        }
+        (BPC::BPC16, 1) => {
+            wiener_filter_16bpc_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, 5, bd_c)
+        }
+        (BPC::BPC16, 2) => {
+            sgr_5x5_16bpc_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd_c)
+        }
+        (BPC::BPC16, 3) => {
+            sgr_3x3_16bpc_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd_c)
+        }
+        (BPC::BPC16, _) => {
+            sgr_mix_16bpc_inner(dst, left_16(), lpf, lpf_off, w, h, params, edges, bd_c)
+        }
     }
     true
 }

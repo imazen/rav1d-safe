@@ -27,7 +27,8 @@ use libc::ptrdiff_t;
 
 /// WHT 4x4 transform for 8bpc
 fn inv_txfm_add_wht_wht_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -92,7 +93,8 @@ fn inv_txfm_add_wht_wht_4x4_8bpc_inner(
 
 /// WHT 4x4 transform for 16bpc
 fn inv_txfm_add_wht_wht_4x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -187,7 +189,8 @@ fn dct4_1d(in0: i32, in1: i32, in2: i32, in3: i32) -> [i32; 4] {
 
 /// DCT 4x4 transform for 8bpc
 fn inv_txfm_add_dct_dct_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -237,7 +240,8 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_inner(
 
 /// DCT 4x4 transform for 16bpc
 fn inv_txfm_add_dct_dct_4x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -336,7 +340,8 @@ fn dct8_1d(input: &[i32; 8]) -> [i32; 8] {
 
 /// DCT 8x8 transform for 8bpc
 fn inv_txfm_add_dct_dct_8x8_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -381,7 +386,8 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_inner(
 
 /// DCT 8x8 transform for 16bpc
 fn inv_txfm_add_dct_dct_8x8_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -488,7 +494,8 @@ fn dct16_1d(input: &[i32; 16]) -> [i32; 16] {
 
 /// DCT 16x16 transform for 8bpc
 fn inv_txfm_add_dct_dct_16x16_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -532,7 +539,8 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_inner(
 
 /// DCT 16x16 transform for 16bpc
 fn inv_txfm_add_dct_dct_16x16_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -578,7 +586,8 @@ fn inv_txfm_add_dct_dct_16x16_16bpc_inner(
 
 /// Identity 4x4 transform for 8bpc
 fn inv_txfm_add_identity_identity_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -607,7 +616,8 @@ fn inv_txfm_add_identity_identity_4x4_8bpc_inner(
 
 /// Identity 4x4 transform for 16bpc
 fn inv_txfm_add_identity_identity_4x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -634,13 +644,13 @@ fn inv_txfm_add_identity_identity_4x4_16bpc_inner(
 
 /// Identity 8x8 transform for 8bpc
 fn inv_txfm_add_identity_identity_8x8_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-
     for y in 0..8 {
         let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         for x in 0..8 {
@@ -660,13 +670,13 @@ fn inv_txfm_add_identity_identity_8x8_8bpc_inner(
 
 /// Identity 8x8 transform for 16bpc
 fn inv_txfm_add_identity_identity_8x8_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-
     for y in 0..8 {
         let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
         for x in 0..8 {
@@ -685,7 +695,8 @@ fn inv_txfm_add_identity_identity_8x8_16bpc_inner(
 
 /// Identity 16x16 transform for 8bpc
 fn inv_txfm_add_identity_identity_16x16_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -713,7 +724,8 @@ fn inv_txfm_add_identity_identity_16x16_8bpc_inner(
 
 /// Identity 16x16 transform for 16bpc
 fn inv_txfm_add_identity_identity_16x16_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -778,7 +790,8 @@ fn adst4_1d(in0: i32, in1: i32, in2: i32, in3: i32) -> [i32; 4] {
 
 /// ADST 4x4 transform for 8bpc
 fn inv_txfm_add_adst_adst_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -825,7 +838,8 @@ fn inv_txfm_add_adst_adst_4x4_8bpc_inner(
 
 /// ADST 4x4 transform for 16bpc
 fn inv_txfm_add_adst_adst_4x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -936,7 +950,8 @@ fn adst8_1d(input: &[i32; 8]) -> [i32; 8] {
 
 /// ADST 8x8 transform for 8bpc
 fn inv_txfm_add_adst_adst_8x8_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -978,7 +993,8 @@ fn inv_txfm_add_adst_adst_8x8_8bpc_inner(
 
 /// ADST 8x8 transform for 16bpc
 fn inv_txfm_add_adst_adst_8x8_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -1030,7 +1046,8 @@ fn flipadst4_1d(in0: i32, in1: i32, in2: i32, in3: i32) -> [i32; 4] {
 
 /// FlipADST 4x4 transform for 8bpc
 fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -1075,7 +1092,8 @@ fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_inner(
 
 /// FlipADST 4x4 transform for 16bpc
 fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -1124,7 +1142,8 @@ fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(
 
 /// DCT-ADST 4x4 transform for 8bpc (DCT on rows, ADST on columns)
 fn inv_txfm_add_dct_adst_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -1171,7 +1190,8 @@ fn inv_txfm_add_dct_adst_4x4_8bpc_inner(
 
 /// ADST-DCT 4x4 transform for 8bpc (ADST on rows, DCT on columns)
 fn inv_txfm_add_adst_dct_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -1218,7 +1238,8 @@ fn inv_txfm_add_adst_dct_4x4_8bpc_inner(
 
 /// DCT-ADST 4x4 transform for 16bpc
 fn inv_txfm_add_dct_adst_4x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -1263,7 +1284,8 @@ fn inv_txfm_add_dct_adst_4x4_16bpc_inner(
 
 /// ADST-DCT 4x4 transform for 16bpc
 fn inv_txfm_add_adst_dct_4x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -1312,7 +1334,8 @@ fn inv_txfm_add_adst_dct_4x4_16bpc_inner(
 
 /// DCT-FLIPADST 4x4 transform for 8bpc
 fn inv_txfm_add_dct_flipadst_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -1357,7 +1380,8 @@ fn inv_txfm_add_dct_flipadst_4x4_8bpc_inner(
 
 /// FLIPADST-DCT 4x4 transform for 8bpc
 fn inv_txfm_add_flipadst_dct_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -1402,7 +1426,8 @@ fn inv_txfm_add_flipadst_dct_4x4_8bpc_inner(
 
 /// DCT-FLIPADST 4x4 transform for 16bpc
 fn inv_txfm_add_dct_flipadst_4x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -1447,7 +1472,8 @@ fn inv_txfm_add_dct_flipadst_4x4_16bpc_inner(
 
 /// FLIPADST-DCT 4x4 transform for 16bpc
 fn inv_txfm_add_flipadst_dct_4x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -1496,7 +1522,8 @@ fn inv_txfm_add_flipadst_dct_4x4_16bpc_inner(
 
 /// ADST-FLIPADST 4x4 transform for 8bpc
 fn inv_txfm_add_adst_flipadst_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -1541,7 +1568,8 @@ fn inv_txfm_add_adst_flipadst_4x4_8bpc_inner(
 
 /// FLIPADST-ADST 4x4 transform for 8bpc
 fn inv_txfm_add_flipadst_adst_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -1586,7 +1614,8 @@ fn inv_txfm_add_flipadst_adst_4x4_8bpc_inner(
 
 /// ADST-FLIPADST 4x4 transform for 16bpc
 fn inv_txfm_add_adst_flipadst_4x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -1631,7 +1660,8 @@ fn inv_txfm_add_adst_flipadst_4x4_16bpc_inner(
 
 /// FLIPADST-ADST 4x4 transform for 16bpc
 fn inv_txfm_add_flipadst_adst_4x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -1693,13 +1723,26 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_wht_wht_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_wht_wht_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1718,13 +1761,26 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_wht_wht_4x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_wht_wht_4x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1742,13 +1798,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1767,13 +1836,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_4x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // DCT_DCT 8x8 FFI Wrappers
@@ -1792,13 +1874,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_8x8_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x8_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1817,13 +1912,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_8x8_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x8_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // DCT_DCT 16x16 FFI Wrappers
@@ -1842,13 +1950,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_16x16_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x16_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1867,13 +1988,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_16x16_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x16_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // IDENTITY FFI Wrappers
@@ -1892,13 +2026,26 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_identity_identity_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1917,13 +2064,26 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_identity_identity_4x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_4x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1941,13 +2101,26 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_identity_identity_8x8_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_8x8_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1966,13 +2139,26 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_identity_identity_8x8_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_8x8_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1990,13 +2176,26 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_identity_identity_16x16_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_16x16_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2015,13 +2214,26 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_identity_identity_16x16_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_16x16_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ADST_ADST FFI Wrappers
@@ -2040,13 +2252,26 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_adst_adst_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_adst_adst_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2065,13 +2290,26 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_adst_adst_4x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_adst_adst_4x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2089,13 +2327,26 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_8bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_adst_adst_8x8_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_adst_adst_8x8_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2114,13 +2365,26 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_16bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_adst_adst_8x8_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_adst_adst_8x8_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // FLIPADST_FLIPADST FFI Wrappers
@@ -2139,13 +2403,26 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_flipadst_flipadst_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_flipadst_flipadst_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2164,13 +2441,26 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // DCT_ADST and ADST_DCT FFI Wrappers
@@ -2189,13 +2479,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_adst_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_adst_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2214,13 +2517,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_adst_4x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_adst_4x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2238,13 +2554,26 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_adst_dct_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_adst_dct_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2263,13 +2592,26 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_adst_dct_4x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_adst_dct_4x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // DCT_FLIPADST and FLIPADST_DCT FFI Wrappers
@@ -2288,13 +2630,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_flipadst_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_flipadst_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2313,13 +2668,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_flipadst_4x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_flipadst_4x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2337,13 +2705,26 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_flipadst_dct_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_flipadst_dct_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2362,13 +2743,26 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_flipadst_dct_4x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_flipadst_dct_4x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ADST_FLIPADST and FLIPADST_ADST FFI Wrappers
@@ -2387,13 +2781,26 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_adst_flipadst_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_adst_flipadst_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2412,13 +2819,26 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_adst_flipadst_4x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_adst_flipadst_4x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2436,13 +2856,26 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_flipadst_adst_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_flipadst_adst_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -2461,13 +2894,26 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_flipadst_adst_4x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_flipadst_adst_4x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -2476,7 +2922,8 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_16bpc_neon(
 
 /// DCT 4x8 transform for 8bpc
 fn inv_txfm_add_dct_dct_4x8_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -2521,7 +2968,8 @@ fn inv_txfm_add_dct_dct_4x8_8bpc_inner(
 
 /// DCT 4x8 transform for 16bpc
 fn inv_txfm_add_dct_dct_4x8_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -2564,7 +3012,8 @@ fn inv_txfm_add_dct_dct_4x8_16bpc_inner(
 
 /// DCT 8x4 transform for 8bpc
 fn inv_txfm_add_dct_dct_8x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -2609,7 +3058,8 @@ fn inv_txfm_add_dct_dct_8x4_8bpc_inner(
 
 /// DCT 8x4 transform for 16bpc
 fn inv_txfm_add_dct_dct_8x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -2656,7 +3106,8 @@ fn inv_txfm_add_dct_dct_8x4_16bpc_inner(
 
 /// DCT 8x16 transform for 8bpc
 fn inv_txfm_add_dct_dct_8x16_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -2700,7 +3151,8 @@ fn inv_txfm_add_dct_dct_8x16_8bpc_inner(
 
 /// DCT 8x16 transform for 16bpc
 fn inv_txfm_add_dct_dct_8x16_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -2742,7 +3194,8 @@ fn inv_txfm_add_dct_dct_8x16_16bpc_inner(
 
 /// DCT 16x8 transform for 8bpc
 fn inv_txfm_add_dct_dct_16x8_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -2786,7 +3239,8 @@ fn inv_txfm_add_dct_dct_16x8_8bpc_inner(
 
 /// DCT 16x8 transform for 16bpc
 fn inv_txfm_add_dct_dct_16x8_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -2832,7 +3286,8 @@ fn inv_txfm_add_dct_dct_16x8_16bpc_inner(
 
 /// DCT-ADST 8x8 transform for 8bpc
 fn inv_txfm_add_dct_adst_8x8_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -2874,7 +3329,8 @@ fn inv_txfm_add_dct_adst_8x8_8bpc_inner(
 
 /// ADST-DCT 8x8 transform for 8bpc
 fn inv_txfm_add_adst_dct_8x8_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -2916,7 +3372,8 @@ fn inv_txfm_add_adst_dct_8x8_8bpc_inner(
 
 /// DCT-ADST 8x8 transform for 16bpc
 fn inv_txfm_add_dct_adst_8x8_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -2958,7 +3415,8 @@ fn inv_txfm_add_dct_adst_8x8_16bpc_inner(
 
 /// ADST-DCT 8x8 transform for 16bpc
 fn inv_txfm_add_adst_dct_8x8_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -3017,13 +3475,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_4x8_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x8_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3042,13 +3513,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_4x8_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x8_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3066,13 +3550,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_8x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3091,13 +3588,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_8x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3115,13 +3625,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_8x16_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x16_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3140,13 +3663,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_8x16_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x16_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3164,13 +3700,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_16x8_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x8_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3189,13 +3738,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_16x8_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x8_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // 8x8 Hybrid FFI Wrappers
@@ -3214,13 +3776,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_8bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_adst_8x8_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_adst_8x8_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3239,13 +3814,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_16bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_adst_8x8_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_adst_8x8_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3263,13 +3851,26 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_8x8_8bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_adst_dct_8x8_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_adst_dct_8x8_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3288,13 +3889,26 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_8x8_16bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_adst_dct_8x8_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_adst_dct_8x8_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -3363,7 +3977,8 @@ fn dct32_1d(input: &[i32; 32]) -> [i32; 32] {
 
 /// DCT 32x32 transform for 8bpc
 fn inv_txfm_add_dct_dct_32x32_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -3407,7 +4022,8 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_inner(
 
 /// DCT 32x32 transform for 16bpc
 fn inv_txfm_add_dct_dct_32x32_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -3453,7 +4069,8 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_inner(
 
 /// DCT 4x16 transform for 8bpc
 fn inv_txfm_add_dct_dct_4x16_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -3498,7 +4115,8 @@ fn inv_txfm_add_dct_dct_4x16_8bpc_inner(
 
 /// DCT 4x16 transform for 16bpc
 fn inv_txfm_add_dct_dct_4x16_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -3541,7 +4159,8 @@ fn inv_txfm_add_dct_dct_4x16_16bpc_inner(
 
 /// DCT 16x4 transform for 8bpc
 fn inv_txfm_add_dct_dct_16x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -3586,7 +4205,8 @@ fn inv_txfm_add_dct_dct_16x4_8bpc_inner(
 
 /// DCT 16x4 transform for 16bpc
 fn inv_txfm_add_dct_dct_16x4_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -3633,7 +4253,8 @@ fn inv_txfm_add_dct_dct_16x4_16bpc_inner(
 
 /// DCT 16x32 transform for 8bpc
 fn inv_txfm_add_dct_dct_16x32_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -3677,7 +4298,8 @@ fn inv_txfm_add_dct_dct_16x32_8bpc_inner(
 
 /// DCT 16x32 transform for 16bpc
 fn inv_txfm_add_dct_dct_16x32_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -3719,7 +4341,8 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_inner(
 
 /// DCT 32x16 transform for 8bpc
 fn inv_txfm_add_dct_dct_32x16_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -3763,7 +4386,8 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_inner(
 
 /// DCT 32x16 transform for 16bpc
 fn inv_txfm_add_dct_dct_32x16_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -3822,13 +4446,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_32x32_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x32_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3847,13 +4484,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_32x32_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x32_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3871,13 +4521,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_4x16_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x16_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3896,13 +4559,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_4x16_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x16_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3920,13 +4596,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_16x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3945,13 +4634,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_16x4_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x4_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3969,13 +4671,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_16x32_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x32_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -3994,13 +4709,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_16x32_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x32_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4018,13 +4746,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_32x16_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x16_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4043,13 +4784,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_16bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_32x16_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x16_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -4095,7 +4849,8 @@ fn dct64_1d(input: &[i32; 64]) -> [i32; 64] {
 
 /// DCT 64x64 transform for 8bpc
 fn inv_txfm_add_dct_dct_64x64_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -4139,7 +4894,8 @@ fn inv_txfm_add_dct_dct_64x64_8bpc_inner(
 
 /// DCT 64x64 transform for 16bpc
 fn inv_txfm_add_dct_dct_64x64_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -4185,7 +4941,8 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_inner(
 
 /// DCT 8x32 transform for 8bpc
 fn inv_txfm_add_dct_dct_8x32_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -4229,7 +4986,8 @@ fn inv_txfm_add_dct_dct_8x32_8bpc_inner(
 
 /// DCT 8x32 transform for 16bpc
 fn inv_txfm_add_dct_dct_8x32_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -4271,7 +5029,8 @@ fn inv_txfm_add_dct_dct_8x32_16bpc_inner(
 
 /// DCT 32x8 transform for 8bpc
 fn inv_txfm_add_dct_dct_32x8_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -4315,7 +5074,8 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_inner(
 
 /// DCT 32x8 transform for 16bpc
 fn inv_txfm_add_dct_dct_32x8_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -4361,7 +5121,8 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_inner(
 
 /// DCT 32x64 transform for 8bpc
 fn inv_txfm_add_dct_dct_32x64_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -4403,7 +5164,8 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_inner(
 
 /// DCT 32x64 transform for 16bpc
 fn inv_txfm_add_dct_dct_32x64_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -4445,7 +5207,8 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_inner(
 
 /// DCT 64x32 transform for 8bpc
 fn inv_txfm_add_dct_dct_64x32_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -4487,7 +5250,8 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_inner(
 
 /// DCT 64x32 transform for 16bpc
 fn inv_txfm_add_dct_dct_64x32_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -4546,13 +5310,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_neon(
     let rows = 63usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 64;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 64;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_64x64_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x64_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4571,13 +5348,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_neon(
     let rows = 63usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 64;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 64;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_64x64_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x64_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4595,13 +5385,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_8x32_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x32_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4620,13 +5423,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_8x32_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x32_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4644,13 +5460,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_32x8_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x8_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4669,13 +5498,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_32x8_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x8_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4693,13 +5535,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_neon(
     let rows = 63usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_32x64_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x64_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4718,13 +5573,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_neon(
     let rows = 63usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_32x64_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x64_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4742,13 +5610,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 64;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 64;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_64x32_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x32_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4767,13 +5648,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 64;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 64;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_64x32_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x32_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -4821,7 +5715,8 @@ fn rect2_scale(v: i32) -> i32 {
 
 /// Generic rectangular identity transform for 8bpc
 fn identity_rect_8bpc_inner<const W: usize, const H: usize>(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -4865,7 +5760,8 @@ fn identity_rect_8bpc_inner<const W: usize, const H: usize>(
 
 /// Generic rectangular identity transform for 16bpc
 fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -4927,13 +5823,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_16bpc_inner::<4, 8>(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max, identity4_1d_arm, identity8_1d_arm, true);
+    identity_rect_16bpc_inner::<4, 8>(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity4_1d_arm,
+        identity8_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4952,13 +5864,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_16bpc_inner::<8, 4>(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max, identity8_1d_arm, identity4_1d_arm, true);
+    identity_rect_16bpc_inner::<8, 4>(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity4_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -4977,13 +5905,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_16bpc_inner::<4, 16>(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max, identity4_1d_arm, identity16_1d_arm, true);
+    identity_rect_16bpc_inner::<4, 16>(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity4_1d_arm,
+        identity16_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5002,13 +5946,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_16bpc_inner::<16, 4>(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max, identity16_1d_arm, identity4_1d_arm, true);
+    identity_rect_16bpc_inner::<16, 4>(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity4_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5027,13 +5987,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_16bpc_inner::<8, 16>(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max, identity8_1d_arm, identity16_1d_arm, true);
+    identity_rect_16bpc_inner::<8, 16>(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity16_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5052,13 +6028,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_16bpc_inner::<16, 8>(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max, identity16_1d_arm, identity8_1d_arm, true);
+    identity_rect_16bpc_inner::<16, 8>(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity8_1d_arm,
+        true,
+    );
 }
 
 // ============================================================================
@@ -5080,13 +6072,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_8bpc_inner::<8, 32>(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max, identity8_1d_arm, identity32_1d_arm, true);
+    identity_rect_8bpc_inner::<8, 32>(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity32_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5105,13 +6113,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 8;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 8;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_16bpc_inner::<8, 32>(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max, identity8_1d_arm, identity32_1d_arm, true);
+    identity_rect_16bpc_inner::<8, 32>(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity32_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5129,13 +6153,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_8bpc_inner::<32, 8>(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max, identity32_1d_arm, identity8_1d_arm, true);
+    identity_rect_8bpc_inner::<32, 8>(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity8_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5154,13 +6194,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_neon(
     let rows = 7usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_16bpc_inner::<32, 8>(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max, identity32_1d_arm, identity8_1d_arm, true);
+    identity_rect_16bpc_inner::<32, 8>(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity8_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5178,13 +6234,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_8bpc_inner::<16, 32>(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max, identity16_1d_arm, identity32_1d_arm, true);
+    identity_rect_8bpc_inner::<16, 32>(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity32_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5203,13 +6275,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_16bpc_inner::<16, 32>(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max, identity16_1d_arm, identity32_1d_arm, true);
+    identity_rect_16bpc_inner::<16, 32>(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity32_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5227,13 +6315,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_8bpc_inner::<32, 16>(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max, identity32_1d_arm, identity16_1d_arm, true);
+    identity_rect_8bpc_inner::<32, 16>(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity16_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5252,13 +6356,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_16bpc_inner::<32, 16>(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max, identity32_1d_arm, identity16_1d_arm, true);
+    identity_rect_16bpc_inner::<32, 16>(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity16_1d_arm,
+        true,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5276,13 +6396,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_8bpc_inner::<32, 32>(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max, identity32_1d_arm, identity32_1d_arm, false);
+    identity_rect_8bpc_inner::<32, 32>(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity32_1d_arm,
+        false,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5301,13 +6437,29 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
     let rows = 31usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 32;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 32;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    identity_rect_16bpc_inner::<32, 32>(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max, identity32_1d_arm, identity32_1d_arm, false);
+    identity_rect_16bpc_inner::<32, 32>(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity32_1d_arm,
+        false,
+    );
 }
 
 // ============================================================================
@@ -5315,7 +6467,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
 // ============================================================================
 
 fn inv_txfm_add_dct_identity_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -5343,14 +6496,14 @@ fn inv_txfm_add_dct_identity_4x4_8bpc_inner(
             dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
         }
     }
-            for i in 0..16 {
-            coeff[i] = 0;
-        }
-
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
 fn inv_txfm_add_identity_dct_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -5386,14 +6539,14 @@ fn inv_txfm_add_identity_dct_4x4_8bpc_inner(
             dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
         }
     }
-            for i in 0..16 {
-            coeff[i] = 0;
-        }
-
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
 fn inv_txfm_add_adst_identity_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -5422,14 +6575,14 @@ fn inv_txfm_add_adst_identity_4x4_8bpc_inner(
             dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
         }
     }
-            for i in 0..16 {
-            coeff[i] = 0;
-        }
-
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
 fn inv_txfm_add_identity_adst_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -5465,14 +6618,14 @@ fn inv_txfm_add_identity_adst_4x4_8bpc_inner(
             dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
         }
     }
-            for i in 0..16 {
-            coeff[i] = 0;
-        }
-
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
 fn inv_txfm_add_flipadst_identity_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -5501,14 +6654,14 @@ fn inv_txfm_add_flipadst_identity_4x4_8bpc_inner(
             dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
         }
     }
-            for i in 0..16 {
-            coeff[i] = 0;
-        }
-
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
 fn inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -5544,10 +6697,9 @@ fn inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
             dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
         }
     }
-            for i in 0..16 {
-            coeff[i] = 0;
-        }
-
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5565,13 +6717,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_identity_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_identity_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5589,13 +6754,26 @@ pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_identity_dct_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_dct_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5613,13 +6791,26 @@ pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_adst_identity_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_adst_identity_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5637,13 +6828,26 @@ pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_identity_adst_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_adst_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5661,13 +6865,26 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_flipadst_identity_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_flipadst_identity_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5685,13 +6902,26 @@ pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_neon(
     let rows = 3usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 4;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 4;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_identity_flipadst_4x4_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -5699,7 +6929,8 @@ pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_neon(
 // ============================================================================
 
 fn inv_txfm_add_dct_dct_16x64_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -5735,12 +6966,13 @@ fn inv_txfm_add_dct_dct_16x64_8bpc_inner(
         }
     }
     for i in 0..(16 * 64) {
-            coeff[i] = 0;
+        coeff[i] = 0;
     }
 }
 
 fn inv_txfm_add_dct_dct_16x64_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -5776,12 +7008,13 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_inner(
         }
     }
     for i in 0..(16 * 64) {
-            coeff[i] = 0;
+        coeff[i] = 0;
     }
 }
 
 fn inv_txfm_add_dct_dct_64x16_8bpc_inner(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     _eob: i32,
@@ -5817,12 +7050,13 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_inner(
         }
     }
     for i in 0..(64 * 16) {
-            coeff[i] = 0;
+        coeff[i] = 0;
     }
 }
 
 fn inv_txfm_add_dct_dct_64x16_16bpc_inner(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     _eob: i32,
@@ -5858,7 +7092,7 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_inner(
         }
     }
     for i in 0..(64 * 16) {
-            coeff[i] = 0;
+        coeff[i] = 0;
     }
 }
 
@@ -5877,13 +7111,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_neon(
     let rows = 63usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_16x64_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x64_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5902,13 +7149,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_neon(
     let rows = 63usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 16;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 16;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_16x64_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x64_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5926,13 +7186,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if dst_stride >= 0 {
         let len = rows * abs_stride + 64;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 64;
         let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_64x16_8bpc_inner(dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x16_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -5951,13 +7224,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_neon(
     let rows = 15usize;
     let (dst_slice, base) = if stride_u16 >= 0 {
         let len = rows * abs_stride + 64;
-        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
     } else {
         let len = rows * abs_stride + 64;
         let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
-        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
     };
-    inv_txfm_add_dct_dct_64x16_16bpc_inner(dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x16_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -5977,7 +7263,8 @@ type Itx1dFn = fn(&mut [i32], NonZeroUsize, i32, i32);
 /// Generic 8bpc inverse transform: apply row_fn across rows, then col_fn down columns,
 /// then add residuals to dst pixels.
 fn inv_txfm_add_generic_8bpc(
-    dst: &mut [u8], dst_base: usize,
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     coeff: &mut [i16],
     eob: i32,
@@ -6006,7 +7293,7 @@ fn inv_txfm_add_generic_8bpc(
             let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
             for x in 0..w {
                 let p = dst[row_off + x] as i32 + dc;
-                    dst[row_off + x] = p.max(0).min(255) as u8;
+                dst[row_off + x] = p.max(0).min(255) as u8;
             }
         }
         return;
@@ -6043,7 +7330,7 @@ fn inv_txfm_add_generic_8bpc(
 
     // Clear coefficients
     for i in 0..(sh * sw) {
-            coeff[i] = 0;
+        coeff[i] = 0;
     }
 
     // Apply shift + clip
@@ -6066,14 +7353,15 @@ fn inv_txfm_add_generic_8bpc(
         let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         for x in 0..w {
             let p = dst[row_off + x] as i32 + ((tmp[y * w + x] + 8) >> 4);
-                dst[row_off + x] = p.max(0).min(255) as u8;
+            dst[row_off + x] = p.max(0).min(255) as u8;
         }
     }
 }
 
 /// Generic 16bpc inverse transform
 fn inv_txfm_add_generic_16bpc(
-    dst: &mut [u16], dst_base: usize,
+    dst: &mut [u16],
+    dst_base: usize,
     dst_stride_u16: isize,
     coeff: &mut [i32],
     eob: i32,
@@ -6102,7 +7390,7 @@ fn inv_txfm_add_generic_16bpc(
             let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
             for x in 0..w {
                 let p = dst[row_off + x] as i32 + dc;
-                    dst[row_off + x] = p.max(0).min(bitdepth_max) as u16;
+                dst[row_off + x] = p.max(0).min(bitdepth_max) as u16;
             }
         }
         return;
@@ -6139,7 +7427,7 @@ fn inv_txfm_add_generic_16bpc(
 
     // Clear coefficients
     for i in 0..(sh * sw) {
-            coeff[i] = 0;
+        coeff[i] = 0;
     }
 
     // Apply shift + clip
@@ -6162,7 +7450,7 @@ fn inv_txfm_add_generic_16bpc(
         let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
         for x in 0..w {
             let p = dst[row_off + x] as i32 + ((tmp[y * w + x] + 8) >> 4);
-                dst[row_off + x] = p.max(0).min(bitdepth_max) as u16;
+            dst[row_off + x] = p.max(0).min(bitdepth_max) as u16;
         }
     }
 }
