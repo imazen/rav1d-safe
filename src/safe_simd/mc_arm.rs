@@ -1,5 +1,6 @@
 //! Safe SIMD implementations of motion compensation functions for ARM NEON
 #![allow(deprecated)] // FFI wrappers need to forge tokens
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 //!
 //! These use archmage tokens to safely invoke NEON intrinsics.
 //! The extern "C" wrappers are used for FFI compatibility with rav1d's dispatch system.
@@ -105,6 +106,7 @@ fn avg_8bpc_inner(
 }
 
 /// AVG operation for 8-bit pixels - extern "C" wrapper for dispatch
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn avg_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -210,6 +212,7 @@ fn avg_16bpc_inner(
 }
 
 /// AVG operation for 16-bit pixels - extern "C" wrapper
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn avg_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -313,6 +316,7 @@ fn w_avg_8bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_avg_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -409,6 +413,7 @@ fn w_avg_16bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_avg_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -519,6 +524,7 @@ fn mask_8bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn mask_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -632,6 +638,7 @@ fn mask_16bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn mask_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -747,6 +754,7 @@ fn blend_8bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -856,6 +864,7 @@ fn blend_16bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -986,6 +995,7 @@ fn blend_v_8bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_v_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1083,6 +1093,7 @@ fn blend_v_16bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_v_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1199,6 +1210,7 @@ fn blend_h_8bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_h_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1312,6 +1324,7 @@ fn blend_h_16bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_h_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1356,6 +1369,7 @@ pub unsafe extern "C" fn blend_h_16bpc_neon(
 /// Core w_mask implementation for 8bpc
 /// SS_HOR and SS_VER control subsampling: 444=(false,false), 422=(true,false), 420=(true,true)
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 #[target_feature(enable = "neon")]
 unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     dst: &mut [u8],
@@ -1541,6 +1555,7 @@ unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_444_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1574,6 +1589,7 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_422_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1607,6 +1623,7 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_420_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1847,6 +1864,7 @@ fn put_bilin_8bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn put_bilin_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2098,6 +2116,7 @@ fn prep_bilin_8bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn prep_bilin_8bpc_neon(
     tmp: *mut i16,
@@ -2232,6 +2251,7 @@ fn put_bilin_16bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn put_bilin_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2376,6 +2396,7 @@ fn prep_bilin_16bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn prep_bilin_16bpc_neon(
     tmp: *mut i16,
@@ -2411,6 +2432,7 @@ pub unsafe extern "C" fn prep_bilin_16bpc_neon(
 
 /// Core w_mask implementation for 16bpc
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 #[target_feature(enable = "neon")]
 unsafe fn w_mask_16bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     dst: &mut [u16],
@@ -2484,6 +2506,7 @@ unsafe fn w_mask_16bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_444_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2516,6 +2539,7 @@ pub unsafe extern "C" fn w_mask_444_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_422_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2548,6 +2572,7 @@ pub unsafe extern "C" fn w_mask_422_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_420_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3093,6 +3118,7 @@ fn get_v_filter_type(filter: Filter2d) -> Rav1dFilterMode {
 
 macro_rules! define_put_8tap_8bpc {
     ($name:ident, $filter:expr) => {
+#[allow(unsafe_code)]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
@@ -3387,6 +3413,7 @@ fn prep_8tap_8bpc_inner(
 
 macro_rules! define_prep_8tap_8bpc {
     ($name:ident, $filter:expr) => {
+#[allow(unsafe_code)]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             tmp: *mut i16,
@@ -3861,6 +3888,7 @@ fn put_8tap_16bpc_inner(
 
 macro_rules! define_put_8tap_16bpc {
     ($name:ident, $filter:expr) => {
+#[allow(unsafe_code)]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
@@ -4150,6 +4178,7 @@ fn prep_8tap_16bpc_inner(
 
 macro_rules! define_prep_8tap_16bpc {
     ($name:ident, $filter:expr) => {
+#[allow(unsafe_code)]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             tmp: *mut i16,
@@ -4223,6 +4252,7 @@ define_prep_8tap_16bpc!(prep_8tap_sharp_16bpc_neon, Filter2d::Sharp8Tap);
 // ============================================================================
 
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn avg_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
@@ -4249,6 +4279,7 @@ pub fn avg_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn w_avg_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
@@ -4280,6 +4311,7 @@ pub fn w_avg_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn mask_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
@@ -4312,6 +4344,7 @@ pub fn mask_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn blend_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN],
@@ -4338,6 +4371,7 @@ pub fn blend_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn blend_dir_dispatch<BD: BitDepth>(
     is_h: bool,
     dst: PicOffset,
@@ -4365,6 +4399,7 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn w_mask_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     dst: PicOffset,
@@ -4410,6 +4445,7 @@ pub fn w_mask_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn mc_put_dispatch<BD: BitDepth>(
     filter: Filter2d,
     dst: PicOffset,
@@ -4502,6 +4538,7 @@ pub fn mc_put_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn mct_prep_dispatch<BD: BitDepth>(
     filter: Filter2d,
     tmp: &mut [i16],
@@ -4591,6 +4628,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
 
 /// No SIMD for scaled variants on aarch64.
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn mc_scaled_dispatch<BD: BitDepth>(
     _filter: Filter2d,
     _dst: PicOffset,
@@ -4608,6 +4646,7 @@ pub fn mc_scaled_dispatch<BD: BitDepth>(
 
 /// No SIMD for scaled variants on aarch64.
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn mct_scaled_dispatch<BD: BitDepth>(
     _filter: Filter2d,
     _tmp: &mut [i16],
@@ -4625,6 +4664,7 @@ pub fn mct_scaled_dispatch<BD: BitDepth>(
 
 /// No SIMD for warp on aarch64.
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn warp8x8_dispatch<BD: BitDepth>(
     _dst: PicOffset,
     _src: PicOffset,
@@ -4638,6 +4678,7 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
 
 /// No SIMD for warp on aarch64.
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn warp8x8t_dispatch<BD: BitDepth>(
     _tmp: &mut [i16],
     _tmp_stride: usize,
@@ -4652,6 +4693,7 @@ pub fn warp8x8t_dispatch<BD: BitDepth>(
 
 /// No SIMD for emu_edge on aarch64.
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn emu_edge_dispatch<BD: BitDepth>(
     _bw: isize,
     _bh: isize,
@@ -4668,6 +4710,7 @@ pub fn emu_edge_dispatch<BD: BitDepth>(
 
 /// No SIMD for resize on aarch64.
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn resize_dispatch<BD: BitDepth>(
     _dst: crate::src::with_offset::WithOffset<
         crate::src::pic_or_buf::PicOrBuf<crate::src::align::AlignedVec64<u8>>,
