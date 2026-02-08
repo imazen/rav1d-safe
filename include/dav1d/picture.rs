@@ -26,7 +26,6 @@ use crate::src::disjoint_mut::DisjointMutGuard;
 use crate::src::disjoint_mut::SliceBounds;
 #[cfg(feature = "c-ffi")]
 use crate::src::error::Dav1dResult;
-#[cfg(feature = "c-ffi")]
 use crate::src::error::Rav1dError;
 #[cfg(feature = "c-ffi")]
 use crate::src::error::Rav1dError::EINVAL;
@@ -1026,14 +1025,15 @@ impl Rav1dPicAllocator {
         let uv_sz = round_up(uv_sz);
 
         // Allocate per-plane buffers with alignment padding.
-        let alloc_plane = |sz: usize| -> Vec<u8> {
-            if sz == 0 { return Vec::new(); }
+        let alloc_plane = |sz: usize| -> Result<Vec<u8>, Rav1dError> {
+            if sz == 0 { return Ok(Vec::new()); }
             self.pool.pop_init(sz + RAV1D_PICTURE_ALIGNMENT, 0)
+                .map_err(|_| Rav1dError::ENOMEM)
         };
 
-        let mut y_buf = alloc_plane(y_sz);
-        let mut u_buf = alloc_plane(uv_sz);
-        let mut v_buf = alloc_plane(uv_sz);
+        let mut y_buf = alloc_plane(y_sz)?;
+        let mut u_buf = alloc_plane(uv_sz)?;
+        let mut v_buf = alloc_plane(uv_sz)?;
 
         let data = [
             Rav1dPictureDataComponent(DisjointMut::new(

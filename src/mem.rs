@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 use parking_lot::Mutex;
+use std::collections::TryReserveError;
 
 pub struct MemPool<T> {
     bufs: Mutex<Vec<Vec<T>>>,
@@ -12,34 +13,36 @@ impl<T> MemPool<T> {
         }
     }
 
-    pub fn _pop(&self, size: usize) -> Vec<T> {
+    pub fn _pop(&self, size: usize) -> Result<Vec<T>, TryReserveError> {
         if let Some(mut buf) = self.bufs.lock().pop() {
             if size > buf.capacity() {
-                // TODO fallible allocation
-                buf.reserve(size - buf.len());
+                buf.try_reserve(size - buf.len())?;
             }
-            return buf;
+            return Ok(buf);
         }
-        // TODO fallible allocation
-        Vec::with_capacity(size)
+        let mut buf = Vec::new();
+        buf.try_reserve(size)?;
+        Ok(buf)
     }
 
     /// A version of [`Self::pop`] that initializes the [`Vec`].
-    /// This allows it to use [`vec!`], which, if used with `0`,
-    /// calls [`alloc_zeroed`], and thus can leave zero initialization to the OS.
+    /// When `init_value` is `0`, this uses [`alloc_zeroed`] via [`vec!`]
+    /// so the OS can skip zero-initialization for fresh pages.
     ///
     /// [`alloc_zeroed`]: std::alloc::alloc_zeroed
-    pub fn pop_init(&self, size: usize, init_value: T) -> Vec<T>
+    pub fn pop_init(&self, size: usize, init_value: T) -> Result<Vec<T>, TryReserveError>
     where
         T: Copy,
     {
         if let Some(buf) = self.bufs.lock().pop() {
             if size <= buf.len() {
-                return buf;
+                return Ok(buf);
             }
         }
-        // TODO fallible allocation
-        vec![init_value; size]
+        let mut buf = Vec::new();
+        buf.try_reserve(size)?;
+        buf.resize(size, init_value);
+        Ok(buf)
     }
 
     pub fn push(&self, buf: Vec<T>) {
