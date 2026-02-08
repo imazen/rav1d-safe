@@ -98,10 +98,7 @@ impl<T: AsMutPtr> DisjointMut<T> {
     pub const fn new(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
-            #[cfg(not(feature = "unchecked"))]
             tracker: Some(checked::BorrowTracker::new()),
-            #[cfg(feature = "unchecked")]
-            tracker: None,
         }
     }
 
@@ -112,6 +109,7 @@ impl<T: AsMutPtr> DisjointMut<T> {
     /// The caller must ensure that all borrows obtained from this instance
     /// are truly disjoint: no mutable borrow may overlap with any other borrow.
     /// Violating this causes undefined behavior (aliasing `&mut`).
+    #[cfg(feature = "unchecked")]
     pub const unsafe fn dangerously_unchecked(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
