@@ -1,16 +1,23 @@
 [package]
 name = "rav1d-disjoint-mut"
 version = "0.1.0"
-edition = "2021"
-rust-version = "1.89"
+edition = "2024"
+rust-version = "1.85"
 description = "A provably safe abstraction for concurrent disjoint mutable access to contiguous storage"
 license = "BSD-2-Clause"
+repository = "https://github.com/imazen/rav1d-safe"
+documentation = "https://docs.rs/rav1d-disjoint-mut"
+keywords = ["concurrency", "mutex", "slice", "disjoint", "borrow"]
+categories = ["concurrency", "no-std", "data-structures"]
+exclude = ["justfile"]
 
 [features]
-default = []
+default = ["std"]
+std = ["dep:parking_lot"]
 # Skip runtime overlap checking. The caller must ensure all borrows are disjoint.
 unchecked = []
 
 [dependencies]
-parking_lot = "0.12.2"
-zerocopy = { version = "0.7.32", features = ["derive"] }
+parking_lot = { version = "0.12.2", optional = true }
+spin = { version = "0.10", default-features = false, features = ["mutex", "spin_mutex"] }
+zerocopy = { version = "0.7.32", default-features = false }

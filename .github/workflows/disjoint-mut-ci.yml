@@ -1,0 +1,83 @@
+name: disjoint-mut CI
+
+on:
+  push:
+    paths:
+      - 'crates/rav1d-disjoint-mut/**'
+      - '.github/workflows/disjoint-mut-ci.yml'
+  pull_request:
+    paths:
+      - 'crates/rav1d-disjoint-mut/**'
+      - '.github/workflows/disjoint-mut-ci.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }}, ${{ matrix.features }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        features: ["", "--no-default-features"]
+        include:
+          - os: ubuntu-latest
+            features: "--features unchecked"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p rav1d-disjoint-mut ${{ matrix.features }}
+
+  miri:
+    name: Miri (${{ matrix.model }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        model:
+          - name: "Stacked Borrows"
+            flags: ""
+          - name: "Tree Borrows"
+            flags: "-Zmiri-tree-borrows"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - run: cargo +nightly miri test -p rav1d-disjoint-mut
+        env:
+          MIRIFLAGS: ${{ matrix.model.flags }}
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt -p rav1d-disjoint-mut -- --check
+      - run: cargo clippy -p rav1d-disjoint-mut -- -D warnings
+      - run: cargo clippy -p rav1d-disjoint-mut --no-default-features -- -D warnings
+
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.85"
+      - run: cargo check -p rav1d-disjoint-mut
+      - run: cargo check -p rav1d-disjoint-mut --no-default-features
+
+  doc:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo doc -p rav1d-disjoint-mut --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings

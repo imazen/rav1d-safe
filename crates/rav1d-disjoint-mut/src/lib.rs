@@ -26,29 +26,35 @@
 //! assert_eq!(a.len() + b.len(), 100);
 //! ```
 
+#![no_std]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::cell::UnsafeCell;
-use std::fmt;
-use std::fmt::Debug;
-use std::fmt::Display;
-use std::fmt::Formatter;
-use std::marker::PhantomData;
-use std::mem;
-use std::mem::ManuallyDrop;
-use std::ops::Deref;
-use std::ops::DerefMut;
-use std::ops::Index;
-use std::ops::Range;
-use std::ops::RangeFrom;
-use std::ops::RangeFull;
-use std::ops::RangeInclusive;
-use std::ops::RangeTo;
-use std::ops::RangeToInclusive;
-use std::ptr;
-use std::ptr::addr_of_mut;
-use std::sync::Arc;
-use std::thread;
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
+
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::cell::UnsafeCell;
+use core::fmt;
+use core::fmt::Debug;
+use core::fmt::Display;
+use core::fmt::Formatter;
+use core::marker::PhantomData;
+use core::mem;
+use core::mem::ManuallyDrop;
+use core::ops::Deref;
+use core::ops::DerefMut;
+use core::ops::Index;
+use core::ops::Range;
+use core::ops::RangeFrom;
+use core::ops::RangeFull;
+use core::ops::RangeInclusive;
+use core::ops::RangeTo;
+use core::ops::RangeToInclusive;
+use core::ptr;
+use core::ptr::addr_of_mut;
 use zerocopy::AsBytes;
 use zerocopy::FromBytes;
 
@@ -68,7 +74,8 @@ use zerocopy::FromBytes;
 /// regions are actually disjoint with all other borrows for the lifetime of the
 /// returned guard. This makes `DisjointMut` a provably safe abstraction (like `RefCell`).
 ///
-/// For audited hot paths, use [`DisjointMut::dangerously_unchecked`] to skip tracking.
+/// For audited hot paths, enable the `unchecked` feature and use
+/// `DisjointMut::dangerously_unchecked` to skip tracking.
 pub struct DisjointMut<T: ?Sized + AsMutPtr> {
     tracker: Option<checked::BorrowTracker>,
 
@@ -95,29 +102,16 @@ impl<T: AsMutPtr + Default> Default for DisjointMut<T> {
     }
 }
 
-impl<T: AsMutPtr> DisjointMut<T> {
-    pub const fn new(value: T) -> Self {
-        Self {
-            inner: UnsafeCell::new(value),
-            tracker: Some(checked::BorrowTracker::new()),
-        }
+impl<T: ?Sized + AsMutPtr> Debug for DisjointMut<T> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("DisjointMut")
+            .field("len", &self.len())
+            .field("checked", &self.is_checked())
+            .finish_non_exhaustive()
     }
+}
 
-    /// Create a `DisjointMut` without runtime overlap checking.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that all borrows obtained from this instance
-    /// are truly disjoint: no mutable borrow may overlap with any other borrow.
-    /// Violating this causes undefined behavior (aliasing `&mut`).
-    #[cfg(feature = "unchecked")]
-    pub const unsafe fn dangerously_unchecked(value: T) -> Self {
-        Self {
-            inner: UnsafeCell::new(value),
-            tracker: None,
-        }
-    }
-
+impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     /// Returns `true` if this instance performs runtime overlap checking.
     pub const fn is_checked(&self) -> bool {
         self.tracker.is_some()
@@ -143,6 +137,30 @@ impl<T: AsMutPtr> DisjointMut<T> {
     /// In particular, the ptr returned by [`AsMutPtr::as_mut_ptr`] may be in use.
     pub const fn inner(&self) -> *mut T {
         self.inner.get()
+    }
+}
+
+impl<T: AsMutPtr> DisjointMut<T> {
+    pub const fn new(value: T) -> Self {
+        Self {
+            inner: UnsafeCell::new(value),
+            tracker: Some(checked::BorrowTracker::new()),
+        }
+    }
+
+    /// Create a `DisjointMut` without runtime overlap checking.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that all borrows obtained from this instance
+    /// are truly disjoint: no mutable borrow may overlap with any other borrow.
+    /// Violating this causes undefined behavior (aliasing `&mut`).
+    #[cfg(feature = "unchecked")]
+    pub const unsafe fn dangerously_unchecked(value: T) -> Self {
+        Self {
+            inner: UnsafeCell::new(value),
+            tracker: None,
+        }
     }
 
     pub fn into_inner(self) -> T {
@@ -277,6 +295,9 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Deref for DisjointImmutGuard<'a, T, V>
 // =============================================================================
 
 mod sealed {
+    use alloc::boxed::Box;
+    use alloc::vec::Vec;
+
     /// Sealing trait — prevents external implementations of [`AsMutPtr`](super::AsMutPtr).
     ///
     /// This is critical for soundness: an incorrect `AsMutPtr` impl could return
@@ -342,6 +363,10 @@ pub unsafe trait AsMutPtr: sealed::Sealed {
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target;
 
     fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Opt-in trait for external types to participate in [`DisjointMut`].
@@ -389,6 +414,10 @@ pub unsafe trait ExternalAsMutPtr {
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target;
 
     fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 // Blanket seal for external types
@@ -845,12 +874,14 @@ where
 
 mod checked {
     use super::*;
+    use alloc::vec::Vec;
+    use core::panic::Location;
+    use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+    #[cfg(feature = "std")]
     use parking_lot::Mutex;
-    use std::fmt::Debug;
-    use std::panic::Location;
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-    use std::thread;
-    use std::thread::ThreadId;
+    #[cfg(not(feature = "std"))]
+    use spin::Mutex;
 
     /// Monotonic ID generator for borrow records.
     static NEXT_ID: AtomicU64 = AtomicU64::new(0);
@@ -868,13 +899,26 @@ mod checked {
         pub const UNCHECKED: Self = Self(u64::MAX);
     }
 
-    #[derive(Debug)]
     struct BorrowRecord {
         id: BorrowId,
         bounds: Bounds,
         mutable: bool,
         location: &'static Location<'static>,
-        thread: ThreadId,
+        #[cfg(feature = "std")]
+        thread: std::thread::ThreadId,
+    }
+
+    impl Debug for BorrowRecord {
+        fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+            let mut s = f.debug_struct("BorrowRecord");
+            s.field("id", &self.id)
+                .field("bounds", &self.bounds)
+                .field("mutable", &self.mutable)
+                .field("location", &self.location);
+            #[cfg(feature = "std")]
+            s.field("thread", &self.thread);
+            s.finish()
+        }
     }
 
     impl Display for BorrowRecord {
@@ -884,16 +928,20 @@ mod checked {
                 bounds,
                 mutable,
                 location,
+                #[cfg(feature = "std")]
                 thread,
             } = self;
             let mutable = if *mutable { "&mut" } else { "   &" };
-            write!(f, "{mutable} _[{bounds}] on {thread:?} at {location}")
+            #[cfg(feature = "std")]
+            return write!(f, "{mutable} _[{bounds}] on {thread:?} at {location}");
+            #[cfg(not(feature = "std"))]
+            write!(f, "{mutable} _[{bounds}] at {location}")
         }
     }
 
     /// All active borrows for a single `DisjointMut` instance.
     ///
-    /// Like [`std::sync::Mutex`], the tracker poisons the data structure when a
+    /// Like `std::sync::Mutex`, the tracker poisons the data structure when a
     /// thread panics while holding a mutable borrow guard. This prevents
     /// subsequent access to potentially corrupted data.
     pub(super) struct BorrowTracker {
@@ -940,7 +988,8 @@ mod checked {
                 bounds: bounds.clone(),
                 mutable: true,
                 location: Location::caller(),
-                thread: thread::current().id(),
+                #[cfg(feature = "std")]
+                thread: std::thread::current().id(),
             };
             let mut borrows = self.borrows.lock();
             // Check against ALL existing borrows (both mut and immut)
@@ -963,7 +1012,8 @@ mod checked {
                 bounds: bounds.clone(),
                 mutable: false,
                 location: Location::caller(),
-                thread: thread::current().id(),
+                #[cfg(feature = "std")]
+                thread: std::thread::current().id(),
             };
             let mut borrows = self.borrows.lock();
             // Only check against mutable borrows
@@ -999,7 +1049,8 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
             // If the thread is panicking while we hold a mutable guard,
             // the data may be partially written / inconsistent.
             // Poison the data structure so all future borrows fail.
-            if thread::panicking() {
+            #[cfg(feature = "std")]
+            if std::thread::panicking() {
                 tracker.poison();
             }
             tracker.remove(self.borrow_id);
