@@ -8061,20 +8061,16 @@ pub fn mc_put_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use crate::src::cpu::CpuFlags;
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(_token) = Desktop64::summon() else { return false };
     use zerocopy::AsBytes;
-    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+    let dst_ptr = unsafe { (dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel).add(dst_base * std::mem::size_of::<BD::Pixel>()) };
     let dst_stride = dst.stride();
-    let (src_guard, _src_base) = src.full_guard::<BD>();
-    let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
-    let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
+    let (src_guard, src_base) = src.full_guard::<BD>();
+    let src_ptr = unsafe { (src_guard.as_bytes().as_ptr() as *const DynPixel).add(src_base * std::mem::size_of::<BD::Pixel>()) };
     let src_stride = src.stride();
     let bd_c = bd.into_c();
+    // SAFETY: _impl fns take raw pointers derived from tracked guards; token proves AVX2 available
     unsafe {
         match BD::BPC {
             BPC::BPC8 => match filter {
@@ -8118,17 +8114,14 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use crate::src::cpu::CpuFlags;
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(_token) = Desktop64::summon() else { return false };
     let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
     use zerocopy::AsBytes;
-    let (src_guard, _src_base) = src.full_guard::<BD>();
-    let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
-    let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
+    let (src_guard, src_base) = src.full_guard::<BD>();
+    let src_ptr = unsafe { (src_guard.as_bytes().as_ptr() as *const DynPixel).add(src_base * std::mem::size_of::<BD::Pixel>()) };
     let src_stride = src.stride();
     let bd_c = bd.into_c();
+    // SAFETY: _impl fns take raw pointers derived from tracked guards; token proves AVX2 available
     unsafe {
         match BD::BPC {
             BPC::BPC8 => match filter {
@@ -8162,7 +8155,6 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
 
 /// No SIMD for scaled variants on x86_64.
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)]
 pub fn mc_scaled_dispatch<BD: BitDepth>(
     _filter: Filter2d,
     _dst: PicOffset,
@@ -8180,7 +8172,6 @@ pub fn mc_scaled_dispatch<BD: BitDepth>(
 
 /// No SIMD for scaled variants on x86_64.
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)]
 pub fn mct_scaled_dispatch<BD: BitDepth>(
     _filter: Filter2d,
     _tmp: &mut [i16],
@@ -8198,7 +8189,6 @@ pub fn mct_scaled_dispatch<BD: BitDepth>(
 
 /// No SIMD for warp on x86_64.
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)]
 pub fn warp8x8_dispatch<BD: BitDepth>(
     _dst: PicOffset,
     _src: PicOffset,
@@ -8212,7 +8202,6 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
 
 /// No SIMD for warp on x86_64.
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)]
 pub fn warp8x8t_dispatch<BD: BitDepth>(
     _tmp: &mut [i16],
     _tmp_stride: usize,
@@ -8227,7 +8216,6 @@ pub fn warp8x8t_dispatch<BD: BitDepth>(
 
 /// No SIMD for emu_edge on x86_64.
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)]
 pub fn emu_edge_dispatch<BD: BitDepth>(
     _bw: isize,
     _bh: isize,
@@ -8244,7 +8232,6 @@ pub fn emu_edge_dispatch<BD: BitDepth>(
 
 /// No SIMD for resize on x86_64.
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)]
 pub fn resize_dispatch<BD: BitDepth>(
     _dst: crate::src::with_offset::WithOffset<
         crate::src::pic_or_buf::PicOrBuf<crate::src::align::AlignedVec64<u8>>,
