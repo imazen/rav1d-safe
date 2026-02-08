@@ -12,6 +12,8 @@ use crate::src::disjoint_mut::DisjointMut;
 use crate::src::disjoint_mut::DisjointMutArcSlice;
 use crate::src::disjoint_mut::DisjointMutGuard;
 use crate::src::disjoint_mut::DisjointMutSlice;
+#[cfg(not(feature = "asm"))]
+use crate::src::enum_map::DefaultValue;
 use crate::src::env::fix_mv_precision;
 use crate::src::env::get_gmv_2d;
 use crate::src::env::get_poc_diff;
@@ -480,6 +482,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn splat_mv(
 /// Direct dispatch for splat_mv - bypasses function pointer table.
 /// Has SIMD implementations: AVX2 (x86_64) and NEON (aarch64).
 #[cfg(not(feature = "asm"))]
+#[allow(unsafe_code)]
 fn splat_mv_direct(
     rr: *mut *mut RefMvsBlock,
     rmv: &Align16<RefMvsBlock>,
@@ -525,6 +528,7 @@ fn splat_mv_direct(
 }
 
 impl splat_mv::Fn {
+    #[allow(unsafe_code)]
     pub fn call(
         &self,
         rf: &RefMvsFrame,
@@ -1520,6 +1524,7 @@ pub(crate) fn rav1d_refmvs_tile_sbrow_init(
 /// # Safety
 ///
 /// Must be called by [`load_tmvs::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn load_tmvs_c(
     rf: &AsmRefMvsFrame,
@@ -1653,6 +1658,7 @@ fn load_tmvs_rust(
 /// # Safety
 ///
 /// Must be called by [`save_tmvs::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn save_tmvs_c(
     _rp: *mut RefMvsTemporalBlock,
@@ -1839,6 +1845,7 @@ pub(crate) fn rav1d_refmvs_init_frame(
 /// # Safety
 ///
 /// Must be called by [`splat_mv::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn splat_mv_c(
     rr: *mut *mut RefMvsBlock,
@@ -1866,10 +1873,20 @@ fn splat_mv_rust<'a>(rr: impl Iterator<Item = &'a mut [RefMvsBlock]>, rmv: &Alig
 
 impl Rav1dRefmvsDSPContext {
     pub const fn default() -> Self {
-        Self {
-            load_tmvs: load_tmvs::Fn::new(load_tmvs_c),
-            save_tmvs: save_tmvs::Fn::new(save_tmvs_c),
-            splat_mv: splat_mv::Fn::new(splat_mv_c),
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                Self {
+                    load_tmvs: load_tmvs::Fn::new(load_tmvs_c),
+                    save_tmvs: save_tmvs::Fn::new(save_tmvs_c),
+                    splat_mv: splat_mv::Fn::new(splat_mv_c),
+                }
+            } else {
+                Self {
+                    load_tmvs: load_tmvs::Fn::DEFAULT,
+                    save_tmvs: save_tmvs::Fn::DEFAULT,
+                    splat_mv: splat_mv::Fn::DEFAULT,
+                }
+            }
         }
     }
 

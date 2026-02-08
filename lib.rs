@@ -88,11 +88,11 @@ pub mod src {
     mod mc;
     mod pal;
     mod recon;
-    #[allow(unsafe_code)]
+    #[cfg_attr(feature = "asm", allow(unsafe_code))]
     mod refmvs;
 
-    // Entropy coding (inline SIMD)
-    #[allow(unsafe_code)]
+    // Entropy coding (inline SIMD on aarch64 for NEON, safe on x86_64)
+    #[cfg_attr(any(feature = "asm", target_arch = "aarch64"), allow(unsafe_code))]
     mod msac;
 
     // Safe SIMD implementations

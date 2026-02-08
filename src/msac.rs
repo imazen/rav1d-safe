@@ -85,6 +85,7 @@ extern "C" {
 }
 
 pub struct Rav1dMsacDSPContext {
+    #[cfg(feature = "asm")]
     symbol_adapt16: unsafe extern "C" fn(
         s: &mut MsacAsmContext,
         cdf: *mut u16,
@@ -95,8 +96,14 @@ pub struct Rav1dMsacDSPContext {
 
 impl Rav1dMsacDSPContext {
     pub const fn default() -> Self {
-        Self {
-            symbol_adapt16: rav1d_msac_decode_symbol_adapt_c,
+        cfg_if! {
+            if #[cfg(feature = "asm")] {
+                Self {
+                    symbol_adapt16: rav1d_msac_decode_symbol_adapt_c,
+                }
+            } else {
+                Self {}
+            }
         }
     }
 
@@ -180,12 +187,14 @@ struct MsacAsmContextBuf {
 /// which is always contained in [`MsacContext::asm`], whose [`MsacContext::data`] field
 /// is what is stored in [`MsacAsmContextBuf::pos`] and [`MsacAsmContextBuf::end`].
 /// Since [`MsacContext::data`] is [`Send`], [`MsacAsmContextBuf`] is also [`Send`].
+#[allow(unsafe_code)]
 unsafe impl Send for MsacAsmContextBuf {}
 
 /// SAFETY: [`MsacAsmContextBuf`] is always contained in [`MsacAsmContext::buf`],
 /// which is always contained in [`MsacContext::asm`], whose [`MsacContext::data`] field
 /// is what is stored in [`MsacAsmContextBuf::pos`] and [`MsacAsmContextBuf::end`].
 /// Since [`MsacContext::data`] is [`Sync`], [`MsacAsmContextBuf`] is also [`Sync`].
+#[allow(unsafe_code)]
 unsafe impl Sync for MsacAsmContextBuf {}
 
 impl Default for MsacAsmContextBuf {
@@ -448,6 +457,7 @@ fn rav1d_msac_decode_symbol_adapt_rust(s: &mut MsacContext, cdf: &mut [u16], n_s
 ///
 /// Must be called through [`Rav1dMsacDSPContext::symbol_adapt16`]
 /// in [`rav1d_msac_decode_symbol_adapt16`].
+#[cfg(feature = "asm")]
 #[cfg_attr(not(all(feature = "asm", target_arch = "x86_64")), allow(dead_code))]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn rav1d_msac_decode_symbol_adapt_c(
@@ -629,6 +639,7 @@ static MIN_PROB_16_ARM: [u16; 31] = [
 
 /// NEON implementation of symbol_adapt16
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+#[allow(unsafe_code)]
 unsafe fn rav1d_msac_decode_symbol_adapt16_neon(
     s: &mut MsacContext,
     cdf: &mut [u16],
@@ -744,7 +755,7 @@ impl MsacContext {
             asm,
             data: Some(data),
         };
-        let _ = dsp.symbol_adapt16; // Silence unused warnings.
+        let _ = dsp; // Silence unused warnings when asm is off.
         ctx_refill(&mut s);
         s
     }
@@ -806,6 +817,7 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
 ///
 /// `n_symbols` is in the range `0..16`.
 #[inline(always)]
+#[cfg_attr(any(feature = "asm", target_arch = "aarch64"), allow(unsafe_code))]
 pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
     debug_assert!(n_symbols < 16);
     let ret;
