@@ -45,71 +45,32 @@ const SQRT2_HALF: i32 = 181; // sqrt(2) * 128
 /// Full 2D DCT_DCT 4x4 inverse transform with add-to-destination
 /// Uses AVX2 to process all 4 rows simultaneously
 #[cfg(target_arch = "x86_64")]
-#[cfg(feature = "asm")]
 #[arcane]
-#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     _token: Desktop64,
-    dst: *mut u8,
-    dst_stride: isize,
-    coeff: *mut i16,
+    dst: &mut [u8],
+    dst_stride: usize,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    // Load coefficients (column-major storage in rav1d)
-    // coeff[y + x*4] for position (x,y)
-    // row0: coeff[0], coeff[4], coeff[8], coeff[12]
-    // row1: coeff[1], coeff[5], coeff[9], coeff[13]
-    // etc.
+    use crate::src::safe_simd::pixel_access::{loadi32, storei32, storeu_128};
 
-    let c_ptr = coeff;
-    let row0 = unsafe {
-        _mm_set_epi32(
-            *c_ptr.add(12) as i32,
-            *c_ptr.add(8) as i32,
-            *c_ptr.add(4) as i32,
-            *c_ptr.add(0) as i32,
-        )
-    };
-    let row1 = unsafe {
-        _mm_set_epi32(
-            *c_ptr.add(13) as i32,
-            *c_ptr.add(9) as i32,
-            *c_ptr.add(5) as i32,
-            *c_ptr.add(1) as i32,
-        )
-    };
-    let row2 = unsafe {
-        _mm_set_epi32(
-            *c_ptr.add(14) as i32,
-            *c_ptr.add(10) as i32,
-            *c_ptr.add(6) as i32,
-            *c_ptr.add(2) as i32,
-        )
-    };
-    let row3 = unsafe {
-        _mm_set_epi32(
-            *c_ptr.add(15) as i32,
-            *c_ptr.add(11) as i32,
-            *c_ptr.add(7) as i32,
-            *c_ptr.add(3) as i32,
-        )
-    };
+    let row0 = _mm_set_epi32(coeff[12] as i32, coeff[8] as i32, coeff[4] as i32, coeff[0] as i32);
+    let row1 = _mm_set_epi32(coeff[13] as i32, coeff[9] as i32, coeff[5] as i32, coeff[1] as i32);
+    let row2 = _mm_set_epi32(coeff[14] as i32, coeff[10] as i32, coeff[6] as i32, coeff[2] as i32);
+    let row3 = _mm_set_epi32(coeff[15] as i32, coeff[11] as i32, coeff[7] as i32, coeff[3] as i32);
 
-    // Pack rows into 256-bit vectors for processing
     let rows01 = _mm256_set_m128i(row1, row0);
     let rows23 = _mm256_set_m128i(row3, row2);
 
-    // DCT4 butterfly on rows
     let (rows01_out, rows23_out) = dct4_2rows_avx2(_token, rows01, rows23);
 
-    // Transpose for column pass
     let r0 = _mm256_castsi256_si128(rows01_out);
     let r1 = _mm256_extracti128_si256(rows01_out, 1);
     let r2 = _mm256_castsi256_si128(rows23_out);
     let r3 = _mm256_extracti128_si256(rows23_out, 1);
 
-    // Transpose 4x4 using unpack
     let t01_lo = _mm_unpacklo_epi32(r0, r1);
     let t01_hi = _mm_unpackhi_epi32(r0, r1);
     let t23_lo = _mm_unpacklo_epi32(r2, r3);
@@ -123,15 +84,12 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     let cols01 = _mm256_set_m128i(col1, col0);
     let cols23 = _mm256_set_m128i(col3, col2);
 
-    // DCT4 butterfly on columns
     let (cols01_out, cols23_out) = dct4_2rows_avx2(_token, cols01, cols23);
 
-    // Final scaling: (result + 8) >> 4
     let rnd = _mm256_set1_epi32(8);
     let cols01_scaled = _mm256_srai_epi32(_mm256_add_epi32(cols01_out, rnd), 4);
     let cols23_scaled = _mm256_srai_epi32(_mm256_add_epi32(cols23_out, rnd), 4);
 
-    // Transpose back to row order for storing
     let c0 = _mm256_castsi256_si128(cols01_scaled);
     let c1 = _mm256_extracti128_si256(cols01_scaled, 1);
     let c2 = _mm256_castsi256_si128(cols23_scaled);
@@ -147,69 +105,61 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     let final2 = _mm_unpacklo_epi64(u01_hi, u23_hi);
     let final3 = _mm_unpackhi_epi64(u01_hi, u23_hi);
 
-    // Add to destination with clamping
     let zero = _mm_setzero_si128();
     let max_val = _mm_set1_epi16(bitdepth_max as i16);
 
     // Row 0
-    unsafe {
-        let d0 = _mm_cvtsi32_si128(*(dst as *const i32));
-        let d0_16 = _mm_unpacklo_epi8(d0, zero);
-        let d0_32 = _mm_cvtepi16_epi32(d0_16);
-        let sum0 = _mm_add_epi32(d0_32, final0);
-        let sum0_16 = _mm_packs_epi32(sum0, sum0);
-        let sum0_clamped = _mm_max_epi16(_mm_min_epi16(sum0_16, max_val), zero);
-        let sum0_8 = _mm_packus_epi16(sum0_clamped, sum0_clamped);
-        *(dst as *mut i32) = _mm_cvtsi128_si32(sum0_8);
-    }
+    let d0 = loadi32!(&dst[..4]);
+    let d0_16 = _mm_unpacklo_epi8(d0, zero);
+    let d0_32 = _mm_cvtepi16_epi32(d0_16);
+    let sum0 = _mm_add_epi32(d0_32, final0);
+    let sum0_16 = _mm_packs_epi32(sum0, sum0);
+    let sum0_clamped = _mm_max_epi16(_mm_min_epi16(sum0_16, max_val), zero);
+    let sum0_8 = _mm_packus_epi16(sum0_clamped, sum0_clamped);
+    storei32!(&mut dst[..4], sum0_8);
 
     // Row 1
-    unsafe {
-        let d1 = _mm_cvtsi32_si128(*(dst.offset(dst_stride) as *const i32));
-        let d1_16 = _mm_unpacklo_epi8(d1, zero);
-        let d1_32 = _mm_cvtepi16_epi32(d1_16);
-        let sum1 = _mm_add_epi32(d1_32, final1);
-        let sum1_16 = _mm_packs_epi32(sum1, sum1);
-        let sum1_clamped = _mm_max_epi16(_mm_min_epi16(sum1_16, max_val), zero);
-        let sum1_8 = _mm_packus_epi16(sum1_clamped, sum1_clamped);
-        *(dst.offset(dst_stride) as *mut i32) = _mm_cvtsi128_si32(sum1_8);
-    }
+    let off1 = dst_stride;
+    let d1 = loadi32!(&dst[off1..off1 + 4]);
+    let d1_16 = _mm_unpacklo_epi8(d1, zero);
+    let d1_32 = _mm_cvtepi16_epi32(d1_16);
+    let sum1 = _mm_add_epi32(d1_32, final1);
+    let sum1_16 = _mm_packs_epi32(sum1, sum1);
+    let sum1_clamped = _mm_max_epi16(_mm_min_epi16(sum1_16, max_val), zero);
+    let sum1_8 = _mm_packus_epi16(sum1_clamped, sum1_clamped);
+    storei32!(&mut dst[off1..off1 + 4], sum1_8);
 
     // Row 2
-    unsafe {
-        let d2 = _mm_cvtsi32_si128(*(dst.offset(dst_stride * 2) as *const i32));
-        let d2_16 = _mm_unpacklo_epi8(d2, zero);
-        let d2_32 = _mm_cvtepi16_epi32(d2_16);
-        let sum2 = _mm_add_epi32(d2_32, final2);
-        let sum2_16 = _mm_packs_epi32(sum2, sum2);
-        let sum2_clamped = _mm_max_epi16(_mm_min_epi16(sum2_16, max_val), zero);
-        let sum2_8 = _mm_packus_epi16(sum2_clamped, sum2_clamped);
-        *(dst.offset(dst_stride * 2) as *mut i32) = _mm_cvtsi128_si32(sum2_8);
-    }
+    let off2 = dst_stride * 2;
+    let d2 = loadi32!(&dst[off2..off2 + 4]);
+    let d2_16 = _mm_unpacklo_epi8(d2, zero);
+    let d2_32 = _mm_cvtepi16_epi32(d2_16);
+    let sum2 = _mm_add_epi32(d2_32, final2);
+    let sum2_16 = _mm_packs_epi32(sum2, sum2);
+    let sum2_clamped = _mm_max_epi16(_mm_min_epi16(sum2_16, max_val), zero);
+    let sum2_8 = _mm_packus_epi16(sum2_clamped, sum2_clamped);
+    storei32!(&mut dst[off2..off2 + 4], sum2_8);
 
     // Row 3
-    unsafe {
-        let d3 = _mm_cvtsi32_si128(*(dst.offset(dst_stride * 3) as *const i32));
-        let d3_16 = _mm_unpacklo_epi8(d3, zero);
-        let d3_32 = _mm_cvtepi16_epi32(d3_16);
-        let sum3 = _mm_add_epi32(d3_32, final3);
-        let sum3_16 = _mm_packs_epi32(sum3, sum3);
-        let sum3_clamped = _mm_max_epi16(_mm_min_epi16(sum3_16, max_val), zero);
-        let sum3_8 = _mm_packus_epi16(sum3_clamped, sum3_clamped);
-        *(dst.offset(dst_stride * 3) as *mut i32) = _mm_cvtsi128_si32(sum3_8);
-    }
+    let off3 = dst_stride * 3;
+    let d3 = loadi32!(&dst[off3..off3 + 4]);
+    let d3_16 = _mm_unpacklo_epi8(d3, zero);
+    let d3_32 = _mm_cvtepi16_epi32(d3_16);
+    let sum3 = _mm_add_epi32(d3_32, final3);
+    let sum3_16 = _mm_packs_epi32(sum3, sum3);
+    let sum3_clamped = _mm_max_epi16(_mm_min_epi16(sum3_16, max_val), zero);
+    let sum3_8 = _mm_packus_epi16(sum3_clamped, sum3_clamped);
+    storei32!(&mut dst[off3..off3 + 4], sum3_8);
 
     // Clear coefficients
-    unsafe {
-        _mm_storeu_si128(coeff as *mut __m128i, _mm_setzero_si128());
-        _mm_storeu_si128(coeff.add(8) as *mut __m128i, _mm_setzero_si128());
-    }
+    let coeff_bytes = zerocopy::AsBytes::as_bytes_mut(coeff);
+    storeu_128!(<&mut [u8; 16]>::try_from(&mut coeff_bytes[..16]).unwrap(), _mm_setzero_si128());
+    storeu_128!(<&mut [u8; 16]>::try_from(&mut coeff_bytes[16..32]).unwrap(), _mm_setzero_si128());
 }
 
 /// DCT4 butterfly on 2 rows packed in __m256i
 /// Each 128-bit lane contains one row: [in0, in1, in2, in3] as i32
 #[cfg(target_arch = "x86_64")]
-#[cfg(feature = "asm")]
 #[arcane]
 fn dct4_2rows_avx2(_token: Desktop64, rows01: __m256i, rows23: __m256i) -> (__m256i, __m256i) {
     // DCT4: t0 = (in0 + in2) * 181 + 128 >> 8
