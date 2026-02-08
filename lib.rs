@@ -73,7 +73,8 @@ pub mod src {
 
     // Data/picture management
     mod data;
-    #[allow(unsafe_code)]
+    #[cfg_attr(not(feature = "c-ffi"), deny(unsafe_code))]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     mod picture;
 
     // DSP dispatch modules (contain _erased functions and fn ptr dispatch)
@@ -100,7 +101,8 @@ pub mod src {
     pub mod safe_simd;
 
     // C API entry point
-    #[allow(unsafe_code)]
+    #[cfg_attr(not(feature = "c-ffi"), deny(unsafe_code))]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub mod lib;
 
     // === Modules WITHOUT unsafe_code (enforced by deny) ===
