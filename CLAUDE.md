@@ -152,21 +152,24 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 **C FFI types gated behind `cfg(feature = "c-ffi")`:**
 - `DavdPicture`, `DavdData`, `DavdDataProps`, `DavdUserData`, `DavdSettings`, `DavdLogger` — all gated
 - `ITUTT35PayloadPtr`, `Dav1dITUTT35` struct (with `Send`/`Sync` impls) — gated; safe type alias when c-ffi off
+- `RawArc`, `RawCArc`, `Dav1dContext`, `arc_into_raw` — gated (raw Arc ptr roundtrip)
 - `From<Dav1d*>` / `From<Rav1d*> for Dav1d*` conversions (containing `unsafe { CArc::from_raw }`) — all gated
 - Safe picture allocator: per-plane `Vec<u8>` from MemPool, no C callbacks needed
 - Fallible allocation: `MemPool::pop_init` returns `Result<Vec, TryReserveError>`, propagated as `Rav1dError::ENOMEM`
 
-**Module safety annotations:**
-- 42+ modules with `forbid(unsafe_code)` — permanent, compiler-enforced
-- 13 with conditional deny when asm disabled (cdef, filmgrain, ipred, itx, etc.)
-- 5 modules conditionally safe when c-ffi disabled: include/dav1d, picture.rs, lib.rs (entry point), log.rs, c_box.rs
-- 11 modules with unconditional `allow(unsafe_code)` for sound abstractions
-
-**Remaining 11 unconditional `allow(unsafe_code)` modules:**
-- Sound abstractions: align, assume, c_arc, c_box, send_sync_non_null
-- Bridges: disjoint_mut, ffi_safe
-- Threading: internal
-- DSP: refmvs, msac, safe_simd (~2300 SIMD intrinsic calls)
+**Module safety architecture (default build without asm/c-ffi):**
+- Only 3 modules need unconditional `#[allow(unsafe_code)]`: refmvs, msac, safe_simd
+  - refmvs: MV storage pointer operations (DisjointMut guard → raw ptr arithmetic)
+  - msac: NEON SIMD intrinsics, fn ptr dispatch, Send/Sync
+  - safe_simd: ~2300 SIMD intrinsic calls (blocked by safe_intrinsics)
+- 6 modules use conditional `allow(unsafe_code)` only when c-ffi enabled:
+  include/dav1d, c_arc, c_box, log, picture, lib (C API entry point)
+- 1 module gated entirely behind asm/c-ffi: send_sync_non_null
+- All other modules use **item-level** `#[allow(unsafe_code)]` on specific functions/impls:
+  align (4 items), assume (1 fn), ffi_safe (2 fns), disjoint_mut (1 impl),
+  c_arc (3 items), c_box (1 fn), internal (4 impls)
+- 42+ modules with `#![forbid(unsafe_code)]` — permanent, compiler-enforced
+- 13 DSP modules with conditional deny when asm disabled
 
 **c-ffi build fully working** (previously blocked by 320 `forge_token_dangerously` errors in safe_simd):
 - Fixed: wrapped all `forge_token_dangerously()` calls in `unsafe { }` blocks (Rust 2024 edition compliance)
