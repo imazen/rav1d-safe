@@ -5,6 +5,7 @@
 
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -1708,6 +1709,7 @@ fn inv_txfm_add_flipadst_adst_4x4_16bpc_inner(
 // FFI WRAPPERS
 // ============================================================================
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1745,6 +1747,7 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1783,6 +1786,7 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1820,6 +1824,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1859,6 +1864,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_neon(
 }
 
 // DCT_DCT 8x8 FFI Wrappers
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1896,6 +1902,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1935,6 +1942,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_neon(
 }
 
 // DCT_DCT 16x16 FFI Wrappers
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1972,6 +1980,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2011,6 +2020,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_neon(
 }
 
 // IDENTITY FFI Wrappers
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2048,6 +2058,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2086,6 +2097,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2123,6 +2135,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2161,6 +2174,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2198,6 +2212,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2237,6 +2252,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_neon(
 }
 
 // ADST_ADST FFI Wrappers
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2274,6 +2290,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2312,6 +2329,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2349,6 +2367,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2388,6 +2407,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_16bpc_neon(
 }
 
 // FLIPADST_FLIPADST FFI Wrappers
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2425,6 +2445,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2464,6 +2485,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_neon(
 }
 
 // DCT_ADST and ADST_DCT FFI Wrappers
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2501,6 +2523,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2539,6 +2562,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2576,6 +2600,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2615,6 +2640,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_16bpc_neon(
 }
 
 // DCT_FLIPADST and FLIPADST_DCT FFI Wrappers
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2652,6 +2678,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2690,6 +2717,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2727,6 +2755,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2766,6 +2795,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_16bpc_neon(
 }
 
 // ADST_FLIPADST and FLIPADST_ADST FFI Wrappers
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2803,6 +2833,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2841,6 +2872,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2878,6 +2910,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3460,6 +3493,7 @@ fn inv_txfm_add_adst_dct_8x8_16bpc_inner(
 // RECTANGULAR FFI WRAPPERS
 // ============================================================================
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3497,6 +3531,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3535,6 +3570,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3572,6 +3608,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3610,6 +3647,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3647,6 +3685,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3685,6 +3724,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3722,6 +3762,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3761,6 +3802,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_neon(
 }
 
 // 8x8 Hybrid FFI Wrappers
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3798,6 +3840,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3836,6 +3879,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_dct_8x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3873,6 +3917,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_8x8_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_dct_8x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -4431,6 +4476,7 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_inner(
 // LARGER SIZE FFI WRAPPERS
 // ============================================================================
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -4468,6 +4514,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -4506,6 +4553,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -4543,6 +4591,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -4581,6 +4630,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -4618,6 +4668,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -4656,6 +4707,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -4693,6 +4745,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -4731,6 +4784,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -4768,6 +4822,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5295,6 +5350,7 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_inner(
 // LARGE SIZE FFI WRAPPERS
 // ============================================================================
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5332,6 +5388,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5370,6 +5427,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5407,6 +5465,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5445,6 +5504,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5482,6 +5542,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5520,6 +5581,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5557,6 +5619,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5595,6 +5658,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5632,6 +5696,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5807,6 +5872,7 @@ fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
 // RECTANGULAR IDENTITY_IDENTITY FFI WRAPPERS - 16BPC ONLY
 // ============================================================================
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5848,6 +5914,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5889,6 +5956,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5930,6 +5998,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -5971,6 +6040,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6012,6 +6082,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6057,6 +6128,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_neon(
 // RECTANGULAR IDENTITY_IDENTITY - 8BPC + 16BPC
 // ============================================================================
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6097,6 +6169,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6138,6 +6211,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6178,6 +6252,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6219,6 +6294,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6259,6 +6335,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6300,6 +6377,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6340,6 +6418,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6381,6 +6460,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6421,6 +6501,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6702,6 +6783,7 @@ fn inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6739,6 +6821,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6776,6 +6859,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6813,6 +6897,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6850,6 +6935,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -6887,6 +6973,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -7096,6 +7183,7 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_inner(
     }
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -7133,6 +7221,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -7171,6 +7260,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -7208,6 +7298,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_neon(
     );
 }
 
+#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -7510,6 +7601,7 @@ fn shift_for(w: usize, h: usize) -> u8 {
 macro_rules! gen_itx_arm {
     ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
         paste::paste! {
+#[allow(unsafe_code)]
             #[cfg(target_arch = "aarch64")]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _8bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
@@ -7538,6 +7630,7 @@ macro_rules! gen_itx_arm {
                 }
             }
 
+#[allow(unsafe_code)]
             #[cfg(target_arch = "aarch64")]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _16bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
@@ -7574,6 +7667,7 @@ macro_rules! gen_itx_arm {
 macro_rules! gen_itx_arm_8bpc {
     ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
         paste::paste! {
+#[allow(unsafe_code)]
             #[cfg(target_arch = "aarch64")]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _8bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
@@ -7609,6 +7703,7 @@ macro_rules! gen_itx_arm_8bpc {
 macro_rules! gen_itx_arm_16bpc {
     ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
         paste::paste! {
+#[allow(unsafe_code)]
             #[cfg(target_arch = "aarch64")]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _16bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
@@ -7838,6 +7933,7 @@ macro_rules! impl_itxfm_direct_dispatch {
     ) => {
         paste::paste! {
             #[allow(non_upper_case_globals)]
+            #[allow(unsafe_code)]
             fn $fn_name(
                 tx_size: usize,
                 tx_type: usize,
@@ -7987,6 +8083,7 @@ impl_itxfm_direct_dispatch!(
 );
 
 /// Safe dispatch entry point for ITX SIMD on ARM.
+#[allow(unsafe_code)]
 pub fn itxfm_add_dispatch<BD: BitDepth>(
     tx_size: usize,
     tx_type: usize,
