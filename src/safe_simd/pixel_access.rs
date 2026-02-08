@@ -297,6 +297,78 @@ macro_rules! storeu_128 {
 #[cfg(target_arch = "x86_64")]
 pub(crate) use storeu_128;
 
+/// Load 4 bytes from a slice as an `__m128i` (via `_mm_cvtsi32_si128`).
+///
+/// ```ignore
+/// let v = loadi32!(&src[off..off+4]);
+/// ```
+#[cfg(target_arch = "x86_64")]
+macro_rules! loadi32 {
+    ($src:expr) => {{
+        let bytes: &[u8] = $src;
+        let val = i32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        core::arch::x86_64::_mm_cvtsi32_si128(val)
+    }};
+}
+#[cfg(target_arch = "x86_64")]
+pub(crate) use loadi32;
+
+/// Store low 4 bytes of an `__m128i` to a slice (via `_mm_cvtsi128_si32`).
+///
+/// ```ignore
+/// storei32!(&mut dst[off..off+4], v);
+/// ```
+#[cfg(target_arch = "x86_64")]
+macro_rules! storei32 {
+    ($dst:expr, $val:expr) => {{
+        let val = core::arch::x86_64::_mm_cvtsi128_si32($val);
+        let bytes = val.to_ne_bytes();
+        let dst: &mut [u8] = $dst;
+        dst[0] = bytes[0];
+        dst[1] = bytes[1];
+        dst[2] = bytes[2];
+        dst[3] = bytes[3];
+    }};
+}
+#[cfg(target_arch = "x86_64")]
+pub(crate) use storei32;
+
+/// Load 8 bytes from a slice as an `__m128i` (via `_mm_set_epi64x`).
+///
+/// ```ignore
+/// let v = loadi64!(&src[off..off+8]);
+/// ```
+#[cfg(target_arch = "x86_64")]
+macro_rules! loadi64 {
+    ($src:expr) => {{
+        let bytes: &[u8] = $src;
+        let lo = i64::from_ne_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+        ]);
+        core::arch::x86_64::_mm_set_epi64x(0, lo)
+    }};
+}
+#[cfg(target_arch = "x86_64")]
+pub(crate) use loadi64;
+
+/// Store low 8 bytes of an `__m128i` to a slice.
+///
+/// ```ignore
+/// storei64!(&mut dst[off..off+8], v);
+/// ```
+#[cfg(target_arch = "x86_64")]
+macro_rules! storei64 {
+    ($dst:expr, $val:expr) => {{
+        let val = core::arch::x86_64::_mm_cvtsi128_si64($val);
+        let bytes = val.to_ne_bytes();
+        let dst: &mut [u8] = $dst;
+        dst[..8].copy_from_slice(&bytes);
+    }};
+}
+#[cfg(target_arch = "x86_64")]
+pub(crate) use storei64;
+
 /// Load 256 bits from a dynamic slice, converting to a fixed-size array.
 ///
 /// `$slice` is `&[T]` and `$T` is the target array type (e.g., `[u8; 32]`).
