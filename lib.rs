@@ -31,7 +31,7 @@ pub mod include {
         pub(crate) mod intops;
         pub(crate) mod validate;
     } // mod common
-    #[allow(unsafe_code)]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub mod dav1d {
         pub mod common;
         pub mod data;

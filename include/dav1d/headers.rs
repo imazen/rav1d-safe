@@ -779,15 +779,19 @@ pub type Dav1dMasteringDisplay = Rav1dMasteringDisplay;
 /// [`Rav1dITUTT35::payload`] is a [`Box`], so it doesn't move,
 /// and [`Self::payload`]'s lifetime is that of the [`Rav1dITUTT35`],
 /// which is itself stored in a [`Box`] as returned from [`Rav1dITUTT35::to_immut`].
+#[cfg(feature = "c-ffi")]
 #[repr(transparent)]
 pub struct ITUTT35PayloadPtr(*const u8);
 
 /// SAFETY: The raw ptr is immutable and essentially a `&[u8]`, which is [`Send`].
+#[cfg(feature = "c-ffi")]
 unsafe impl Send for ITUTT35PayloadPtr {}
 
 /// SAFETY: The raw ptr is immutable and essentially a `&[u8]`, which is [`Sync`].
+#[cfg(feature = "c-ffi")]
 unsafe impl Sync for ITUTT35PayloadPtr {}
 
+#[cfg(feature = "c-ffi")]
 #[repr(C)]
 pub struct Dav1dITUTT35 {
     pub country_code: u8,
@@ -796,6 +800,11 @@ pub struct Dav1dITUTT35 {
     pub payload: ITUTT35PayloadPtr,
 }
 
+/// When c-ffi is disabled, Dav1dITUTT35 is just Rav1dITUTT35 (no raw pointer needed).
+#[cfg(not(feature = "c-ffi"))]
+pub type Dav1dITUTT35 = Rav1dITUTT35;
+
+#[derive(Clone)]
 #[repr(C)]
 pub struct Rav1dITUTT35 {
     pub country_code: u8,
@@ -803,6 +812,7 @@ pub struct Rav1dITUTT35 {
     pub payload: Box<[u8]>,
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<&Rav1dITUTT35> for Dav1dITUTT35 {
     fn from(value: &Rav1dITUTT35) -> Self {
         let Rav1dITUTT35 {
@@ -824,9 +834,11 @@ impl Rav1dITUTT35 {
         mutable: Arc<Mutex<Vec<Rav1dITUTT35>>>,
     ) -> Arc<DRav1d<Box<[Rav1dITUTT35]>, Box<[Dav1dITUTT35]>>> {
         let mutable = Arc::into_inner(mutable).unwrap().into_inner();
-        let immutable = mutable.into_boxed_slice();
-        let rav1d = immutable;
+        let rav1d = mutable.into_boxed_slice();
+        #[cfg(feature = "c-ffi")]
         let dav1d = rav1d.iter().map(Dav1dITUTT35::from).collect();
+        #[cfg(not(feature = "c-ffi"))]
+        let dav1d = rav1d.clone();
         Arc::new(DRav1d { rav1d, dav1d })
     }
 }
