@@ -169,20 +169,28 @@ fn test_adjacent_element_guards() {
     assert_eq!(*g2, 6);
 }
 
-/// BUG: empty ranges are treated as overlapping.
-/// `50..50` borrows zero bytes but the tracker considers it to overlap with `0..100`.
-/// This is a false positive — empty ranges should never conflict with anything.
+/// Empty ranges borrow zero bytes and should never conflict with anything.
 #[test]
-#[should_panic(expected = "overlapping")]
-fn test_empty_range_false_positive_bug() {
+fn test_empty_range_no_conflict() {
     let dm = DisjointMut::new(vec![0u8; 100]);
     let _g1 = dm.index_mut(50..50); // empty range
-    let _g2 = dm.index_mut(0..100); // entire buffer — panics incorrectly
+    let mut g2 = dm.index_mut(0..100); // entire buffer — no conflict
+    g2[50] = 42;
+    assert_eq!(g2[50], 42);
 }
 
-/// Test: borrow leak on OOB panic — borrow should be permanently leaked.
+/// Two empty ranges at the same position don't conflict.
 #[test]
-fn test_borrow_leak_on_oob_panic() {
+fn test_two_empty_ranges_same_position() {
+    let dm = DisjointMut::new(vec![0u8; 100]);
+    let _g1 = dm.index_mut(50..50);
+    let _g2 = dm.index_mut(50..50);
+}
+
+/// OOB panic should not leak a borrow record. After recovery,
+/// the same range should be borrowable again.
+#[test]
+fn test_no_borrow_leak_on_oob_panic() {
     let dm = DisjointMut::new(vec![0u8; 10]);
 
     // This should panic because index is OOB
@@ -191,15 +199,10 @@ fn test_borrow_leak_on_oob_panic() {
     }));
     assert!(result.is_err());
 
-    // Now try to borrow — the leaked borrow for 0..100 should block this
-    // Actually, the bounds check happens in get_mut AFTER registration,
-    // so the borrow 0..100 is registered but the guard was never created.
-    // This means 0..100 is permanently "locked".
-    let result2 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _g = dm.index_mut(0..5);
-    }));
-    // This SHOULD panic due to overlap with the leaked borrow
-    assert!(result2.is_err());
+    // The borrow record should NOT be leaked — we should be able to
+    // borrow the same range again.
+    let g = dm.index_mut(0..5);
+    assert_eq!(g[0], 0);
 }
 
 /// Test: concurrent disjoint access with Box<[u8]> backing.
