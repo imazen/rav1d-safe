@@ -17,7 +17,7 @@
 //! # Example
 //!
 //! ```
-//! use disjoint_mut::DisjointMut;
+//! use rav1d_disjoint_mut::DisjointMut;
 //!
 //! let mut buf = DisjointMut::new(vec![0u8; 100]);
 //! // Borrow two non-overlapping regions simultaneously through &buf:
@@ -48,6 +48,7 @@ use std::ops::RangeToInclusive;
 use std::ptr;
 use std::ptr::addr_of_mut;
 use std::sync::Arc;
+use std::thread;
 use zerocopy::AsBytes;
 use zerocopy::FromBytes;
 
@@ -98,10 +99,7 @@ impl<T: AsMutPtr> DisjointMut<T> {
     pub const fn new(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
-            #[cfg(not(feature = "unchecked"))]
             tracker: Some(checked::BorrowTracker::new()),
-            #[cfg(feature = "unchecked")]
-            tracker: None,
         }
     }
 
@@ -112,6 +110,7 @@ impl<T: AsMutPtr> DisjointMut<T> {
     /// The caller must ensure that all borrows obtained from this instance
     /// are truly disjoint: no mutable borrow may overlap with any other borrow.
     /// Violating this causes undefined behavior (aliasing `&mut`).
+    #[cfg(feature = "unchecked")]
     pub const unsafe fn dangerously_unchecked(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
@@ -154,6 +153,27 @@ impl<T: AsMutPtr> DisjointMut<T> {
 // =============================================================================
 // Guard types
 // =============================================================================
+
+/// Scope guard that poisons the `DisjointMut` if the indexing operation panics
+/// (e.g., out-of-bounds). Disarmed via `mem::forget` on success.
+///
+/// Rather than cleaning up the leaked borrow record (which would allow the range
+/// to be re-borrowed in potentially inconsistent state), we poison the entire
+/// data structure. This follows the `std::sync::Mutex` pattern: after a panic,
+/// fail loudly on all subsequent access.
+struct BorrowCleanup<'a, T: ?Sized + AsMutPtr> {
+    parent: Option<&'a DisjointMut<T>>,
+}
+
+impl<T: ?Sized + AsMutPtr> Drop for BorrowCleanup<'_, T> {
+    fn drop(&mut self) {
+        // This only fires on panic (mem::forget on success path).
+        // Poison rather than clean up — the data structure is compromised.
+        if let Some(parent) = self.parent {
+            parent.tracker.as_ref().unwrap().poison();
+        }
+    }
+}
 
 pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
     slice: &'a mut V,
@@ -328,21 +348,44 @@ pub unsafe trait AsMutPtr: sealed::Sealed {
 ///
 /// Implement this trait for your container type so it can be used with
 /// `DisjointMut<YourType>`. The `Target` type must be `Copy` to ensure
-/// data races (from the TOCTOU window) cannot cause memory safety issues
-/// beyond producing incorrect values.
+/// data races cannot cause memory safety issues beyond producing incorrect
+/// values (no torn reads on non-`Copy` types).
 ///
 /// # Safety
 ///
-/// Same requirements as [`AsMutPtr`]:
-/// - Must not create a mutable reference to the underlying slice
-/// - Returned pointer must be valid for the collection's length
-/// - `len()` must return the correct length
+/// Implementors must uphold all of the following:
+///
+/// 1. **No mutable references to the container or its data.** The
+///    `as_mut_ptr` implementation must not create `&mut Self` or
+///    `&mut [Self::Target]`. Creating `&mut` causes a Stacked Borrows
+///    retag that invalidates concurrent borrows on other threads.
+///    Use only shared references (`&Self`) or raw pointer operations.
+///
+/// 2. **No shared references to element data.** Even `&[Self::Target]`
+///    conflicts with `&mut [Self::Target]` guards under Stacked Borrows.
+///    If you need the length, read it from container metadata (which lives
+///    in a separate allocation from the elements), or override
+///    [`AsMutPtr::as_mut_slice`] and use raw pointer metadata.
+///
+/// 3. **Valid pointer.** The returned `*mut Self::Target` must be valid
+///    for reads and writes over `0..self.len()` elements.
+///
+/// 4. **Stable length.** `len()` must return a consistent value for the
+///    lifetime of any outstanding borrow guard.
+///
+/// See the `Vec<V>` and `Box<[V]>` implementations in this crate for
+/// reference patterns.
 pub unsafe trait ExternalAsMutPtr {
     type Target: Copy;
 
+    /// Returns a mutable pointer to the first element.
+    ///
     /// # Safety
     ///
-    /// Same as [`AsMutPtr::as_mut_ptr`].
+    /// `ptr` must be safely dereferenceable. The implementation must not
+    /// create `&mut Self` or `&mut [Self::Target]` — only shared references
+    /// to container metadata or raw pointer operations. See the trait-level
+    /// safety docs for full requirements.
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target;
 
     fn len(&self) -> usize;
@@ -370,9 +413,11 @@ unsafe impl<T: ExternalAsMutPtr> AsMutPtr for T {
 
 impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     pub fn len(&self) -> usize {
-        // SAFETY: The inner cell is safe to access immutably. We never create a
-        // mutable reference to the inner value.
-        unsafe { (*self.inner.get()).len() }
+        // Use as_mut_slice to get a fat *mut [T] pointer and read length from
+        // the fat pointer metadata. This avoids creating &T which for some
+        // container types (e.g. Box<[V]>) would create &[V] to the heap data,
+        // conflicting with concurrent &mut [V] guards under Stacked Borrows.
+        self.as_mut_slice().len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -412,8 +457,9 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
 
     /// Mutably borrow a slice or element.
     ///
-    /// Atomically checks for overlaps and creates the reference under a single
-    /// lock acquisition — no TOCTOU gap between validation and reference creation.
+    /// Validates that the requested range doesn't overlap with any outstanding
+    /// borrow, then creates the `&mut` reference. Panics on overlap, OOB, or
+    /// if the data structure has been poisoned by a prior panic.
     #[inline] // Inline to see bounds checks in order to potentially elide them.
     #[track_caller]
     pub fn index_mut<'a, I>(&'a self, index: I) -> DisjointMutGuard<'a, T, I::Output>
@@ -423,17 +469,25 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     {
         let bounds = index.clone().into();
         // Register the borrow BEFORE creating the reference.
-        // The tracker's add_mut() holds the lock during validation.
+        // This prevents a TOCTOU gap where two threads could both create
+        // references to overlapping ranges before either registers.
         let borrow_id = match &self.tracker {
             Some(tracker) => tracker.add_mut(&bounds),
             None => checked::BorrowId::UNCHECKED,
         };
+        let parent = self.tracker.as_ref().map(|_| self);
+        // Scope guard: if get_mut panics (OOB), poison the data structure.
+        // We don't try to clean up the leaked borrow — poisoning is stricter
+        // and prevents all future access, following std::sync::Mutex semantics.
+        let cleanup = BorrowCleanup { parent };
         // SAFETY: The borrow has been registered (or we're unchecked).
         // The indexed region is guaranteed disjoint from all other active borrows.
         let slice = unsafe { &mut *index.get_mut(self.as_mut_slice()) };
+        // Success — disarm the cleanup guard.
+        mem::forget(cleanup);
         DisjointMutGuard {
             slice,
-            parent: self.tracker.as_ref().map(|_| self),
+            parent,
             borrow_id,
             phantom: PhantomData,
         }
@@ -441,8 +495,9 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
 
     /// Immutably borrow a slice or element.
     ///
-    /// Atomically checks for overlapping mutable borrows and creates the reference
-    /// under a single lock acquisition.
+    /// Validates that the requested range doesn't overlap with any outstanding
+    /// mutable borrow, then creates the `&` reference. Panics on overlap, OOB,
+    /// or if the data structure has been poisoned by a prior panic.
     #[inline] // Inline to see bounds checks in order to potentially elide them.
     #[track_caller]
     pub fn index<'a, I>(&'a self, index: I) -> DisjointImmutGuard<'a, T, I::Output>
@@ -455,11 +510,14 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
             Some(tracker) => tracker.add_immut(&bounds),
             None => checked::BorrowId::UNCHECKED,
         };
+        let parent = self.tracker.as_ref().map(|_| self);
+        let cleanup = BorrowCleanup { parent };
         // SAFETY: The borrow has been registered (or we're unchecked).
         let slice = unsafe { &*index.get_mut(self.as_mut_slice()).cast_const() };
+        mem::forget(cleanup);
         DisjointImmutGuard {
             slice,
-            parent: self.tracker.as_ref().map(|_| self),
+            parent,
             borrow_id,
             phantom: PhantomData,
         }
@@ -636,7 +694,15 @@ impl Debug for Bounds {
 }
 
 impl Bounds {
+    fn is_empty(&self) -> bool {
+        self.range.start >= self.range.end
+    }
+
     fn overlaps(&self, other: &Bounds) -> bool {
+        // Empty ranges borrow zero bytes and never conflict.
+        if self.is_empty() || other.is_empty() {
+            return false;
+        }
         let a = &self.range;
         let b = &other.range;
         a.start < b.end && b.start < a.end
@@ -646,7 +712,7 @@ impl Bounds {
 impl From<usize> for Bounds {
     fn from(index: usize) -> Self {
         Self {
-            range: index..index + 1,
+            range: index..index.checked_add(1).expect("index overflow in Bounds"),
         }
     }
 }
@@ -679,7 +745,7 @@ impl SliceBounds for RangeFrom<usize> {
 
 impl SliceBounds for RangeInclusive<usize> {
     fn to_range(&self, _len: usize) -> Range<usize> {
-        *self.start()..*self.end() + 1
+        *self.start()..self.end().checked_add(1).expect("range end overflow")
     }
 }
 
@@ -693,7 +759,7 @@ impl SliceBounds for RangeTo<usize> {
 impl SliceBounds for RangeToInclusive<usize> {
     fn to_range(&self, _len: usize) -> Range<usize> {
         let Self { end } = *self;
-        0..end + 1
+        0..end.checked_add(1).expect("range end overflow")
     }
 }
 
@@ -782,7 +848,7 @@ mod checked {
     use parking_lot::Mutex;
     use std::fmt::Debug;
     use std::panic::Location;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::thread;
     use std::thread::ThreadId;
 
@@ -826,8 +892,13 @@ mod checked {
     }
 
     /// All active borrows for a single `DisjointMut` instance.
+    ///
+    /// Like [`std::sync::Mutex`], the tracker poisons the data structure when a
+    /// thread panics while holding a mutable borrow guard. This prevents
+    /// subsequent access to potentially corrupted data.
     pub(super) struct BorrowTracker {
         borrows: Mutex<Vec<BorrowRecord>>,
+        poisoned: AtomicBool,
     }
 
     impl Default for BorrowTracker {
@@ -840,6 +911,19 @@ mod checked {
         pub const fn new() -> Self {
             Self {
                 borrows: Mutex::new(Vec::new()),
+                poisoned: AtomicBool::new(false),
+            }
+        }
+
+        /// Mark this tracker as poisoned. All future borrow attempts will panic.
+        pub fn poison(&self) {
+            self.poisoned.store(true, Ordering::Release);
+        }
+
+        /// Panic if the tracker has been poisoned.
+        fn check_poisoned(&self) {
+            if self.poisoned.load(Ordering::Acquire) {
+                panic!("DisjointMut poisoned: a thread panicked while holding a mutable borrow");
             }
         }
 
@@ -849,6 +933,7 @@ mod checked {
         /// Returns the BorrowId for later removal.
         #[track_caller]
         pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
+            self.check_poisoned();
             let id = BorrowId::next();
             let record = BorrowRecord {
                 id,
@@ -871,6 +956,7 @@ mod checked {
         /// Register an immutable borrow.
         #[track_caller]
         pub fn add_immut(&self, bounds: &Bounds) -> BorrowId {
+            self.check_poisoned();
             let id = BorrowId::next();
             let record = BorrowRecord {
                 id,
@@ -909,7 +995,14 @@ mod checked {
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
     fn drop(&mut self) {
         if let Some(parent) = self.parent {
-            parent.tracker.as_ref().unwrap().remove(self.borrow_id);
+            let tracker = parent.tracker.as_ref().unwrap();
+            // If the thread is panicking while we hold a mutable guard,
+            // the data may be partially written / inconsistent.
+            // Poison the data structure so all future borrows fail.
+            if thread::panicking() {
+                tracker.poison();
+            }
+            tracker.remove(self.borrow_id);
         }
     }
 }
@@ -990,18 +1083,29 @@ impl<T: AsMutPtr + ResizableWith> DisjointMut<T> {
 // AsMutPtr implementations for standard types
 // =============================================================================
 
-/// SAFETY: We never materialize a `&mut [V]` since we
-/// only materialize a `&mut Vec<V>` and call [`Vec::as_mut_ptr`] on it,
-/// which never materializes a `&mut [V]`.
+/// SAFETY: We only create `&Vec<V>` (shared reference), never `&mut Vec<V>`.
+/// This is critical for Stacked Borrows: `&mut Vec` creates a retag-write
+/// (Unique) on the Vec struct allocation, which conflicts with concurrent
+/// `&Vec` reads of `len`/`as_ptr` from other threads. Using only shared
+/// references avoids this data race.
+///
+/// The returned `*mut V` pointer retains write provenance from the original
+/// allocator, not from the reference we read it through. The `UnsafeCell`
+/// wrapper in `DisjointMut` provides the permission for concurrent writes
+/// to the heap data.
 unsafe impl<V: Copy> AsMutPtr for Vec<V> {
     type Target = V;
 
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
+        // SAFETY: Only creates &Vec (SharedReadOnly). The data pointer value
+        // stored inside Vec retains its original allocator provenance.
+        let vec_ref = unsafe { &*ptr };
+        ptr::slice_from_raw_parts_mut(vec_ref.as_ptr().cast_mut(), vec_ref.len())
+    }
+
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
-        // SAFETY: Mutably dereferencing and calling `.as_mut_ptr()` does not
-        // materialize a mutable reference to the underlying slice according to
-        // its documentated behavior, so we can still allow concurrent immutable
-        // references into that underlying slice.
-        unsafe { (*ptr).as_mut_ptr() }
+        // SAFETY: Only creates &Vec (SharedReadOnly), not &mut Vec.
+        unsafe { (*ptr).as_ptr().cast_mut() }
     }
 
     fn len(&self) -> usize {
@@ -1009,9 +1113,16 @@ unsafe impl<V: Copy> AsMutPtr for Vec<V> {
     }
 }
 
-/// SAFETY: We never materialize a `&mut [V]` since we do a direct cast.
+/// SAFETY: Pure pointer operations only — no references created.
+/// The array data is inline (same allocation as the UnsafeCell), so we
+/// must not create `&[V; N]` or `&[V]` which would conflict with guards.
+/// Length is the compile-time constant `N`.
 unsafe impl<V: Copy, const N: usize> AsMutPtr for [V; N] {
     type Target = V;
+
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
+        ptr::slice_from_raw_parts_mut(ptr.cast::<V>(), N)
+    }
 
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut V {
         ptr.cast()
@@ -1022,9 +1133,15 @@ unsafe impl<V: Copy, const N: usize> AsMutPtr for [V; N] {
     }
 }
 
-/// SAFETY: We never materialize a `&mut [V]` since we do a direct unsizing cast.
+/// SAFETY: Pure pointer operations only — no references created.
+/// Like arrays, the slice data IS the allocation, so `&[V]` would conflict.
 unsafe impl<V: Copy> AsMutPtr for [V] {
     type Target = V;
+
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
+        // *mut [V] is already the right type — just pass it through.
+        ptr
+    }
 
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
         ptr.cast()
@@ -1035,13 +1152,25 @@ unsafe impl<V: Copy> AsMutPtr for [V] {
     }
 }
 
-/// SAFETY: We never materialize a `&mut [V]` since we use [`addr_of_mut!`]
-/// to create a `*mut [V]` directly, which we then unsize cast.
+/// SAFETY: Uses `addr_of_mut!` to obtain `*mut [V]` through the raw pointer
+/// chain `*mut Box<[V]>` → `*mut [V]` without creating `&[V]` or `&mut [V]`.
+/// Box deref through a raw-pointer-derived place is a compiler built-in
+/// operation that does not create intermediate references.
+///
+/// This is critical for Stacked Borrows: creating `&[V]` to the heap would
+/// conflict with concurrent `&mut [V]` guards from other threads.
 unsafe impl<V: Copy> AsMutPtr for Box<[V]> {
     type Target = V;
 
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
+        // SAFETY: addr_of_mut! through raw pointer chain — no &[V] created.
+        // Box deref from a raw-pointer place is a compiler intrinsic that
+        // follows the Box's internal pointer without creating references.
+        unsafe { addr_of_mut!(**ptr) }
+    }
+
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
-        // SAFETY: `AsMutPtr::as_mut_ptr` may dereference `ptr`.
+        // SAFETY: Same raw pointer chain as as_mut_slice, then cast to thin pointer.
         unsafe { addr_of_mut!(**ptr) }.cast()
     }
 

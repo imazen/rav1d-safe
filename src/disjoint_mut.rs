@@ -1,26 +1,26 @@
 //! Wrapper that allows concurrent, disjoint mutation of a slice-like owned
 //! structure.
 //!
-//! This module re-exports the core `DisjointMut` type from the `disjoint_mut`
+//! This module re-exports the core `DisjointMut` type from the `rav1d-disjoint-mut`
 //! crate (a provably safe abstraction with always-on bounds checking by default),
 //! and adds `AsMutPtr` implementations for rav1d-specific types (AlignedVec, Align*).
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
-// Re-export everything from the disjoint-mut crate.
-pub use disjoint_mut::AsMutPtr;
-pub use disjoint_mut::Clearable;
-pub use disjoint_mut::DisjointImmutGuard;
-pub use disjoint_mut::DisjointMut;
-pub use disjoint_mut::DisjointMutArcSlice;
-pub use disjoint_mut::DisjointMutGuard;
-pub use disjoint_mut::DisjointMutIndex;
-pub use disjoint_mut::DisjointMutSlice;
-pub use disjoint_mut::ExternalAsMutPtr;
-pub use disjoint_mut::Resizable;
-pub use disjoint_mut::ResizableWith;
-pub use disjoint_mut::SliceBounds;
-pub use disjoint_mut::TranslateRange;
+// Re-export everything from the rav1d-disjoint-mut crate.
+pub use rav1d_disjoint_mut::AsMutPtr;
+pub use rav1d_disjoint_mut::Clearable;
+pub use rav1d_disjoint_mut::DisjointImmutGuard;
+pub use rav1d_disjoint_mut::DisjointMut;
+pub use rav1d_disjoint_mut::DisjointMutArcSlice;
+pub use rav1d_disjoint_mut::DisjointMutGuard;
+pub use rav1d_disjoint_mut::DisjointMutIndex;
+pub use rav1d_disjoint_mut::DisjointMutSlice;
+pub use rav1d_disjoint_mut::ExternalAsMutPtr;
+pub use rav1d_disjoint_mut::Resizable;
+pub use rav1d_disjoint_mut::ResizableWith;
+pub use rav1d_disjoint_mut::SliceBounds;
+pub use rav1d_disjoint_mut::TranslateRange;
 
 // rav1d-specific extensions: AlignedVec AsMutPtr + Resizable impls.
 

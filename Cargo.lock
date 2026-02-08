@@ -116,14 +116,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf0a07a401f374238ab8e2f11a104d2851bf9ce711ec69804834de8af45c7af"
 
 [[package]]
-name = "disjoint-mut"
-version = "0.1.0"
-dependencies = [
- "parking_lot",
- "zerocopy",
-]
-
-[[package]]
 name = "divan"
 version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -283,6 +275,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
+name = "rav1d-disjoint-mut"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "zerocopy",
+]
+
+[[package]]
 name = "rav1d-safe"
 version = "0.1.0"
 dependencies = [
@@ -292,12 +292,12 @@ dependencies = [
  "bitflags",
  "cc",
  "cfg-if",
- "disjoint-mut",
  "divan",
  "libc",
  "nasm-rs",
  "parking_lot",
  "paste",
+ "rav1d-disjoint-mut",
  "raw-cpuid",
  "safe_unaligned_simd",
  "strum",
