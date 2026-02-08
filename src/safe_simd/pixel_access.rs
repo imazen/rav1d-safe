@@ -42,7 +42,6 @@ pub fn row_slice(buf: &[u8], offset: usize, len: usize) -> &[u8] {
     {
         debug_assert!(offset + len <= buf.len());
         // SAFETY: caller guarantees offset + len <= buf.len()
-        #[allow(unsafe_code)]
         unsafe {
             buf.get_unchecked(offset..offset + len)
         }
@@ -57,7 +56,6 @@ pub fn row_slice_mut(buf: &mut [u8], offset: usize, len: usize) -> &mut [u8] {
     #[cfg(feature = "unchecked")]
     {
         debug_assert!(offset + len <= buf.len());
-        #[allow(unsafe_code)]
         unsafe {
             buf.get_unchecked_mut(offset..offset + len)
         }
@@ -72,7 +70,6 @@ pub fn row_slice_u16(buf: &[u16], offset: usize, len: usize) -> &[u16] {
     #[cfg(feature = "unchecked")]
     {
         debug_assert!(offset + len <= buf.len());
-        #[allow(unsafe_code)]
         unsafe {
             buf.get_unchecked(offset..offset + len)
         }
@@ -87,7 +84,6 @@ pub fn row_slice_u16_mut(buf: &mut [u16], offset: usize, len: usize) -> &mut [u1
     #[cfg(feature = "unchecked")]
     {
         debug_assert!(offset + len <= buf.len());
-        #[allow(unsafe_code)]
         unsafe {
             buf.get_unchecked_mut(offset..offset + len)
         }
@@ -102,7 +98,6 @@ pub fn idx<T>(buf: &[T], i: usize) -> &T {
     #[cfg(feature = "unchecked")]
     {
         debug_assert!(i < buf.len());
-        #[allow(unsafe_code)]
         unsafe {
             buf.get_unchecked(i)
         }
@@ -117,7 +112,6 @@ pub fn idx_mut<T>(buf: &mut [T], i: usize) -> &mut T {
     #[cfg(feature = "unchecked")]
     {
         debug_assert!(i < buf.len());
-        #[allow(unsafe_code)]
         unsafe {
             buf.get_unchecked_mut(i)
         }
@@ -228,7 +222,6 @@ macro_rules! loadu_256 {
         }
         #[cfg(feature = "unchecked")]
         {
-            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm256_loadu_si256(core::ptr::from_ref($src).cast())
             }
@@ -254,7 +247,6 @@ macro_rules! storeu_256 {
         }
         #[cfg(feature = "unchecked")]
         {
-            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm256_storeu_si256(core::ptr::from_mut($dst).cast(), $val)
             }
@@ -277,7 +269,6 @@ macro_rules! loadu_128 {
         }
         #[cfg(feature = "unchecked")]
         {
-            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm_loadu_si128(core::ptr::from_ref($src).cast())
             }
@@ -297,7 +288,6 @@ macro_rules! storeu_128 {
         }
         #[cfg(feature = "unchecked")]
         {
-            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm_storeu_si128(core::ptr::from_mut($dst).cast(), $val)
             }
@@ -329,7 +319,6 @@ macro_rules! load_256 {
         {
             let __s = $slice;
             debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 32);
-            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm256_loadu_si256(__s.as_ptr() as *const _)
             }
@@ -356,7 +345,6 @@ macro_rules! store_256 {
         {
             let __s = $slice;
             debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 32);
-            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm256_storeu_si256(__s.as_mut_ptr() as *mut _, $val)
             }
@@ -383,7 +371,6 @@ macro_rules! load_128 {
         {
             let __s = $slice;
             debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 16);
-            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm_loadu_si128(__s.as_ptr() as *const _)
             }
@@ -410,7 +397,6 @@ macro_rules! store_128 {
         {
             let __s = $slice;
             debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 16);
-            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm_storeu_si128(__s.as_mut_ptr() as *mut _, $val)
             }
@@ -443,7 +429,6 @@ macro_rules! neon_ld1q_u8 {
         }
         #[cfg(feature = "unchecked")]
         {
-            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vld1q_u8(($src).as_ptr()) }
         }
     }};
@@ -460,7 +445,6 @@ macro_rules! neon_ld1q_u16 {
         }
         #[cfg(feature = "unchecked")]
         {
-            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vld1q_u16(($src).as_ptr()) }
         }
     }};
@@ -477,7 +461,6 @@ macro_rules! neon_ld1q_s16 {
         }
         #[cfg(feature = "unchecked")]
         {
-            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vld1q_s16(($src).as_ptr()) }
         }
     }};
@@ -494,7 +477,6 @@ macro_rules! neon_st1q_u8 {
         }
         #[cfg(feature = "unchecked")]
         {
-            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vst1q_u8(($dst).as_mut_ptr(), $val) }
         }
     }};
@@ -511,7 +493,6 @@ macro_rules! neon_st1q_u16 {
         }
         #[cfg(feature = "unchecked")]
         {
-            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vst1q_u16(($dst).as_mut_ptr(), $val) }
         }
     }};
@@ -528,7 +509,6 @@ macro_rules! neon_st1q_s16 {
         }
         #[cfg(feature = "unchecked")]
         {
-            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vst1q_s16(($dst).as_mut_ptr(), $val) }
         }
     }};
