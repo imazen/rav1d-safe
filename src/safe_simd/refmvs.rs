@@ -6,10 +6,12 @@
 
 #![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 use std::arch::x86_64::*;
 
+#[cfg(feature = "asm")]
 use crate::src::align::Align16;
+#[cfg(feature = "asm")]
 use crate::src::refmvs::RefMvsBlock;
 
 /// AVX2 implementation of splat_mv.
@@ -20,7 +22,7 @@ use crate::src::refmvs::RefMvsBlock;
 /// RefMvsBlock is 12 bytes. We use 16-byte unaligned stores at stride 12,
 /// which safely overwrites 4 bytes into the next element (or padding at end).
 /// The R_PAD allocation padding ensures we don't write out of bounds.
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 #[allow(unsafe_code)]
 pub unsafe extern "C" fn splat_mv_avx2(
