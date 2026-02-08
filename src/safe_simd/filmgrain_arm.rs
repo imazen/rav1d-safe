@@ -396,27 +396,17 @@ unsafe fn fgy_row_neon_8bpc(
     }
 }
 
-#[allow(unsafe_code)]
-unsafe fn fgy_inner_8bpc(
-    dst_row_ptr: *mut DynPixel,
-    src_row_ptr: *const DynPixel,
-    stride: ptrdiff_t,
-    data: &Dav1dFilmGrainData,
+fn fgy_inner_8bpc(
+    dst: &mut [u8],
+    src: &[u8],
+    stride: isize,
+    data: &Rav1dFilmGrainData,
     pw: usize,
-    scaling: *const DynScaling,
-    grain_lut: *const GrainLut<DynEntry>,
-    bh: c_int,
-    row_num: c_int,
-    _bitdepth_max: c_int,
+    scaling: &[u8],
+    grain_lut: &[[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+    bh: usize,
+    row_num: usize,
 ) {
-    let dst = dst_row_ptr as *mut u8;
-    let src = src_row_ptr as *const u8;
-    let scaling = scaling as *const u8;
-    let grain_lut = grain_lut as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1];
-    let data: Rav1dFilmGrainData = data.clone().into();
-    let bh = bh as usize;
-    let row_num = row_num as usize;
-
     let rows = 1 + (data.overlap_flag && row_num > 0) as usize;
     let scaling_shift = data.scaling_shift;
 
@@ -426,13 +416,16 @@ unsafe fn fgy_inner_8bpc(
         (0, 255)
     };
 
-    let mut seed = row_seed(rows, row_num, &data);
+    let mut seed = row_seed(rows, row_num, data);
 
     #[cfg(target_arch = "aarch64")]
+    #[allow(unsafe_code)]
     let mul = unsafe { vdupq_n_s16(1i16 << (15 - scaling_shift)) };
 
     let mut offsets: [[c_int; 2]; 2] = [[0; 2]; 2];
     static W: [[i32; 2]; 2] = [[27, 17], [17, 27]];
+
+    let row_off = |y: usize| -> usize { (y as isize * stride) as usize };
 
     for bx in (0..pw).step_by(FG_BLOCK_SIZE) {
         let bw = cmp::min(FG_BLOCK_SIZE, pw - bx);
@@ -471,31 +464,28 @@ unsafe fn fgy_inner_8bpc(
 
         // Main rows
         for y in ystart..bh {
-            let src_ptr = unsafe { src.offset(y as isize * stride).add(bx) };
-            let dst_ptr = unsafe { dst.offset(y as isize * stride).add(bx) };
-            let grain_row = unsafe { (*grain_lut)[offy + y].as_ptr().add(offx) };
+            let base = row_off(y).wrapping_add(bx);
 
             // x-overlap (scalar)
             for x in 0..xstart {
-                let sv = unsafe { *src_ptr.add(x) as usize };
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old = unsafe { (*grain_lut)[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32 };
+                let sv = src[base + x] as usize;
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let blended = round2(old * W[x][0] + grain * W[x][1], 5).clamp(-128, 127);
-                let sc = unsafe { *scaling.add(sv) as i32 };
+                let sc = scaling[sv] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                unsafe {
-                    *dst_ptr.add(x) =
-                        ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u8;
-                }
+                dst[base + x] =
+                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
             }
 
             #[cfg(target_arch = "aarch64")]
+            #[allow(unsafe_code)]
             unsafe {
                 fgy_row_neon_8bpc(
-                    dst_ptr,
-                    src_ptr,
-                    scaling,
-                    grain_row,
+                    dst.as_mut_ptr().add(base),
+                    src.as_ptr().add(base),
+                    scaling.as_ptr(),
+                    grain_lut[offy + y].as_ptr().add(offx),
                     bw,
                     xstart,
                     mul,
@@ -504,44 +494,48 @@ unsafe fn fgy_inner_8bpc(
                     scaling_shift,
                 );
             }
+
+            // Scalar fallback for non-aarch64 (xstart..bw)
+            #[cfg(not(target_arch = "aarch64"))]
+            for x in xstart..bw {
+                let sv = src[base + x] as usize;
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let sc = scaling[sv] as i32;
+                let noise = round2(sc * grain, scaling_shift);
+                dst[base + x] =
+                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
+            }
         }
 
         // y-overlap rows (scalar)
         for y in 0..ystart {
-            let src_ptr = unsafe { src.offset(y as isize * stride).add(bx) };
-            let dst_ptr = unsafe { dst.offset(y as isize * stride).add(bx) };
+            let base = row_off(y).wrapping_add(bx);
 
             for x in xstart..bw {
-                let sv = unsafe { *src_ptr.add(x) as usize };
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old = unsafe { (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32 };
+                let sv = src[base + x] as usize;
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
                 let blended = round2(old * W[y][0] + grain * W[y][1], 5).clamp(-128, 127);
-                let sc = unsafe { *scaling.add(sv) as i32 };
+                let sc = scaling[sv] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                unsafe {
-                    *dst_ptr.add(x) =
-                        ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u8;
-                }
+                dst[base + x] =
+                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
             }
 
             for x in 0..xstart {
-                let sv = unsafe { *src_ptr.add(x) as usize };
-                let top = unsafe { (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32 };
-                let old_top = unsafe {
-                    (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][prev_offx + x + FG_BLOCK_SIZE]
-                        as i32
-                };
+                let sv = src[base + x] as usize;
+                let top = grain_lut[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
+                let old_top =
+                    grain_lut[prev_offy + y + FG_BLOCK_SIZE][prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let top = round2(old_top * W[x][0] + top * W[x][1], 5).clamp(-128, 127);
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old = unsafe { (*grain_lut)[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32 };
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let grain = round2(old * W[x][0] + grain * W[x][1], 5).clamp(-128, 127);
                 let blended = round2(top * W[y][0] + grain * W[y][1], 5).clamp(-128, 127);
-                let sc = unsafe { *scaling.add(sv) as i32 };
+                let sc = scaling[sv] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                unsafe {
-                    *dst_ptr.add(x) =
-                        ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u8;
-                }
+                dst[base + x] =
+                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
             }
         }
     }
@@ -562,35 +556,33 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_neon(
     _dst_row: *const FFISafe<PicOffset>,
     _src_row: *const FFISafe<PicOffset>,
 ) {
-    fgy_inner_8bpc(dst_row_ptr, src_row_ptr, stride, data, pw, scaling, grain_lut, bh, row_num, _bitdepth_max);
+    let data: Rav1dFilmGrainData = data.clone().into();
+    let bh = bh as usize;
+    let row_num = row_num as usize;
+    let total_size = bh * stride.unsigned_abs() + pw;
+    let dst = unsafe { std::slice::from_raw_parts_mut(dst_row_ptr as *mut u8, total_size) };
+    let src = unsafe { std::slice::from_raw_parts(src_row_ptr as *const u8, total_size) };
+    let scaling = unsafe { std::slice::from_raw_parts(scaling as *const u8, 256) };
+    let grain_lut = unsafe { &*(grain_lut as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1]) };
+    fgy_inner_8bpc(dst, src, stride, &data, pw, scaling, grain_lut, bh, row_num);
 }
 
 // ============================================================================
 // fgy_32x32xn - 16bpc NEON
 // ============================================================================
 
-#[allow(unsafe_code)]
-unsafe fn fgy_inner_16bpc(
-    dst_row_ptr: *mut DynPixel,
-    src_row_ptr: *const DynPixel,
-    stride: ptrdiff_t,
-    data: &Dav1dFilmGrainData,
+fn fgy_inner_16bpc(
+    dst: &mut [u16],
+    src: &[u16],
+    stride_u16: isize,
+    data: &Rav1dFilmGrainData,
     pw: usize,
-    scaling: *const DynScaling,
-    grain_lut: *const GrainLut<DynEntry>,
-    bh: c_int,
-    row_num: c_int,
-    bitdepth_max: c_int,
+    scaling: &[u8],
+    grain_lut: &[[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+    bh: usize,
+    row_num: usize,
+    bitdepth_max: i32,
 ) {
-    let dst = dst_row_ptr as *mut u16;
-    let src = src_row_ptr as *const u16;
-    let stride_u16 = stride / 2;
-    let scaling = scaling as *const u8;
-    let grain_lut = grain_lut as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1];
-    let data: Rav1dFilmGrainData = data.clone().into();
-    let bh = bh as usize;
-    let row_num = row_num as usize;
-
     let bitdepth_min_8 = if bitdepth_max >= 4095 { 4u8 } else { 2u8 };
     let grain_ctr = 128i32 << bitdepth_min_8;
     let grain_min = -grain_ctr;
@@ -604,14 +596,18 @@ unsafe fn fgy_inner_16bpc(
         (0, bitdepth_max as i32)
     };
 
-    let mut seed = row_seed(rows, row_num, &data);
+    let mut seed = row_seed(rows, row_num, data);
     let mut offsets: [[c_int; 2]; 2] = [[0; 2]; 2];
     static W: [[i32; 2]; 2] = [[27, 17], [17, 27]];
 
     #[cfg(target_arch = "aarch64")]
+    #[allow(unsafe_code)]
     let min_vec = unsafe { vdupq_n_s16(min_value as i16) };
     #[cfg(target_arch = "aarch64")]
+    #[allow(unsafe_code)]
     let max_vec = unsafe { vdupq_n_s16(max_value as i16) };
+
+    let row_off = |y: usize| -> usize { (y as isize * stride_u16) as usize };
 
     for bx in (0..pw).step_by(FG_BLOCK_SIZE) {
         let bw = cmp::min(FG_BLOCK_SIZE, pw - bx);
@@ -649,94 +645,83 @@ unsafe fn fgy_inner_16bpc(
         };
 
         for y in ystart..bh {
-            let src_ptr = unsafe { src.offset(y as isize * stride_u16 as isize).add(bx) };
-            let dst_ptr = unsafe { dst.offset(y as isize * stride_u16 as isize).add(bx) };
+            let base = row_off(y).wrapping_add(bx);
 
             for x in 0..xstart {
-                let sv = unsafe { cmp::min(*src_ptr.add(x) as usize, bitdepth_max as usize) };
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old = unsafe { (*grain_lut)[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32 };
+                let sv = cmp::min(src[base + x] as usize, bitdepth_max as usize);
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let blended =
                     round2(old * W[x][0] + grain * W[x][1], 5).clamp(grain_min, grain_max);
-                let sc = unsafe { *scaling.add(sv) as i32 };
+                let sc = scaling[sv] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                unsafe {
-                    *dst_ptr.add(x) =
-                        ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
-                }
+                dst[base + x] =
+                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
             }
 
             // NEON: compute noise scalar, add/clamp with SIMD
             let mut x = xstart;
             #[cfg(target_arch = "aarch64")]
+            #[allow(unsafe_code)]
             while x + 8 <= bw {
                 let mut noise_vals = [0i16; 8];
                 for i in 0..8 {
-                    let sv =
-                        unsafe { cmp::min(*src_ptr.add(x + i) as usize, bitdepth_max as usize) };
-                    let grain = unsafe { (*grain_lut)[offy + y][offx + x + i] as i32 };
-                    let sc = unsafe { *scaling.add(sv) as i32 };
+                    let sv = cmp::min(src[base + x + i] as usize, bitdepth_max as usize);
+                    let grain = grain_lut[offy + y][offx + x + i] as i32;
+                    let sc = scaling[sv] as i32;
                     noise_vals[i] = round2(sc * grain, scaling_shift) as i16;
                 }
                 unsafe {
-                    let src_vec = vld1q_s16(src_ptr.add(x) as *const i16);
+                    let src_vec = vld1q_s16(src.as_ptr().add(base + x) as *const i16);
                     let noise = vld1q_s16(noise_vals.as_ptr());
                     let result = vaddq_s16(src_vec, noise);
                     let result = vmaxq_s16(result, min_vec);
                     let result = vminq_s16(result, max_vec);
-                    vst1q_s16(dst_ptr.add(x) as *mut i16, result);
+                    vst1q_s16(dst.as_mut_ptr().add(base + x) as *mut i16, result);
                 }
                 x += 8;
             }
             while x < bw {
-                let sv = unsafe { cmp::min(*src_ptr.add(x) as usize, bitdepth_max as usize) };
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let sc = unsafe { *scaling.add(sv) as i32 };
+                let sv = cmp::min(src[base + x] as usize, bitdepth_max as usize);
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let sc = scaling[sv] as i32;
                 let noise = round2(sc * grain, scaling_shift);
-                unsafe {
-                    *dst_ptr.add(x) =
-                        ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
-                }
+                dst[base + x] =
+                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
                 x += 1;
             }
         }
 
         // y-overlap (scalar)
         for y in 0..ystart {
-            let src_ptr = unsafe { src.offset(y as isize * stride_u16 as isize).add(bx) };
-            let dst_ptr = unsafe { dst.offset(y as isize * stride_u16 as isize).add(bx) };
+            let base = row_off(y).wrapping_add(bx);
+
             for x in xstart..bw {
-                let sv = unsafe { cmp::min(*src_ptr.add(x) as usize, bitdepth_max as usize) };
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old = unsafe { (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32 };
+                let sv = cmp::min(src[base + x] as usize, bitdepth_max as usize);
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
                 let blended =
                     round2(old * W[y][0] + grain * W[y][1], 5).clamp(grain_min, grain_max);
-                let sc = unsafe { *scaling.add(sv) as i32 };
+                let sc = scaling[sv] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                unsafe {
-                    *dst_ptr.add(x) =
-                        ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
-                }
+                dst[base + x] =
+                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
             }
             for x in 0..xstart {
-                let sv = unsafe { cmp::min(*src_ptr.add(x) as usize, bitdepth_max as usize) };
-                let top = unsafe { (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32 };
-                let old_top = unsafe {
-                    (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][prev_offx + x + FG_BLOCK_SIZE]
-                        as i32
-                };
+                let sv = cmp::min(src[base + x] as usize, bitdepth_max as usize);
+                let top = grain_lut[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
+                let old_top =
+                    grain_lut[prev_offy + y + FG_BLOCK_SIZE][prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let top = round2(old_top * W[x][0] + top * W[x][1], 5).clamp(grain_min, grain_max);
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old = unsafe { (*grain_lut)[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32 };
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
                 let grain = round2(old * W[x][0] + grain * W[x][1], 5).clamp(grain_min, grain_max);
                 let blended =
                     round2(top * W[y][0] + grain * W[y][1], 5).clamp(grain_min, grain_max);
-                let sc = unsafe { *scaling.add(sv) as i32 };
+                let sc = scaling[sv] as i32;
                 let noise = round2(sc * blended, scaling_shift);
-                unsafe {
-                    *dst_ptr.add(x) =
-                        ((*src_ptr.add(x) as i32 + noise).clamp(min_value, max_value)) as u16;
-                }
+                dst[base + x] =
+                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
             }
         }
     }
@@ -757,7 +742,17 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_neon(
     _dst_row: *const FFISafe<PicOffset>,
     _src_row: *const FFISafe<PicOffset>,
 ) {
-    fgy_inner_16bpc(dst_row_ptr, src_row_ptr, stride, data, pw, scaling, grain_lut, bh, row_num, bitdepth_max);
+    let data: Rav1dFilmGrainData = data.clone().into();
+    let bh = bh as usize;
+    let row_num = row_num as usize;
+    let stride_u16 = stride / 2;
+    let total_size = bh * (stride / 2).unsigned_abs() + pw;
+    let dst = unsafe { std::slice::from_raw_parts_mut(dst_row_ptr as *mut u16, total_size) };
+    let src = unsafe { std::slice::from_raw_parts(src_row_ptr as *const u16, total_size) };
+    let scaling_len = if bitdepth_max >= 4095 { 4096 } else { 1024 };
+    let scaling = unsafe { std::slice::from_raw_parts(scaling as *const u8, scaling_len) };
+    let grain_lut = unsafe { &*(grain_lut as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1]) };
+    fgy_inner_16bpc(dst, src, stride_u16, &data, pw, scaling, grain_lut, bh, row_num, bitdepth_max as i32);
 }
 
 // ============================================================================
@@ -765,41 +760,39 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_neon(
 // ============================================================================
 
 #[inline(always)]
-#[allow(unsafe_code)]
-unsafe fn compute_uv_scaling_val(
-    src_ptr: *const u8,
-    luma_ptr: *const u8,
+fn compute_uv_scaling_val(
+    src_val: u8,
+    luma: &[u8],
+    luma_x: usize,
     is_sx: bool,
     data: &Rav1dFilmGrainData,
     uv: usize,
-    scaling: *const u8,
+    scaling: &[u8],
 ) -> u8 {
-    let src_val = unsafe { *src_ptr as i32 };
-    let mut avg = unsafe { *luma_ptr as i32 };
+    let mut avg = luma[luma_x] as i32;
     if is_sx {
-        avg = unsafe { (avg + *luma_ptr.add(1) as i32 + 1) >> 1 };
+        avg = (avg + luma[luma_x + 1] as i32 + 1) >> 1;
     }
     let val = if data.chroma_scaling_from_luma {
         avg
     } else {
-        let combined = avg * data.uv_luma_mult[uv] + src_val * data.uv_mult[uv];
+        let combined = avg * data.uv_luma_mult[uv] + src_val as i32 * data.uv_mult[uv];
         ((combined >> 6) + data.uv_offset[uv]).clamp(0, 255)
     };
-    unsafe { *scaling.add(val as usize) }
+    scaling[val as usize]
 }
 
-#[allow(unsafe_code)]
-unsafe fn fguv_inner_8bpc(
-    dst: *mut u8,
-    src: *const u8,
+fn fguv_inner_8bpc(
+    dst: &mut [u8],
+    src: &[u8],
     stride: isize,
     data: &Rav1dFilmGrainData,
     pw: usize,
-    scaling: *const u8,
-    grain_lut: *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+    scaling: &[u8],
+    grain_lut: &[[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
     bh: usize,
     row_num: usize,
-    luma: *const u8,
+    luma: &[u8],
     luma_stride: isize,
     is_uv: bool,
     is_id: bool,
@@ -825,16 +818,22 @@ unsafe fn fguv_inner_8bpc(
     static W: [[[i32; 2]; 2]; 2] = [[[27, 17], [17, 27]], [[23, 22], [0; 2]]];
 
     #[cfg(target_arch = "aarch64")]
+    #[allow(unsafe_code)]
     let mul = unsafe { vdupq_n_s16(1i16 << (15 - scaling_shift)) };
     #[cfg(target_arch = "aarch64")]
+    #[allow(unsafe_code)]
     let min_vec = unsafe { vdupq_n_u8(min_value as u8) };
     #[cfg(target_arch = "aarch64")]
+    #[allow(unsafe_code)]
     let max_vec = unsafe { vdupq_n_u8(max_value as u8) };
 
-    let noise_uv = |src_val: u8, grain: i32, luma_ptr: *const u8, luma_x: usize| -> u8 {
-        let mut avg = unsafe { *luma_ptr.add(luma_x) as i32 };
+    let row_off = |y: usize| -> usize { (y as isize * stride) as usize };
+    let luma_row_off = |y: usize| -> usize { ((y << sy) as isize * luma_stride) as usize };
+
+    let noise_uv = |src_val: u8, grain: i32, luma_row: &[u8], luma_x: usize| -> u8 {
+        let mut avg = luma_row[luma_x] as i32;
         if is_sx {
-            avg = unsafe { (avg + *luma_ptr.add(luma_x + 1) as i32 + 1) >> 1 };
+            avg = (avg + luma_row[luma_x + 1] as i32 + 1) >> 1;
         }
         let val = if data.chroma_scaling_from_luma {
             avg
@@ -842,7 +841,7 @@ unsafe fn fguv_inner_8bpc(
             let combined = avg * data.uv_luma_mult[uv] + src_val as i32 * data.uv_mult[uv];
             ((combined >> 6) + data.uv_offset[uv]).clamp(0, 255)
         };
-        let sc = unsafe { *scaling.add(val as usize) as i32 };
+        let sc = scaling[val as usize] as i32;
         let noise = round2(sc * grain, scaling_shift);
         ((src_val as i32 + noise).clamp(min_value, max_value)) as u8
     };
@@ -883,100 +882,93 @@ unsafe fn fguv_inner_8bpc(
         };
 
         for y in ystart..bh {
-            let src_ptr = unsafe { src.offset(y as isize * stride).add(bx) };
-            let dst_ptr = unsafe { dst.offset(y as isize * stride).add(bx) };
-            let luma_ptr = unsafe { luma.offset((y << sy) as isize * luma_stride).add(bx << sx) };
-            let grain_row = unsafe { (*grain_lut)[offy + y].as_ptr().add(offx) };
+            let base = row_off(y).wrapping_add(bx);
+            let luma_base = luma_row_off(y).wrapping_add(bx << sx);
 
             for x in 0..xstart {
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old =
-                    unsafe { (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32 };
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let blended =
                     round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
-                unsafe { *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx) };
+                dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
 
             // NEON inner loop
             let mut x = xstart;
             #[cfg(target_arch = "aarch64")]
+            #[allow(unsafe_code)]
             while x + 16 <= bw {
-                let src_vec = unsafe { vld1q_u8(src_ptr.add(x)) };
-                let src_lo = unsafe { vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(src_vec))) };
-                let src_hi = unsafe { vreinterpretq_s16_u16(vmovl_high_u8(src_vec)) };
+                unsafe {
+                    let src_vec = vld1q_u8(src.as_ptr().add(base + x));
+                    let src_lo = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(src_vec)));
+                    let src_hi = vreinterpretq_s16_u16(vmovl_high_u8(src_vec));
 
-                let mut sc_arr = [0i16; 16];
-                for i in 0..16 {
-                    sc_arr[i] = unsafe {
-                        compute_uv_scaling_val(
-                            src_ptr.add(x + i),
-                            luma_ptr.add((x + i) << sx),
+                    let mut sc_arr = [0i16; 16];
+                    for i in 0..16 {
+                        sc_arr[i] = compute_uv_scaling_val(
+                            src[base + x + i],
+                            luma,
+                            luma_base + ((x + i) << sx),
                             is_sx,
                             data,
                             uv,
                             scaling,
-                        ) as i16
-                    };
+                        ) as i16;
+                    }
+                    let sc_lo = vld1q_s16(sc_arr.as_ptr());
+                    let sc_hi = vld1q_s16(sc_arr.as_ptr().add(8));
+
+                    let grain_vec = vld1q_s8(grain_lut[offy + y].as_ptr().add(offx + x));
+                    let grain_lo = vmovl_s8(vget_low_s8(grain_vec));
+                    let grain_hi = vmovl_high_s8(grain_vec);
+
+                    let noise_lo = vmulq_s16(sc_lo, grain_lo);
+                    let noise_hi = vmulq_s16(sc_hi, grain_hi);
+                    let noise_lo = vqrdmulhq_s16(noise_lo, mul);
+                    let noise_hi = vqrdmulhq_s16(noise_hi, mul);
+
+                    let result_lo = vaddq_s16(src_lo, noise_lo);
+                    let result_hi = vaddq_s16(src_hi, noise_hi);
+                    let result = vcombine_u8(vqmovun_s16(result_lo), vqmovun_s16(result_hi));
+                    let result = vmaxq_u8(result, min_vec);
+                    let result = vminq_u8(result, max_vec);
+                    vst1q_u8(dst.as_mut_ptr().add(base + x), result);
                 }
-                let sc_lo = unsafe { vld1q_s16(sc_arr.as_ptr()) };
-                let sc_hi = unsafe { vld1q_s16(sc_arr.as_ptr().add(8)) };
-
-                let grain_vec = unsafe { vld1q_s8(grain_row.add(x)) };
-                let grain_lo = unsafe { vmovl_s8(vget_low_s8(grain_vec)) };
-                let grain_hi = unsafe { vmovl_high_s8(grain_vec) };
-
-                let noise_lo = unsafe { vmulq_s16(sc_lo, grain_lo) };
-                let noise_hi = unsafe { vmulq_s16(sc_hi, grain_hi) };
-                let noise_lo = unsafe { vqrdmulhq_s16(noise_lo, mul) };
-                let noise_hi = unsafe { vqrdmulhq_s16(noise_hi, mul) };
-
-                let result_lo = unsafe { vaddq_s16(src_lo, noise_lo) };
-                let result_hi = unsafe { vaddq_s16(src_hi, noise_hi) };
-                let result = unsafe { vcombine_u8(vqmovun_s16(result_lo), vqmovun_s16(result_hi)) };
-                let result = unsafe { vmaxq_u8(result, min_vec) };
-                let result = unsafe { vminq_u8(result, max_vec) };
-                unsafe { vst1q_u8(dst_ptr.add(x), result) };
                 x += 16;
             }
 
             while x < bw {
-                let grain = unsafe { *grain_row.add(x) as i32 };
-                unsafe { *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), grain, luma_ptr, x << sx) };
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                dst[base + x] = noise_uv(src[base + x], grain, &luma[luma_base..], x << sx);
                 x += 1;
             }
         }
 
         // y-overlap (scalar)
         for y in 0..ystart {
-            let src_ptr = unsafe { src.offset(y as isize * stride).add(bx) };
-            let dst_ptr = unsafe { dst.offset(y as isize * stride).add(bx) };
-            let luma_ptr = unsafe { luma.offset((y << sy) as isize * luma_stride).add(bx << sx) };
+            let base = row_off(y).wrapping_add(bx);
+            let luma_base = luma_row_off(y).wrapping_add(bx << sx);
 
             for x in xstart..bw {
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old =
-                    unsafe { (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32 };
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
                 let blended =
                     round2(old * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
-                unsafe { *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx) };
+                dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
             for x in 0..xstart {
-                let top =
-                    unsafe { (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32 };
-                let old_top = unsafe {
-                    (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
-                        [prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32
-                };
+                let top = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
+                let old_top = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
+                    [prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5)
                     .clamp(grain_min, grain_max);
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old =
-                    unsafe { (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32 };
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let grain =
                     round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
                 let blended =
                     round2(top * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
-                unsafe { *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx) };
+                dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
         }
     }
@@ -1006,17 +998,28 @@ macro_rules! fguv_8bpc_wrapper {
             _luma_row: *const FFISafe<PicOffset>,
         ) {
             let data: Rav1dFilmGrainData = data.clone().into();
+            let bh = bh as usize;
+            let row_num = row_num as usize;
+            let total_size = bh * stride.unsigned_abs() + pw;
+            let sy = $is_sy as usize;
+            let sx = $is_sx as usize;
+            let luma_total = (bh << sy) * luma_stride.unsigned_abs() + (pw << sx) + sx;
+            let dst = unsafe { std::slice::from_raw_parts_mut(dst_row_ptr as *mut u8, total_size) };
+            let src = unsafe { std::slice::from_raw_parts(src_row_ptr as *const u8, total_size) };
+            let scaling = unsafe { std::slice::from_raw_parts(scaling as *const u8, 256) };
+            let grain_lut = unsafe { &*(grain_lut as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1]) };
+            let luma = unsafe { std::slice::from_raw_parts(luma_row_ptr as *const u8, luma_total) };
             fguv_inner_8bpc(
-                dst_row_ptr as *mut u8,
-                src_row_ptr as *const u8,
+                dst,
+                src,
                 stride as isize,
                 &data,
                 pw,
-                scaling as *const u8,
-                grain_lut as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
-                bh as usize,
-                row_num as usize,
-                luma_row_ptr as *const u8,
+                scaling,
+                grain_lut,
+                bh,
+                row_num,
+                luma,
                 luma_stride as isize,
                 uv_pl != 0,
                 is_id != 0,
@@ -1035,18 +1038,17 @@ fguv_8bpc_wrapper!(fguv_32x32xn_i444_8bpc_neon, false, false);
 // fguv_32x32xn - 16bpc (scalar with NEON add/clamp)
 // ============================================================================
 
-#[allow(unsafe_code)]
-unsafe fn fguv_inner_16bpc(
-    dst: *mut u16,
-    src: *const u16,
+fn fguv_inner_16bpc(
+    dst: &mut [u16],
+    src: &[u16],
     stride_u16: isize,
     data: &Rav1dFilmGrainData,
     pw: usize,
-    scaling: *const u8,
-    grain_lut: *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+    scaling: &[u8],
+    grain_lut: &[[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
     bh: usize,
     row_num: usize,
-    luma: *const u16,
+    luma: &[u16],
     luma_stride_u16: isize,
     is_uv: bool,
     is_id: bool,
@@ -1077,10 +1079,13 @@ unsafe fn fguv_inner_16bpc(
     let mut offsets: [[c_int; 2]; 2] = [[0; 2]; 2];
     static W: [[[i32; 2]; 2]; 2] = [[[27, 17], [17, 27]], [[23, 22], [0; 2]]];
 
-    let noise_uv = |src_val: u16, grain: i32, luma_ptr: *const u16, luma_x: usize| -> u16 {
-        let mut avg = unsafe { *luma_ptr.add(luma_x) as i32 };
+    let row_off = |y: usize| -> usize { (y as isize * stride_u16) as usize };
+    let luma_row_off = |y: usize| -> usize { ((y << sy) as isize * luma_stride_u16) as usize };
+
+    let noise_uv = |src_val: u16, grain: i32, luma_row: &[u16], luma_x: usize| -> u16 {
+        let mut avg = luma_row[luma_x] as i32;
         if is_sx {
-            avg = unsafe { (avg + *luma_ptr.add(luma_x + 1) as i32 + 1) >> 1 };
+            avg = (avg + luma_row[luma_x + 1] as i32 + 1) >> 1;
         }
         let val = if data.chroma_scaling_from_luma {
             avg
@@ -1089,7 +1094,7 @@ unsafe fn fguv_inner_16bpc(
             ((combined >> 6) + data.uv_offset[uv] * (1 << bitdepth_min_8))
                 .clamp(0, bitdepth_max as i32)
         };
-        let sc = unsafe { *scaling.add(cmp::min(val as usize, bitdepth_max as usize)) as i32 };
+        let sc = scaling[cmp::min(val as usize, bitdepth_max as usize)] as i32;
         let noise = round2(sc * grain, scaling_shift);
         ((src_val as i32 + noise).clamp(min_value, max_value)) as u16
     };
@@ -1130,60 +1135,46 @@ unsafe fn fguv_inner_16bpc(
         };
 
         for y in ystart..bh {
-            let src_ptr = unsafe { src.offset(y as isize * stride_u16).add(bx) };
-            let dst_ptr = unsafe { dst.offset(y as isize * stride_u16).add(bx) };
-            let luma_ptr = unsafe {
-                luma.offset((y << sy) as isize * luma_stride_u16)
-                    .add(bx << sx)
-            };
+            let base = row_off(y).wrapping_add(bx);
+            let luma_base = luma_row_off(y).wrapping_add(bx << sx);
 
             for x in 0..xstart {
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old =
-                    unsafe { (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32 };
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let blended =
                     round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
-                unsafe { *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx) };
+                dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
             for x in xstart..bw {
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                unsafe { *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), grain, luma_ptr, x << sx) };
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                dst[base + x] = noise_uv(src[base + x], grain, &luma[luma_base..], x << sx);
             }
         }
 
         for y in 0..ystart {
-            let src_ptr = unsafe { src.offset(y as isize * stride_u16).add(bx) };
-            let dst_ptr = unsafe { dst.offset(y as isize * stride_u16).add(bx) };
-            let luma_ptr = unsafe {
-                luma.offset((y << sy) as isize * luma_stride_u16)
-                    .add(bx << sx)
-            };
+            let base = row_off(y).wrapping_add(bx);
+            let luma_base = luma_row_off(y).wrapping_add(bx << sx);
 
             for x in xstart..bw {
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old =
-                    unsafe { (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32 };
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
                 let blended =
                     round2(old * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
-                unsafe { *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx) };
+                dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
             for x in 0..xstart {
-                let top =
-                    unsafe { (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32 };
-                let old_top = unsafe {
-                    (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
-                        [prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32
-                };
+                let top = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
+                let old_top = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
+                    [prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5)
                     .clamp(grain_min, grain_max);
-                let grain = unsafe { (*grain_lut)[offy + y][offx + x] as i32 };
-                let old =
-                    unsafe { (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32 };
+                let grain = grain_lut[offy + y][offx + x] as i32;
+                let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let grain =
                     round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
                 let blended =
                     round2(top * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
-                unsafe { *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx) };
+                dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
         }
     }
@@ -1212,23 +1203,36 @@ macro_rules! fguv_16bpc_wrapper {
             _luma_row: *const FFISafe<PicOffset>,
         ) {
             let data: Rav1dFilmGrainData = data.clone().into();
+            let bh = bh as usize;
+            let row_num = row_num as usize;
+            let stride_u16 = stride / 2;
+            let sy = $is_sy as usize;
+            let sx = $is_sx as usize;
+            let total_size = bh * (stride / 2).unsigned_abs() + pw;
+            let luma_total = (bh << sy) * (luma_stride / 2).unsigned_abs() + (pw << sx) + sx;
+            let scaling_len = if bitdepth_max >= 4095 { 4096 } else { 1024 };
+            let dst = unsafe { std::slice::from_raw_parts_mut(dst_row_ptr as *mut u16, total_size) };
+            let src = unsafe { std::slice::from_raw_parts(src_row_ptr as *const u16, total_size) };
+            let scaling = unsafe { std::slice::from_raw_parts(scaling as *const u8, scaling_len) };
+            let grain_lut = unsafe { &*(grain_lut as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1]) };
+            let luma = unsafe { std::slice::from_raw_parts(luma_row_ptr as *const u16, luma_total) };
             fguv_inner_16bpc(
-                dst_row_ptr as *mut u16,
-                src_row_ptr as *const u16,
-                stride / 2,
+                dst,
+                src,
+                stride_u16,
                 &data,
                 pw,
-                scaling as *const u8,
-                grain_lut as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
-                bh as usize,
-                row_num as usize,
-                luma_row_ptr as *const u16,
+                scaling,
+                grain_lut,
+                bh,
+                row_num,
+                luma,
                 luma_stride / 2,
                 uv_pl != 0,
                 is_id != 0,
                 $is_sx,
                 $is_sy,
-                bitdepth_max,
+                bitdepth_max as i32,
             );
         }
     };
@@ -1306,7 +1310,6 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
 /// Safe dispatch for fgy_32x32xn (aarch64 NEON).
 /// NEON is always available on aarch64, so this always dispatches and returns true.
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
 pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     dst: &Rav1dPictureDataComponent,
     src: &Rav1dPictureDataComponent,
@@ -1318,58 +1321,62 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     row_num: usize,
     bd: BD,
 ) -> bool {
-    use zerocopy::AsBytes;
+    use zerocopy::{AsBytes, FromBytes};
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
     let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
 
-    // Create tracked guards instead of using Pixels trait
-    let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
-    let dst_row_ptr = {
-        let bytes = dst_guard.as_bytes_mut();
-        let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
-        &mut bytes[base_byte] as *mut u8 as *mut DynPixel
-    };
-    let (src_guard, src_base) = src_row.full_guard::<BD>();
-    let src_row_ptr = {
-        let bytes = src_guard.as_bytes();
-        let base_byte = src_base * std::mem::size_of::<BD::Pixel>();
-        &bytes[base_byte] as *const u8 as *const DynPixel
-    };
-
     let stride = dst.stride();
-    let data_c = &data.clone().into();
-    let scaling_ptr = std::ptr::from_ref(scaling).cast();
-    let grain_lut_ptr = std::ptr::from_ref(grain_lut).cast();
-    let bh_c = bh as c_int;
-    let row_num_c = row_num as c_int;
-    let bd_c = bd.into_c();
-    unsafe {
-        match BD::BPC {
-            BPC::BPC8 => fgy_inner_8bpc(
-                dst_row_ptr,
-                src_row_ptr,
+
+    match BD::BPC {
+        BPC::BPC8 => {
+            let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
+            let dst_bytes = dst_guard.as_bytes_mut();
+            let dst_slice = &mut dst_bytes[dst_base..];
+            let (src_guard, src_base) = src_row.full_guard::<BD>();
+            let src_bytes = src_guard.as_bytes();
+            let src_slice = &src_bytes[src_base..];
+            let scaling_bytes: &[u8] = scaling.as_ref();
+            let grain_lut_8: &[[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
+                FromBytes::ref_from(grain_lut.as_bytes()).unwrap();
+            fgy_inner_8bpc(
+                dst_slice,
+                src_slice,
                 stride,
-                data_c,
+                data,
                 pw,
-                scaling_ptr,
-                grain_lut_ptr,
-                bh_c,
-                row_num_c,
-                bd_c,
-            ),
-            BPC::BPC16 => fgy_inner_16bpc(
-                dst_row_ptr,
-                src_row_ptr,
-                stride,
-                data_c,
+                scaling_bytes,
+                grain_lut_8,
+                bh,
+                row_num,
+            );
+        }
+        BPC::BPC16 => {
+            let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
+            let dst_bytes = dst_guard.as_bytes_mut();
+            let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
+            let dst_u16: &mut [u16] =
+                FromBytes::mut_slice_from(&mut dst_bytes[base_byte..]).unwrap();
+            let (src_guard, src_base) = src_row.full_guard::<BD>();
+            let src_bytes = src_guard.as_bytes();
+            let src_base_byte = src_base * std::mem::size_of::<BD::Pixel>();
+            let src_u16: &[u16] = FromBytes::slice_from(&src_bytes[src_base_byte..]).unwrap();
+            let stride_u16 = stride / 2;
+            let scaling_bytes: &[u8] = scaling.as_ref();
+            let grain_lut_16: &[[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
+                FromBytes::ref_from(grain_lut.as_bytes()).unwrap();
+            fgy_inner_16bpc(
+                dst_u16,
+                src_u16,
+                stride_u16,
+                data,
                 pw,
-                scaling_ptr,
-                grain_lut_ptr,
-                bh_c,
-                row_num_c,
-                bd_c,
-            ),
+                scaling_bytes,
+                grain_lut_16,
+                bh,
+                row_num,
+                bd.into_c() as i32,
+            );
         }
     }
     true
@@ -1378,7 +1385,6 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
 /// Safe dispatch for fguv_32x32xn (aarch64 NEON).
 /// NEON is always available on aarch64, so this always dispatches and returns true.
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
 pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     dst: &Rav1dPictureDataComponent,
@@ -1394,34 +1400,14 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     is_id: bool,
     bd: BD,
 ) -> bool {
-    use zerocopy::AsBytes;
+    use zerocopy::{AsBytes, FromBytes};
     let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + (row_strides * dst.pixel_stride::<BD>() >> ss_y);
     let src_row = src.with_offset::<BD>() + (row_strides * src.pixel_stride::<BD>() >> ss_y);
 
-    // Create tracked guards instead of using Pixels trait
-    let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
-    let dst_row_ptr = {
-        let bytes = dst_guard.as_bytes_mut();
-        let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
-        &mut bytes[base_byte] as *mut u8 as *mut DynPixel
-    };
-    let (src_guard, src_base) = src_row.full_guard::<BD>();
-    let src_row_ptr = {
-        let bytes = src_guard.as_bytes();
-        let base_byte = src_base * std::mem::size_of::<BD::Pixel>();
-        &bytes[base_byte] as *const u8 as *const DynPixel
-    };
     let stride = dst.stride();
-    let scaling_ptr = (scaling as *const BD::Scaling).cast::<u8>();
     let luma_row = luma.with_offset::<BD>() + (row_strides * luma.pixel_stride::<BD>());
-    let (luma_guard, luma_base) = luma_row.full_guard::<BD>();
-    let luma_row_ptr = {
-        let bytes = luma_guard.as_bytes();
-        let base_byte = luma_base * std::mem::size_of::<BD::Pixel>();
-        &bytes[base_byte] as *const u8 as *const DynPixel
-    };
     let luma_stride = luma.stride();
 
     let (is_sx, is_sy) = match layout {
@@ -1430,45 +1416,74 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
         Rav1dPixelLayoutSubSampled::I444 => (false, false),
     };
 
-    unsafe {
-        match BD::BPC {
-            BPC::BPC8 => fguv_inner_8bpc(
-                dst_row_ptr as *mut u8,
-                src_row_ptr as *const u8,
+    match BD::BPC {
+        BPC::BPC8 => {
+            let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
+            let dst_bytes = dst_guard.as_bytes_mut();
+            let dst_slice = &mut dst_bytes[dst_base..];
+            let (src_guard, src_base) = src_row.full_guard::<BD>();
+            let src_bytes = src_guard.as_bytes();
+            let src_slice = &src_bytes[src_base..];
+            let scaling_bytes: &[u8] = scaling.as_ref();
+            let grain_lut_8: &[[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
+                FromBytes::ref_from(grain_lut.as_bytes()).unwrap();
+            let (luma_guard, luma_base) = luma_row.full_guard::<BD>();
+            let luma_bytes = luma_guard.as_bytes();
+            let luma_slice = &luma_bytes[luma_base..];
+            fguv_inner_8bpc(
+                dst_slice,
+                src_slice,
                 stride as isize,
                 data,
                 pw,
-                scaling_ptr,
-                grain_lut as *const GrainLut<BD::Entry>
-                    as *const [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+                scaling_bytes,
+                grain_lut_8,
                 bh,
                 row_num,
-                luma_row_ptr as *const u8,
+                luma_slice,
                 luma_stride as isize,
                 is_uv,
                 is_id,
                 is_sx,
                 is_sy,
-            ),
-            BPC::BPC16 => fguv_inner_16bpc(
-                dst_row_ptr as *mut u16,
-                src_row_ptr as *const u16,
+            );
+        }
+        BPC::BPC16 => {
+            let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
+            let dst_bytes = dst_guard.as_bytes_mut();
+            let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
+            let dst_u16: &mut [u16] =
+                FromBytes::mut_slice_from(&mut dst_bytes[base_byte..]).unwrap();
+            let (src_guard, src_base) = src_row.full_guard::<BD>();
+            let src_bytes = src_guard.as_bytes();
+            let src_base_byte = src_base * std::mem::size_of::<BD::Pixel>();
+            let src_u16: &[u16] = FromBytes::slice_from(&src_bytes[src_base_byte..]).unwrap();
+            let scaling_bytes: &[u8] = scaling.as_ref();
+            let grain_lut_16: &[[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
+                FromBytes::ref_from(grain_lut.as_bytes()).unwrap();
+            let (luma_guard, luma_base) = luma_row.full_guard::<BD>();
+            let luma_bytes = luma_guard.as_bytes();
+            let luma_base_byte = luma_base * std::mem::size_of::<BD::Pixel>();
+            let luma_u16: &[u16] =
+                FromBytes::slice_from(&luma_bytes[luma_base_byte..]).unwrap();
+            fguv_inner_16bpc(
+                dst_u16,
+                src_u16,
                 stride / 2,
                 data,
                 pw,
-                scaling_ptr,
-                grain_lut as *const GrainLut<BD::Entry>
-                    as *const [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1],
+                scaling_bytes,
+                grain_lut_16,
                 bh,
                 row_num,
-                luma_row_ptr as *const u16,
+                luma_u16,
                 luma_stride / 2,
                 is_uv,
                 is_id,
                 is_sx,
                 is_sy,
-                bd.into_c(),
-            ),
+                bd.into_c() as i32,
+            );
         }
     }
     true
