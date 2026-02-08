@@ -45,11 +45,10 @@ const PW_1024: i16 = 1024;
 /// - tmp1 and tmp2 must contain at least w*h elements
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-#[allow(unsafe_code)]
-unsafe fn avg_8bpc_avx2_inner(
+fn avg_8bpc_avx2_safe(
     _token: Desktop64,
-    dst_ptr: *mut DynPixel,
-    dst_stride: isize,
+    dst: &mut [u8],
+    dst_stride: usize,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
@@ -57,7 +56,6 @@ unsafe fn avg_8bpc_avx2_inner(
 ) {
     let w = w as usize;
     let h = h as usize;
-    let dst = dst_ptr as *mut u8;
 
     // Broadcast rounding constant to all lanes
     // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
@@ -66,9 +64,7 @@ unsafe fn avg_8bpc_avx2_inner(
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
-        // SAFETY: dst_ptr is valid for w*h bytes, dst_stride is correct
-        let dst_row =
-            unsafe { std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w) };
+        let dst_row = &mut dst[row * dst_stride..][..w];
 
         // Process 32 pixels at a time (64 bytes of i16 input → 32 bytes of u8 output)
         let mut col = 0;
@@ -140,6 +136,7 @@ unsafe fn avg_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
+#[allow(unsafe_code)]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn avg_8bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -151,8 +148,18 @@ pub unsafe extern "C" fn avg_8bpc_avx2(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { avg_8bpc_avx2_inner(token, dst_ptr, dst_stride, tmp1, tmp2, w, h) }
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
+    };
+    avg_8bpc_avx2_safe(
+        Desktop64::forge_token_dangerously(),
+        dst,
+        dst_stride as usize,
+        tmp1,
+        tmp2,
+        w,
+        h,
+    )
 }
 
 /// AVG operation for 16-bit pixels using AVX2
@@ -164,11 +171,10 @@ pub unsafe extern "C" fn avg_8bpc_avx2(
 /// Same as avg_8bpc_avx2, plus bitdepth_max must be correct for the content.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-#[allow(unsafe_code)]
-unsafe fn avg_16bpc_avx2_inner(
+fn avg_16bpc_avx2_safe(
     _token: Desktop64,
-    dst_ptr: *mut DynPixel,
-    dst_stride: isize,
+    dst: &mut [u8],
+    dst_stride: usize,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
@@ -177,82 +183,65 @@ unsafe fn avg_16bpc_avx2_inner(
 ) {
     let w = w as usize;
     let h = h as usize;
-    let dst = dst_ptr as *mut u16;
-    // stride is in bytes, convert to u16 elements
-    let dst_stride_elems = dst_stride / 2;
 
-    // For 16bpc, intermediate_bits = 4, so shift = 5, round = 16400
-    // rnd = (1 << 4) + 8192 * 2 = 16 + 16384 = 16400
-    // Result should be clamped to [0, bitdepth_max]
     let rnd = 16400i32;
     let max = bitdepth_max as i32;
 
-    // SAFETY: AVX2 is available (checked at dispatch time via target_feature)
     let rnd_vec = _mm256_set1_epi32(rnd);
     let zero = _mm256_setzero_si256();
     let max_vec = _mm256_set1_epi32(max);
 
     for row in 0..h {
-        let tmp1_ptr = tmp1[row * w..].as_ptr();
-        let tmp2_ptr = tmp2[row * w..].as_ptr();
-        // SAFETY: dst_ptr is valid, stride is correct
-        let dst_row = unsafe { dst.offset(row as isize * dst_stride_elems) };
+        let tmp1_row = &tmp1[row * w..][..w];
+        let tmp2_row = &tmp2[row * w..][..w];
+        // dst is bytes, but we write u16 pixels — each pixel is 2 bytes
+        let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
+        // Reinterpret as u16 slice
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
 
         let mut col = 0usize;
 
-        // Process 16 pixels at a time (need 32-bit arithmetic)
         while col + 16 <= w {
-            // SAFETY: AVX2 intrinsics with valid pointers
-            unsafe {
-                // Load 16x i16 values
-                let t1 = _mm256_loadu_si256(tmp1_ptr.add(col) as *const __m256i);
-                let t2 = _mm256_loadu_si256(tmp2_ptr.add(col) as *const __m256i);
+            let t1_arr: &[i16; 16] = tmp1_row[col..col + 16].try_into().unwrap();
+            let t2_arr: &[i16; 16] = tmp2_row[col..col + 16].try_into().unwrap();
 
-                // Sign-extend low 8 values to 32-bit
-                let t1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t1));
-                let t2_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t2));
+            let t1 = loadu_256!(t1_arr);
+            let t2 = loadu_256!(t2_arr);
 
-                // Sign-extend high 8 values to 32-bit
-                let t1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t1, 1));
-                let t2_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t2, 1));
+            let t1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t1));
+            let t2_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t2));
+            let t1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t1, 1));
+            let t2_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t2, 1));
 
-                // sum = tmp1 + tmp2 + rnd
-                let sum_lo = _mm256_add_epi32(_mm256_add_epi32(t1_lo, t2_lo), rnd_vec);
-                let sum_hi = _mm256_add_epi32(_mm256_add_epi32(t1_hi, t2_hi), rnd_vec);
+            let sum_lo = _mm256_add_epi32(_mm256_add_epi32(t1_lo, t2_lo), rnd_vec);
+            let sum_hi = _mm256_add_epi32(_mm256_add_epi32(t1_hi, t2_hi), rnd_vec);
 
-                // >> 5
-                let result_lo = _mm256_srai_epi32(sum_lo, 5);
-                let result_hi = _mm256_srai_epi32(sum_hi, 5);
+            let result_lo = _mm256_srai_epi32(sum_lo, 5);
+            let result_hi = _mm256_srai_epi32(sum_hi, 5);
 
-                // Clamp to [0, max]
-                let clamped_lo = _mm256_min_epi32(_mm256_max_epi32(result_lo, zero), max_vec);
-                let clamped_hi = _mm256_min_epi32(_mm256_max_epi32(result_hi, zero), max_vec);
+            let clamped_lo = _mm256_min_epi32(_mm256_max_epi32(result_lo, zero), max_vec);
+            let clamped_hi = _mm256_min_epi32(_mm256_max_epi32(result_hi, zero), max_vec);
 
-                // Pack 32-bit to 16-bit (unsigned saturation handles the low clamp)
-                let packed = _mm256_packus_epi32(clamped_lo, clamped_hi);
-                // Fix lane ordering after packus
-                let packed = _mm256_permute4x64_epi64(packed, 0b11011000);
+            let packed = _mm256_packus_epi32(clamped_lo, clamped_hi);
+            let packed = _mm256_permute4x64_epi64(packed, 0b11011000);
 
-                // Store 16x u16
-                _mm256_storeu_si256(dst_row.add(col) as *mut __m256i, packed);
-            }
+            let dst_arr: &mut [u16; 16] = (&mut dst_row[col..col + 16]).try_into().unwrap();
+            storeu_256!(dst_arr, packed);
+
             col += 16;
         }
 
-        // Handle remaining pixels with scalar
         while col < w {
-            // SAFETY: pointers are valid within bounds
-            unsafe {
-                let sum = *tmp1_ptr.add(col) as i32 + *tmp2_ptr.add(col) as i32;
-                let val = ((sum + rnd) >> 5).clamp(0, max) as u16;
-                *dst_row.add(col) = val;
-            }
+            let sum = tmp1_row[col] as i32 + tmp2_row[col] as i32;
+            let val = ((sum + rnd) >> 5).clamp(0, max) as u16;
+            dst_row[col] = val;
             col += 1;
         }
     }
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
+#[allow(unsafe_code)]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn avg_16bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -264,8 +253,19 @@ pub unsafe extern "C" fn avg_16bpc_avx2(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { avg_16bpc_avx2_inner(token, dst_ptr, dst_stride, tmp1, tmp2, w, h, bitdepth_max) }
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
+    };
+    avg_16bpc_avx2_safe(
+        Desktop64::forge_token_dangerously(),
+        dst,
+        dst_stride as usize,
+        tmp1,
+        tmp2,
+        w,
+        h,
+        bitdepth_max,
+    )
 }
 
 /// SSE4.1 fallback for avg_8bpc
@@ -7733,7 +7733,6 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
 // ============================================================================
 
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)]
 pub fn avg_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
@@ -7743,39 +7742,34 @@ pub fn avg_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use crate::src::cpu::CpuFlags;
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(token) = Desktop64::summon() else { return false };
     use zerocopy::AsBytes;
-    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+    let dst_bytes = dst_guard.as_bytes_mut();
+    let pixel_size = std::mem::size_of::<BD::Pixel>();
+    let dst_offset = dst_base * pixel_size;
     let dst_stride = dst.stride();
     let bd_c = bd.into_c();
-    let _dst_ffi = FFISafe::new(&dst);
-    unsafe {
-        match BD::BPC {
-            BPC::BPC8 => avg_8bpc_avx2_inner(
-                Desktop64::summon().unwrap(),
-                dst_ptr,
-                dst_stride,
-                tmp1,
-                tmp2,
-                w,
-                h,
-            ),
-            BPC::BPC16 => avg_16bpc_avx2_inner(
-                Desktop64::summon().unwrap(),
-                dst_ptr,
-                dst_stride,
-                tmp1,
-                tmp2,
-                w,
-                h,
-                bd_c,
-            ),
-        }
+    match BD::BPC {
+        BPC::BPC8 => avg_8bpc_avx2_safe(
+            token,
+            &mut dst_bytes[dst_offset..],
+            dst_stride as usize,
+            tmp1,
+            tmp2,
+            w,
+            h,
+        ),
+        BPC::BPC16 => avg_16bpc_avx2_safe(
+            token,
+            &mut dst_bytes[dst_offset..],
+            dst_stride as usize,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            bd_c,
+        ),
     }
     true
 }
@@ -8324,27 +8318,25 @@ mod tests {
                 dst_scalar.fill(0);
 
                 let token = Desktop64::summon().unwrap();
-                unsafe {
-                    avg_8bpc_avx2_inner(
-                        token,
-                        dst_scalar.as_mut_ptr() as *mut DynPixel,
-                        w as isize,
-                        &tmp1,
-                        &tmp2,
-                        w,
-                        h,
-                    );
+                avg_8bpc_avx2_safe(
+                    token,
+                    &mut dst_scalar,
+                    w as usize,
+                    &tmp1,
+                    &tmp2,
+                    w,
+                    h,
+                );
 
-                    avg_8bpc_avx2_inner(
-                        token,
-                        dst_avx2.as_mut_ptr() as *mut DynPixel,
-                        w as isize,
-                        &tmp1,
-                        &tmp2,
-                        w,
-                        h,
-                    );
-                }
+                avg_8bpc_avx2_safe(
+                    token,
+                    &mut dst_avx2,
+                    w as usize,
+                    &tmp1,
+                    &tmp2,
+                    w,
+                    h,
+                );
 
                 assert_eq!(
                     dst_avx2, dst_scalar,
@@ -8376,27 +8368,25 @@ mod tests {
         let mut dst_b = vec![0u8; (w * h) as usize];
 
         let token = Desktop64::summon().unwrap();
-        unsafe {
-            avg_8bpc_avx2_inner(
-                token,
-                dst_a.as_mut_ptr() as *mut DynPixel,
-                w as isize,
-                &tmp1,
-                &tmp2,
-                w,
-                h,
-            );
+        avg_8bpc_avx2_safe(
+            token,
+            &mut dst_a,
+            w as usize,
+            &tmp1,
+            &tmp2,
+            w,
+            h,
+        );
 
-            avg_8bpc_avx2_inner(
-                token,
-                dst_b.as_mut_ptr() as *mut DynPixel,
-                w as isize,
-                &tmp1,
-                &tmp2,
-                w,
-                h,
-            );
-        }
+        avg_8bpc_avx2_safe(
+            token,
+            &mut dst_b,
+            w as usize,
+            &tmp1,
+            &tmp2,
+            w,
+            h,
+        );
 
         assert_eq!(dst_a, dst_b, "Results differ for varying data");
     }
