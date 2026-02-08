@@ -3275,14 +3275,9 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use crate::src::cpu::CpuFlags;
     use zerocopy::AsBytes;
 
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
-
-    let token = Desktop64::summon().unwrap();
+    let Some(token) = Desktop64::summon() else { return false };
 
     let w = width as usize;
     let h = height as usize;

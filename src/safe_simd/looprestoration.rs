@@ -1575,11 +1575,8 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use crate::src::cpu::CpuFlags;
 
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(token) = Desktop64::summon() else { return false };
 
     let w = w as usize;
     let h = h as usize;
@@ -1589,9 +1586,6 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
     let left_16 = || -> &[LeftPixelRow<u16>] {
         reinterpret_slice(left).expect("BD::Pixel layout matches u16")
     };
-
-    // Safe: AVX2 verified by CpuFlags check above, summon() does runtime check
-    let token = Desktop64::summon().expect("AVX2 required (verified by CpuFlags)");
 
     match (BD::BPC, variant) {
         (BPC::BPC8, 0) => {

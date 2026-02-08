@@ -18,6 +18,8 @@
 #![allow(unused_imports)]
 
 #[cfg(target_arch = "x86_64")]
+use archmage::{Desktop64, SimdToken};
+#[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
 use crate::include::common::bitdepth::AsPrimitive;
@@ -1331,11 +1333,8 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     is_v: bool,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use crate::src::cpu::CpuFlags;
 
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(_token) = Desktop64::summon() else { return false };
 
     assert!(lvl.offset <= lvl.data.len());
 

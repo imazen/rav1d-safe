@@ -7962,10 +7962,6 @@ pub fn w_mask_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use crate::src::cpu::CpuFlags;
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
     let Some(token) = Desktop64::summon() else { return false };
     use zerocopy::AsBytes;
     let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();

@@ -2435,7 +2435,6 @@ fn fguv_inner_safe_16bpc(
 use crate::include::common::bitdepth::{BitDepth, BPC};
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
-use crate::src::cpu::CpuFlags;
 use crate::src::strided::Strided as _;
 
 /// Safe dispatch for generate_grain_y (x86_64 AVX2).
@@ -2447,9 +2446,7 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
     data: &Rav1dFilmGrainData,
     bd: BD,
 ) -> bool {
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(_token) = Desktop64::summon() else { return false };
     // Call inner functions directly, bypassing FFI wrappers.
     unsafe {
         match BD::BPC {
@@ -2479,9 +2476,7 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     is_uv: bool,
     bd: BD,
 ) -> bool {
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(_token) = Desktop64::summon() else { return false };
     // Call inner functions directly, bypassing FFI wrappers.
     let (is_subx, is_suby) = match layout {
         Rav1dPixelLayoutSubSampled::I420 => (true, true),
@@ -2521,13 +2516,7 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     row_num: usize,
     bd: BD,
 ) -> bool {
-    let token = match Desktop64::summon() {
-        Some(t) => t,
-        None => return false,
-    };
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(token) = Desktop64::summon() else { return false };
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
     let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
@@ -2628,13 +2617,7 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     is_id: bool,
     bd: BD,
 ) -> bool {
-    let token = match Desktop64::summon() {
-        Some(t) => t,
-        None => return false,
-    };
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(token) = Desktop64::summon() else { return false };
     let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
     let (is_sx, is_sy) = match layout {
         Rav1dPixelLayoutSubSampled::I420 => (true, true),
