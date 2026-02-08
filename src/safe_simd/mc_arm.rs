@@ -4628,7 +4628,6 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
 
 /// No SIMD for scaled variants on aarch64.
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
 pub fn mc_scaled_dispatch<BD: BitDepth>(
     _filter: Filter2d,
     _dst: PicOffset,
@@ -4646,7 +4645,6 @@ pub fn mc_scaled_dispatch<BD: BitDepth>(
 
 /// No SIMD for scaled variants on aarch64.
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
 pub fn mct_scaled_dispatch<BD: BitDepth>(
     _filter: Filter2d,
     _tmp: &mut [i16],
@@ -4664,7 +4662,6 @@ pub fn mct_scaled_dispatch<BD: BitDepth>(
 
 /// No SIMD for warp on aarch64.
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
 pub fn warp8x8_dispatch<BD: BitDepth>(
     _dst: PicOffset,
     _src: PicOffset,
@@ -4678,7 +4675,6 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
 
 /// No SIMD for warp on aarch64.
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
 pub fn warp8x8t_dispatch<BD: BitDepth>(
     _tmp: &mut [i16],
     _tmp_stride: usize,
@@ -4693,7 +4689,6 @@ pub fn warp8x8t_dispatch<BD: BitDepth>(
 
 /// No SIMD for emu_edge on aarch64.
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
 pub fn emu_edge_dispatch<BD: BitDepth>(
     _bw: isize,
     _bh: isize,
@@ -4710,7 +4705,6 @@ pub fn emu_edge_dispatch<BD: BitDepth>(
 
 /// No SIMD for resize on aarch64.
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
 pub fn resize_dispatch<BD: BitDepth>(
     _dst: crate::src::with_offset::WithOffset<
         crate::src::pic_or_buf::PicOrBuf<crate::src::align::AlignedVec64<u8>>,
