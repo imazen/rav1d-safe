@@ -3,6 +3,8 @@
 //! splat_mv: Fills rows of RefMvsBlock arrays with a single value.
 //! Uses 16-byte NEON stores for the 12-byte RefMvsBlock struct (with R_PAD overflow).
 
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
@@ -17,6 +19,7 @@ use crate::src::refmvs::RefMvsBlock;
 /// RefMvsBlock is 12 bytes. We use 16-byte stores at stride 12,
 /// which safely overwrites 4 bytes into the next element (or padding at end).
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn splat_mv_neon(
     rr: *mut *mut RefMvsBlock,
     rmv: &Align16<RefMvsBlock>,

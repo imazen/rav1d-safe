@@ -2,6 +2,7 @@
 //!
 //! The loop filter removes blocking artifacts at transform block boundaries.
 
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
 #[cfg(target_arch = "aarch64")]
@@ -220,6 +221,7 @@ fn loop_filter_core<BD: BitDepth>(
 // SUPERBLOCK FILTER IMPLEMENTATIONS
 // ============================================================================
 
+#[allow(unsafe_code)]
 fn lpf_h_sb_inner<BD: BitDepth, const YUV: usize>(
     dst: *mut BD::Pixel,
     stride: isize,
@@ -293,6 +295,7 @@ fn lpf_h_sb_inner<BD: BitDepth, const YUV: usize>(
     }
 }
 
+#[allow(unsafe_code)]
 fn lpf_v_sb_inner<BD: BitDepth, const YUV: usize>(
     dst: *mut BD::Pixel,
     stride: isize,

@@ -6,6 +6,10 @@
 //! The wrappers are safe functions with #[target_feature], callable from #[arcane]
 //! contexts without needing unsafe blocks.
 //!
+//! # Safety boundary
+//! This module provides the safe abstraction boundary — it contains targeted unsafe
+//! blocks to wrap raw SIMD intrinsics, exposed as safe functions with #[target_feature].
+//!
 //! # Future compatibility
 //! ```ignore
 //! // When safe_unaligned_simd adds 64-bit support, change this module to:

@@ -4,6 +4,8 @@
 //! The value is 12 bytes (RefMvsBlock) stored in a 16-byte aligned wrapper.
 //! Uses 16-byte stores at stride 12, with R_PAD ensuring safe overwrite.
 
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
@@ -20,6 +22,7 @@ use crate::src::refmvs::RefMvsBlock;
 /// The R_PAD allocation padding ensures we don't write out of bounds.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn splat_mv_avx2(
     rr: *mut *mut RefMvsBlock,
     rmv: &Align16<RefMvsBlock>,
