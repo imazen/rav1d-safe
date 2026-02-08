@@ -1,0 +1,24 @@
+# DisjointMut crate commands
+
+# Run unit tests
+test:
+    cargo test
+
+# Run tests under Miri with Stacked Borrows (default)
+miri:
+    cargo +nightly miri test
+
+# Run tests under Miri with Tree Borrows
+miri-tree:
+    MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test
+
+# Run both aliasing models
+miri-all: miri miri-tree
+
+# Check with clippy
+clippy:
+    cargo clippy -- -D warnings
+
+# Format check
+fmt-check:
+    cargo fmt --check

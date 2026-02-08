@@ -1,9 +1,13 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
+#[cfg(feature = "c-ffi")]
 use crate::include::dav1d::picture::Dav1dPicAllocator;
 use crate::include::dav1d::picture::Rav1dPicAllocator;
+#[cfg(feature = "c-ffi")]
 use crate::src::c_arc::RawArc;
 use crate::src::error::Rav1dError;
+#[cfg(feature = "c-ffi")]
 use crate::src::internal::Rav1dContext;
+#[cfg(feature = "c-ffi")]
 pub use crate::src::log::Dav1dLogger;
 use crate::src::log::Rav1dLogger;
 use bitflags::bitflags;
@@ -11,8 +15,10 @@ use std::ffi::c_int;
 use std::ffi::c_uint;
 use strum::FromRepr;
 
+#[cfg(feature = "c-ffi")]
 pub type Dav1dContext = RawArc<Rav1dContext>;
 
+#[cfg(feature = "c-ffi")]
 pub type Dav1dRef = ();
 
 pub type Dav1dInloopFilterType = c_uint;
@@ -124,6 +130,7 @@ impl From<Dav1dEventFlags> for Rav1dEventFlags {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 #[repr(C)]
 pub struct Dav1dSettings {
     pub n_threads: c_int,
@@ -157,6 +164,7 @@ pub(crate) struct Rav1dSettings {
     pub decode_frame_type: Rav1dDecodeFrameType,
 }
 
+#[cfg(feature = "c-ffi")]
 impl TryFrom<Dav1dSettings> for Rav1dSettings {
     type Error = Rav1dError;
 
@@ -193,6 +201,7 @@ impl TryFrom<Dav1dSettings> for Rav1dSettings {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Rav1dSettings> for Dav1dSettings {
     fn from(value: Rav1dSettings) -> Self {
         let Rav1dSettings {

@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::dav1d::headers::Rav1dFrameHeader;
@@ -379,7 +379,7 @@ fn filter_plane_cols_y<BD: BitDepth>(
     let lf_sb = &f.dsp.lf.loop_filter_sb;
     let len = endy4 - starty4;
     let y_dst = |x| y_dst + x * 4;
-    y_dst(w).as_ptr::<BD>(); // Bounds check
+    assert!(y_dst(w).offset <= y_dst(w).data.pixel_len::<BD>()); // Bounds check
     let mask = &mask[..w];
     for x in 0..w {
         if !have_left && x == 0 {
@@ -422,7 +422,7 @@ fn filter_plane_rows_y<BD: BitDepth>(
     let lf_sb = &f.dsp.lf.loop_filter_sb;
     let len = endy4 - starty4;
     let y_dst = |i| y_dst + (i as isize * 4 * y_dst.pixel_stride::<BD>());
-    y_dst(len - 1).as_ptr::<BD>(); // Bounds check
+    assert!(y_dst(len - 1).offset <= y_dst(len - 1).data.pixel_len::<BD>()); // Bounds check
     for i in 0..len {
         let y = i + starty4;
         if !have_top && y == 0 {
@@ -457,8 +457,8 @@ fn filter_plane_cols_uv<BD: BitDepth>(
     let len = endy4 - starty4;
     let u_dst = |x| u_dst + x * 4;
     let v_dst = |x| v_dst + x * 4;
-    u_dst(w).as_ptr::<BD>(); // Bounds check
-    v_dst(w).as_ptr::<BD>(); // Bounds check
+    assert!(u_dst(w).offset <= u_dst(w).data.pixel_len::<BD>()); // Bounds check
+    assert!(v_dst(w).offset <= v_dst(w).data.pixel_len::<BD>()); // Bounds check
     let mask = &mask[..w];
     for x in 0..w {
         if !have_left && x == 0 {
@@ -509,8 +509,8 @@ fn filter_plane_rows_uv<BD: BitDepth>(
     let len = endy4 - starty4;
     let u_dst = |i| u_dst + (i as isize * 4 * u_dst.pixel_stride::<BD>());
     let v_dst = |i| v_dst + (i as isize * 4 * v_dst.pixel_stride::<BD>());
-    u_dst(len - 1).as_ptr::<BD>(); // Bounds check
-    v_dst(len - 1).as_ptr::<BD>(); // Bounds check
+    assert!(u_dst(len - 1).offset <= u_dst(len - 1).data.pixel_len::<BD>()); // Bounds check
+    assert!(v_dst(len - 1).offset <= v_dst(len - 1).data.pixel_len::<BD>()); // Bounds check
     for i in 0..len {
         let y = i + starty4;
         if !have_top && y == 0 {

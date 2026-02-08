@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use crate::include::common::intops::clip_u8;
 use crate::include::common::intops::ulog2;

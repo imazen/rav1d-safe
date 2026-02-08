@@ -78,6 +78,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "disjoint-mut"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "zerocopy",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -205,6 +213,7 @@ dependencies = [
  "bitflags",
  "cc",
  "cfg-if",
+ "disjoint-mut",
  "libc",
  "nasm-rs",
  "parking_lot",

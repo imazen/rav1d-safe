@@ -3,6 +3,8 @@
 //! CDEF applies direction-dependent filtering to remove coding artifacts
 //! while preserving edges.
 
+#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
 

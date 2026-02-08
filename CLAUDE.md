@@ -27,6 +27,76 @@ Pick the next unfinished module and port it. Priority order:
 
 Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with safe Rust intrinsics.
 
+## MANDATORY: Safe intrinsics strategy
+
+**Rust 1.93+ made value-type SIMD intrinsics safe.** Computation intrinsics (`_mm256_add_epi32`, `_mm256_shuffle_epi8`, etc.) are now safe functions — no `unsafe` needed.
+
+**Two things still require wrappers:**
+
+1. **Pointer intrinsics (load/store)** — `_mm256_loadu_si256` takes `*const __m256i`, which requires `unsafe`. Use `safe_unaligned_simd` crate which wraps these as safe functions taking `&[T; N]` references. Our `loadu_256!`/`storeu_256!` macros dispatch to these.
+
+2. **Target feature dispatch** — intrinsics are only safe when called within a function annotated with `#[target_feature(enable = "avx2")]` (or equivalent). `archmage` handles this via token-based dispatch (`Desktop64::summon()`, `#[arcane]`), so we **never manually write `is_x86_feature_detected!()` checks or `#[target_feature]` annotations on our functions**.
+
+3. **Slice access** — Two APIs in `pixel_access.rs`, both zero-cost (verified identical asm):
+
+   **`Flex` trait** — Use in super hot loops where you'd otherwise reach for pointer arithmetic:
+   ```rust
+   use crate::src::safe_simd::pixel_access::Flex;
+   let c = coeff.flex();      // immutable FlexSlice with [] syntax
+   let mut d = dst.flex_mut(); // mutable FlexSliceMut with [] syntax
+   d[off] = ((d[off] as i32 + c[idx] as i32).clamp(0, 255)) as u8;
+   ```
+   - `slice.flex()[i]` / `slice.flex()[start..end]` / `slice.flex()[start..]`
+   - `slice.flex_mut()[i] = val` / `slice.flex_mut()[start..end]`
+   - Natural `[]` syntax, checked by default, unchecked when `unchecked` feature on
+
+   **`SliceExt` trait** — Simpler single-access API:
+   - `slice.at(i)` / `slice.at_mut(i)` — single element
+   - `slice.sub(start, len)` / `slice.sub_mut(start, len)` — subslice
+   - Import: `use crate::src::safe_simd::pixel_access::SliceExt;`
+
+**Do NOT:**
+- Manually add `#[target_feature(enable = "...")]` to new functions — use `#[arcane]` instead
+- Manually call `is_x86_feature_detected!()` — use `Desktop64::summon()` / `CpuFlags` instead
+- Use raw pointer load/store intrinsics — use `loadu_256!` / `storeu_256!` macros instead
+- Block on any nightly-only feature for safety — everything works on stable Rust 1.93+
+
+## Feature Flag Safety Model
+
+**`forbid(unsafe_code)` is ON by default.** When `asm` or `c-ffi` are enabled, it drops to `deny` so modules can use `#[allow(unsafe_code)]` on specific items (FFI wrappers, etc).
+
+```
+Default (no asm, no c-ffi): #![forbid(unsafe_code)]  — NO exceptions, NO #[allow] overrides
+asm or c-ffi enabled:       #![deny(unsafe_code)]    — modules can #[allow] specific items
+```
+
+This means: **every `#[allow(unsafe_code)]` in the codebase MUST be gated behind `cfg(feature = "asm")` or `cfg(feature = "c-ffi")` or `cfg(target_arch)` that excludes the default build.** If an `#[allow(unsafe_code)]` item compiles in the default build, `forbid` will reject it.
+
+## HARD RULES — STOP GOING IN CIRCLES
+
+**READ AND OBEY THESE EVERY TIME. DO NOT SKIP.**
+
+1. **`#[arcane]` NEVER needs `#[allow(unsafe_code)]`.** It is safe by design. If you find yourself adding `allow(unsafe_code)` to an `#[arcane]` function, YOU ARE DOING SOMETHING WRONG. The function body itself must be rewritten to not use `unsafe` — use slices, safe macros, and safe intrinsics.
+
+2. **`#[rite]` NEVER needs `#[allow(unsafe_code)]`.** Same as `#[arcane]` — it's a safe inner helper.
+
+3. **Inner SIMD functions (using core::arch intrinsics) are NOT assembly.** `safe_simd/` contains ZERO `asm!` macros. Do NOT gate inner SIMD functions behind `#[cfg(feature = "asm")]`. Only gate `pub unsafe extern "C" fn` FFI wrappers behind asm.
+
+4. **If an `#[arcane]` function won't compile under `forbid(unsafe_code)`, the function body is wrong.** Rewrite the body to use slices + safe macros. Do NOT add `#[allow(unsafe_code)]`. Do NOT gate behind `#[cfg(feature = "asm")]`.
+
+5. **Read the archmage README before touching dispatch.** `Desktop64::summon()` for detection, `#[arcane]` for entry points, `#[rite]` for inner helpers. The prelude re-exports safe intrinsics. `safe_unaligned_simd` provides reference-based load/store.
+
+6. **Conversion pattern for making `#[arcane]` functions safe:**
+   - Change `dst: *mut u8` → `dst: &mut [u8]`
+   - Change `coeff: *mut i16` → `coeff: &mut [i16]`
+   - Replace `unsafe { *ptr.add(n) }` → `slice[n]`
+   - Replace `unsafe { _mm256_loadu_si256(ptr) }` → `loadu_256!(&slice[off..off+32], [u8; 32])`
+   - Replace `unsafe { _mm256_storeu_si256(ptr, v) }` → `storeu_256!(&mut slice[off..off+32], [u8; 32], v)`
+   - Replace `unsafe { _mm_cvtsi32_si128(*(ptr as *const i32)) }` → `loadi32!(&slice[off..off+4])`
+   - Remove ALL `unsafe {}` blocks — if intrinsics need unsafe, you're not in a `#[target_feature]` context (use `#[arcane]`/`#[rite]`)
+
+7. **When you don't know how something works, READ THE README/DOCS FIRST.** Do not guess. Do not add workarounds. Especially for archmage, zerocopy, safe_unaligned_simd.
+
 ## Quick Commands
 
 ```bash
@@ -142,11 +212,39 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 ## Safety Status
 
-**Crate-level deny(unsafe_code) when asm disabled.** `lib.rs` has `#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]` — compiler-enforced safety for the entire non-asm path.
+**Crate-level deny(unsafe_code) when asm/c-ffi disabled.** `lib.rs` has `#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]` — compiler-enforced safety for the entire non-asm, non-c-ffi path.
 
-**47/80 modules have explicit `deny(unsafe_code)`:**
-- 35 unconditionally safe (decode, recon, lf_mask, lf_apply, ctx, obu, cdf, etc.)
-- 12 conditionally safe when asm disabled (cdef, filmgrain, ipred, itx, loopfilter, looprestoration, mc, pal, data, tables, cpu, safe_simd/pal)
+**DisjointMut extracted to separate crate** (`crates/disjoint-mut/`):
+- Provably safe abstraction (like RefCell for ranges) with always-on bounds checking
+- Main crate re-exports + adds AlignedVec-specific impls
+- Enables future `forbid(unsafe_code)` at crate level
+
+**C FFI types gated behind `cfg(feature = "c-ffi")`:**
+- `DavdPicture`, `DavdData`, `DavdDataProps`, `DavdUserData`, `DavdSettings`, `DavdLogger` — all gated
+- `ITUTT35PayloadPtr`, `Dav1dITUTT35` struct (with `Send`/`Sync` impls) — gated; safe type alias when c-ffi off
+- `RawArc`, `RawCArc`, `Dav1dContext`, `arc_into_raw` — gated (raw Arc ptr roundtrip)
+- `From<Dav1d*>` / `From<Rav1d*> for Dav1d*` conversions (containing `unsafe { CArc::from_raw }`) — all gated
+- Safe picture allocator: per-plane `Vec<u8>` from MemPool, no C callbacks needed
+- Fallible allocation: `MemPool::pop_init` returns `Result<Vec, TryReserveError>`, propagated as `Rav1dError::ENOMEM`
+
+**Module safety architecture (default build without asm/c-ffi on x86_64):**
+- Only **1 module** needs unconditional `#[allow(unsafe_code)]`: **safe_simd**
+  - Remaining unsafe: pointer load/store intrinsics (use `safe_unaligned_simd` + macros to eliminate) and FFI wrappers (gate behind `feature = "asm"`)
+- 2 modules conditionally allow unsafe by architecture:
+  - refmvs: `cfg_attr(feature = "asm", allow(unsafe_code))` — extern C wrappers gated behind asm
+  - msac: `cfg_attr(any(asm, aarch64), allow(unsafe_code))` — NEON intrinsics on aarch64 only
+- 6 modules use conditional `allow(unsafe_code)` only when c-ffi enabled:
+  include/dav1d, c_arc, c_box, log, picture, lib (C API entry point)
+- 1 module gated entirely behind asm/c-ffi: send_sync_non_null
+- All other modules use **item-level** `#[allow(unsafe_code)]` on specific functions/impls:
+  align (4 items), assume (1 fn), ffi_safe (2 fns), disjoint_mut (1 impl),
+  c_arc (3 items), c_box (1 fn), internal (4 impls), refmvs (2 fns), msac (4 items)
+- 42+ modules with `#![forbid(unsafe_code)]` — permanent, compiler-enforced
+- 13 DSP modules with conditional deny when asm disabled
+
+**c-ffi build fully working** (previously blocked by 320 `forge_token_dangerously` errors in safe_simd):
+- Fixed: wrapped all `forge_token_dangerously()` calls in `unsafe { }` blocks (Rust 2024 edition compliance)
+- Both `cargo check --features c-ffi` and `cargo test --features c-ffi` pass clean
 
 **FFI wrappers gated behind `feature = "asm"`** in: cdef, cdef_arm, loopfilter, loopfilter_arm, looprestoration, looprestoration_arm, filmgrain, filmgrain_arm, pal.
 
@@ -154,16 +252,101 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 **Feature flags:**
 - `unchecked` - Use unchecked slice access in SIMD hot paths (skips bounds checks)
-- `src/safe_simd/pixel_access.rs` - Helper module for checked/unchecked slice access
+- `src/safe_simd/pixel_access.rs` - Helper module for checked/unchecked slice access + SIMD macros
+
+**Writing Clean Safe SIMD (the complete pattern):**
+
+Since Rust 1.93, value-type SIMD intrinsics are safe functions. The only remaining sources of `unsafe` in SIMD are:
+1. **Pointer load/store** — `_mm256_loadu_si256(*const)` takes raw pointers
+2. **Target feature dispatch** — intrinsics are only safe inside `#[target_feature(enable = "...")]` fns
+
+Both are solved without any `unsafe` in user code:
+
+```rust
+// 1. Module header — forbid unsafe (load/store macros handle it internally):
+#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
+
+// 2. Import macros from pixel_access:
+use super::pixel_access::{loadu_256, storeu_256, load_256, store_256};
+
+// 3. Functions take SLICES, not raw pointers:
+// 4. Use #[arcane] for target_feature dispatch (NOT manual #[target_feature]):
+#[arcane]
+fn process(token: Desktop64, dst: &mut [u8], src: &[u8], w: usize) {
+    // Load 32 bytes from slice — safe, bounds-checked:
+    let v = load_256!(&src[0..32], [u8; 32]);
+
+    // All computation intrinsics are safe (Rust 1.93+):
+    let doubled = _mm256_add_epi8(v, v);
+    let shuffled = _mm256_shuffle_epi8(doubled, _mm256_setzero_si256());
+
+    // Store 32 bytes to slice — safe, bounds-checked:
+    store_256!(&mut dst[0..32], [u8; 32], shuffled);
+
+    // Or use typed array ref forms (no slice→array conversion):
+    let arr: &[u8; 32] = src[0..32].try_into().unwrap();
+    let v = loadu_256!(arr);
+    storeu_256!(<&mut [u8; 32]>::try_from(&mut dst[0..32]).unwrap(), v);
+}
+```
+
+**Why this works with `forbid(unsafe_code)`:**
+- `#[arcane]` (from archmage crate) handles `#[target_feature]` dispatch via tokens — no manual feature annotations needed
+- `load_256!`/`store_256!` expand to `safe_unaligned_simd` calls (safe, bounds-checked) when `unchecked` is off
+- Computation intrinsics (`_mm256_add_epi8`, `_mm256_shuffle_epi8`, etc.) are plain safe functions since Rust 1.93
+- Result: **zero `unsafe` blocks** in the SIMD function body
+
+**When `unchecked` is ON:** macros expand to `unsafe { _mm256_loadu_si256(ptr) }` with `debug_assert!` only — maximum perf, `deny(unsafe_code)` instead of `forbid`.
+
+**Load/Store macros (in `pixel_access.rs`):**
+
+| Macro | Width | Input | Description |
+|-------|-------|-------|-------------|
+| `loadu_256!(ref)` | 256 | `&[T; N]` | Load from typed array ref |
+| `storeu_256!(ref, v)` | 256 | `&mut [T; N]` | Store to typed array ref |
+| `load_256!(slice, T)` | 256 | `&[T]` | Load from slice (auto-converts to `&[T; N]`) |
+| `store_256!(slice, T, v)` | 256 | `&mut [T]` | Store to slice (auto-converts to `&mut [T; N]`) |
+| `loadu_128!` / `storeu_128!` | 128 | `&[T; N]` | SSE typed-ref variants |
+| `load_128!` / `store_128!` | 128 | `&[T]` | SSE from-slice variants |
+| `neon_ld1q_u8!` / `neon_st1q_u8!` | 128 | `&[u8; 16]` | aarch64 NEON u8 |
+| `neon_ld1q_u16!` / `neon_st1q_u16!` | 128 | `&[u16; 8]` | aarch64 NEON u16 |
+| `neon_ld1q_s16!` / `neon_st1q_s16!` | 128 | `&[i16; 8]` | aarch64 NEON i16 |
+
+**Slice access helpers (in `pixel_access.rs`):**
+
+| Helper | Description |
+|--------|-------------|
+| `row_slice(buf, off, len)` | Immutable `&[u8]` — unchecked when feature enabled |
+| `row_slice_mut(buf, off, len)` | Mutable `&mut [u8]` — unchecked when feature enabled |
+| `row_slice_u16(buf, off, len)` | Immutable `&[u16]` variant |
+| `row_slice_u16_mut(buf, off, len)` | Mutable `&mut [u16]` variant |
+| `idx(buf, i)` / `idx_mut(buf, i)` | Single element access |
+| `reinterpret_slice(src)` | Safe zerocopy type reinterpretation |
+
+**Migration checklist for converting a SIMD function to safe:**
+1. Change fn signature: raw pointers → slices (`*mut u8` → `&mut [u8]`)
+2. Add `#[arcane]` attribute, take `Desktop64` token param
+3. Replace `unsafe { _mm256_loadu_si256(ptr) }` → `load_256!(&slice[off..off+32], [u8; 32])`
+4. Replace `unsafe { _mm256_storeu_si256(ptr, v) }` → `store_256!(&mut slice[off..off+32], [u8; 32], v)`
+5. Remove `unsafe {}` blocks around computation intrinsics (they're safe since 1.93)
+6. Add `#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]` to module
+7. Gate FFI `extern "C"` wrappers behind `#[cfg(feature = "asm")]`
 
 **Unsafe reduction progress (safe_simd/):**
-- cdef.rs: Padding functions converted to safe DisjointMut slice access (top/bottom)
-- cdef_arm.rs: Same conversion for ARM NEON path
-- loopfilter.rs: Dispatch function fully safe (lvl + dst via slice access)
-- Remaining: Raw pointer pixel access in inner SIMD functions (mc, itx, ipred, etc.)
-  - SIMD intrinsics (`_mm256_storeu_si256` etc.) are inherently unsafe
-  - Inner functions take raw pointers; need signature changes to accept slices
-  - FFI wrappers in ipred/mc/itx not gated behind `feature = "asm"` (always compiled)
+- **itx.rs: ✅ FULLY SAFE when asm off** — all 85 #[arcane] fns converted from raw pointers to slices, 0 unsafe outside #[cfg(feature = "asm")] FFI wrappers
+- **filmgrain.rs: ✅ 0 allows** — all dispatch safe via zerocopy AsBytes/FromBytes
+- **pixel_access.rs: ✅ 0 allows** — SliceExt trait + FlexSlice zero-cost wrapper
+- **itx_arm.rs: ✅ 0 allows** — all FFI correctly gated behind asm
+- **ipred.rs: ✅ 0 allows** — all 28 inner SIMD fns converted to safe slices
+- **mc.rs: ✅ FULLY SAFE when asm off** — 29 rite fns converted from raw pointers to slices, 0 unsafe outside FFI wrappers
+- mc_arm.rs: 10 allows (FFI gated, inner fns use NEON intrinsics)
+- filmgrain_arm.rs: 8 allows (FFI gated, inner fns use NEON)
+- loopfilter_arm.rs: 3 allows
+- cdef.rs: 2 allows (test module calling #[target_feature] fns)
+- refmvs.rs/refmvs_arm.rs: 1 allow each
+- ipred_arm.rs: 1 allow
+- All safe_simd dispatch functions use tracked DisjointMut guards
+- Pixels trait gated behind cfg(asm) — dead code when asm disabled
 
 **c-ffi decoupled from fn-ptr dispatch.** The `c-ffi` feature now only controls the 19 `dav1d_*` extern "C" entry points in `src/lib.rs`. Internal DSP dispatch uses direct function calls (no function pointers) when `asm` is disabled.
 
@@ -171,7 +354,7 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 **Location:** `src/managed.rs` (~970 lines, 100% safe Rust)
 
-A fully safe, zero-copy API for decoding AV1 video. Enforced by `#![deny(unsafe_code)]`.
+A fully safe, zero-copy API for decoding AV1 video. Enforced by `#![forbid(unsafe_code)]`.
 
 **Key types:**
 - `Decoder` - safe wrapper around `Rav1dContext` (new/with_settings/decode/flush/drop)

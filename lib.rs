@@ -5,8 +5,11 @@
     feature(stdarch_riscv_feature_detection)
 )]
 // When neither `asm` nor `c-ffi` is enabled, deny unsafe code crate-wide.
-// Modules that encapsulate unsafe behind safe APIs get #[allow(unsafe_code)].
-// As modules are made fully safe, their #[allow] annotations should be removed.
+// Remaining #[allow(unsafe_code)] items (16 sound abstractions):
+//   safe_simd module: partial_simd.rs safety boundary (SIMD load/store wrappers)
+//   align.rs(4), assume.rs(1), c_arc.rs(3), c_box.rs(1), disjoint_mut.rs(1),
+//   internal.rs(4), msac.rs(2): Send/Sync impls, Pin, AlignedVec, unreachable_unchecked
+// 16 safe_simd sub-modules use forbid(unsafe_code) when asm off — compiler-enforced.
 #![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
 #![allow(clippy::all)]
@@ -30,7 +33,7 @@ pub mod include {
         pub(crate) mod intops;
         pub(crate) mod validate;
     } // mod common
-    #[allow(unsafe_code)]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub mod dav1d {
         pub mod common;
         pub mod data;
@@ -40,39 +43,40 @@ pub mod include {
     } // mod dav1d
 } // mod include
 pub mod src {
-    // === Modules with #[allow(unsafe_code)] ===
-    // These modules encapsulate unsafe behind safe APIs or contain
-    // fundamental primitives that require unsafe. Each should be
-    // audited and the allow removed as the code is made safe.
+    // === Module Safety Annotations ===
+    // Module-level #[allow(unsafe_code)] is used only when the entire module
+    // needs unsafe (SIMD intrinsics, pointer operations).
+    // For modules with isolated unsafe, item-level #[allow(unsafe_code)] is used
+    // on specific functions/impls instead, keeping the rest of the module deny'd.
+    // Conditional annotations (#[cfg_attr(feature = "c-ffi", allow(unsafe_code))])
+    // are used when unsafe is only needed for C FFI support.
 
     // Core primitives
-    #[allow(unsafe_code)]
     pub mod align;
-    #[allow(unsafe_code)]
     pub(crate) mod assume;
-    #[allow(unsafe_code)]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod c_arc;
-    #[allow(unsafe_code)]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod c_box;
     pub mod cpu;
-    #[allow(unsafe_code)]
     pub(crate) mod disjoint_mut;
-    #[allow(unsafe_code)]
     mod ffi_safe;
     mod in_range;
-    #[allow(unsafe_code)]
     pub(super) mod internal;
     mod intra_edge;
-    #[allow(unsafe_code)]
+    #[cfg_attr(not(feature = "c-ffi"), deny(unsafe_code))]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod log;
     pub(crate) mod pixels;
+    #[cfg(any(feature = "asm", feature = "c-ffi"))]
     #[allow(unsafe_code)]
     pub mod send_sync_non_null;
     mod tables;
 
     // Data/picture management
     mod data;
-    #[allow(unsafe_code)]
+    #[cfg_attr(not(feature = "c-ffi"), deny(unsafe_code))]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     mod picture;
 
     // DSP dispatch modules (contain _erased functions and fn ptr dispatch)
@@ -80,18 +84,17 @@ pub mod src {
     mod filmgrain;
     mod ipred;
     mod itx;
-    #[allow(unsafe_code)]
     mod lf_mask;
     mod loopfilter;
     mod looprestoration;
     mod mc;
     mod pal;
     mod recon;
-    #[allow(unsafe_code)]
+    #[cfg_attr(feature = "asm", allow(unsafe_code))]
     mod refmvs;
 
-    // Entropy coding (inline SIMD)
-    #[allow(unsafe_code)]
+    // Entropy coding (inline SIMD, safe on both x86_64 and aarch64 when asm off)
+    #[cfg_attr(feature = "asm", allow(unsafe_code))]
     mod msac;
 
     // Safe SIMD implementations
@@ -100,7 +103,8 @@ pub mod src {
     pub mod safe_simd;
 
     // C API entry point
-    #[allow(unsafe_code)]
+    #[cfg_attr(not(feature = "c-ffi"), deny(unsafe_code))]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub mod lib;
 
     // === Modules WITHOUT unsafe_code (enforced by deny) ===
@@ -123,7 +127,7 @@ pub mod src {
     pub(crate) mod levels;
     mod lf_apply;
     mod lr_apply;
-    mod mem;
+    pub(crate) mod mem;
     mod obu;
     pub(crate) mod pic_or_buf;
     mod qm;
@@ -147,3 +151,11 @@ pub mod src {
 } // mod src
 
 pub use src::error::Dav1dResult;
+
+// Re-export the managed API at the crate root for convenience.
+// Users can write `rav1d_safe::Decoder` instead of `rav1d_safe::src::managed::Decoder`.
+pub use src::managed::{
+    enabled_features, ColorInfo, ColorPrimaries, ColorRange, ContentLightLevel, DecodeFrameType,
+    Decoder, Error, Frame, InloopFilters, MasteringDisplay, MatrixCoefficients, PixelLayout,
+    PlaneView16, PlaneView8, Planes, Planes16, Planes8, Settings, TransferCharacteristics,
+};

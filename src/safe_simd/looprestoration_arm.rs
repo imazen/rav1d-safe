@@ -2,6 +2,8 @@
 //!
 //! Wiener filter and SGR (Self-Guided Restoration) implementations for ARM.
 
+#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
 
@@ -24,6 +26,7 @@ use crate::src::align::AlignedVec64;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::looprestoration::{padding, LooprestorationParams, LrEdgeFlags};
+#[cfg(feature = "asm")]
 use crate::src::pixels::Pixels;
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_sgr_x_by_x;

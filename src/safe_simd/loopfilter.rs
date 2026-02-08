@@ -14,8 +14,12 @@
 //! is in `loopfilter_sb_dispatch` where raw pointers from PicOffset/DisjointMut
 //! are converted to slices. All inner functions are fully safe.
 
+#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
 #![allow(unused_imports)]
 
+#[cfg(target_arch = "x86_64")]
+use archmage::{Desktop64, SimdToken};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
@@ -268,9 +272,10 @@ fn loop_filter_4_8bpc(
 
 /// Read level value from lvl slice at the given offset.
 /// Each entry is [u8; 4], we read the first byte.
+/// Returns 0 for out-of-bounds access (= no filtering for that block).
 #[inline(always)]
 fn read_lvl(lvl: &[[u8; 4]], offset: usize) -> u8 {
-    lvl[offset][0]
+    lvl.get(offset).map_or(0, |v| v[0])
 }
 
 /// Loop filter for Y plane, horizontal edges (8bpc)
@@ -1330,33 +1335,64 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     is_v: bool,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use crate::src::cpu::CpuFlags;
 
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(_token) = Desktop64::summon() else { return false };
 
     assert!(lvl.offset <= lvl.data.len());
 
     // Safe slice access for lvl data: reinterpret u8 data as &[[u8; 4]] entries
+    // Note: lvl.offset is a BYTE offset (not element offset), so we use .index()
+    // with a byte range and then cast via zerocopy, since slice_as() would
+    // incorrectly multiply the offset by sizeof([u8; 4]).
     let lvl_remaining_bytes = lvl.data.len() - lvl.offset;
     let lvl_len = lvl_remaining_bytes / 4;
-    let lvl_guard = lvl.data.slice_as::<_, [u8; 4]>((lvl.offset.., ..lvl_len));
-    let lvl_slice: &[[u8; 4]] = &lvl_guard;
+    let lvl_byte_end = lvl.offset + lvl_len * 4;
+    let lvl_byte_guard = lvl.data.index(lvl.offset..lvl_byte_end);
+    let lvl_slice: &[[u8; 4]] = zerocopy::FromBytes::slice_from(&*lvl_byte_guard).unwrap();
+
+    // Compute actual iterations from vmask to tighten bounds check.
+    // Each bit in vmask represents a 4-pixel edge. The highest set bit
+    // determines the maximum forward reach, which is much less than 128
+    // for SBs near image edges.
+    let vm = mask[0] | mask[1] | mask[2];
+    if vm == 0 {
+        return true; // Nothing to filter
+    }
+    let max_iter = 32 - vm.leading_zeros() as usize;
 
     match BD::BPC {
         BPC::BPC8 => {
             use crate::include::common::bitdepth::BitDepth8;
 
             // For 8bpc, the stride is in bytes (= pixels).
-            // The filter accesses pixels at offsets from -7*stride to well beyond the base.
             let byte_stride = stride.unsigned_abs() as usize;
-            let reach_before = 7 * byte_stride + 7;
-            let reach_after = 128 * byte_stride + 7;
+
+            // Compute reach based on filter direction and actual vmask extent.
+            // H filter (is_v=false): iterates rows (stridea=stride), pixel access (strideb=1)
+            //   forward: last group at (max_iter-1)*4*stride, +3 lines, +16 pixels
+            //   backward: 7 pixels horizontally
+            // V filter (is_v=true): iterates columns (stridea=1), row access (strideb=stride)
+            //   forward: (max_iter*4-1) columns + 16*stride rows
+            //   backward: 7*stride rows
+            let (reach_before, reach_after) = if !is_v {
+                // H filter: iterates through row groups
+                (7, (max_iter * 4 - 1) * byte_stride + 16)
+            } else {
+                // V filter: iterates through column groups
+                (7 * byte_stride, max_iter * 4 - 1 + 16 * byte_stride)
+            };
+
+            // Guard: fall back to scalar if buffer bounds are insufficient.
+            let buf_pixel_len = dst.data.pixel_len::<BitDepth8>();
+            if dst.offset < reach_before
+                || dst.offset.saturating_add(reach_after) > buf_pixel_len
+            {
+                return false;
+            }
 
             // Safe slice access: get a mutable guard covering the full filter reach
-            let start_pixel = dst.offset.wrapping_sub(reach_before);
-            let total_pixels = reach_before + reach_after;
+            let start_pixel = dst.offset - reach_before;
+            let total_pixels = (reach_before + reach_after).min(buf_pixel_len - start_pixel);
             let mut buf_guard = dst
                 .data
                 .slice_mut::<BitDepth8, _>((start_pixel.., ..total_pixels));
@@ -1414,12 +1450,27 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             use crate::include::common::bitdepth::BitDepth16;
 
             let u16_stride = (stride / 2).unsigned_abs() as usize;
-            let reach_before = 7 * u16_stride + 7;
-            let reach_after = 128 * u16_stride + 7;
+
+            // Compute reach based on filter direction and actual vmask extent
+            let (reach_before, reach_after) = if !is_v {
+                // H filter: iterates through row groups
+                (7, (max_iter * 4 - 1) * u16_stride + 16)
+            } else {
+                // V filter: iterates through column groups
+                (7 * u16_stride, max_iter * 4 - 1 + 16 * u16_stride)
+            };
+
+            // Guard: fall back to scalar if buffer bounds are insufficient.
+            let buf_pixel_len = dst.data.pixel_len::<BitDepth16>();
+            if dst.offset < reach_before
+                || dst.offset.saturating_add(reach_after) > buf_pixel_len
+            {
+                return false;
+            }
 
             // Safe slice access: get a mutable guard covering the full filter reach
-            let start_pixel = dst.offset.wrapping_sub(reach_before);
-            let total_pixels = reach_before + reach_after;
+            let start_pixel = dst.offset - reach_before;
+            let total_pixels = (reach_before + reach_after).min(buf_pixel_len - start_pixel);
             let mut buf_guard = dst
                 .data
                 .slice_mut::<BitDepth16, _>((start_pixel.., ..total_pixels));

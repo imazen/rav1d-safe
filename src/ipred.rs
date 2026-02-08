@@ -116,7 +116,7 @@ fn intra_pred_direct<BD: BitDepth>(
         return;
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(feature = "asm", target_arch = "aarch64"))]
     if crate::src::safe_simd::ipred_arm::intra_pred_dispatch::<BD>(
         mode,
         dst,

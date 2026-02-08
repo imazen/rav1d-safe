@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 use strum::EnumCount;
 
 use crate::src::const_fn::const_for;

@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 //! The [`CaseSet`] API below is a safe and simplified version of the `case_set*` macros in `ctx.h`.
 //!
 //! The `case_set*` macros themselves replaced `memset`s in order to further optimize them

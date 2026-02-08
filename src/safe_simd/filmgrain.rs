@@ -1,5 +1,7 @@
 //! Safe SIMD implementations of film grain synthesis functions
 #![allow(deprecated)] // FFI wrappers need to forge tokens
+#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
 //!
 //! Film grain synthesis adds artificial grain to decoded video to match
 //! the artistic intent of the original content.
@@ -14,6 +16,9 @@
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
+
+#[cfg(target_arch = "x86_64")]
+use crate::src::safe_simd::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256, Flex};
 
 use std::cmp;
 use std::ffi::c_int;
@@ -414,7 +419,10 @@ fn fgy_row_simd_8bpc_safe(
     min_value: i32,
     max_value: i32,
 ) {
-    use safe_unaligned_simd::x86_64 as safe_simd;
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
+    let grain_row = grain_row.flex();
     let zero = _mm256_setzero_si256();
 
     // Process aligned 32-pixel chunks
@@ -422,7 +430,7 @@ fn fgy_row_simd_8bpc_safe(
     while x + 32 <= bw {
         // Load 32 source pixels
         let src_arr: &[u8; 32] = src[x..x + 32].try_into().unwrap();
-        let src_vec = safe_simd::_mm256_loadu_si256(src_arr);
+        let src_vec = loadu_256!(src_arr);
         let src_lo = _mm256_unpacklo_epi8(src_vec, zero);
         let src_hi = _mm256_unpackhi_epi8(src_vec, zero);
 
@@ -447,15 +455,15 @@ fn fgy_row_simd_8bpc_safe(
             sc_hi_bytes[16 + i * 2] = scaling[src[x + 24 + i] as usize];
         }
 
-        let sc_lo = safe_simd::_mm256_loadu_si256(&sc_lo_bytes);
-        let sc_hi = safe_simd::_mm256_loadu_si256(&sc_hi_bytes);
+        let sc_lo = loadu_256!(&sc_lo_bytes);
+        let sc_hi = loadu_256!(&sc_hi_bytes);
 
         // Load 32 grain values as bytes for SIMD
         let mut grain_bytes = [0u8; 32];
         for i in 0..32 {
             grain_bytes[i] = grain_row[x + i] as u8;
         }
-        let grain_vec = safe_simd::_mm256_loadu_si256(&grain_bytes);
+        let grain_vec = loadu_256!(&grain_bytes);
         let grain_lo = _mm256_unpacklo_epi8(grain_vec, zero);
         let grain_hi = _mm256_unpackhi_epi8(grain_vec, zero);
 
@@ -470,14 +478,14 @@ fn fgy_row_simd_8bpc_safe(
         let result = _mm256_min_epu8(result, max_vec);
 
         let dst_arr: &mut [u8; 32] = (&mut dst[x..x + 32]).try_into().unwrap();
-        safe_simd::_mm256_storeu_si256(dst_arr, result);
+        storeu_256!(dst_arr, result);
         x += 32;
     }
 
     // Process remaining 16-pixel chunk if present
     if x + 16 <= bw {
         let src_arr: &[u8; 16] = src[x..x + 16].try_into().unwrap();
-        let src_vec = safe_simd::_mm_loadu_si128(src_arr);
+        let src_vec = loadu_128!(src_arr);
         let src_lo = _mm256_cvtepu8_epi16(src_vec);
 
         let mut sc_bytes = [0u8; 32];
@@ -488,13 +496,13 @@ fn fgy_row_simd_8bpc_safe(
             sc_bytes[16 + i * 2] = scaling[src[x + 8 + i] as usize];
         }
 
-        let sc_vec = safe_simd::_mm256_loadu_si256(&sc_bytes);
+        let sc_vec = loadu_256!(&sc_bytes);
 
         let mut grain_16 = [0u8; 16];
         for i in 0..16 {
             grain_16[i] = grain_row[x + i] as u8;
         }
-        let grain_128 = safe_simd::_mm_loadu_si128(&grain_16);
+        let grain_128 = loadu_128!(&grain_16);
         let grain_interleaved = _mm256_unpacklo_epi8(_mm256_castsi128_si256(grain_128), zero);
         let grain_128_hi = _mm_srli_si128::<8>(grain_128);
         let grain_interleaved_hi = _mm256_unpacklo_epi8(_mm256_castsi128_si256(grain_128_hi), zero);
@@ -516,7 +524,7 @@ fn fgy_row_simd_8bpc_safe(
         let combined = _mm_min_epu8(combined, _mm256_castsi256_si128(max_vec));
 
         let dst_arr: &mut [u8; 16] = (&mut dst[x..x + 16]).try_into().unwrap();
-        safe_simd::_mm_storeu_si128(dst_arr, combined);
+        storeu_128!(dst_arr, combined);
         x += 16;
     }
 
@@ -1717,6 +1725,9 @@ fn fgy_inner_8bpc(
     bh: usize,
     row_num: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
     let rows = 1 + (data.overlap_flag && row_num > 0) as usize;
     let scaling_shift = data.scaling_shift;
 
@@ -1797,7 +1808,7 @@ fn fgy_inner_8bpc(
                 token,
                 &mut dst[base..base + bw],
                 &src[base..base + bw],
-                scaling,
+                &*scaling,
                 &grain_lut[offy + y][offx..offx + bw],
                 bw,
                 xstart,
@@ -1863,7 +1874,9 @@ fn fgy_inner_16bpc(
     row_num: usize,
     bitdepth_max: i32,
 ) {
-    use safe_unaligned_simd::x86_64 as safe_simd;
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
 
     let bitdepth_min_8 = if bitdepth_max >= 4095 { 4u8 } else { 2u8 };
     let grain_ctr = 128i32 << bitdepth_min_8;
@@ -1942,7 +1955,7 @@ fn fgy_inner_16bpc(
             let mut x = xstart;
             while x + 16 <= bw {
                 let src_chunk: &[u16; 16] = src[base + x..base + x + 16].try_into().unwrap();
-                let src_vec = safe_simd::_mm256_loadu_si256(src_chunk);
+                let src_vec = loadu_256!(src_chunk);
 
                 let mut noise_vals = [0i16; 16];
                 for i in 0..16 {
@@ -1952,13 +1965,13 @@ fn fgy_inner_16bpc(
                     noise_vals[i] = round2(sc * grain, scaling_shift) as i16;
                 }
 
-                let noise = safe_simd::_mm256_loadu_si256(&noise_vals);
+                let noise = loadu_256!(&noise_vals);
                 let result = _mm256_add_epi16(src_vec, noise);
                 let result = _mm256_max_epi16(result, min_vec);
                 let result = _mm256_min_epi16(result, max_vec);
                 let dst_chunk: &mut [u16; 16] =
                     (&mut dst[base + x..base + x + 16]).try_into().unwrap();
-                safe_simd::_mm256_storeu_si256(dst_chunk, result);
+                storeu_256!(dst_chunk, result);
                 x += 16;
             }
 
@@ -2054,7 +2067,10 @@ fn fguv_inner_safe_8bpc(
     is_sx: bool,
     is_sy: bool,
 ) {
-    use safe_unaligned_simd::x86_64 as safe_simd;
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
+    let luma = luma.flex();
 
     let uv = is_uv as usize;
     let sx = is_sx as usize;
@@ -2153,7 +2169,7 @@ fn fguv_inner_safe_8bpc(
             let mut x = xstart;
             while x + 32 <= bw {
                 let src_arr: &[u8; 32] = src[base + x..base + x + 32].try_into().unwrap();
-                let src_vec = safe_simd::_mm256_loadu_si256(src_arr);
+                let src_vec = loadu_256!(src_arr);
                 let src_lo = _mm256_unpacklo_epi8(src_vec, zero);
                 let src_hi = _mm256_unpackhi_epi8(src_vec, zero);
 
@@ -2163,56 +2179,56 @@ fn fguv_inner_safe_8bpc(
                 for i in 0..8 {
                     sc_lo_bytes[i * 2] = compute_uv_scaling_val_safe(
                         src[base + x + i],
-                        luma,
+                        &*luma,
                         luma_base + ((x + i) << sx),
                         is_sx,
                         data,
                         uv,
-                        scaling,
+                        &*scaling,
                     );
                 }
                 for i in 0..8 {
                     sc_lo_bytes[16 + i * 2] = compute_uv_scaling_val_safe(
                         src[base + x + 16 + i],
-                        luma,
+                        &*luma,
                         luma_base + ((x + 16 + i) << sx),
                         is_sx,
                         data,
                         uv,
-                        scaling,
+                        &*scaling,
                     );
                 }
                 for i in 0..8 {
                     sc_hi_bytes[i * 2] = compute_uv_scaling_val_safe(
                         src[base + x + 8 + i],
-                        luma,
+                        &*luma,
                         luma_base + ((x + 8 + i) << sx),
                         is_sx,
                         data,
                         uv,
-                        scaling,
+                        &*scaling,
                     );
                 }
                 for i in 0..8 {
                     sc_hi_bytes[16 + i * 2] = compute_uv_scaling_val_safe(
                         src[base + x + 24 + i],
-                        luma,
+                        &*luma,
                         luma_base + ((x + 24 + i) << sx),
                         is_sx,
                         data,
                         uv,
-                        scaling,
+                        &*scaling,
                     );
                 }
 
-                let sc_lo = safe_simd::_mm256_loadu_si256(&sc_lo_bytes);
-                let sc_hi = safe_simd::_mm256_loadu_si256(&sc_hi_bytes);
+                let sc_lo = loadu_256!(&sc_lo_bytes);
+                let sc_hi = loadu_256!(&sc_hi_bytes);
 
                 let mut grain_bytes = [0u8; 32];
                 for i in 0..32 {
                     grain_bytes[i] = grain_lut[offy + y][offx + x + i] as u8;
                 }
-                let grain_vec = safe_simd::_mm256_loadu_si256(&grain_bytes);
+                let grain_vec = loadu_256!(&grain_bytes);
                 let grain_lo = _mm256_unpacklo_epi8(grain_vec, zero);
                 let grain_hi = _mm256_unpackhi_epi8(grain_vec, zero);
 
@@ -2229,7 +2245,7 @@ fn fguv_inner_safe_8bpc(
 
                 let dst_arr: &mut [u8; 32] =
                     (&mut dst[base + x..base + x + 32]).try_into().unwrap();
-                safe_simd::_mm256_storeu_si256(dst_arr, result);
+                storeu_256!(dst_arr, result);
                 x += 32;
             }
 
@@ -2296,6 +2312,10 @@ fn fguv_inner_safe_16bpc(
     is_sy: bool,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
+    let luma = luma.flex();
     let uv = is_uv as usize;
     let sx = is_sx as usize;
     let sy = is_sy as usize;
@@ -2434,7 +2454,6 @@ fn fguv_inner_safe_16bpc(
 use crate::include::common::bitdepth::{BitDepth, BPC};
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
-use crate::src::cpu::CpuFlags;
 use crate::src::strided::Strided as _;
 
 /// Safe dispatch for generate_grain_y (x86_64 AVX2).
@@ -2445,21 +2464,17 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
     data: &Rav1dFilmGrainData,
     bd: BD,
 ) -> bool {
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
-    // Call inner functions directly, bypassing FFI wrappers.
-    unsafe {
-        match BD::BPC {
-            BPC::BPC8 => {
-                let buf = &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i8>);
-                generate_grain_y_inner_8bpc(buf, data);
-            }
-            BPC::BPC16 => {
-                let buf = &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i16>);
-                let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
-                generate_grain_y_inner_16bpc(buf, data, bitdepth);
-            }
+    let Some(_token) = Desktop64::summon() else { return false };
+    use zerocopy::{AsBytes, FromBytes};
+    match BD::BPC {
+        BPC::BPC8 => {
+            let buf: &mut GrainLut<i8> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            generate_grain_y_inner_8bpc(buf, data);
+        }
+        BPC::BPC16 => {
+            let buf: &mut GrainLut<i16> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
+            generate_grain_y_inner_16bpc(buf, data, bitdepth);
         }
     }
     true
@@ -2476,28 +2491,24 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     is_uv: bool,
     bd: BD,
 ) -> bool {
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
-    // Call inner functions directly, bypassing FFI wrappers.
+    let Some(_token) = Desktop64::summon() else { return false };
     let (is_subx, is_suby) = match layout {
         Rav1dPixelLayoutSubSampled::I420 => (true, true),
         Rav1dPixelLayoutSubSampled::I422 => (true, false),
         Rav1dPixelLayoutSubSampled::I444 => (false, false),
     };
-    unsafe {
-        match BD::BPC {
-            BPC::BPC8 => {
-                let buf = &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i8>);
-                let buf_y = &*(buf_y as *const GrainLut<BD::Entry> as *const GrainLut<i8>);
-                generate_grain_uv_inner_8bpc(buf, buf_y, data, is_uv, is_subx, is_suby);
-            }
-            BPC::BPC16 => {
-                let buf = &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i16>);
-                let buf_y = &*(buf_y as *const GrainLut<BD::Entry> as *const GrainLut<i16>);
-                let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
-                generate_grain_uv_inner_16bpc(buf, buf_y, data, is_uv, is_subx, is_suby, bitdepth);
-            }
+    use zerocopy::{AsBytes, FromBytes};
+    match BD::BPC {
+        BPC::BPC8 => {
+            let buf: &mut GrainLut<i8> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let buf_y: &GrainLut<i8> = FromBytes::ref_from(buf_y.as_bytes()).unwrap();
+            generate_grain_uv_inner_8bpc(buf, buf_y, data, is_uv, is_subx, is_suby);
+        }
+        BPC::BPC16 => {
+            let buf: &mut GrainLut<i16> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let buf_y: &GrainLut<i16> = FromBytes::ref_from(buf_y.as_bytes()).unwrap();
+            let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
+            generate_grain_uv_inner_16bpc(buf, buf_y, data, is_uv, is_subx, is_suby, bitdepth);
         }
     }
     true
@@ -2517,13 +2528,8 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     row_num: usize,
     bd: BD,
 ) -> bool {
-    let token = match Desktop64::summon() {
-        Some(t) => t,
-        None => return false,
-    };
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    use zerocopy::AsBytes;
+    let Some(token) = Desktop64::summon() else { return false };
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
     let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
@@ -2537,15 +2543,7 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
         0
     };
 
-    // Convert grain_lut bytes for safe reinterpretation.
-    // SAFETY: BD::Entry is i8 (8bpc) or i16 (16bpc), both POD types with same layout as u8/u16.
-    // This is the one remaining unsafe: creating a byte view of the generic grain_lut.
-    let grain_lut_bytes: &[u8] = unsafe {
-        std::slice::from_raw_parts(
-            grain_lut as *const _ as *const u8,
-            std::mem::size_of_val(grain_lut),
-        )
-    };
+    let grain_lut_bytes: &[u8] = grain_lut.as_bytes();
 
     match BD::BPC {
         BPC::BPC8 => {
@@ -2623,13 +2621,8 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     is_id: bool,
     bd: BD,
 ) -> bool {
-    let token = match Desktop64::summon() {
-        Some(t) => t,
-        None => return false,
-    };
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    use zerocopy::AsBytes;
+    let Some(token) = Desktop64::summon() else { return false };
     let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
     let (is_sx, is_sy) = match layout {
         Rav1dPixelLayoutSubSampled::I420 => (true, true),
@@ -2661,13 +2654,7 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
         0
     };
 
-    // SAFETY: grain_lut byte view for reinterpretation
-    let grain_lut_bytes: &[u8] = unsafe {
-        std::slice::from_raw_parts(
-            grain_lut as *const _ as *const u8,
-            std::mem::size_of_val(grain_lut),
-        )
-    };
+    let grain_lut_bytes: &[u8] = grain_lut.as_bytes();
 
     match BD::BPC {
         BPC::BPC8 => {

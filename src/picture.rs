@@ -12,11 +12,14 @@ use crate::include::dav1d::headers::Rav1dITUTT35;
 use crate::include::dav1d::headers::Rav1dMasteringDisplay;
 use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::include::dav1d::headers::Rav1dSequenceHeader;
+#[cfg(feature = "c-ffi")]
 use crate::include::dav1d::picture::Dav1dPicture;
 use crate::include::dav1d::picture::Rav1dPicAllocator;
 use crate::include::dav1d::picture::Rav1dPicture;
 use crate::include::dav1d::picture::Rav1dPictureParameters;
+#[cfg(feature = "c-ffi")]
 use crate::include::dav1d::picture::RAV1D_PICTURE_ALIGNMENT;
+#[cfg(feature = "c-ffi")]
 use crate::src::error::Dav1dResult;
 use crate::src::error::Rav1dError::EGeneric;
 use crate::src::error::Rav1dResult;
@@ -24,19 +27,28 @@ use crate::src::internal::Rav1dFrameContext;
 use crate::src::internal::Rav1dFrameData;
 use crate::src::log::Rav1dLog as _;
 use crate::src::log::Rav1dLogger;
+#[cfg(feature = "c-ffi")]
 use crate::src::mem::MemPool;
+#[cfg(feature = "c-ffi")]
 use crate::src::send_sync_non_null::SendSyncNonNull;
 use bitflags::bitflags;
+#[cfg(feature = "c-ffi")]
 use libc::ptrdiff_t;
 use parking_lot::Mutex;
 use std::ffi::c_int;
+#[cfg(feature = "c-ffi")]
 use std::ffi::c_void;
+#[cfg(feature = "c-ffi")]
 use std::mem;
+#[cfg(feature = "c-ffi")]
 use std::ptr;
+#[cfg(feature = "c-ffi")]
 use std::ptr::fn_addr_eq;
+#[cfg(feature = "c-ffi")]
 use std::ptr::NonNull;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
+#[cfg(feature = "c-ffi")]
 use to_method::To as _;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -74,6 +86,7 @@ pub(crate) struct Rav1dThreadPicture {
     pub progress: Option<Arc<[AtomicU32; 2]>>,
 }
 
+#[cfg(feature = "c-ffi")]
 struct MemPoolBuf<T> {
     /// This is an [`Arc`] because a [`Rav1dPicture`] can outlive
     /// its [`Rav1dContext`], and that's how the API was designed.
@@ -100,6 +113,7 @@ impl Rav1dPictureParameters {
 ///
 /// * `p_c` must be from a `&mut Dav1dPicture`.
 /// * `cookie` must be from a `&Arc<MemPool<u8>>`.
+#[cfg(feature = "c-ffi")]
 unsafe extern "C" fn dav1d_default_picture_alloc(
     p_c: *mut Dav1dPicture,
     cookie: Option<SendSyncNonNull<c_void>>,
@@ -128,7 +142,7 @@ unsafe extern "C" fn dav1d_default_picture_alloc(
     let pool = pool.clone();
     let pic_cap = pic_size + RAV1D_PICTURE_ALIGNMENT;
     // TODO fallible allocation
-    let buf = pool.pop_init(pic_cap, 0);
+    let buf = pool.pop_init(pic_cap, 0).expect("picture allocation failed");
     // We have to `Box` this because `Dav1dPicture::allocator_data` is only 8 bytes.
     let mut buf = Box::new(MemPoolBuf { pool, buf });
     let data = &mut buf.buf[..pic_cap];
@@ -164,6 +178,7 @@ unsafe extern "C" fn dav1d_default_picture_alloc(
 /// # Safety
 ///
 /// * `p` is from a `&mut Dav1dPicture` initialized by [`dav1d_default_picture_alloc`].
+#[cfg(feature = "c-ffi")]
 unsafe extern "C" fn dav1d_default_picture_release(
     p: *mut Dav1dPicture,
     _cookie: Option<SendSyncNonNull<c_void>>,
@@ -178,6 +193,7 @@ unsafe extern "C" fn dav1d_default_picture_release(
     pool.push(buf);
 }
 
+#[cfg(feature = "c-ffi")]
 impl Default for Rav1dPicAllocator {
     fn default() -> Self {
         Self {
@@ -195,6 +211,16 @@ impl Default for Rav1dPicAllocator {
     }
 }
 
+#[cfg(not(feature = "c-ffi"))]
+impl Default for Rav1dPicAllocator {
+    fn default() -> Self {
+        Self {
+            pool: Default::default(),
+        }
+    }
+}
+
+#[cfg(feature = "c-ffi")]
 impl Rav1dPicAllocator {
     pub fn is_default(&self) -> bool {
         let alloc = fn_addr_eq(

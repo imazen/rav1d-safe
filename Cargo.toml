@@ -1,5 +1,5 @@
 [workspace]
-members = ["."]
+members = [".", "crates/disjoint-mut"]
 
 [package]
 name = "rav1d-safe"
@@ -8,7 +8,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
 description = "Safe SIMD fork of rav1d - Rust AV1 decoder with archmage intrinsics"
-license = "BSD-2-Clause"
+license = "AGPL-3.0-or-later"
 repository = "https://github.com/imazen/rav1d-safe"
 exclude = ["*.c", "*.h", "*.in", "meson*", "tests/", "doc/", "package/"]
 
@@ -21,6 +21,7 @@ assert_matches = "1.5.0"
 atomig = { version = "0.4.0", features = ["derive"] }
 bitflags = "2.4.0"
 cfg-if = "1.0.0"
+disjoint-mut = { path = "crates/disjoint-mut", default-features = false }
 libc = "0.2"
 parking_lot = "0.12.2"
 paste = "1.0.14"
@@ -46,7 +47,8 @@ default = ["bitdepth_8", "bitdepth_16"]
 quite-safe = []
 
 # Level 2: Unchecked slice access in hot paths (get_unchecked with debug_assert!)
-unchecked = ["quite-safe"]
+# Also disables DisjointMut runtime overlap checking.
+unchecked = ["quite-safe", "disjoint-mut/unchecked"]
 
 # Level 3: C FFI API compatibility (unsafe extern "C" functions)
 # Enables: dav1d_* C API, FFISafe, c_arc, c_box

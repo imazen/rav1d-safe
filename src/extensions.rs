@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 pub trait OptionError<E> {
     fn err_or<T>(self, ok: T) -> Result<T, E>;
 }

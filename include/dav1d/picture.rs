@@ -1,7 +1,10 @@
 #![deny(unsafe_op_in_unsafe_fn)]
+#![allow(unsafe_code)]
 
 use crate::include::common::bitdepth::BitDepth;
+#[cfg(feature = "c-ffi")]
 use crate::include::common::validate::validate_input;
+#[cfg(feature = "c-ffi")]
 use crate::include::dav1d::common::Dav1dDataProps;
 use crate::include::dav1d::common::Rav1dDataProps;
 use crate::include::dav1d::headers::DRav1d;
@@ -16,28 +19,38 @@ use crate::include::dav1d::headers::Rav1dMasteringDisplay;
 use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::include::dav1d::headers::Rav1dSequenceHeader;
 use crate::src::assume::assume;
+#[cfg(feature = "c-ffi")]
 use crate::src::c_arc::RawArc;
-use crate::src::disjoint_mut::AsMutPtr;
+use crate::src::disjoint_mut::ExternalAsMutPtr;
 use crate::src::disjoint_mut::DisjointImmutGuard;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::disjoint_mut::DisjointMutGuard;
 use crate::src::disjoint_mut::SliceBounds;
+#[cfg(feature = "c-ffi")]
 use crate::src::error::Dav1dResult;
 use crate::src::error::Rav1dError;
+#[cfg(feature = "c-ffi")]
 use crate::src::error::Rav1dError::EINVAL;
 use crate::src::error::Rav1dResult;
+#[cfg(feature = "asm")]
 use crate::src::pixels::Pixels;
+#[cfg(feature = "c-ffi")]
 use crate::src::send_sync_non_null::SendSyncNonNull;
+#[cfg(not(feature = "c-ffi"))]
+use crate::src::mem::MemPool;
 use crate::src::strided::Strided;
 use crate::src::with_offset::WithOffset;
 use libc::ptrdiff_t;
+#[cfg(feature = "c-ffi")]
 use libc::uintptr_t;
 use std::array;
 use std::ffi::c_int;
+#[cfg(feature = "c-ffi")]
 use std::ffi::c_void;
 use std::mem;
 use std::ptr::NonNull;
 use std::sync::Arc;
+#[cfg(feature = "c-ffi")]
 use to_method::To as _;
 use zerocopy::AsBytes;
 use zerocopy::FromBytes;
@@ -89,6 +102,7 @@ impl From<Rav1dPictureParameters> for Dav1dPictureParameters {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 #[derive(Default)]
 #[repr(C)]
 pub struct Dav1dPicture {
@@ -151,6 +165,7 @@ impl Rav1dPictureDataComponentInner {
     /// # Safety
     ///
     /// `ptr`, `len`, and `stride` must follow the requirements of [`Dav1dPicAllocator::alloc_picture_callback`].
+    #[cfg(feature = "c-ffi")]
     unsafe fn new(ptr: Option<NonNull<u8>>, len: usize, stride: isize) -> Self {
         let ptr = match ptr {
             None => {
@@ -183,6 +198,27 @@ impl Rav1dPictureDataComponentInner {
         Self { ptr, len, stride }
     }
 
+    /// Safe constructor: creates a component pointing into an owned `Vec<u8>` buffer.
+    /// The Vec must have enough capacity for alignment padding + `usable_len`.
+    /// Vec heap data is stable across moves, so the pointer remains valid.
+    #[cfg(not(feature = "c-ffi"))]
+    fn new_from_vec(buf: &mut Vec<u8>, usable_len: usize, stride: isize) -> Self {
+        if usable_len == 0 {
+            return Self {
+                ptr: NonNull::<AlignedPixelChunk>::dangling().cast(),
+                len: 0,
+                stride,
+            };
+        }
+        let align_offset = buf.as_ptr().align_offset(RAV1D_PICTURE_ALIGNMENT);
+        assert!(align_offset + usable_len <= buf.len());
+        // Vec data lives on the heap; moving the Vec doesn't invalidate this pointer.
+        let ptr = NonNull::new(buf.as_mut_ptr().wrapping_add(align_offset)).unwrap();
+        assert!(ptr.cast::<AlignedPixelChunk>().is_aligned());
+        assert!(usable_len % RAV1D_PICTURE_MULTIPLE == 0);
+        Self { ptr, len: usable_len, stride }
+    }
+
     /// # Safety
     ///
     /// As opposed to [`Self::new`], this is safe because `buf` is a `&mut` and thus unique,
@@ -199,7 +235,7 @@ impl Rav1dPictureDataComponentInner {
 }
 
 // SAFETY: We only store the raw pointer, so we never materialize a `&mut`.
-unsafe impl AsMutPtr for Rav1dPictureDataComponentInner {
+unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
     type Target = u8;
 
     #[inline] // Inline so callers can see the assume.
@@ -227,6 +263,7 @@ unsafe impl AsMutPtr for Rav1dPictureDataComponentInner {
 
 pub struct Rav1dPictureDataComponent(DisjointMut<Rav1dPictureDataComponentInner>);
 
+#[cfg(feature = "asm")]
 impl Pixels for Rav1dPictureDataComponent {
     fn byte_len(&self) -> usize {
         self.0.len()
@@ -245,10 +282,25 @@ impl Strided for Rav1dPictureDataComponent {
 }
 
 impl Rav1dPictureDataComponent {
+    /// Length in number of bytes.
+    pub fn byte_len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Determine if two components reference the same underlying data.
+    pub fn ref_eq(&self, other: &Self) -> bool {
+        self.0.as_mut_ptr() == other.0.as_mut_ptr()
+    }
+
     pub fn wrap_buf<BD: BitDepth>(buf: &mut [BD::Pixel], stride: usize) -> Self {
         Self(DisjointMut::new(
             Rav1dPictureDataComponentInner::wrap_buf::<BD>(buf, stride),
         ))
+    }
+
+    /// Length in number of [`BitDepth::Pixel`]s.
+    pub fn pixel_len<BD: BitDepth>(&self) -> usize {
+        self.0.len() / mem::size_of::<BD::Pixel>()
     }
 
     pub fn pixel_offset<BD: BitDepth>(&self) -> usize {
@@ -292,6 +344,7 @@ impl Rav1dPictureDataComponent {
         self.as_strided_mut_ptr::<BD>().cast_const()
     }
 
+    #[cfg(feature = "c-ffi")]
     fn as_dav1d(&self) -> Option<NonNull<c_void>> {
         if self.byte_len() == 0 {
             None
@@ -387,14 +440,114 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     ) -> DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]> {
         self.data.slice_mut::<BD, _>((self.offset.., ..len))
     }
+
+    /// Create a tracked mutable guard covering a strided w×h pixel region.
+    ///
+    /// Handles both positive and negative strides. The returned guard covers
+    /// all pixels that would be accessed by iterating h rows with the given
+    /// pixel stride, each row being w pixels wide.
+    ///
+    /// Returns `(guard, base_offset_within_guard)` where `base_offset_within_guard`
+    /// is the index within the guard's slice that corresponds to `self.offset`.
+    #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn strided_slice_mut<BD: BitDepth>(
+        &self,
+        w: usize,
+        h: usize,
+    ) -> (
+        DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
+        usize,
+    ) {
+        let pxstride = self.data.pixel_stride::<BD>();
+        if pxstride >= 0 {
+            let total = if h == 0 { 0 } else { (h - 1) * pxstride as usize + w };
+            let guard = self.data.slice_mut::<BD, _>((self.offset.., ..total));
+            (guard, 0)
+        } else {
+            let abs_stride = pxstride.unsigned_abs();
+            let total = if h == 0 { 0 } else { (h - 1) * abs_stride + w };
+            let start = self.offset - (h - 1) * abs_stride;
+            let guard = self.data.slice_mut::<BD, _>((start.., ..total));
+            // base_offset = how far into the guard our logical row 0 is
+            (guard, (h - 1) * abs_stride)
+        }
+    }
+
+    /// Create a tracked immutable guard covering a strided w×h pixel region.
+    #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn strided_slice<BD: BitDepth>(
+        &self,
+        w: usize,
+        h: usize,
+    ) -> (
+        DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
+        usize,
+    ) {
+        let pxstride = self.data.pixel_stride::<BD>();
+        if pxstride >= 0 {
+            let total = if h == 0 { 0 } else { (h - 1) * pxstride as usize + w };
+            let guard = self.data.slice::<BD, _>((self.offset.., ..total));
+            (guard, 0)
+        } else {
+            let abs_stride = pxstride.unsigned_abs();
+            let total = if h == 0 { 0 } else { (h - 1) * abs_stride + w };
+            let start = self.offset - (h - 1) * abs_stride;
+            let guard = self.data.slice::<BD, _>((start.., ..total));
+            (guard, (h - 1) * abs_stride)
+        }
+    }
+
+    /// Create a tracked mutable guard covering the entire picture component.
+    ///
+    /// Returns `(guard, offset_within_guard)` where the offset corresponds to
+    /// this PicOffset's logical position within the full guard.
+    /// Use this when the access pattern is complex (e.g., loopfilter accessing
+    /// negative offsets from the base pointer).
+    #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn full_guard_mut<BD: BitDepth>(
+        &self,
+    ) -> (
+        DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
+        usize,
+    ) {
+        let total_pixels = self.data.pixel_len::<BD>();
+        let guard = self.data.slice_mut::<BD, _>((0.., ..total_pixels));
+        (guard, self.offset)
+    }
+
+    /// Create a tracked immutable guard covering the entire picture component.
+    #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn full_guard<BD: BitDepth>(
+        &self,
+    ) -> (
+        DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
+        usize,
+    ) {
+        let total_pixels = self.data.pixel_len::<BD>();
+        let guard = self.data.slice::<BD, _>((0.., ..total_pixels));
+        (guard, self.offset)
+    }
 }
 
+#[cfg(feature = "c-ffi")]
 pub struct Rav1dPictureData {
     pub data: [Rav1dPictureDataComponent; 3],
     pub(crate) allocator_data: Option<SendSyncNonNull<c_void>>,
     pub(crate) allocator: Rav1dPicAllocator,
 }
 
+#[cfg(not(feature = "c-ffi"))]
+pub struct Rav1dPictureData {
+    pub data: [Rav1dPictureDataComponent; 3],
+    owned_bufs: [Vec<u8>; 3],
+    pub(crate) allocator: Rav1dPicAllocator,
+}
+
+#[cfg(feature = "c-ffi")]
 impl Drop for Rav1dPictureData {
     fn drop(&mut self) {
         let Self {
@@ -403,6 +556,17 @@ impl Drop for Rav1dPictureData {
             allocator,
         } = self;
         allocator.dealloc_picture_data(data, *allocator_data);
+    }
+}
+
+#[cfg(not(feature = "c-ffi"))]
+impl Drop for Rav1dPictureData {
+    fn drop(&mut self) {
+        for buf in &mut self.owned_bufs {
+            if !buf.is_empty() {
+                self.allocator.pool.push(mem::take(buf));
+            }
+        }
     }
 }
 
@@ -425,6 +589,7 @@ pub(crate) struct Rav1dPicture {
     pub itut_t35: Arc<DRav1d<Box<[Rav1dITUTT35]>, Box<[Dav1dITUTT35]>>>,
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Dav1dPicture> for Rav1dPicture {
     fn from(value: Dav1dPicture) -> Self {
         let Dav1dPicture {
@@ -485,6 +650,7 @@ impl From<Dav1dPicture> for Rav1dPicture {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Rav1dPicture> for Dav1dPicture {
     fn from(value: Rav1dPicture) -> Self {
         let Rav1dPicture {
@@ -546,6 +712,7 @@ impl Rav1dPicture {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 #[derive(Clone)]
 #[repr(C)]
 pub struct Dav1dPicAllocator {
@@ -664,6 +831,7 @@ pub struct Dav1dPicAllocator {
     >,
 }
 
+#[cfg(feature = "c-ffi")]
 #[derive(Clone)]
 #[repr(C)]
 pub(crate) struct Rav1dPicAllocator {
@@ -716,6 +884,14 @@ pub(crate) struct Rav1dPicAllocator {
         unsafe extern "C" fn(pic: *mut Dav1dPicture, cookie: Option<SendSyncNonNull<c_void>>) -> (),
 }
 
+/// Safe picture allocator using per-plane `Vec<u8>` buffers from a shared pool.
+#[cfg(not(feature = "c-ffi"))]
+#[derive(Clone)]
+pub(crate) struct Rav1dPicAllocator {
+    pub(crate) pool: Arc<MemPool<u8>>,
+}
+
+#[cfg(feature = "c-ffi")]
 impl TryFrom<Dav1dPicAllocator> for Rav1dPicAllocator {
     type Error = Rav1dError;
 
@@ -733,6 +909,7 @@ impl TryFrom<Dav1dPicAllocator> for Rav1dPicAllocator {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Rav1dPicAllocator> for Dav1dPicAllocator {
     fn from(value: Rav1dPicAllocator) -> Self {
         let Rav1dPicAllocator {
@@ -748,6 +925,7 @@ impl From<Rav1dPicAllocator> for Dav1dPicAllocator {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl Rav1dPicAllocator {
     pub fn alloc_picture_data(
         &self,
@@ -810,6 +988,84 @@ impl Rav1dPicAllocator {
         unsafe {
             (self.release_picture_callback)(&mut pic_c, self.cookie);
         }
+    }
+}
+
+#[cfg(not(feature = "c-ffi"))]
+impl Rav1dPicAllocator {
+    pub fn alloc_picture_data(
+        &self,
+        w: c_int,
+        h: c_int,
+        seq_hdr: Arc<DRav1d<Rav1dSequenceHeader, Dav1dSequenceHeader>>,
+        frame_hdr: Option<Arc<DRav1d<Rav1dFrameHeader, Dav1dFrameHeader>>>,
+    ) -> Rav1dResult<Rav1dPicture> {
+        let p = Rav1dPictureParameters {
+            w,
+            h,
+            layout: seq_hdr.layout,
+            bpc: 8 + 2 * seq_hdr.hbd,
+        };
+
+        let hbd = (p.bpc > 8) as c_int;
+        let aligned_w = p.w + 127 & !127;
+        let has_chroma = p.layout != Rav1dPixelLayout::I400;
+        let ss_hor = (p.layout != Rav1dPixelLayout::I444) as c_int;
+        let mut y_stride = (aligned_w << hbd) as isize;
+        let mut uv_stride = if has_chroma { y_stride >> ss_hor } else { 0 };
+        if y_stride & 1023 == 0 {
+            y_stride += RAV1D_PICTURE_ALIGNMENT as isize;
+        }
+        if uv_stride & 1023 == 0 && has_chroma {
+            uv_stride += RAV1D_PICTURE_ALIGNMENT as isize;
+        }
+        let stride = [y_stride, uv_stride];
+        let [y_sz, uv_sz] = p.pic_len(stride);
+
+        // Round up to RAV1D_PICTURE_MULTIPLE for allocated data.
+        let round_up = |sz: usize| -> usize {
+            if sz == 0 { 0 } else { (sz + RAV1D_PICTURE_MULTIPLE - 1) & !(RAV1D_PICTURE_MULTIPLE - 1) }
+        };
+        let y_sz = round_up(y_sz);
+        let uv_sz = round_up(uv_sz);
+
+        // Allocate per-plane buffers with alignment padding.
+        let alloc_plane = |sz: usize| -> Result<Vec<u8>, Rav1dError> {
+            if sz == 0 { return Ok(Vec::new()); }
+            self.pool.pop_init(sz + RAV1D_PICTURE_ALIGNMENT, 0)
+                .map_err(|_| Rav1dError::ENOMEM)
+        };
+
+        let mut y_buf = alloc_plane(y_sz)?;
+        let mut u_buf = alloc_plane(uv_sz)?;
+        let mut v_buf = alloc_plane(uv_sz)?;
+
+        let data = [
+            Rav1dPictureDataComponent(DisjointMut::new(
+                Rav1dPictureDataComponentInner::new_from_vec(&mut y_buf, y_sz, y_stride),
+            )),
+            Rav1dPictureDataComponent(DisjointMut::new(
+                Rav1dPictureDataComponentInner::new_from_vec(&mut u_buf, uv_sz, uv_stride),
+            )),
+            Rav1dPictureDataComponent(DisjointMut::new(
+                Rav1dPictureDataComponentInner::new_from_vec(&mut v_buf, uv_sz, uv_stride),
+            )),
+        ];
+
+        let pic = Rav1dPicture {
+            p,
+            seq_hdr: Some(seq_hdr),
+            frame_hdr,
+            stride,
+            data: Some(Arc::new(Rav1dPictureData {
+                data,
+                owned_bufs: [y_buf, u_buf, v_buf],
+                allocator: self.clone(),
+            })),
+            ..Default::default()
+        };
+
+        Ok(pic)
     }
 }
 pub type PicOffset<'a> = Rav1dPictureDataComponentOffset<'a>;

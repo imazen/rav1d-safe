@@ -12,6 +12,8 @@ use crate::src::disjoint_mut::DisjointMut;
 use crate::src::disjoint_mut::DisjointMutArcSlice;
 use crate::src::disjoint_mut::DisjointMutGuard;
 use crate::src::disjoint_mut::DisjointMutSlice;
+#[cfg(not(feature = "asm"))]
+use crate::src::enum_map::DefaultValue;
 use crate::src::env::fix_mv_precision;
 use crate::src::env::get_gmv_2d;
 use crate::src::env::get_poc_diff;
@@ -26,6 +28,7 @@ use std::cmp;
 use std::marker::PhantomData;
 use std::mem;
 use std::ptr;
+#[cfg(feature = "asm")]
 use std::slice;
 use zerocopy::FromZeroes;
 
@@ -477,54 +480,8 @@ wrap_fn_ptr!(pub unsafe extern "C" fn splat_mv(
     bh4: i32,
 ) -> ());
 
-/// Direct dispatch for splat_mv - bypasses function pointer table.
-/// Has SIMD implementations: AVX2 (x86_64) and NEON (aarch64).
-#[cfg(not(feature = "asm"))]
-fn splat_mv_direct(
-    rr: *mut *mut RefMvsBlock,
-    rmv: &Align16<RefMvsBlock>,
-    bx4: i32,
-    bw4: i32,
-    bh4: i32,
-) {
-    #[cfg(target_arch = "x86_64")]
-    {
-        use crate::src::cpu::CpuFlags;
-        if crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-            // SAFETY: AVX2 verified by CpuFlags check. Pointers set up by caller.
-            unsafe {
-                crate::src::safe_simd::refmvs::splat_mv_avx2(rr, rmv, bx4, bw4, bh4);
-            }
-            return;
-        }
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        // SAFETY: NEON always available on aarch64. Pointers set up by caller.
-        unsafe {
-            crate::src::safe_simd::refmvs_arm::splat_mv_neon(rr, rmv, bx4, bw4, bh4);
-        }
-        return;
-    }
-
-    // Scalar fallback
-    #[allow(unreachable_code)]
-    {
-        let bh4 = bh4 as usize;
-        let bx4 = bx4 as usize;
-        let bw4 = bw4 as usize;
-        // SAFETY: Length set up by caller in `splat_mv::Fn::call`.
-        let rr = unsafe { slice::from_raw_parts_mut(rr, bh4) };
-        let rr = rr.into_iter().map(|&mut r| {
-            // SAFETY: Pointers set up by caller.
-            unsafe { slice::from_raw_parts_mut(r.add(bx4), bw4) }
-        });
-        splat_mv_rust(rr, rmv);
-    }
-}
-
 impl splat_mv::Fn {
+    #[cfg_attr(feature = "asm", allow(unsafe_code))]
     pub fn call(
         &self,
         rf: &RefMvsFrame,
@@ -541,40 +498,42 @@ impl splat_mv::Fn {
         type Guard<'a> = DisjointMutGuard<'a, AlignedVec64<RefMvsBlock>, [RefMvsBlock]>;
 
         let mut r_guards: [Option<Guard<'_>>; 37] = [const { None }; 37];
-        let mut r_ptrs = [ptr::null_mut::<RefMvsBlock>(); 37];
-
         let r_indices = &rt.r[offset..][..len];
         let r_guards = &mut r_guards[offset..][..len];
-        let r_ptrs = &mut r_ptrs[offset..][..len];
 
         for i in 0..len {
             let ri = r_indices[i];
             if ri < rf.r.len() - R_PAD {
-                // This is the range that will actually be accessed,
-                // but `splat_mv` expects a pointer offset `bx4` backwards.
                 let guard = rf.r.index_mut((ri + bx4.., ..bw4));
                 r_guards[i] = Some(guard);
-                let guard = r_guards[i].as_mut().unwrap();
-                // SAFETY: The above `index_mut` starts at `ri + bx4`, so we can safely index `bx4` backwards.
-                let ptr = unsafe { guard.as_mut_ptr().sub(bx4) };
-                r_ptrs[i] = ptr;
             }
         }
 
-        let rr = r_ptrs.as_mut_ptr();
-        let bx4 = b4.x as _;
-        let bw4 = bw4 as _;
-        let bh4 = bh4 as _;
-
         cfg_if::cfg_if! {
             if #[cfg(feature = "asm")] {
+                let mut r_ptrs = [ptr::null_mut::<RefMvsBlock>(); 37];
+                let r_ptrs = &mut r_ptrs[offset..][..len];
+                for i in 0..len {
+                    if let Some(ref mut guard) = r_guards[i] {
+                        // SAFETY: The above `index_mut` starts at `ri + bx4`, so we can safely index `bx4` backwards.
+                        let ptr = unsafe { guard.as_mut_ptr().sub(bx4) };
+                        r_ptrs[i] = ptr;
+                    }
+                }
+                let rr = r_ptrs.as_mut_ptr();
+                let bx4 = b4.x as _;
+                let bw4 = bw4 as _;
+                let bh4 = bh4 as _;
                 // SAFETY: Unsafe asm call. `rr` is `bh4` elements long,
                 // and each ptr in `rr` points to at least `bx4 + bw4` elements,
                 // which is what will be accessed in `splat_mv`.
                 unsafe { self.get()(rr, rmv, bx4, bw4, bh4) };
             } else {
-                // Direct dispatch: no function pointers, no extern "C" ABI overhead
-                splat_mv_direct(rr, rmv, bx4, bw4, bh4);
+                // Safe dispatch: fill each guard's slice directly
+                let rr = r_guards.iter_mut().filter_map(|g| {
+                    g.as_mut().map(|guard| &mut **guard)
+                });
+                splat_mv_rust(rr, rmv);
             }
         }
         // r_guards drop automatically here, releasing DisjointMut borrows
@@ -1520,6 +1479,7 @@ pub(crate) fn rav1d_refmvs_tile_sbrow_init(
 /// # Safety
 ///
 /// Must be called by [`load_tmvs::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn load_tmvs_c(
     rf: &AsmRefMvsFrame,
@@ -1653,6 +1613,7 @@ fn load_tmvs_rust(
 /// # Safety
 ///
 /// Must be called by [`save_tmvs::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn save_tmvs_c(
     _rp: *mut RefMvsTemporalBlock,
@@ -1839,6 +1800,7 @@ pub(crate) fn rav1d_refmvs_init_frame(
 /// # Safety
 ///
 /// Must be called by [`splat_mv::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn splat_mv_c(
     rr: *mut *mut RefMvsBlock,
@@ -1866,10 +1828,20 @@ fn splat_mv_rust<'a>(rr: impl Iterator<Item = &'a mut [RefMvsBlock]>, rmv: &Alig
 
 impl Rav1dRefmvsDSPContext {
     pub const fn default() -> Self {
-        Self {
-            load_tmvs: load_tmvs::Fn::new(load_tmvs_c),
-            save_tmvs: save_tmvs::Fn::new(save_tmvs_c),
-            splat_mv: splat_mv::Fn::new(splat_mv_c),
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                Self {
+                    load_tmvs: load_tmvs::Fn::new(load_tmvs_c),
+                    save_tmvs: save_tmvs::Fn::new(save_tmvs_c),
+                    splat_mv: splat_mv::Fn::new(splat_mv_c),
+                }
+            } else {
+                Self {
+                    load_tmvs: load_tmvs::Fn::DEFAULT,
+                    save_tmvs: save_tmvs::Fn::DEFAULT,
+                    splat_mv: splat_mv::Fn::DEFAULT,
+                }
+            }
         }
     }
 

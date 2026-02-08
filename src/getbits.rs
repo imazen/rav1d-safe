@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 use crate::include::common::intops::inv_recenter;
 use crate::include::common::intops::ulog2;
 use std::ffi::c_int;

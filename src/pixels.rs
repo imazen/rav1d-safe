@@ -1,4 +1,5 @@
-#![deny(unsafe_code)]
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
+#![cfg_attr(not(feature = "asm"), allow(dead_code, unused_imports))]
 use crate::include::common::bitdepth::BitDepth;
 use crate::src::disjoint_mut::AsMutPtr;
 use crate::src::disjoint_mut::DisjointMut;
@@ -6,6 +7,9 @@ use crate::src::strided::WithStride;
 use std::mem;
 use std::ops::Deref;
 
+/// Raw pointer pixel access. Unsound: returns `*mut u8` from `&self`.
+/// Gated behind `cfg(feature = "asm")` — only used by asm dispatch paths.
+#[cfg(feature = "asm")]
 pub trait Pixels {
     /// Length in number of [`u8`] bytes.
     fn byte_len(&self) -> usize;
@@ -78,6 +82,7 @@ pub trait Pixels {
     }
 }
 
+#[cfg(feature = "asm")]
 impl<'a, P: Pixels> Pixels for &'a P {
     fn byte_len(&self) -> usize {
         (*self).byte_len()
@@ -88,6 +93,7 @@ impl<'a, P: Pixels> Pixels for &'a P {
     }
 }
 
+#[cfg(feature = "asm")]
 impl<P: Pixels> Pixels for WithStride<P> {
     fn byte_len(&self) -> usize {
         self.deref().byte_len()
@@ -98,6 +104,7 @@ impl<P: Pixels> Pixels for WithStride<P> {
     }
 }
 
+#[cfg(feature = "asm")]
 impl<T: AsMutPtr<Target = u8>> Pixels for DisjointMut<T> {
     fn byte_len(&self) -> usize {
         self.len()

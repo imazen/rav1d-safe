@@ -1,193 +1,175 @@
-# rav1d
+# rav1d-safe
 
-[![CI](https://github.com/memorysafety/rav1d/workflows/CI/badge.svg)](https://github.com/memorysafety/rav1d/actions)
-[![License](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
+A safe Rust AV1 decoder. Forked from [rav1d](https://github.com/memorysafety/rav1d), with 160k lines of hand-written x86/ARM assembly replaced by safe Rust SIMD intrinsics.
 
-**rav1d** is an AV1 cross-platform decoder, open-source, and focused on speed
-and correctness. It is a Rust port of
-[dav1d](https://code.videolan.org/videolan/dav1d).
+## Quick Start
 
-## Safe Rust API
+Add to your `Cargo.toml`:
+```toml
+[dependencies]
+rav1d-safe = { git = "https://github.com/imazen/rav1d-safe" }
+```
 
-rav1d now includes a **100% safe Rust API** for decoding AV1 video (`src/managed.rs`).
-No `unsafe` code required! Features:
-
-- **Zero-copy** pixel access via type-safe views
-- **HDR metadata** support (HDR10, HLG, mastering display, content light level)
-- **Type-safe** color space handling
-- **Multi-threaded** decoding with configurable thread pools
-- Both **8-bit** and **10/12-bit** support
-
+Decode an AV1 bitstream:
 ```rust
-use rav1d_safe::src::managed::{Decoder, Planes};
+use rav1d_safe::{Decoder, Planes};
 
-let mut decoder = Decoder::new()?;
-if let Some(frame) = decoder.decode(obu_data)? {
-    match frame.planes() {
-        Planes::Depth8(planes) => {
-            for row in planes.y().rows() {
-                // Process 8-bit luma row
+fn decode(obu_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut decoder = Decoder::new()?;
+
+    // Feed raw OBU data (not IVF/WebM containers)
+    if let Some(frame) = decoder.decode(obu_data)? {
+        println!("{}x{} @ {}bpc", frame.width(), frame.height(), frame.bit_depth());
+
+        match frame.planes() {
+            Planes::Depth8(planes) => {
+                for row in planes.y().rows() {
+                    // row is &[u8] — zero-copy, no allocation
+                }
+            }
+            Planes::Depth16(planes) => {
+                let px = planes.y().pixel(0, 0); // 10 or 12-bit value
             }
         }
-        Planes::Depth16(planes) => {
-            let pixel = planes.y().pixel(0, 0); // Zero-copy 16-bit access
-        }
     }
+
+    // Drain any buffered frames
+    for frame in decoder.flush()? {
+        // ...
+    }
+    Ok(())
 }
 ```
 
-See `examples/managed_decode.rs` for a complete example.
+## API Overview
 
-and correctness. It is a Rust port of
-[dav1d](https://code.videolan.org/videolan/dav1d).
+The public API lives in `src/managed.rs` and is re-exported at the crate root.
 
-# Building
+**Core types:**
 
-rav1d is written in Rust and uses the standard Rust toolchain to build. The Rust
-toolchain can be installed by going to https://rustup.rs. The rav1d library
-builds on stable Rust for `x86`, `x86_64`, and `aarch64`, but currently
-requires a nightly compiler for `arm` and `riscv64`. The project is configured
-to use a nightly compiler by default via `rust-toolchain.toml`, but a stable
-library build can be made with the `+stable` cargo flag.
+| Type | Purpose |
+|------|---------|
+| `Decoder` | Decodes AV1 OBU data into frames |
+| `Frame` | Decoded frame with metadata (cloneable, Arc-backed) |
+| `Planes` | Enum dispatching to `Planes8` or `Planes16` by bit depth |
+| `PlaneView8` / `PlaneView16` | Zero-copy 2D view with `row()`, `pixel()`, `rows()` |
+| `Settings` | Thread count, film grain, filters, frame type selection |
 
-For x86 targets, you'll also need to install [`nasm`](https://nasm.us/) in order
-to build with assembly support.
+**Metadata types:** `ColorInfo`, `ColorPrimaries`, `TransferCharacteristics`, `MatrixCoefficients`, `ColorRange`, `ContentLightLevel`, `MasteringDisplay`, `PixelLayout`
 
-A release build can then be made using cargo:
+### Input Format
+
+The decoder expects raw AV1 Open Bitstream Unit (OBU) data. If you have IVF or WebM containers, strip the container framing first and pass the OBU payload. See `tests/ivf_parser.rs` for an IVF parser example. For AVIF images, use [zenavif-parse](https://crates.io/crates/zenavif-parse) to extract the OBU data from the ISOBMFF container.
+
+### Threading
+
+```rust
+use rav1d_safe::{Decoder, Settings};
+
+// Single-threaded (default) — synchronous, deterministic
+let decoder = Decoder::new()?;
+
+// Multi-threaded — frame threading, better throughput
+let decoder = Decoder::with_settings(Settings {
+    threads: 0, // auto-detect core count
+    ..Default::default()
+})?;
+```
+
+With `threads >= 2` or `threads == 0`, the decoder uses frame threading. `decode()` may return `None` for complete frames because processing is asynchronous — call it repeatedly or use `flush()` to drain.
+
+### HDR Metadata
+
+```rust
+if let Some(cll) = frame.content_light() {
+    println!("MaxCLL: {} nits", cll.max_content_light_level);
+}
+if let Some(mdcv) = frame.mastering_display() {
+    println!("Peak: {} nits", mdcv.max_luminance_nits());
+}
+let color = frame.color_info();
+// color.primaries, color.transfer_characteristics, color.matrix_coefficients
+```
+
+### Error Handling
+
+All fallible operations return `Result<T, rav1d_safe::Error>`. Error variants: `InvalidData`, `OutOfMemory`, `NeedMoreData`, `InitFailed`, `InvalidSettings`, `Other`.
+
+## Safety Model
+
+The default build (`deny(unsafe_code)` crate-wide) contains zero `unsafe` in the main crate. The only unsafe code lives in the [disjoint-mut](crates/disjoint-mut/) workspace sub-crate, a provably sound `RefCell`-for-ranges abstraction with always-on bounds checking. The managed API module uses `forbid(unsafe_code)` unconditionally.
+
+The SIMD path uses:
+- [archmage](https://crates.io/crates/archmage) for token-based target-feature dispatch (no manual `#[target_feature]`)
+- [safe_unaligned_simd](https://crates.io/crates/safe_unaligned_simd) for reference-based SIMD load/store (no raw pointers)
+- Value-type SIMD intrinsics, which are safe functions since Rust 1.93
+- Slice-based APIs throughout — no pointer arithmetic in SIMD code
+
+Verify at runtime with `rav1d_safe::enabled_features()` — returns a comma-delimited list including the active safety level (e.g. `"bitdepth_8, bitdepth_16, safety:forbid-unsafe"`).
+
+## Performance
+
+Benchmarked on x86_64 (AVX2), single-threaded, 500 iterations via `examples/profile_decode`:
+
+| Build | kodim03 8bpc (768x512) | colors_hdr 16bpc |
+|-------|------------------------|------------------|
+| ASM (hand-written assembly) | 3.6 ms/frame | 1.0 ms/frame |
+| Safe-SIMD (default, fully checked) | 21.2 ms/frame | 2.4 ms/frame |
+| Safe-SIMD + `unchecked` feature | 15.4 ms/frame | 1.9 ms/frame |
+
+The `unchecked` feature disables DisjointMut runtime borrow tracking and slice bounds checks, giving ~27% speedup on 8bpc. The remaining gap vs ASM is function call and inlining differences — the safe SIMD uses the same AVX2 intrinsics but through Rust's calling conventions rather than hand-tuned register allocation.
+
+## Building
+
+Requires Rust 1.89+ (stable). Install via [rustup.rs](https://rustup.rs).
 
 ```sh
+# Default safe-SIMD build (recommended)
 cargo build --release
+
+# With original hand-written assembly (for benchmarking)
+cargo build --features asm --release
+
+# Run tests
+cargo test --release
 ```
 
-For development purposes you may also want to use the `opt-dev` profile, which
-runs faster than a regular debug build but has all debug checks still enabled:
+### Feature Flags
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `bitdepth_8` | on | 8-bit pixel support |
+| `bitdepth_16` | on | 10/12-bit pixel support |
+| `asm` | off | Hand-written assembly (implies `c-ffi`) |
+| `c-ffi` | off | C API entry points (implies `unchecked`) |
+| `unchecked` | off | Skip bounds checks in SIMD hot paths |
+
+### Cross-Compilation
 
 ```sh
-cargo build --profile opt-dev
+# aarch64
+RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" \
+  cargo build --target aarch64-unknown-linux-gnu --release
+
+# Verify aarch64 NEON compiles
+cargo check --target aarch64-unknown-linux-gnu
 ```
 
-To build just `librav1d` using a stable compiler:
+Supported targets: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `i686-unknown-linux-gnu`, `armv7-unknown-linux-gnueabihf`, `riscv64gc-unknown-linux-gnu`.
 
-```sh
-cargo +stable build --lib --release
-```
+## License
 
-## Feature Flags
+New code in this fork (safe SIMD implementations, managed API, tooling) is dual-licensed:
 
-The following feature flags are supported:
+- **[AGPL-3.0-or-later](LICENSE-AGPL)** for open-source use
+- **Commercial license** available from [Imazen](https://imazen.io) for proprietary use
 
-* `asm` - Enables optimized assembly routines, if available for the target
-  platform.
-* `bitdepth_8` - Enables support for 8 bitdepth decoding.
-* `bitdepth_16` - Enables support for 10 and 12 bitdepth decoding.
+The upstream rav1d/dav1d code retains its original **[BSD-2-Clause](COPYING)** license.
 
-All of these features are enabled by default. In order to build a version of
-`librav1d` that disables one or more of these features use the
-`--no-default-features` flag in combination with the `--features` flag to enable
-any desired features. For example, to build without assembly routines, which is
-useful when testing the Rust fallback functions, do the following:
+### Upstream Contribution
 
-```sh
-cargo build --no-default-features --features="bitdepth_8,bitdepth_16"
-```
+This fork exists because maintaining a separate safe SIMD implementation is the fastest path to getting safe Rust AV1 decoding into production. If the rav1d maintainers are interested in upstreaming any of this work under the original BSD-2-Clause license, we'd be happy to contribute. Open an issue or reach out.
 
-## Cross-Compiling
+## Acknowledgments
 
-rav1d can be cross-compiled for a target other than the host platform using the
-`cargo` `--target` flag. This will require passing additional arguments to
-`rustc` to tell it what linker to use. This can be done by setting the
-`RUSTFLAGS` enviroment variable and specifying the `linker` compiler flag. For
-example, compiling for `aarch64-unknown-linux-gnu` from an Ubuntu Linux machine
-would be done as follows:
-
-```sh
-RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" cargo build --target aarch64-unknown-linux-gnu
-```
-
-If you're cross-compiling in order to run tests under QEMU (`qemu-*-static`)
-you'll also need to specify the `+crt-static` target feature.
-
-```sh
-RUSTFLAGS="-C target-feature=+crt-static -C linker=aarch64-linux-gnu-gcc" cargo build --target aarch64-unknown-linux-gnu
-```
-
-This will require installing the `rustup` component for the target platform and
-the appropriate cross-platform compiler/linker toolchain for your target
-platform. Examples of how we cross-compile rav1d in CI can be found in
-[`.github/workflows/build-and-test-qemu.yml`](.github/workflows/build-and-test-qemu.yml).
-
-The following targets are currently supported:
-
-* `x86_64-unknown-linux-gnu`
-* `i686-unknown-linux-gnu`
-* `armv7-unknown-linux-gnueabihf`
-* `aarch64-unknown-linux-gnu`
-* `riscv64gc-unknown-linux-gnu`
-
-## Running Tests
-
-Currently we use the original [Meson](https://mesonbuild.com/) test suite for
-testing the Rust port. This means you'll need to [have Meson
-installed](https://mesonbuild.com/Getting-meson.html) to run tests.
-
-To setup and run the tests, do the following:
-
-First, build `rav1d` using `cargo`. You'll need to do this step manually before
-running any tests because it is not built automatically when tests are run. It's
-recommended to run tests with either the `release` or `opt-dev` profile as the
-debug build runs slowly and often causes tests to timeout. The `opt-dev` profile
-is generally ideal for development purposes as it enables some optimizations
-while leaving debug checks enabled.
-
-```sh
-cargo build --release
-```
-
-Or:
-
-```sh
-cargo build --profile opt-dev
-```
-
-Then you can run the tests with the [`test.sh`](.github/workflows/test.sh)
-helper script:
-
-```sh
-.github/workflows/test.sh -r target/release/dav1d
-```
-
-Or:
-
-```sh
-.github/workflows/test.sh -r target/opt-dev/dav1d
-```
-
-The test script accepts additional arguments to configure how tests are run:
-
-* `-s PATH` - Specify a path to the `seek_stress` binary in order to run the
-  `seek_stress` tests. This is generally in the same output directory as the
-  main `dav1d` binary, e.g. `target/release/seek_stress`.
-* `-t MULTIPLIER` - Specify a multiplier for the test timeout. Allows for tests
-  to take longer to run, e.g. if running tests with a debug build.
-* `-f DELAY` - Specify a frame delay for the tests. If specified the tests will
-  also be run with multiple threads.
-* `-n` - Test with negative strides.
-* `-w WRAPPER` - Specify a wrapper binary to use to run the tests. This is
-  necessary for testing under QEMU for platforms other than the host platform.
-
-You can learn more about how to build and test by referencing the CI scripts in
-the [`.github/workflows`](.github/workflows) folder.
-
-# Using rav1d
-
-`librav1d` is designed to be a drop-in replacement for `libdav1d`, so it
-primarily exposes a C API with the same usage as `libdav1d`'s. This is found in
-the `librav1d.a` library generated by `cargo build`. [`libdav1d`'s primary API
-documentation can be found
-here](https://videolan.videolan.me/dav1d/dav1d_8h.html) for reference, and the
-equivalent Rust functions can be found in [`src/lib.rs`](src/lib.rs). You can
-also reference the `dav1d` binary's code to see how it uses the API, which can
-be found at [`tools/dav1d.rs`](tools/dav1d.rs).
-
-A [Rust API is planned](https://github.com/memorysafety/rav1d/issues/1252) for
-addition in the future.
+Built on the work of the [dav1d](https://code.videolan.org/videolan/dav1d) team (VideoLAN) and the [rav1d](https://github.com/memorysafety/rav1d) team (ISRG/Prossimo). The original C and assembly implementations are exceptional — this fork just proves you can match that performance in safe Rust.

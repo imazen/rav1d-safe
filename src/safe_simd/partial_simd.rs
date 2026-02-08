@@ -6,6 +6,10 @@
 //! The wrappers are safe functions with #[target_feature], callable from #[arcane]
 //! contexts without needing unsafe blocks.
 //!
+//! # Safety boundary
+//! This module provides the safe abstraction boundary — it contains targeted unsafe
+//! blocks to wrap raw SIMD intrinsics, exposed as safe functions with #[target_feature].
+//!
 //! # Future compatibility
 //! ```ignore
 //! // When safe_unaligned_simd adds 64-bit support, change this module to:
@@ -25,6 +29,11 @@
 //!     partial_simd::mm_storel_epi64(dst, v);       // SAFE - no unsafe block!
 //! }
 //! ```
+
+// Safety boundary module: every function wraps exactly one unsafe intrinsic
+// in a safe public API with #[target_feature]. Module-level allow is appropriate
+// because wrapping unsafe intrinsics IS this module's sole purpose.
+#![allow(unsafe_code)]
 
 // ============================================================================
 // x86_64 SSE2 64-bit operations

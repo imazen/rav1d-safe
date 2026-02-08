@@ -1,5 +1,7 @@
 //! Safe SIMD implementations for Loop Restoration
 #![allow(deprecated)] // FFI wrappers need to forge tokens
+#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
 //!
 //! Loop restoration applies two types of filtering:
 //! 1. Wiener filter - 7-tap or 5-tap separable filter
@@ -16,6 +18,11 @@ use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
 use std::slice;
+
+#[cfg(target_arch = "x86_64")]
+use crate::src::safe_simd::partial_simd;
+#[cfg(target_arch = "x86_64")]
+use crate::src::safe_simd::pixel_access::load_128;
 
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
@@ -130,14 +137,14 @@ fn wiener_filter7_8bpc_avx2_inner(
             let row5 = &hor[(j + 5) * REST_UNIT_STRIDE + i..];
             let row6 = &hor[(j + 6) * REST_UNIT_STRIDE + i..];
 
-            // Load 8 u16 values as __m128i - SSE intrinsics still require unsafe
-            let r0 = unsafe { _mm_loadu_si128(row0.as_ptr() as *const __m128i) };
-            let r1 = unsafe { _mm_loadu_si128(row1.as_ptr() as *const __m128i) };
-            let r2 = unsafe { _mm_loadu_si128(row2.as_ptr() as *const __m128i) };
-            let r3 = unsafe { _mm_loadu_si128(row3.as_ptr() as *const __m128i) };
-            let r4 = unsafe { _mm_loadu_si128(row4.as_ptr() as *const __m128i) };
-            let r5 = unsafe { _mm_loadu_si128(row5.as_ptr() as *const __m128i) };
-            let r6 = unsafe { _mm_loadu_si128(row6.as_ptr() as *const __m128i) };
+            // Load 8 u16 values as __m128i via safe macro
+            let r0 = load_128!(&row0[..8], [u16; 8]);
+            let r1 = load_128!(&row1[..8], [u16; 8]);
+            let r2 = load_128!(&row2[..8], [u16; 8]);
+            let r3 = load_128!(&row3[..8], [u16; 8]);
+            let r4 = load_128!(&row4[..8], [u16; 8]);
+            let r5 = load_128!(&row5[..8], [u16; 8]);
+            let r6 = load_128!(&row6[..8], [u16; 8]);
 
             // Process low 4 pixels (expand u16 to i32)
             let r0_lo = _mm256_cvtepu16_epi32(r0);
@@ -170,11 +177,9 @@ fn wiener_filter7_8bpc_avx2_inner(
             let sum16_combined = _mm_unpacklo_epi64(sum16_lo, sum16_hi);
             let sum8 = _mm_packus_epi16(sum16_combined, sum16_combined); // u16 -> u8
 
-            // Store 8 bytes
-            unsafe {
-                let dst_ptr = dst_row.as_mut_ptr().add(i);
-                _mm_storel_epi64(dst_ptr as *mut __m128i, sum8);
-            }
+            // Store 8 bytes via safe partial_simd
+            let dst_arr: &mut [u8; 8] = (&mut dst_row[i..i + 8]).try_into().unwrap();
+            partial_simd::mm_storel_epi64(dst_arr, sum8);
             i += 8;
         }
 
@@ -627,8 +632,10 @@ fn selfguided_filter_8bpc(
     let base = 2 * REST_UNIT_STRIDE + 3;
 
     for row_offset in (0..(h + 2)).step_by(step) {
-        let row_start = (row_offset as isize - 1) as usize;
-        let aa_base = base + row_start * REST_UNIT_STRIDE - REST_UNIT_STRIDE;
+        // Use signed arithmetic to avoid overflow when row_offset=0
+        // aa_base = base + (row_offset - 2) * REST_UNIT_STRIDE
+        let aa_base =
+            (base as isize + (row_offset as isize - 2) * REST_UNIT_STRIDE as isize) as usize;
 
         for i in 0..(w + 2) {
             let idx = aa_base + i;
@@ -1164,8 +1171,10 @@ fn selfguided_filter_16bpc(
     let base = 2 * REST_UNIT_STRIDE + 3;
 
     for row_offset in (0..(h + 2)).step_by(step) {
-        let row_start = (row_offset as isize - 1) as usize;
-        let aa_base = base + row_start * REST_UNIT_STRIDE - REST_UNIT_STRIDE;
+        // Use signed arithmetic to avoid overflow when row_offset=0
+        // aa_base = base + (row_offset - 2) * REST_UNIT_STRIDE
+        let aa_base =
+            (base as isize + (row_offset as isize - 2) * REST_UNIT_STRIDE as isize) as usize;
 
         for i in 0..(w + 2) {
             let idx = aa_base + i;
@@ -1571,11 +1580,8 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use crate::src::cpu::CpuFlags;
 
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(token) = Desktop64::summon() else { return false };
 
     let w = w as usize;
     let h = h as usize;
@@ -1585,9 +1591,6 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
     let left_16 = || -> &[LeftPixelRow<u16>] {
         reinterpret_slice(left).expect("BD::Pixel layout matches u16")
     };
-
-    // Safe: AVX2 verified by CpuFlags check above, summon() does runtime check
-    let token = Desktop64::summon().expect("AVX2 required (verified by CpuFlags)");
 
     match (BD::BPC, variant) {
         (BPC::BPC8, 0) => {

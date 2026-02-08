@@ -3,6 +3,8 @@
 //! Replaces hand-written assembly with safe Rust intrinsics.
 
 #![allow(unused)]
+#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -16,13 +18,17 @@ use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 
-// ============================================================================
-// DC_128 Prediction (fill with mid-value)
-// ============================================================================
+#[cfg(feature = "asm")]
+mod ffi {
+    use super::*;
 
-/// DC_128 prediction: fill block with 128 (8bpc) or 1 << (bitdepth - 1) (16bpc)
-#[cfg(target_arch = "aarch64")]
-pub unsafe extern "C" fn ipred_dc_128_8bpc_neon(
+    // ============================================================================
+    // DC_128 Prediction (fill with mid-value)
+    // ============================================================================
+
+    /// DC_128 prediction: fill block with 128 (8bpc) or 1 << (bitdepth - 1) (16bpc)
+    #[cfg(target_arch = "aarch64")]
+    pub unsafe extern "C" fn ipred_dc_128_8bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     _topleft: *const DynPixel,
@@ -995,18 +1001,27 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_neon(
     }
 }
 
+} // mod ffi
+
+#[cfg(feature = "asm")]
+pub use ffi::*;
+
 // ============================================================================
 // Safe dispatch wrapper for aarch64 NEON
 // ============================================================================
 
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 use crate::include::common::bitdepth::BitDepth;
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 use crate::src::internal::SCRATCH_EDGE_LEN;
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 use crate::src::strided::Strided as _;
 
 /// Safe dispatch for intra prediction on ARM. Returns true if SIMD was used.
 /// NEON is always available on aarch64, so this always returns true for
 /// supported modes and false only for unimplemented modes (Z1, Z2, Z3, FILTER).
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[allow(unsafe_code)]
 pub fn intra_pred_dispatch<BD: BitDepth>(
     mode: usize,
     dst: PicOffset,
@@ -1020,14 +1035,22 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
+    use zerocopy::AsBytes;
 
-    let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+    let w = width as usize;
+    let h = height as usize;
     let stride = dst.stride();
-    let topleft_ptr = topleft[topleft_off..].as_ptr().cast();
     let bd_c = bd.into_c();
     let dst_ffi = FFISafe::new(&dst);
 
-    // SAFETY: NEON always available on aarch64. Pointers derived from valid types.
+    // Create tracked guard — ensures borrow tracker knows about this access
+    let (mut dst_guard, _dst_base) = dst.strided_slice_mut::<BD>(w, h);
+    // Get pointer from guard's slice (tracked, not from Pixels)
+    let dst_ptr: *mut DynPixel = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+    // topleft is already a safe slice, get pointer for FFI
+    let topleft_ptr: *const DynPixel = topleft.as_bytes()[topleft_off * std::mem::size_of::<BD::Pixel>()..].as_ptr() as *const DynPixel;
+
+    // SAFETY: NEON always available on aarch64. Pointers derived from tracked guard.
     let handled = unsafe {
         match (BD::BPC, mode) {
             (BPC::BPC8, 0) => {
