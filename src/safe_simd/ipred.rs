@@ -21,7 +21,7 @@ use libc::{c_int, ptrdiff_t};
 #[cfg(target_arch = "x86_64")]
 use super::partial_simd;
 #[cfg(target_arch = "x86_64")]
-use crate::src::safe_simd::pixel_access::{load_128, load_256, store_128, store_256, Flex};
+use crate::src::safe_simd::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256, Flex};
 
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::picture::PicOffset;
@@ -54,11 +54,11 @@ fn ipred_dc_128_8bpc_inner(
         // Fill row with 128
         let mut x = 0;
         while x + 32 <= width {
-            store_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
+            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
             x += 32;
         }
         while x + 16 <= width {
-            store_128!(
+            storeu_128!(
                 &mut row[x..x + 16],
                 [u8; 16],
                 _mm256_castsi256_si128(fill_val)
@@ -147,26 +147,26 @@ fn ipred_v_8bpc_inner(
             }
         }
         16 => {
-            let top_val = load_128!((&topleft[top_off..top_off + 16]), [u8; 16]);
+            let top_val = loadu_128!((&topleft[top_off..top_off + 16]), [u8; 16]);
             for y in 0..height {
                 let row_off = (dst_base as isize + y as isize * stride) as usize;
-                store_128!((&mut dst[row_off..row_off + 16]), [u8; 16], top_val);
+                storeu_128!((&mut dst[row_off..row_off + 16]), [u8; 16], top_val);
             }
         }
         32 => {
-            let top_val = load_256!((&topleft[top_off..top_off + 32]), [u8; 32]);
+            let top_val = loadu_256!((&topleft[top_off..top_off + 32]), [u8; 32]);
             for y in 0..height {
                 let row_off = (dst_base as isize + y as isize * stride) as usize;
-                store_256!((&mut dst[row_off..row_off + 32]), [u8; 32], top_val);
+                storeu_256!((&mut dst[row_off..row_off + 32]), [u8; 32], top_val);
             }
         }
         64 => {
-            let top_val0 = load_256!((&topleft[top_off..top_off + 32]), [u8; 32]);
-            let top_val1 = load_256!((&topleft[top_off + 32..top_off + 64]), [u8; 32]);
+            let top_val0 = loadu_256!((&topleft[top_off..top_off + 32]), [u8; 32]);
+            let top_val1 = loadu_256!((&topleft[top_off + 32..top_off + 64]), [u8; 32]);
             for y in 0..height {
                 let row_off = (dst_base as isize + y as isize * stride) as usize;
-                store_256!((&mut dst[row_off..row_off + 32]), [u8; 32], top_val0);
-                store_256!((&mut dst[row_off + 32..row_off + 64]), [u8; 32], top_val1);
+                storeu_256!((&mut dst[row_off..row_off + 32]), [u8; 32], top_val0);
+                storeu_256!((&mut dst[row_off + 32..row_off + 64]), [u8; 32], top_val1);
             }
         }
         _ => {
@@ -241,11 +241,11 @@ fn ipred_h_8bpc_inner(
 
         let mut x = 0;
         while x + 32 <= width {
-            store_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
+            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
             x += 32;
         }
         while x + 16 <= width {
-            store_128!(
+            storeu_128!(
                 &mut row[x..x + 16],
                 [u8; 16],
                 _mm256_castsi256_si128(fill_val)
@@ -333,11 +333,11 @@ fn ipred_dc_8bpc_inner(
 
         let mut x = 0;
         while x + 32 <= width {
-            store_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
+            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
             x += 32;
         }
         while x + 16 <= width {
-            store_128!(
+            storeu_128!(
                 &mut row[x..x + 16],
                 [u8; 16],
                 _mm256_castsi256_si128(fill_val)
@@ -416,11 +416,11 @@ fn ipred_dc_top_8bpc_inner(
 
         let mut x = 0;
         while x + 32 <= width {
-            store_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
+            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
             x += 32;
         }
         while x + 16 <= width {
-            store_128!(
+            storeu_128!(
                 &mut row[x..x + 16],
                 [u8; 16],
                 _mm256_castsi256_si128(fill_val)
@@ -499,11 +499,11 @@ fn ipred_dc_left_8bpc_inner(
 
         let mut x = 0;
         while x + 32 <= width {
-            store_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
+            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
             x += 32;
         }
         while x + 16 <= width {
-            store_128!(
+            storeu_128!(
                 &mut row[x..x + 16],
                 [u8; 16],
                 _mm256_castsi256_si128(fill_val)
@@ -1280,8 +1280,8 @@ fn ipred_z1_8bpc_inner(
             let base = base0 + base_inc * x;
 
             // Load 16 consecutive top pixels (need pairs for interpolation)
-            let t0 = load_128!((&topleft[top_off + base..top_off + base + 16]), [u8; 16]);
-            let t1 = load_128!(
+            let t0 = loadu_128!((&topleft[top_off + base..top_off + base + 16]), [u8; 16]);
+            let t1 = loadu_128!(
                 (&topleft[top_off + base + 1..top_off + base + 17]),
                 [u8; 16]
             );
@@ -1301,7 +1301,7 @@ fn ipred_z1_8bpc_inner(
             let lo = _mm256_castsi256_si128(packed);
             let hi = _mm256_extracti128_si256::<1>(packed);
             let combined = _mm_unpacklo_epi64(lo, hi);
-            store_128!(
+            storeu_128!(
                 (&mut dst[row_off + x..row_off + x + 16]),
                 [u8; 16],
                 combined
@@ -1557,8 +1557,8 @@ fn ipred_z2_8bpc_inner(
                 break;
             }
 
-            let t0 = load_128!((&topleft[top_off + base..top_off + base + 16]), [u8; 16]);
-            let t1 = load_128!(
+            let t0 = loadu_128!((&topleft[top_off + base..top_off + base + 16]), [u8; 16]);
+            let t1 = loadu_128!(
                 (&topleft[top_off + base + 1..top_off + base + 17]),
                 [u8; 16]
             );
@@ -1578,7 +1578,7 @@ fn ipred_z2_8bpc_inner(
             let lo = _mm256_castsi256_si128(packed);
             let hi = _mm256_extracti128_si256::<1>(packed);
             let combined = _mm_unpacklo_epi64(lo, hi);
-            store_128!(
+            storeu_128!(
                 (&mut dst[row_off + x..row_off + x + 16]),
                 [u8; 16],
                 combined
@@ -1939,14 +1939,14 @@ fn ipred_dc_128_16bpc_inner(
         // Process 16 pixels at a time (256-bit / 16-bit = 16 pixels)
         while x + 16 <= width {
             let off = row_off + x * 2;
-            store_256!((&mut dst[off..off + 32]), [u8; 32], fill_val);
+            storeu_256!((&mut dst[off..off + 32]), [u8; 32], fill_val);
             x += 16;
         }
 
         // Process 8 pixels at a time
         while x + 8 <= width {
             let off = row_off + x * 2;
-            store_128!(
+            storeu_128!(
                 (&mut dst[off..off + 16]),
                 [u8; 16],
                 _mm256_castsi256_si128(fill_val)
@@ -2017,18 +2017,18 @@ fn ipred_v_16bpc_inner(
         // Process 16 pixels at a time
         while x + 16 <= width {
             let load_off = top_off + x * 2;
-            let top_vals = load_256!((&topleft[load_off..load_off + 32]), [u8; 32]);
+            let top_vals = loadu_256!((&topleft[load_off..load_off + 32]), [u8; 32]);
             let store_off = row_off + x * 2;
-            store_256!((&mut dst[store_off..store_off + 32]), [u8; 32], top_vals);
+            storeu_256!((&mut dst[store_off..store_off + 32]), [u8; 32], top_vals);
             x += 16;
         }
 
         // Process 8 pixels at a time
         while x + 8 <= width {
             let load_off = top_off + x * 2;
-            let top_vals = load_128!((&topleft[load_off..load_off + 16]), [u8; 16]);
+            let top_vals = loadu_128!((&topleft[load_off..load_off + 16]), [u8; 16]);
             let store_off = row_off + x * 2;
-            store_128!((&mut dst[store_off..store_off + 16]), [u8; 16], top_vals);
+            storeu_128!((&mut dst[store_off..store_off + 16]), [u8; 16], top_vals);
             x += 8;
         }
 
@@ -2108,14 +2108,14 @@ fn ipred_h_16bpc_inner(
         // Process 16 pixels at a time
         while x + 16 <= width {
             let off = row_off + x * 2;
-            store_256!((&mut dst[off..off + 32]), [u8; 32], fill_val);
+            storeu_256!((&mut dst[off..off + 32]), [u8; 32], fill_val);
             x += 16;
         }
 
         // Process 8 pixels at a time
         while x + 8 <= width {
             let off = row_off + x * 2;
-            store_128!(
+            storeu_128!(
                 (&mut dst[off..off + 16]),
                 [u8; 16],
                 _mm256_castsi256_si128(fill_val)
@@ -2209,13 +2209,13 @@ fn ipred_dc_16bpc_inner(
 
         while x + 16 <= width {
             let off = row_off + x * 2;
-            store_256!((&mut dst[off..off + 32]), [u8; 32], fill_val);
+            storeu_256!((&mut dst[off..off + 32]), [u8; 32], fill_val);
             x += 16;
         }
 
         while x + 8 <= width {
             let off = row_off + x * 2;
-            store_128!(
+            storeu_128!(
                 (&mut dst[off..off + 16]),
                 [u8; 16],
                 _mm256_castsi256_si128(fill_val)
@@ -2297,13 +2297,13 @@ fn ipred_dc_top_16bpc_inner(
 
         while x + 16 <= width {
             let off = row_off + x * 2;
-            store_256!((&mut dst[off..off + 32]), [u8; 32], fill_val);
+            storeu_256!((&mut dst[off..off + 32]), [u8; 32], fill_val);
             x += 16;
         }
 
         while x + 8 <= width {
             let off = row_off + x * 2;
-            store_128!(
+            storeu_128!(
                 (&mut dst[off..off + 16]),
                 [u8; 16],
                 _mm256_castsi256_si128(fill_val)
@@ -2385,13 +2385,13 @@ fn ipred_dc_left_16bpc_inner(
 
         while x + 16 <= width {
             let off = row_off + x * 2;
-            store_256!((&mut dst[off..off + 32]), [u8; 32], fill_val);
+            storeu_256!((&mut dst[off..off + 32]), [u8; 32], fill_val);
             x += 16;
         }
 
         while x + 8 <= width {
             let off = row_off + x * 2;
-            store_128!(
+            storeu_128!(
                 (&mut dst[off..off + 16]),
                 [u8; 16],
                 _mm256_castsi256_si128(fill_val)
@@ -2847,8 +2847,8 @@ fn ipred_z1_16bpc_inner(
             // Load 8 consecutive top u16 pixels and 8 shifted by 1
             let load0 = top_off + base * 2;
             let load1 = top_off + (base + 1) * 2;
-            let t0 = load_128!((&topleft[load0..load0 + 16]), [u8; 16]);
-            let t1 = load_128!((&topleft[load1..load1 + 16]), [u8; 16]);
+            let t0 = loadu_128!((&topleft[load0..load0 + 16]), [u8; 16]);
+            let t1 = loadu_128!((&topleft[load1..load1 + 16]), [u8; 16]);
 
             // Zero-extend to 32-bit for precise multiply
             let t0_lo = _mm256_cvtepu16_epi32(t0);
@@ -2866,7 +2866,7 @@ fn ipred_z1_16bpc_inner(
             let hi = _mm256_extracti128_si256::<1>(packed);
             let combined = _mm_unpacklo_epi64(lo, hi);
             let store_off = row_off + x * 2;
-            store_128!((&mut dst[store_off..store_off + 16]), [u8; 16], combined);
+            storeu_128!((&mut dst[store_off..store_off + 16]), [u8; 16], combined);
 
             x += 8;
         }
@@ -3105,8 +3105,8 @@ fn ipred_z2_16bpc_inner(
             if load1 + 16 > topleft.len() {
                 break;
             }
-            let t0 = load_128!((&topleft[load0..load0 + 16]), [u8; 16]);
-            let t1 = load_128!((&topleft[load1..load1 + 16]), [u8; 16]);
+            let t0 = loadu_128!((&topleft[load0..load0 + 16]), [u8; 16]);
+            let t1 = loadu_128!((&topleft[load1..load1 + 16]), [u8; 16]);
 
             let t0_lo = _mm256_cvtepu16_epi32(t0);
             let t1_lo = _mm256_cvtepu16_epi32(t1);
@@ -3124,7 +3124,7 @@ fn ipred_z2_16bpc_inner(
             let hi = _mm256_extracti128_si256::<1>(packed);
             let combined = _mm_unpacklo_epi64(lo, hi);
             let store_off = row_off + x * 2;
-            store_128!((&mut dst[store_off..store_off + 16]), [u8; 16], combined);
+            storeu_128!((&mut dst[store_off..store_off + 16]), [u8; 16], combined);
 
             x += 8;
         }
