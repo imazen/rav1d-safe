@@ -4,6 +4,7 @@
 use crate::src::send_sync_non_null::SendSyncNonNull;
 #[cfg(feature = "c-ffi")]
 use std::ffi::c_void;
+#[cfg(feature = "c-ffi")]
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::pin::Pin;

@@ -18,6 +18,7 @@ use crate::include::dav1d::headers::Rav1dMasteringDisplay;
 use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::include::dav1d::headers::Rav1dSequenceHeader;
 use crate::src::assume::assume;
+#[cfg(feature = "c-ffi")]
 use crate::src::c_arc::RawArc;
 use crate::src::disjoint_mut::ExternalAsMutPtr;
 use crate::src::disjoint_mut::DisjointImmutGuard;
@@ -32,15 +33,18 @@ use crate::src::error::Rav1dError::EINVAL;
 use crate::src::error::Rav1dResult;
 #[cfg(feature = "asm")]
 use crate::src::pixels::Pixels;
+#[cfg(feature = "c-ffi")]
 use crate::src::send_sync_non_null::SendSyncNonNull;
 #[cfg(not(feature = "c-ffi"))]
 use crate::src::mem::MemPool;
 use crate::src::strided::Strided;
 use crate::src::with_offset::WithOffset;
 use libc::ptrdiff_t;
+#[cfg(feature = "c-ffi")]
 use libc::uintptr_t;
 use std::array;
 use std::ffi::c_int;
+#[cfg(feature = "c-ffi")]
 use std::ffi::c_void;
 use std::mem;
 use std::ptr::NonNull;
