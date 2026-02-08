@@ -178,6 +178,160 @@ impl<T> SliceExt<T> for [T] {
     }
 }
 
+// ---------------------------------------------------------------------------
+// FlexSlice — zero-cost `[]` wrapper with configurable bounds checking
+// ---------------------------------------------------------------------------
+
+/// Immutable slice wrapper: `slice.flex()[i]` uses normal `[]` syntax but
+/// switches between checked (default) and unchecked (`unchecked` feature).
+///
+/// Verified zero-overhead: generates identical assembly to raw `get_unchecked`
+/// in unchecked mode and identical to `[]` in checked mode.
+pub struct FlexSlice<'a, T>(pub &'a [T]);
+
+/// Mutable slice wrapper: `slice.flex_mut()[i]` with the same guarantees.
+pub struct FlexSliceMut<'a, T>(pub &'a mut [T]);
+
+impl<T> core::ops::Index<usize> for FlexSlice<'_, T> {
+    type Output = T;
+    #[inline(always)]
+    fn index(&self, i: usize) -> &T {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(i < self.0.len());
+            unsafe { self.0.get_unchecked(i) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &self.0[i]
+    }
+}
+
+impl<T> core::ops::Index<core::ops::Range<usize>> for FlexSlice<'_, T> {
+    type Output = [T];
+    #[inline(always)]
+    fn index(&self, r: core::ops::Range<usize>) -> &[T] {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(r.end <= self.0.len());
+            unsafe { self.0.get_unchecked(r) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &self.0[r]
+    }
+}
+
+impl<T> core::ops::Index<core::ops::RangeFrom<usize>> for FlexSlice<'_, T> {
+    type Output = [T];
+    #[inline(always)]
+    fn index(&self, r: core::ops::RangeFrom<usize>) -> &[T] {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(r.start <= self.0.len());
+            unsafe { self.0.get_unchecked(r) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &self.0[r]
+    }
+}
+
+impl<T> core::ops::Index<usize> for FlexSliceMut<'_, T> {
+    type Output = T;
+    #[inline(always)]
+    fn index(&self, i: usize) -> &T {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(i < self.0.len());
+            unsafe { self.0.get_unchecked(i) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &self.0[i]
+    }
+}
+
+impl<T> core::ops::IndexMut<usize> for FlexSliceMut<'_, T> {
+    #[inline(always)]
+    fn index_mut(&mut self, i: usize) -> &mut T {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(i < self.0.len());
+            unsafe { self.0.get_unchecked_mut(i) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &mut self.0[i]
+    }
+}
+
+impl<T> core::ops::Index<core::ops::Range<usize>> for FlexSliceMut<'_, T> {
+    type Output = [T];
+    #[inline(always)]
+    fn index(&self, r: core::ops::Range<usize>) -> &[T] {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(r.end <= self.0.len());
+            unsafe { self.0.get_unchecked(r) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &self.0[r]
+    }
+}
+
+impl<T> core::ops::IndexMut<core::ops::Range<usize>> for FlexSliceMut<'_, T> {
+    #[inline(always)]
+    fn index_mut(&mut self, r: core::ops::Range<usize>) -> &mut [T] {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(r.end <= self.0.len());
+            unsafe { self.0.get_unchecked_mut(r) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &mut self.0[r]
+    }
+}
+
+impl<T> core::ops::Index<core::ops::RangeFrom<usize>> for FlexSliceMut<'_, T> {
+    type Output = [T];
+    #[inline(always)]
+    fn index(&self, r: core::ops::RangeFrom<usize>) -> &[T] {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(r.start <= self.0.len());
+            unsafe { self.0.get_unchecked(r) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &self.0[r]
+    }
+}
+
+impl<T> core::ops::IndexMut<core::ops::RangeFrom<usize>> for FlexSliceMut<'_, T> {
+    #[inline(always)]
+    fn index_mut(&mut self, r: core::ops::RangeFrom<usize>) -> &mut [T] {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(r.start <= self.0.len());
+            unsafe { self.0.get_unchecked_mut(r) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &mut self.0[r]
+    }
+}
+
+/// Trait to get a `FlexSlice` or `FlexSliceMut` from any slice.
+///
+/// Use `slice.flex()[i]` in hot loops where you'd otherwise reach for
+/// raw pointer arithmetic. Zero-cost: generates identical assembly to
+/// both `[]` (checked) and `get_unchecked` (unchecked).
+pub trait Flex<T> {
+    fn flex(&self) -> FlexSlice<'_, T>;
+    fn flex_mut(&mut self) -> FlexSliceMut<'_, T>;
+}
+
+impl<T> Flex<T> for [T] {
+    #[inline(always)]
+    fn flex(&self) -> FlexSlice<'_, T> { FlexSlice(self) }
+    #[inline(always)]
+    fn flex_mut(&mut self) -> FlexSliceMut<'_, T> { FlexSliceMut(self) }
+}
+
 /// Safely reinterpret a slice of `[Src; N]` as a slice of `[Dst; N]`
 /// when both types have the same size and both implement zerocopy traits.
 ///

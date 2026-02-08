@@ -37,10 +37,22 @@ Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with saf
 
 2. **Target feature dispatch** — intrinsics are only safe when called within a function annotated with `#[target_feature(enable = "avx2")]` (or equivalent). `archmage` handles this via token-based dispatch (`Desktop64::summon()`, `#[arcane]`), so we **never manually write `is_x86_feature_detected!()` checks or `#[target_feature]` annotations on our functions**.
 
-3. **Slice access** — Use the `SliceExt` trait from `pixel_access.rs` for hot-path indexing:
-   - `slice.at(i)` / `slice.at_mut(i)` — single element access
-   - `slice.sub(start, len)` / `slice.sub_mut(start, len)` — subslice access
-   - Checked by default, unchecked (with `debug_assert!`) when `unchecked` feature is on
+3. **Slice access** — Two APIs in `pixel_access.rs`, both zero-cost (verified identical asm):
+
+   **`Flex` trait** — Use in super hot loops where you'd otherwise reach for pointer arithmetic:
+   ```rust
+   use crate::src::safe_simd::pixel_access::Flex;
+   let c = coeff.flex();      // immutable FlexSlice with [] syntax
+   let mut d = dst.flex_mut(); // mutable FlexSliceMut with [] syntax
+   d[off] = ((d[off] as i32 + c[idx] as i32).clamp(0, 255)) as u8;
+   ```
+   - `slice.flex()[i]` / `slice.flex()[start..end]` / `slice.flex()[start..]`
+   - `slice.flex_mut()[i] = val` / `slice.flex_mut()[start..end]`
+   - Natural `[]` syntax, checked by default, unchecked when `unchecked` feature on
+
+   **`SliceExt` trait** — Simpler single-access API:
+   - `slice.at(i)` / `slice.at_mut(i)` — single element
+   - `slice.sub(start, len)` / `slice.sub_mut(start, len)` — subslice
    - Import: `use crate::src::safe_simd::pixel_access::SliceExt;`
 
 **Do NOT:**
