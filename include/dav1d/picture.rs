@@ -1,7 +1,9 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use crate::include::common::bitdepth::BitDepth;
+#[cfg(feature = "c-ffi")]
 use crate::include::common::validate::validate_input;
+#[cfg(feature = "c-ffi")]
 use crate::include::dav1d::common::Dav1dDataProps;
 use crate::include::dav1d::common::Rav1dDataProps;
 use crate::include::dav1d::headers::DRav1d;
@@ -22,13 +24,18 @@ use crate::src::disjoint_mut::DisjointImmutGuard;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::disjoint_mut::DisjointMutGuard;
 use crate::src::disjoint_mut::SliceBounds;
+#[cfg(feature = "c-ffi")]
 use crate::src::error::Dav1dResult;
+#[cfg(feature = "c-ffi")]
 use crate::src::error::Rav1dError;
+#[cfg(feature = "c-ffi")]
 use crate::src::error::Rav1dError::EINVAL;
 use crate::src::error::Rav1dResult;
 #[cfg(feature = "asm")]
 use crate::src::pixels::Pixels;
 use crate::src::send_sync_non_null::SendSyncNonNull;
+#[cfg(not(feature = "c-ffi"))]
+use crate::src::mem::MemPool;
 use crate::src::strided::Strided;
 use crate::src::with_offset::WithOffset;
 use libc::ptrdiff_t;
@@ -39,6 +46,7 @@ use std::ffi::c_void;
 use std::mem;
 use std::ptr::NonNull;
 use std::sync::Arc;
+#[cfg(feature = "c-ffi")]
 use to_method::To as _;
 use zerocopy::AsBytes;
 use zerocopy::FromBytes;
@@ -90,6 +98,7 @@ impl From<Rav1dPictureParameters> for Dav1dPictureParameters {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 #[derive(Default)]
 #[repr(C)]
 pub struct Dav1dPicture {
@@ -152,6 +161,7 @@ impl Rav1dPictureDataComponentInner {
     /// # Safety
     ///
     /// `ptr`, `len`, and `stride` must follow the requirements of [`Dav1dPicAllocator::alloc_picture_callback`].
+    #[cfg(feature = "c-ffi")]
     unsafe fn new(ptr: Option<NonNull<u8>>, len: usize, stride: isize) -> Self {
         let ptr = match ptr {
             None => {
@@ -182,6 +192,27 @@ impl Rav1dPictureDataComponentInner {
         // Guaranteed by `Dav1dPicAllocator::alloc_picture_callback`.
         assert!(len % RAV1D_PICTURE_MULTIPLE == 0);
         Self { ptr, len, stride }
+    }
+
+    /// Safe constructor: creates a component pointing into an owned `Vec<u8>` buffer.
+    /// The Vec must have enough capacity for alignment padding + `usable_len`.
+    /// Vec heap data is stable across moves, so the pointer remains valid.
+    #[cfg(not(feature = "c-ffi"))]
+    fn new_from_vec(buf: &mut Vec<u8>, usable_len: usize, stride: isize) -> Self {
+        if usable_len == 0 {
+            return Self {
+                ptr: NonNull::<AlignedPixelChunk>::dangling().cast(),
+                len: 0,
+                stride,
+            };
+        }
+        let align_offset = buf.as_ptr().align_offset(RAV1D_PICTURE_ALIGNMENT);
+        assert!(align_offset + usable_len <= buf.len());
+        // Vec data lives on the heap; moving the Vec doesn't invalidate this pointer.
+        let ptr = NonNull::new(buf.as_mut_ptr().wrapping_add(align_offset)).unwrap();
+        assert!(ptr.cast::<AlignedPixelChunk>().is_aligned());
+        assert!(usable_len % RAV1D_PICTURE_MULTIPLE == 0);
+        Self { ptr, len: usable_len, stride }
     }
 
     /// # Safety
@@ -309,6 +340,7 @@ impl Rav1dPictureDataComponent {
         self.as_strided_mut_ptr::<BD>().cast_const()
     }
 
+    #[cfg(feature = "c-ffi")]
     fn as_dav1d(&self) -> Option<NonNull<c_void>> {
         if self.byte_len() == 0 {
             None
@@ -497,12 +529,21 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 pub struct Rav1dPictureData {
     pub data: [Rav1dPictureDataComponent; 3],
     pub(crate) allocator_data: Option<SendSyncNonNull<c_void>>,
     pub(crate) allocator: Rav1dPicAllocator,
 }
 
+#[cfg(not(feature = "c-ffi"))]
+pub struct Rav1dPictureData {
+    pub data: [Rav1dPictureDataComponent; 3],
+    owned_bufs: [Vec<u8>; 3],
+    pub(crate) allocator: Rav1dPicAllocator,
+}
+
+#[cfg(feature = "c-ffi")]
 impl Drop for Rav1dPictureData {
     fn drop(&mut self) {
         let Self {
@@ -511,6 +552,17 @@ impl Drop for Rav1dPictureData {
             allocator,
         } = self;
         allocator.dealloc_picture_data(data, *allocator_data);
+    }
+}
+
+#[cfg(not(feature = "c-ffi"))]
+impl Drop for Rav1dPictureData {
+    fn drop(&mut self) {
+        for buf in &mut self.owned_bufs {
+            if !buf.is_empty() {
+                self.allocator.pool.push(mem::take(buf));
+            }
+        }
     }
 }
 
@@ -533,6 +585,7 @@ pub(crate) struct Rav1dPicture {
     pub itut_t35: Arc<DRav1d<Box<[Rav1dITUTT35]>, Box<[Dav1dITUTT35]>>>,
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Dav1dPicture> for Rav1dPicture {
     fn from(value: Dav1dPicture) -> Self {
         let Dav1dPicture {
@@ -593,6 +646,7 @@ impl From<Dav1dPicture> for Rav1dPicture {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Rav1dPicture> for Dav1dPicture {
     fn from(value: Rav1dPicture) -> Self {
         let Rav1dPicture {
@@ -654,6 +708,7 @@ impl Rav1dPicture {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 #[derive(Clone)]
 #[repr(C)]
 pub struct Dav1dPicAllocator {
@@ -772,6 +827,7 @@ pub struct Dav1dPicAllocator {
     >,
 }
 
+#[cfg(feature = "c-ffi")]
 #[derive(Clone)]
 #[repr(C)]
 pub(crate) struct Rav1dPicAllocator {
@@ -824,6 +880,14 @@ pub(crate) struct Rav1dPicAllocator {
         unsafe extern "C" fn(pic: *mut Dav1dPicture, cookie: Option<SendSyncNonNull<c_void>>) -> (),
 }
 
+/// Safe picture allocator using per-plane `Vec<u8>` buffers from a shared pool.
+#[cfg(not(feature = "c-ffi"))]
+#[derive(Clone)]
+pub(crate) struct Rav1dPicAllocator {
+    pub(crate) pool: Arc<MemPool<u8>>,
+}
+
+#[cfg(feature = "c-ffi")]
 impl TryFrom<Dav1dPicAllocator> for Rav1dPicAllocator {
     type Error = Rav1dError;
 
@@ -841,6 +905,7 @@ impl TryFrom<Dav1dPicAllocator> for Rav1dPicAllocator {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Rav1dPicAllocator> for Dav1dPicAllocator {
     fn from(value: Rav1dPicAllocator) -> Self {
         let Rav1dPicAllocator {
@@ -856,6 +921,7 @@ impl From<Rav1dPicAllocator> for Dav1dPicAllocator {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl Rav1dPicAllocator {
     pub fn alloc_picture_data(
         &self,
@@ -918,6 +984,83 @@ impl Rav1dPicAllocator {
         unsafe {
             (self.release_picture_callback)(&mut pic_c, self.cookie);
         }
+    }
+}
+
+#[cfg(not(feature = "c-ffi"))]
+impl Rav1dPicAllocator {
+    pub fn alloc_picture_data(
+        &self,
+        w: c_int,
+        h: c_int,
+        seq_hdr: Arc<DRav1d<Rav1dSequenceHeader, Dav1dSequenceHeader>>,
+        frame_hdr: Option<Arc<DRav1d<Rav1dFrameHeader, Dav1dFrameHeader>>>,
+    ) -> Rav1dResult<Rav1dPicture> {
+        let p = Rav1dPictureParameters {
+            w,
+            h,
+            layout: seq_hdr.layout,
+            bpc: 8 + 2 * seq_hdr.hbd,
+        };
+
+        let hbd = (p.bpc > 8) as c_int;
+        let aligned_w = p.w + 127 & !127;
+        let has_chroma = p.layout != Rav1dPixelLayout::I400;
+        let ss_hor = (p.layout != Rav1dPixelLayout::I444) as c_int;
+        let mut y_stride = (aligned_w << hbd) as isize;
+        let mut uv_stride = if has_chroma { y_stride >> ss_hor } else { 0 };
+        if y_stride & 1023 == 0 {
+            y_stride += RAV1D_PICTURE_ALIGNMENT as isize;
+        }
+        if uv_stride & 1023 == 0 && has_chroma {
+            uv_stride += RAV1D_PICTURE_ALIGNMENT as isize;
+        }
+        let stride = [y_stride, uv_stride];
+        let [y_sz, uv_sz] = p.pic_len(stride);
+
+        // Round up to RAV1D_PICTURE_MULTIPLE for allocated data.
+        let round_up = |sz: usize| -> usize {
+            if sz == 0 { 0 } else { (sz + RAV1D_PICTURE_MULTIPLE - 1) & !(RAV1D_PICTURE_MULTIPLE - 1) }
+        };
+        let y_sz = round_up(y_sz);
+        let uv_sz = round_up(uv_sz);
+
+        // Allocate per-plane buffers with alignment padding.
+        let alloc_plane = |sz: usize| -> Vec<u8> {
+            if sz == 0 { return Vec::new(); }
+            self.pool.pop_init(sz + RAV1D_PICTURE_ALIGNMENT, 0)
+        };
+
+        let mut y_buf = alloc_plane(y_sz);
+        let mut u_buf = alloc_plane(uv_sz);
+        let mut v_buf = alloc_plane(uv_sz);
+
+        let data = [
+            Rav1dPictureDataComponent(DisjointMut::new(
+                Rav1dPictureDataComponentInner::new_from_vec(&mut y_buf, y_sz, y_stride),
+            )),
+            Rav1dPictureDataComponent(DisjointMut::new(
+                Rav1dPictureDataComponentInner::new_from_vec(&mut u_buf, uv_sz, uv_stride),
+            )),
+            Rav1dPictureDataComponent(DisjointMut::new(
+                Rav1dPictureDataComponentInner::new_from_vec(&mut v_buf, uv_sz, uv_stride),
+            )),
+        ];
+
+        let pic = Rav1dPicture {
+            p,
+            seq_hdr: Some(seq_hdr),
+            frame_hdr,
+            stride,
+            data: Some(Arc::new(Rav1dPictureData {
+                data,
+                owned_bufs: [y_buf, u_buf, v_buf],
+                allocator: self.clone(),
+            })),
+            ..Default::default()
+        };
+
+        Ok(pic)
     }
 }
 pub type PicOffset<'a> = Rav1dPictureDataComponentOffset<'a>;

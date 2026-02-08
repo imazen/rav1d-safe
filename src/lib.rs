@@ -43,12 +43,14 @@ use crate::src::log::Rav1dLogger;
 use crate::src::obu::rav1d_parse_obus;
 use crate::src::picture::rav1d_picture_alloc_copy;
 use crate::src::picture::PictureFlags;
+#[cfg(feature = "c-ffi")]
 use crate::src::send_sync_non_null::SendSyncNonNull;
 use crate::src::thread_task::rav1d_task_delayed_fg;
 use crate::src::thread_task::rav1d_worker_task;
 use crate::src::thread_task::FRAME_ERROR;
 use parking_lot::Mutex;
 use std::cmp;
+#[cfg(feature = "c-ffi")]
 use std::ffi::c_void;
 use std::ffi::CStr;
 use std::mem;
@@ -191,6 +193,7 @@ pub(crate) fn rav1d_open(
     validate_input!((s.n_threads >= 0 && s.n_threads <= 256, EINVAL))?;
     validate_input!((s.max_frame_delay >= 0 && s.max_frame_delay <= 256, EINVAL))?;
     validate_input!((s.operating_point <= 31, EINVAL))?;
+    #[cfg(feature = "c-ffi")]
     validate_input!((
         !s.allocator.is_default() || s.allocator.cookie.is_none(),
         EINVAL
@@ -294,8 +297,10 @@ pub(crate) fn rav1d_open(
     };
 
     // TODO fallible allocation
+    #[cfg_attr(not(feature = "c-ffi"), allow(unused_mut))]
     let mut c = Arc::new(c);
 
+    #[cfg(feature = "c-ffi")]
     if c.allocator.is_default() {
         let c = Arc::get_mut(&mut c).unwrap();
         // SAFETY: When `allocator.is_default()`, `allocator.cookie` should be a `&c.picture_pool`.

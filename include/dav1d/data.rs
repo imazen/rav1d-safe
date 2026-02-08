@@ -1,10 +1,16 @@
+#[cfg(feature = "c-ffi")]
+#[cfg(feature = "c-ffi")]
 use crate::include::dav1d::common::Dav1dDataProps;
 use crate::include::dav1d::common::Rav1dDataProps;
 use crate::src::c_arc::CArc;
+#[cfg(feature = "c-ffi")]
 use crate::src::c_arc::RawCArc;
+#[cfg(feature = "c-ffi")]
 use std::ptr::NonNull;
+#[cfg(feature = "c-ffi")]
 use to_method::To as _;
 
+#[cfg(feature = "c-ffi")]
 #[derive(Default)]
 #[repr(C)]
 pub struct Dav1dData {
@@ -21,6 +27,7 @@ pub(crate) struct Rav1dData {
     pub m: Rav1dDataProps,
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Dav1dData> for Rav1dData {
     fn from(value: Dav1dData) -> Self {
         let Dav1dData {
@@ -39,6 +46,7 @@ impl From<Dav1dData> for Rav1dData {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Rav1dData> for Dav1dData {
     fn from(value: Rav1dData) -> Self {
         let Rav1dData { data, m } = value;

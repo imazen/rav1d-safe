@@ -123,7 +123,7 @@ pub mod src {
     pub(crate) mod levels;
     mod lf_apply;
     mod lr_apply;
-    mod mem;
+    pub(crate) mod mem;
     mod obu;
     pub(crate) mod pic_or_buf;
     mod qm;
