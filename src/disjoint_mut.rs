@@ -36,17 +36,21 @@ impl<V: Copy, C: AlignedByteChunk> Resizable for AlignedVec<V, C> {
     }
 }
 
-/// SAFETY: We never materialize a `&mut [T]` since we
-/// only materialize a `&mut AlignedVec<T, _>` and call [`AlignedVec::as_mut_ptr`] on it,
-/// which calls [`Vec::as_mut_ptr`] and never materializes a `&mut [V]`.
+/// SAFETY: We only create `&AlignedVec` (SharedReadOnly), never `&mut AlignedVec`.
+/// Creating `&mut AlignedVec` would produce a Unique retag (Stacked Borrows) covering
+/// the inner Vec struct, invalidating concurrent `&AlignedVec` reads from other threads.
+/// Instead, we read the data pointer through `as_ptr().cast_mut()` and the length
+/// through `self.len()`, both of which only require shared references.
 #[allow(unsafe_code)]
 unsafe impl<T: Copy, C: AlignedByteChunk> ExternalAsMutPtr for AlignedVec<T, C> {
     type Target = T;
 
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
-        // SAFETY: `.as_mut_ptr()` does not materialize a `&mut` to
-        // the underlying slice, so we can still allow `&`s into this slice.
-        let ptr = unsafe { &mut *ptr }.as_mut_ptr();
+        // SAFETY: Only creates &AlignedVec (SharedReadOnly), not &mut AlignedVec.
+        // as_ptr() reads the inner Vec's pointer through a shared reference,
+        // which doesn't conflict with concurrent shared borrows from other threads.
+        let aligned_ref = unsafe { &*ptr };
+        let ptr = aligned_ref.as_ptr().cast_mut();
 
         // SAFETY: `AlignedVec` stores `C`s internally,
         // so `*mut T` is really `*mut C`.
