@@ -2454,7 +2454,9 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
     data: &Rav1dFilmGrainData,
     bd: BD,
 ) -> bool {
-    let Some(_token) = Desktop64::summon() else { return false };
+    let Some(_token) = Desktop64::summon() else {
+        return false;
+    };
     use zerocopy::{AsBytes, FromBytes};
     match BD::BPC {
         BPC::BPC8 => {
@@ -2481,7 +2483,9 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     is_uv: bool,
     bd: BD,
 ) -> bool {
-    let Some(_token) = Desktop64::summon() else { return false };
+    let Some(_token) = Desktop64::summon() else {
+        return false;
+    };
     let (is_subx, is_suby) = match layout {
         Rav1dPixelLayoutSubSampled::I420 => (true, true),
         Rav1dPixelLayoutSubSampled::I422 => (true, false),
@@ -2519,7 +2523,9 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use zerocopy::AsBytes;
-    let Some(token) = Desktop64::summon() else { return false };
+    let Some(token) = Desktop64::summon() else {
+        return false;
+    };
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
     let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
@@ -2612,7 +2618,9 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use zerocopy::AsBytes;
-    let Some(token) = Desktop64::summon() else { return false };
+    let Some(token) = Desktop64::summon() else {
+        return false;
+    };
     let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
     let (is_sx, is_sy) = match layout {
         Rav1dPixelLayoutSubSampled::I420 => (true, true),

@@ -23,11 +23,13 @@ use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::intops::iclip;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
+use crate::src::safe_simd::pixel_access::Flex;
+use crate::src::safe_simd::pixel_access::{
+    loadi32, loadi64, loadu_128, loadu_256, storei32, storei64, storeu_128, storeu_256,
+};
 use std::ffi::c_int;
 use std::num::NonZeroUsize;
 use std::slice;
-use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128, loadu_256, storeu_256};
-use crate::src::safe_simd::pixel_access::Flex;
 
 // ============================================================================
 // CONSTANTS
@@ -61,10 +63,30 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
 
-    let row0 = _mm_set_epi32(coeff[12] as i32, coeff[8] as i32, coeff[4] as i32, coeff[0] as i32);
-    let row1 = _mm_set_epi32(coeff[13] as i32, coeff[9] as i32, coeff[5] as i32, coeff[1] as i32);
-    let row2 = _mm_set_epi32(coeff[14] as i32, coeff[10] as i32, coeff[6] as i32, coeff[2] as i32);
-    let row3 = _mm_set_epi32(coeff[15] as i32, coeff[11] as i32, coeff[7] as i32, coeff[3] as i32);
+    let row0 = _mm_set_epi32(
+        coeff[12] as i32,
+        coeff[8] as i32,
+        coeff[4] as i32,
+        coeff[0] as i32,
+    );
+    let row1 = _mm_set_epi32(
+        coeff[13] as i32,
+        coeff[9] as i32,
+        coeff[5] as i32,
+        coeff[1] as i32,
+    );
+    let row2 = _mm_set_epi32(
+        coeff[14] as i32,
+        coeff[10] as i32,
+        coeff[6] as i32,
+        coeff[2] as i32,
+    );
+    let row3 = _mm_set_epi32(
+        coeff[15] as i32,
+        coeff[11] as i32,
+        coeff[7] as i32,
+        coeff[3] as i32,
+    );
 
     let rows01 = _mm256_set_m128i(row1, row0);
     let rows23 = _mm256_set_m128i(row3, row2);
@@ -158,8 +180,14 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
 
     // Clear coefficients
     let coeff_bytes = zerocopy::AsBytes::as_bytes_mut(&mut *coeff);
-    storeu_128!(<&mut [u8; 16]>::try_from(&mut coeff_bytes[..16]).unwrap(), _mm_setzero_si128());
-    storeu_128!(<&mut [u8; 16]>::try_from(&mut coeff_bytes[16..32]).unwrap(), _mm_setzero_si128());
+    storeu_128!(
+        <&mut [u8; 16]>::try_from(&mut coeff_bytes[..16]).unwrap(),
+        _mm_setzero_si128()
+    );
+    storeu_128!(
+        <&mut [u8; 16]>::try_from(&mut coeff_bytes[16..32]).unwrap(),
+        _mm_setzero_si128()
+    );
 }
 
 /// DCT4 butterfly on 2 rows packed in __m256i
@@ -312,11 +340,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -341,29 +379,29 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
 
     // Load coefficients (column-major storage)
     let row0 = _mm_set_epi32(
-            coeff[12] as i32,
-            coeff[8] as i32,
-            coeff[4] as i32,
-            coeff[0] as i32,
-        );
+        coeff[12] as i32,
+        coeff[8] as i32,
+        coeff[4] as i32,
+        coeff[0] as i32,
+    );
     let row1 = _mm_set_epi32(
-            coeff[13] as i32,
-            coeff[9] as i32,
-            coeff[5] as i32,
-            coeff[1] as i32,
-        );
+        coeff[13] as i32,
+        coeff[9] as i32,
+        coeff[5] as i32,
+        coeff[1] as i32,
+    );
     let row2 = _mm_set_epi32(
-            coeff[14] as i32,
-            coeff[10] as i32,
-            coeff[6] as i32,
-            coeff[2] as i32,
-        );
+        coeff[14] as i32,
+        coeff[10] as i32,
+        coeff[6] as i32,
+        coeff[2] as i32,
+    );
     let row3 = _mm_set_epi32(
-            coeff[15] as i32,
-            coeff[11] as i32,
-            coeff[7] as i32,
-            coeff[3] as i32,
-        );
+        coeff[15] as i32,
+        coeff[11] as i32,
+        coeff[7] as i32,
+        coeff[3] as i32,
+    );
 
     // Pack rows into 256-bit vectors
     let rows01 = _mm256_set_m128i(row1, row0);
@@ -433,7 +471,10 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     let sum1 = _mm_add_epi32(dst1_32, scaled1);
     let clamped1 = _mm_max_epi32(_mm_min_epi32(sum1, max_val), zero);
     let packed1 = _mm_packus_epi32(clamped1, clamped1);
-    storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off1..dst_off1 + 4]), packed1);
+    storei64!(
+        zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off1..dst_off1 + 4]),
+        packed1
+    );
 
     // Row 2
     let dst_off2 = stride_u16 * 2;
@@ -443,7 +484,10 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     let sum2 = _mm_add_epi32(dst2_32, scaled2);
     let clamped2 = _mm_max_epi32(_mm_min_epi32(sum2, max_val), zero);
     let packed2 = _mm_packus_epi32(clamped2, clamped2);
-    storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off2..dst_off2 + 4]), packed2);
+    storei64!(
+        zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off2..dst_off2 + 4]),
+        packed2
+    );
 
     // Row 3
     let dst_off3 = stride_u16 * 3;
@@ -453,7 +497,10 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     let sum3 = _mm_add_epi32(dst3_32, scaled3);
     let clamped3 = _mm_max_epi32(_mm_min_epi32(sum3, max_val), zero);
     let packed3 = _mm_packus_epi32(clamped3, clamped3);
-    storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off3..dst_off3 + 4]), packed3);
+    storei64!(
+        zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off3..dst_off3 + 4]),
+        packed3
+    );
 
     // Clear coefficients
     coeff[..16].fill(0);
@@ -475,11 +522,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -582,10 +639,14 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
@@ -681,10 +742,14 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_avx2(
     let abs_stride_u16 = stride_u16;
     let buf_size = 3 * abs_stride_u16 + 4;
     let (base, dst_slice) = if stride_u16 >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u16, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u16).offset(3 * stride_u16) };
-        (3 * abs_stride_u16, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride_u16, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
@@ -777,9 +842,12 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
     inv_identity_add_4x4_8bpc_avx2(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
 }
@@ -857,9 +925,12 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
     inv_identity_add_8x8_8bpc_avx2(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
 }
@@ -1237,11 +1308,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -1337,7 +1418,10 @@ fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
 
         // Pack to u16 and store
         let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
-        storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(), packed);
+        storeu_128!(
+            <&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -1360,11 +1444,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -1455,7 +1549,10 @@ pub fn inv_identity_add_16x16_8bpc_avx2(
         let packed_hi = _mm256_extracti128_si256(packed, 1);
         let result = _mm_unpacklo_epi64(packed_lo, packed_hi);
 
-        storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), result);
+        storeu_128!(
+            <&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            result
+        );
     }
 
     // Clear coefficients (16x16 = 256 i16 = 512 bytes = 32 x 16-byte stores)
@@ -1478,9 +1575,12 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
     inv_identity_add_16x16_8bpc_avx2(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
 }
@@ -1782,7 +1882,7 @@ fn add_16x16_to_dst(
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
-    
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
     let rnd_final = _mm256_set1_epi32(8);
@@ -1834,12 +1934,14 @@ fn add_16x16_to_dst(
         let packed = _mm256_permute4x64_epi64::<0b11_01_10_00>(packed);
 
         // Store 16 pixels
-        storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+        storeu_128!(
+            <&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            _mm256_castsi256_si128(packed)
+        );
     }
 
     // Clear coefficients (256 * 2 = 512 bytes = 16 * 32 bytes)
     coeff[..256].fill(0);
-    
 }
 
 // ============================================================================
@@ -1850,7 +1952,7 @@ fn add_16x16_to_dst(
 macro_rules! impl_16x16_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u8],
@@ -1859,7 +1961,9 @@ macro_rules! impl_16x16_transform {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
@@ -1878,7 +1982,14 @@ macro_rules! impl_16x16_transform {
                 col_clip_min,
                 col_clip_max,
             );
-            add_16x16_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+            add_16x16_to_dst(
+                _token,
+                &mut *dst,
+                dst_stride,
+                &tmp,
+                &mut *coeff,
+                bitdepth_max,
+            );
         }
     };
 }
@@ -1888,7 +1999,7 @@ macro_rules! impl_16x16_ffi_wrapper {
     ($wrapper:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -1901,9 +2012,15 @@ macro_rules! impl_16x16_ffi_wrapper {
             let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride = dst_stride as usize;
 
-            let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+            let dst_slice = unsafe {
+                std::slice::from_raw_parts_mut(
+                    dst_ptr as *mut u8,
+                    _coeff_len as usize * stride + stride,
+                )
+            };
 
-            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+            let coeff_slice =
+                unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
             $inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
         }
@@ -2133,7 +2250,10 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
         // Store 16 pixels
-        storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+        storeu_128!(
+            <&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            _mm256_castsi256_si128(packed)
+        );
     }
 
     // Clear coefficients (256 * 2 = 512 bytes = 16 * 32 bytes)
@@ -2156,11 +2276,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -2266,7 +2396,10 @@ fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
         let packed = _mm256_packus_epi32(clamped0, clamped1);
         // Fix lane order after packus
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
-        storeu_256!(<&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), packed);
+        storeu_256!(
+            <&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients (256 * 2 = 512 bytes = 16 * 32 bytes)
@@ -2289,11 +2422,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -2389,11 +2532,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// Full 2D DCT_DCT 8x4 inverse transform
@@ -2497,11 +2650,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -2512,7 +2675,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_avx2(
 macro_rules! impl_4x8_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u8],
@@ -2521,7 +2684,9 @@ macro_rules! impl_4x8_transform {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
@@ -2581,7 +2746,7 @@ macro_rules! impl_4x8_transform {
 macro_rules! impl_8x4_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u8],
@@ -2590,7 +2755,9 @@ macro_rules! impl_8x4_transform {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
@@ -2624,7 +2791,7 @@ macro_rules! impl_8x4_transform {
                     let d = dst[dst_off + x] as i32;
                     let c = (tmp[y * 8 + x] + 8) >> 4;
                     let result = iclip(d + c, 0, bitdepth_max);
-                    dst[dst_off + x] = result as u8 ;
+                    dst[dst_off + x] = result as u8;
                 }
             }
 
@@ -2706,7 +2873,7 @@ macro_rules! impl_4x8_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -2719,9 +2886,15 @@ macro_rules! impl_4x8_ffi_wrapper {
             let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride = dst_stride as usize;
 
-            let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+            let dst_slice = unsafe {
+                std::slice::from_raw_parts_mut(
+                    dst_ptr as *mut u8,
+                    _coeff_len as usize * stride + stride,
+                )
+            };
 
-            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+            let coeff_slice =
+                unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
             $inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
         }
@@ -2766,7 +2939,7 @@ macro_rules! impl_8x4_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -2779,9 +2952,15 @@ macro_rules! impl_8x4_ffi_wrapper {
             let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride = dst_stride as usize;
 
-            let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+            let dst_slice = unsafe {
+                std::slice::from_raw_parts_mut(
+                    dst_ptr as *mut u8,
+                    _coeff_len as usize * stride + stride,
+                )
+            };
 
-            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+            let coeff_slice =
+                unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
             $inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
         }
@@ -2965,7 +3144,7 @@ impl_8x4_ffi_wrapper!(
 macro_rules! impl_8x16_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u8],
@@ -2974,7 +3153,9 @@ macro_rules! impl_8x16_transform {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
@@ -3051,7 +3232,7 @@ macro_rules! impl_8x16_transform {
 macro_rules! impl_16x8_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u8],
@@ -3060,7 +3241,9 @@ macro_rules! impl_16x8_transform {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
@@ -3133,7 +3316,10 @@ macro_rules! impl_16x8_transform {
                 let packed = _mm256_packus_epi16(clamped, clamped);
                 let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-                storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+                storeu_128!(
+                    <&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+                    _mm256_castsi256_si128(packed)
+                );
             }
 
             // Clear coefficients
@@ -3231,7 +3417,7 @@ macro_rules! impl_8x16_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -3244,9 +3430,15 @@ macro_rules! impl_8x16_ffi_wrapper {
             let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride = dst_stride as usize;
 
-            let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+            let dst_slice = unsafe {
+                std::slice::from_raw_parts_mut(
+                    dst_ptr as *mut u8,
+                    _coeff_len as usize * stride + stride,
+                )
+            };
 
-            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+            let coeff_slice =
+                unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
             $inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
         }
@@ -3258,7 +3450,7 @@ macro_rules! impl_16x8_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -3271,9 +3463,15 @@ macro_rules! impl_16x8_ffi_wrapper {
             let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride = dst_stride as usize;
 
-            let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+            let dst_slice = unsafe {
+                std::slice::from_raw_parts_mut(
+                    dst_ptr as *mut u8,
+                    _coeff_len as usize * stride + stride,
+                )
+            };
 
-            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+            let coeff_slice =
+                unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
             $inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
         }
@@ -3583,11 +3781,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// Full 2D DCT_DCT 16x8 inverse transform
@@ -3675,7 +3883,10 @@ fn inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
         let packed = _mm256_packus_epi16(clamped, clamped);
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-        storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+        storeu_128!(
+            <&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            _mm256_castsi256_si128(packed)
+        );
     }
 
     // Clear coefficients
@@ -3698,11 +3909,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -3794,7 +4015,10 @@ fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
         let packed = _mm256_packus_epi16(clamped, clamped);
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-        storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+        storeu_128!(
+            <&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            _mm256_castsi256_si128(packed)
+        );
     }
 
     // Clear coefficients
@@ -3817,11 +4041,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// Full 2D DCT_DCT 32x16 inverse transform
@@ -3876,7 +4110,10 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
         // Process 32 pixels in two 16-pixel chunks
         for chunk in 0..2 {
             let chunk_off = chunk * 16;
-            let d = loadu_128!(<&[u8; 16]>::try_from(&dst[dst_off + chunk_off..dst_off + chunk_off + 16]).unwrap());
+            let d = loadu_128!(<&[u8; 16]>::try_from(
+                &dst[dst_off + chunk_off..dst_off + chunk_off + 16]
+            )
+            .unwrap());
             let d16 = _mm256_cvtepu8_epi16(d);
 
             let c0 = _mm256_set_epi32(
@@ -3912,7 +4149,11 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-            storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off + chunk_off..dst_off + chunk_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+            storeu_128!(
+                <&mut [u8; 16]>::try_from(&mut dst[dst_off + chunk_off..dst_off + chunk_off + 16])
+                    .unwrap(),
+                _mm256_castsi256_si128(packed)
+            );
         }
     }
 
@@ -3936,11 +4177,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -4028,7 +4279,10 @@ fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
         let packed = _mm256_packus_epi16(clamped, clamped);
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-        storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+        storeu_128!(
+            <&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            _mm256_castsi256_si128(packed)
+        );
     }
 
     // Clear coefficients
@@ -4051,11 +4305,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 32x16 IDTX inverse transform
@@ -4102,7 +4366,7 @@ fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
             let d = dst[dst_off + x] as i32;
             let c = (tmp[y * 32 + x] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            dst[dst_off + x] = result as u8 ;
+            dst[dst_off + x] = result as u8;
         }
     }
 
@@ -4126,11 +4390,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// Full 2D DCT_DCT 32x64 inverse transform
@@ -4194,7 +4468,10 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
         // Process 32 pixels in two 16-pixel chunks
         for chunk in 0..2 {
             let chunk_off = chunk * 16;
-            let d = loadu_128!(<&[u8; 16]>::try_from(&dst[dst_off + chunk_off..dst_off + chunk_off + 16]).unwrap());
+            let d = loadu_128!(<&[u8; 16]>::try_from(
+                &dst[dst_off + chunk_off..dst_off + chunk_off + 16]
+            )
+            .unwrap());
             let d16 = _mm256_cvtepu8_epi16(d);
 
             let c0 = _mm256_set_epi32(
@@ -4230,7 +4507,11 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-            storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off + chunk_off..dst_off + chunk_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+            storeu_128!(
+                <&mut [u8; 16]>::try_from(&mut dst[dst_off + chunk_off..dst_off + chunk_off + 16])
+                    .unwrap(),
+                _mm256_castsi256_si128(packed)
+            );
         }
     }
 
@@ -4254,11 +4535,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// Full 2D DCT_DCT 64x32 inverse transform
@@ -4317,7 +4608,10 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
         // Process 64 pixels in four 16-pixel chunks
         for chunk in 0..4 {
             let chunk_off = chunk * 16;
-            let d = loadu_128!(<&[u8; 16]>::try_from(&dst[dst_off + chunk_off..dst_off + chunk_off + 16]).unwrap());
+            let d = loadu_128!(<&[u8; 16]>::try_from(
+                &dst[dst_off + chunk_off..dst_off + chunk_off + 16]
+            )
+            .unwrap());
             let d16 = _mm256_cvtepu8_epi16(d);
 
             let c0 = _mm256_set_epi32(
@@ -4353,7 +4647,11 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-            storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off + chunk_off..dst_off + chunk_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+            storeu_128!(
+                <&mut [u8; 16]>::try_from(&mut dst[dst_off + chunk_off..dst_off + chunk_off + 16])
+                    .unwrap(),
+                _mm256_castsi256_si128(packed)
+            );
         }
     }
 
@@ -4377,11 +4675,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -4434,7 +4742,7 @@ fn inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(
             let d = dst[dst_off + x] as i32;
             let c = (tmp[y * 4 + x] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            dst[dst_off + x] = result as u8 ;
+            dst[dst_off + x] = result as u8;
         }
     }
 
@@ -4458,11 +4766,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// Full 2D DCT_DCT 16x4 inverse transform
@@ -4548,7 +4866,10 @@ fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
         let packed = _mm256_packus_epi16(clamped, clamped);
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-        storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+        storeu_128!(
+            <&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            _mm256_castsi256_si128(packed)
+        );
     }
 
     // Clear coefficients
@@ -4571,11 +4892,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -4586,7 +4917,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_avx2(
 macro_rules! impl_4x16_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u8],
@@ -4595,7 +4926,9 @@ macro_rules! impl_4x16_transform {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
@@ -4629,7 +4962,7 @@ macro_rules! impl_4x16_transform {
                     let d = dst[dst_off + x] as i32;
                     let c = (tmp[y * 4 + x] + 8) >> 4;
                     let result = iclip(d + c, 0, bitdepth_max);
-                    dst[dst_off + x] = result as u8 ;
+                    dst[dst_off + x] = result as u8;
                 }
             }
 
@@ -4643,7 +4976,7 @@ macro_rules! impl_4x16_transform {
 macro_rules! impl_16x4_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u8],
@@ -4652,7 +4985,9 @@ macro_rules! impl_16x4_transform {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
@@ -4723,7 +5058,10 @@ macro_rules! impl_16x4_transform {
                 let packed = _mm256_packus_epi16(clamped, clamped);
                 let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-                storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+                storeu_128!(
+                    <&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+                    _mm256_castsi256_si128(packed)
+                );
             }
 
             // Clear coefficients
@@ -4821,7 +5159,7 @@ macro_rules! impl_4x16_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -4834,9 +5172,15 @@ macro_rules! impl_4x16_ffi_wrapper {
             let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride = dst_stride as usize;
 
-            let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+            let dst_slice = unsafe {
+                std::slice::from_raw_parts_mut(
+                    dst_ptr as *mut u8,
+                    _coeff_len as usize * stride + stride,
+                )
+            };
 
-            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+            let coeff_slice =
+                unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
             $inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
         }
@@ -4848,7 +5192,7 @@ macro_rules! impl_16x4_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -4861,9 +5205,15 @@ macro_rules! impl_16x4_ffi_wrapper {
             let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride = dst_stride as usize;
 
-            let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+            let dst_slice = unsafe {
+                std::slice::from_raw_parts_mut(
+                    dst_ptr as *mut u8,
+                    _coeff_len as usize * stride + stride,
+                )
+            };
 
-            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+            let coeff_slice =
+                unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
             $inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
         }
@@ -5122,7 +5472,7 @@ fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
             let d = dst[dst_off + x] as i32;
             let c = (tmp[y * 8 + x] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            dst[dst_off + x] = result as u8 ;
+            dst[dst_off + x] = result as u8;
         }
     }
 
@@ -5146,11 +5496,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// Full 2D DCT_DCT 32x8 inverse transform
@@ -5205,7 +5565,10 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
         // Process 32 pixels in two 16-pixel chunks
         for chunk in 0..2 {
             let chunk_off = chunk * 16;
-            let d = loadu_128!(<&[u8; 16]>::try_from(&dst[dst_off + chunk_off..dst_off + chunk_off + 16]).unwrap());
+            let d = loadu_128!(<&[u8; 16]>::try_from(
+                &dst[dst_off + chunk_off..dst_off + chunk_off + 16]
+            )
+            .unwrap());
             let d16 = _mm256_cvtepu8_epi16(d);
 
             let c0 = _mm256_set_epi32(
@@ -5241,7 +5604,11 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-            storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off + chunk_off..dst_off + chunk_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+            storeu_128!(
+                <&mut [u8; 16]>::try_from(&mut dst[dst_off + chunk_off..dst_off + chunk_off + 16])
+                    .unwrap(),
+                _mm256_castsi256_si128(packed)
+            );
         }
     }
 
@@ -5265,11 +5632,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -5318,7 +5695,7 @@ fn inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
             let d = dst[dst_off + x] as i32;
             let c = (tmp[y * 8 + x] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            dst[dst_off + x] = result as u8 ;
+            dst[dst_off + x] = result as u8;
         }
     }
 
@@ -5342,11 +5719,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 32x8 IDTX inverse transform
@@ -5391,7 +5778,7 @@ fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
             let d = dst[dst_off + x] as i32;
             let c = (tmp[y * 32 + x] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            dst[dst_off + x] = result as u8 ;
+            dst[dst_off + x] = result as u8;
         }
     }
 
@@ -5415,11 +5802,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -5518,7 +5915,10 @@ fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
         let packed = _mm256_packus_epi16(clamped, clamped);
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-        storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+        storeu_128!(
+            <&mut [u8; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            _mm256_castsi256_si128(packed)
+        );
     }
 
     // Clear coefficients
@@ -5541,11 +5941,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// Full 2D DCT_DCT 64x16 inverse transform
@@ -5603,7 +6013,10 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
         // Process 64 pixels in four 16-pixel chunks
         for chunk in 0..4 {
             let chunk_off = chunk * 16;
-            let d = loadu_128!(<&[u8; 16]>::try_from(&dst[dst_off + chunk_off..dst_off + chunk_off + 16]).unwrap());
+            let d = loadu_128!(<&[u8; 16]>::try_from(
+                &dst[dst_off + chunk_off..dst_off + chunk_off + 16]
+            )
+            .unwrap());
             let d16 = _mm256_cvtepu8_epi16(d);
 
             let c0 = _mm256_set_epi32(
@@ -5639,7 +6052,11 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-            storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_off + chunk_off..dst_off + chunk_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+            storeu_128!(
+                <&mut [u8; 16]>::try_from(&mut dst[dst_off + chunk_off..dst_off + chunk_off + 16])
+                    .unwrap(),
+                _mm256_castsi256_si128(packed)
+            );
         }
     }
 
@@ -5663,11 +6080,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -5928,10 +6355,14 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner(
@@ -5961,10 +6392,14 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner(
@@ -5994,10 +6429,14 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
@@ -6274,10 +6713,14 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(
@@ -6306,10 +6749,14 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(
@@ -6338,10 +6785,14 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(
@@ -6370,10 +6821,14 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(
@@ -6402,10 +6857,14 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
@@ -6554,7 +7013,7 @@ fn dct8_1d_scalar(
 macro_rules! impl_8x8_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         pub fn $name(
             _token: Desktop64,
             dst: &mut [u8],
@@ -6563,7 +7022,9 @@ macro_rules! impl_8x8_transform {
             _eob: i32,
             _bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             const MIN: i32 = i16::MIN as i32;
@@ -6617,7 +7078,7 @@ macro_rules! impl_8x8_transform {
                 for x in 0..8 {
                     let pixel = dst[dst_off + x] as i32;
                     let val = pixel + ((out[y][x] + 8) >> 4);
-                    dst[dst_off + x] = val.clamp(0, 255) as u8 ;
+                    dst[dst_off + x] = val.clamp(0, 255) as u8;
                 }
             }
 
@@ -6674,7 +7135,7 @@ macro_rules! impl_8x8_ffi_wrapper {
     ($wrapper:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -6687,9 +7148,15 @@ macro_rules! impl_8x8_ffi_wrapper {
             let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride = dst_stride as usize;
 
-            let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+            let dst_slice = unsafe {
+                std::slice::from_raw_parts_mut(
+                    dst_ptr as *mut u8,
+                    _coeff_len as usize * stride + stride,
+                )
+            };
 
-            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+            let coeff_slice =
+                unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
             $inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
         }
@@ -6951,10 +7418,14 @@ pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
@@ -6983,10 +7454,14 @@ pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(
@@ -7015,10 +7490,14 @@ pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
@@ -7047,10 +7526,14 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(
@@ -7180,10 +7663,14 @@ pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
@@ -7212,10 +7699,14 @@ pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_avx2(
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) })
+        (0usize, unsafe {
+            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
+        })
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe { std::slice::from_raw_parts_mut(start, buf_size) })
+        (3 * abs_stride, unsafe {
+            std::slice::from_raw_parts_mut(start, buf_size)
+        })
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
@@ -7549,7 +8040,7 @@ fn add_32x32_to_dst(
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
-    
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
     let rnd_final = _mm256_set1_epi32(4); // (+ 4) >> 3 for 32x32
@@ -7563,7 +8054,8 @@ fn add_32x32_to_dst(
             let dst_chunk_off = dst_off + x_base;
 
             // Load destination pixels (16 bytes)
-            let d = loadu_128!(<&[u8; 16]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 16]).unwrap());
+            let d =
+                loadu_128!(<&[u8; 16]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 16]).unwrap());
             let d16 = _mm256_cvtepu8_epi16(d);
 
             // Load coefficients
@@ -7601,13 +8093,15 @@ fn add_32x32_to_dst(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64::<0b11_01_10_00>(packed);
 
-            storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+            storeu_128!(
+                <&mut [u8; 16]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 16]).unwrap(),
+                _mm256_castsi256_si128(packed)
+            );
         }
     }
 
     // Clear coefficients (1024 * 2 = 2048 bytes = 64 * 32 bytes)
     coeff[..1024].fill(0);
-    
 }
 
 /// 32x32 DCT_DCT inner function
@@ -7639,7 +8133,14 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+    add_32x32_to_dst(
+        _token,
+        &mut *dst,
+        dst_stride,
+        &tmp,
+        &mut *coeff,
+        bitdepth_max,
+    );
 }
 
 /// 32x32 IDTX inner function
@@ -7671,7 +8172,14 @@ fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+    add_32x32_to_dst(
+        _token,
+        &mut *dst,
+        dst_stride,
+        &tmp,
+        &mut *coeff,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for 32x32 DCT_DCT 8bpc
@@ -7690,11 +8198,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for 32x32 IDTX 8bpc
@@ -7713,11 +8231,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -7752,7 +8280,8 @@ fn add_32x32_to_dst_16bpc(
             let dst_chunk_off = dst_off + x_base;
 
             // Load destination pixels (8 u16 = 16 bytes)
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
@@ -7787,7 +8316,10 @@ fn add_32x32_to_dst_16bpc(
             let lo = _mm256_castsi256_si128(clamped);
             let hi = _mm256_extracti128_si256(clamped, 1);
             let packed = _mm_packus_epi32(lo, hi);
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -7825,7 +8357,14 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+    add_32x32_to_dst_16bpc(
+        _token,
+        &mut *dst,
+        dst_stride,
+        &tmp,
+        &mut *coeff,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for 32x32 DCT_DCT 16bpc
@@ -7844,11 +8383,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -8521,7 +9070,7 @@ fn add_64x64_to_dst(
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
-    
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
     let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2 for 64x64
@@ -8534,7 +9083,8 @@ fn add_64x64_to_dst(
             let x_base = chunk * 16;
             let dst_chunk_off = dst_off + x_base;
 
-            let d = loadu_128!(<&[u8; 16]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 16]).unwrap());
+            let d =
+                loadu_128!(<&[u8; 16]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 16]).unwrap());
             let d16 = _mm256_cvtepu8_epi16(d);
 
             let c0 = _mm256_set_epi32(
@@ -8571,13 +9121,15 @@ fn add_64x64_to_dst(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64::<0b11_01_10_00>(packed);
 
-            storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 16]).unwrap(), _mm256_castsi256_si128(packed));
+            storeu_128!(
+                <&mut [u8; 16]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 16]).unwrap(),
+                _mm256_castsi256_si128(packed)
+            );
         }
     }
 
     // Clear coefficients (only 1024 stored due to high-frequency zeroing)
     coeff[..1024].fill(0);
-
 }
 
 /// 64x64 DCT_DCT inner function
@@ -8609,7 +9161,14 @@ fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_64x64_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+    add_64x64_to_dst(
+        _token,
+        &mut *dst,
+        dst_stride,
+        &tmp,
+        &mut *coeff,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for 64x64 DCT_DCT 8bpc
@@ -8628,11 +9187,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, _coeff_len as usize * stride + stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -8667,7 +9236,8 @@ fn add_64x64_to_dst_16bpc(
             let dst_chunk_off = dst_off + x_base;
 
             // Load destination pixels (8 u16 = 16 bytes)
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
@@ -8702,7 +9272,10 @@ fn add_64x64_to_dst_16bpc(
             let lo = _mm256_castsi256_si128(clamped);
             let hi = _mm256_extracti128_si256(clamped, 1);
             let packed = _mm_packus_epi32(lo, hi);
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -8740,7 +9313,14 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_64x64_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+    add_64x64_to_dst_16bpc(
+        _token,
+        &mut *dst,
+        dst_stride,
+        &tmp,
+        &mut *coeff,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for 64x64 DCT_DCT 16bpc
@@ -8759,11 +9339,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -8832,7 +9422,10 @@ fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
         let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
         let packed = _mm_packus_epi32(clamped, clamped);
 
-        storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]), packed);
+        storei64!(
+            zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -8855,11 +9448,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 8x4 DCT_DCT for 16bpc
@@ -8933,7 +9536,10 @@ fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
         let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
         let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-        storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(), packed);
+        storeu_128!(
+            <&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -8956,11 +9562,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 8x16 DCT_DCT for 16bpc
@@ -9036,7 +9652,10 @@ fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
         let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
         let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-        storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(), packed);
+        storeu_128!(
+            <&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -9059,11 +9678,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 16x8 DCT_DCT for 16bpc
@@ -9155,7 +9784,10 @@ fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
 
         let packed = _mm256_packus_epi32(clamped0, clamped1);
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
-        storeu_256!(<&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), packed);
+        storeu_256!(
+            <&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -9178,11 +9810,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 4x16 DCT_DCT for 16bpc
@@ -9245,7 +9887,10 @@ fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
         let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
         let packed = _mm_packus_epi32(clamped, clamped);
 
-        storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]), packed);
+        storei64!(
+            zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -9268,11 +9913,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 16x4 DCT_DCT for 16bpc
@@ -9360,7 +10015,10 @@ fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
 
         let packed = _mm256_packus_epi32(clamped0, clamped1);
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
-        storeu_256!(<&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), packed);
+        storeu_256!(
+            <&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -9383,11 +10041,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 16x32 DCT_DCT for 16bpc
@@ -9478,7 +10146,10 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
 
         let packed = _mm256_packus_epi32(clamped0, clamped1);
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
-        storeu_256!(<&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), packed);
+        storeu_256!(
+            <&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -9501,11 +10172,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 32x16 DCT_DCT for 16bpc
@@ -9563,7 +10244,8 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
             let x_base = chunk * 8;
             let dst_chunk_off = dst_off + x_base;
 
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
@@ -9590,7 +10272,10 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
             let lo = _mm256_castsi256_si128(clamped);
             let hi = _mm256_extracti128_si256(clamped, 1);
             let packed = _mm_packus_epi32(lo, hi);
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -9614,11 +10299,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 8x32 DCT_DCT for 16bpc
@@ -9694,7 +10389,10 @@ fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
         let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
         let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-        storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(), packed);
+        storeu_128!(
+            <&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -9717,11 +10415,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 32x8 DCT_DCT for 16bpc
@@ -9779,7 +10487,8 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
             let x_base = chunk * 8;
             let dst_chunk_off = dst_off + x_base;
 
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
@@ -9806,7 +10515,10 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
             let lo = _mm256_castsi256_si128(clamped);
             let hi = _mm256_extracti128_si256(clamped, 1);
             let packed = _mm_packus_epi32(lo, hi);
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -9830,11 +10542,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 32x64 DCT_DCT for 16bpc
@@ -9896,7 +10618,8 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
             let x_base = chunk * 8;
             let dst_chunk_off = dst_off + x_base;
 
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
@@ -9923,7 +10646,10 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
             let lo = _mm256_castsi256_si128(clamped);
             let hi = _mm256_extracti128_si256(clamped, 1);
             let packed = _mm_packus_epi32(lo, hi);
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -9947,11 +10673,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 64x32 DCT_DCT for 16bpc
@@ -10011,7 +10747,8 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
             let x_base = chunk * 8;
             let dst_chunk_off = dst_off + x_base;
 
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
@@ -10038,7 +10775,10 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
             let lo = _mm256_castsi256_si128(clamped);
             let hi = _mm256_extracti128_si256(clamped, 1);
             let packed = _mm_packus_epi32(lo, hi);
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -10062,11 +10802,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 16x64 DCT_DCT for 16bpc
@@ -10161,7 +10911,10 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
 
         let packed = _mm256_packus_epi32(clamped0, clamped1);
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
-        storeu_256!(<&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), packed);
+        storeu_256!(
+            <&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients (only 512 stored due to high-frequency zeroing)
@@ -10184,11 +10937,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 64x16 DCT_DCT for 16bpc
@@ -10248,7 +11011,8 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
             let x_base = chunk * 8;
             let dst_chunk_off = dst_off + x_base;
 
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
 
@@ -10275,7 +11039,10 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
             let lo = _mm256_castsi256_si128(clamped);
             let hi = _mm256_extracti128_si256(clamped, 1);
             let packed = _mm_packus_epi32(lo, hi);
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -10299,11 +11066,21 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -10314,7 +11091,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_avx2(
 macro_rules! impl_8x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         pub fn $name(
             _token: Desktop64,
             dst: &mut [u16],
@@ -10323,7 +11100,9 @@ macro_rules! impl_8x8_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
@@ -10378,7 +11157,7 @@ macro_rules! impl_8x8_transform_16bpc {
                 for x in 0..8 {
                     let pixel = dst[dst_off + x] as i32;
                     let val = pixel + ((out[y][x] + 8) >> 4);
-                    dst[dst_off + x] = val.clamp(0, bitdepth_max) as u16 ;
+                    dst[dst_off + x] = val.clamp(0, bitdepth_max) as u16;
                 }
             }
 
@@ -10435,7 +11214,7 @@ macro_rules! impl_8x8_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -10448,9 +11227,12 @@ macro_rules! impl_8x8_ffi_wrapper_16bpc {
             let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride = dst_stride as usize;
 
-            let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+            let dst_slice = unsafe {
+                std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+            };
 
-            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+            let coeff_slice =
+                unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
             $inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
         }
@@ -10507,7 +11289,9 @@ macro_rules! impl_4x4_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             // Load coefficients (row-major)
             let mut c = [[0i32; 4]; 4];
             for y in 0..4 {
@@ -10599,7 +11383,7 @@ macro_rules! impl_4x4_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -10680,7 +11464,7 @@ impl_4x4_ffi_wrapper_16bpc!(
 macro_rules! impl_16x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         pub fn $name(
             _token: Desktop64,
             dst: &mut [u16],
@@ -10689,7 +11473,9 @@ macro_rules! impl_16x16_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
@@ -10736,7 +11522,7 @@ macro_rules! impl_16x16_transform_16bpc {
                 for x in 0..16 {
                     let pixel = dst[dst_off + x] as i32;
                     let val = pixel + ((out[y][x] + 8) >> 4);
-                    dst[dst_off + x] = val.clamp(0, bitdepth_max) as u16 ;
+                    dst[dst_off + x] = val.clamp(0, bitdepth_max) as u16;
                 }
             }
 
@@ -10793,7 +11579,7 @@ macro_rules! impl_16x16_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -10806,9 +11592,12 @@ macro_rules! impl_16x16_ffi_wrapper_16bpc {
             let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride = dst_stride as usize;
 
-            let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+            let dst_slice = unsafe {
+                std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+            };
 
-            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+            let coeff_slice =
+                unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
             $inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
         }
@@ -10900,7 +11689,10 @@ pub fn inv_identity_add_4x4_16bpc_avx2(
         let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
         let packed = _mm_packus_epi32(clamped, clamped);
 
-        storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]), packed);
+        storei64!(
+            zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -10923,9 +11715,12 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
     inv_identity_add_4x4_16bpc_avx2(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
 }
@@ -10979,7 +11774,10 @@ pub fn inv_identity_add_8x8_16bpc_avx2(
         let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
         let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-        storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(), packed);
+        storeu_128!(
+            <&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -11002,9 +11800,12 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
     inv_identity_add_8x8_16bpc_avx2(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
 }
@@ -11080,7 +11881,10 @@ pub fn inv_identity_add_16x16_16bpc_avx2(
 
         let packed = _mm256_packus_epi32(clamped0, clamped1);
         let packed = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
-        storeu_256!(<&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), packed);
+        storeu_256!(
+            <&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -11103,9 +11907,12 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
     inv_identity_add_16x16_16bpc_avx2(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
 }
@@ -11144,7 +11951,14 @@ fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+    add_32x32_to_dst_16bpc(
+        _token,
+        &mut *dst,
+        dst_stride,
+        &tmp,
+        &mut *coeff,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for 32x32 IDTX 16bpc
@@ -11163,11 +11977,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -11236,7 +12060,10 @@ fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
         let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
         let packed = _mm_packus_epi32(clamped, clamped);
 
-        storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]), packed);
+        storei64!(
+            zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -11259,11 +12086,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 8x4 IDTX for 16bpc
@@ -11337,7 +12174,10 @@ fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
         let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
         let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-        storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(), packed);
+        storeu_128!(
+            <&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -11360,11 +12200,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 8x16 IDTX for 16bpc
@@ -11438,7 +12288,10 @@ fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
         let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
         let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-        storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(), packed);
+        storeu_128!(
+            <&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -11461,11 +12314,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 16x8 IDTX for 16bpc
@@ -11519,7 +12382,8 @@ fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
             let x_base = chunk * 8;
             let dst_chunk_off = dst_off + x_base;
 
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, zero);
             let d_hi = _mm_unpackhi_epi16(d, zero);
 
@@ -11542,7 +12406,10 @@ fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
             let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
             let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -11566,11 +12433,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 4x16 IDTX for 16bpc
@@ -11634,7 +12511,10 @@ fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
         let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
         let packed = _mm_packus_epi32(clamped, clamped);
 
-        storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]), packed);
+        storei64!(
+            zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -11657,11 +12537,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 16x4 IDTX for 16bpc
@@ -11714,7 +12604,8 @@ fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
             let x_base = chunk * 8;
             let dst_chunk_off = dst_off + x_base;
 
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, zero);
             let d_hi = _mm_unpackhi_epi16(d, zero);
 
@@ -11737,7 +12628,10 @@ fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
             let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
             let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -11761,11 +12655,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 16x32 IDTX for 16bpc
@@ -11819,7 +12723,8 @@ fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
             let x_base = chunk * 8;
             let dst_chunk_off = dst_off + x_base;
 
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, zero);
             let d_hi = _mm_unpackhi_epi16(d, zero);
 
@@ -11843,7 +12748,10 @@ fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
             let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
             let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -11867,11 +12775,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 32x16 IDTX for 16bpc
@@ -11925,7 +12843,8 @@ fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
             let x_base = chunk * 8;
             let dst_chunk_off = dst_off + x_base;
 
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, zero);
             let d_hi = _mm_unpackhi_epi16(d, zero);
 
@@ -11949,7 +12868,10 @@ fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
             let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
             let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -11973,11 +12895,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 8x32 IDTX for 16bpc
@@ -12050,7 +12982,10 @@ fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
         let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
         let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-        storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(), packed);
+        storeu_128!(
+            <&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(),
+            packed
+        );
     }
 
     // Clear coefficients
@@ -12073,11 +13008,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 /// 32x8 IDTX for 16bpc
@@ -12130,7 +13075,8 @@ fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
             let x_base = chunk * 8;
             let dst_chunk_off = dst_off + x_base;
 
-            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, zero);
             let d_hi = _mm_unpackhi_epi16(d, zero);
 
@@ -12154,7 +13100,10 @@ fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
             let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
             let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                packed
+            );
         }
     }
 
@@ -12178,11 +13127,21 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let stride = dst_stride as usize;
 
-    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+    let dst_slice = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+    };
 
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+    let coeff_slice =
+        unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
-    inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
+    inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
+        _token,
+        dst_slice,
+        stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -12193,7 +13152,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_avx2(
 macro_rules! impl_4x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u16],
@@ -12202,7 +13161,9 @@ macro_rules! impl_4x8_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
@@ -12252,7 +13213,10 @@ macro_rules! impl_4x8_transform_16bpc {
                 let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
                 let packed = _mm_packus_epi32(clamped, clamped);
 
-                storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]), packed);
+                storei64!(
+                    zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+                    packed
+                );
             }
 
             // Clear coefficients
@@ -12265,7 +13229,7 @@ macro_rules! impl_4x8_transform_16bpc {
 macro_rules! impl_8x4_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u16],
@@ -12274,7 +13238,9 @@ macro_rules! impl_8x4_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
@@ -12333,7 +13299,10 @@ macro_rules! impl_8x4_transform_16bpc {
                 let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
                 let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-                storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(), packed);
+                storeu_128!(
+                    <&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(),
+                    packed
+                );
             }
 
             // Clear coefficients
@@ -12347,7 +13316,7 @@ macro_rules! impl_ffi_wrapper_16bpc {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -12360,9 +13329,12 @@ macro_rules! impl_ffi_wrapper_16bpc {
             let _token = unsafe { Desktop64::forge_token_dangerously() };
             let stride = dst_stride as usize;
 
-            let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride) };
+            let dst_slice = unsafe {
+                std::slice::from_raw_parts_mut(dst_ptr as *mut u16, _coeff_len as usize * stride)
+            };
 
-            let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
+            let coeff_slice =
+                unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, _coeff_len as usize) };
 
             $inner(_token, dst_slice, stride, coeff_slice, eob, bitdepth_max);
         }
@@ -12523,7 +13495,7 @@ impl_ffi_wrapper_16bpc!(
 macro_rules! impl_8x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u16],
@@ -12532,7 +13504,9 @@ macro_rules! impl_8x16_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
@@ -12591,7 +13565,10 @@ macro_rules! impl_8x16_transform_16bpc {
                 let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
                 let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-                storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(), packed);
+                storeu_128!(
+                    <&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(),
+                    packed
+                );
             }
 
             // Clear coefficients
@@ -12604,7 +13581,7 @@ macro_rules! impl_8x16_transform_16bpc {
 macro_rules! impl_16x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u16],
@@ -12613,7 +13590,9 @@ macro_rules! impl_16x8_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
@@ -12653,7 +13632,10 @@ macro_rules! impl_16x8_transform_16bpc {
                     let x_base = chunk * 8;
                     let dst_chunk_off = dst_off + x_base;
 
-                    let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+                    let d = loadu_128!(<&[u16; 8]>::try_from(
+                        &dst[dst_chunk_off..dst_chunk_off + 8]
+                    )
+                    .unwrap());
                     let d_lo = _mm_unpacklo_epi16(d, zero);
                     let d_hi = _mm_unpackhi_epi16(d, zero);
 
@@ -12676,7 +13658,11 @@ macro_rules! impl_16x8_transform_16bpc {
                     let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
                     let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-                    storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+                    storeu_128!(
+                        <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8])
+                            .unwrap(),
+                        packed
+                    );
                 }
             }
 
@@ -12840,7 +13826,7 @@ impl_ffi_wrapper_16bpc!(
 macro_rules! impl_4x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u16],
@@ -12849,7 +13835,9 @@ macro_rules! impl_4x16_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
@@ -12898,7 +13886,10 @@ macro_rules! impl_4x16_transform_16bpc {
                 let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
                 let packed = _mm_packus_epi32(clamped, clamped);
 
-                storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]), packed);
+                storei64!(
+                    zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+                    packed
+                );
             }
 
             // Clear coefficients
@@ -12911,7 +13902,7 @@ macro_rules! impl_4x16_transform_16bpc {
 macro_rules! impl_16x4_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u16],
@@ -12920,7 +13911,9 @@ macro_rules! impl_16x4_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
@@ -12959,7 +13952,10 @@ macro_rules! impl_16x4_transform_16bpc {
                     let x_base = chunk * 8;
                     let dst_chunk_off = dst_off + x_base;
 
-                    let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+                    let d = loadu_128!(<&[u16; 8]>::try_from(
+                        &dst[dst_chunk_off..dst_chunk_off + 8]
+                    )
+                    .unwrap());
                     let d_lo = _mm_unpacklo_epi16(d, zero);
                     let d_hi = _mm_unpackhi_epi16(d, zero);
 
@@ -12982,7 +13978,11 @@ macro_rules! impl_16x4_transform_16bpc {
                     let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
                     let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-                    storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+                    storeu_128!(
+                        <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8])
+                            .unwrap(),
+                        packed
+                    );
                 }
             }
 
@@ -13496,7 +14496,7 @@ impl_ffi_wrapper_16bpc!(
 macro_rules! impl_8x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u16],
@@ -13505,7 +14505,9 @@ macro_rules! impl_8x8_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
@@ -13563,7 +14565,10 @@ macro_rules! impl_8x8_transform_16bpc {
                 let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
                 let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-                storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(), packed);
+                storeu_128!(
+                    <&mut [u16; 8]>::try_from(&mut dst[dst_off..dst_off + 8]).unwrap(),
+                    packed
+                );
             }
 
             // Clear coefficients
@@ -13633,7 +14638,7 @@ impl_ffi_wrapper_16bpc!(
 macro_rules! impl_4x4_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u16],
@@ -13642,7 +14647,9 @@ macro_rules! impl_4x4_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
@@ -13689,7 +14696,10 @@ macro_rules! impl_4x4_transform_16bpc {
                 let clamped = _mm_max_epi32(_mm_min_epi32(sum, max_val), zero);
                 let packed = _mm_packus_epi32(clamped, clamped);
 
-                storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]), packed);
+                storei64!(
+                    zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+                    packed
+                );
             }
 
             // Clear coefficients
@@ -13759,7 +14769,7 @@ impl_ffi_wrapper_16bpc!(
 macro_rules! impl_16x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-                #[arcane]
+        #[arcane]
         fn $name(
             _token: Desktop64,
             dst: &mut [u16],
@@ -13768,7 +14778,9 @@ macro_rules! impl_16x16_transform_16bpc {
             _eob: i32,
             bitdepth_max: i32,
         ) {
-            use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            use crate::src::safe_simd::pixel_access::{
+                loadi32, loadi64, loadu_128, storei32, storei64, storeu_128,
+            };
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
@@ -13805,7 +14817,10 @@ macro_rules! impl_16x16_transform_16bpc {
                     let x_base = chunk * 8;
                     let dst_chunk_off = dst_off + x_base;
 
-                    let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap());
+                    let d = loadu_128!(<&[u16; 8]>::try_from(
+                        &dst[dst_chunk_off..dst_chunk_off + 8]
+                    )
+                    .unwrap());
                     let d_lo = _mm_unpacklo_epi16(d, zero);
                     let d_hi = _mm_unpackhi_epi16(d, zero);
 
@@ -13828,7 +14843,11 @@ macro_rules! impl_16x16_transform_16bpc {
                     let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
                     let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
 
-                    storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(), packed);
+                    storeu_128!(
+                        <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8])
+                            .unwrap(),
+                        packed
+                    );
                 }
             }
 
@@ -14332,11 +15351,16 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     use zerocopy::AsBytes;
 
     #[cfg(not(target_arch = "x86_64"))]
-    { let _ = (tx_size, tx_type, &dst, &coeff, eob, &bd); return false; }
+    {
+        let _ = (tx_size, tx_type, &dst, &coeff, eob, &bd);
+        return false;
+    }
 
     #[cfg(target_arch = "x86_64")]
     {
-        let Some(token) = Desktop64::summon() else { return false };
+        let Some(token) = Desktop64::summon() else {
+            return false;
+        };
 
         let txfm = match crate::src::levels::TxfmSize::from_repr(tx_size) {
             Some(t) => t,
@@ -14356,9 +15380,16 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                 let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
                 let dst_u8: &mut [u8] = guard.as_bytes_mut();
                 itxfm_dispatch_8bpc(
-                    token, tx_size, tx_type as TxfmType,
-                    dst_u8, base, byte_stride_u, byte_stride_i,
-                    coeff_i16, eob, bd_c,
+                    token,
+                    tx_size,
+                    tx_type as TxfmType,
+                    dst_u8,
+                    base,
+                    byte_stride_u,
+                    byte_stride_i,
+                    coeff_i16,
+                    eob,
+                    bd_c,
                 )
             }
             BPC::BPC16 => {
@@ -14368,9 +15399,16 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                     .expect("dst alignment/size mismatch for u16 reinterpretation");
                 let px_stride_i = dst.pixel_stride::<BD>(); // isize, in pixels
                 itxfm_dispatch_16bpc(
-                    token, tx_size, tx_type as TxfmType,
-                    dst_u16, base, byte_stride_u, px_stride_i,
-                    coeff_i16, eob, bd_c,
+                    token,
+                    tx_size,
+                    tx_type as TxfmType,
+                    dst_u16,
+                    base,
+                    byte_stride_u,
+                    px_stride_i,
+                    coeff_i16,
+                    eob,
+                    bd_c,
                 )
             }
         }
@@ -14391,12 +15429,14 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     eob: i32,
     bd: BD,
 ) -> bool {
-    use archmage::Desktop64;
     use crate::src::levels::TxfmSize;
+    use crate::src::safe_simd::pixel_access::Flex;
+    use archmage::Desktop64;
     use zerocopy::AsBytes;
-use crate::src::safe_simd::pixel_access::Flex;
 
-    let Some(_token) = Desktop64::summon() else { return false };
+    let Some(_token) = Desktop64::summon() else {
+        return false;
+    };
 
     // Get transform dimensions for tracked guard
     let txfm = TxfmSize::from_repr(tx_size).unwrap_or_default();

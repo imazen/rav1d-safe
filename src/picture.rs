@@ -142,7 +142,9 @@ unsafe extern "C" fn dav1d_default_picture_alloc(
     let pool = pool.clone();
     let pic_cap = pic_size + RAV1D_PICTURE_ALIGNMENT;
     // TODO fallible allocation
-    let buf = pool.pop_init(pic_cap, 0).expect("picture allocation failed");
+    let buf = pool
+        .pop_init(pic_cap, 0)
+        .expect("picture allocation failed");
     // We have to `Box` this because `Dav1dPicture::allocator_data` is only 8 bytes.
     let mut buf = Box::new(MemPoolBuf { pool, buf });
     let data = &mut buf.buf[..pic_cap];

@@ -1482,7 +1482,9 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
 
-    let Some(_token) = Desktop64::summon() else { return false };
+    let Some(_token) = Desktop64::summon() else {
+        return false;
+    };
 
     // Left pointer cast is safe because LeftPixelRow2px<BD::Pixel> has same layout for u8/u16.
     match (BD::BPC, variant) {
@@ -1596,7 +1598,9 @@ pub fn cdef_dir_dispatch<BD: BitDepth>(
     variance: &mut c_uint,
     bd: BD,
 ) -> Option<c_int> {
-    let Some(_token) = Desktop64::summon() else { return None };
+    let Some(_token) = Desktop64::summon() else {
+        return None;
+    };
 
     Some(cdef_find_dir_scalar(dst, variance, bd))
 }

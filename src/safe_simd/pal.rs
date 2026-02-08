@@ -9,14 +9,14 @@
 #[cfg(target_arch = "x86_64")]
 use super::partial_simd;
 #[cfg(target_arch = "x86_64")]
-use super::pixel_access::{loadu_256, storeu_256, loadu_128, storeu_128};
+use super::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256};
+use crate::src::safe_simd::pixel_access::Flex;
 #[cfg(target_arch = "x86_64")]
 use archmage::{arcane, Desktop64, SimdToken};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 #[cfg(feature = "asm")]
 use std::ffi::c_int;
-use crate::src::safe_simd::pixel_access::Flex;
 
 /// Inner implementation using archmage for safe SIMD.
 ///
@@ -76,7 +76,11 @@ fn pal_idx_finish_inner(
             let packed = _mm256_permute4x64_epi64::<0xD8>(packed);
             // Now: [a_lo(8), a_hi(8), zeros(16)]
             // Store lower 16 bytes
-            storeu_128!(&mut dst_row[x..x + 16], [u8; 16], _mm256_castsi256_si128(packed));
+            storeu_128!(
+                &mut dst_row[x..x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(packed)
+            );
             x += 16;
         }
 

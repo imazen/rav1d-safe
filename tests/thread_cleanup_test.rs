@@ -84,11 +84,7 @@ fn test_multi_threaded_cleanup() {
 
         // Should have spawned workers
         let workers = count_worker_threads();
-        assert!(
-            workers >= 4,
-            "Expected at least 4 workers, got {}",
-            workers
-        );
+        assert!(workers >= 4, "Expected at least 4 workers, got {}", workers);
     }
 
     // Threads should be joined synchronously by Decoder::drop

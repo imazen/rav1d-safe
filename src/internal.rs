@@ -448,7 +448,6 @@ unsafe impl Send for Rav1dContext {}
 #[allow(unsafe_code)]
 unsafe impl Sync for Rav1dContext {}
 
-
 #[derive(Default)]
 #[repr(C)]
 pub struct Rav1dTask {

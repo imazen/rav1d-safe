@@ -861,9 +861,7 @@ mod checked {
             // Check against ALL existing borrows (both mut and immut)
             for existing in borrows.iter() {
                 if bounds.overlaps(&existing.bounds) {
-                    panic!(
-                        "\toverlapping DisjointMut:\n current: {record}\nexisting: {existing}"
-                    );
+                    panic!("\toverlapping DisjointMut:\n current: {record}\nexisting: {existing}");
                 }
             }
             borrows.push(record);
@@ -885,9 +883,7 @@ mod checked {
             // Only check against mutable borrows
             for existing in borrows.iter() {
                 if existing.mutable && bounds.overlaps(&existing.bounds) {
-                    panic!(
-                        "\toverlapping DisjointMut:\n current: {record}\nexisting: {existing}"
-                    );
+                    panic!("\toverlapping DisjointMut:\n current: {record}\nexisting: {existing}");
                 }
             }
             borrows.push(record);

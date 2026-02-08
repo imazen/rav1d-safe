@@ -58,7 +58,11 @@ fn ipred_dc_128_8bpc_inner(
             x += 32;
         }
         while x + 16 <= width {
-            storeu_128!(&mut row[x..x + 16], [u8; 16], _mm256_castsi256_si128(fill_val));
+            storeu_128!(
+                &mut row[x..x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(fill_val)
+            );
             x += 16;
         }
         while x < width {
@@ -121,17 +125,25 @@ fn ipred_v_8bpc_inner(
     // Load top row into register(s)
     match width {
         4 => {
-            let top_val = _mm_cvtsi32_si128(i32::from_ne_bytes(topleft[top_off..top_off + 4].try_into().unwrap()));
+            let top_val = _mm_cvtsi32_si128(i32::from_ne_bytes(
+                topleft[top_off..top_off + 4].try_into().unwrap(),
+            ));
             for y in 0..height {
                 let row_off = (dst_base as isize + y as isize * stride) as usize;
-                dst[row_off..row_off + 4].copy_from_slice(&_mm_cvtsi128_si32(top_val).to_ne_bytes());
+                dst[row_off..row_off + 4]
+                    .copy_from_slice(&_mm_cvtsi128_si32(top_val).to_ne_bytes());
             }
         }
         8 => {
-            let top_val = partial_simd::mm_loadl_epi64::<[u8; 8]>((&topleft[top_off..top_off + 8]).try_into().unwrap());
+            let top_val = partial_simd::mm_loadl_epi64::<[u8; 8]>(
+                (&topleft[top_off..top_off + 8]).try_into().unwrap(),
+            );
             for y in 0..height {
                 let row_off = (dst_base as isize + y as isize * stride) as usize;
-                partial_simd::mm_storel_epi64::<[u8; 8]>((&mut dst[row_off..row_off + 8]).try_into().unwrap(), top_val);
+                partial_simd::mm_storel_epi64::<[u8; 8]>(
+                    (&mut dst[row_off..row_off + 8]).try_into().unwrap(),
+                    top_val,
+                );
             }
         }
         16 => {
@@ -185,7 +197,8 @@ pub unsafe extern "C" fn ipred_v_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_v_8bpc_inner(
         token,
         dst_sl,
@@ -232,7 +245,11 @@ fn ipred_h_8bpc_inner(
             x += 32;
         }
         while x + 16 <= width {
-            storeu_128!(&mut row[x..x + 16], [u8; 16], _mm256_castsi256_si128(fill_val));
+            storeu_128!(
+                &mut row[x..x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(fill_val)
+            );
             x += 16;
         }
         while x < width {
@@ -260,7 +277,8 @@ pub unsafe extern "C" fn ipred_h_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_h_8bpc_inner(
         token,
         dst_sl,
@@ -319,7 +337,11 @@ fn ipred_dc_8bpc_inner(
             x += 32;
         }
         while x + 16 <= width {
-            storeu_128!(&mut row[x..x + 16], [u8; 16], _mm256_castsi256_si128(fill_val));
+            storeu_128!(
+                &mut row[x..x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(fill_val)
+            );
             x += 16;
         }
         while x < width {
@@ -347,7 +369,8 @@ pub unsafe extern "C" fn ipred_dc_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_dc_8bpc_inner(
         token,
         dst_sl,
@@ -397,7 +420,11 @@ fn ipred_dc_top_8bpc_inner(
             x += 32;
         }
         while x + 16 <= width {
-            storeu_128!(&mut row[x..x + 16], [u8; 16], _mm256_castsi256_si128(fill_val));
+            storeu_128!(
+                &mut row[x..x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(fill_val)
+            );
             x += 16;
         }
         while x < width {
@@ -425,7 +452,8 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_dc_top_8bpc_inner(
         token,
         dst_sl,
@@ -475,7 +503,11 @@ fn ipred_dc_left_8bpc_inner(
             x += 32;
         }
         while x + 16 <= width {
-            storeu_128!(&mut row[x..x + 16], [u8; 16], _mm256_castsi256_si128(fill_val));
+            storeu_128!(
+                &mut row[x..x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(fill_val)
+            );
             x += 16;
         }
         while x < width {
@@ -503,7 +535,8 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_dc_left_8bpc_inner(
         token,
         dst_sl,
@@ -554,7 +587,11 @@ fn ipred_paeth_8bpc_inner(
         let mut x = 0;
         while x + 8 <= width {
             // Load 8 top pixels and zero-extend to 32-bit
-            let top_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>((&topleft[tl_off + 1 + x..tl_off + 1 + x + 8]).try_into().unwrap());
+            let top_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>(
+                (&topleft[tl_off + 1 + x..tl_off + 1 + x + 8])
+                    .try_into()
+                    .unwrap(),
+            );
             let top_lo = _mm256_cvtepu8_epi32(top_bytes);
 
             // base = left + top - topleft
@@ -600,14 +637,17 @@ fn ipred_paeth_8bpc_inner(
             let packed = _mm256_shuffle_epi8(
                 result,
                 _mm256_setr_epi8(
-                    0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12,
-                    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                    0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12, -1,
+                    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
                 ),
             );
             let lo = _mm256_castsi256_si128(packed);
             let hi = _mm256_extracti128_si256::<1>(packed);
             let combined = _mm_unpacklo_epi32(lo, hi);
-            partial_simd::mm_storel_epi64::<[u8; 8]>((&mut dst[row_off + x..row_off + x + 8]).try_into().unwrap(), combined);
+            partial_simd::mm_storel_epi64::<[u8; 8]>(
+                (&mut dst[row_off + x..row_off + x + 8]).try_into().unwrap(),
+                combined,
+            );
 
             x += 8;
         }
@@ -652,7 +692,8 @@ pub unsafe extern "C" fn ipred_paeth_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_paeth_8bpc_inner(
         token,
         dst_sl,
@@ -709,11 +750,17 @@ fn ipred_smooth_8bpc_inner(
         let mut x = 0;
         while x + 8 <= width {
             // Load 8 top pixels
-            let top_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>((&topleft[tl_off + 1 + x..tl_off + 1 + x + 8]).try_into().unwrap());
+            let top_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>(
+                (&topleft[tl_off + 1 + x..tl_off + 1 + x + 8])
+                    .try_into()
+                    .unwrap(),
+            );
             let top = _mm256_cvtepu8_epi32(top_bytes);
 
             // Load 8 horizontal weights
-            let w_h_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>((&weights_hor[x..x + 8]).try_into().unwrap());
+            let w_h_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>(
+                (&weights_hor[x..x + 8]).try_into().unwrap(),
+            );
             let w_h = _mm256_cvtepu8_epi32(w_h_bytes);
             let w_h_inv = _mm256_sub_epi32(c256, w_h);
 
@@ -737,14 +784,17 @@ fn ipred_smooth_8bpc_inner(
             let packed = _mm256_shuffle_epi8(
                 result,
                 _mm256_setr_epi8(
-                    0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12,
-                    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                    0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12, -1,
+                    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
                 ),
             );
             let lo = _mm256_castsi256_si128(packed);
             let hi = _mm256_extracti128_si256::<1>(packed);
             let combined = _mm_unpacklo_epi32(lo, hi);
-            partial_simd::mm_storel_epi64::<[u8; 8]>((&mut dst[row_off + x..row_off + x + 8]).try_into().unwrap(), combined);
+            partial_simd::mm_storel_epi64::<[u8; 8]>(
+                (&mut dst[row_off + x..row_off + x + 8]).try_into().unwrap(),
+                combined,
+            );
 
             x += 8;
         }
@@ -754,10 +804,8 @@ fn ipred_smooth_8bpc_inner(
         while x < width {
             let top_val = topleft[tl_off + 1 + x] as i32;
             let w_h = weights_hor[x] as i32;
-            let pred = w_v * top_val
-                + (256 - w_v) * bottom_val
-                + w_h * left_val
-                + (256 - w_h) * right_val;
+            let pred =
+                w_v * top_val + (256 - w_v) * bottom_val + w_h * left_val + (256 - w_h) * right_val;
             row[x] = ((pred + 256) >> 9) as u8;
             x += 1;
         }
@@ -782,7 +830,8 @@ pub unsafe extern "C" fn ipred_smooth_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_smooth_8bpc_inner(
         token,
         dst_sl,
@@ -828,7 +877,11 @@ fn ipred_smooth_v_8bpc_inner(
         let mut x = 0;
         while x + 8 <= width {
             // Load 8 top pixels
-            let top_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>((&topleft[tl_off + 1 + x..tl_off + 1 + x + 8]).try_into().unwrap());
+            let top_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>(
+                (&topleft[tl_off + 1 + x..tl_off + 1 + x + 8])
+                    .try_into()
+                    .unwrap(),
+            );
             let top = _mm256_cvtepu8_epi32(top_bytes);
 
             // pred = w_v * top + (256 - w_v) * bottom
@@ -844,14 +897,17 @@ fn ipred_smooth_v_8bpc_inner(
             let packed = _mm256_shuffle_epi8(
                 result,
                 _mm256_setr_epi8(
-                    0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12,
-                    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                    0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12, -1,
+                    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
                 ),
             );
             let lo = _mm256_castsi256_si128(packed);
             let hi = _mm256_extracti128_si256::<1>(packed);
             let combined = _mm_unpacklo_epi32(lo, hi);
-            partial_simd::mm_storel_epi64::<[u8; 8]>((&mut dst[row_off + x..row_off + x + 8]).try_into().unwrap(), combined);
+            partial_simd::mm_storel_epi64::<[u8; 8]>(
+                (&mut dst[row_off + x..row_off + x + 8]).try_into().unwrap(),
+                combined,
+            );
 
             x += 8;
         }
@@ -885,7 +941,8 @@ pub unsafe extern "C" fn ipred_smooth_v_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_smooth_v_8bpc_inner(
         token,
         dst_sl,
@@ -930,7 +987,9 @@ fn ipred_smooth_h_8bpc_inner(
         let mut x = 0;
         while x + 8 <= width {
             // Load 8 horizontal weights
-            let w_h_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>((&weights_hor[x..x + 8]).try_into().unwrap());
+            let w_h_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>(
+                (&weights_hor[x..x + 8]).try_into().unwrap(),
+            );
             let w_h = _mm256_cvtepu8_epi32(w_h_bytes);
             let w_h_inv = _mm256_sub_epi32(c256, w_h);
 
@@ -947,14 +1006,17 @@ fn ipred_smooth_h_8bpc_inner(
             let packed = _mm256_shuffle_epi8(
                 result,
                 _mm256_setr_epi8(
-                    0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12,
-                    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                    0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12, -1,
+                    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
                 ),
             );
             let lo = _mm256_castsi256_si128(packed);
             let hi = _mm256_extracti128_si256::<1>(packed);
             let combined = _mm_unpacklo_epi32(lo, hi);
-            partial_simd::mm_storel_epi64::<[u8; 8]>((&mut dst[row_off + x..row_off + x + 8]).try_into().unwrap(), combined);
+            partial_simd::mm_storel_epi64::<[u8; 8]>(
+                (&mut dst[row_off + x..row_off + x + 8]).try_into().unwrap(),
+                combined,
+            );
 
             x += 8;
         }
@@ -988,7 +1050,8 @@ pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_smooth_h_8bpc_inner(
         token,
         dst_sl,
@@ -1055,7 +1118,10 @@ fn ipred_filter_8bpc_inner(
             let (p5, p6) = if x == 0 {
                 // From original topleft buffer
                 let left_base = tl_off.wrapping_add(cur_tl_off.wrapping_sub(1));
-                (topleft[left_base] as i32, topleft[left_base.wrapping_sub(1)] as i32)
+                (
+                    topleft[left_base] as i32,
+                    topleft[left_base.wrapping_sub(1)] as i32,
+                )
             } else {
                 // From previously computed output
                 (dst[row0_off + x - 1] as i32, dst[row1_off + x - 1] as i32)
@@ -1108,7 +1174,8 @@ pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_filter_8bpc_inner(
         token,
         dst_sl,
@@ -1168,7 +1235,9 @@ fn ipred_z1_8bpc_inner(
 
     if upsample_above {
         // Upsampling case - use scalar fallback for now
-        ipred_z1_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, true);
+        ipred_z1_scalar(
+            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, true,
+        );
         return;
     }
 
@@ -1180,7 +1249,9 @@ fn ipred_z1_8bpc_inner(
 
     if filter_strength != 0 {
         // Filtered case - use scalar fallback for now
-        ipred_z1_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, false);
+        ipred_z1_scalar(
+            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, false,
+        );
         return;
     }
 
@@ -1210,7 +1281,10 @@ fn ipred_z1_8bpc_inner(
 
             // Load 16 consecutive top pixels (need pairs for interpolation)
             let t0 = loadu_128!((&topleft[top_off + base..top_off + base + 16]), [u8; 16]);
-            let t1 = loadu_128!((&topleft[top_off + base + 1..top_off + base + 17]), [u8; 16]);
+            let t1 = loadu_128!(
+                (&topleft[top_off + base + 1..top_off + base + 17]),
+                [u8; 16]
+            );
 
             // Zero-extend to 16-bit
             let t0_lo = _mm256_cvtepu8_epi16(t0);
@@ -1227,7 +1301,11 @@ fn ipred_z1_8bpc_inner(
             let lo = _mm256_castsi256_si128(packed);
             let hi = _mm256_extracti128_si256::<1>(packed);
             let combined = _mm_unpacklo_epi64(lo, hi);
-            storeu_128!((&mut dst[row_off + x..row_off + x + 16]), [u8; 16], combined);
+            storeu_128!(
+                (&mut dst[row_off + x..row_off + x + 16]),
+                [u8; 16],
+                combined
+            );
 
             x += 16;
         }
@@ -1271,7 +1349,8 @@ pub unsafe extern "C" fn ipred_z1_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_z1_8bpc_inner(
         token,
         dst_sl,
@@ -1400,9 +1479,19 @@ fn ipred_z2_8bpc_inner(
     if upsample_left || upsample_above {
         // Fall back to scalar for upsampled cases
         ipred_z2_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off,
-            width, height, dx, dy,
-            max_width, max_height, is_sm, enable_intra_edge_filter,
+            &mut *dst,
+            dst_base,
+            stride,
+            &*topleft,
+            tl_off,
+            width,
+            height,
+            dx,
+            dy,
+            max_width,
+            max_height,
+            is_sm,
+            enable_intra_edge_filter,
         );
         return;
     }
@@ -1422,9 +1511,19 @@ fn ipred_z2_8bpc_inner(
     if filter_strength_above != 0 || filter_strength_left != 0 {
         // Fall back to scalar for filtered cases
         ipred_z2_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off,
-            width, height, dx, dy,
-            max_width, max_height, is_sm, enable_intra_edge_filter,
+            &mut *dst,
+            dst_base,
+            stride,
+            &*topleft,
+            tl_off,
+            width,
+            height,
+            dx,
+            dy,
+            max_width,
+            max_height,
+            is_sm,
+            enable_intra_edge_filter,
         );
         return;
     }
@@ -1459,7 +1558,10 @@ fn ipred_z2_8bpc_inner(
             }
 
             let t0 = loadu_128!((&topleft[top_off + base..top_off + base + 16]), [u8; 16]);
-            let t1 = loadu_128!((&topleft[top_off + base + 1..top_off + base + 17]), [u8; 16]);
+            let t1 = loadu_128!(
+                (&topleft[top_off + base + 1..top_off + base + 17]),
+                [u8; 16]
+            );
 
             let t0_lo = _mm256_cvtepu8_epi16(t0);
             let t1_lo = _mm256_cvtepu8_epi16(t1);
@@ -1476,7 +1578,11 @@ fn ipred_z2_8bpc_inner(
             let lo = _mm256_castsi256_si128(packed);
             let hi = _mm256_extracti128_si256::<1>(packed);
             let combined = _mm_unpacklo_epi64(lo, hi);
-            storeu_128!((&mut dst[row_off + x..row_off + x + 16]), [u8; 16], combined);
+            storeu_128!(
+                (&mut dst[row_off + x..row_off + x + 16]),
+                [u8; 16],
+                combined
+            );
 
             x += 16;
         }
@@ -1534,7 +1640,8 @@ pub unsafe extern "C" fn ipred_z2_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_z2_8bpc_inner(
         token,
         dst_sl,
@@ -1641,7 +1748,9 @@ fn ipred_z3_8bpc_inner(
         && (width as i32 + height) <= (16 >> is_sm as usize);
 
     if upsample_left {
-        ipred_z3_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, true);
+        ipred_z3_scalar(
+            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, true,
+        );
         return;
     }
 
@@ -1653,7 +1762,9 @@ fn ipred_z3_8bpc_inner(
     };
 
     if filter_strength != 0 {
-        ipred_z3_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, false);
+        ipred_z3_scalar(
+            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, false,
+        );
         return;
     }
 
@@ -1710,7 +1821,8 @@ pub unsafe extern "C" fn ipred_z3_8bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
+    let (tl_sl, tl_off) =
+        compute_topleft_slice(topleft as *const u8, width as usize, height as usize);
     ipred_z3_8bpc_inner(
         token,
         dst_sl,
@@ -1789,7 +1901,10 @@ unsafe fn compute_topleft_slice<'a>(
     let pos_reach = width + height + 2;
     let total = neg_reach + pos_reach;
     let base = unsafe { tl_ptr.sub(neg_reach) };
-    (unsafe { std::slice::from_raw_parts(base, total) }, neg_reach)
+    (
+        unsafe { std::slice::from_raw_parts(base, total) },
+        neg_reach,
+    )
 }
 
 // ============================================================================
@@ -1831,7 +1946,11 @@ fn ipred_dc_128_16bpc_inner(
         // Process 8 pixels at a time
         while x + 8 <= width {
             let off = row_off + x * 2;
-            storeu_128!((&mut dst[off..off + 16]), [u8; 16], _mm256_castsi256_si128(fill_val));
+            storeu_128!(
+                (&mut dst[off..off + 16]),
+                [u8; 16],
+                _mm256_castsi256_si128(fill_val)
+            );
             x += 8;
         }
 
@@ -1941,7 +2060,11 @@ pub unsafe extern "C" fn ipred_v_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_v_16bpc_inner(
         token,
         dst_sl,
@@ -1973,7 +2096,11 @@ fn ipred_h_16bpc_inner(
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         // Left pixel for this row: topleft[-(y+1)] in u16 units = tl_off - (y+1)*2 in bytes
         let left_byte_off = tl_off - (y + 1) * 2;
-        let left_val = u16::from_ne_bytes(topleft[left_byte_off..left_byte_off + 2].try_into().unwrap());
+        let left_val = u16::from_ne_bytes(
+            topleft[left_byte_off..left_byte_off + 2]
+                .try_into()
+                .unwrap(),
+        );
         let fill_val = _mm256_set1_epi16(left_val as i16);
 
         let mut x = 0usize;
@@ -1988,7 +2115,11 @@ fn ipred_h_16bpc_inner(
         // Process 8 pixels at a time
         while x + 8 <= width {
             let off = row_off + x * 2;
-            storeu_128!((&mut dst[off..off + 16]), [u8; 16], _mm256_castsi256_si128(fill_val));
+            storeu_128!(
+                (&mut dst[off..off + 16]),
+                [u8; 16],
+                _mm256_castsi256_si128(fill_val)
+            );
             x += 8;
         }
 
@@ -2019,7 +2150,11 @@ pub unsafe extern "C" fn ipred_h_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_h_16bpc_inner(
         token,
         dst_sl,
@@ -2080,7 +2215,11 @@ fn ipred_dc_16bpc_inner(
 
         while x + 8 <= width {
             let off = row_off + x * 2;
-            storeu_128!((&mut dst[off..off + 16]), [u8; 16], _mm256_castsi256_si128(fill_val));
+            storeu_128!(
+                (&mut dst[off..off + 16]),
+                [u8; 16],
+                _mm256_castsi256_si128(fill_val)
+            );
             x += 8;
         }
 
@@ -2110,7 +2249,11 @@ pub unsafe extern "C" fn ipred_dc_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_dc_16bpc_inner(
         token,
         dst_sl,
@@ -2160,7 +2303,11 @@ fn ipred_dc_top_16bpc_inner(
 
         while x + 8 <= width {
             let off = row_off + x * 2;
-            storeu_128!((&mut dst[off..off + 16]), [u8; 16], _mm256_castsi256_si128(fill_val));
+            storeu_128!(
+                (&mut dst[off..off + 16]),
+                [u8; 16],
+                _mm256_castsi256_si128(fill_val)
+            );
             x += 8;
         }
 
@@ -2190,7 +2337,11 @@ pub unsafe extern "C" fn ipred_dc_top_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_dc_top_16bpc_inner(
         token,
         dst_sl,
@@ -2240,7 +2391,11 @@ fn ipred_dc_left_16bpc_inner(
 
         while x + 8 <= width {
             let off = row_off + x * 2;
-            storeu_128!((&mut dst[off..off + 16]), [u8; 16], _mm256_castsi256_si128(fill_val));
+            storeu_128!(
+                (&mut dst[off..off + 16]),
+                [u8; 16],
+                _mm256_castsi256_si128(fill_val)
+            );
             x += 8;
         }
 
@@ -2270,7 +2425,11 @@ pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_dc_left_16bpc_inner(
         token,
         dst_sl,
@@ -2303,12 +2462,18 @@ fn ipred_paeth_16bpc_inner(
     for y in 0..height {
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let left_byte_off = tl_off - (y + 1) * 2;
-        let left_val = u16::from_ne_bytes(topleft[left_byte_off..left_byte_off + 2].try_into().unwrap()) as i32;
+        let left_val = u16::from_ne_bytes(
+            topleft[left_byte_off..left_byte_off + 2]
+                .try_into()
+                .unwrap(),
+        ) as i32;
 
         // Process each pixel - PAETH is complex so use scalar
         for x in 0..width {
             let top_byte_off = tl_off + (x + 1) * 2;
-            let top_val = u16::from_ne_bytes(topleft[top_byte_off..top_byte_off + 2].try_into().unwrap()) as i32;
+            let top_val =
+                u16::from_ne_bytes(topleft[top_byte_off..top_byte_off + 2].try_into().unwrap())
+                    as i32;
 
             // PAETH: pick closest of left, top, topleft to (left + top - topleft)
             let base = left_val + top_val - topleft_val;
@@ -2348,7 +2513,11 @@ pub unsafe extern "C" fn ipred_paeth_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_paeth_16bpc_inner(
         token,
         dst_sl,
@@ -2379,19 +2548,27 @@ fn ipred_smooth_16bpc_inner(
     let weights_hor = &dav1d_sm_weights.0[width..][..width];
     let weights_ver = &dav1d_sm_weights.0[height..][..height];
     let right_off = tl_off + width * 2;
-    let right_val = u16::from_ne_bytes(topleft[right_off..right_off + 2].try_into().unwrap()) as i32;
+    let right_val =
+        u16::from_ne_bytes(topleft[right_off..right_off + 2].try_into().unwrap()) as i32;
     let bottom_off = tl_off - height * 2;
-    let bottom_val = u16::from_ne_bytes(topleft[bottom_off..bottom_off + 2].try_into().unwrap()) as i32;
+    let bottom_val =
+        u16::from_ne_bytes(topleft[bottom_off..bottom_off + 2].try_into().unwrap()) as i32;
 
     for y in 0..height {
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let left_byte_off = tl_off - (y + 1) * 2;
-        let left_val = u16::from_ne_bytes(topleft[left_byte_off..left_byte_off + 2].try_into().unwrap()) as i32;
+        let left_val = u16::from_ne_bytes(
+            topleft[left_byte_off..left_byte_off + 2]
+                .try_into()
+                .unwrap(),
+        ) as i32;
         let w_v = weights_ver[y] as i32;
 
         for x in 0..width {
             let top_byte_off = tl_off + (1 + x) * 2;
-            let top_val = u16::from_ne_bytes(topleft[top_byte_off..top_byte_off + 2].try_into().unwrap()) as i32;
+            let top_val =
+                u16::from_ne_bytes(topleft[top_byte_off..top_byte_off + 2].try_into().unwrap())
+                    as i32;
             let w_h = weights_hor[x] as i32;
 
             // Vertical component: w_v * top + (256 - w_v) * bottom
@@ -2424,7 +2601,11 @@ pub unsafe extern "C" fn ipred_smooth_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_smooth_16bpc_inner(
         token,
         dst_sl,
@@ -2454,7 +2635,8 @@ fn ipred_smooth_v_16bpc_inner(
     let topleft = topleft.flex();
     let weights_ver = &dav1d_sm_weights.0[height..][..height];
     let bottom_off = tl_off - height * 2;
-    let bottom_val = u16::from_ne_bytes(topleft[bottom_off..bottom_off + 2].try_into().unwrap()) as i32;
+    let bottom_val =
+        u16::from_ne_bytes(topleft[bottom_off..bottom_off + 2].try_into().unwrap()) as i32;
 
     for y in 0..height {
         let row_off = (dst_base as isize + y as isize * stride) as usize;
@@ -2462,7 +2644,9 @@ fn ipred_smooth_v_16bpc_inner(
 
         for x in 0..width {
             let top_byte_off = tl_off + (1 + x) * 2;
-            let top_val = u16::from_ne_bytes(topleft[top_byte_off..top_byte_off + 2].try_into().unwrap()) as i32;
+            let top_val =
+                u16::from_ne_bytes(topleft[top_byte_off..top_byte_off + 2].try_into().unwrap())
+                    as i32;
             let pred = (w_v * top_val + (256 - w_v) * bottom_val + 128) >> 8;
             let off = row_off + x * 2;
             dst[off..off + 2].copy_from_slice(&(pred as u16).to_ne_bytes());
@@ -2488,7 +2672,11 @@ pub unsafe extern "C" fn ipred_smooth_v_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_smooth_v_16bpc_inner(
         token,
         dst_sl,
@@ -2518,12 +2706,17 @@ fn ipred_smooth_h_16bpc_inner(
     let topleft = topleft.flex();
     let weights_hor = &dav1d_sm_weights.0[width..][..width];
     let right_off = tl_off + width * 2;
-    let right_val = u16::from_ne_bytes(topleft[right_off..right_off + 2].try_into().unwrap()) as i32;
+    let right_val =
+        u16::from_ne_bytes(topleft[right_off..right_off + 2].try_into().unwrap()) as i32;
 
     for y in 0..height {
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let left_byte_off = tl_off - (y + 1) * 2;
-        let left_val = u16::from_ne_bytes(topleft[left_byte_off..left_byte_off + 2].try_into().unwrap()) as i32;
+        let left_val = u16::from_ne_bytes(
+            topleft[left_byte_off..left_byte_off + 2]
+                .try_into()
+                .unwrap(),
+        ) as i32;
 
         for x in 0..width {
             let w_h = weights_hor[x] as i32;
@@ -2552,7 +2745,11 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_smooth_h_16bpc_inner(
         token,
         dst_sl,
@@ -2602,7 +2799,9 @@ fn ipred_z1_16bpc_inner(
 
     if upsample_above {
         // Upsampling case - use scalar fallback
-        ipred_z1_16bpc_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, true);
+        ipred_z1_16bpc_scalar(
+            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, true,
+        );
         return;
     }
 
@@ -2614,7 +2813,9 @@ fn ipred_z1_16bpc_inner(
 
     if filter_strength != 0 {
         // Filtered case - use scalar fallback
-        ipred_z1_16bpc_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, false);
+        ipred_z1_16bpc_scalar(
+            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, false,
+        );
         return;
     }
 
@@ -2714,7 +2915,11 @@ pub unsafe extern "C" fn ipred_z1_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_z1_16bpc_inner(
         token,
         dst_sl,
@@ -2769,7 +2974,8 @@ fn ipred_z1_16bpc_scalar(
                 let fill_val_bytes = topleft[fill_off..fill_off + 2].try_into().unwrap();
                 for xx in x..width {
                     let off = row_off + xx * 2;
-                    dst[off..off + 2].copy_from_slice(&u16::from_ne_bytes(fill_val_bytes).to_ne_bytes());
+                    dst[off..off + 2]
+                        .copy_from_slice(&u16::from_ne_bytes(fill_val_bytes).to_ne_bytes());
                 }
                 break;
             }
@@ -2820,9 +3026,19 @@ fn ipred_z2_16bpc_inner(
 
     if upsample_left || upsample_above {
         ipred_z2_16bpc_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off,
-            width, height, dx, dy,
-            max_width, max_height, is_sm, enable_intra_edge_filter,
+            &mut *dst,
+            dst_base,
+            stride,
+            &*topleft,
+            tl_off,
+            width,
+            height,
+            dx,
+            dy,
+            max_width,
+            max_height,
+            is_sm,
+            enable_intra_edge_filter,
         );
         return;
     }
@@ -2841,9 +3057,19 @@ fn ipred_z2_16bpc_inner(
 
     if filter_strength_above != 0 || filter_strength_left != 0 {
         ipred_z2_16bpc_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off,
-            width, height, dx, dy,
-            max_width, max_height, is_sm, enable_intra_edge_filter,
+            &mut *dst,
+            dst_base,
+            stride,
+            &*topleft,
+            tl_off,
+            width,
+            height,
+            dx,
+            dy,
+            max_width,
+            max_height,
+            is_sm,
+            enable_intra_edge_filter,
         );
         return;
     }
@@ -2960,7 +3186,11 @@ pub unsafe extern "C" fn ipred_z2_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_z2_16bpc_inner(
         token,
         dst_sl,
@@ -3066,7 +3296,9 @@ fn ipred_z3_16bpc_inner(
         && (width as i32 + height) <= (16 >> is_sm as usize);
 
     if upsample_left {
-        ipred_z3_16bpc_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, true);
+        ipred_z3_16bpc_scalar(
+            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, true,
+        );
         return;
     }
 
@@ -3078,7 +3310,9 @@ fn ipred_z3_16bpc_inner(
     };
 
     if filter_strength != 0 {
-        ipred_z3_16bpc_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, false);
+        ipred_z3_16bpc_scalar(
+            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, false,
+        );
         return;
     }
 
@@ -3103,7 +3337,8 @@ fn ipred_z3_16bpc_inner(
                 let l1 = u16::from_ne_bytes(topleft[l1_off..l1_off + 2].try_into().unwrap()) as i32;
                 let v = l0 * inv_frac + l1 * frac;
                 let pixel_off = (dst_base as isize + y as isize * stride) as usize + x * 2;
-                dst[pixel_off..pixel_off + 2].copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
+                dst[pixel_off..pixel_off + 2]
+                    .copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
             } else {
                 let fill_off = tl_off - (max_base_y + 1) * 2;
                 let fill_val_bytes = topleft[fill_off..fill_off + 2].try_into().unwrap();
@@ -3136,7 +3371,11 @@ pub unsafe extern "C" fn ipred_z3_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_z3_16bpc_inner(
         token,
         dst_sl,
@@ -3182,10 +3421,12 @@ fn ipred_z3_16bpc_scalar(
                 let l1 = u16::from_ne_bytes(topleft[l1_off..l1_off + 2].try_into().unwrap()) as i32;
                 let v = l0 * inv_frac + l1 * frac;
                 let pixel_off = (dst_base as isize + y as isize * stride) as usize + x * 2;
-                dst[pixel_off..pixel_off + 2].copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
+                dst[pixel_off..pixel_off + 2]
+                    .copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
             } else {
                 let fill_off = tl_off - (max_base_y + 1) * 2;
-                let fill_val = u16::from_ne_bytes(topleft[fill_off..fill_off + 2].try_into().unwrap());
+                let fill_val =
+                    u16::from_ne_bytes(topleft[fill_off..fill_off + 2].try_into().unwrap());
                 for yy in y..height {
                     let pixel_off = (dst_base as isize + yy as isize * stride) as usize + x * 2;
                     dst[pixel_off..pixel_off + 2].copy_from_slice(&fill_val.to_ne_bytes());
@@ -3232,7 +3473,8 @@ fn ipred_filter_16bpc_inner(
         let cur_tl_off = topleft_off - y;
         // tl_pixel = topleft at byte offset for pixel position cur_tl_off
         let tl_pixel_off = tl_off.wrapping_add(cur_tl_off * 2);
-        let mut tl_pixel = u16::from_ne_bytes(topleft[tl_pixel_off..tl_pixel_off + 2].try_into().unwrap()) as i32;
+        let mut tl_pixel =
+            u16::from_ne_bytes(topleft[tl_pixel_off..tl_pixel_off + 2].try_into().unwrap()) as i32;
 
         let row0_off = (dst_base as isize + y as isize * stride) as usize;
         let row1_off = (dst_base as isize + (y + 1) as isize * stride) as usize;
@@ -3241,9 +3483,12 @@ fn ipred_filter_16bpc_inner(
             // Get top 4 pixels (p1-p4) in pixel units from topleft
             let top_base = tl_off.wrapping_add((topleft_off + 1 + x) * 2);
             let p1 = u16::from_ne_bytes(topleft[top_base..top_base + 2].try_into().unwrap()) as i32;
-            let p2 = u16::from_ne_bytes(topleft[top_base + 2..top_base + 4].try_into().unwrap()) as i32;
-            let p3 = u16::from_ne_bytes(topleft[top_base + 4..top_base + 6].try_into().unwrap()) as i32;
-            let p4 = u16::from_ne_bytes(topleft[top_base + 6..top_base + 8].try_into().unwrap()) as i32;
+            let p2 =
+                u16::from_ne_bytes(topleft[top_base + 2..top_base + 4].try_into().unwrap()) as i32;
+            let p3 =
+                u16::from_ne_bytes(topleft[top_base + 4..top_base + 6].try_into().unwrap()) as i32;
+            let p4 =
+                u16::from_ne_bytes(topleft[top_base + 6..top_base + 8].try_into().unwrap()) as i32;
 
             // Get left 2 pixels (p5, p6)
             let (p5, p6) = if x == 0 {
@@ -3251,8 +3496,10 @@ fn ipred_filter_16bpc_inner(
                 let left_base = tl_off.wrapping_add(cur_tl_off.wrapping_sub(1) * 2);
                 let left_base2 = tl_off.wrapping_add(cur_tl_off.wrapping_sub(2) * 2);
                 (
-                    u16::from_ne_bytes(topleft[left_base..left_base + 2].try_into().unwrap()) as i32,
-                    u16::from_ne_bytes(topleft[left_base2..left_base2 + 2].try_into().unwrap()) as i32,
+                    u16::from_ne_bytes(topleft[left_base..left_base + 2].try_into().unwrap())
+                        as i32,
+                    u16::from_ne_bytes(topleft[left_base2..left_base2 + 2].try_into().unwrap())
+                        as i32,
                 )
             } else {
                 // From previously computed output
@@ -3313,7 +3560,11 @@ pub unsafe extern "C" fn ipred_filter_16bpc_avx2(
     let token = unsafe { Desktop64::forge_token_dangerously() };
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
-    let (tl_sl, tl_off) = compute_topleft_slice(topleft as *const u8, width as usize * 2, height as usize * 2);
+    let (tl_sl, tl_off) = compute_topleft_slice(
+        topleft as *const u8,
+        width as usize * 2,
+        height as usize * 2,
+    );
     ipred_filter_16bpc_inner(
         token,
         dst_sl,
@@ -3354,7 +3605,9 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     use crate::include::common::bitdepth::BPC;
     use zerocopy::AsBytes;
 
-    let Some(token) = Desktop64::summon() else { return false };
+    let Some(token) = Desktop64::summon() else {
+        return false;
+    };
 
     let w = width as usize;
     let h = height as usize;
@@ -3420,14 +3673,9 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             w,
             h,
         ),
-        (BPC::BPC8, 5) => ipred_dc_128_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            w,
-            h,
-        ),
+        (BPC::BPC8, 5) => {
+            ipred_dc_128_8bpc_inner(token, dst_bytes, dst_base_bytes, byte_stride, w, h)
+        }
         (BPC::BPC8, 6) => ipred_z1_8bpc_inner(
             token,
             dst_bytes,
@@ -3518,7 +3766,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
             )
-        },
+        }
         (BPC::BPC16, 1) => {
             let tl_off_bytes = topleft_off * 2;
             ipred_v_16bpc_inner(
@@ -3531,7 +3779,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
             )
-        },
+        }
         (BPC::BPC16, 2) => {
             let tl_off_bytes = topleft_off * 2;
             ipred_h_16bpc_inner(
@@ -3544,7 +3792,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
             )
-        },
+        }
         (BPC::BPC16, 3) => {
             let tl_off_bytes = topleft_off * 2;
             ipred_dc_left_16bpc_inner(
@@ -3557,7 +3805,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
             )
-        },
+        }
         (BPC::BPC16, 4) => {
             let tl_off_bytes = topleft_off * 2;
             ipred_dc_top_16bpc_inner(
@@ -3570,7 +3818,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
             )
-        },
+        }
         (BPC::BPC16, 5) => ipred_dc_128_16bpc_inner(
             token,
             dst_bytes,
@@ -3593,7 +3841,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 h,
                 angle as i32,
             )
-        },
+        }
         (BPC::BPC16, 7) => {
             let tl_off_bytes = topleft_off * 2;
             ipred_z2_16bpc_inner(
@@ -3609,7 +3857,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 max_width as i32,
                 max_height as i32,
             )
-        },
+        }
         (BPC::BPC16, 8) => {
             let tl_off_bytes = topleft_off * 2;
             ipred_z3_16bpc_inner(
@@ -3623,7 +3871,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 h,
                 angle as i32,
             )
-        },
+        }
         (BPC::BPC16, 9) => {
             let tl_off_bytes = topleft_off * 2;
             ipred_smooth_16bpc_inner(
@@ -3636,7 +3884,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
             )
-        },
+        }
         (BPC::BPC16, 10) => {
             let tl_off_bytes = topleft_off * 2;
             ipred_smooth_v_16bpc_inner(
@@ -3649,7 +3897,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
             )
-        },
+        }
         (BPC::BPC16, 11) => {
             let tl_off_bytes = topleft_off * 2;
             ipred_smooth_h_16bpc_inner(
@@ -3662,7 +3910,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
             )
-        },
+        }
         (BPC::BPC16, 12) => {
             let tl_off_bytes = topleft_off * 2;
             ipred_paeth_16bpc_inner(
@@ -3675,7 +3923,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
             )
-        },
+        }
         // filter_intra 16bpc: disabled due to topleft offset bugs
         // (same class as 8bpc filter_intra — double-offset and missing top-pointer update)
         (BPC::BPC16, 13) => return false,
