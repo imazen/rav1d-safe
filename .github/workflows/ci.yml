@@ -119,6 +119,55 @@ jobs:
       - name: Cross build
         run: cross build --target ${{ matrix.target }} --no-default-features --features "bitdepth_8,bitdepth_16"
 
+  # ==========================================================================
+  # Cross-compiled testing (32-bit) via QEMU
+  # ==========================================================================
+  test-cross-32bit:
+    name: Cross 32-bit (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - i686-unknown-linux-gnu
+          - armv7-unknown-linux-gnueabihf
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Build (cross)
+        run: cross build --target ${{ matrix.target }} --no-default-features --features "bitdepth_8,bitdepth_16"
+      - name: Test (cross/QEMU)
+        run: cross test --target ${{ matrix.target }} --no-default-features --features "bitdepth_8,bitdepth_16" --lib
+
+  # ==========================================================================
+  # WASM testing (no asm)
+  # ==========================================================================
+  test-wasm:
+    name: Test WASM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown,wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - name: Install wasmtime
+        run: |
+          curl https://wasmtime.dev/install.sh -sSf | bash
+          echo "$HOME/.wasmtime/bin" >> $GITHUB_PATH
+      - name: Build (wasm32-unknown-unknown)
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16" --lib
+      - name: Test (wasm32-wasip1)
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: "wasmtime --dir=. --"
+        run: cargo test --target wasm32-wasip1 --no-default-features --features "bitdepth_8,bitdepth_16" --lib
+
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
@@ -132,11 +181,11 @@ jobs:
       - name: Install NASM
         run: sudo apt-get update && sudo apt-get install -y nasm
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate coverage
         run: cargo llvm-cov --no-default-features --features "bitdepth_8,bitdepth_16" --lcov --output-path lcov.info
       - name: Upload to codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           fail_ci_if_error: false
