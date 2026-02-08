@@ -1350,19 +1350,39 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     let lvl_byte_guard = lvl.data.index(lvl.offset..lvl_byte_end);
     let lvl_slice: &[[u8; 4]] = zerocopy::FromBytes::slice_from(&*lvl_byte_guard).unwrap();
 
+    // Compute actual iterations from vmask to tighten bounds check.
+    // Each bit in vmask represents a 4-pixel edge. The highest set bit
+    // determines the maximum forward reach, which is much less than 128
+    // for SBs near image edges.
+    let vm = mask[0] | mask[1] | mask[2];
+    if vm == 0 {
+        return true; // Nothing to filter
+    }
+    let max_iter = 32 - vm.leading_zeros() as usize;
+
     match BD::BPC {
         BPC::BPC8 => {
             use crate::include::common::bitdepth::BitDepth8;
 
             // For 8bpc, the stride is in bytes (= pixels).
-            // The filter accesses pixels at offsets from -7*stride to well beyond the base.
             let byte_stride = stride.unsigned_abs() as usize;
-            let reach_before = 7 * byte_stride + 7;
-            let reach_after = 128 * byte_stride + 7;
+
+            // Compute reach based on filter direction and actual vmask extent.
+            // H filter (is_v=false): iterates rows (stridea=stride), pixel access (strideb=1)
+            //   forward: last group at (max_iter-1)*4*stride, +3 lines, +16 pixels
+            //   backward: 7 pixels horizontally
+            // V filter (is_v=true): iterates columns (stridea=1), row access (strideb=stride)
+            //   forward: (max_iter*4-1) columns + 16*stride rows
+            //   backward: 7*stride rows
+            let (reach_before, reach_after) = if !is_v {
+                // H filter: iterates through row groups
+                (7, (max_iter * 4 - 1) * byte_stride + 16)
+            } else {
+                // V filter: iterates through column groups
+                (7 * byte_stride, max_iter * 4 - 1 + 16 * byte_stride)
+            };
 
             // Guard: fall back to scalar if buffer bounds are insufficient.
-            // The SIMD filter needs reach_before pixels before and reach_after after
-            // the current position. Small images may not have enough buffer.
             let buf_pixel_len = dst.data.pixel_len::<BitDepth8>();
             if dst.offset < reach_before
                 || dst.offset.saturating_add(reach_after) > buf_pixel_len
@@ -1430,8 +1450,15 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             use crate::include::common::bitdepth::BitDepth16;
 
             let u16_stride = (stride / 2).unsigned_abs() as usize;
-            let reach_before = 7 * u16_stride + 7;
-            let reach_after = 128 * u16_stride + 7;
+
+            // Compute reach based on filter direction and actual vmask extent
+            let (reach_before, reach_after) = if !is_v {
+                // H filter: iterates through row groups
+                (7, (max_iter * 4 - 1) * u16_stride + 16)
+            } else {
+                // V filter: iterates through column groups
+                (7 * u16_stride, max_iter * 4 - 1 + 16 * u16_stride)
+            };
 
             // Guard: fall back to scalar if buffer bounds are insufficient.
             let buf_pixel_len = dst.data.pixel_len::<BitDepth16>();
