@@ -200,55 +200,83 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 - `unchecked` - Use unchecked slice access in SIMD hot paths (skips bounds checks)
 - `src/safe_simd/pixel_access.rs` - Helper module for checked/unchecked slice access + SIMD macros
 
-**Safe SIMD Pattern (forbid(unsafe_code) by default):**
+**Writing Clean Safe SIMD (the complete pattern):**
 
-SIMD modules use slices in function signatures and load/store macros that switch
-between safe (`safe_unaligned_simd`) and unchecked (raw pointer) implementations:
+Since Rust 1.93, value-type SIMD intrinsics are safe functions. The only remaining sources of `unsafe` in SIMD are:
+1. **Pointer load/store** — `_mm256_loadu_si256(*const)` takes raw pointers
+2. **Target feature dispatch** — intrinsics are only safe inside `#[target_feature(enable = "...")]` fns
+
+Both are solved without any `unsafe` in user code:
 
 ```rust
-// Module header — forbid unsafe when unchecked is off:
+// 1. Module header — forbid unsafe (load/store macros handle it internally):
 #![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
 
+// 2. Import macros from pixel_access:
 use super::pixel_access::{loadu_256, storeu_256, load_256, store_256};
 
-// Functions take slices, not raw pointers:
-fn process(dst: &mut [u8], src: &[u8], w: usize) {
-    // Direct: pass typed array reference
-    let src_arr: &[u8; 32] = src[0..32].try_into().unwrap();
-    let v = loadu_256!(src_arr);
-
-    // From-slice: auto-converts slice → fixed array
+// 3. Functions take SLICES, not raw pointers:
+// 4. Use #[arcane] for target_feature dispatch (NOT manual #[target_feature]):
+#[arcane]
+fn process(token: Desktop64, dst: &mut [u8], src: &[u8], w: usize) {
+    // Load 32 bytes from slice — safe, bounds-checked:
     let v = load_256!(&src[0..32], [u8; 32]);
 
-    // Stores work the same way:
-    store_256!(&mut dst[0..32], [u8; 32], v);
+    // All computation intrinsics are safe (Rust 1.93+):
+    let doubled = _mm256_add_epi8(v, v);
+    let shuffled = _mm256_shuffle_epi8(doubled, _mm256_setzero_si256());
+
+    // Store 32 bytes to slice — safe, bounds-checked:
+    store_256!(&mut dst[0..32], [u8; 32], shuffled);
+
+    // Or use typed array ref forms (no slice→array conversion):
+    let arr: &[u8; 32] = src[0..32].try_into().unwrap();
+    let v = loadu_256!(arr);
     storeu_256!(<&mut [u8; 32]>::try_from(&mut dst[0..32]).unwrap(), v);
 }
 ```
 
-When `unchecked` is **off**: macros expand to `safe_unaligned_simd::_mm256_loadu_si256(ref)` — fully safe, bounds-checked, compatible with `forbid(unsafe_code)`.
+**Why this works with `forbid(unsafe_code)`:**
+- `#[arcane]` (from archmage crate) handles `#[target_feature]` dispatch via tokens — no manual feature annotations needed
+- `load_256!`/`store_256!` expand to `safe_unaligned_simd` calls (safe, bounds-checked) when `unchecked` is off
+- Computation intrinsics (`_mm256_add_epi8`, `_mm256_shuffle_epi8`, etc.) are plain safe functions since Rust 1.93
+- Result: **zero `unsafe` blocks** in the SIMD function body
 
-When `unchecked` is **on**: macros expand to `unsafe { _mm256_loadu_si256(ptr) }` — raw pointer, `debug_assert!` only.
+**When `unchecked` is ON:** macros expand to `unsafe { _mm256_loadu_si256(ptr) }` with `debug_assert!` only — maximum perf, `deny(unsafe_code)` instead of `forbid`.
 
-**Available macros (in `pixel_access.rs`):**
+**Load/Store macros (in `pixel_access.rs`):**
 
 | Macro | Width | Input | Description |
 |-------|-------|-------|-------------|
-| `loadu_256!($ref)` | 256 | `&[T; N]` | Load from typed array ref |
-| `storeu_256!($ref, v)` | 256 | `&mut [T; N]` | Store to typed array ref |
-| `load_256!($slice, T)` | 256 | `&[T]` | Load from slice + type conversion |
-| `store_256!($slice, T, v)` | 256 | `&mut [T]` | Store to slice + type conversion |
-| `loadu_128!` / `storeu_128!` | 128 | `&[T; N]` | SSE variants |
+| `loadu_256!(ref)` | 256 | `&[T; N]` | Load from typed array ref |
+| `storeu_256!(ref, v)` | 256 | `&mut [T; N]` | Store to typed array ref |
+| `load_256!(slice, T)` | 256 | `&[T]` | Load from slice (auto-converts to `&[T; N]`) |
+| `store_256!(slice, T, v)` | 256 | `&mut [T]` | Store to slice (auto-converts to `&mut [T; N]`) |
+| `loadu_128!` / `storeu_128!` | 128 | `&[T; N]` | SSE typed-ref variants |
 | `load_128!` / `store_128!` | 128 | `&[T]` | SSE from-slice variants |
-| `neon_ld1q_u8!` / `neon_st1q_u8!` | 128 | `&[u8; 16]` | aarch64 NEON |
-| `neon_ld1q_u16!` / `neon_st1q_u16!` | 128 | `&[u16; 8]` | aarch64 NEON |
+| `neon_ld1q_u8!` / `neon_st1q_u8!` | 128 | `&[u8; 16]` | aarch64 NEON u8 |
+| `neon_ld1q_u16!` / `neon_st1q_u16!` | 128 | `&[u16; 8]` | aarch64 NEON u16 |
+| `neon_ld1q_s16!` / `neon_st1q_s16!` | 128 | `&[i16; 8]` | aarch64 NEON i16 |
 
-**Migration path for SIMD modules:**
-1. Change fn signatures: raw pointers → slices (`&[u8]`, `&mut [u8]`)
-2. Replace `unsafe { _mm256_loadu_si256(ptr) }` → `loadu_256!(&arr)` or `load_256!(&slice, [u8; 32])`
-3. Replace `unsafe { _mm256_storeu_si256(ptr, v) }` → `storeu_256!(&mut arr, v)` or `store_256!(&mut slice, [u8; 32], v)`
-4. Add `#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]` to module
-5. Computation intrinsics (add, sub, shuffle, etc.) are already safe via archmage `#[arcane]`
+**Slice access helpers (in `pixel_access.rs`):**
+
+| Helper | Description |
+|--------|-------------|
+| `row_slice(buf, off, len)` | Immutable `&[u8]` — unchecked when feature enabled |
+| `row_slice_mut(buf, off, len)` | Mutable `&mut [u8]` — unchecked when feature enabled |
+| `row_slice_u16(buf, off, len)` | Immutable `&[u16]` variant |
+| `row_slice_u16_mut(buf, off, len)` | Mutable `&mut [u16]` variant |
+| `idx(buf, i)` / `idx_mut(buf, i)` | Single element access |
+| `reinterpret_slice(src)` | Safe zerocopy type reinterpretation |
+
+**Migration checklist for converting a SIMD function to safe:**
+1. Change fn signature: raw pointers → slices (`*mut u8` → `&mut [u8]`)
+2. Add `#[arcane]` attribute, take `Desktop64` token param
+3. Replace `unsafe { _mm256_loadu_si256(ptr) }` → `load_256!(&slice[off..off+32], [u8; 32])`
+4. Replace `unsafe { _mm256_storeu_si256(ptr, v) }` → `store_256!(&mut slice[off..off+32], [u8; 32], v)`
+5. Remove `unsafe {}` blocks around computation intrinsics (they're safe since 1.93)
+6. Add `#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]` to module
+7. Gate FFI `extern "C"` wrappers behind `#[cfg(feature = "asm")]`
 
 **Unsafe reduction progress (safe_simd/):**
 - **Pixels trait gated behind cfg(asm)** — the unsound `Pixels` trait (which returned `*mut u8` from `&self`, bypassing DisjointMut's borrow tracker) is now dead code when asm is disabled
