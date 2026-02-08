@@ -6499,14 +6499,13 @@ pub unsafe extern "C" fn prep_bilin_8bpc_avx2(
 
 use crate::src::internal::SEG_MASK_LEN;
 
-/// Core w_mask implementation
+/// Core w_mask implementation (fully safe, slice-based)
 /// SS_HOR and SS_VER control subsampling: 444=(false,false), 422=(true,false), 420=(true,true)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
-unsafe fn w_mask_8bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
-    dst_ptr: *mut DynPixel,
-    dst_stride: isize,
+#[inline(always)]
+fn w_mask_8bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
+    dst: &mut [u8],
+    dst_stride: usize,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
@@ -6514,93 +6513,88 @@ unsafe fn w_mask_8bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
 ) {
-    // SAFETY: AVX2 guaranteed by target_feature, caller ensures pointer validity
-    unsafe {
-        let w = w as usize;
-        let h = h as usize;
-        let dst = dst_ptr as *mut u8;
-        let sign = sign as u8;
+    let w = w as usize;
+    let h = h as usize;
+    let sign = sign as u8;
 
-        // For 8bpc: intermediate_bits = 4, bitdepth = 8
-        let intermediate_bits = 4u32;
-        let bitdepth = 8u32;
-        let sh = intermediate_bits + 6;
-        let rnd = (32i32 << intermediate_bits) + 8192 * 64; // PREP_BIAS = 8192 for 8bpc in compound
-        let mask_sh = bitdepth + intermediate_bits - 4;
-        let mask_rnd = 1u16 << (mask_sh - 5);
+    // For 8bpc: intermediate_bits = 4, bitdepth = 8
+    let intermediate_bits = 4u32;
+    let bitdepth = 8u32;
+    let sh = intermediate_bits + 6;
+    let rnd = (32i32 << intermediate_bits) + 8192 * 64;
+    let mask_sh = bitdepth + intermediate_bits - 4;
+    let mask_rnd = 1u16 << (mask_sh - 5);
 
-        // Mask output dimensions depend on subsampling
-        let mask_w = if SS_HOR { w >> 1 } else { w };
-        let mut mask_ptr = mask.as_mut_ptr();
+    // Mask output dimensions depend on subsampling
+    let mask_w = if SS_HOR { w >> 1 } else { w };
+    let mut mask_off = 0usize;
 
-        for row_h in 0..h {
-            let row_offset = row_h * w;
-            let tmp1_row = &tmp1[row_offset..][..w];
-            let tmp2_row = &tmp2[row_offset..][..w];
-            let dst_row = dst.offset(row_h as isize * dst_stride);
+    for row_h in 0..h {
+        let row_offset = row_h * w;
+        let tmp1_row = &tmp1[row_offset..][..w];
+        let tmp2_row = &tmp2[row_offset..][..w];
+        let dst_row = &mut dst[row_h * dst_stride..][..w];
 
-            let mut x = 0;
-            while x < w {
-                // Compute mask value m
-                let diff = tmp1_row[x].abs_diff(tmp2_row[x]);
-                let m = std::cmp::min(38 + ((diff.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
+        let mut x = 0;
+        while x < w {
+            // Compute mask value m
+            let diff = tmp1_row[x].abs_diff(tmp2_row[x]);
+            let m = std::cmp::min(38 + ((diff.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
 
-                // Blend pixels
+            // Blend pixels
+            let t1 = tmp1_row[x] as i32;
+            let t2 = tmp2_row[x] as i32;
+            let pixel = (t1 * m as i32 + t2 * (64 - m as i32) + rnd) >> sh;
+            dst_row[x] = pixel.clamp(0, 255) as u8;
+
+            if SS_HOR {
+                // Process second pixel in pair for horizontal subsampling
+                x += 1;
+                let diff2 = tmp1_row[x].abs_diff(tmp2_row[x]);
+                let n =
+                    std::cmp::min(38 + ((diff2.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
+
                 let t1 = tmp1_row[x] as i32;
                 let t2 = tmp2_row[x] as i32;
-                let pixel = (t1 * m as i32 + t2 * (64 - m as i32) + rnd) >> sh;
-                *dst_row.add(x) = pixel.clamp(0, 255) as u8;
+                let pixel = (t1 * n as i32 + t2 * (64 - n as i32) + rnd) >> sh;
+                dst_row[x] = pixel.clamp(0, 255) as u8;
 
-                if SS_HOR {
-                    // Process second pixel in pair for horizontal subsampling
-                    x += 1;
-                    let diff2 = tmp1_row[x].abs_diff(tmp2_row[x]);
-                    let n =
-                        std::cmp::min(38 + ((diff2.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
-
-                    let t1 = tmp1_row[x] as i32;
-                    let t2 = tmp2_row[x] as i32;
-                    let pixel = (t1 * n as i32 + t2 * (64 - n as i32) + rnd) >> sh;
-                    *dst_row.add(x) = pixel.clamp(0, 255) as u8;
-
-                    // Output subsampled mask
-                    let mask_x = x >> 1;
-                    if SS_VER && (row_h & 1 != 0) {
-                        // Vertical subsampling: average with previous row
-                        let prev = *mask_ptr.add(mask_x);
-                        *mask_ptr.add(mask_x) =
-                            (((m as u16 + n as u16 + 2 - sign as u16) + prev as u16) >> 2) as u8;
-                    } else if SS_VER {
-                        // Even row: just store sum (will be averaged on odd row)
-                        *mask_ptr.add(mask_x) = m + n;
-                    } else {
-                        // No vertical subsampling: average of horizontal pair
-                        *mask_ptr.add(mask_x) =
-                            ((m as u16 + n as u16 + 1 - sign as u16) >> 1) as u8;
-                    }
+                // Output subsampled mask
+                let mask_x = x >> 1;
+                if SS_VER && (row_h & 1 != 0) {
+                    // Vertical subsampling: average with previous row
+                    let prev = mask[mask_off + mask_x];
+                    mask[mask_off + mask_x] =
+                        (((m as u16 + n as u16 + 2 - sign as u16) + prev as u16) >> 2) as u8;
+                } else if SS_VER {
+                    // Even row: just store sum (will be averaged on odd row)
+                    mask[mask_off + mask_x] = m + n;
                 } else {
-                    // No horizontal subsampling (444)
-                    *mask_ptr.add(x) = m;
+                    // No vertical subsampling: average of horizontal pair
+                    mask[mask_off + mask_x] =
+                        ((m as u16 + n as u16 + 1 - sign as u16) >> 1) as u8;
                 }
-                x += 1;
+            } else {
+                // No horizontal subsampling (444)
+                mask[mask_off + x] = m;
             }
+            x += 1;
+        }
 
-            // Advance mask pointer only on appropriate rows
-            if !SS_VER || (row_h & 1 != 0) {
-                mask_ptr = mask_ptr.add(mask_w);
-            }
+        // Advance mask offset only on appropriate rows
+        if !SS_VER || (row_h & 1 != 0) {
+            mask_off += mask_w;
         }
     }
 }
 
-/// w_mask for 4:4:4 (no subsampling)
+/// w_mask 444 8bpc (no subsampling)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-#[allow(unsafe_code)]
-unsafe fn w_mask_444_8bpc_avx2_inner(
+fn w_mask_444_8bpc_avx2_safe(
     _token: Desktop64,
-    dst_ptr: *mut DynPixel,
-    dst_stride: isize,
+    dst: &mut [u8],
+    dst_stride: usize,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
@@ -6608,12 +6602,46 @@ unsafe fn w_mask_444_8bpc_avx2_inner(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
 ) {
-    unsafe {
-        w_mask_8bpc_avx2_impl::<false, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign);
-    }
+    w_mask_8bpc_avx2_safe_impl::<false, false>(dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
 }
 
+/// w_mask 422 8bpc (horizontal subsampling only)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn w_mask_422_8bpc_avx2_safe(
+    _token: Desktop64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+) {
+    w_mask_8bpc_avx2_safe_impl::<true, false>(dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
+}
+
+/// w_mask 420 8bpc (horizontal and vertical subsampling)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn w_mask_420_8bpc_avx2_safe(
+    _token: Desktop64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+) {
+    w_mask_8bpc_avx2_safe_impl::<true, true>(dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
+}
+
+/// w_mask for 4:4:4 (no subsampling)
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
+#[allow(unsafe_code)]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn w_mask_444_8bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -6627,31 +6655,25 @@ pub unsafe extern "C" fn w_mask_444_8bpc_avx2(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { w_mask_444_8bpc_avx2_inner(token, dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign) }
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
+    };
+    w_mask_444_8bpc_avx2_safe(
+        Desktop64::forge_token_dangerously(),
+        dst,
+        dst_stride as usize,
+        tmp1,
+        tmp2,
+        w,
+        h,
+        mask,
+        sign,
+    )
 }
 
 /// w_mask for 4:2:2 (horizontal subsampling only)
-#[cfg(target_arch = "x86_64")]
-#[arcane]
-#[allow(unsafe_code)]
-unsafe fn w_mask_422_8bpc_avx2_inner(
-    _token: Desktop64,
-    dst_ptr: *mut DynPixel,
-    dst_stride: isize,
-    tmp1: &[i16; COMPINTER_LEN],
-    tmp2: &[i16; COMPINTER_LEN],
-    w: i32,
-    h: i32,
-    mask: &mut [u8; SEG_MASK_LEN],
-    sign: i32,
-) {
-    unsafe {
-        w_mask_8bpc_avx2_impl::<true, false>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign);
-    }
-}
-
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
+#[allow(unsafe_code)]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn w_mask_422_8bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -6665,31 +6687,25 @@ pub unsafe extern "C" fn w_mask_422_8bpc_avx2(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { w_mask_422_8bpc_avx2_inner(token, dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign) }
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
+    };
+    w_mask_422_8bpc_avx2_safe(
+        Desktop64::forge_token_dangerously(),
+        dst,
+        dst_stride as usize,
+        tmp1,
+        tmp2,
+        w,
+        h,
+        mask,
+        sign,
+    )
 }
 
 /// w_mask for 4:2:0 (horizontal and vertical subsampling)
-#[cfg(target_arch = "x86_64")]
-#[arcane]
-#[allow(unsafe_code)]
-unsafe fn w_mask_420_8bpc_avx2_inner(
-    _token: Desktop64,
-    dst_ptr: *mut DynPixel,
-    dst_stride: isize,
-    tmp1: &[i16; COMPINTER_LEN],
-    tmp2: &[i16; COMPINTER_LEN],
-    w: i32,
-    h: i32,
-    mask: &mut [u8; SEG_MASK_LEN],
-    sign: i32,
-) {
-    unsafe {
-        w_mask_8bpc_avx2_impl::<true, true>(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign);
-    }
-}
-
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
+#[allow(unsafe_code)]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn w_mask_420_8bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -6703,17 +6719,28 @@ pub unsafe extern "C" fn w_mask_420_8bpc_avx2(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe { w_mask_420_8bpc_avx2_inner(token, dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign) }
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
+    };
+    w_mask_420_8bpc_avx2_safe(
+        Desktop64::forge_token_dangerously(),
+        dst,
+        dst_stride as usize,
+        tmp1,
+        tmp2,
+        w,
+        h,
+        mask,
+        sign,
+    )
 }
 
-// 16bpc w_mask (scalar for now)
+// 16bpc w_mask (fully safe, slice-based)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
-unsafe fn w_mask_16bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
-    dst_ptr: *mut DynPixel,
-    dst_stride: isize,
+#[inline(always)]
+fn w_mask_16bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
+    dst: &mut [u8],
+    dst_stride: usize,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
@@ -6722,83 +6749,81 @@ unsafe fn w_mask_16bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
     sign: i32,
     bitdepth_max: i32,
 ) {
-    unsafe {
-        let w = w as usize;
-        let h = h as usize;
-        let dst = dst_ptr as *mut u16;
-        let dst_stride = dst_stride / 2;
-        let sign = sign as u8;
-        let bd_max = bitdepth_max as i32;
+    let w = w as usize;
+    let h = h as usize;
+    let sign = sign as u8;
+    let bd_max = bitdepth_max as i32;
 
-        // Determine bitdepth from bitdepth_max
-        let bitdepth = if bitdepth_max == 1023 { 10u32 } else { 12u32 };
-        let intermediate_bits = 4u32;
-        let sh = intermediate_bits + 6;
-        let rnd = (32i32 << intermediate_bits) + 8192 * 64;
-        let mask_sh = bitdepth + intermediate_bits - 4;
-        let mask_rnd = 1u16 << (mask_sh - 5);
+    // Determine bitdepth from bitdepth_max
+    let bitdepth = if bitdepth_max == 1023 { 10u32 } else { 12u32 };
+    let intermediate_bits = 4u32;
+    let sh = intermediate_bits + 6;
+    let rnd = (32i32 << intermediate_bits) + 8192 * 64;
+    let mask_sh = bitdepth + intermediate_bits - 4;
+    let mask_rnd = 1u16 << (mask_sh - 5);
 
-        let mask_w = if SS_HOR { w >> 1 } else { w };
-        let mut mask_ptr = mask.as_mut_ptr();
+    let mask_w = if SS_HOR { w >> 1 } else { w };
+    let mut mask_off = 0usize;
 
-        for row_h in 0..h {
-            let row_offset = row_h * w;
-            let tmp1_row = &tmp1[row_offset..][..w];
-            let tmp2_row = &tmp2[row_offset..][..w];
-            let dst_row = dst.offset(row_h as isize * dst_stride);
+    for row_h in 0..h {
+        let row_offset = row_h * w;
+        let tmp1_row = &tmp1[row_offset..][..w];
+        let tmp2_row = &tmp2[row_offset..][..w];
+        // dst is bytes, but we write u16 pixels — each pixel is 2 bytes
+        let dst_row_bytes = &mut dst[row_h * dst_stride..][..w * 2];
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
 
-            let mut x = 0;
-            while x < w {
-                let diff = tmp1_row[x].abs_diff(tmp2_row[x]);
-                let m = std::cmp::min(38 + ((diff.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
+        let mut x = 0;
+        while x < w {
+            let diff = tmp1_row[x].abs_diff(tmp2_row[x]);
+            let m = std::cmp::min(38 + ((diff.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
+
+            let t1 = tmp1_row[x] as i32;
+            let t2 = tmp2_row[x] as i32;
+            let pixel = (t1 * m as i32 + t2 * (64 - m as i32) + rnd) >> sh;
+            dst_row[x] = pixel.clamp(0, bd_max) as u16;
+
+            if SS_HOR {
+                x += 1;
+                let diff2 = tmp1_row[x].abs_diff(tmp2_row[x]);
+                let n =
+                    std::cmp::min(38 + ((diff2.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
 
                 let t1 = tmp1_row[x] as i32;
                 let t2 = tmp2_row[x] as i32;
-                let pixel = (t1 * m as i32 + t2 * (64 - m as i32) + rnd) >> sh;
-                *dst_row.add(x) = pixel.clamp(0, bd_max) as u16;
+                let pixel = (t1 * n as i32 + t2 * (64 - n as i32) + rnd) >> sh;
+                dst_row[x] = pixel.clamp(0, bd_max) as u16;
 
-                if SS_HOR {
-                    x += 1;
-                    let diff2 = tmp1_row[x].abs_diff(tmp2_row[x]);
-                    let n =
-                        std::cmp::min(38 + ((diff2.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
-
-                    let t1 = tmp1_row[x] as i32;
-                    let t2 = tmp2_row[x] as i32;
-                    let pixel = (t1 * n as i32 + t2 * (64 - n as i32) + rnd) >> sh;
-                    *dst_row.add(x) = pixel.clamp(0, bd_max) as u16;
-
-                    let mask_x = x >> 1;
-                    if SS_VER && (row_h & 1 != 0) {
-                        let prev = *mask_ptr.add(mask_x);
-                        *mask_ptr.add(mask_x) =
-                            (((m as u16 + n as u16 + 2 - sign as u16) + prev as u16) >> 2) as u8;
-                    } else if SS_VER {
-                        *mask_ptr.add(mask_x) = m + n;
-                    } else {
-                        *mask_ptr.add(mask_x) =
-                            ((m as u16 + n as u16 + 1 - sign as u16) >> 1) as u8;
-                    }
+                let mask_x = x >> 1;
+                if SS_VER && (row_h & 1 != 0) {
+                    let prev = mask[mask_off + mask_x];
+                    mask[mask_off + mask_x] =
+                        (((m as u16 + n as u16 + 2 - sign as u16) + prev as u16) >> 2) as u8;
+                } else if SS_VER {
+                    mask[mask_off + mask_x] = m + n;
                 } else {
-                    *mask_ptr.add(x) = m;
+                    mask[mask_off + mask_x] =
+                        ((m as u16 + n as u16 + 1 - sign as u16) >> 1) as u8;
                 }
-                x += 1;
+            } else {
+                mask[mask_off + x] = m;
             }
+            x += 1;
+        }
 
-            if !SS_VER || (row_h & 1 != 0) {
-                mask_ptr = mask_ptr.add(mask_w);
-            }
+        if !SS_VER || (row_h & 1 != 0) {
+            mask_off += mask_w;
         }
     }
 }
 
+/// w_mask 444 16bpc (no subsampling)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-#[allow(unsafe_code)]
-unsafe fn w_mask_444_16bpc_avx2_inner(
+fn w_mask_444_16bpc_avx2_safe(
     _token: Desktop64,
-    dst_ptr: *mut DynPixel,
-    dst_stride: isize,
+    dst: &mut [u8],
+    dst_stride: usize,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: i32,
@@ -6807,22 +6832,53 @@ unsafe fn w_mask_444_16bpc_avx2_inner(
     sign: i32,
     bitdepth_max: i32,
 ) {
-    unsafe {
-        w_mask_16bpc_avx2_impl::<false, false>(
-            dst_ptr,
-            dst_stride,
-            tmp1,
-            tmp2,
-            w,
-            h,
-            mask,
-            sign,
-            bitdepth_max,
-        );
-    }
+    w_mask_16bpc_avx2_safe_impl::<false, false>(
+        dst, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max,
+    );
+}
+
+/// w_mask 422 16bpc (horizontal subsampling only)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn w_mask_422_16bpc_avx2_safe(
+    _token: Desktop64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+    bitdepth_max: i32,
+) {
+    w_mask_16bpc_avx2_safe_impl::<true, false>(
+        dst, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max,
+    );
+}
+
+/// w_mask 420 16bpc (horizontal and vertical subsampling)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn w_mask_420_16bpc_avx2_safe(
+    _token: Desktop64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+    bitdepth_max: i32,
+) {
+    w_mask_16bpc_avx2_safe_impl::<true, true>(
+        dst, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max,
+    );
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
+#[allow(unsafe_code)]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn w_mask_444_16bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -6836,54 +6892,25 @@ pub unsafe extern "C" fn w_mask_444_16bpc_avx2(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe {
-        w_mask_444_16bpc_avx2_inner(
-            token,
-            dst_ptr,
-            dst_stride,
-            tmp1,
-            tmp2,
-            w,
-            h,
-            mask,
-            sign,
-            bitdepth_max,
-        )
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[arcane]
-#[allow(unsafe_code)]
-unsafe fn w_mask_422_16bpc_avx2_inner(
-    _token: Desktop64,
-    dst_ptr: *mut DynPixel,
-    dst_stride: isize,
-    tmp1: &[i16; COMPINTER_LEN],
-    tmp2: &[i16; COMPINTER_LEN],
-    w: i32,
-    h: i32,
-    mask: &mut [u8; SEG_MASK_LEN],
-    sign: i32,
-    bitdepth_max: i32,
-) {
-    unsafe {
-        w_mask_16bpc_avx2_impl::<true, false>(
-            dst_ptr,
-            dst_stride,
-            tmp1,
-            tmp2,
-            w,
-            h,
-            mask,
-            sign,
-            bitdepth_max,
-        );
-    }
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
+    };
+    w_mask_444_16bpc_avx2_safe(
+        Desktop64::forge_token_dangerously(),
+        dst,
+        dst_stride as usize,
+        tmp1,
+        tmp2,
+        w,
+        h,
+        mask,
+        sign,
+        bitdepth_max,
+    )
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
+#[allow(unsafe_code)]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn w_mask_422_16bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -6897,54 +6924,25 @@ pub unsafe extern "C" fn w_mask_422_16bpc_avx2(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe {
-        w_mask_422_16bpc_avx2_inner(
-            token,
-            dst_ptr,
-            dst_stride,
-            tmp1,
-            tmp2,
-            w,
-            h,
-            mask,
-            sign,
-            bitdepth_max,
-        )
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[arcane]
-#[allow(unsafe_code)]
-unsafe fn w_mask_420_16bpc_avx2_inner(
-    _token: Desktop64,
-    dst_ptr: *mut DynPixel,
-    dst_stride: isize,
-    tmp1: &[i16; COMPINTER_LEN],
-    tmp2: &[i16; COMPINTER_LEN],
-    w: i32,
-    h: i32,
-    mask: &mut [u8; SEG_MASK_LEN],
-    sign: i32,
-    bitdepth_max: i32,
-) {
-    unsafe {
-        w_mask_16bpc_avx2_impl::<true, true>(
-            dst_ptr,
-            dst_stride,
-            tmp1,
-            tmp2,
-            w,
-            h,
-            mask,
-            sign,
-            bitdepth_max,
-        );
-    }
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
+    };
+    w_mask_422_16bpc_avx2_safe(
+        Desktop64::forge_token_dangerously(),
+        dst,
+        dst_stride as usize,
+        tmp1,
+        tmp2,
+        w,
+        h,
+        mask,
+        sign,
+        bitdepth_max,
+    )
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
+#[allow(unsafe_code)]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
     dst_ptr: *mut DynPixel,
@@ -6958,21 +6956,21 @@ pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
-    unsafe {
-        w_mask_420_16bpc_avx2_inner(
-            token,
-            dst_ptr,
-            dst_stride,
-            tmp1,
-            tmp2,
-            w,
-            h,
-            mask,
-            sign,
-            bitdepth_max,
-        )
-    }
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
+    };
+    w_mask_420_16bpc_avx2_safe(
+        Desktop64::forge_token_dangerously(),
+        dst,
+        dst_stride as usize,
+        tmp1,
+        tmp2,
+        w,
+        h,
+        mask,
+        sign,
+        bitdepth_max,
+    )
 }
 
 // ============================================================================
@@ -7952,7 +7950,6 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)]
 pub fn w_mask_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     dst: PicOffset,
@@ -7969,85 +7966,84 @@ pub fn w_mask_dispatch<BD: BitDepth>(
     if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
         return false;
     }
+    let Some(token) = Desktop64::summon() else { return false };
     use zerocopy::AsBytes;
-    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-    let dst_stride = dst.stride();
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+    let dst_bytes = dst_guard.as_bytes_mut();
+    let pixel_size = std::mem::size_of::<BD::Pixel>();
+    let dst_offset = dst_base * pixel_size;
+    let dst_stride = dst.stride() as usize;
     let bd_c = bd.into_c();
-    let _dst_ffi = FFISafe::new(&dst);
-    unsafe {
-        match (BD::BPC, layout) {
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_8bpc_avx2_inner(
-                Desktop64::summon().unwrap(),
-                dst_ptr,
-                dst_stride,
-                tmp1,
-                tmp2,
-                w,
-                h,
-                mask,
-                sign,
-            ),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_8bpc_avx2_inner(
-                Desktop64::summon().unwrap(),
-                dst_ptr,
-                dst_stride,
-                tmp1,
-                tmp2,
-                w,
-                h,
-                mask,
-                sign,
-            ),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_8bpc_avx2_inner(
-                Desktop64::summon().unwrap(),
-                dst_ptr,
-                dst_stride,
-                tmp1,
-                tmp2,
-                w,
-                h,
-                mask,
-                sign,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_16bpc_avx2_inner(
-                Desktop64::summon().unwrap(),
-                dst_ptr,
-                dst_stride,
-                tmp1,
-                tmp2,
-                w,
-                h,
-                mask,
-                sign,
-                bd_c,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_16bpc_avx2_inner(
-                Desktop64::summon().unwrap(),
-                dst_ptr,
-                dst_stride,
-                tmp1,
-                tmp2,
-                w,
-                h,
-                mask,
-                sign,
-                bd_c,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_16bpc_avx2_inner(
-                Desktop64::summon().unwrap(),
-                dst_ptr,
-                dst_stride,
-                tmp1,
-                tmp2,
-                w,
-                h,
-                mask,
-                sign,
-                bd_c,
-            ),
-        }
+    match (BD::BPC, layout) {
+        (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_8bpc_avx2_safe(
+            token,
+            &mut dst_bytes[dst_offset..],
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+        ),
+        (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_8bpc_avx2_safe(
+            token,
+            &mut dst_bytes[dst_offset..],
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+        ),
+        (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_8bpc_avx2_safe(
+            token,
+            &mut dst_bytes[dst_offset..],
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+        ),
+        (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_16bpc_avx2_safe(
+            token,
+            &mut dst_bytes[dst_offset..],
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+            bd_c,
+        ),
+        (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_16bpc_avx2_safe(
+            token,
+            &mut dst_bytes[dst_offset..],
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+            bd_c,
+        ),
+        (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_16bpc_avx2_safe(
+            token,
+            &mut dst_bytes[dst_offset..],
+            dst_stride,
+            tmp1,
+            tmp2,
+            w,
+            h,
+            mask,
+            sign,
+            bd_c,
+        ),
     }
     true
 }
