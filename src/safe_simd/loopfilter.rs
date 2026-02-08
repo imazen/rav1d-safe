@@ -1336,7 +1336,9 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
 
-    let Some(_token) = Desktop64::summon() else { return false };
+    let Some(_token) = Desktop64::summon() else {
+        return false;
+    };
 
     assert!(lvl.offset <= lvl.data.len());
 
@@ -1384,9 +1386,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             // Guard: fall back to scalar if buffer bounds are insufficient.
             let buf_pixel_len = dst.data.pixel_len::<BitDepth8>();
-            if dst.offset < reach_before
-                || dst.offset.saturating_add(reach_after) > buf_pixel_len
-            {
+            if dst.offset < reach_before || dst.offset.saturating_add(reach_after) > buf_pixel_len {
                 return false;
             }
 
@@ -1462,9 +1462,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             // Guard: fall back to scalar if buffer bounds are insufficient.
             let buf_pixel_len = dst.data.pixel_len::<BitDepth16>();
-            if dst.offset < reach_before
-                || dst.offset.saturating_add(reach_after) > buf_pixel_len
-            {
+            if dst.offset < reach_before || dst.offset.saturating_add(reach_after) > buf_pixel_len {
                 return false;
             }
 

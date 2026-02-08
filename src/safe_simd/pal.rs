@@ -9,14 +9,16 @@
 #[cfg(target_arch = "x86_64")]
 use super::partial_simd;
 #[cfg(target_arch = "x86_64")]
-use super::pixel_access::{load_256, load_128, store_256, store_128, loadu_256, storeu_256, loadu_128, storeu_128};
+use super::pixel_access::{
+    load_128, load_256, loadu_128, loadu_256, store_128, store_256, storeu_128, storeu_256,
+};
+use crate::src::safe_simd::pixel_access::Flex;
 #[cfg(target_arch = "x86_64")]
 use archmage::{arcane, Desktop64, SimdToken};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 #[cfg(feature = "asm")]
 use std::ffi::c_int;
-use crate::src::safe_simd::pixel_access::Flex;
 
 /// Inner implementation using archmage for safe SIMD.
 ///

@@ -12,15 +12,37 @@ use crate::include::common::bitdepth::BitDepth16;
 #[cfg(feature = "bitdepth_8")]
 use crate::include::common::bitdepth::BitDepth8;
 use crate::include::common::validate::validate_input;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::common::Dav1dDataProps;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::common::Rav1dDataProps;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::data::Dav1dData;
 use crate::include::dav1d::data::Rav1dData;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::dav1d::Dav1dContext;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::dav1d::Dav1dEventFlags;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::dav1d::Dav1dSettings;
 use crate::include::dav1d::dav1d::Rav1dDecodeFrameType;
 use crate::include::dav1d::dav1d::Rav1dInloopFilterType;
 use crate::include::dav1d::dav1d::Rav1dSettings;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::headers::Dav1dSequenceHeader;
 use crate::include::dav1d::headers::Rav1dFilmGrainData;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::picture::Dav1dPicture;
 use crate::include::dav1d::picture::Rav1dPicture;
+#[cfg(feature = "c-ffi")]
+use crate::src::c_arc::RawArc;
+#[cfg(feature = "c-ffi")]
+use crate::src::c_box::FnFree;
 use crate::src::cpu::rav1d_init_cpu;
 use crate::src::cpu::rav1d_num_logical_processors;
 use crate::src::decode::rav1d_decode_frame_exit;
+#[cfg(feature = "c-ffi")]
+use crate::src::error::Dav1dResult;
 use crate::src::error::Rav1dError::EGeneric;
 use crate::src::error::Rav1dError::EAGAIN;
 use crate::src::error::Rav1dError::EINVAL;
@@ -41,6 +63,8 @@ use crate::src::iter::wrapping_iter;
 use crate::src::log::Rav1dLog as _;
 use crate::src::log::Rav1dLogger;
 use crate::src::obu::rav1d_parse_obus;
+#[cfg(feature = "c-ffi")]
+use crate::src::obu::rav1d_parse_sequence_header;
 use crate::src::picture::rav1d_picture_alloc_copy;
 use crate::src::picture::PictureFlags;
 #[cfg(feature = "c-ffi")]
@@ -51,9 +75,19 @@ use crate::src::thread_task::FRAME_ERROR;
 use parking_lot::Mutex;
 use std::cmp;
 #[cfg(feature = "c-ffi")]
+use std::ffi::c_char;
+#[cfg(feature = "c-ffi")]
+use std::ffi::c_uint;
+#[cfg(feature = "c-ffi")]
 use std::ffi::c_void;
 use std::ffi::CStr;
 use std::mem;
+#[cfg(feature = "c-ffi")]
+use std::ptr;
+#[cfg(feature = "c-ffi")]
+use std::ptr::NonNull;
+#[cfg(feature = "c-ffi")]
+use std::slice;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
@@ -63,40 +97,6 @@ use std::thread;
 use std::thread::JoinHandle;
 #[cfg(feature = "c-ffi")]
 use std::time::Duration;
-#[cfg(feature = "c-ffi")]
-use std::ffi::c_char;
-#[cfg(feature = "c-ffi")]
-use std::ffi::c_uint;
-#[cfg(feature = "c-ffi")]
-use std::ptr;
-#[cfg(feature = "c-ffi")]
-use std::ptr::NonNull;
-#[cfg(feature = "c-ffi")]
-use std::slice;
-#[cfg(feature = "c-ffi")]
-use crate::include::dav1d::common::Rav1dDataProps;
-#[cfg(feature = "c-ffi")]
-use crate::include::dav1d::dav1d::Dav1dContext;
-#[cfg(feature = "c-ffi")]
-use crate::include::dav1d::dav1d::Dav1dSettings;
-#[cfg(feature = "c-ffi")]
-use crate::include::dav1d::data::Dav1dData;
-#[cfg(feature = "c-ffi")]
-use crate::include::dav1d::picture::Dav1dPicture;
-#[cfg(feature = "c-ffi")]
-use crate::include::dav1d::headers::Dav1dSequenceHeader;
-#[cfg(feature = "c-ffi")]
-use crate::include::dav1d::dav1d::Dav1dEventFlags;
-#[cfg(feature = "c-ffi")]
-use crate::include::dav1d::common::Dav1dDataProps;
-#[cfg(feature = "c-ffi")]
-use crate::src::error::Dav1dResult;
-#[cfg(feature = "c-ffi")]
-use crate::src::c_box::FnFree;
-#[cfg(feature = "c-ffi")]
-use crate::src::c_arc::RawArc;
-#[cfg(feature = "c-ffi")]
-use crate::src::obu::rav1d_parse_sequence_header;
 #[cfg(feature = "c-ffi")]
 use to_method::To as _;
 

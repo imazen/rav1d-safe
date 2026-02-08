@@ -15,7 +15,6 @@ use archmage::{arcane, Arm64, SimdToken};
 #[cfg(target_arch = "aarch64")]
 use safe_unaligned_simd::aarch64 as safe_simd;
 
-use crate::src::safe_simd::pixel_access::Flex;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::headers::Rav1dFilterMode;
@@ -29,6 +28,7 @@ use crate::src::internal::SCRATCH_LAP_LEN;
 #[cfg(target_arch = "aarch64")]
 use crate::src::internal::SEG_MASK_LEN;
 use crate::src::levels::Filter2d;
+use crate::src::safe_simd::pixel_access::Flex;
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_mc_subpel_filters;
 
@@ -1634,7 +1634,8 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
         h,
         mask.as_mut_slice(),
         sign as u8,
-        false, false,
+        false,
+        false,
     );
 }
 
@@ -1671,7 +1672,8 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
         h,
         mask.as_mut_slice(),
         sign as u8,
-        true, false,
+        true,
+        false,
     );
 }
 
@@ -1708,7 +1710,8 @@ pub unsafe extern "C" fn w_mask_420_8bpc_neon(
         h,
         mask.as_mut_slice(),
         sign as u8,
-        true, true,
+        true,
+        true,
     );
 }
 
@@ -2599,7 +2602,8 @@ pub unsafe extern "C" fn w_mask_444_16bpc_neon(
         mask.as_mut_slice(),
         sign as u8,
         bitdepth_max,
-        false, false,
+        false,
+        false,
     );
 }
 
@@ -2633,7 +2637,8 @@ pub unsafe extern "C" fn w_mask_422_16bpc_neon(
         mask.as_mut_slice(),
         sign as u8,
         bitdepth_max,
-        true, false,
+        true,
+        false,
     );
 }
 
@@ -2667,7 +2672,8 @@ pub unsafe extern "C" fn w_mask_420_16bpc_neon(
         mask.as_mut_slice(),
         sign as u8,
         bitdepth_max,
-        true, true,
+        true,
+        true,
     );
 }
 
@@ -3193,7 +3199,7 @@ fn get_v_filter_type(filter: Filter2d) -> Rav1dFilterMode {
 
 macro_rules! define_put_8tap_8bpc {
     ($name:ident, $filter:expr) => {
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
@@ -3491,7 +3497,7 @@ fn prep_8tap_8bpc_inner(
 
 macro_rules! define_prep_8tap_8bpc {
     ($name:ident, $filter:expr) => {
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             tmp: *mut i16,
@@ -3975,7 +3981,7 @@ fn put_8tap_16bpc_inner(
 
 macro_rules! define_put_8tap_16bpc {
     ($name:ident, $filter:expr) => {
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
@@ -4268,7 +4274,7 @@ fn prep_8tap_16bpc_inner(
 
 macro_rules! define_prep_8tap_16bpc {
     ($name:ident, $filter:expr) => {
-#[cfg(feature = "asm")]
+        #[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             tmp: *mut i16,
@@ -4365,8 +4371,12 @@ pub fn avg_dispatch<BD: BitDepth>(
             let dst_ffi = FFISafe::new(&dst);
             unsafe {
                 match BD::BPC {
-                    BPC::BPC8 => avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
-                    BPC::BPC16 => avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
+                    BPC::BPC8 => {
+                        avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi)
+                    }
+                    BPC::BPC16 => {
+                        avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi)
+                    }
                 }
             }
         }
@@ -4382,7 +4392,15 @@ pub fn avg_dispatch<BD: BitDepth>(
             BPC::BPC8 => {
                 use zerocopy::AsBytes;
                 let dst_bytes = dst_guard.as_bytes_mut();
-                avg_8bpc_inner(token, &mut dst_bytes[dst_base..], dst_stride, &tmp1[..], &tmp2[..], w_u, h_u);
+                avg_8bpc_inner(
+                    token,
+                    &mut dst_bytes[dst_base..],
+                    dst_stride,
+                    &tmp1[..],
+                    &tmp2[..],
+                    w_u,
+                    h_u,
+                );
             }
             BPC::BPC16 => {
                 use zerocopy::{AsBytes, FromBytes};
@@ -4390,8 +4408,18 @@ pub fn avg_dispatch<BD: BitDepth>(
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
                 let byte_len = (h_u * stride_u16 + w_u) * 2;
-                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
-                avg_16bpc_inner(token, dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, bd.into_c());
+                let dst_u16: &mut [u16] =
+                    FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
+                avg_16bpc_inner(
+                    token,
+                    dst_u16,
+                    stride_u16,
+                    &tmp1[..],
+                    &tmp2[..],
+                    w_u,
+                    h_u,
+                    bd.into_c(),
+                );
             }
         }
     }
@@ -4423,12 +4451,12 @@ pub fn w_avg_dispatch<BD: BitDepth>(
             let dst_ffi = FFISafe::new(&dst);
             unsafe {
                 match BD::BPC {
-                    BPC::BPC8 => {
-                        w_avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
-                    }
-                    BPC::BPC16 => {
-                        w_avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
-                    }
+                    BPC::BPC8 => w_avg_8bpc_neon(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi,
+                    ),
+                    BPC::BPC16 => w_avg_16bpc_neon(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi,
+                    ),
                 }
             }
         }
@@ -4444,7 +4472,16 @@ pub fn w_avg_dispatch<BD: BitDepth>(
             BPC::BPC8 => {
                 use zerocopy::AsBytes;
                 let dst_bytes = dst_guard.as_bytes_mut();
-                w_avg_8bpc_inner(token, &mut dst_bytes[dst_base..], dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, weight);
+                w_avg_8bpc_inner(
+                    token,
+                    &mut dst_bytes[dst_base..],
+                    dst_stride,
+                    &tmp1[..],
+                    &tmp2[..],
+                    w_u,
+                    h_u,
+                    weight,
+                );
             }
             BPC::BPC16 => {
                 use zerocopy::{AsBytes, FromBytes};
@@ -4452,8 +4489,19 @@ pub fn w_avg_dispatch<BD: BitDepth>(
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
                 let byte_len = (h_u * stride_u16 + w_u) * 2;
-                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
-                w_avg_16bpc_inner(token, dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, weight, bd.into_c());
+                let dst_u16: &mut [u16] =
+                    FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
+                w_avg_16bpc_inner(
+                    token,
+                    dst_u16,
+                    stride_u16,
+                    &tmp1[..],
+                    &tmp2[..],
+                    w_u,
+                    h_u,
+                    weight,
+                    bd.into_c(),
+                );
             }
         }
     }
@@ -4508,7 +4556,16 @@ pub fn mask_dispatch<BD: BitDepth>(
             BPC::BPC8 => {
                 use zerocopy::AsBytes;
                 let dst_bytes = dst_guard.as_bytes_mut();
-                mask_8bpc_inner(token, &mut dst_bytes[dst_base..], dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, mask_slice);
+                mask_8bpc_inner(
+                    token,
+                    &mut dst_bytes[dst_base..],
+                    dst_stride,
+                    &tmp1[..],
+                    &tmp2[..],
+                    w_u,
+                    h_u,
+                    mask_slice,
+                );
             }
             BPC::BPC16 => {
                 use zerocopy::{AsBytes, FromBytes};
@@ -4516,8 +4573,19 @@ pub fn mask_dispatch<BD: BitDepth>(
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
                 let byte_len = (h_u * stride_u16 + w_u) * 2;
-                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
-                mask_16bpc_inner(token, dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, mask_slice, bd.into_c());
+                let dst_u16: &mut [u16] =
+                    FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
+                mask_16bpc_inner(
+                    token,
+                    dst_u16,
+                    stride_u16,
+                    &tmp1[..],
+                    &tmp2[..],
+                    w_u,
+                    h_u,
+                    mask_slice,
+                    bd.into_c(),
+                );
             }
         }
     }
@@ -4548,8 +4616,12 @@ pub fn blend_dispatch<BD: BitDepth>(
             let dst_ffi = FFISafe::new(&dst);
             unsafe {
                 match BD::BPC {
-                    BPC::BPC8 => blend_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
-                    BPC::BPC16 => blend_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
+                    BPC::BPC8 => {
+                        blend_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi)
+                    }
+                    BPC::BPC16 => {
+                        blend_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi)
+                    }
                 }
             }
         }
@@ -4585,7 +4657,8 @@ pub fn blend_dispatch<BD: BitDepth>(
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
                 let dst_byte_len = (h_u * stride_u16 + w_u) * 2;
-                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
+                let dst_u16: &mut [u16] =
+                    FromBytes::mut_slice_from(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
                 let tmp_byte_len = w_u * h_u * 2;
                 let tmp_u16: &[u16] = FromBytes::slice_from(&tmp_bytes[..tmp_byte_len]).unwrap();
@@ -4629,10 +4702,18 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
             let dst_ffi = FFISafe::new(&dst);
             unsafe {
                 match (BD::BPC, is_h) {
-                    (BPC::BPC8, true) => blend_h_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                    (BPC::BPC8, false) => blend_v_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                    (BPC::BPC16, true) => blend_h_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                    (BPC::BPC16, false) => blend_v_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                    (BPC::BPC8, true) => {
+                        blend_h_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi)
+                    }
+                    (BPC::BPC8, false) => {
+                        blend_v_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi)
+                    }
+                    (BPC::BPC16, true) => {
+                        blend_h_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi)
+                    }
+                    (BPC::BPC16, false) => {
+                        blend_v_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi)
+                    }
                 }
             }
         }
@@ -4687,7 +4768,8 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
                 let dst_byte_len = (h_u * stride_u16 + w_u) * 2;
-                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
+                let dst_u16: &mut [u16] =
+                    FromBytes::mut_slice_from(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
                 let tmp_byte_len = w_u * h_u * 2;
                 let tmp_u16: &[u16] = FromBytes::slice_from(&tmp_bytes[..tmp_byte_len]).unwrap();
@@ -4712,7 +4794,8 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                 let mask = &dav1d_obmc_masks.0[h_u..];
                 let h_effective = h_u * 3 >> 2;
                 let dst_byte_len = (h_effective * stride_u16 + w_u) * 2;
-                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
+                let dst_u16: &mut [u16] =
+                    FromBytes::mut_slice_from(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
                 let tmp_byte_len = w_u * h_effective * 2;
                 let tmp_u16: &[u16] = FromBytes::slice_from(&tmp_bytes[..tmp_byte_len]).unwrap();
@@ -4794,9 +4877,45 @@ pub fn w_mask_dispatch<BD: BitDepth>(
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let dst_slice = &mut dst_bytes[dst_base..];
                 match layout {
-                    Rav1dPixelLayoutSubSampled::I420 => w_mask_8bpc_inner(token, dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, true, true),
-                    Rav1dPixelLayoutSubSampled::I422 => w_mask_8bpc_inner(token, dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, true, false),
-                    Rav1dPixelLayoutSubSampled::I444 => w_mask_8bpc_inner(token, dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, false, false),
+                    Rav1dPixelLayoutSubSampled::I420 => w_mask_8bpc_inner(
+                        token,
+                        dst_slice,
+                        dst_stride,
+                        &tmp1[..],
+                        &tmp2[..],
+                        w_u,
+                        h_u,
+                        &mut mask[..],
+                        sign as u8,
+                        true,
+                        true,
+                    ),
+                    Rav1dPixelLayoutSubSampled::I422 => w_mask_8bpc_inner(
+                        token,
+                        dst_slice,
+                        dst_stride,
+                        &tmp1[..],
+                        &tmp2[..],
+                        w_u,
+                        h_u,
+                        &mut mask[..],
+                        sign as u8,
+                        true,
+                        false,
+                    ),
+                    Rav1dPixelLayoutSubSampled::I444 => w_mask_8bpc_inner(
+                        token,
+                        dst_slice,
+                        dst_stride,
+                        &tmp1[..],
+                        &tmp2[..],
+                        w_u,
+                        h_u,
+                        &mut mask[..],
+                        sign as u8,
+                        false,
+                        false,
+                    ),
                 }
             }
             BPC::BPC16 => {
@@ -4805,12 +4924,49 @@ pub fn w_mask_dispatch<BD: BitDepth>(
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
                 let byte_len = (h_u * stride_u16 + w_u) * 2;
-                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
+                let dst_u16: &mut [u16] =
+                    FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
                 let bd_c = bd.into_c();
                 match layout {
-                    Rav1dPixelLayoutSubSampled::I420 => w_mask_16bpc_inner(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c, true, true),
-                    Rav1dPixelLayoutSubSampled::I422 => w_mask_16bpc_inner(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c, true, false),
-                    Rav1dPixelLayoutSubSampled::I444 => w_mask_16bpc_inner(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c, false, false),
+                    Rav1dPixelLayoutSubSampled::I420 => w_mask_16bpc_inner(
+                        dst_u16,
+                        stride_u16,
+                        &tmp1[..],
+                        &tmp2[..],
+                        w_u,
+                        h_u,
+                        &mut mask[..],
+                        sign as u8,
+                        bd_c,
+                        true,
+                        true,
+                    ),
+                    Rav1dPixelLayoutSubSampled::I422 => w_mask_16bpc_inner(
+                        dst_u16,
+                        stride_u16,
+                        &tmp1[..],
+                        &tmp2[..],
+                        w_u,
+                        h_u,
+                        &mut mask[..],
+                        sign as u8,
+                        bd_c,
+                        true,
+                        false,
+                    ),
+                    Rav1dPixelLayoutSubSampled::I444 => w_mask_16bpc_inner(
+                        dst_u16,
+                        stride_u16,
+                        &tmp1[..],
+                        &tmp2[..],
+                        w_u,
+                        h_u,
+                        &mut mask[..],
+                        sign as u8,
+                        bd_c,
+                        false,
+                        false,
+                    ),
                 }
             }
         }
@@ -4837,81 +4993,101 @@ pub fn mc_put_dispatch<BD: BitDepth>(
         use zerocopy::AsBytes;
         #[allow(unsafe_code)]
         {
-        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-        let dst_stride = dst.stride();
-        let (src_guard, _src_base) = src.full_guard::<BD>();
-        let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
-        let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
-        let src_stride = src.stride();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        let src_ffi = FFISafe::new(&src);
-        unsafe {
-            match (BD::BPC, filter) {
-                (BPC::BPC8, Regular8Tap) => put_8tap_regular_8bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC8, RegularSmooth8Tap) => put_8tap_regular_smooth_8bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC8, RegularSharp8Tap) => put_8tap_regular_sharp_8bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC8, SmoothRegular8Tap) => put_8tap_smooth_regular_8bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC8, Smooth8Tap) => put_8tap_smooth_8bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC8, SmoothSharp8Tap) => put_8tap_smooth_sharp_8bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC8, SharpRegular8Tap) => put_8tap_sharp_regular_8bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC8, SharpSmooth8Tap) => put_8tap_sharp_smooth_8bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC8, Sharp8Tap) => put_8tap_sharp_8bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC8, Bilinear) => put_bilin_8bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC16, Regular8Tap) => put_8tap_regular_16bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC16, RegularSmooth8Tap) => put_8tap_regular_smooth_16bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC16, RegularSharp8Tap) => put_8tap_regular_sharp_16bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC16, SmoothRegular8Tap) => put_8tap_smooth_regular_16bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC16, Smooth8Tap) => put_8tap_smooth_16bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC16, SmoothSharp8Tap) => put_8tap_smooth_sharp_16bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC16, SharpRegular8Tap) => put_8tap_sharp_regular_16bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC16, SharpSmooth8Tap) => put_8tap_sharp_smooth_16bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC16, Sharp8Tap) => put_8tap_sharp_16bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
-                (BPC::BPC16, Bilinear) => put_bilin_16bpc_neon(
-                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-                ),
+            let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+            let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+            let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+            let dst_stride = dst.stride();
+            let (src_guard, _src_base) = src.full_guard::<BD>();
+            let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
+            let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
+            let src_stride = src.stride();
+            let bd_c = bd.into_c();
+            let dst_ffi = FFISafe::new(&dst);
+            let src_ffi = FFISafe::new(&src);
+            unsafe {
+                match (BD::BPC, filter) {
+                    (BPC::BPC8, Regular8Tap) => put_8tap_regular_8bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC8, RegularSmooth8Tap) => put_8tap_regular_smooth_8bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC8, RegularSharp8Tap) => put_8tap_regular_sharp_8bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC8, SmoothRegular8Tap) => put_8tap_smooth_regular_8bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC8, Smooth8Tap) => put_8tap_smooth_8bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC8, SmoothSharp8Tap) => put_8tap_smooth_sharp_8bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC8, SharpRegular8Tap) => put_8tap_sharp_regular_8bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC8, SharpSmooth8Tap) => put_8tap_sharp_smooth_8bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC8, Sharp8Tap) => put_8tap_sharp_8bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC8, Bilinear) => put_bilin_8bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC16, Regular8Tap) => put_8tap_regular_16bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC16, RegularSmooth8Tap) => put_8tap_regular_smooth_16bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC16, RegularSharp8Tap) => put_8tap_regular_sharp_16bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC16, SmoothRegular8Tap) => put_8tap_smooth_regular_16bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC16, Smooth8Tap) => put_8tap_smooth_16bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC16, SmoothSharp8Tap) => put_8tap_smooth_sharp_16bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC16, SharpRegular8Tap) => put_8tap_sharp_regular_16bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC16, SharpSmooth8Tap) => put_8tap_sharp_smooth_16bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC16, Sharp8Tap) => put_8tap_sharp_16bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                    (BPC::BPC16, Bilinear) => put_bilin_16bpc_neon(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi,
+                        src_ffi,
+                    ),
+                }
             }
-        }
         }
     }
     #[cfg(not(feature = "asm"))]
@@ -4937,13 +5113,35 @@ pub fn mc_put_dispatch<BD: BitDepth>(
 
                 if filter == Bilinear {
                     let src_slice = &src_bytes[src_base..];
-                    put_bilin_8bpc_inner(token, dst_slice, dst_stride_u, src_slice, src_stride_u, w_u, h_u, mx, my);
+                    put_bilin_8bpc_inner(
+                        token,
+                        dst_slice,
+                        dst_stride_u,
+                        src_slice,
+                        src_stride_u,
+                        w_u,
+                        h_u,
+                        mx,
+                        my,
+                    );
                 } else {
                     let src_start = src_base.wrapping_sub(3 * src_stride_u + 3);
                     let src_len = (h_u + 7) * src_stride_u + w_u + 7;
                     let src_full = &src_bytes[src_start..][..src_len];
                     let src_adj = &src_full[3 * src_stride_u + 3..];
-                    put_8tap_8bpc_inner(token, dst_slice, dst_stride_u, src_adj, src_stride_u, w_u, h_u, mx_u, my_u, get_h_filter_type(filter), get_v_filter_type(filter));
+                    put_8tap_8bpc_inner(
+                        token,
+                        dst_slice,
+                        dst_stride_u,
+                        src_adj,
+                        src_stride_u,
+                        w_u,
+                        h_u,
+                        mx_u,
+                        my_u,
+                        get_h_filter_type(filter),
+                        get_v_filter_type(filter),
+                    );
                 }
             }
             BPC::BPC16 => {
@@ -4954,21 +5152,51 @@ pub fn mc_put_dispatch<BD: BitDepth>(
                 let src_stride_u16 = (src_stride_raw as usize) / 2;
                 let dst_start = dst_base * 2;
                 let dst_byte_len = (h_u * dst_stride_u16 + w_u) * 2;
-                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[dst_start..dst_start + dst_byte_len]).unwrap();
+                let dst_u16: &mut [u16] =
+                    FromBytes::mut_slice_from(&mut dst_bytes[dst_start..dst_start + dst_byte_len])
+                        .unwrap();
 
                 if filter == Bilinear {
                     let src_start = src_base * 2;
                     let src_byte_len = ((h_u + 1) * src_stride_u16 + w_u + 1) * 2;
-                    let src_u16: &[u16] = FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len]).unwrap();
-                    put_bilin_16bpc_inner(token, dst_u16, dst_stride_u16, src_u16, src_stride_u16, w_u, h_u, mx, my, bd.into_c());
+                    let src_u16: &[u16] =
+                        FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len])
+                            .unwrap();
+                    put_bilin_16bpc_inner(
+                        token,
+                        dst_u16,
+                        dst_stride_u16,
+                        src_u16,
+                        src_stride_u16,
+                        w_u,
+                        h_u,
+                        mx,
+                        my,
+                        bd.into_c(),
+                    );
                 } else {
                     let src_start_u16 = src_base.wrapping_sub(3 * src_stride_u16 + 3);
                     let src_start = src_start_u16 * 2;
                     let src_len = (h_u + 7) * src_stride_u16 + w_u + 7;
                     let src_byte_len = src_len * 2;
-                    let src_full: &[u16] = FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len]).unwrap();
+                    let src_full: &[u16] =
+                        FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len])
+                            .unwrap();
                     let src_adj = &src_full[3 * src_stride_u16 + 3..];
-                    put_8tap_16bpc_inner(token, dst_u16, dst_stride_u16, src_adj, src_stride_u16, w_u, h_u, mx_u, my_u, get_h_filter_type(filter), get_v_filter_type(filter), bd.into_c() as u16);
+                    put_8tap_16bpc_inner(
+                        token,
+                        dst_u16,
+                        dst_stride_u16,
+                        src_adj,
+                        src_stride_u16,
+                        w_u,
+                        h_u,
+                        mx_u,
+                        my_u,
+                        get_h_filter_type(filter),
+                        get_v_filter_type(filter),
+                        bd.into_c() as u16,
+                    );
                 }
             }
         }
@@ -4994,78 +5222,78 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
     {
         #[allow(unsafe_code)]
         {
-        let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
-        use zerocopy::AsBytes;
-        let (src_guard, _src_base) = src.full_guard::<BD>();
-        let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
-        let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
-        let src_stride = src.stride();
-        let bd_c = bd.into_c();
-        let src_ffi = FFISafe::new(&src);
-        unsafe {
-            match (BD::BPC, filter) {
-                (BPC::BPC8, Regular8Tap) => prep_8tap_regular_8bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC8, RegularSmooth8Tap) => prep_8tap_regular_smooth_8bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC8, RegularSharp8Tap) => prep_8tap_regular_sharp_8bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC8, SmoothRegular8Tap) => prep_8tap_smooth_regular_8bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC8, Smooth8Tap) => prep_8tap_smooth_8bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC8, SmoothSharp8Tap) => prep_8tap_smooth_sharp_8bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC8, SharpRegular8Tap) => prep_8tap_sharp_regular_8bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC8, SharpSmooth8Tap) => prep_8tap_sharp_smooth_8bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC8, Sharp8Tap) => {
-                    prep_8tap_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
-                }
-                (BPC::BPC8, Bilinear) => {
-                    prep_bilin_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
-                }
-                (BPC::BPC16, Regular8Tap) => prep_8tap_regular_16bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC16, RegularSmooth8Tap) => prep_8tap_regular_smooth_16bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC16, RegularSharp8Tap) => prep_8tap_regular_sharp_16bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC16, SmoothRegular8Tap) => prep_8tap_smooth_regular_16bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC16, Smooth8Tap) => prep_8tap_smooth_16bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC16, SmoothSharp8Tap) => prep_8tap_smooth_sharp_16bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC16, SharpRegular8Tap) => prep_8tap_sharp_regular_16bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC16, SharpSmooth8Tap) => prep_8tap_sharp_smooth_16bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC16, Sharp8Tap) => prep_8tap_sharp_16bpc_neon(
-                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-                ),
-                (BPC::BPC16, Bilinear) => {
-                    prep_bilin_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
+            let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
+            use zerocopy::AsBytes;
+            let (src_guard, _src_base) = src.full_guard::<BD>();
+            let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
+            let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
+            let src_stride = src.stride();
+            let bd_c = bd.into_c();
+            let src_ffi = FFISafe::new(&src);
+            unsafe {
+                match (BD::BPC, filter) {
+                    (BPC::BPC8, Regular8Tap) => prep_8tap_regular_8bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC8, RegularSmooth8Tap) => prep_8tap_regular_smooth_8bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC8, RegularSharp8Tap) => prep_8tap_regular_sharp_8bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC8, SmoothRegular8Tap) => prep_8tap_smooth_regular_8bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC8, Smooth8Tap) => prep_8tap_smooth_8bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC8, SmoothSharp8Tap) => prep_8tap_smooth_sharp_8bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC8, SharpRegular8Tap) => prep_8tap_sharp_regular_8bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC8, SharpSmooth8Tap) => prep_8tap_sharp_smooth_8bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC8, Sharp8Tap) => prep_8tap_sharp_8bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC8, Bilinear) => prep_bilin_8bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC16, Regular8Tap) => prep_8tap_regular_16bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC16, RegularSmooth8Tap) => prep_8tap_regular_smooth_16bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC16, RegularSharp8Tap) => prep_8tap_regular_sharp_16bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC16, SmoothRegular8Tap) => prep_8tap_smooth_regular_16bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC16, Smooth8Tap) => prep_8tap_smooth_16bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC16, SmoothSharp8Tap) => prep_8tap_smooth_sharp_16bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC16, SharpRegular8Tap) => prep_8tap_sharp_regular_16bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC16, SharpSmooth8Tap) => prep_8tap_sharp_smooth_16bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC16, Sharp8Tap) => prep_8tap_sharp_16bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
+                    (BPC::BPC16, Bilinear) => prep_bilin_16bpc_neon(
+                        tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                    ),
                 }
             }
-        }
         }
     }
     #[cfg(not(feature = "asm"))]
@@ -5087,13 +5315,33 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
 
                 if filter == Bilinear {
                     let src_slice = &src_bytes[src_base..];
-                    prep_bilin_8bpc_inner(token, tmp_slice, src_slice, src_stride_u, w_u, h_u, mx, my);
+                    prep_bilin_8bpc_inner(
+                        token,
+                        tmp_slice,
+                        src_slice,
+                        src_stride_u,
+                        w_u,
+                        h_u,
+                        mx,
+                        my,
+                    );
                 } else {
                     let src_start = src_base.wrapping_sub(3 * src_stride_u + 3);
                     let src_len = (h_u + 7) * src_stride_u + w_u + 7;
                     let src_full = &src_bytes[src_start..][..src_len];
                     let src_adj = &src_full[3 * src_stride_u + 3..];
-                    prep_8tap_8bpc_inner(token, tmp_slice, src_adj, src_stride_u, w_u, h_u, mx_u, my_u, get_h_filter_type(filter), get_v_filter_type(filter));
+                    prep_8tap_8bpc_inner(
+                        token,
+                        tmp_slice,
+                        src_adj,
+                        src_stride_u,
+                        w_u,
+                        h_u,
+                        mx_u,
+                        my_u,
+                        get_h_filter_type(filter),
+                        get_v_filter_type(filter),
+                    );
                 }
             }
             BPC::BPC16 => {
@@ -5104,16 +5352,40 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                 if filter == Bilinear {
                     let src_start = src_base * 2;
                     let src_byte_len = ((h_u + 1) * src_stride_u16 + w_u + 1) * 2;
-                    let src_u16: &[u16] = FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len]).unwrap();
-                    prep_bilin_16bpc_inner(token, tmp_slice, src_u16, src_stride_u16, w_u, h_u, mx, my);
+                    let src_u16: &[u16] =
+                        FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len])
+                            .unwrap();
+                    prep_bilin_16bpc_inner(
+                        token,
+                        tmp_slice,
+                        src_u16,
+                        src_stride_u16,
+                        w_u,
+                        h_u,
+                        mx,
+                        my,
+                    );
                 } else {
                     let src_start_u16 = src_base.wrapping_sub(3 * src_stride_u16 + 3);
                     let src_start = src_start_u16 * 2;
                     let src_len = (h_u + 7) * src_stride_u16 + w_u + 7;
                     let src_byte_len = src_len * 2;
-                    let src_full: &[u16] = FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len]).unwrap();
+                    let src_full: &[u16] =
+                        FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len])
+                            .unwrap();
                     let src_adj = &src_full[3 * src_stride_u16 + 3..];
-                    prep_8tap_16bpc_inner(token, tmp_slice, src_adj, src_stride_u16, w_u, h_u, mx_u, my_u, get_h_filter_type(filter), get_v_filter_type(filter));
+                    prep_8tap_16bpc_inner(
+                        token,
+                        tmp_slice,
+                        src_adj,
+                        src_stride_u16,
+                        w_u,
+                        h_u,
+                        mx_u,
+                        my_u,
+                        get_h_filter_type(filter),
+                        get_v_filter_type(filter),
+                    );
                 }
             }
         }

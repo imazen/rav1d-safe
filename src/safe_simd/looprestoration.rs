@@ -1581,7 +1581,9 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
 
-    let Some(token) = Desktop64::summon() else { return false };
+    let Some(token) = Desktop64::summon() else {
+        return false;
+    };
 
     let w = w as usize;
     let h = h as usize;

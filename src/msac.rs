@@ -25,11 +25,11 @@ use safe_unaligned_simd::x86_64 as safe_simd;
 
 // aarch64 SIMD intrinsics for safe_simd implementations
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+use crate::src::safe_simd::pixel_access::{neon_ld1q_u16, neon_st1q_u16};
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
 use archmage::{arcane, Arm64, SimdToken};
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
 use std::arch::aarch64::*;
-#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-use crate::src::safe_simd::pixel_access::{neon_ld1q_u16, neon_st1q_u16};
 
 #[cfg(all(feature = "asm", target_feature = "sse2"))]
 extern "C" {

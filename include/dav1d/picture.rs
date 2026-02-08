@@ -21,10 +21,10 @@ use crate::include::dav1d::headers::Rav1dSequenceHeader;
 use crate::src::assume::assume;
 #[cfg(feature = "c-ffi")]
 use crate::src::c_arc::RawArc;
-use crate::src::disjoint_mut::ExternalAsMutPtr;
 use crate::src::disjoint_mut::DisjointImmutGuard;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::disjoint_mut::DisjointMutGuard;
+use crate::src::disjoint_mut::ExternalAsMutPtr;
 use crate::src::disjoint_mut::SliceBounds;
 #[cfg(feature = "c-ffi")]
 use crate::src::error::Dav1dResult;
@@ -32,12 +32,12 @@ use crate::src::error::Rav1dError;
 #[cfg(feature = "c-ffi")]
 use crate::src::error::Rav1dError::EINVAL;
 use crate::src::error::Rav1dResult;
+#[cfg(not(feature = "c-ffi"))]
+use crate::src::mem::MemPool;
 #[cfg(feature = "asm")]
 use crate::src::pixels::Pixels;
 #[cfg(feature = "c-ffi")]
 use crate::src::send_sync_non_null::SendSyncNonNull;
-#[cfg(not(feature = "c-ffi"))]
-use crate::src::mem::MemPool;
 use crate::src::strided::Strided;
 use crate::src::with_offset::WithOffset;
 use libc::ptrdiff_t;
@@ -216,7 +216,11 @@ impl Rav1dPictureDataComponentInner {
         let ptr = NonNull::new(buf.as_mut_ptr().wrapping_add(align_offset)).unwrap();
         assert!(ptr.cast::<AlignedPixelChunk>().is_aligned());
         assert!(usable_len % RAV1D_PICTURE_MULTIPLE == 0);
-        Self { ptr, len: usable_len, stride }
+        Self {
+            ptr,
+            len: usable_len,
+            stride,
+        }
     }
 
     /// # Safety
@@ -461,7 +465,11 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     ) {
         let pxstride = self.data.pixel_stride::<BD>();
         if pxstride >= 0 {
-            let total = if h == 0 { 0 } else { (h - 1) * pxstride as usize + w };
+            let total = if h == 0 {
+                0
+            } else {
+                (h - 1) * pxstride as usize + w
+            };
             let guard = self.data.slice_mut::<BD, _>((self.offset.., ..total));
             (guard, 0)
         } else {
@@ -487,7 +495,11 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     ) {
         let pxstride = self.data.pixel_stride::<BD>();
         if pxstride >= 0 {
-            let total = if h == 0 { 0 } else { (h - 1) * pxstride as usize + w };
+            let total = if h == 0 {
+                0
+            } else {
+                (h - 1) * pxstride as usize + w
+            };
             let guard = self.data.slice::<BD, _>((self.offset.., ..total));
             (guard, 0)
         } else {
@@ -1024,15 +1036,22 @@ impl Rav1dPicAllocator {
 
         // Round up to RAV1D_PICTURE_MULTIPLE for allocated data.
         let round_up = |sz: usize| -> usize {
-            if sz == 0 { 0 } else { (sz + RAV1D_PICTURE_MULTIPLE - 1) & !(RAV1D_PICTURE_MULTIPLE - 1) }
+            if sz == 0 {
+                0
+            } else {
+                (sz + RAV1D_PICTURE_MULTIPLE - 1) & !(RAV1D_PICTURE_MULTIPLE - 1)
+            }
         };
         let y_sz = round_up(y_sz);
         let uv_sz = round_up(uv_sz);
 
         // Allocate per-plane buffers with alignment padding.
         let alloc_plane = |sz: usize| -> Result<Vec<u8>, Rav1dError> {
-            if sz == 0 { return Ok(Vec::new()); }
-            self.pool.pop_init(sz + RAV1D_PICTURE_ALIGNMENT, 0)
+            if sz == 0 {
+                return Ok(Vec::new());
+            }
+            self.pool
+                .pop_init(sz + RAV1D_PICTURE_ALIGNMENT, 0)
                 .map_err(|_| Rav1dError::ENOMEM)
         };
 

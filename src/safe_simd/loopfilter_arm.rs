@@ -356,7 +356,18 @@ pub unsafe extern "C" fn lpf_h_sb_y_8bpc_neon(
     let buf: &mut [u8] = &mut dst_guard;
     let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
     let lvl_data: &[u8] = &lvl_guard;
-    lpf_h_sb_inner::<BitDepth8, 0>(buf, dst_base, stride as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
+    lpf_h_sb_inner::<BitDepth8, 0>(
+        buf,
+        dst_base,
+        stride as isize,
+        mask,
+        lvl_data,
+        lvl.offset,
+        b4_stride as isize,
+        &lut.0,
+        w,
+        bitdepth_max,
+    );
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
@@ -380,7 +391,18 @@ pub unsafe extern "C" fn lpf_v_sb_y_8bpc_neon(
     let buf: &mut [u8] = &mut dst_guard;
     let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
     let lvl_data: &[u8] = &lvl_guard;
-    lpf_v_sb_inner::<BitDepth8, 0>(buf, dst_base, stride as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
+    lpf_v_sb_inner::<BitDepth8, 0>(
+        buf,
+        dst_base,
+        stride as isize,
+        mask,
+        lvl_data,
+        lvl.offset,
+        b4_stride as isize,
+        &lut.0,
+        w,
+        bitdepth_max,
+    );
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
@@ -404,7 +426,18 @@ pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_neon(
     let buf: &mut [u8] = &mut dst_guard;
     let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
     let lvl_data: &[u8] = &lvl_guard;
-    lpf_h_sb_inner::<BitDepth8, 1>(buf, dst_base, stride as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
+    lpf_h_sb_inner::<BitDepth8, 1>(
+        buf,
+        dst_base,
+        stride as isize,
+        mask,
+        lvl_data,
+        lvl.offset,
+        b4_stride as isize,
+        &lut.0,
+        w,
+        bitdepth_max,
+    );
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
@@ -428,7 +461,18 @@ pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_neon(
     let buf: &mut [u8] = &mut dst_guard;
     let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
     let lvl_data: &[u8] = &lvl_guard;
-    lpf_v_sb_inner::<BitDepth8, 1>(buf, dst_base, stride as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
+    lpf_v_sb_inner::<BitDepth8, 1>(
+        buf,
+        dst_base,
+        stride as isize,
+        mask,
+        lvl_data,
+        lvl.offset,
+        b4_stride as isize,
+        &lut.0,
+        w,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -456,7 +500,18 @@ pub unsafe extern "C" fn lpf_h_sb_y_16bpc_neon(
     let buf: &mut [u16] = &mut dst_guard;
     let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
     let lvl_data: &[u8] = &lvl_guard;
-    lpf_h_sb_inner::<BitDepth16, 0>(buf, dst_base, (stride / 2) as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
+    lpf_h_sb_inner::<BitDepth16, 0>(
+        buf,
+        dst_base,
+        (stride / 2) as isize,
+        mask,
+        lvl_data,
+        lvl.offset,
+        b4_stride as isize,
+        &lut.0,
+        w,
+        bitdepth_max,
+    );
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
@@ -480,7 +535,18 @@ pub unsafe extern "C" fn lpf_v_sb_y_16bpc_neon(
     let buf: &mut [u16] = &mut dst_guard;
     let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
     let lvl_data: &[u8] = &lvl_guard;
-    lpf_v_sb_inner::<BitDepth16, 0>(buf, dst_base, (stride / 2) as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
+    lpf_v_sb_inner::<BitDepth16, 0>(
+        buf,
+        dst_base,
+        (stride / 2) as isize,
+        mask,
+        lvl_data,
+        lvl.offset,
+        b4_stride as isize,
+        &lut.0,
+        w,
+        bitdepth_max,
+    );
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
@@ -504,7 +570,18 @@ pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_neon(
     let buf: &mut [u16] = &mut dst_guard;
     let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
     let lvl_data: &[u8] = &lvl_guard;
-    lpf_h_sb_inner::<BitDepth16, 1>(buf, dst_base, (stride / 2) as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
+    lpf_h_sb_inner::<BitDepth16, 1>(
+        buf,
+        dst_base,
+        (stride / 2) as isize,
+        mask,
+        lvl_data,
+        lvl.offset,
+        b4_stride as isize,
+        &lut.0,
+        w,
+        bitdepth_max,
+    );
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
@@ -528,7 +605,18 @@ pub unsafe extern "C" fn lpf_v_sb_uv_16bpc_neon(
     let buf: &mut [u16] = &mut dst_guard;
     let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
     let lvl_data: &[u8] = &lvl_guard;
-    lpf_v_sb_inner::<BitDepth16, 1>(buf, dst_base, (stride / 2) as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
+    lpf_v_sb_inner::<BitDepth16, 1>(
+        buf,
+        dst_base,
+        (stride / 2) as isize,
+        mask,
+        lvl_data,
+        lvl.offset,
+        b4_stride as isize,
+        &lut.0,
+        w,
+        bitdepth_max,
+    );
 }
 
 /// Safe dispatch for loopfilter_sb on aarch64. Returns true if SIMD was used.
