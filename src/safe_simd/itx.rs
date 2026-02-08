@@ -14646,13 +14646,11 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     eob: i32,
     bd: BD,
 ) -> bool {
-    use crate::src::cpu::CpuFlags;
+    use archmage::Desktop64;
     use crate::src::levels::TxfmSize;
     use zerocopy::AsBytes;
 
-    if !crate::src::cpu::rav1d_get_cpu_flags().contains(CpuFlags::AVX2) {
-        return false;
-    }
+    let Some(_token) = Desktop64::summon() else { return false };
 
     // Get transform dimensions for tracked guard
     let txfm = TxfmSize::from_repr(tx_size).unwrap_or_default();
