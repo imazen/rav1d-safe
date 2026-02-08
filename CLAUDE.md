@@ -322,14 +322,20 @@ fn process(token: Desktop64, dst: &mut [u8], src: &[u8], w: usize) {
 7. Gate FFI `extern "C"` wrappers behind `#[cfg(feature = "asm")]`
 
 **Unsafe reduction progress (safe_simd/):**
-- **Pixels trait gated behind cfg(asm)** — the unsound `Pixels` trait (which returned `*mut u8` from `&self`, bypassing DisjointMut's borrow tracker) is now dead code when asm is disabled
-- All safe_simd dispatch functions use tracked DisjointMut guards (full_guard_mut/full_guard) instead of Pixels
-- ipred.rs: All 28 inner SIMD fns converted from raw pointers to safe slices
-- cdef.rs: Padding functions converted to safe DisjointMut slice access (top/bottom)
-- cdef_arm.rs: Same conversion for ARM NEON path
-- loopfilter.rs: Dispatch function fully safe (lvl + dst via slice access)
-- lf_apply.rs: Bounds checks use assert on pixel_len instead of Pixels
-- Remaining: Inner SIMD functions in mc, itx, filmgrain_arm, loopfilter_arm still take raw pointers (derived from tracked guards)
+- **itx.rs: ✅ FULLY SAFE when asm off** — all 85 #[arcane] fns converted from raw pointers to slices, 0 unsafe outside #[cfg(feature = "asm")] FFI wrappers
+- **filmgrain.rs: ✅ 0 allows** — all dispatch safe via zerocopy AsBytes/FromBytes
+- **pixel_access.rs: ✅ 0 allows** — SliceExt trait + FlexSlice zero-cost wrapper
+- **itx_arm.rs: ✅ 0 allows** — all FFI correctly gated behind asm
+- **ipred.rs: ✅ 0 allows** — all 28 inner SIMD fns converted to safe slices
+- **mc.rs: ⚠️ NEEDS CONVERSION** — 62 inner fns wrongly gated behind asm, 253 unsafe blocks, needs same itx.rs treatment
+- mc_arm.rs: 10 allows (FFI gated, inner fns use NEON intrinsics)
+- filmgrain_arm.rs: 8 allows (FFI gated, inner fns use NEON)
+- loopfilter_arm.rs: 3 allows
+- cdef.rs: 2 allows (test module calling #[target_feature] fns)
+- refmvs.rs/refmvs_arm.rs: 1 allow each
+- ipred_arm.rs: 1 allow
+- All safe_simd dispatch functions use tracked DisjointMut guards
+- Pixels trait gated behind cfg(asm) — dead code when asm disabled
 
 **c-ffi decoupled from fn-ptr dispatch.** The `c-ffi` feature now only controls the 19 `dav1d_*` extern "C" entry points in `src/lib.rs`. Internal DSP dispatch uses direct function calls (no function pointers) when `asm` is disabled.
 
