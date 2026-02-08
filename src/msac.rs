@@ -25,7 +25,11 @@ use safe_unaligned_simd::x86_64 as safe_simd;
 
 // aarch64 SIMD intrinsics for safe_simd implementations
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+use archmage::{arcane, Arm64, SimdToken};
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
 use std::arch::aarch64::*;
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+use crate::src::safe_simd::pixel_access::{neon_ld1q_u16, neon_st1q_u16};
 
 #[cfg(all(feature = "asm", target_feature = "sse2"))]
 extern "C" {
@@ -639,8 +643,9 @@ static MIN_PROB_16_ARM: [u16; 31] = [
 
 /// NEON implementation of symbol_adapt16
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-#[allow(unsafe_code)]
-unsafe fn rav1d_msac_decode_symbol_adapt16_neon(
+#[arcane]
+fn rav1d_msac_decode_symbol_adapt16_neon(
+    _t: Arm64,
     s: &mut MsacContext,
     cdf: &mut [u16],
     n_symbols: u8,
@@ -649,54 +654,68 @@ unsafe fn rav1d_msac_decode_symbol_adapt16_neon(
     let n = n_symbols as usize;
 
     // Load CDF (16 values = 2 x uint16x8)
-    let cdf_lo = unsafe { vld1q_u16(cdf.as_ptr()) };
-    let cdf_hi = unsafe { vld1q_u16(cdf.as_ptr().add(8)) };
+    let cdf_lo_ref: &[u16; 8] = cdf[..8].try_into().unwrap();
+    let cdf_lo = neon_ld1q_u16!(cdf_lo_ref);
+    let cdf_hi_ref: &[u16; 8] = cdf[8..16].try_into().unwrap();
+    let cdf_hi = neon_ld1q_u16!(cdf_hi_ref);
 
     // rng masked and broadcast
     let rng_masked = (s.rng & 0xff00) as u16;
-    let rng_vec = unsafe { vdupq_n_u16(rng_masked) };
+    let rng_vec = vdupq_n_u16(rng_masked);
 
     // Process (cdf >> 6) << 7 for both halves
-    let cdf_shifted_lo = unsafe { vshlq_n_u16(vshrq_n_u16(cdf_lo, 6), 7) };
-    let cdf_shifted_hi = unsafe { vshlq_n_u16(vshrq_n_u16(cdf_hi, 6), 7) };
+    let cdf_shifted_lo = vshlq_n_u16(vshrq_n_u16(cdf_lo, 6), 7);
+    let cdf_shifted_hi = vshlq_n_u16(vshrq_n_u16(cdf_hi, 6), 7);
 
     // High multiply using vmull + shrn
-    let rng_lo = unsafe { vget_low_u16(rng_vec) };
-    let rng_hi = unsafe { vget_high_u16(rng_vec) };
+    let rng_lo = vget_low_u16(rng_vec);
+    let rng_hi = vget_high_u16(rng_vec);
 
     // Low 8
-    let prod_lo_a = unsafe { vshrn_n_u32(vmull_u16(vget_low_u16(cdf_shifted_lo), rng_lo), 16) };
-    let prod_lo_b = unsafe { vshrn_n_u32(vmull_u16(vget_high_u16(cdf_shifted_lo), rng_hi), 16) };
-    let prod_lo = unsafe { vcombine_u16(prod_lo_a, prod_lo_b) };
+    let prod_lo_a = vshrn_n_u32(vmull_u16(vget_low_u16(cdf_shifted_lo), rng_lo), 16);
+    let prod_lo_b = vshrn_n_u32(vmull_u16(vget_high_u16(cdf_shifted_lo), rng_hi), 16);
+    let prod_lo = vcombine_u16(prod_lo_a, prod_lo_b);
 
     // High 8
-    let prod_hi_a = unsafe { vshrn_n_u32(vmull_u16(vget_low_u16(cdf_shifted_hi), rng_lo), 16) };
-    let prod_hi_b = unsafe { vshrn_n_u32(vmull_u16(vget_high_u16(cdf_shifted_hi), rng_hi), 16) };
-    let prod_hi = unsafe { vcombine_u16(prod_hi_a, prod_hi_b) };
+    let prod_hi_a = vshrn_n_u32(vmull_u16(vget_low_u16(cdf_shifted_hi), rng_lo), 16);
+    let prod_hi_b = vshrn_n_u32(vmull_u16(vget_high_u16(cdf_shifted_hi), rng_hi), 16);
+    let prod_hi = vcombine_u16(prod_hi_a, prod_hi_b);
 
     // Load min_prob
     let min_prob_offset = 15 - n;
-    let min_prob_lo = unsafe { vld1q_u16(MIN_PROB_16_ARM.as_ptr().add(min_prob_offset)) };
-    let min_prob_hi = unsafe { vld1q_u16(MIN_PROB_16_ARM.as_ptr().add(min_prob_offset + 8)) };
+    let min_prob_lo_ref: &[u16; 8] = MIN_PROB_16_ARM[min_prob_offset..min_prob_offset + 8]
+        .try_into()
+        .unwrap();
+    let min_prob_lo = neon_ld1q_u16!(min_prob_lo_ref);
+    let min_prob_hi_ref: &[u16; 8] = MIN_PROB_16_ARM[min_prob_offset + 8..min_prob_offset + 16]
+        .try_into()
+        .unwrap();
+    let min_prob_hi = neon_ld1q_u16!(min_prob_hi_ref);
 
     // v = prod + min_prob
-    let v_lo = unsafe { vaddq_u16(prod_lo, min_prob_lo) };
-    let v_hi = unsafe { vaddq_u16(prod_hi, min_prob_hi) };
+    let v_lo = vaddq_u16(prod_lo, min_prob_lo);
+    let v_hi = vaddq_u16(prod_hi, min_prob_hi);
 
     // Store v
     let mut v_arr = [0u16; 16];
-    unsafe { vst1q_u16(v_arr.as_mut_ptr(), v_lo) };
-    unsafe { vst1q_u16(v_arr.as_mut_ptr().add(8), v_hi) };
+    {
+        let (lo, hi) = v_arr.split_at_mut(8);
+        neon_st1q_u16!(lo.try_into().unwrap(), v_lo);
+        neon_st1q_u16!(hi.try_into().unwrap(), v_hi);
+    }
 
     // Compare c >= v[i]
-    let c_vec = unsafe { vdupq_n_u16(c) };
-    let cmp_lo = unsafe { vcgeq_u16(c_vec, v_lo) };
-    let cmp_hi = unsafe { vcgeq_u16(c_vec, v_hi) };
+    let c_vec = vdupq_n_u16(c);
+    let cmp_lo = vcgeq_u16(c_vec, v_lo);
+    let cmp_hi = vcgeq_u16(c_vec, v_hi);
 
     // Find symbol by counting consecutive true comparisons
     let mut mask_arr = [0u16; 16];
-    unsafe { vst1q_u16(mask_arr.as_mut_ptr(), cmp_lo) };
-    unsafe { vst1q_u16(mask_arr.as_mut_ptr().add(8), cmp_hi) };
+    {
+        let (lo, hi) = mask_arr.split_at_mut(8);
+        neon_st1q_u16!(lo.try_into().unwrap(), cmp_lo);
+        neon_st1q_u16!(hi.try_into().unwrap(), cmp_hi);
+    }
 
     let mut val = 0u8;
     for i in 0..n {
@@ -817,7 +836,7 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
 ///
 /// `n_symbols` is in the range `0..16`.
 #[inline(always)]
-#[cfg_attr(any(feature = "asm", target_arch = "aarch64"), allow(unsafe_code))]
+#[cfg_attr(feature = "asm", allow(unsafe_code))]
 pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
     debug_assert!(n_symbols < 16);
     let ret;
@@ -846,10 +865,8 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
             }
         } else if #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))] {
             // NEON is baseline on aarch64, always available
-            // SAFETY: NEON always available on aarch64.
-            ret = unsafe {
-                rav1d_msac_decode_symbol_adapt16_neon(s, cdf, n_symbols)
-            } as c_uint;
+            let token = Arm64::summon().unwrap();
+            ret = rav1d_msac_decode_symbol_adapt16_neon(token, s, cdf, n_symbols) as c_uint;
         } else {
             ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
         }
