@@ -1058,15 +1058,17 @@ fn cdef_filter_8x8_16bpc_avx2_inner(
                         max = cmp::max(cmp::max(p0, p1), max);
 
                         let off2 = dav1d_cdef_directions[dir + 4][k] as isize;
+                        let off3 = dav1d_cdef_directions[dir + 0][k] as isize;
                         let s0 = tmp[(base + off2) as usize] as i32;
                         let s1 = tmp[(base - off2) as usize] as i32;
-                        let s2 = tmp[(base + off2 - TMP_STRIDE as isize) as usize] as i32;
-                        let s3 = tmp[(base - off2 + TMP_STRIDE as isize) as usize] as i32;
+                        let s2 = tmp[(base + off3) as usize] as i32;
+                        let s3 = tmp[(base - off3) as usize] as i32;
 
-                        sum += 2 * constrain_scalar(s0 - px, sec_strength, sec_shift);
-                        sum += 2 * constrain_scalar(s1 - px, sec_strength, sec_shift);
-                        sum += constrain_scalar(s2 - px, sec_strength, sec_shift);
-                        sum += constrain_scalar(s3 - px, sec_strength, sec_shift);
+                        let sec_tap = 2 - k as i32;
+                        sum += sec_tap * constrain_scalar(s0 - px, sec_strength, sec_shift);
+                        sum += sec_tap * constrain_scalar(s1 - px, sec_strength, sec_shift);
+                        sum += sec_tap * constrain_scalar(s2 - px, sec_strength, sec_shift);
+                        sum += sec_tap * constrain_scalar(s3 - px, sec_strength, sec_shift);
 
                         min = cmp::min(cmp::min(cmp::min(cmp::min(s0, s1), s2), s3), min);
                         max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);
@@ -1124,16 +1126,18 @@ fn cdef_filter_8x8_16bpc_avx2_inner(
                 let base = row_base + x as isize;
 
                 for k in 0..2 {
-                    let off2 = dav1d_cdef_directions[dir + 4][k] as isize;
-                    let s0 = tmp[(base + off2) as usize] as i32;
-                    let s1 = tmp[(base - off2) as usize] as i32;
-                    let s2 = tmp[(base + off2 - TMP_STRIDE as isize) as usize] as i32;
-                    let s3 = tmp[(base - off2 + TMP_STRIDE as isize) as usize] as i32;
+                    let off1 = dav1d_cdef_directions[dir + 4][k] as isize;
+                    let off2 = dav1d_cdef_directions[dir + 0][k] as isize;
+                    let s0 = tmp[(base + off1) as usize] as i32;
+                    let s1 = tmp[(base - off1) as usize] as i32;
+                    let s2 = tmp[(base + off2) as usize] as i32;
+                    let s3 = tmp[(base - off2) as usize] as i32;
 
-                    sum += 2 * constrain_scalar(s0 - px, sec_strength, sec_shift);
-                    sum += 2 * constrain_scalar(s1 - px, sec_strength, sec_shift);
-                    sum += constrain_scalar(s2 - px, sec_strength, sec_shift);
-                    sum += constrain_scalar(s3 - px, sec_strength, sec_shift);
+                    let sec_tap = 2 - k as i32;
+                    sum += sec_tap * constrain_scalar(s0 - px, sec_strength, sec_shift);
+                    sum += sec_tap * constrain_scalar(s1 - px, sec_strength, sec_shift);
+                    sum += sec_tap * constrain_scalar(s2 - px, sec_strength, sec_shift);
+                    sum += sec_tap * constrain_scalar(s3 - px, sec_strength, sec_shift);
 
                     min = cmp::min(cmp::min(cmp::min(cmp::min(s0, s1), s2), s3), min);
                     max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);
@@ -1218,15 +1222,17 @@ fn cdef_filter_4x8_16bpc_avx2_inner(
                 if sec_strength != 0 {
                     for k in 0..2 {
                         let off2 = dav1d_cdef_directions[dir + 4][k] as isize;
+                        let off3 = dav1d_cdef_directions[dir + 0][k] as isize;
                         let s0 = tmp[(base + off2) as usize] as i32;
                         let s1 = tmp[(base - off2) as usize] as i32;
-                        let s2 = tmp[(base + off2 - TMP_STRIDE as isize) as usize] as i32;
-                        let s3 = tmp[(base - off2 + TMP_STRIDE as isize) as usize] as i32;
+                        let s2 = tmp[(base + off3) as usize] as i32;
+                        let s3 = tmp[(base - off3) as usize] as i32;
 
-                        sum += 2 * constrain_scalar(s0 - px, sec_strength, sec_shift);
-                        sum += 2 * constrain_scalar(s1 - px, sec_strength, sec_shift);
-                        sum += constrain_scalar(s2 - px, sec_strength, sec_shift);
-                        sum += constrain_scalar(s3 - px, sec_strength, sec_shift);
+                        let sec_tap = 2 - k as i32;
+                        sum += sec_tap * constrain_scalar(s0 - px, sec_strength, sec_shift);
+                        sum += sec_tap * constrain_scalar(s1 - px, sec_strength, sec_shift);
+                        sum += sec_tap * constrain_scalar(s2 - px, sec_strength, sec_shift);
+                        sum += sec_tap * constrain_scalar(s3 - px, sec_strength, sec_shift);
 
                         min = cmp::min(cmp::min(cmp::min(cmp::min(s0, s1), s2), s3), min);
                         max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);
@@ -1311,15 +1317,17 @@ fn cdef_filter_4x4_16bpc_avx2_inner(
                 if sec_strength != 0 {
                     for k in 0..2 {
                         let off2 = dav1d_cdef_directions[dir + 4][k] as isize;
+                        let off3 = dav1d_cdef_directions[dir + 0][k] as isize;
                         let s0 = tmp[(base + off2) as usize] as i32;
                         let s1 = tmp[(base - off2) as usize] as i32;
-                        let s2 = tmp[(base + off2 - TMP_STRIDE as isize) as usize] as i32;
-                        let s3 = tmp[(base - off2 + TMP_STRIDE as isize) as usize] as i32;
+                        let s2 = tmp[(base + off3) as usize] as i32;
+                        let s3 = tmp[(base - off3) as usize] as i32;
 
-                        sum += 2 * constrain_scalar(s0 - px, sec_strength, sec_shift);
-                        sum += 2 * constrain_scalar(s1 - px, sec_strength, sec_shift);
-                        sum += constrain_scalar(s2 - px, sec_strength, sec_shift);
-                        sum += constrain_scalar(s3 - px, sec_strength, sec_shift);
+                        let sec_tap = 2 - k as i32;
+                        sum += sec_tap * constrain_scalar(s0 - px, sec_strength, sec_shift);
+                        sum += sec_tap * constrain_scalar(s1 - px, sec_strength, sec_shift);
+                        sum += sec_tap * constrain_scalar(s2 - px, sec_strength, sec_shift);
+                        sum += sec_tap * constrain_scalar(s3 - px, sec_strength, sec_shift);
 
                         min = cmp::min(cmp::min(cmp::min(cmp::min(s0, s1), s2), s3), min);
                         max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);

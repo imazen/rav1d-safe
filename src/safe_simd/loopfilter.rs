@@ -272,9 +272,10 @@ fn loop_filter_4_8bpc(
 
 /// Read level value from lvl slice at the given offset.
 /// Each entry is [u8; 4], we read the first byte.
+/// Returns 0 for out-of-bounds access (= no filtering for that block).
 #[inline(always)]
 fn read_lvl(lvl: &[[u8; 4]], offset: usize) -> u8 {
-    lvl[offset][0]
+    lvl.get(offset).map_or(0, |v| v[0])
 }
 
 /// Loop filter for Y plane, horizontal edges (8bpc)

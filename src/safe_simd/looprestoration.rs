@@ -632,8 +632,10 @@ fn selfguided_filter_8bpc(
     let base = 2 * REST_UNIT_STRIDE + 3;
 
     for row_offset in (0..(h + 2)).step_by(step) {
-        let row_start = (row_offset as isize - 1) as usize;
-        let aa_base = base + row_start * REST_UNIT_STRIDE - REST_UNIT_STRIDE;
+        // Use signed arithmetic to avoid overflow when row_offset=0
+        // aa_base = base + (row_offset - 2) * REST_UNIT_STRIDE
+        let aa_base =
+            (base as isize + (row_offset as isize - 2) * REST_UNIT_STRIDE as isize) as usize;
 
         for i in 0..(w + 2) {
             let idx = aa_base + i;
@@ -1169,8 +1171,10 @@ fn selfguided_filter_16bpc(
     let base = 2 * REST_UNIT_STRIDE + 3;
 
     for row_offset in (0..(h + 2)).step_by(step) {
-        let row_start = (row_offset as isize - 1) as usize;
-        let aa_base = base + row_start * REST_UNIT_STRIDE - REST_UNIT_STRIDE;
+        // Use signed arithmetic to avoid overflow when row_offset=0
+        // aa_base = base + (row_offset - 2) * REST_UNIT_STRIDE
+        let aa_base =
+            (base as isize + (row_offset as isize - 2) * REST_UNIT_STRIDE as isize) as usize;
 
         for i in 0..(w + 2) {
             let idx = aa_base + i;

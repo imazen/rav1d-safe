@@ -3622,22 +3622,9 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 h,
             )
         },
-        (BPC::BPC16, 13) => {
-            let tl_off_bytes = topleft_off * 2;
-            ipred_filter_16bpc_inner(
-                token,
-                dst_bytes,
-                dst_base_bytes,
-                byte_stride,
-                tl_bytes,
-                tl_off_bytes,
-                w,
-                h,
-                angle as i32,
-                bd_c as i32,
-                topleft_off,
-            )
-        },
+        // filter_intra 16bpc: disabled due to topleft offset bugs
+        // (same class as 8bpc filter_intra — double-offset and missing top-pointer update)
+        (BPC::BPC16, 13) => return false,
         _ => return false,
     }
     true
