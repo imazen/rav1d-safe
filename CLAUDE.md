@@ -157,17 +157,18 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 - Safe picture allocator: per-plane `Vec<u8>` from MemPool, no C callbacks needed
 - Fallible allocation: `MemPool::pop_init` returns `Result<Vec, TryReserveError>`, propagated as `Rav1dError::ENOMEM`
 
-**Module safety architecture (default build without asm/c-ffi):**
-- Only 3 modules need unconditional `#[allow(unsafe_code)]`: refmvs, msac, safe_simd
-  - refmvs: MV storage pointer operations (DisjointMut guard → raw ptr arithmetic)
-  - msac: NEON SIMD intrinsics, fn ptr dispatch, Send/Sync
-  - safe_simd: ~2300 SIMD intrinsic calls (blocked by safe_intrinsics)
+**Module safety architecture (default build without asm/c-ffi on x86_64):**
+- Only **1 module** needs unconditional `#[allow(unsafe_code)]`: **safe_simd**
+  - ~2300 SIMD intrinsic calls (blocked by Rust safe_intrinsics feature)
+- 2 modules conditionally allow unsafe by architecture:
+  - refmvs: `cfg_attr(feature = "asm", allow(unsafe_code))` — extern C wrappers gated behind asm
+  - msac: `cfg_attr(any(asm, aarch64), allow(unsafe_code))` — NEON intrinsics on aarch64 only
 - 6 modules use conditional `allow(unsafe_code)` only when c-ffi enabled:
   include/dav1d, c_arc, c_box, log, picture, lib (C API entry point)
 - 1 module gated entirely behind asm/c-ffi: send_sync_non_null
 - All other modules use **item-level** `#[allow(unsafe_code)]` on specific functions/impls:
   align (4 items), assume (1 fn), ffi_safe (2 fns), disjoint_mut (1 impl),
-  c_arc (3 items), c_box (1 fn), internal (4 impls)
+  c_arc (3 items), c_box (1 fn), internal (4 impls), refmvs (2 fns), msac (4 items)
 - 42+ modules with `#![forbid(unsafe_code)]` — permanent, compiler-enforced
 - 13 DSP modules with conditional deny when asm disabled
 
