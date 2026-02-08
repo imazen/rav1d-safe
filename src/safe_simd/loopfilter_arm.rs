@@ -588,6 +588,7 @@ pub unsafe extern "C" fn lpf_v_sb_uv_16bpc_neon(
 
 /// Safe dispatch for loopfilter_sb on aarch64. Returns true if SIMD was used.
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     dst: PicOffset,
     stride: ptrdiff_t,

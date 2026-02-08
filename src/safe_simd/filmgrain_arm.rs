@@ -5,6 +5,8 @@
 //! - fgy_32x32xn: NEON SIMD inner loop for grain application
 //! - fguv_32x32xn: NEON SIMD inner loop for chroma grain application
 
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
@@ -325,6 +327,7 @@ gen_grain_uv_16bpc!(generate_grain_uv_444_16bpc_neon, false, false);
 // ============================================================================
 
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 unsafe fn fgy_row_neon_8bpc(
     dst: *mut u8,
     src: *const u8,
@@ -393,6 +396,7 @@ unsafe fn fgy_row_neon_8bpc(
     }
 }
 
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn fgy_32x32xn_8bpc_neon(
     dst_row_ptr: *mut DynPixel,
     src_row_ptr: *const DynPixel,
@@ -549,6 +553,7 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_neon(
 // fgy_32x32xn - 16bpc NEON
 // ============================================================================
 
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn fgy_32x32xn_16bpc_neon(
     dst_row_ptr: *mut DynPixel,
     src_row_ptr: *const DynPixel,
@@ -728,6 +733,7 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_neon(
 // ============================================================================
 
 #[inline(always)]
+#[allow(unsafe_code)]
 unsafe fn compute_uv_scaling_val(
     src_ptr: *const u8,
     luma_ptr: *const u8,
@@ -750,6 +756,7 @@ unsafe fn compute_uv_scaling_val(
     unsafe { *scaling.add(val as usize) }
 }
 
+#[allow(unsafe_code)]
 unsafe fn fguv_inner_8bpc(
     dst: *mut u8,
     src: *const u8,
@@ -996,6 +1003,7 @@ fguv_8bpc_wrapper!(fguv_32x32xn_i444_8bpc_neon, false, false);
 // fguv_32x32xn - 16bpc (scalar with NEON add/clamp)
 // ============================================================================
 
+#[allow(unsafe_code)]
 unsafe fn fguv_inner_16bpc(
     dst: *mut u16,
     src: *const u16,
@@ -1210,6 +1218,7 @@ use crate::src::strided::Strided as _;
 /// Safe dispatch for generate_grain_y (aarch64 NEON).
 /// NEON is always available on aarch64, so this always dispatches and returns true.
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn generate_grain_y_dispatch<BD: BitDepth>(
     buf: &mut GrainLut<BD::Entry>,
     data: &Rav1dFilmGrainData,
@@ -1232,6 +1241,7 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
 /// Safe dispatch for generate_grain_uv (aarch64 NEON).
 /// NEON is always available on aarch64, so this always dispatches and returns true.
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     buf: &mut GrainLut<BD::Entry>,
@@ -1264,6 +1274,7 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
 /// Safe dispatch for fgy_32x32xn (aarch64 NEON).
 /// NEON is always available on aarch64, so this always dispatches and returns true.
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     dst: &Rav1dPictureDataComponent,
     src: &Rav1dPictureDataComponent,
@@ -1341,6 +1352,7 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
 /// Safe dispatch for fguv_32x32xn (aarch64 NEON).
 /// NEON is always available on aarch64, so this always dispatches and returns true.
 #[cfg(target_arch = "aarch64")]
+#[allow(unsafe_code)]
 pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     dst: &Rav1dPictureDataComponent,
