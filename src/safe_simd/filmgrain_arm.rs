@@ -10,6 +10,11 @@
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
+#[cfg(target_arch = "aarch64")]
+use archmage::{arcane, Arm64, SimdToken};
+#[cfg(target_arch = "aarch64")]
+use safe_unaligned_simd::aarch64 as safe_simd;
+
 use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
@@ -327,71 +332,77 @@ gen_grain_uv_16bpc!(generate_grain_uv_444_16bpc_neon, false, false);
 // ============================================================================
 
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
-unsafe fn fgy_row_neon_8bpc(
-    dst: *mut u8,
-    src: *const u8,
-    scaling: *const u8,
-    grain_row: *const i8,
+#[arcane]
+fn fgy_row_neon_8bpc(
+    _token: Arm64,
+    dst: &mut [u8],
+    src: &[u8],
+    scaling: &[u8],
+    grain_row: &[i8],
     bw: usize,
     xstart: usize,
-    mul: int16x8_t,
     min_val: u8,
     max_val: u8,
     scaling_shift: u8,
 ) {
-    let min_vec = unsafe { vdupq_n_u8(min_val) };
-    let max_vec = unsafe { vdupq_n_u8(max_val) };
+    let mul = vdupq_n_s16(1i16 << (15 - scaling_shift));
+    let min_vec = vdupq_n_u8(min_val);
+    let max_vec = vdupq_n_u8(max_val);
     let mut x = xstart;
 
     // Process 16 pixels at a time with NEON
     while x + 16 <= bw {
-        let src_vec = unsafe { vld1q_u8(src.add(x)) };
-        let src_lo = unsafe { vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(src_vec))) };
-        let src_hi = unsafe { vreinterpretq_s16_u16(vmovl_high_u8(src_vec)) };
+        let src_arr: &[u8; 16] = src[x..x + 16].try_into().unwrap();
+        let src_vec = safe_simd::vld1q_u8(src_arr);
+        let src_lo = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(src_vec)));
+        let src_hi = vreinterpretq_s16_u16(vmovl_high_u8(src_vec));
 
         // Scalar scaling lookups
         let mut sc_arr = [0i16; 16];
         for i in 0..16 {
-            sc_arr[i] = unsafe { *scaling.add(*src.add(x + i) as usize) as i16 };
+            sc_arr[i] = scaling[src[x + i] as usize] as i16;
         }
-        let sc_lo = unsafe { vld1q_s16(sc_arr.as_ptr()) };
-        let sc_hi = unsafe { vld1q_s16(sc_arr.as_ptr().add(8)) };
+        let sc_lo = safe_simd::vld1q_s16(
+            <&[i16; 8]>::try_from(&sc_arr[..8]).unwrap(),
+        );
+        let sc_hi = safe_simd::vld1q_s16(
+            <&[i16; 8]>::try_from(&sc_arr[8..16]).unwrap(),
+        );
 
         // Load grain and widen to i16
-        let grain_vec = unsafe { vld1q_s8(grain_row.add(x)) };
-        let grain_lo = unsafe { vmovl_s8(vget_low_s8(grain_vec)) };
-        let grain_hi = unsafe { vmovl_high_s8(grain_vec) };
+        let grain_arr: &[i8; 16] = grain_row[x..x + 16].try_into().unwrap();
+        let grain_vec = safe_simd::vld1q_s8(grain_arr);
+        let grain_lo = vmovl_s8(vget_low_s8(grain_vec));
+        let grain_hi = vmovl_high_s8(grain_vec);
 
         // noise = sc * grain (fits i16 for 8bpc: max 255*127=32385)
-        let noise_lo = unsafe { vmulq_s16(sc_lo, grain_lo) };
-        let noise_hi = unsafe { vmulq_s16(sc_hi, grain_hi) };
+        let noise_lo = vmulq_s16(sc_lo, grain_lo);
+        let noise_hi = vmulq_s16(sc_hi, grain_hi);
 
         // Round: (noise * mul + 16384) >> 15 (same as pmulhrsw)
-        let noise_lo = unsafe { vqrdmulhq_s16(noise_lo, mul) };
-        let noise_hi = unsafe { vqrdmulhq_s16(noise_hi, mul) };
+        let noise_lo = vqrdmulhq_s16(noise_lo, mul);
+        let noise_hi = vqrdmulhq_s16(noise_hi, mul);
 
         // Add noise to source
-        let result_lo = unsafe { vaddq_s16(src_lo, noise_lo) };
-        let result_hi = unsafe { vaddq_s16(src_hi, noise_hi) };
+        let result_lo = vaddq_s16(src_lo, noise_lo);
+        let result_hi = vaddq_s16(src_hi, noise_hi);
 
         // Saturating narrow to u8
-        let result = unsafe { vcombine_u8(vqmovun_s16(result_lo), vqmovun_s16(result_hi)) };
-        let result = unsafe { vmaxq_u8(result, min_vec) };
-        let result = unsafe { vminq_u8(result, max_vec) };
-        unsafe { vst1q_u8(dst.add(x), result) };
+        let result = vcombine_u8(vqmovun_s16(result_lo), vqmovun_s16(result_hi));
+        let result = vmaxq_u8(result, min_vec);
+        let result = vminq_u8(result, max_vec);
+        let dst_arr: &mut [u8; 16] = (&mut dst[x..x + 16]).try_into().unwrap();
+        safe_simd::vst1q_u8(dst_arr, result);
         x += 16;
     }
 
     // Scalar remainder
     while x < bw {
-        let sv = unsafe { *src.add(x) as usize };
-        let grain = unsafe { *grain_row.add(x) as i32 };
-        let sc = unsafe { *scaling.add(sv) as i32 };
+        let sv = src[x] as usize;
+        let grain = grain_row[x] as i32;
+        let sc = scaling[sv] as i32;
         let noise = round2(sc * grain, scaling_shift);
-        unsafe {
-            *dst.add(x) = ((*src.add(x) as i32 + noise).clamp(min_val as i32, max_val as i32)) as u8
-        };
+        dst[x] = ((src[x] as i32 + noise).clamp(min_val as i32, max_val as i32)) as u8;
         x += 1;
     }
 }
@@ -419,8 +430,7 @@ fn fgy_inner_8bpc(
     let mut seed = row_seed(rows, row_num, data);
 
     #[cfg(target_arch = "aarch64")]
-    #[allow(unsafe_code)]
-    let mul = unsafe { vdupq_n_s16(1i16 << (15 - scaling_shift)) };
+    let token = Arm64::summon().unwrap();
 
     let mut offsets: [[c_int; 2]; 2] = [[0; 2]; 2];
     static W: [[i32; 2]; 2] = [[27, 17], [17, 27]];
@@ -479,21 +489,18 @@ fn fgy_inner_8bpc(
             }
 
             #[cfg(target_arch = "aarch64")]
-            #[allow(unsafe_code)]
-            unsafe {
-                fgy_row_neon_8bpc(
-                    dst.as_mut_ptr().add(base),
-                    src.as_ptr().add(base),
-                    scaling.as_ptr(),
-                    grain_lut[offy + y].as_ptr().add(offx),
-                    bw,
-                    xstart,
-                    mul,
-                    min_value as u8,
-                    max_value as u8,
-                    scaling_shift,
-                );
-            }
+            fgy_row_neon_8bpc(
+                token,
+                &mut dst[base..],
+                &src[base..],
+                scaling,
+                &grain_lut[offy + y][offx..],
+                bw,
+                xstart,
+                min_value as u8,
+                max_value as u8,
+                scaling_shift,
+            );
 
             // Scalar fallback for non-aarch64 (xstart..bw)
             #[cfg(not(target_arch = "aarch64"))]
@@ -571,6 +578,62 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_neon(
 // fgy_32x32xn - 16bpc NEON
 // ============================================================================
 
+/// NEON helper for 16bpc: add precomputed noise to src, clamp, store to dst.
+/// Processes 8 u16 pixels at a time.
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn fgy_row_neon_16bpc(
+    _token: Arm64,
+    dst: &mut [u16],
+    src: &[u16],
+    scaling: &[u8],
+    grain_row: &[i16],
+    bw: usize,
+    xstart: usize,
+    min_value: i32,
+    max_value: i32,
+    scaling_shift: u8,
+    bitdepth_max: i32,
+) {
+    let min_vec = vdupq_n_s16(min_value as i16);
+    let max_vec = vdupq_n_s16(max_value as i16);
+    let mut x = xstart;
+
+    while x + 8 <= bw {
+        let mut noise_vals = [0i16; 8];
+        for i in 0..8 {
+            let sv = cmp::min(src[x + i] as usize, bitdepth_max as usize);
+            let grain = grain_row[x + i] as i32;
+            let sc = scaling[sv] as i32;
+            noise_vals[i] = round2(sc * grain, scaling_shift) as i16;
+        }
+        // Load src u16 as u16, reinterpret to s16 in NEON
+        let src_u16_arr: &[u16; 8] = (&src[x..x + 8]).try_into().unwrap();
+        let src_vec = vreinterpretq_s16_u16(safe_simd::vld1q_u16(src_u16_arr));
+        let noise = safe_simd::vld1q_s16(
+            <&[i16; 8]>::try_from(&noise_vals[..8]).unwrap(),
+        );
+        let result = vaddq_s16(src_vec, noise);
+        let result = vmaxq_s16(result, min_vec);
+        let result = vminq_s16(result, max_vec);
+        // Store s16 result as u16
+        let result_u16 = vreinterpretq_u16_s16(result);
+        let dst_u16_arr: &mut [u16; 8] = (&mut dst[x..x + 8]).try_into().unwrap();
+        safe_simd::vst1q_u16(dst_u16_arr, result_u16);
+        x += 8;
+    }
+
+    // Scalar remainder
+    while x < bw {
+        let sv = cmp::min(src[x] as usize, bitdepth_max as usize);
+        let grain = grain_row[x] as i32;
+        let sc = scaling[sv] as i32;
+        let noise = round2(sc * grain, scaling_shift);
+        dst[x] = ((src[x] as i32 + noise).clamp(min_value, max_value)) as u16;
+        x += 1;
+    }
+}
+
 fn fgy_inner_16bpc(
     dst: &mut [u16],
     src: &[u16],
@@ -601,11 +664,7 @@ fn fgy_inner_16bpc(
     static W: [[i32; 2]; 2] = [[27, 17], [17, 27]];
 
     #[cfg(target_arch = "aarch64")]
-    #[allow(unsafe_code)]
-    let min_vec = unsafe { vdupq_n_s16(min_value as i16) };
-    #[cfg(target_arch = "aarch64")]
-    #[allow(unsafe_code)]
-    let max_vec = unsafe { vdupq_n_s16(max_value as i16) };
+    let token = Arm64::summon().unwrap();
 
     let row_off = |y: usize| -> usize { (y as isize * stride_u16) as usize };
 
@@ -659,36 +718,34 @@ fn fgy_inner_16bpc(
                     ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
             }
 
-            // NEON: compute noise scalar, add/clamp with SIMD
-            let mut x = xstart;
             #[cfg(target_arch = "aarch64")]
-            #[allow(unsafe_code)]
-            while x + 8 <= bw {
-                let mut noise_vals = [0i16; 8];
-                for i in 0..8 {
-                    let sv = cmp::min(src[base + x + i] as usize, bitdepth_max as usize);
-                    let grain = grain_lut[offy + y][offx + x + i] as i32;
+            fgy_row_neon_16bpc(
+                token,
+                &mut dst[base..],
+                &src[base..],
+                scaling,
+                &grain_lut[offy + y][offx..],
+                bw,
+                xstart,
+                min_value,
+                max_value,
+                scaling_shift,
+                bitdepth_max,
+            );
+
+            // Scalar fallback for non-aarch64
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                let mut x = xstart;
+                while x < bw {
+                    let sv = cmp::min(src[base + x] as usize, bitdepth_max as usize);
+                    let grain = grain_lut[offy + y][offx + x] as i32;
                     let sc = scaling[sv] as i32;
-                    noise_vals[i] = round2(sc * grain, scaling_shift) as i16;
+                    let noise = round2(sc * grain, scaling_shift);
+                    dst[base + x] =
+                        ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
+                    x += 1;
                 }
-                unsafe {
-                    let src_vec = vld1q_s16(src.as_ptr().add(base + x) as *const i16);
-                    let noise = vld1q_s16(noise_vals.as_ptr());
-                    let result = vaddq_s16(src_vec, noise);
-                    let result = vmaxq_s16(result, min_vec);
-                    let result = vminq_s16(result, max_vec);
-                    vst1q_s16(dst.as_mut_ptr().add(base + x) as *mut i16, result);
-                }
-                x += 8;
-            }
-            while x < bw {
-                let sv = cmp::min(src[base + x] as usize, bitdepth_max as usize);
-                let grain = grain_lut[offy + y][offx + x] as i32;
-                let sc = scaling[sv] as i32;
-                let noise = round2(sc * grain, scaling_shift);
-                dst[base + x] =
-                    ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u16;
-                x += 1;
             }
         }
 
@@ -759,6 +816,95 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_neon(
 // fguv_32x32xn - 8bpc NEON (chroma grain application)
 // ============================================================================
 
+/// NEON helper for 8bpc chroma: apply grain noise with UV scaling.
+/// Processes 16 pixels at a time, with scalar remainder.
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn fguv_row_neon_8bpc(
+    _token: Arm64,
+    dst: &mut [u8],
+    src: &[u8],
+    scaling: &[u8],
+    grain_row: &[i8],
+    luma_row: &[u8],
+    bw: usize,
+    xstart: usize,
+    min_val: u8,
+    max_val: u8,
+    scaling_shift: u8,
+    is_sx: bool,
+    sx: usize,
+    data: &Rav1dFilmGrainData,
+    uv: usize,
+) {
+    let mul = vdupq_n_s16(1i16 << (15 - scaling_shift));
+    let min_vec = vdupq_n_u8(min_val);
+    let max_vec = vdupq_n_u8(max_val);
+    let mut x = xstart;
+
+    while x + 16 <= bw {
+        let src_arr: &[u8; 16] = src[x..x + 16].try_into().unwrap();
+        let src_vec = safe_simd::vld1q_u8(src_arr);
+        let src_lo = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(src_vec)));
+        let src_hi = vreinterpretq_s16_u16(vmovl_high_u8(src_vec));
+
+        let mut sc_arr = [0i16; 16];
+        for i in 0..16 {
+            sc_arr[i] = compute_uv_scaling_val(
+                src[x + i],
+                luma_row,
+                (x + i) << sx,
+                is_sx,
+                data,
+                uv,
+                scaling,
+            ) as i16;
+        }
+        let sc_lo = safe_simd::vld1q_s16(
+            <&[i16; 8]>::try_from(&sc_arr[..8]).unwrap(),
+        );
+        let sc_hi = safe_simd::vld1q_s16(
+            <&[i16; 8]>::try_from(&sc_arr[8..16]).unwrap(),
+        );
+
+        let grain_arr: &[i8; 16] = grain_row[x..x + 16].try_into().unwrap();
+        let grain_vec = safe_simd::vld1q_s8(grain_arr);
+        let grain_lo = vmovl_s8(vget_low_s8(grain_vec));
+        let grain_hi = vmovl_high_s8(grain_vec);
+
+        let noise_lo = vmulq_s16(sc_lo, grain_lo);
+        let noise_hi = vmulq_s16(sc_hi, grain_hi);
+        let noise_lo = vqrdmulhq_s16(noise_lo, mul);
+        let noise_hi = vqrdmulhq_s16(noise_hi, mul);
+
+        let result_lo = vaddq_s16(src_lo, noise_lo);
+        let result_hi = vaddq_s16(src_hi, noise_hi);
+        let result = vcombine_u8(vqmovun_s16(result_lo), vqmovun_s16(result_hi));
+        let result = vmaxq_u8(result, min_vec);
+        let result = vminq_u8(result, max_vec);
+        let dst_arr: &mut [u8; 16] = (&mut dst[x..x + 16]).try_into().unwrap();
+        safe_simd::vst1q_u8(dst_arr, result);
+        x += 16;
+    }
+
+    // Scalar remainder
+    while x < bw {
+        let sc = compute_uv_scaling_val(
+            src[x],
+            luma_row,
+            x << sx,
+            is_sx,
+            data,
+            uv,
+            scaling,
+        ) as i32;
+        let grain = grain_row[x] as i32;
+        let noise = round2(sc * grain, scaling_shift);
+        dst[x] = ((src[x] as i32 + noise).clamp(min_val as i32, max_val as i32)) as u8;
+        x += 1;
+    }
+}
+
 #[inline(always)]
 fn compute_uv_scaling_val(
     src_val: u8,
@@ -818,14 +964,7 @@ fn fguv_inner_8bpc(
     static W: [[[i32; 2]; 2]; 2] = [[[27, 17], [17, 27]], [[23, 22], [0; 2]]];
 
     #[cfg(target_arch = "aarch64")]
-    #[allow(unsafe_code)]
-    let mul = unsafe { vdupq_n_s16(1i16 << (15 - scaling_shift)) };
-    #[cfg(target_arch = "aarch64")]
-    #[allow(unsafe_code)]
-    let min_vec = unsafe { vdupq_n_u8(min_value as u8) };
-    #[cfg(target_arch = "aarch64")]
-    #[allow(unsafe_code)]
-    let max_vec = unsafe { vdupq_n_u8(max_value as u8) };
+    let token = Arm64::summon().unwrap();
 
     let row_off = |y: usize| -> usize { (y as isize * stride) as usize };
     let luma_row_off = |y: usize| -> usize { ((y << sy) as isize * luma_stride) as usize };
@@ -894,53 +1033,34 @@ fn fguv_inner_8bpc(
             }
 
             // NEON inner loop
-            let mut x = xstart;
             #[cfg(target_arch = "aarch64")]
-            #[allow(unsafe_code)]
-            while x + 16 <= bw {
-                unsafe {
-                    let src_vec = vld1q_u8(src.as_ptr().add(base + x));
-                    let src_lo = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(src_vec)));
-                    let src_hi = vreinterpretq_s16_u16(vmovl_high_u8(src_vec));
+            fguv_row_neon_8bpc(
+                token,
+                &mut dst[base..],
+                &src[base..],
+                scaling,
+                &grain_lut[offy + y][offx..],
+                &luma[luma_base..],
+                bw,
+                xstart,
+                min_value as u8,
+                max_value as u8,
+                scaling_shift,
+                is_sx,
+                sx,
+                data,
+                uv,
+            );
 
-                    let mut sc_arr = [0i16; 16];
-                    for i in 0..16 {
-                        sc_arr[i] = compute_uv_scaling_val(
-                            src[base + x + i],
-                            luma,
-                            luma_base + ((x + i) << sx),
-                            is_sx,
-                            data,
-                            uv,
-                            scaling,
-                        ) as i16;
-                    }
-                    let sc_lo = vld1q_s16(sc_arr.as_ptr());
-                    let sc_hi = vld1q_s16(sc_arr.as_ptr().add(8));
-
-                    let grain_vec = vld1q_s8(grain_lut[offy + y].as_ptr().add(offx + x));
-                    let grain_lo = vmovl_s8(vget_low_s8(grain_vec));
-                    let grain_hi = vmovl_high_s8(grain_vec);
-
-                    let noise_lo = vmulq_s16(sc_lo, grain_lo);
-                    let noise_hi = vmulq_s16(sc_hi, grain_hi);
-                    let noise_lo = vqrdmulhq_s16(noise_lo, mul);
-                    let noise_hi = vqrdmulhq_s16(noise_hi, mul);
-
-                    let result_lo = vaddq_s16(src_lo, noise_lo);
-                    let result_hi = vaddq_s16(src_hi, noise_hi);
-                    let result = vcombine_u8(vqmovun_s16(result_lo), vqmovun_s16(result_hi));
-                    let result = vmaxq_u8(result, min_vec);
-                    let result = vminq_u8(result, max_vec);
-                    vst1q_u8(dst.as_mut_ptr().add(base + x), result);
+            // Scalar fallback for non-aarch64
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                let mut x = xstart;
+                while x < bw {
+                    let grain = grain_lut[offy + y][offx + x] as i32;
+                    dst[base + x] = noise_uv(src[base + x], grain, &luma[luma_base..], x << sx);
+                    x += 1;
                 }
-                x += 16;
-            }
-
-            while x < bw {
-                let grain = grain_lut[offy + y][offx + x] as i32;
-                dst[base + x] = noise_uv(src[base + x], grain, &luma[luma_base..], x << sx);
-                x += 1;
             }
         }
 
