@@ -1340,10 +1340,14 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     assert!(lvl.offset <= lvl.data.len());
 
     // Safe slice access for lvl data: reinterpret u8 data as &[[u8; 4]] entries
+    // Note: lvl.offset is a BYTE offset (not element offset), so we use .index()
+    // with a byte range and then cast via zerocopy, since slice_as() would
+    // incorrectly multiply the offset by sizeof([u8; 4]).
     let lvl_remaining_bytes = lvl.data.len() - lvl.offset;
     let lvl_len = lvl_remaining_bytes / 4;
-    let lvl_guard = lvl.data.slice_as::<_, [u8; 4]>((lvl.offset.., ..lvl_len));
-    let lvl_slice: &[[u8; 4]] = &lvl_guard;
+    let lvl_byte_end = lvl.offset + lvl_len * 4;
+    let lvl_byte_guard = lvl.data.index(lvl.offset..lvl_byte_end);
+    let lvl_slice: &[[u8; 4]] = zerocopy::FromBytes::slice_from(&*lvl_byte_guard).unwrap();
 
     match BD::BPC {
         BPC::BPC8 => {
@@ -1355,9 +1359,19 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             let reach_before = 7 * byte_stride + 7;
             let reach_after = 128 * byte_stride + 7;
 
+            // Guard: fall back to scalar if buffer bounds are insufficient.
+            // The SIMD filter needs reach_before pixels before and reach_after after
+            // the current position. Small images may not have enough buffer.
+            let buf_pixel_len = dst.data.pixel_len::<BitDepth8>();
+            if dst.offset < reach_before
+                || dst.offset.saturating_add(reach_after) > buf_pixel_len
+            {
+                return false;
+            }
+
             // Safe slice access: get a mutable guard covering the full filter reach
-            let start_pixel = dst.offset.wrapping_sub(reach_before);
-            let total_pixels = reach_before + reach_after;
+            let start_pixel = dst.offset - reach_before;
+            let total_pixels = (reach_before + reach_after).min(buf_pixel_len - start_pixel);
             let mut buf_guard = dst
                 .data
                 .slice_mut::<BitDepth8, _>((start_pixel.., ..total_pixels));
@@ -1418,9 +1432,17 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             let reach_before = 7 * u16_stride + 7;
             let reach_after = 128 * u16_stride + 7;
 
+            // Guard: fall back to scalar if buffer bounds are insufficient.
+            let buf_pixel_len = dst.data.pixel_len::<BitDepth16>();
+            if dst.offset < reach_before
+                || dst.offset.saturating_add(reach_after) > buf_pixel_len
+            {
+                return false;
+            }
+
             // Safe slice access: get a mutable guard covering the full filter reach
-            let start_pixel = dst.offset.wrapping_sub(reach_before);
-            let total_pixels = reach_before + reach_after;
+            let start_pixel = dst.offset - reach_before;
+            let total_pixels = (reach_before + reach_after).min(buf_pixel_len - start_pixel);
             let mut buf_guard = dst
                 .data
                 .slice_mut::<BitDepth16, _>((start_pixel.., ..total_pixels));
