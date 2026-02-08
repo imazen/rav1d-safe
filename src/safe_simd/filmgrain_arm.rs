@@ -1218,19 +1218,19 @@ use crate::src::strided::Strided as _;
 /// Safe dispatch for generate_grain_y (aarch64 NEON).
 /// NEON is always available on aarch64, so this always dispatches and returns true.
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
 pub fn generate_grain_y_dispatch<BD: BitDepth>(
     buf: &mut GrainLut<BD::Entry>,
     data: &Rav1dFilmGrainData,
     bd: BD,
 ) -> bool {
+    use zerocopy::{AsBytes, FromBytes};
     match BD::BPC {
         BPC::BPC8 => {
-            let buf = unsafe { &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i8>) };
+            let buf: &mut GrainLut<i8> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
             generate_grain_y_inner_8bpc(buf, data);
         }
         BPC::BPC16 => {
-            let buf = unsafe { &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i16>) };
+            let buf: &mut GrainLut<i16> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
             let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
             generate_grain_y_inner_16bpc(buf, data, bitdepth);
         }
@@ -1241,7 +1241,6 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
 /// Safe dispatch for generate_grain_uv (aarch64 NEON).
 /// NEON is always available on aarch64, so this always dispatches and returns true.
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
 pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     buf: &mut GrainLut<BD::Entry>,
@@ -1255,15 +1254,16 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
         Rav1dPixelLayoutSubSampled::I422 => (true, false),
         Rav1dPixelLayoutSubSampled::I444 => (false, false),
     };
+    use zerocopy::{AsBytes, FromBytes};
     match BD::BPC {
         BPC::BPC8 => {
-            let buf = unsafe { &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i8>) };
-            let buf_y = unsafe { &*(buf_y as *const GrainLut<BD::Entry> as *const GrainLut<i8>) };
+            let buf: &mut GrainLut<i8> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let buf_y: &GrainLut<i8> = FromBytes::ref_from(buf_y.as_bytes()).unwrap();
             generate_grain_uv_inner_8bpc(buf, buf_y, data, is_uv, is_subx, is_suby);
         }
         BPC::BPC16 => {
-            let buf = unsafe { &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i16>) };
-            let buf_y = unsafe { &*(buf_y as *const GrainLut<BD::Entry> as *const GrainLut<i16>) };
+            let buf: &mut GrainLut<i16> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let buf_y: &GrainLut<i16> = FromBytes::ref_from(buf_y.as_bytes()).unwrap();
             let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
             generate_grain_uv_inner_16bpc(buf, buf_y, data, is_uv, is_subx, is_suby, bitdepth);
         }
