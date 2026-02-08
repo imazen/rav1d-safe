@@ -209,7 +209,9 @@ fn test_oob_panic_poisons() {
 }
 
 /// Panic while holding a mutable guard poisons the data structure.
+/// Requires `std` feature (poisoning uses `thread::panicking()`).
 #[test]
+#[cfg(feature = "std")]
 fn test_panic_during_mut_guard_poisons() {
     let dm = DisjointMut::new(vec![0u8; 100]);
 
