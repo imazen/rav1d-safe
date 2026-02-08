@@ -1,197 +1,121 @@
-# Progressive Safety Architecture - Implementation Summary
+# Safety Architecture Summary
 
-## What Was Done ✅
+## Status: All SIMD Modules Safe ✅
 
-### 1. Feature Dependency Chain Implemented
+All 20 `safe_simd/` modules enforce `deny(unsafe_code)` when `asm` is disabled.
+Zero `unsafe` blocks exist outside `#[cfg(feature = "asm")]` FFI wrappers.
 
-**Cargo.toml:**
+### Feature Dependency Chain
+
 ```toml
 [features]
-default = ["bitdepth_8", "bitdepth_16"]  # Changed: removed asm from default
+default = ["bitdepth_8", "bitdepth_16"]  # Safe-SIMD, no asm, no unsafe
 
-# Progressive safety levels:
-quite-safe = []                          # Level 1: Threading + sound abstractions
-unchecked = ["quite-safe"]               # Level 2: Unchecked slice access
-c-ffi = ["unchecked"]                    # Level 3: C FFI API
-asm = ["c-ffi"]                          # Level 4: Hand-written assembly
+unchecked = []               # Skip bounds checks (debug_assert only)
+c-ffi = ["unchecked"]        # C API (dav1d_* entry points)
+asm = ["c-ffi"]              # Hand-written assembly
 ```
 
-### 2. Crate-Level Safety Enforcement
+### Crate-Level Safety
 
 **src/lib.rs:**
 ```rust
-#![cfg_attr(not(feature = "quite-safe"), forbid(unsafe_code))]
+#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
 ```
 
-When `quite-safe` is disabled, the compiler enforces zero unsafe code.
-
-### 3. Documentation Updated
-
-**CLAUDE.md now includes:**
-- Safety level descriptions (0-4)
-- Feature dependency chain
-- Build commands for each level
-- Code structure guidelines
-- Audit guidance for reviewers
-- Migration checklist for modules
-
-## Safety Levels Explained
-
-### Level 0: Default (forbid_unsafe)
-```bash
-cargo build --no-default-features --features "bitdepth_8,bitdepth_16"
-```
-- ✅ `#![forbid(unsafe_code)]` enforced
-- ✅ Single-threaded (Rc/RefCell)
-- ✅ Bounds-checked slices
-- ⚠️ **NOT YET IMPLEMENTED** - requires Arc→Rc migration
-
-### Level 1: quite-safe
-```bash
-cargo build --features "quite-safe,bitdepth_8,bitdepth_16"
-```
-- ✅ Arc/Mutex/AtomicU32 allowed
-- ✅ Multi-threaded
-- ✅ Bounds-checked slices
-- ✅ **THIS IS THE CURRENT PRACTICAL DEFAULT**
-
-### Level 2: unchecked
-```bash
-cargo build --features "unchecked,bitdepth_8,bitdepth_16"
-```
-- ✅ Everything from quite-safe
-- ⚠️ Unchecked slice access (via pixel_access helpers)
-- ⚠️ debug_assert! still validates in debug builds
-
-### Level 3: c-ffi
-```bash
-cargo build --features "c-ffi,bitdepth_8,bitdepth_16"
-```
-- ✅ Everything from unchecked
-- ⚠️ `unsafe extern "C"` FFI functions
-- ⚠️ dav1d_* C API available
-
-### Level 4: asm
-```bash
-cargo build --features "asm,bitdepth_8,bitdepth_16"
-```
-- ✅ Everything from c-ffi
-- ⚠️ Hand-written x86_64/aarch64 assembly
-
-## What's NOT Yet Implemented ⚠️
-
-### Default forbid_unsafe Mode Doesn't Build
-
-**Problem:** Code currently uses Arc/Mutex unconditionally
-
-**Solution needed:**
+**Each safe_simd module:**
 ```rust
-// In src/internal.rs, src/lib.rs, etc.
-#[cfg(feature = "quite-safe")]
-use std::sync::{Arc, Mutex, AtomicU32};
-
-#[cfg(not(feature = "quite-safe"))]
-use std::{
-    rc::Rc as Arc,
-    cell::RefCell as Mutex,
-    // No AtomicU32 equivalent for single-threaded
-};
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 ```
 
-**Work estimate:** ~1 week to conditionally compile threading code
+## Safe SIMD Architecture
 
-### Modules Not Yet Migrated
+### Archmage Token-Based Dispatch
 
-~20 safe_simd modules still need:
-1. Inner functions changed from raw pointers → slices
-2. `#![cfg_attr(not(feature = "quite-safe"), forbid(unsafe_code))]` added
-3. FFI wrappers gated with `#[cfg(feature = "c-ffi")]`
+```rust
+use archmage::prelude::*;
 
-## Next Steps
+// Entry point: #[arcane] adds #[target_feature], makes intrinsics safe
+#[arcane]
+fn transform(_token: Desktop64, dst: &mut [u8], coeff: &mut [i16]) {
+    let v = loadu_128!(&coeff_bytes[0..16]); // safe_unaligned_simd
+    let result = _mm_add_epi16(v, v);        // safe (Rust 1.93+ with target_feature)
+    storeu_128!(&mut dst_bytes[0..16], result);
+}
 
-### Option A: Implement forbid_unsafe Default
-1. Audit all Arc/Mutex/AtomicU32 usage
-2. Create single-threaded alternatives with Rc/RefCell
-3. Conditionally compile based on `quite-safe` feature
-4. Update Decoder to not spawn threads when quite-safe disabled
-5. Test default mode builds and passes tests
+// Runtime detection: Desktop64::summon() checks CPUID, cached ~1.3ns
+pub fn transform_dispatch(dst: &mut [u8], coeff: &mut [i16]) -> bool {
+    let Some(token) = Desktop64::summon() else { return false };
+    transform(token, dst, coeff);
+    true
+}
+```
 
-**Estimate:** 5-7 days
+### Safe Load/Store Macros (pixel_access.rs)
 
-### Option B: Migrate SIMD Modules First
-1. Pick a module (e.g., mc.rs)
-2. Change inner functions to take slices
-3. Use pixel_access helpers
-4. Gate FFI wrappers with `#[cfg(feature = "c-ffi")]`
-5. Add `#![cfg_attr(not(feature = "quite-safe"), forbid(unsafe_code))]`
-6. Test in all safety levels
-7. Repeat for remaining ~19 modules
+| Macro | Size | Safe via |
+|-------|------|----------|
+| `loadu_256!` / `storeu_256!` | 256-bit | `safe_unaligned_simd` |
+| `loadu_128!` / `storeu_128!` | 128-bit | `safe_unaligned_simd` |
+| `loadi64!` / `storei64!` | 64-bit | value-type intrinsics |
+| `loadi32!` / `storei32!` | 32-bit | value-type intrinsics |
 
-**Estimate:** 2-5 days for all modules
+All macros: checked by default, unchecked with `unchecked` feature.
 
-### Option C: Do Both (Recommended Order)
+### FlexSlice for Hot Loops
 
-**Week 1:** Migrate SIMD modules to slices
-- Immediate benefit: better APIs, easier auditing
-- Reduces unsafe code surface area
-- Makes FFI boundary clear
+```rust
+use crate::src::safe_simd::pixel_access::Flex;
 
-**Week 2:** Implement forbid_unsafe default
-- Conditional threading compilation
-- Single-threaded safe alternatives
-- Complete the safety level architecture
+let c = coeff.flex();       // FlexSlice — [] syntax, zero overhead
+let mut d = dst.flex_mut(); // FlexSliceMut — mutable [] syntax
+d[off] = ((d[off] as i32 + c[idx] as i32).clamp(0, 255)) as u8;
+```
 
-## How to Audit the Safety Levels
+Verified identical assembly to both raw `[]` and `get_unchecked`.
 
-For code reviewers:
+## Module Safety Status
 
-1. **Check feature gates are correct:**
-   ```bash
-   rg "#\[cfg\(feature = \"quite-safe\"\)\]" | less
-   rg "#\[cfg\(feature = \"c-ffi\"\)\]" | less
-   ```
+| Module | unsafe (asm off) | Notes |
+|--------|-----------------|-------|
+| itx.rs | **0** | 85 arcane fns, all slice-based |
+| mc.rs | **0** | 29 rite fns converted to slices |
+| ipred.rs | **0** | 28 inner fns converted |
+| filmgrain.rs | **0** | Safe via zerocopy AsBytes/FromBytes |
+| cdef.rs | **0** | Padding via DisjointMut slice access |
+| loopfilter.rs | **0** | Dispatch fully safe |
+| looprestoration.rs | **0** | Wiener + SGR safe |
+| pal.rs | **0** | AVX2 pal_idx_finish |
+| refmvs.rs | **0** | splat_mv |
+| pixel_access.rs | **0** | SliceExt + FlexSlice |
+| itx_arm.rs | **0** | FFI correctly gated |
+| mc_arm.rs | **0** | FFI gated, NEON intrinsics |
+| ipred_arm.rs | **0** | FFI gated |
+| filmgrain_arm.rs | **0** | FFI gated |
+| cdef_arm.rs | **0** | FFI gated |
+| loopfilter_arm.rs | **0** | FFI gated |
+| looprestoration_arm.rs | **0** | FFI gated |
+| refmvs_arm.rs | **0** | FFI gated |
+| partial_simd.rs | **0** | 64-bit SIMD helpers |
+| mod.rs | **0** | Module declarations |
 
-2. **Verify default mode forbids unsafe:**
-   ```bash
-   cargo build --no-default-features --features "bitdepth_8"
-   # Should fail until Arc→Rc migration done
-   ```
-
-3. **Verify quite-safe allows only sound abstractions:**
-   ```bash
-   cargo build --features "quite-safe,bitdepth_8"
-   # Should only use Arc/Mutex/AtomicU32, no other unsafe
-   ```
-
-4. **Check FFI wrappers are gated:**
-   ```bash
-   rg "unsafe extern \"C\"" | grep -v "#\[cfg\(feature"
-   # Should return no results (all FFI should be gated)
-   ```
-
-## Benefits of This Architecture
-
-1. ✅ **Auditable** - Clear separation of safety levels
-2. ✅ **Progressive** - Opt-in to less safety for more performance
-3. ✅ **Testable** - Can test all levels independently
-4. ✅ **Fuzzing-friendly** - Default mode ideal for fuzzing
-5. ✅ **Trust minimization** - Use only the features you need
-
-## Current Build Status
+## Build Verification
 
 ```bash
-# Does NOT work yet (needs Arc→Rc migration):
+# Default (safe-SIMD, deny(unsafe_code)):
 cargo build --no-default-features --features "bitdepth_8,bitdepth_16"
 
-# Works now (practical default):
-cargo build --features "quite-safe,bitdepth_8,bitdepth_16"
+# With unchecked bounds elision:
+cargo build --no-default-features --features "unchecked,bitdepth_8,bitdepth_16"
 
-# Works (adds unchecked slice access):
-cargo build --features "unchecked,bitdepth_8,bitdepth_16"
+# With C FFI:
+cargo build --no-default-features --features "c-ffi,bitdepth_8,bitdepth_16"
 
-# Works (adds C FFI):
-cargo build --features "c-ffi,bitdepth_8,bitdepth_16"
-
-# Works (adds asm):
+# With hand-written assembly:
 cargo build --features "asm,bitdepth_8,bitdepth_16"
+
+# Cross-compile check (aarch64):
+cargo check --no-default-features --features "bitdepth_8,bitdepth_16" --target aarch64-unknown-linux-gnu
 ```
+
+All builds pass. 12/12 tests pass in safe-SIMD mode.
