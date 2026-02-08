@@ -63,6 +63,42 @@ use std::thread;
 use std::thread::JoinHandle;
 #[cfg(feature = "c-ffi")]
 use std::time::Duration;
+#[cfg(feature = "c-ffi")]
+use std::ffi::c_char;
+#[cfg(feature = "c-ffi")]
+use std::ffi::c_uint;
+#[cfg(feature = "c-ffi")]
+use std::ptr;
+#[cfg(feature = "c-ffi")]
+use std::ptr::NonNull;
+#[cfg(feature = "c-ffi")]
+use std::slice;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::common::Rav1dDataProps;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::dav1d::Dav1dContext;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::dav1d::Dav1dSettings;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::data::Dav1dData;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::picture::Dav1dPicture;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::headers::Dav1dSequenceHeader;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::dav1d::Dav1dEventFlags;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::common::Dav1dDataProps;
+#[cfg(feature = "c-ffi")]
+use crate::src::error::Dav1dResult;
+#[cfg(feature = "c-ffi")]
+use crate::src::c_box::FnFree;
+#[cfg(feature = "c-ffi")]
+use crate::src::c_arc::RawArc;
+#[cfg(feature = "c-ffi")]
+use crate::src::obu::rav1d_parse_sequence_header;
+#[cfg(feature = "c-ffi")]
+use to_method::To as _;
 
 #[cold]
 fn init_internal() {
