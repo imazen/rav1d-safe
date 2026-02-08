@@ -8,6 +8,8 @@ license = "BSD-2-Clause"
 
 [features]
 default = []
+# Skip runtime overlap checking. The caller must ensure all borrows are disjoint.
+unchecked = []
 
 [dependencies]
 parking_lot = "0.12.2"

@@ -114,9 +114,10 @@ Benchmarked on x86_64 (AVX2), single-threaded, 500 iterations via `examples/prof
 | Build | kodim03 8bpc (768x512) | colors_hdr 16bpc |
 |-------|------------------------|------------------|
 | ASM (hand-written assembly) | 6.8 ms/frame | 1.9 ms/frame |
-| Safe-SIMD (this crate, default) | 22.9 ms/frame | 2.4 ms/frame |
+| Safe-SIMD (default, fully checked) | 22.9 ms/frame | 2.4 ms/frame |
+| Safe-SIMD + `unchecked` feature | 15.2 ms/frame | 2.0 ms/frame |
 
-The 16bpc path is near-parity. The 8bpc gap comes from DisjointMut borrow-tracking overhead per SIMD block — the safety abstraction that enforces exclusive mutable access at runtime. The SIMD intrinsics themselves compile to identical instructions.
+The 16bpc path is near-parity with `unchecked`. The 8bpc gap is partly DisjointMut borrow-tracking overhead (34% of safe-SIMD time) and partly function call / inlining differences vs hand-written assembly. The `unchecked` feature disables both DisjointMut runtime tracking and slice bounds checks.
 
 ## Building
 

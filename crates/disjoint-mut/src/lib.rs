@@ -98,7 +98,10 @@ impl<T: AsMutPtr> DisjointMut<T> {
     pub const fn new(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
+            #[cfg(not(feature = "unchecked"))]
             tracker: Some(checked::BorrowTracker::new()),
+            #[cfg(feature = "unchecked")]
+            tracker: None,
         }
     }
 
