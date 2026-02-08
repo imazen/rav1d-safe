@@ -221,12 +221,13 @@ fn loop_filter_core<BD: BitDepth>(
 // SUPERBLOCK FILTER IMPLEMENTATIONS
 // ============================================================================
 
-#[allow(unsafe_code)]
 fn lpf_h_sb_inner<BD: BitDepth, const YUV: usize>(
-    dst: *mut BD::Pixel,
+    buf: &mut [BD::Pixel],
+    dst_base: usize,
     stride: isize,
     mask: &[u32; 3],
-    lvl_ptr: *const [u8; 4],
+    lvl_data: &[u8],
+    lvl_offset: usize,
     _b4_stride: isize,
     lut: &Av1FilterLUT,
     w: i32,
@@ -234,30 +235,9 @@ fn lpf_h_sb_inner<BD: BitDepth, const YUV: usize>(
 ) {
     let vmask = [mask[0], mask[1], mask[2]];
 
-    // Create a slice encompassing the accessible pixel region.
-    // For H filter: base = x*4, stridea=1 (across columns), strideb=stride (across rows).
-    // Access range: base + idx (0..3) + stride * offset (-7..=6).
-    // We need pixels from dst.offset(stride * -7) to dst.offset((w*4-1) + 3 + stride * 6).
-    // To avoid computing exact bounds, we use the pointer as a base with a large enough slice.
-    // The negative stride offsets mean we need to start 7*|stride| pixels before dst.
-    let abs_stride = stride.unsigned_abs();
-    // Total rows accessed: 7 before + 1 at center + 6 after = 14 rows
-    // Total columns: w*4 + 3 (for the 4 iterations of stridea=1)
-    let cols = w as usize * 4 + 3;
-    let slice_start_offset = 7 * abs_stride; // how far back from dst the slice starts
-    let slice_len = slice_start_offset + cols + 6 * abs_stride;
-    // SAFETY: The caller guarantees dst points into a valid pixel buffer with sufficient
-    // extent in both directions for the filter's access pattern.
-    let buf = unsafe {
-        let start = dst.offset(-(7 * stride));
-        core::slice::from_raw_parts_mut(start, slice_len)
-    };
-    // base_idx offset: dst is at index slice_start_offset within buf
-    let dst_base = slice_start_offset;
-
     for x in 0..w as usize {
-        // SAFETY: lvl_ptr points to a valid array of [u8; 4] with at least w entries
-        let lvl = unsafe { &*lvl_ptr.add(x) };
+        let lvl_base = lvl_offset + x * 4;
+        let lvl = &lvl_data[lvl_base..lvl_base + 4];
 
         if lvl[0] == 0 && lvl[1] == 0 && lvl[2] == 0 && lvl[3] == 0 {
             continue;
@@ -295,12 +275,13 @@ fn lpf_h_sb_inner<BD: BitDepth, const YUV: usize>(
     }
 }
 
-#[allow(unsafe_code)]
 fn lpf_v_sb_inner<BD: BitDepth, const YUV: usize>(
-    dst: *mut BD::Pixel,
+    buf: &mut [BD::Pixel],
+    dst_base: usize,
     stride: isize,
     mask: &[u32; 3],
-    lvl_ptr: *const [u8; 4],
+    lvl_data: &[u8],
+    lvl_offset: usize,
     b4_stride: isize,
     lut: &Av1FilterLUT,
     w: i32,
@@ -309,26 +290,9 @@ fn lpf_v_sb_inner<BD: BitDepth, const YUV: usize>(
     let vmask = [mask[0], mask[1], mask[2]];
     let b4_stride_u = b4_stride as usize;
 
-    // For V filter: base = y*4*stride, stridea=stride (across rows), strideb=1 (across columns).
-    // Access range: base + idx*stride (idx 0..3) + offset (-7..=6).
-    // We need pixels from dst.offset(-7) to dst.offset((w-1)*4*stride + 3*stride + 6).
-    let abs_stride = stride.unsigned_abs();
-    // Total rows: (w-1)*4 + 3 + 1 = w*4 rows accessed via stridea
-    let rows = w as usize * 4;
-    // Columns: 7 before + 1 center + 6 after = 14
-    let slice_start_offset: usize = 7; // pixels before dst
-    let slice_len = slice_start_offset + (rows.saturating_sub(1)) * abs_stride + 7;
-    // SAFETY: The caller guarantees dst points into a valid pixel buffer with sufficient
-    // extent in both directions for the filter's access pattern.
-    let buf = unsafe {
-        let start = dst.offset(-7);
-        core::slice::from_raw_parts_mut(start, slice_len)
-    };
-    let dst_base = slice_start_offset;
-
     for y in 0..w as usize {
-        // SAFETY: lvl_ptr points to a valid array with sufficient stride-spaced entries
-        let lvl = unsafe { &*lvl_ptr.add(y * b4_stride_u) };
+        let lvl_base = lvl_offset + y * b4_stride_u * 4;
+        let lvl = &lvl_data[lvl_base..lvl_base + 4];
 
         if lvl[0] == 0 && lvl[1] == 0 && lvl[2] == 0 && lvl[3] == 0 {
             continue;
@@ -371,107 +335,99 @@ fn lpf_v_sb_inner<BD: BitDepth, const YUV: usize>(
 // ============================================================================
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn lpf_h_sb_y_8bpc_neon(
-    dst_ptr: *mut DynPixel,
+    _dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     mask: &[u32; 3],
-    lvl_ptr: *const [u8; 4],
+    _lvl_ptr: *const [u8; 4],
     b4_stride: ptrdiff_t,
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<PicOffset>,
-    _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
+    dst: *const FFISafe<PicOffset>,
+    lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     use crate::include::common::bitdepth::BitDepth8;
-    lpf_h_sb_inner::<BitDepth8, 0>(
-        dst_ptr as *mut u8,
-        stride as isize,
-        mask,
-        lvl_ptr,
-        b4_stride as isize,
-        &lut.0,
-        w,
-        bitdepth_max,
-    );
+    let dst = unsafe { *FFISafe::get(dst) };
+    let lvl = unsafe { *FFISafe::get(lvl) };
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BitDepth8>();
+    let buf: &mut [u8] = &mut dst_guard;
+    let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
+    let lvl_data: &[u8] = &lvl_guard;
+    lpf_h_sb_inner::<BitDepth8, 0>(buf, dst_base, stride as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn lpf_v_sb_y_8bpc_neon(
-    dst_ptr: *mut DynPixel,
+    _dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     mask: &[u32; 3],
-    lvl_ptr: *const [u8; 4],
+    _lvl_ptr: *const [u8; 4],
     b4_stride: ptrdiff_t,
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<PicOffset>,
-    _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
+    dst: *const FFISafe<PicOffset>,
+    lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     use crate::include::common::bitdepth::BitDepth8;
-    lpf_v_sb_inner::<BitDepth8, 0>(
-        dst_ptr as *mut u8,
-        stride as isize,
-        mask,
-        lvl_ptr,
-        b4_stride as isize,
-        &lut.0,
-        w,
-        bitdepth_max,
-    );
+    let dst = unsafe { *FFISafe::get(dst) };
+    let lvl = unsafe { *FFISafe::get(lvl) };
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BitDepth8>();
+    let buf: &mut [u8] = &mut dst_guard;
+    let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
+    let lvl_data: &[u8] = &lvl_guard;
+    lpf_v_sb_inner::<BitDepth8, 0>(buf, dst_base, stride as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_neon(
-    dst_ptr: *mut DynPixel,
+    _dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     mask: &[u32; 3],
-    lvl_ptr: *const [u8; 4],
+    _lvl_ptr: *const [u8; 4],
     b4_stride: ptrdiff_t,
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<PicOffset>,
-    _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
+    dst: *const FFISafe<PicOffset>,
+    lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     use crate::include::common::bitdepth::BitDepth8;
-    lpf_h_sb_inner::<BitDepth8, 1>(
-        dst_ptr as *mut u8,
-        stride as isize,
-        mask,
-        lvl_ptr,
-        b4_stride as isize,
-        &lut.0,
-        w,
-        bitdepth_max,
-    );
+    let dst = unsafe { *FFISafe::get(dst) };
+    let lvl = unsafe { *FFISafe::get(lvl) };
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BitDepth8>();
+    let buf: &mut [u8] = &mut dst_guard;
+    let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
+    let lvl_data: &[u8] = &lvl_guard;
+    lpf_h_sb_inner::<BitDepth8, 1>(buf, dst_base, stride as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_neon(
-    dst_ptr: *mut DynPixel,
+    _dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     mask: &[u32; 3],
-    lvl_ptr: *const [u8; 4],
+    _lvl_ptr: *const [u8; 4],
     b4_stride: ptrdiff_t,
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<PicOffset>,
-    _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
+    dst: *const FFISafe<PicOffset>,
+    lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     use crate::include::common::bitdepth::BitDepth8;
-    lpf_v_sb_inner::<BitDepth8, 1>(
-        dst_ptr as *mut u8,
-        stride as isize,
-        mask,
-        lvl_ptr,
-        b4_stride as isize,
-        &lut.0,
-        w,
-        bitdepth_max,
-    );
+    let dst = unsafe { *FFISafe::get(dst) };
+    let lvl = unsafe { *FFISafe::get(lvl) };
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BitDepth8>();
+    let buf: &mut [u8] = &mut dst_guard;
+    let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
+    let lvl_data: &[u8] = &lvl_guard;
+    lpf_v_sb_inner::<BitDepth8, 1>(buf, dst_base, stride as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
 }
 
 // ============================================================================
@@ -479,116 +435,103 @@ pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_neon(
 // ============================================================================
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn lpf_h_sb_y_16bpc_neon(
-    dst_ptr: *mut DynPixel,
+    _dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     mask: &[u32; 3],
-    lvl_ptr: *const [u8; 4],
+    _lvl_ptr: *const [u8; 4],
     b4_stride: ptrdiff_t,
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<PicOffset>,
-    _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
+    dst: *const FFISafe<PicOffset>,
+    lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     use crate::include::common::bitdepth::BitDepth16;
-    let stride_u16 = (stride / 2) as isize;
-    lpf_h_sb_inner::<BitDepth16, 0>(
-        dst_ptr as *mut u16,
-        stride_u16,
-        mask,
-        lvl_ptr,
-        b4_stride as isize,
-        &lut.0,
-        w,
-        bitdepth_max,
-    );
+    let dst = unsafe { *FFISafe::get(dst) };
+    let lvl = unsafe { *FFISafe::get(lvl) };
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BitDepth16>();
+    let buf: &mut [u16] = &mut dst_guard;
+    let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
+    let lvl_data: &[u8] = &lvl_guard;
+    lpf_h_sb_inner::<BitDepth16, 0>(buf, dst_base, (stride / 2) as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn lpf_v_sb_y_16bpc_neon(
-    dst_ptr: *mut DynPixel,
+    _dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     mask: &[u32; 3],
-    lvl_ptr: *const [u8; 4],
+    _lvl_ptr: *const [u8; 4],
     b4_stride: ptrdiff_t,
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<PicOffset>,
-    _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
+    dst: *const FFISafe<PicOffset>,
+    lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     use crate::include::common::bitdepth::BitDepth16;
-    let stride_u16 = (stride / 2) as isize;
-    lpf_v_sb_inner::<BitDepth16, 0>(
-        dst_ptr as *mut u16,
-        stride_u16,
-        mask,
-        lvl_ptr,
-        b4_stride as isize,
-        &lut.0,
-        w,
-        bitdepth_max,
-    );
+    let dst = unsafe { *FFISafe::get(dst) };
+    let lvl = unsafe { *FFISafe::get(lvl) };
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BitDepth16>();
+    let buf: &mut [u16] = &mut dst_guard;
+    let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
+    let lvl_data: &[u8] = &lvl_guard;
+    lpf_v_sb_inner::<BitDepth16, 0>(buf, dst_base, (stride / 2) as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_neon(
-    dst_ptr: *mut DynPixel,
+    _dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     mask: &[u32; 3],
-    lvl_ptr: *const [u8; 4],
+    _lvl_ptr: *const [u8; 4],
     b4_stride: ptrdiff_t,
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<PicOffset>,
-    _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
+    dst: *const FFISafe<PicOffset>,
+    lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     use crate::include::common::bitdepth::BitDepth16;
-    let stride_u16 = (stride / 2) as isize;
-    lpf_h_sb_inner::<BitDepth16, 1>(
-        dst_ptr as *mut u16,
-        stride_u16,
-        mask,
-        lvl_ptr,
-        b4_stride as isize,
-        &lut.0,
-        w,
-        bitdepth_max,
-    );
+    let dst = unsafe { *FFISafe::get(dst) };
+    let lvl = unsafe { *FFISafe::get(lvl) };
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BitDepth16>();
+    let buf: &mut [u16] = &mut dst_guard;
+    let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
+    let lvl_data: &[u8] = &lvl_guard;
+    lpf_h_sb_inner::<BitDepth16, 1>(buf, dst_base, (stride / 2) as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn lpf_v_sb_uv_16bpc_neon(
-    dst_ptr: *mut DynPixel,
+    _dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     mask: &[u32; 3],
-    lvl_ptr: *const [u8; 4],
+    _lvl_ptr: *const [u8; 4],
     b4_stride: ptrdiff_t,
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<PicOffset>,
-    _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
+    dst: *const FFISafe<PicOffset>,
+    lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     use crate::include::common::bitdepth::BitDepth16;
-    let stride_u16 = (stride / 2) as isize;
-    lpf_v_sb_inner::<BitDepth16, 1>(
-        dst_ptr as *mut u16,
-        stride_u16,
-        mask,
-        lvl_ptr,
-        b4_stride as isize,
-        &lut.0,
-        w,
-        bitdepth_max,
-    );
+    let dst = unsafe { *FFISafe::get(dst) };
+    let lvl = unsafe { *FFISafe::get(lvl) };
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BitDepth16>();
+    let buf: &mut [u16] = &mut dst_guard;
+    let lvl_guard = lvl.data.slice::<_, _>((0.., ..lvl.data.len()));
+    let lvl_data: &[u8] = &lvl_guard;
+    lpf_v_sb_inner::<BitDepth16, 1>(buf, dst_base, (stride / 2) as isize, mask, lvl_data, lvl.offset, b4_stride as isize, &lut.0, w, bitdepth_max);
 }
 
 /// Safe dispatch for loopfilter_sb on aarch64. Returns true if SIMD was used.
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
 pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     dst: PicOffset,
     stride: ptrdiff_t,
@@ -601,59 +544,60 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     is_y: bool,
     is_v: bool,
 ) -> bool {
-    use crate::include::common::bitdepth::BPC;
-    use zerocopy::AsBytes;
-
-    // Loopfilter accesses pixels at negative offsets from the base pointer
-    // (filtering across block boundaries), so use full_guard_mut.
+    // Get full pixel buffer as a slice
     let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
-    let dst_ptr = {
-        let bytes = dst_guard.as_bytes_mut();
-        let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
-        &mut bytes[base_byte] as *mut u8 as *mut BD::Pixel
-    };
-    assert!(lvl.offset <= lvl.data.len());
-    // SAFETY: `lvl.offset` is in bounds, checked above.
-    let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };
-    let lvl_ptr = lvl_ptr.cast::<[u8; 4]>();
+    let buf: &mut [BD::Pixel] = &mut dst_guard;
+
+    // Get lvl data as a slice
+    let lvl_guard = lvl.data.slice_as::<_, u8>((0.., ..lvl.data.len()));
+    let lvl_data: &[u8] = &lvl_guard;
+    let lvl_offset = lvl.offset;
 
     // Call inner functions directly, bypassing FFI wrappers.
     match (is_y, is_v) {
         (true, false) => lpf_h_sb_inner::<BD, 0>(
-            dst_ptr,
+            buf,
+            dst_base,
             stride as isize,
             mask,
-            lvl_ptr,
+            lvl_data,
+            lvl_offset,
             b4_stride,
             &lut.0,
             w,
             bitdepth_max,
         ),
         (true, true) => lpf_v_sb_inner::<BD, 0>(
-            dst_ptr,
+            buf,
+            dst_base,
             stride as isize,
             mask,
-            lvl_ptr,
+            lvl_data,
+            lvl_offset,
             b4_stride,
             &lut.0,
             w,
             bitdepth_max,
         ),
         (false, false) => lpf_h_sb_inner::<BD, 1>(
-            dst_ptr,
+            buf,
+            dst_base,
             stride as isize,
             mask,
-            lvl_ptr,
+            lvl_data,
+            lvl_offset,
             b4_stride,
             &lut.0,
             w,
             bitdepth_max,
         ),
         (false, true) => lpf_v_sb_inner::<BD, 1>(
-            dst_ptr,
+            buf,
+            dst_base,
             stride as isize,
             mask,
-            lvl_ptr,
+            lvl_data,
+            lvl_offset,
             b4_stride,
             &lut.0,
             w,

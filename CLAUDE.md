@@ -61,6 +61,17 @@ Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with saf
 - Use raw pointer load/store intrinsics — use `loadu_256!` / `storeu_256!` macros instead
 - Block on any nightly-only feature for safety — everything works on stable Rust 1.93+
 
+## Feature Flag Safety Model
+
+**`forbid(unsafe_code)` is ON by default.** When `asm` or `c-ffi` are enabled, it drops to `deny` so modules can use `#[allow(unsafe_code)]` on specific items (FFI wrappers, etc).
+
+```
+Default (no asm, no c-ffi): #![forbid(unsafe_code)]  — NO exceptions, NO #[allow] overrides
+asm or c-ffi enabled:       #![deny(unsafe_code)]    — modules can #[allow] specific items
+```
+
+This means: **every `#[allow(unsafe_code)]` in the codebase MUST be gated behind `cfg(feature = "asm")` or `cfg(feature = "c-ffi")` or `cfg(target_arch)` that excludes the default build.** If an `#[allow(unsafe_code)]` item compiles in the default build, `forbid` will reject it.
+
 ## HARD RULES — STOP GOING IN CIRCLES
 
 **READ AND OBEY THESE EVERY TIME. DO NOT SKIP.**
