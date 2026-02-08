@@ -1090,12 +1090,107 @@ fn blend_v_8bpc_avx2_safe(
     let tmp = tmp.flex();
     let w = w as usize;
     let h = h as usize;
-    let obmc_mask = &dav1d_obmc_masks.0[h..];
+    // blend_v: mask indexed by column, offset by w, only process w*3/4 columns
+    let obmc_mask = &dav1d_obmc_masks.0[w..];
+    let w_eff = w * 3 >> 2;
 
     let rnd = _mm256_set1_epi16(32);
     let sixty_four = _mm256_set1_epi16(64);
 
     for row in 0..h {
+        let dst_row = &mut dst[row * dst_stride..][..w_eff];
+        // tmp uses full w stride even though we only write w_eff columns
+        let tmp_row = &tmp[row * w..][..w_eff];
+
+        let mut col = 0usize;
+
+        // Process 16 pixels at a time
+        while col + 16 <= w_eff {
+            let dst_bytes = loadu_128!(&dst_row[col..col + 16], [u8; 16]);
+            let tmp_bytes = loadu_128!(&tmp_row[col..col + 16], [u8; 16]);
+            let mask_bytes = loadu_128!(&obmc_mask[col..col + 16], [u8; 16]);
+
+            let dst_16 = _mm256_cvtepu8_epi16(dst_bytes);
+            let tmp_16 = _mm256_cvtepu8_epi16(tmp_bytes);
+            let mask_16 = _mm256_cvtepu8_epi16(mask_bytes);
+            let inv_mask = _mm256_sub_epi16(sixty_four, mask_16);
+
+            let term1 = _mm256_mullo_epi16(dst_16, inv_mask);
+            let term2 = _mm256_mullo_epi16(tmp_16, mask_16);
+            let sum = _mm256_add_epi16(_mm256_add_epi16(term1, term2), rnd);
+            let result_16 = _mm256_srli_epi16(sum, 6);
+
+            let result_8 = _mm256_packus_epi16(result_16, result_16);
+            let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
+
+            storeu_128!(
+                &mut dst_row[col..col + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(result_8)
+            );
+
+            col += 16;
+        }
+
+        // Handle remaining pixels
+        while col < w_eff {
+            let a = dst_row[col] as u32;
+            let b = tmp_row[col] as u32;
+            let m = obmc_mask[col] as u32;
+            let val = (a * (64 - m) + b * m + 32) >> 6;
+            dst_row[col] = val as u8;
+            col += 1;
+        }
+    }
+}
+
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+pub unsafe extern "C" fn blend_v_8bpc_avx2(
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+    _dst: *const FFISafe<PicOffset>,
+) {
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
+    };
+    let tmp_slice = unsafe { std::slice::from_raw_parts(tmp as *const u8, (w * h) as usize) };
+    blend_v_8bpc_avx2_safe(
+        Desktop64::forge_token_dangerously(),
+        dst,
+        dst_stride as usize,
+        tmp_slice,
+        w,
+        h,
+    )
+}
+
+/// Horizontal blend (overlapped block motion compensation)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn blend_h_8bpc_avx2_safe(
+    _token: Desktop64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp: &[u8],
+    w: i32,
+    h: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
+    let w = w as usize;
+    let h = h as usize;
+    // blend_h: mask indexed by row, offset by h, only process h*3/4 rows
+    let obmc_mask = &dav1d_obmc_masks.0[h..];
+    let h_eff = h * 3 >> 2;
+
+    let rnd = _mm256_set1_epi16(32);
+    let sixty_four = _mm256_set1_epi16(64);
+
+    for row in 0..h_eff {
         let dst_row = &mut dst[row * dst_stride..][..w];
         let tmp_row = &tmp[row * w..][..w];
         let m = obmc_mask[row];
@@ -1143,96 +1238,6 @@ fn blend_v_8bpc_avx2_safe(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn blend_v_8bpc_avx2(
-    dst_ptr: *mut DynPixel,
-    dst_stride: isize,
-    tmp: *const [DynPixel; SCRATCH_LAP_LEN],
-    w: i32,
-    h: i32,
-    _dst: *const FFISafe<PicOffset>,
-) {
-    let dst = unsafe {
-        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
-    };
-    let tmp_slice = unsafe { std::slice::from_raw_parts(tmp as *const u8, (w * h) as usize) };
-    blend_v_8bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
-        dst,
-        dst_stride as usize,
-        tmp_slice,
-        w,
-        h,
-    )
-}
-
-/// Horizontal blend (overlapped block motion compensation)
-#[cfg(target_arch = "x86_64")]
-#[arcane]
-fn blend_h_8bpc_avx2_safe(
-    _token: Desktop64,
-    dst: &mut [u8],
-    dst_stride: usize,
-    tmp: &[u8],
-    w: i32,
-    h: i32,
-) {
-    let mut dst = dst.flex_mut();
-    let tmp = tmp.flex();
-    let w = w as usize;
-    let h = h as usize;
-    let obmc_mask = &dav1d_obmc_masks.0[w..];
-
-    let rnd = _mm256_set1_epi16(32);
-    let sixty_four = _mm256_set1_epi16(64);
-
-    for row in 0..h {
-        let dst_row = &mut dst[row * dst_stride..][..w];
-        let tmp_row = &tmp[row * w..][..w];
-
-        let mut col = 0usize;
-
-        // Process 16 pixels at a time
-        while col + 16 <= w {
-            let dst_bytes = loadu_128!(&dst_row[col..col + 16], [u8; 16]);
-            let tmp_bytes = loadu_128!(&tmp_row[col..col + 16], [u8; 16]);
-            let mask_bytes = loadu_128!(&obmc_mask[col..col + 16], [u8; 16]);
-
-            let dst_16 = _mm256_cvtepu8_epi16(dst_bytes);
-            let tmp_16 = _mm256_cvtepu8_epi16(tmp_bytes);
-            let mask_16 = _mm256_cvtepu8_epi16(mask_bytes);
-            let inv_mask = _mm256_sub_epi16(sixty_four, mask_16);
-
-            let term1 = _mm256_mullo_epi16(dst_16, inv_mask);
-            let term2 = _mm256_mullo_epi16(tmp_16, mask_16);
-            let sum = _mm256_add_epi16(_mm256_add_epi16(term1, term2), rnd);
-            let result_16 = _mm256_srli_epi16(sum, 6);
-
-            let result_8 = _mm256_packus_epi16(result_16, result_16);
-            let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
-
-            storeu_128!(
-                &mut dst_row[col..col + 16],
-                [u8; 16],
-                _mm256_castsi256_si128(result_8)
-            );
-
-            col += 16;
-        }
-
-        // Handle remaining pixels
-        while col < w {
-            let a = dst_row[col] as u32;
-            let b = tmp_row[col] as u32;
-            let m = obmc_mask[col] as u32;
-            let val = (a * (64 - m) + b * m + 32) >> 6;
-            dst_row[col] = val as u8;
-            col += 1;
-        }
-    }
-}
-
-#[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn blend_h_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1270,29 +1275,35 @@ fn blend_v_16bpc_avx2_safe(
     let tmp = tmp.flex();
     let w = w as usize;
     let h = h as usize;
-    let obmc_mask = &dav1d_obmc_masks.0[h..];
+    // blend_v: mask indexed by column, offset by w, only process w*3/4 columns
+    let obmc_mask = &dav1d_obmc_masks.0[w..];
+    let w_eff = w * 3 >> 2;
 
     let rnd = _mm256_set1_epi32(32);
     let sixty_four = _mm256_set1_epi32(64);
 
     for row in 0..h {
-        let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
+        let dst_row_bytes = &mut dst[row * dst_stride..][..w_eff * 2];
         let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
-        let tmp_row_bytes = &tmp[row * w * 2..][..w * 2];
+        // tmp uses full w stride
+        let tmp_row_bytes = &tmp[row * w * 2..][..w_eff * 2];
         let tmp_row: &[u16] = <u16 as zerocopy::FromBytes>::slice_from(tmp_row_bytes).unwrap();
-        let m = obmc_mask[row] as u32;
-
-        let mask_32 = _mm256_set1_epi32(m as i32);
-        let inv_mask = _mm256_sub_epi32(sixty_four, mask_32);
 
         let mut col = 0usize;
 
         // Process 8 pixels at a time with 32-bit arithmetic
-        while col + 8 <= w {
+        while col + 8 <= w_eff {
             let dst_16 = loadu_128!(&dst_row[col..col + 8], [u16; 8]);
             let tmp_16 = loadu_128!(&tmp_row[col..col + 8], [u16; 8]);
             let dst_32 = _mm256_cvtepu16_epi32(dst_16);
             let tmp_32 = _mm256_cvtepu16_epi32(tmp_16);
+
+            // Load 8 bytes of mask via zero-padded 16-byte array
+            let mut mask_pad = [0u8; 16];
+            mask_pad[..8].copy_from_slice(&obmc_mask[col..col + 8]);
+            let mask_bytes = loadu_128!(&mask_pad);
+            let mask_32 = _mm256_cvtepu8_epi32(mask_bytes);
+            let inv_mask = _mm256_sub_epi32(sixty_four, mask_32);
 
             let term1 = _mm256_mullo_epi32(dst_32, inv_mask);
             let term2 = _mm256_mullo_epi32(tmp_32, mask_32);
@@ -1311,9 +1322,10 @@ fn blend_v_16bpc_avx2_safe(
         }
 
         // Handle remaining pixels with scalar
-        while col < w {
+        while col < w_eff {
             let a = dst_row[col] as u32;
             let b = tmp_row[col] as u32;
+            let m = obmc_mask[col] as u32;
             let val = (a * (64 - m) + b * m + 32) >> 6;
             dst_row[col] = val as u16;
             col += 1;
@@ -1360,16 +1372,22 @@ fn blend_h_16bpc_avx2_safe(
     let tmp = tmp.flex();
     let w = w as usize;
     let h = h as usize;
-    let obmc_mask = &dav1d_obmc_masks.0[w..];
+    // blend_h: mask indexed by row, offset by h, only process h*3/4 rows
+    let obmc_mask = &dav1d_obmc_masks.0[h..];
+    let h_eff = h * 3 >> 2;
 
     let rnd = _mm256_set1_epi32(32);
     let sixty_four = _mm256_set1_epi32(64);
 
-    for row in 0..h {
+    for row in 0..h_eff {
         let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
         let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
         let tmp_row_bytes = &tmp[row * w * 2..][..w * 2];
         let tmp_row: &[u16] = <u16 as zerocopy::FromBytes>::slice_from(tmp_row_bytes).unwrap();
+        let m = obmc_mask[row] as u32;
+
+        let mask_32 = _mm256_set1_epi32(m as i32);
+        let inv_mask = _mm256_sub_epi32(sixty_four, mask_32);
 
         let mut col = 0usize;
 
@@ -1379,13 +1397,6 @@ fn blend_h_16bpc_avx2_safe(
             let tmp_16 = loadu_128!(&tmp_row[col..col + 8], [u16; 8]);
             let dst_32 = _mm256_cvtepu16_epi32(dst_16);
             let tmp_32 = _mm256_cvtepu16_epi32(tmp_16);
-
-            // Load 8 bytes of mask via zero-padded 16-byte array
-            let mut mask_pad = [0u8; 16];
-            mask_pad[..8].copy_from_slice(&obmc_mask[col..col + 8]);
-            let mask_bytes = loadu_128!(&mask_pad);
-            let mask_32 = _mm256_cvtepu8_epi32(mask_bytes);
-            let inv_mask = _mm256_sub_epi32(sixty_four, mask_32);
 
             let term1 = _mm256_mullo_epi32(dst_32, inv_mask);
             let term2 = _mm256_mullo_epi32(tmp_32, mask_32);
@@ -1407,7 +1418,6 @@ fn blend_h_16bpc_avx2_safe(
         while col < w {
             let a = dst_row[col] as u32;
             let b = tmp_row[col] as u32;
-            let m = obmc_mask[col] as u32;
             let val = (a * (64 - m) + b * m + 32) >> 6;
             dst_row[col] = val as u16;
             col += 1;
