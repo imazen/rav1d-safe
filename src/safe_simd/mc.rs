@@ -1,6 +1,6 @@
 //! Safe SIMD implementations of motion compensation functions
 #![allow(deprecated)] // FFI wrappers need to forge tokens
-#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 //!
 //! These replace the hand-written assembly in src/x86/mc_*.asm
 //!

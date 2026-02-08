@@ -3,7 +3,7 @@
 //! splat_mv: Fills rows of RefMvsBlock arrays with a single value.
 //! Uses 16-byte NEON stores for the 12-byte RefMvsBlock struct (with R_PAD overflow).
 
-#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
 use core::arch::aarch64::*;

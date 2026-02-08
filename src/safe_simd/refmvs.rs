@@ -4,7 +4,7 @@
 //! The value is 12 bytes (RefMvsBlock) stored in a 16-byte aligned wrapper.
 //! Uses 16-byte stores at stride 12, with R_PAD ensuring safe overwrite.
 
-#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 use std::arch::x86_64::*;

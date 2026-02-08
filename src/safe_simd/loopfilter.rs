@@ -14,7 +14,7 @@
 //! is in `loopfilter_sb_dispatch` where raw pointers from PicOffset/DisjointMut
 //! are converted to slices. All inner functions are fully safe.
 
-#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 #![allow(unused_imports)]
 
 #[cfg(target_arch = "x86_64")]

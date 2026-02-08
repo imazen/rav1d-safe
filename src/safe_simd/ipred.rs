@@ -1,6 +1,6 @@
 //! Safe SIMD implementations of intra prediction functions
 #![allow(deprecated)] // FFI wrappers need to forge tokens
-#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 //!
 //! Replaces hand-written assembly with safe Rust intrinsics.
 //!

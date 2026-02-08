@@ -1,6 +1,6 @@
 //! Safe SIMD implementations of film grain synthesis functions
 #![allow(deprecated)] // FFI wrappers need to forge tokens
-#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 //!
 //! Film grain synthesis adds artificial grain to decoded video to match
 //! the artistic intent of the original content.

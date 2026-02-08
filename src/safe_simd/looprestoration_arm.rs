@@ -2,7 +2,7 @@
 //!
 //! Wiener filter and SGR (Self-Guided Restoration) implementations for ARM.
 
-#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
 
