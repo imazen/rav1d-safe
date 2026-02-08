@@ -27,19 +27,21 @@ Pick the next unfinished module and port it. Priority order:
 
 Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with safe Rust intrinsics.
 
-## MANDATORY: Do NOT block on safe_intrinsics
+## MANDATORY: Safe intrinsics strategy
 
-**DO NOT pursue a path that requires Rust's `safe_intrinsics` feature or any nightly-only feature to achieve `forbid(unsafe_code)` in SIMD modules.**
+**Rust 1.93+ made value-type SIMD intrinsics safe.** Computation intrinsics (`_mm256_add_epi32`, `_mm256_shuffle_epi8`, etc.) are now safe functions — no `unsafe` needed.
 
-The `safe_intrinsics` feature is unstable, has no stabilization timeline, and would block the entire safety story on upstream Rust. Instead:
+**Two things still require wrappers:**
 
-- **Use `safe_unaligned_simd` crate** — provides safe wrappers for load/store intrinsics TODAY on stable Rust
-- **Use `archmage` `#[arcane]`** — makes computation intrinsics (add, sub, shuffle, etc.) safe via token-based dispatch
-- **Use `loadu_256!` / `storeu_256!` macros** — switch between safe (bounds-checked) and unchecked (raw pointer) via feature flag
-- **Gate FFI wrappers behind `feature = "asm"`** — so they don't pollute the default safe build
-- **Refactor dispatch to call `_inner`/`_impl` directly** — bypass extern "C" FFI wrappers in non-asm mode
+1. **Pointer intrinsics (load/store)** — `_mm256_loadu_si256` takes `*const __m256i`, which requires `unsafe`. Use `safe_unaligned_simd` crate which wraps these as safe functions taking `&[T; N]` references. Our `loadu_256!`/`storeu_256!` macros dispatch to these.
 
-The path to `forbid(unsafe_code)` is: slices in fn signatures → safe load/store macros → arcane computation → no raw pointers needed. This works TODAY without any nightly features.
+2. **Target feature dispatch** — intrinsics are only safe when called within a function annotated with `#[target_feature(enable = "avx2")]` (or equivalent). `archmage` handles this via token-based dispatch (`Desktop64::summon()`, `#[arcane]`), so we **never manually write `is_x86_feature_detected!()` checks or `#[target_feature]` annotations on our functions**.
+
+**Do NOT:**
+- Manually add `#[target_feature(enable = "...")]` to new functions — use `#[arcane]` instead
+- Manually call `is_x86_feature_detected!()` — use `Desktop64::summon()` / `CpuFlags` instead
+- Use raw pointer load/store intrinsics — use `loadu_256!` / `storeu_256!` macros instead
+- Block on any nightly-only feature for safety — everything works on stable Rust 1.93+
 
 ## Quick Commands
 
@@ -173,7 +175,7 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 **Module safety architecture (default build without asm/c-ffi on x86_64):**
 - Only **1 module** needs unconditional `#[allow(unsafe_code)]`: **safe_simd**
-  - ~2300 SIMD intrinsic calls — being eliminated via `safe_unaligned_simd` + `archmage` (NOT blocked on nightly `safe_intrinsics`)
+  - Remaining unsafe: pointer load/store intrinsics (use `safe_unaligned_simd` + macros to eliminate) and FFI wrappers (gate behind `feature = "asm"`)
 - 2 modules conditionally allow unsafe by architecture:
   - refmvs: `cfg_attr(feature = "asm", allow(unsafe_code))` — extern C wrappers gated behind asm
   - msac: `cfg_attr(any(asm, aarch64), allow(unsafe_code))` — NEON intrinsics on aarch64 only
