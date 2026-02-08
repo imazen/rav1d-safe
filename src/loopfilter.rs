@@ -1,10 +1,9 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::Align16;
 use crate::src::cpu::CpuFlags;
 use crate::src::disjoint_mut::DisjointMut;
@@ -25,6 +24,9 @@ use strum::FromRepr;
 ))]
 use crate::include::common::bitdepth::bd_fn;
 
+#[cfg(not(feature = "asm"))]
+use crate::src::enum_map::DefaultValue;
+
 wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -34,39 +36,111 @@ wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
     lut: &Align16<Av1FilterLUT>,
     w: c_int,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) -> ());
 
+/// Direct dispatch for loopfilter_sb - bypasses function pointer table.
+///
+/// Selects optimal SIMD implementation at runtime based on CPU features.
+/// Used when `feature = "asm"` is disabled for zero-overhead direct calls.
+#[cfg(not(feature = "asm"))]
+fn loopfilter_sb_direct<BD: BitDepth>(
+    f: &Rav1dFrameData,
+    dst: PicOffset,
+    mask: &[u32; 3],
+    lvl: WithOffset<&DisjointMut<Vec<u8>>>,
+    w: usize,
+    is_y: bool,
+    is_v: bool,
+) {
+    let stride = dst.stride();
+    let b4_stride = f.b4_stride;
+    let lut = &f.lf.lim_lut;
+    let wh = w as c_int;
+    let bd_max = f.bitdepth_max;
+
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::loopfilter::loopfilter_sb_dispatch::<BD>(
+        dst, stride, mask, lvl, b4_stride, lut, wh, bd_max, is_y, is_v,
+    ) {
+        return;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::loopfilter_arm::loopfilter_sb_dispatch::<BD>(
+        dst, stride, mask, lvl, b4_stride, lut, wh, bd_max, is_y, is_v,
+    ) {
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    {
+        let b4_stride = b4_stride as usize;
+        let bd = BD::from_c(bd_max);
+        match (is_y, is_v) {
+            (true, false) => loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::Y as usize }>(
+                dst, mask, lvl, b4_stride, lut, wh, bd,
+            ),
+            (true, true) => loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::Y as usize }>(
+                dst, mask, lvl, b4_stride, lut, wh, bd,
+            ),
+            (false, false) => {
+                loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::UV as usize }>(
+                    dst, mask, lvl, b4_stride, lut, wh, bd,
+                )
+            }
+            (false, true) => {
+                loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::UV as usize }>(
+                    dst, mask, lvl, b4_stride, lut, wh, bd,
+                )
+            }
+        }
+    }
+}
+
 impl loopfilter_sb::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         f: &Rav1dFrameData,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         mask: &[u32; 3],
         lvl: WithOffset<&DisjointMut<Vec<u8>>>,
         w: usize,
+        is_y: bool,
+        is_v: bool,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let stride = dst.stride();
-        assert!(lvl.offset <= lvl.data.len());
-        // SAFETY: `lvl.offset` is in bounds, just checked above.
-        let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };
-        let lvl_ptr = lvl_ptr.cast::<[u8; 4]>();
-        let b4_stride = f.b4_stride;
-        let lut = &f.lf.lim_lut;
-        let w = w as c_int;
-        let bd = f.bitdepth_max;
-        let dst = FFISafe::new(&dst);
-        let lvl = FFISafe::new(&lvl);
-        // SAFETY: Fallback `fn loop_filter_sb128_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst, lvl,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = (is_y, is_v);
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let stride = dst.stride();
+                assert!(lvl.offset <= lvl.data.len());
+                // SAFETY: `lvl.offset` is in bounds, just checked above.
+                let lvl_ptr = unsafe { lvl.data.as_mut_ptr().add(lvl.offset) };
+                let lvl_ptr = lvl_ptr.cast::<[u8; 4]>();
+                let b4_stride = f.b4_stride;
+                let lut = &f.lf.lim_lut;
+                let w = w as c_int;
+                let bd = f.bitdepth_max;
+                let dst = FFISafe::new(&dst);
+                let lvl = FFISafe::new(&lvl);
+                // SAFETY: Fallback `fn loop_filter_sb128_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst, lvl,
+                    )
+                }
+            } else {
+                // Direct dispatch: no function pointers, no extern "C" ABI overhead
+                loopfilter_sb_direct::<BD>(f, dst, mask, lvl, w, is_y, is_v)
+            }
         }
     }
 
+    #[cfg(feature = "asm")]
     const fn default<BD: BitDepth, const HV: usize, const YUV: usize>() -> Self {
         Self::new(loop_filter_sb128_c_erased::<BD, { HV }, { YUV }>)
     }
@@ -88,7 +162,7 @@ pub struct Rav1dLoopFilterDSPContext {
 
 #[inline(never)]
 fn loop_filter<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     e: u8,
     i: u8,
     h: u8,
@@ -288,7 +362,7 @@ enum YUV {
 }
 
 fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
-    mut dst: Rav1dPictureDataComponentOffset,
+    mut dst: PicOffset,
     vmask: &[u32; 3],
     mut lvl: WithOffset<&DisjointMut<Vec<u8>>>,
     b4_stride: usize,
@@ -357,6 +431,7 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
 /// # Safety
 ///
 /// Must be called by [`loopfilter_sb::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, const YUV: usize>(
     _dst_ptr: *mut DynPixel,
@@ -367,7 +442,7 @@ unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, c
     lut: &Align16<Av1FilterLUT>,
     wh: c_int,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     lvl: *const FFISafe<WithOffset<&DisjointMut<Vec<u8>>>>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `loopfilter_sb::Fn::call`.
@@ -381,19 +456,36 @@ unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, c
 
 impl Rav1dLoopFilterDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
-        use HV::*;
-        use YUV::*;
-        Self {
-            loop_filter_sb: LoopFilterYUVDSPContext {
-                y: LoopFilterHVDSPContext {
-                    h: loopfilter_sb::Fn::default::<BD, { H as _ }, { Y as _ }>(),
-                    v: loopfilter_sb::Fn::default::<BD, { V as _ }, { Y as _ }>(),
-                },
-                uv: LoopFilterHVDSPContext {
-                    h: loopfilter_sb::Fn::default::<BD, { H as _ }, { UV as _ }>(),
-                    v: loopfilter_sb::Fn::default::<BD, { V as _ }, { UV as _ }>(),
-                },
-            },
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                use HV::*;
+                use YUV::*;
+                Self {
+                    loop_filter_sb: LoopFilterYUVDSPContext {
+                        y: LoopFilterHVDSPContext {
+                            h: loopfilter_sb::Fn::default::<BD, { H as _ }, { Y as _ }>(),
+                            v: loopfilter_sb::Fn::default::<BD, { V as _ }, { Y as _ }>(),
+                        },
+                        uv: LoopFilterHVDSPContext {
+                            h: loopfilter_sb::Fn::default::<BD, { H as _ }, { UV as _ }>(),
+                            v: loopfilter_sb::Fn::default::<BD, { V as _ }, { UV as _ }>(),
+                        },
+                    },
+                }
+            } else {
+                Self {
+                    loop_filter_sb: LoopFilterYUVDSPContext {
+                        y: LoopFilterHVDSPContext {
+                            h: loopfilter_sb::Fn::DEFAULT,
+                            v: loopfilter_sb::Fn::DEFAULT,
+                        },
+                        uv: LoopFilterHVDSPContext {
+                            h: loopfilter_sb::Fn::DEFAULT,
+                            v: loopfilter_sb::Fn::DEFAULT,
+                        },
+                    },
+                }
+            }
         }
     }
 
@@ -452,58 +544,6 @@ impl Rav1dLoopFilterDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-    #[inline(always)]
-    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::loopfilter as safe_lpf;
-
-        if !flags.contains(CpuFlags::AVX2) {
-            return self;
-        }
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.loop_filter_sb.y.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_y_8bpc_avx2);
-                self.loop_filter_sb.y.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_y_8bpc_avx2);
-                self.loop_filter_sb.uv.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_uv_8bpc_avx2);
-                self.loop_filter_sb.uv.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_uv_8bpc_avx2);
-            }
-            BPC::BPC16 => {
-                self.loop_filter_sb.y.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_y_16bpc_avx2);
-                self.loop_filter_sb.y.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_y_16bpc_avx2);
-                self.loop_filter_sb.uv.h = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_h_sb_uv_16bpc_avx2);
-                self.loop_filter_sb.uv.v = loopfilter_sb::decl_fn_safe!(safe_lpf::lpf_v_sb_uv_16bpc_avx2);
-            }
-        }
-
-        self
-    }
-
-    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-    #[inline(always)]
-    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::loopfilter_arm as safe_lpf;
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.loop_filter_sb.y.h = loopfilter_sb::Fn::new(safe_lpf::lpf_h_sb_y_8bpc_neon);
-                self.loop_filter_sb.y.v = loopfilter_sb::Fn::new(safe_lpf::lpf_v_sb_y_8bpc_neon);
-                self.loop_filter_sb.uv.h = loopfilter_sb::Fn::new(safe_lpf::lpf_h_sb_uv_8bpc_neon);
-                self.loop_filter_sb.uv.v = loopfilter_sb::Fn::new(safe_lpf::lpf_v_sb_uv_8bpc_neon);
-            }
-            BPC::BPC16 => {
-                self.loop_filter_sb.y.h = loopfilter_sb::Fn::new(safe_lpf::lpf_h_sb_y_16bpc_neon);
-                self.loop_filter_sb.y.v = loopfilter_sb::Fn::new(safe_lpf::lpf_v_sb_y_16bpc_neon);
-                self.loop_filter_sb.uv.h = loopfilter_sb::Fn::new(safe_lpf::lpf_h_sb_uv_16bpc_neon);
-                self.loop_filter_sb.uv.v = loopfilter_sb::Fn::new(safe_lpf::lpf_v_sb_uv_16bpc_neon);
-            }
-        }
-
-        self
-    }
-
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -516,16 +556,6 @@ impl Rav1dLoopFilterDSPContext {
             {
                 return self.init_arm::<BD>(flags);
             }
-        }
-
-        #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-        {
-            return self.init_x86_safe_simd::<BD>(flags);
-        }
-
-        #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-        {
-            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.

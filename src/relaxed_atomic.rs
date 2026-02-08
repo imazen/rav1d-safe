@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use atomig::Atom;
 use atomig::Atomic;
 use std::sync::atomic::Ordering;

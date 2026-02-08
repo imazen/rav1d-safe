@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use std::any::type_name;
 use std::process::abort;
 

@@ -1,12 +1,11 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::bitdepth::LeftPixelRow2px;
 use crate::include::common::intops::apply_sign;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::cpu::CpuFlags;
 use crate::src::disjoint_mut::DisjointMut;
@@ -21,6 +20,7 @@ use libc::ptrdiff_t;
 use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
+#[cfg(feature = "asm")]
 use std::ptr;
 
 #[cfg(all(
@@ -32,8 +32,15 @@ use crate::include::common::bitdepth::bd_fn;
 #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]
 use crate::include::common::bitdepth::{bpc_fn, BPC};
 
-#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+#[cfg(all(
+    not(feature = "asm"),
+    feature = "asm",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use crate::include::common::bitdepth::BPC;
+
+#[cfg(not(feature = "asm"))]
+use crate::src::enum_map::DefaultValue;
 
 bitflags! {
     #[repr(transparent)]
@@ -58,7 +65,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cdef(
     damping: c_int,
     edges: CdefEdgeFlags,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _top: *const FFISafe<CdefTop>,
     _bottom: *const FFISafe<CdefBottom>,
 ) -> ());
@@ -66,15 +73,95 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cdef(
 pub type CdefTop<'a> = WithOffset<&'a DisjointMut<AlignedVec64<u8>>>;
 pub type CdefBottom<'a> = WithOffset<PicOrBuf<'a, AlignedVec64<u8>>>;
 
+/// Direct dispatch for cdef filter - bypasses function pointer table.
+/// Selects optimal SIMD implementation at runtime based on CPU features.
+/// `variant`: 0 = 8x8 (444/luma), 1 = 4x8 (422), 2 = 4x4 (420)
+#[cfg(not(feature = "asm"))]
+fn cdef_direct<BD: BitDepth>(
+    variant: usize,
+    dst: PicOffset,
+    left: &[LeftPixelRow2px<BD::Pixel>; 8],
+    top: CdefTop,
+    bottom: CdefBottom,
+    pri_strength: c_int,
+    sec_strength: c_int,
+    dir: c_int,
+    damping: c_int,
+    edges: CdefEdgeFlags,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::cdef::cdef_filter_dispatch::<BD>(
+        variant,
+        dst,
+        left,
+        top,
+        bottom,
+        pri_strength,
+        sec_strength,
+        dir,
+        damping,
+        edges,
+        bd,
+    ) {
+        return;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::cdef_arm::cdef_filter_dispatch::<BD>(
+        variant,
+        dst,
+        left,
+        top,
+        bottom,
+        pri_strength,
+        sec_strength,
+        dir,
+        damping,
+        edges,
+        bd,
+    ) {
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    {
+        let (w, h) = match variant {
+            0 => (8, 8),
+            1 => (4, 8),
+            _ => (4, 4),
+        };
+        cdef_filter_block_rust(
+            dst,
+            left,
+            top,
+            bottom,
+            pri_strength,
+            sec_strength,
+            dir,
+            damping,
+            w,
+            h,
+            edges,
+            bd,
+        );
+    }
+}
+
 impl cdef::Fn {
     /// CDEF operates entirely on pre-filter data.
     /// If bottom/right edges are present (according to `edges`),
     /// then the pre-filter data is located in `dst`.
     /// However, the edge pixels above `dst` may be post-filter,
     /// so in order to get access to pre-filter top pixels, use `top`.
+    ///
+    /// `variant`: 0 = 8x8 (444/luma), 1 = 4x8 (422), 2 = 4x4 (420)
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        variant: usize,
+        dst: PicOffset,
         left: &[LeftPixelRow2px<BD::Pixel>; 8],
         top: CdefTop,
         bottom: CdefBottom,
@@ -85,35 +172,55 @@ impl cdef::Fn {
         edges: CdefEdgeFlags,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let left = ptr::from_ref(left).cast();
-        let top_ptr = top.as_ptr::<BD>().cast();
-        let bottom_ptr = bottom.wrapping_as_ptr::<BD>().cast();
-        let top = FFISafe::new(&top);
-        let bottom = FFISafe::new(&bottom);
-        let sec_strength = sec_strength as c_int;
-        let damping = damping as c_int;
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Rust fallback is safe, asm is assumed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr,
-                stride,
-                left,
-                top_ptr,
-                bottom_ptr,
-                pri_strength,
-                sec_strength,
-                dir,
-                damping,
-                edges,
-                bd,
-                dst,
-                top,
-                bottom,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = variant;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let stride = dst.stride();
+                let left = ptr::from_ref(left).cast();
+                let top_ptr = top.as_ptr::<BD>().cast();
+                let bottom_ptr = bottom.wrapping_as_ptr::<BD>().cast();
+                let top = FFISafe::new(&top);
+                let bottom = FFISafe::new(&bottom);
+                let sec_strength = sec_strength as c_int;
+                let damping = damping as c_int;
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Rust fallback is safe, asm is assumed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr,
+                        stride,
+                        left,
+                        top_ptr,
+                        bottom_ptr,
+                        pri_strength,
+                        sec_strength,
+                        dir,
+                        damping,
+                        edges,
+                        bd,
+                        dst,
+                        top,
+                        bottom,
+                    )
+                }
+            } else {
+                let _ = self;
+                cdef_direct::<BD>(
+                    variant,
+                    dst,
+                    left,
+                    top,
+                    bottom,
+                    pri_strength,
+                    sec_strength as c_int,
+                    dir,
+                    damping as c_int,
+                    edges,
+                    bd,
+                )
+            }
         }
     }
 }
@@ -123,22 +230,44 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cdef_dir(
     dst_stride: ptrdiff_t,
     variance: &mut c_uint,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> c_int);
 
+/// Direct dispatch for cdef_dir - bypasses function pointer table.
+/// Selects optimal SIMD implementation at runtime based on CPU features.
+#[cfg(not(feature = "asm"))]
+fn cdef_dir_direct<BD: BitDepth>(dst: PicOffset, variance: &mut c_uint, bd: BD) -> c_int {
+    #[cfg(target_arch = "x86_64")]
+    if let Some(dir) = crate::src::safe_simd::cdef::cdef_dir_dispatch::<BD>(dst, variance, bd) {
+        return dir;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    if let Some(dir) = crate::src::safe_simd::cdef_arm::cdef_dir_dispatch::<BD>(dst, variance, bd) {
+        return dir;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    cdef_find_dir_rust(dst, variance, bd)
+}
+
 impl cdef_dir::Fn {
-    pub fn call<BD: BitDepth>(
-        &self,
-        dst: Rav1dPictureDataComponentOffset,
-        variance: &mut c_uint,
-        bd: BD,
-    ) -> c_int {
-        let dst_ptr = dst.as_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn cdef_find_dir_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, variance, bd, dst) }
+    #[allow(dead_code)]
+    pub fn call<BD: BitDepth>(&self, dst: PicOffset, variance: &mut c_uint, bd: BD) -> c_int {
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn cdef_find_dir_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, variance, bd, dst) }
+            } else {
+                let _ = self;
+                cdef_dir_direct::<BD>(dst, variance, bd)
+            }
+        }
     }
 }
 
@@ -171,7 +300,7 @@ pub fn fill(tmp: &mut [i16], w: usize, h: usize) {
 
 fn padding<BD: BitDepth>(
     tmp: &mut [i16; TMP_STRIDE * TMP_STRIDE],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     left: &[LeftPixelRow2px<BD::Pixel>; 8],
     top: CdefTop,
     bottom: CdefBottom,
@@ -242,7 +371,7 @@ fn padding<BD: BitDepth>(
 
 #[inline(never)]
 fn cdef_filter_block_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     left: &[LeftPixelRow2px<BD::Pixel>; 8],
     top: CdefTop,
     bottom: CdefBottom,
@@ -375,6 +504,7 @@ fn cdef_filter_block_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`cdef::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn cdef_filter_block_c_erased<BD: BitDepth, const W: usize, const H: usize>(
     _dst_ptr: *mut DynPixel,
@@ -388,7 +518,7 @@ unsafe extern "C" fn cdef_filter_block_c_erased<BD: BitDepth, const W: usize, co
     damping: c_int,
     edges: CdefEdgeFlags,
     bitdepth_max: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
     top: *const FFISafe<CdefTop>,
     bottom: *const FFISafe<CdefBottom>,
 ) {
@@ -420,13 +550,14 @@ unsafe extern "C" fn cdef_filter_block_c_erased<BD: BitDepth, const W: usize, co
 /// # Safety
 ///
 /// Must be called by [`cdef_dir::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn cdef_find_dir_c_erased<BD: BitDepth>(
     _img_ptr: *const DynPixel,
     _stride: ptrdiff_t,
     variance: &mut c_uint,
     bitdepth_max: c_int,
-    img: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    img: *const FFISafe<PicOffset>,
 ) -> c_int {
     // SAFETY: Was passed as `FFISafe::new(_)` in `cdef_dir::Fn::call`.
     let img = *unsafe { FFISafe::get(img) };
@@ -434,11 +565,7 @@ unsafe extern "C" fn cdef_find_dir_c_erased<BD: BitDepth>(
     cdef_find_dir_rust(img, variance, bd)
 }
 
-fn cdef_find_dir_rust<BD: BitDepth>(
-    img: Rav1dPictureDataComponentOffset,
-    variance: &mut c_uint,
-    bd: BD,
-) -> c_int {
+fn cdef_find_dir_rust<BD: BitDepth>(img: PicOffset, variance: &mut c_uint, bd: BD) -> c_int {
     let bitdepth_min_8 = bd.bitdepth() - 8;
     let mut partial_sum_hv = [[0; 8]; 2];
     let mut partial_sum_diag = [[0; 15]; 2];
@@ -634,7 +761,7 @@ mod neon {
         damping: c_int,
         edges: CdefEdgeFlags,
         bitdepth_max: c_int,
-        _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        _dst: *const FFISafe<PicOffset>,
         _top: *const FFISafe<CdefTop>,
         _bottom: *const FFISafe<CdefBottom>,
     ) {
@@ -666,13 +793,22 @@ mod neon {
 
 impl Rav1dCdefDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
-        Self {
-            dir: cdef_dir::Fn::new(cdef_find_dir_c_erased::<BD>),
-            fb: [
-                cdef::Fn::new(cdef_filter_block_c_erased::<BD, 8, 8>),
-                cdef::Fn::new(cdef_filter_block_c_erased::<BD, 4, 8>),
-                cdef::Fn::new(cdef_filter_block_c_erased::<BD, 4, 4>),
-            ],
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                Self {
+                    dir: cdef_dir::Fn::new(cdef_find_dir_c_erased::<BD>),
+                    fb: [
+                        cdef::Fn::new(cdef_filter_block_c_erased::<BD, 8, 8>),
+                        cdef::Fn::new(cdef_filter_block_c_erased::<BD, 4, 8>),
+                        cdef::Fn::new(cdef_filter_block_c_erased::<BD, 4, 4>),
+                    ],
+                }
+            } else {
+                Self {
+                    dir: cdef_dir::Fn::DEFAULT,
+                    fb: [cdef::Fn::DEFAULT; 3],
+                }
+            }
         }
     }
 
@@ -749,57 +885,6 @@ impl Rav1dCdefDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-    #[inline(always)]
-    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
-        use crate::src::safe_simd::cdef as safe_cdef;
-
-        if !flags.contains(CpuFlags::AVX2) {
-            return self;
-        }
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.dir = cdef_dir::decl_fn_safe!(safe_cdef::cdef_find_dir_8bpc_avx2);
-                self.fb[0] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_8x8_8bpc_avx2);
-                self.fb[1] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x8_8bpc_avx2);
-                self.fb[2] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x4_8bpc_avx2);
-            }
-            BPC::BPC16 => {
-                self.dir = cdef_dir::decl_fn_safe!(safe_cdef::cdef_find_dir_16bpc_avx2);
-                self.fb[0] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_8x8_16bpc_avx2);
-                self.fb[1] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x8_16bpc_avx2);
-                self.fb[2] = cdef::decl_fn_safe!(safe_cdef::cdef_filter_4x4_16bpc_avx2);
-            }
-        }
-
-        self
-    }
-
-    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-    #[inline(always)]
-    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::cdef_arm as safe_cdef;
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.dir = cdef_dir::Fn::new(safe_cdef::cdef_find_dir_8bpc_neon);
-                self.fb[0] = cdef::Fn::new(safe_cdef::cdef_filter_8x8_8bpc_neon);
-                self.fb[1] = cdef::Fn::new(safe_cdef::cdef_filter_4x8_8bpc_neon);
-                self.fb[2] = cdef::Fn::new(safe_cdef::cdef_filter_4x4_8bpc_neon);
-            }
-            BPC::BPC16 => {
-                self.dir = cdef_dir::Fn::new(safe_cdef::cdef_find_dir_16bpc_neon);
-                self.fb[0] = cdef::Fn::new(safe_cdef::cdef_filter_8x8_16bpc_neon);
-                self.fb[1] = cdef::Fn::new(safe_cdef::cdef_filter_4x8_16bpc_neon);
-                self.fb[2] = cdef::Fn::new(safe_cdef::cdef_filter_4x4_16bpc_neon);
-            }
-        }
-
-        self
-    }
-
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -812,16 +897,6 @@ impl Rav1dCdefDSPContext {
             {
                 return self.init_arm::<BD>(flags);
             }
-        }
-
-        #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-        {
-            return self.init_x86_safe_simd::<BD>(flags);
-        }
-
-        #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-        {
-            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.

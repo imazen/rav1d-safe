@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 use strum::EnumCount;
 
 use crate::include::common::bitdepth::AsPrimitive;
@@ -5,7 +6,7 @@ use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynCoef;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::cpu::CpuFlags;
 use crate::src::enum_map::DefaultValue;
 use crate::src::ffi_safe::FFISafe;
@@ -49,6 +50,7 @@ use crate::src::strided::Strided as _;
 use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::cmp;
 use std::num::NonZeroUsize;
+#[cfg(feature = "asm")]
 use std::slice;
 
 #[cfg(all(
@@ -64,7 +66,7 @@ pub type Itx1dFn = fn(c: &mut [i32], stride: NonZeroUsize, min: i32, max: i32);
 
 #[inline(never)]
 fn inv_txfm_add<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     coeff: &mut [BD::Coef],
     eob: i32,
     w: usize,
@@ -160,7 +162,7 @@ fn inv_txfm_add<BD: BitDepth>(
 }
 
 fn inv_txfm_add_rust<const W: usize, const H: usize, const TYPE: TxfmType, BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     coeff: &mut [BD::Coef],
     eob: i32,
     bd: BD,
@@ -259,6 +261,7 @@ fn inv_txfm_add_rust<const W: usize, const H: usize, const TYPE: TxfmType, BD: B
 /// # Safety
 ///
 /// Must be called by [`itxfm::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn inv_txfm_add_c_erased<
     const W: usize,
@@ -272,7 +275,7 @@ unsafe extern "C" fn inv_txfm_add_c_erased<
     eob: i32,
     bitdepth_max: i32,
     coeff_len: u16,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `itxfm::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -282,6 +285,114 @@ unsafe extern "C" fn inv_txfm_add_c_erased<
     inv_txfm_add_rust::<W, H, TYPE, BD>(dst, coeff, eob, bd)
 }
 
+/// Scalar fallback for ITX when no function pointer table is available.
+/// Dispatches to `inv_txfm_add_rust` based on runtime (tx_size, tx_type).
+#[cfg(not(feature = "asm"))]
+fn itxfm_add_scalar_fallback<BD: BitDepth>(
+    tx_size: usize,
+    tx_type: TxfmType,
+    dst: PicOffset,
+    coeff: &mut [BD::Coef],
+    eob: i32,
+    bd: BD,
+) {
+    macro_rules! call {
+        ($w:literal, $h:literal, $ty:expr) => {
+            inv_txfm_add_rust::<$w, $h, { $ty }, BD>(dst, coeff, eob, bd)
+        };
+    }
+    macro_rules! dispatch_type_16 {
+        ($w:literal, $h:literal) => {
+            match tx_type {
+                DCT_DCT => call!($w, $h, DCT_DCT),
+                IDTX => call!($w, $h, IDTX),
+                DCT_ADST => call!($w, $h, DCT_ADST),
+                ADST_DCT => call!($w, $h, ADST_DCT),
+                ADST_ADST => call!($w, $h, ADST_ADST),
+                DCT_FLIPADST => call!($w, $h, DCT_FLIPADST),
+                FLIPADST_DCT => call!($w, $h, FLIPADST_DCT),
+                FLIPADST_FLIPADST => call!($w, $h, FLIPADST_FLIPADST),
+                ADST_FLIPADST => call!($w, $h, ADST_FLIPADST),
+                FLIPADST_ADST => call!($w, $h, FLIPADST_ADST),
+                H_DCT => call!($w, $h, H_DCT),
+                V_DCT => call!($w, $h, V_DCT),
+                H_ADST => call!($w, $h, H_ADST),
+                V_ADST => call!($w, $h, V_ADST),
+                H_FLIPADST => call!($w, $h, H_FLIPADST),
+                V_FLIPADST => call!($w, $h, V_FLIPADST),
+                _ => unreachable!(),
+            }
+        };
+    }
+    macro_rules! dispatch_type_12 {
+        ($w:literal, $h:literal) => {
+            match tx_type {
+                DCT_DCT => call!($w, $h, DCT_DCT),
+                IDTX => call!($w, $h, IDTX),
+                DCT_ADST => call!($w, $h, DCT_ADST),
+                ADST_DCT => call!($w, $h, ADST_DCT),
+                ADST_ADST => call!($w, $h, ADST_ADST),
+                DCT_FLIPADST => call!($w, $h, DCT_FLIPADST),
+                FLIPADST_DCT => call!($w, $h, FLIPADST_DCT),
+                FLIPADST_FLIPADST => call!($w, $h, FLIPADST_FLIPADST),
+                ADST_FLIPADST => call!($w, $h, ADST_FLIPADST),
+                FLIPADST_ADST => call!($w, $h, FLIPADST_ADST),
+                H_DCT => call!($w, $h, H_DCT),
+                V_DCT => call!($w, $h, V_DCT),
+                _ => unreachable!(),
+            }
+        };
+    }
+    macro_rules! dispatch_type_2 {
+        ($w:literal, $h:literal) => {
+            match tx_type {
+                DCT_DCT => call!($w, $h, DCT_DCT),
+                IDTX => call!($w, $h, IDTX),
+                _ => unreachable!(),
+            }
+        };
+    }
+    macro_rules! dispatch_type_1 {
+        ($w:literal, $h:literal) => {
+            match tx_type {
+                DCT_DCT => call!($w, $h, DCT_DCT),
+                _ => unreachable!(),
+            }
+        };
+    }
+
+    use TxfmSize::*;
+    match tx_size {
+        x if x == S4x4 as usize => match tx_type {
+            WHT_WHT => call!(4, 4, WHT_WHT),
+            _ => dispatch_type_16!(4, 4),
+        },
+        // itx16 sizes (W*H <= 8*16 or 16x16)
+        x if x == R4x8 as usize => dispatch_type_16!(4, 8),
+        x if x == R8x4 as usize => dispatch_type_16!(8, 4),
+        x if x == S8x8 as usize => dispatch_type_16!(8, 8),
+        x if x == R4x16 as usize => dispatch_type_16!(4, 16),
+        x if x == R16x4 as usize => dispatch_type_16!(16, 4),
+        x if x == R8x16 as usize => dispatch_type_16!(8, 16),
+        x if x == R16x8 as usize => dispatch_type_16!(16, 8),
+        x if x == S16x16 as usize => dispatch_type_16!(16, 16),
+        // itx12 sizes (max_wh == 32)
+        x if x == R8x32 as usize => dispatch_type_12!(8, 32),
+        x if x == R32x8 as usize => dispatch_type_12!(32, 8),
+        x if x == R16x32 as usize => dispatch_type_12!(16, 32),
+        x if x == R32x16 as usize => dispatch_type_12!(32, 16),
+        x if x == S32x32 as usize => dispatch_type_12!(32, 32),
+        // itx2 sizes (max_wh == 64)
+        x if x == R16x64 as usize => dispatch_type_2!(16, 64),
+        x if x == R64x16 as usize => dispatch_type_2!(64, 16),
+        x if x == R32x64 as usize => dispatch_type_2!(32, 64),
+        x if x == R64x32 as usize => dispatch_type_2!(64, 32),
+        // itx1 sizes
+        x if x == S64x64 as usize => dispatch_type_1!(64, 64),
+        _ => unreachable!(),
+    }
+}
+
 wrap_fn_ptr!(unsafe extern "C" fn itxfm(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -289,25 +400,47 @@ wrap_fn_ptr!(unsafe extern "C" fn itxfm(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
-
 impl itxfm::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        tx_size: usize,
+        tx_type: usize,
+        dst: PicOffset,
         coeff: &mut [BD::Coef],
         eob: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let coeff_len = coeff.len() as u16;
-        let coeff = coeff.as_mut_ptr().cast();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn inv_txfm_add_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, coeff, eob, bd, coeff_len, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = (tx_size, tx_type);
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let coeff_len = coeff.len() as u16;
+                let coeff_ptr = coeff.as_mut_ptr().cast();
+                let bd_c = bd.into_c();
+                let dst_ffi = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn inv_txfm_add_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) }
+            } else {
+                // Direct dispatch: no function pointers, no extern "C" ABI overhead.
+                let simd_handled = {
+                    #[cfg(target_arch = "x86_64")]
+                    { crate::src::safe_simd::itx::itxfm_add_dispatch::<BD>(tx_size, tx_type, dst, coeff, eob, bd) }
+                    #[cfg(target_arch = "aarch64")]
+                    { crate::src::safe_simd::itx_arm::itxfm_add_dispatch::<BD>(tx_size, tx_type, dst, coeff, eob, bd) }
+                    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+                    { let _ = (tx_size, tx_type, &dst, &coeff, eob, &bd); false }
+                };
+                if simd_handled {
+                    return;
+                }
+                // Scalar fallback
+                itxfm_add_scalar_fallback::<BD>(tx_size, tx_type as TxfmType, dst, coeff, eob, bd);
+            }
+        }
     }
 }
 
@@ -315,11 +448,7 @@ pub struct Rav1dInvTxfmDSPContext {
     pub itxfm_add: [[itxfm::Fn; N_TX_TYPES_PLUS_LL]; TxfmSize::COUNT],
 }
 
-fn inv_txfm_add_wht_wht_4x4_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    coeff: &mut [BD::Coef],
-    bd: BD,
-) {
+fn inv_txfm_add_wht_wht_4x4_rust<BD: BitDepth>(dst: PicOffset, coeff: &mut [BD::Coef], bd: BD) {
     const H: usize = 4;
     const W: usize = 4;
 
@@ -467,6 +596,7 @@ macro_rules! assign_itx16_fn {
 }
 
 impl Rav1dInvTxfmDSPContext {
+    #[cfg(feature = "asm")]
     const fn assign<const W: usize, const H: usize, BD: BitDepth>(mut self) -> Self {
         let tx = TxfmSize::from_wh(W, H) as usize;
 
@@ -517,31 +647,43 @@ impl Rav1dInvTxfmDSPContext {
     }
 
     pub const fn default<BD: BitDepth>() -> Self {
-        let mut c = Self {
-            itxfm_add: [[itxfm::Fn::DEFAULT; N_TX_TYPES_PLUS_LL]; TxfmSize::COUNT],
-        };
+        #[cfg(feature = "asm")]
+        {
+            let mut c = Self {
+                itxfm_add: [[itxfm::Fn::DEFAULT; N_TX_TYPES_PLUS_LL]; TxfmSize::COUNT],
+            };
 
-        c = c.assign::<4, 4, BD>();
-        c = c.assign::<4, 8, BD>();
-        c = c.assign::<4, 16, BD>();
-        c = c.assign::<8, 4, BD>();
-        c = c.assign::<8, 8, BD>();
-        c = c.assign::<8, 16, BD>();
-        c = c.assign::<8, 32, BD>();
-        c = c.assign::<16, 4, BD>();
-        c = c.assign::<16, 8, BD>();
-        c = c.assign::<16, 16, BD>();
-        c = c.assign::<16, 32, BD>();
-        c = c.assign::<16, 64, BD>();
-        c = c.assign::<32, 8, BD>();
-        c = c.assign::<32, 16, BD>();
-        c = c.assign::<32, 32, BD>();
-        c = c.assign::<32, 64, BD>();
-        c = c.assign::<64, 16, BD>();
-        c = c.assign::<64, 32, BD>();
-        c = c.assign::<64, 64, BD>();
+            c = c.assign::<4, 4, BD>();
+            c = c.assign::<4, 8, BD>();
+            c = c.assign::<4, 16, BD>();
+            c = c.assign::<8, 4, BD>();
+            c = c.assign::<8, 8, BD>();
+            c = c.assign::<8, 16, BD>();
+            c = c.assign::<8, 32, BD>();
+            c = c.assign::<16, 4, BD>();
+            c = c.assign::<16, 8, BD>();
+            c = c.assign::<16, 16, BD>();
+            c = c.assign::<16, 32, BD>();
+            c = c.assign::<16, 64, BD>();
+            c = c.assign::<32, 8, BD>();
+            c = c.assign::<32, 16, BD>();
+            c = c.assign::<32, 32, BD>();
+            c = c.assign::<32, 64, BD>();
+            c = c.assign::<64, 16, BD>();
+            c = c.assign::<64, 32, BD>();
+            c = c.assign::<64, 64, BD>();
 
-        c
+            c
+        }
+
+        // In the neither build (no asm, no c-ffi), function pointers are unit structs.
+        // Dispatch is handled entirely by safe_simd::itx::itxfm_add_dispatch.
+        #[cfg(not(feature = "asm"))]
+        {
+            Self {
+                itxfm_add: [[itxfm::Fn::DEFAULT; N_TX_TYPES_PLUS_LL]; TxfmSize::COUNT],
+            }
+        }
     }
 
     #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]
@@ -764,1000 +906,10 @@ impl Rav1dInvTxfmDSPContext {
 
     /// Safe SIMD initialization for x86_64 without hand-written assembly.
     /// Uses Rust intrinsics instead.
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-    #[inline(always)]
-    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::itx as safe_itx;
-
-        if !flags.contains(CpuFlags::AVX2) {
-            return self;
-        }
-
-        // Handle 8bpc and 16bpc separately
-        match BD::BPC {
-            BPC::BPC8 => return self.init_x86_safe_simd_8bpc(flags),
-            BPC::BPC16 => return self.init_x86_safe_simd_16bpc(flags),
-        }
-    }
 
     /// Safe SIMD 8bpc initialization
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-    #[inline(always)]
-    const fn init_x86_safe_simd_8bpc(mut self, _flags: CpuFlags) -> Self {
-        use crate::src::safe_simd::itx as safe_itx;
-
-        let tx_4x4 = TxfmSize::from_wh(4, 4) as usize;
-
-        // DCT_DCT 4x4
-        self.itxfm_add[tx_4x4][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x4_8bpc_avx2);
-
-        // WHT_WHT 4x4
-        self.itxfm_add[tx_4x4][WHT_WHT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_wht_wht_4x4_8bpc_avx2);
-
-        // IDTX 4x4
-        self.itxfm_add[tx_4x4][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x4_8bpc_avx2);
-        // ADST_DCT 4x4
-        self.itxfm_add[tx_4x4][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_4x4_8bpc_avx2);
-
-        // DCT_ADST 4x4
-        self.itxfm_add[tx_4x4][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_4x4_8bpc_avx2);
-
-        // ADST_ADST 4x4
-        self.itxfm_add[tx_4x4][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_4x4_8bpc_avx2);
-        // FLIPADST_DCT 4x4
-        self.itxfm_add[tx_4x4][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_4x4_8bpc_avx2);
-
-        // DCT_FLIPADST 4x4
-        self.itxfm_add[tx_4x4][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_4x4_8bpc_avx2);
-
-        // FLIPADST_FLIPADST 4x4
-        self.itxfm_add[tx_4x4][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2);
-
-        // ADST_FLIPADST 4x4
-        self.itxfm_add[tx_4x4][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_4x4_8bpc_avx2);
-
-        // FLIPADST_ADST 4x4
-        self.itxfm_add[tx_4x4][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_4x4_8bpc_avx2);
-        // V_ADST, H_ADST, V_FLIPADST, H_FLIPADST 4x4
-        self.itxfm_add[tx_4x4][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_4x4_8bpc_avx2);
-        self.itxfm_add[tx_4x4][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_4x4_8bpc_avx2);
-        self.itxfm_add[tx_4x4][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_4x4_8bpc_avx2);
-        self.itxfm_add[tx_4x4][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_4x4_8bpc_avx2);
-
-        // V_DCT, H_DCT 4x4
-        self.itxfm_add[tx_4x4][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_4x4_8bpc_avx2);
-        self.itxfm_add[tx_4x4][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_4x4_8bpc_avx2);
-        // 8x8 transforms
-        let tx_8x8 = TxfmSize::from_wh(8, 8) as usize;
-
-        // DCT_DCT 8x8
-        self.itxfm_add[tx_8x8][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x8_8bpc_avx2);
-
-        // IDTX 8x8
-        self.itxfm_add[tx_8x8][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x8_8bpc_avx2);
-        // ADST/FlipADST 8x8
-        self.itxfm_add[tx_8x8][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_8x8_8bpc_avx2);
-        // V/H ADST/DCT 8x8
-        self.itxfm_add[tx_8x8][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_8x8_8bpc_avx2);
-        self.itxfm_add[tx_8x8][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_8x8_8bpc_avx2);
-
-        // 16x16 transforms
-        let tx_16x16 = TxfmSize::from_wh(16, 16) as usize;
-
-        // DCT_DCT 16x16
-        self.itxfm_add[tx_16x16][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x16_8bpc_avx2);
-
-        // IDTX 16x16
-        self.itxfm_add[tx_16x16][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x16_8bpc_avx2);
-
-        // ADST/FlipADST combinations 16x16
-        self.itxfm_add[tx_16x16][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_16x16_8bpc_avx2);
-
-        // V/H transforms 16x16 (Identity + DCT/ADST/FlipADST)
-        self.itxfm_add[tx_16x16][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_16x16_8bpc_avx2);
-        self.itxfm_add[tx_16x16][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_16x16_8bpc_avx2);
-
-        // 32x32 transforms
-        let tx_32x32 = TxfmSize::from_wh(32, 32) as usize;
-
-        // DCT_DCT 32x32
-        self.itxfm_add[tx_32x32][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x32_8bpc_avx2);
-
-        // IDTX 32x32
-        self.itxfm_add[tx_32x32][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x32_8bpc_avx2);
-
-        // 64x64 transforms
-        let tx_64x64 = TxfmSize::from_wh(64, 64) as usize;
-
-        // DCT_DCT 64x64
-        self.itxfm_add[tx_64x64][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x64_8bpc_avx2);
-
-        // Rectangular transforms: 4x8, 8x4, 8x16, 16x8
-        let tx_4x8 = TxfmSize::from_wh(4, 8) as usize;
-        let tx_8x4 = TxfmSize::from_wh(8, 4) as usize;
-        let tx_8x16 = TxfmSize::from_wh(8, 16) as usize;
-        let tx_16x8 = TxfmSize::from_wh(16, 8) as usize;
-
-        // DCT_DCT 4x8
-        self.itxfm_add[tx_4x8][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x8_8bpc_avx2);
-        // DCT_DCT 8x4
-        self.itxfm_add[tx_8x4][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x4_8bpc_avx2);
-
-        // ADST/FLIPADST variants for 4x8
-        self.itxfm_add[tx_4x8][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_4x8_8bpc_avx2);
-        self.itxfm_add[tx_4x8][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_4x8_8bpc_avx2);
-        self.itxfm_add[tx_4x8][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_4x8_8bpc_avx2);
-        self.itxfm_add[tx_4x8][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_4x8_8bpc_avx2);
-        self.itxfm_add[tx_4x8][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_4x8_8bpc_avx2);
-        self.itxfm_add[tx_4x8][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2);
-        self.itxfm_add[tx_4x8][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_4x8_8bpc_avx2);
-        self.itxfm_add[tx_4x8][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_4x8_8bpc_avx2);
-
-        // ADST/FLIPADST variants for 8x4
-        self.itxfm_add[tx_8x4][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_8x4_8bpc_avx2);
-        self.itxfm_add[tx_8x4][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_8x4_8bpc_avx2);
-        self.itxfm_add[tx_8x4][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_8x4_8bpc_avx2);
-        self.itxfm_add[tx_8x4][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_8x4_8bpc_avx2);
-        self.itxfm_add[tx_8x4][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_8x4_8bpc_avx2);
-        self.itxfm_add[tx_8x4][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2);
-        self.itxfm_add[tx_8x4][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_8x4_8bpc_avx2);
-        self.itxfm_add[tx_8x4][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_8x4_8bpc_avx2);
-
-        // Identity transforms for 4x8 and 8x4
-        self.itxfm_add[tx_4x8][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x8_8bpc_avx2);
-        self.itxfm_add[tx_8x4][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x4_8bpc_avx2);
-        self.itxfm_add[tx_4x8][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_4x8_8bpc_avx2);
-        self.itxfm_add[tx_4x8][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_4x8_8bpc_avx2);
-        self.itxfm_add[tx_8x4][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_8x4_8bpc_avx2);
-        self.itxfm_add[tx_8x4][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_8x4_8bpc_avx2);
-        self.itxfm_add[tx_4x8][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_4x8_8bpc_avx2);
-        self.itxfm_add[tx_4x8][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_4x8_8bpc_avx2);
-        self.itxfm_add[tx_4x8][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_4x8_8bpc_avx2);
-        self.itxfm_add[tx_4x8][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_4x8_8bpc_avx2);
-        self.itxfm_add[tx_8x4][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_8x4_8bpc_avx2);
-        self.itxfm_add[tx_8x4][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_8x4_8bpc_avx2);
-        self.itxfm_add[tx_8x4][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_8x4_8bpc_avx2);
-        self.itxfm_add[tx_8x4][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_8x4_8bpc_avx2);
-
-        // DCT_DCT 8x16
-        self.itxfm_add[tx_8x16][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x16_8bpc_avx2);
-        // DCT_DCT 16x8
-        self.itxfm_add[tx_16x8][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x8_8bpc_avx2);
-
-        // ADST/FLIPADST variants for 8x16
-        self.itxfm_add[tx_8x16][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_8x16_8bpc_avx2);
-        self.itxfm_add[tx_8x16][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_8x16_8bpc_avx2);
-        self.itxfm_add[tx_8x16][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_8x16_8bpc_avx2);
-        self.itxfm_add[tx_8x16][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_8x16_8bpc_avx2);
-        self.itxfm_add[tx_8x16][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_8x16_8bpc_avx2);
-        self.itxfm_add[tx_8x16][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2);
-        self.itxfm_add[tx_8x16][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_8x16_8bpc_avx2);
-        self.itxfm_add[tx_8x16][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_8x16_8bpc_avx2);
-
-        // ADST/FLIPADST variants for 16x8
-        self.itxfm_add[tx_16x8][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_16x8_8bpc_avx2);
-        self.itxfm_add[tx_16x8][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_16x8_8bpc_avx2);
-        self.itxfm_add[tx_16x8][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_16x8_8bpc_avx2);
-        self.itxfm_add[tx_16x8][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_16x8_8bpc_avx2);
-        self.itxfm_add[tx_16x8][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_16x8_8bpc_avx2);
-        self.itxfm_add[tx_16x8][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2);
-        self.itxfm_add[tx_16x8][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_16x8_8bpc_avx2);
-        self.itxfm_add[tx_16x8][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_16x8_8bpc_avx2);
-
-        // Identity transforms for 8x16 and 16x8
-        self.itxfm_add[tx_8x16][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x16_8bpc_avx2);
-        self.itxfm_add[tx_16x8][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x8_8bpc_avx2);
-        self.itxfm_add[tx_8x16][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_8x16_8bpc_avx2);
-        self.itxfm_add[tx_8x16][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_8x16_8bpc_avx2);
-        self.itxfm_add[tx_16x8][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_16x8_8bpc_avx2);
-        self.itxfm_add[tx_16x8][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_16x8_8bpc_avx2);
-        self.itxfm_add[tx_8x16][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_8x16_8bpc_avx2);
-        self.itxfm_add[tx_8x16][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_8x16_8bpc_avx2);
-        self.itxfm_add[tx_8x16][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_8x16_8bpc_avx2);
-        self.itxfm_add[tx_8x16][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_8x16_8bpc_avx2);
-        self.itxfm_add[tx_16x8][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_16x8_8bpc_avx2);
-        self.itxfm_add[tx_16x8][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_16x8_8bpc_avx2);
-        self.itxfm_add[tx_16x8][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_16x8_8bpc_avx2);
-        self.itxfm_add[tx_16x8][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_16x8_8bpc_avx2);
-
-        // Larger rectangular transforms: 16x32, 32x16, 32x64, 64x32
-        let tx_16x32 = TxfmSize::from_wh(16, 32) as usize;
-        let tx_32x16 = TxfmSize::from_wh(32, 16) as usize;
-        let tx_32x64 = TxfmSize::from_wh(32, 64) as usize;
-        let tx_64x32 = TxfmSize::from_wh(64, 32) as usize;
-
-        // DCT_DCT 16x32
-        self.itxfm_add[tx_16x32][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x32_8bpc_avx2);
-        // DCT_DCT 32x16
-        self.itxfm_add[tx_32x16][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x16_8bpc_avx2);
-        // DCT_DCT 32x64
-        self.itxfm_add[tx_32x64][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x64_8bpc_avx2);
-        // DCT_DCT 64x32
-        self.itxfm_add[tx_64x32][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x32_8bpc_avx2);
-
-        // IDTX 16x32 and 32x16
-        self.itxfm_add[tx_16x32][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x32_8bpc_avx2);
-        self.itxfm_add[tx_32x16][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x16_8bpc_avx2);
-
-        // 4:1 aspect ratio rectangles: 4x16, 16x4, 8x32, 32x8
-        let tx_4x16 = TxfmSize::from_wh(4, 16) as usize;
-        let tx_16x4 = TxfmSize::from_wh(16, 4) as usize;
-        let tx_8x32 = TxfmSize::from_wh(8, 32) as usize;
-        let tx_32x8 = TxfmSize::from_wh(32, 8) as usize;
-
-        // DCT_DCT 4x16
-        self.itxfm_add[tx_4x16][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x16_8bpc_avx2);
-        // DCT_DCT 16x4
-        self.itxfm_add[tx_16x4][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x4_8bpc_avx2);
-
-        // ADST/FLIPADST variants for 4x16
-        self.itxfm_add[tx_4x16][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_4x16_8bpc_avx2);
-        self.itxfm_add[tx_4x16][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_4x16_8bpc_avx2);
-        self.itxfm_add[tx_4x16][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_4x16_8bpc_avx2);
-        self.itxfm_add[tx_4x16][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_4x16_8bpc_avx2);
-        self.itxfm_add[tx_4x16][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_4x16_8bpc_avx2);
-        self.itxfm_add[tx_4x16][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_4x16_8bpc_avx2);
-        self.itxfm_add[tx_4x16][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_4x16_8bpc_avx2);
-        self.itxfm_add[tx_4x16][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_4x16_8bpc_avx2);
-
-        // ADST/FLIPADST variants for 16x4
-        self.itxfm_add[tx_16x4][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_16x4_8bpc_avx2);
-        self.itxfm_add[tx_16x4][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_16x4_8bpc_avx2);
-        self.itxfm_add[tx_16x4][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_16x4_8bpc_avx2);
-        self.itxfm_add[tx_16x4][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_16x4_8bpc_avx2);
-        self.itxfm_add[tx_16x4][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_16x4_8bpc_avx2);
-        self.itxfm_add[tx_16x4][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2);
-        self.itxfm_add[tx_16x4][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_16x4_8bpc_avx2);
-        self.itxfm_add[tx_16x4][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_16x4_8bpc_avx2);
-
-        // Identity transforms for 4x16 and 16x4
-        self.itxfm_add[tx_4x16][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x16_8bpc_avx2);
-        self.itxfm_add[tx_16x4][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x4_8bpc_avx2);
-        self.itxfm_add[tx_4x16][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_4x16_8bpc_avx2);
-        self.itxfm_add[tx_4x16][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_4x16_8bpc_avx2);
-        self.itxfm_add[tx_16x4][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_16x4_8bpc_avx2);
-        self.itxfm_add[tx_16x4][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_16x4_8bpc_avx2);
-        self.itxfm_add[tx_4x16][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_4x16_8bpc_avx2);
-        self.itxfm_add[tx_4x16][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_4x16_8bpc_avx2);
-        self.itxfm_add[tx_4x16][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_4x16_8bpc_avx2);
-        self.itxfm_add[tx_4x16][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_4x16_8bpc_avx2);
-        self.itxfm_add[tx_16x4][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_16x4_8bpc_avx2);
-        self.itxfm_add[tx_16x4][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_16x4_8bpc_avx2);
-        self.itxfm_add[tx_16x4][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_16x4_8bpc_avx2);
-        self.itxfm_add[tx_16x4][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_16x4_8bpc_avx2);
-
-        // DCT_DCT 8x32
-        self.itxfm_add[tx_8x32][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x32_8bpc_avx2);
-        // DCT_DCT 32x8
-        self.itxfm_add[tx_32x8][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x8_8bpc_avx2);
-
-        // IDTX 8x32 and 32x8
-        self.itxfm_add[tx_8x32][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x32_8bpc_avx2);
-        self.itxfm_add[tx_32x8][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x8_8bpc_avx2);
-
-        // Largest rectangular transforms: 16x64, 64x16
-        let tx_16x64 = TxfmSize::from_wh(16, 64) as usize;
-        let tx_64x16 = TxfmSize::from_wh(64, 16) as usize;
-
-        // DCT_DCT 16x64
-        self.itxfm_add[tx_16x64][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x64_8bpc_avx2);
-        // DCT_DCT 64x16
-        self.itxfm_add[tx_64x16][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x16_8bpc_avx2);
-
-        self
-    }
 
     /// Safe SIMD 16bpc initialization
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-    #[inline(always)]
-    const fn init_x86_safe_simd_16bpc(mut self, _flags: CpuFlags) -> Self {
-        use crate::src::safe_simd::itx as safe_itx;
-
-        // Square transforms
-        let tx_4x4 = TxfmSize::from_wh(4, 4) as usize;
-        let tx_8x8 = TxfmSize::from_wh(8, 8) as usize;
-        let tx_16x16 = TxfmSize::from_wh(16, 16) as usize;
-        let tx_32x32 = TxfmSize::from_wh(32, 32) as usize;
-        let tx_64x64 = TxfmSize::from_wh(64, 64) as usize;
-
-        // Rectangular transforms
-        let tx_4x8 = TxfmSize::from_wh(4, 8) as usize;
-        let tx_8x4 = TxfmSize::from_wh(8, 4) as usize;
-        let tx_8x16 = TxfmSize::from_wh(8, 16) as usize;
-        let tx_16x8 = TxfmSize::from_wh(16, 8) as usize;
-        let tx_4x16 = TxfmSize::from_wh(4, 16) as usize;
-        let tx_16x4 = TxfmSize::from_wh(16, 4) as usize;
-        let tx_16x32 = TxfmSize::from_wh(16, 32) as usize;
-        let tx_32x16 = TxfmSize::from_wh(32, 16) as usize;
-        let tx_8x32 = TxfmSize::from_wh(8, 32) as usize;
-        let tx_32x8 = TxfmSize::from_wh(32, 8) as usize;
-        let tx_32x64 = TxfmSize::from_wh(32, 64) as usize;
-        let tx_64x32 = TxfmSize::from_wh(64, 32) as usize;
-        let tx_16x64 = TxfmSize::from_wh(16, 64) as usize;
-        let tx_64x16 = TxfmSize::from_wh(64, 16) as usize;
-
-        // DCT_DCT square transforms 16bpc
-        self.itxfm_add[tx_4x4][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x4_16bpc_avx2);
-        // WHT_WHT 4x4 16bpc
-        self.itxfm_add[tx_4x4][WHT_WHT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_wht_wht_4x4_16bpc_avx2);
-        self.itxfm_add[tx_8x8][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x8_16bpc_avx2);
-        self.itxfm_add[tx_16x16][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x16_16bpc_avx2);
-        self.itxfm_add[tx_32x32][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x32_16bpc_avx2);
-        self.itxfm_add[tx_64x64][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x64_16bpc_avx2);
-
-        // DCT_DCT rectangular transforms 16bpc
-        self.itxfm_add[tx_4x8][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x8_16bpc_avx2);
-        self.itxfm_add[tx_8x4][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x16][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x16_16bpc_avx2);
-        self.itxfm_add[tx_16x8][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x8_16bpc_avx2);
-        self.itxfm_add[tx_4x16][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_4x16_16bpc_avx2);
-        self.itxfm_add[tx_16x4][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x32][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x32_16bpc_avx2);
-        self.itxfm_add[tx_32x16][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x16_16bpc_avx2);
-        self.itxfm_add[tx_8x32][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_8x32_16bpc_avx2);
-        self.itxfm_add[tx_32x8][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x8_16bpc_avx2);
-        self.itxfm_add[tx_32x64][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_32x64_16bpc_avx2);
-        self.itxfm_add[tx_64x32][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x32_16bpc_avx2);
-        self.itxfm_add[tx_16x64][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_16x64_16bpc_avx2);
-        self.itxfm_add[tx_64x16][DCT_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_dct_64x16_16bpc_avx2);
-
-        // 8x8 ADST/FLIPADST transforms 16bpc
-        self.itxfm_add[tx_8x8][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_8x8_16bpc_avx2);
-
-        // 4x4 ADST/FLIPADST transforms 16bpc
-        self.itxfm_add[tx_4x4][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_4x4_16bpc_avx2);
-
-        // 16x16 ADST/FLIPADST transforms 16bpc
-        self.itxfm_add[tx_16x16][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_16x16_16bpc_avx2);
-
-        // IDTX (identity) transforms 16bpc - square
-        self.itxfm_add[tx_4x4][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x4_16bpc_avx2);
-        self.itxfm_add[tx_8x8][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x8_16bpc_avx2);
-        self.itxfm_add[tx_16x16][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x16_16bpc_avx2);
-        self.itxfm_add[tx_32x32][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x32_16bpc_avx2);
-
-        // IDTX (identity) transforms 16bpc - rectangular
-        self.itxfm_add[tx_4x8][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x8_16bpc_avx2);
-        self.itxfm_add[tx_8x4][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x16][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x16_16bpc_avx2);
-        self.itxfm_add[tx_16x8][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x8_16bpc_avx2);
-        self.itxfm_add[tx_4x16][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_4x16_16bpc_avx2);
-        self.itxfm_add[tx_16x4][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x32][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_16x32_16bpc_avx2);
-        self.itxfm_add[tx_32x16][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x16_16bpc_avx2);
-        self.itxfm_add[tx_8x32][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_8x32_16bpc_avx2);
-        self.itxfm_add[tx_32x8][IDTX as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_identity_32x8_16bpc_avx2);
-
-        // 4x8 ADST/FLIPADST transforms 16bpc
-        self.itxfm_add[tx_4x8][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_4x8_16bpc_avx2);
-
-        // 8x4 ADST/FLIPADST transforms 16bpc
-        self.itxfm_add[tx_8x4][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_8x4_16bpc_avx2);
-
-        // 8x16 ADST/FLIPADST transforms 16bpc
-        self.itxfm_add[tx_8x16][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_8x16_16bpc_avx2);
-
-        // 16x8 ADST/FLIPADST transforms 16bpc
-        self.itxfm_add[tx_16x8][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_16x8_16bpc_avx2);
-
-        // 4x16 ADST/FLIPADST transforms 16bpc
-        self.itxfm_add[tx_4x16][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_4x16_16bpc_avx2);
-
-        // 16x4 ADST/FLIPADST transforms 16bpc
-        self.itxfm_add[tx_16x4][ADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_dct_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][DCT_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_adst_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][ADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_adst_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][FLIPADST_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_dct_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][DCT_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_flipadst_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][FLIPADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_flipadst_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][ADST_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_flipadst_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][FLIPADST_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_adst_16x4_16bpc_avx2);
-
-        // Hybrid identity transforms 16bpc - 4x8
-        self.itxfm_add[tx_4x8][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_4x8_16bpc_avx2);
-        self.itxfm_add[tx_4x8][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_4x8_16bpc_avx2);
-
-        // Hybrid identity transforms 16bpc - 8x4
-        self.itxfm_add[tx_8x4][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_8x4_16bpc_avx2);
-        self.itxfm_add[tx_8x4][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_8x4_16bpc_avx2);
-
-        // Hybrid identity transforms 16bpc - 8x16
-        self.itxfm_add[tx_8x16][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_8x16_16bpc_avx2);
-        self.itxfm_add[tx_8x16][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_8x16_16bpc_avx2);
-
-        // Hybrid identity transforms 16bpc - 16x8
-        self.itxfm_add[tx_16x8][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_16x8_16bpc_avx2);
-        self.itxfm_add[tx_16x8][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_16x8_16bpc_avx2);
-
-        // Hybrid identity transforms 16bpc - 4x16
-        self.itxfm_add[tx_4x16][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_4x16_16bpc_avx2);
-        self.itxfm_add[tx_4x16][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_4x16_16bpc_avx2);
-
-        // Hybrid identity transforms 16bpc - 16x4
-        self.itxfm_add[tx_16x4][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_16x4_16bpc_avx2);
-        self.itxfm_add[tx_16x4][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_16x4_16bpc_avx2);
-
-        // Hybrid identity transforms 16bpc - 8x8 square
-        self.itxfm_add[tx_8x8][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_8x8_16bpc_avx2);
-        self.itxfm_add[tx_8x8][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_8x8_16bpc_avx2);
-
-        // Hybrid identity transforms 16bpc - 4x4 square
-        self.itxfm_add[tx_4x4][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_4x4_16bpc_avx2);
-        self.itxfm_add[tx_4x4][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_4x4_16bpc_avx2);
-
-        // Hybrid identity transforms 16bpc - 16x16 square
-        self.itxfm_add[tx_16x16][V_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_dct_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][H_DCT as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_dct_identity_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][V_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_adst_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][H_ADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_adst_identity_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][V_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_identity_flipadst_16x16_16bpc_avx2);
-        self.itxfm_add[tx_16x16][H_FLIPADST as usize] =
-            itxfm::Fn::new(safe_itx::inv_txfm_add_flipadst_identity_16x16_16bpc_avx2);
-
-        self
-    }
-
-    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-    #[inline(always)]
-    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::itx_arm as safe_itx;
-
-        // Helper macro: assign a single ITX function to the dispatch table
-        macro_rules! a {
-            ($w:literal, $h:literal, $type_name:ident, $type_enum:ident, $bpc:literal) => {
-                paste::paste! {
-                    self.itxfm_add[TxfmSize::from_wh($w, $h) as usize][$type_enum as usize] =
-                        itxfm::Fn::new(safe_itx::[<inv_txfm_add_ $type_name _ $w x $h _ $bpc bpc_neon>]);
-                }
-            };
-        }
-
-        // itx16: 16 transform types (DCT_DCT + IDTX + 10 hybrids + 4 identity hybrids)
-        // Used for sizes 4x4, 8x8, 16x16 where all types are valid
-        macro_rules! itx16 {
-            ($w:literal, $h:literal, $bpc:literal) => {
-                a!($w, $h, dct_dct, DCT_DCT, $bpc);
-                a!($w, $h, identity_identity, IDTX, $bpc);
-                a!($w, $h, adst_dct, DCT_ADST, $bpc);
-                a!($w, $h, dct_adst, ADST_DCT, $bpc);
-                a!($w, $h, adst_adst, ADST_ADST, $bpc);
-                a!($w, $h, flipadst_dct, DCT_FLIPADST, $bpc);
-                a!($w, $h, dct_flipadst, FLIPADST_DCT, $bpc);
-                a!($w, $h, flipadst_flipadst, FLIPADST_FLIPADST, $bpc);
-                a!($w, $h, adst_flipadst, FLIPADST_ADST, $bpc);
-                a!($w, $h, flipadst_adst, ADST_FLIPADST, $bpc);
-                a!($w, $h, dct_identity, H_DCT, $bpc);
-                a!($w, $h, identity_dct, V_DCT, $bpc);
-                a!($w, $h, adst_identity, H_ADST, $bpc);
-                a!($w, $h, identity_adst, V_ADST, $bpc);
-                a!($w, $h, flipadst_identity, H_FLIPADST, $bpc);
-                a!($w, $h, identity_flipadst, V_FLIPADST, $bpc);
-            };
-        }
-
-        // itx12: 12 transform types (DCT_DCT + IDTX + 10 hybrids, no identity hybrids)
-        // Used for rectangular sizes (4x8, 8x4, 4x16, etc.)
-        macro_rules! itx12 {
-            ($w:literal, $h:literal, $bpc:literal) => {
-                a!($w, $h, dct_dct, DCT_DCT, $bpc);
-                a!($w, $h, identity_identity, IDTX, $bpc);
-                a!($w, $h, adst_dct, DCT_ADST, $bpc);
-                a!($w, $h, dct_adst, ADST_DCT, $bpc);
-                a!($w, $h, adst_adst, ADST_ADST, $bpc);
-                a!($w, $h, flipadst_dct, DCT_FLIPADST, $bpc);
-                a!($w, $h, dct_flipadst, FLIPADST_DCT, $bpc);
-                a!($w, $h, flipadst_flipadst, FLIPADST_FLIPADST, $bpc);
-                a!($w, $h, adst_flipadst, FLIPADST_ADST, $bpc);
-                a!($w, $h, flipadst_adst, ADST_FLIPADST, $bpc);
-                a!($w, $h, dct_identity, H_DCT, $bpc);
-                a!($w, $h, identity_dct, V_DCT, $bpc);
-            };
-        }
-
-        // itx2: DCT_DCT + IDTX only (large rectangular sizes)
-        macro_rules! itx2 {
-            ($w:literal, $h:literal, $bpc:literal) => {
-                a!($w, $h, dct_dct, DCT_DCT, $bpc);
-                a!($w, $h, identity_identity, IDTX, $bpc);
-            };
-        }
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                a!(4, 4, wht_wht, WHT_WHT, 8);
-
-                // Square sizes: full 16 transform types
-                itx16!(4, 4, 8);
-                itx16!(8, 8, 8);
-                itx16!(16, 16, 8);
-
-                // Rectangular sizes: all 16 transform types
-                itx16!(4, 8, 8);
-                itx16!(8, 4, 8);
-                itx16!(4, 16, 8);
-                itx16!(16, 4, 8);
-                itx16!(8, 16, 8);
-                itx16!(16, 8, 8);
-
-                // Large rectangular: DCT_DCT + IDTX
-                itx2!(8, 32, 8);
-                itx2!(32, 8, 8);
-                itx2!(16, 32, 8);
-                itx2!(32, 16, 8);
-                itx2!(32, 32, 8);
-
-                // DCT-only large sizes
-                a!(32, 64, dct_dct, DCT_DCT, 8);
-                a!(64, 32, dct_dct, DCT_DCT, 8);
-                a!(64, 64, dct_dct, DCT_DCT, 8);
-                a!(16, 64, dct_dct, DCT_DCT, 8);
-                a!(64, 16, dct_dct, DCT_DCT, 8);
-            }
-            BPC::BPC16 => {
-                a!(4, 4, wht_wht, WHT_WHT, 16);
-
-                // Square sizes: full 16 transform types
-                itx16!(4, 4, 16);
-                itx16!(8, 8, 16);
-                itx16!(16, 16, 16);
-
-                // Rectangular sizes: all 16 transform types
-                itx16!(4, 8, 16);
-                itx16!(8, 4, 16);
-                itx16!(4, 16, 16);
-                itx16!(16, 4, 16);
-                itx16!(8, 16, 16);
-                itx16!(16, 8, 16);
-
-                // Large rectangular: DCT_DCT + IDTX
-                itx2!(8, 32, 16);
-                itx2!(32, 8, 16);
-                itx2!(16, 32, 16);
-                itx2!(32, 16, 16);
-                itx2!(32, 32, 16);
-
-                // DCT-only large sizes
-                a!(32, 64, dct_dct, DCT_DCT, 16);
-                a!(64, 32, dct_dct, DCT_DCT, 16);
-                a!(64, 64, dct_dct, DCT_DCT, 16);
-                a!(16, 64, dct_dct, DCT_DCT, 16);
-                a!(64, 16, dct_dct, DCT_DCT, 16);
-            }
-        }
-
-        self
-    }
 
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags, bpc: u8) -> Self {
@@ -1771,18 +923,6 @@ impl Rav1dInvTxfmDSPContext {
             {
                 return self.init_arm::<BD>(flags, bpc);
             }
-        }
-
-        #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-        {
-            let _ = bpc;
-            return self.init_x86_safe_simd::<BD>(flags);
-        }
-
-        #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-        {
-            let _ = bpc;
-            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.

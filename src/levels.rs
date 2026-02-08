@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::src::align::ArrayDefault;
@@ -102,6 +102,32 @@ impl TxfmSize {
 
     pub const fn is_rect(self) -> bool {
         self as u8 >= Self::R4x8 as u8
+    }
+
+    /// Get the (width, height) dimensions for this transform size.
+    pub const fn to_wh(self) -> (usize, usize) {
+        use TxfmSize::*;
+        match self {
+            S4x4 => (4, 4),
+            S8x8 => (8, 8),
+            S16x16 => (16, 16),
+            S32x32 => (32, 32),
+            S64x64 => (64, 64),
+            R4x8 => (4, 8),
+            R8x4 => (8, 4),
+            R8x16 => (8, 16),
+            R16x8 => (16, 8),
+            R16x32 => (16, 32),
+            R32x16 => (32, 16),
+            R32x64 => (32, 64),
+            R64x32 => (64, 32),
+            R4x16 => (4, 16),
+            R16x4 => (16, 4),
+            R8x32 => (8, 32),
+            R32x8 => (32, 8),
+            R16x64 => (16, 64),
+            R64x16 => (64, 16),
+        }
     }
 }
 
@@ -398,7 +424,7 @@ pub enum MotionMode {
     Warp = 2,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Default)]
 #[repr(C)]
 pub struct Av1BlockIntra {
     pub y_mode: u8,
@@ -448,7 +474,7 @@ impl From<MaskedInterIntraPredMode> for InterIntraPredMode {
     }
 }
 
-#[derive(Clone, Default, FromZeroes, FromBytes, AsBytes)]
+#[derive(Clone, Copy, Default, FromZeroes, FromBytes, AsBytes)]
 #[repr(C)]
 pub struct Av1BlockInter1d {
     pub mv: [Mv; 2],
@@ -469,7 +495,7 @@ impl Av1BlockInter1d {
     }
 }
 
-#[derive(Clone, FromZeroes, FromBytes, AsBytes)]
+#[derive(Clone, Copy, FromZeroes, FromBytes, AsBytes)]
 #[repr(C)]
 pub struct Av1BlockInter2d {
     pub mv2d: Mv,
@@ -479,7 +505,7 @@ pub struct Av1BlockInter2d {
     pub matrix: [i16; 4],
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Av1BlockInterNd {
     /// Make [`Av1BlockInter1d`] the field instead of [`Av1BlockInter2d`]
@@ -516,7 +542,7 @@ impl From<Av1BlockInter2d> for Av1BlockInterNd {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Av1BlockInter {
     pub nd: Av1BlockInterNd,
@@ -532,6 +558,7 @@ pub struct Av1BlockInter {
     pub tx_split1: u16,
 }
 
+#[derive(Clone, Copy)]
 pub enum Av1BlockIntraInter {
     Intra(Av1BlockIntra),
     Inter(Av1BlockInter),
@@ -589,7 +616,7 @@ impl Display for SegmentId {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 #[repr(C)]
 pub struct Av1Block {
     pub bl: BlockLevel,

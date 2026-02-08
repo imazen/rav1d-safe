@@ -1,8 +1,10 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 use crate::src::cpu::CpuFlags;
+#[cfg(not(feature = "asm"))]
+use crate::src::enum_map::DefaultValue;
 use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::ffi::c_int;
+#[cfg(feature = "asm")]
 use std::slice;
 
 wrap_fn_ptr!(pub unsafe extern "C" fn pal_idx_finish(
@@ -13,6 +15,38 @@ wrap_fn_ptr!(pub unsafe extern "C" fn pal_idx_finish(
     w: c_int,
     h: c_int,
 ) -> ());
+
+/// Direct dispatch for pal_idx_finish - bypasses function pointer table.
+///
+/// Checks CPU flags at runtime and dispatches to the optimal SIMD implementation.
+/// Used when `feature = "asm"` is disabled for zero-overhead direct calls.
+#[cfg(not(feature = "asm"))]
+fn pal_idx_finish_direct(
+    dst: Option<&mut [u8]>,
+    tmp: &mut [u8],
+    bw: usize,
+    bh: usize,
+    w: usize,
+    h: usize,
+) {
+    // When dst is separate from src, we can use SIMD with non-aliasing slices
+    if let Some(dst) = dst {
+        let dst = &mut dst[..(bw / 2) * bh];
+        let src = &tmp[..bw * bh];
+
+        #[cfg(target_arch = "x86_64")]
+        if crate::src::safe_simd::pal::pal_idx_finish_dispatch(dst, src, bw, bh, w, h) {
+            return;
+        }
+
+        // Scalar fallback for non-aliased case
+        pal_idx_finish_rust(PalIdx::Idx { dst, src }, bw, bh, w, h);
+    } else {
+        // Aliased case (dst == src): use scalar fallback which handles this safely
+        let tmp = &mut tmp[..bw * bh];
+        pal_idx_finish_rust(PalIdx::Tmp(tmp), bw, bh, w, h);
+    }
+}
 
 impl pal_idx_finish::Fn {
     /// If `dst` is [`None`], `tmp` is used as `dst`.
@@ -27,17 +61,23 @@ impl pal_idx_finish::Fn {
         w: usize,
         h: usize,
     ) {
-        let dst = dst.map(|dst| &mut dst[..(bw / 2) * bh]);
-        let tmp = &mut tmp[..bw * bh];
-        // SAFETY: Note that `dst` and `src` may be the same.
-        // This is safe because they are raw ptrs for now,
-        // and in the fallback `fn pal_idx_finish_rust`, this is checked for
-        // before creating `&mut`s from them.
-        let dst = dst.unwrap_or(tmp).as_mut_ptr();
-        let src = tmp.as_ptr();
-        let [bw, bh, w, h] = [bw, bh, w, h].map(|it| it as c_int);
-        // SAFETY: Fallback `fn pal_idx_finish_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst, src, bw, bh, w, h) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst = dst.map(|dst| &mut dst[..(bw / 2) * bh]);
+                let tmp = &mut tmp[..bw * bh];
+                // SAFETY: Note that `dst` and `src` may be the same.
+                // This is safe because they are raw ptrs for now,
+                // and in the fallback `fn pal_idx_finish_rust`, this is checked for
+                // before creating `&mut`s from them.
+                let dst = dst.unwrap_or(tmp).as_mut_ptr();
+                let src = tmp.as_ptr();
+                let [bw, bh, w, h] = [bw, bh, w, h].map(|it| it as c_int);
+                // SAFETY: Fallback `fn pal_idx_finish_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst, src, bw, bh, w, h) }
+            } else {
+                pal_idx_finish_direct(dst, tmp, bw, bh, w, h)
+            }
+        }
     }
 }
 
@@ -53,6 +93,7 @@ enum PalIdx<'a> {
 /// # Safety
 ///
 /// Must be called by [`pal_idx_finish::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn pal_idx_finish_c(
     dst: *mut u8,
@@ -133,8 +174,16 @@ fn pal_idx_finish_rust(idx: PalIdx, bw: usize, bh: usize, w: usize, h: usize) {
 
 impl Rav1dPalDSPContext {
     pub const fn default() -> Self {
-        Self {
-            pal_idx_finish: pal_idx_finish::Fn::new(pal_idx_finish_c),
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                Self {
+                    pal_idx_finish: pal_idx_finish::Fn::new(pal_idx_finish_c),
+                }
+            } else {
+                Self {
+                    pal_idx_finish: pal_idx_finish::Fn::DEFAULT,
+                }
+            }
         }
     }
 
@@ -171,14 +220,6 @@ impl Rav1dPalDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-    #[inline(always)]
-    const fn init_x86_safe_simd(mut self, _flags: CpuFlags) -> Self {
-        self.pal_idx_finish =
-            pal_idx_finish::Fn::new(crate::src::safe_simd::pal::pal_idx_finish_avx2);
-        self
-    }
-
     #[inline(always)]
     const fn init(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -190,14 +231,6 @@ impl Rav1dPalDSPContext {
             #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
             {
                 return self.init_arm(flags);
-            }
-        }
-
-        #[cfg(not(feature = "asm"))]
-        {
-            #[cfg(target_arch = "x86_64")]
-            {
-                return self.init_x86_safe_simd(flags);
             }
         }
 

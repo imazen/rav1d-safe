@@ -1,15 +1,18 @@
-#![allow(unsafe_op_in_unsafe_fn)]
-
 //! Safe SIMD implementation of refmvs functions using AVX2.
 //!
 //! splat_mv: Fills rows of RefMvsBlock arrays with a single value.
 //! The value is 12 bytes (RefMvsBlock) stored in a 16-byte aligned wrapper.
 //! Uses 16-byte stores at stride 12, with R_PAD ensuring safe overwrite.
 
-#[cfg(target_arch = "x86_64")]
+#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
+
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 use std::arch::x86_64::*;
 
+#[cfg(feature = "asm")]
 use crate::src::align::Align16;
+#[cfg(feature = "asm")]
 use crate::src::refmvs::RefMvsBlock;
 
 /// AVX2 implementation of splat_mv.
@@ -20,8 +23,9 @@ use crate::src::refmvs::RefMvsBlock;
 /// RefMvsBlock is 12 bytes. We use 16-byte unaligned stores at stride 12,
 /// which safely overwrites 4 bytes into the next element (or padding at end).
 /// The R_PAD allocation padding ensures we don't write out of bounds.
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 pub unsafe extern "C" fn splat_mv_avx2(
     rr: *mut *mut RefMvsBlock,
     rmv: &Align16<RefMvsBlock>,
@@ -35,20 +39,20 @@ pub unsafe extern "C" fn splat_mv_avx2(
 
     // Load the 16-byte aligned value (12 bytes data + 4 bytes padding)
     let rmv_ptr = rmv as *const Align16<RefMvsBlock> as *const __m128i;
-    let val128 = _mm_loadu_si128(rmv_ptr);
+    let val128 = unsafe { _mm_loadu_si128(rmv_ptr) };
 
     for y in 0..bh4 {
-        let row = *rr.add(y);
+        let row = unsafe { *rr.add(y) };
         if row.is_null() {
             continue;
         }
-        let base = (row as *mut u8).add(bx4 * 12);
+        let base = unsafe { (row as *mut u8).add(bx4 * 12) };
 
         // Each RefMvsBlock is 12 bytes. Store 16 bytes at stride 12.
         // The extra 4 bytes overlap into the next element (safe due to R_PAD).
         let mut i = 0;
         while i < bw4 {
-            _mm_storeu_si128(base.add(i * 12) as *mut __m128i, val128);
+            unsafe { _mm_storeu_si128(base.add(i * 12) as *mut __m128i, val128) };
             i += 1;
         }
     }

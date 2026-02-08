@@ -1,8 +1,59 @@
-# rav1d
+# rav1d-safe
 
-**rav1d** is an AV1 cross-platform decoder, open-source, and focused on speed
-and correctness. It is a Rust port of
-[dav1d](https://code.videolan.org/videolan/dav1d).
+[![License](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
+
+**rav1d-safe** is a safe Rust AV1 decoder forked from [rav1d](https://github.com/memorysafety/rav1d).
+It replaces 160k lines of hand-written x86/ARM assembly with safe Rust SIMD intrinsics
+using [archmage](https://crates.io/crates/archmage) for zero-overhead dispatch and
+[safe_unaligned_simd](https://crates.io/crates/safe_unaligned_simd) for safe memory access.
+
+## Safety
+
+**`deny(unsafe_code)` enforced across all 20 safe_simd modules when `asm` is disabled.**
+
+When built without the `asm` feature, the SIMD path contains **zero `unsafe` blocks**.
+All SIMD implementations use:
+- `#[arcane]` / `#[rite]` for safe target-feature dispatch (via archmage tokens)
+- `safe_unaligned_simd` for reference-based SIMD load/store (no raw pointers)
+- Slice-based APIs throughout (no pointer arithmetic)
+- `FlexSlice` zero-cost wrapper for hot-loop indexing with optional bounds elision
+
+The `asm` feature gates only FFI wrappers (`pub unsafe extern "C" fn`) for function-pointer dispatch compatibility.
+
+## Performance
+
+Full-stack benchmark (20 decodes of test.avif via zenavif):
+- **ASM (hand-written assembly): ~1.17s**
+- **Safe-SIMD (safe Rust intrinsics): ~1.11s**
+- Safe-SIMD **matches or beats** ASM performance
+
+## Safe Rust API
+
+A **100% safe Rust API** for decoding AV1 video (`src/managed.rs`).
+No `unsafe` code required:
+
+```rust
+use rav1d_safe::src::managed::{Decoder, Planes};
+
+let mut decoder = Decoder::new()?;
+if let Some(frame) = decoder.decode(obu_data)? {
+    match frame.planes() {
+        Planes::Depth8(planes) => {
+            for row in planes.y().rows() {
+                // Process 8-bit luma row
+            }
+        }
+        Planes::Depth16(planes) => {
+            let pixel = planes.y().pixel(0, 0); // Zero-copy 16-bit access
+        }
+    }
+}
+```
+
+Features: zero-copy pixel access, HDR metadata, type-safe color spaces,
+configurable threading, 8-bit and 10/12-bit support.
+
+See `examples/managed_decode.rs` for a complete example.
 
 # Building
 
@@ -37,21 +88,22 @@ cargo +stable build --lib --release
 
 ## Feature Flags
 
-The following feature flags are supported:
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `bitdepth_8` | ✅ | 8-bit pixel support |
+| `bitdepth_16` | ✅ | 10/12-bit pixel support |
+| `asm` | ❌ | Hand-written assembly + FFI wrappers (implies `c-ffi`) |
+| `c-ffi` | ❌ | C API (`dav1d_*` entry points, implies `unchecked`) |
+| `unchecked` | ❌ | Skip bounds checks in SIMD hot paths (`debug_assert!` only) |
 
-* `asm` - Enables optimized assembly routines, if available for the target
-  platform.
-* `bitdepth_8` - Enables support for 8 bitdepth decoding.
-* `bitdepth_16` - Enables support for 10 and 12 bitdepth decoding.
-
-All of these features are enabled by default. In order to build a version of
-`librav1d` that disables one or more of these features use the
-`--no-default-features` flag in combination with the `--features` flag to enable
-any desired features. For example, to build without assembly routines, which is
-useful when testing the Rust fallback functions, do the following:
-
+**Safe-SIMD build** (default, recommended):
 ```sh
-cargo build --no-default-features --features="bitdepth_8,bitdepth_16"
+cargo build --release
+```
+
+**With hand-written assembly** (for comparison/benchmarking):
+```sh
+cargo build --features asm --release
 ```
 
 ## Cross-Compiling

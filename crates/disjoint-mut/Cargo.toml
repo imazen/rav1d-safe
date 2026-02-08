@@ -1,0 +1,14 @@
+[package]
+name = "disjoint-mut"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "A provably safe abstraction for concurrent disjoint mutable access to contiguous storage"
+license = "BSD-2-Clause"
+
+[features]
+default = []
+
+[dependencies]
+parking_lot = "0.12.2"
+zerocopy = { version = "0.7.32", features = ["derive"] }

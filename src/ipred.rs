@@ -1,5 +1,4 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
@@ -7,28 +6,41 @@ use crate::include::common::bitdepth::BPC;
 use crate::include::common::intops::apply_sign;
 use crate::include::common::intops::iclip;
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::cpu::CpuFlags;
 use crate::src::enum_map::enum_map;
 use crate::src::enum_map::enum_map_ty;
-use crate::src::enum_map::DefaultValue;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::SCRATCH_AC_TXTP_LEN;
 use crate::src::internal::SCRATCH_EDGE_LEN;
+#[cfg(feature = "asm")]
 use crate::src::levels::DC_128_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::DC_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::FILTER_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::HOR_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::LEFT_DC_PRED;
 use crate::src::levels::N_IMPL_INTRA_PRED_MODES;
+#[cfg(feature = "asm")]
 use crate::src::levels::PAETH_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::SMOOTH_H_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::SMOOTH_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::SMOOTH_V_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::TOP_DC_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::VERT_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::Z1_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::Z2_PRED;
+#[cfg(feature = "asm")]
 use crate::src::levels::Z3_PRED;
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_dr_intra_derivative;
@@ -41,10 +53,13 @@ use libc::ptrdiff_t;
 use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
+#[cfg(feature = "asm")]
 use std::slice;
 use strum::FromRepr;
 use zerocopy::AsBytes;
 use zerocopy::FromBytes;
+
+use crate::src::enum_map::DefaultValue;
 
 #[cfg(all(
     feature = "asm",
@@ -66,13 +81,136 @@ wrap_fn_ptr!(pub unsafe extern "C" fn angular_ipred(
     max_height: c_int,
     bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
+/// Direct dispatch for intra prediction - bypasses function pointer table.
+/// Selects optimal SIMD implementation at runtime based on CPU features.
+/// `mode`: prediction mode index (0-13)
+#[cfg(not(feature = "asm"))]
+fn intra_pred_direct<BD: BitDepth>(
+    mode: usize,
+    dst: PicOffset,
+    topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
+    topleft_off: usize,
+    width: c_int,
+    height: c_int,
+    angle: c_int,
+    max_width: c_int,
+    max_height: c_int,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::ipred::intra_pred_dispatch::<BD>(
+        mode,
+        dst,
+        topleft,
+        topleft_off,
+        width,
+        height,
+        angle,
+        max_width,
+        max_height,
+        bd,
+    ) {
+        return;
+    }
+
+    #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+    if crate::src::safe_simd::ipred_arm::intra_pred_dispatch::<BD>(
+        mode,
+        dst,
+        topleft,
+        topleft_off,
+        width,
+        height,
+        angle,
+        max_width,
+        max_height,
+        bd,
+    ) {
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    match mode {
+        0 => {
+            let dc = DcGen::TopLeft.call::<BD>(topleft, topleft_off, width, height) as c_int;
+            splat_dc::<BD>(dst, width, height, dc, bd)
+        }
+        1 => ipred_v_rust::<BD>(dst, topleft, topleft_off, width, height),
+        2 => ipred_h_rust::<BD>(dst, topleft, topleft_off, width, height),
+        3 => {
+            let dc = DcGen::Left.call::<BD>(topleft, topleft_off, width, height) as c_int;
+            splat_dc::<BD>(dst, width, height, dc, bd)
+        }
+        4 => {
+            let dc = DcGen::Top.call::<BD>(topleft, topleft_off, width, height) as c_int;
+            splat_dc::<BD>(dst, width, height, dc, bd)
+        }
+        5 => {
+            let dc = bd.bitdepth_max().as_::<c_int>() + 1 >> 1;
+            splat_dc::<BD>(dst, width, height, dc, bd)
+        }
+        6 => ipred_z1_rust::<BD>(
+            dst,
+            topleft,
+            topleft_off,
+            width,
+            height,
+            angle,
+            max_width,
+            max_height,
+            bd,
+        ),
+        7 => ipred_z2_rust::<BD>(
+            dst,
+            topleft,
+            topleft_off,
+            width,
+            height,
+            angle,
+            max_width,
+            max_height,
+            bd,
+        ),
+        8 => ipred_z3_rust::<BD>(
+            dst,
+            topleft,
+            topleft_off,
+            width,
+            height,
+            angle,
+            max_width,
+            max_height,
+            bd,
+        ),
+        9 => ipred_smooth_rust::<BD>(dst, topleft, topleft_off, width, height),
+        10 => ipred_smooth_v_rust::<BD>(dst, topleft, topleft_off, width, height),
+        11 => ipred_smooth_h_rust::<BD>(dst, topleft, topleft_off, width, height),
+        12 => ipred_paeth_rust::<BD>(dst, topleft, topleft_off, width, height),
+        13 => ipred_filter_rust::<BD>(
+            dst,
+            topleft,
+            topleft_off,
+            width,
+            height,
+            angle,
+            max_width,
+            max_height,
+            bd,
+        ),
+        _ => unreachable!(),
+    }
+}
+
 impl angular_ipred::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        mode: usize,
+        dst: PicOffset,
         topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
         topleft_off: usize,
         width: c_int,
@@ -82,33 +220,45 @@ impl angular_ipred::Fn {
         max_height: c_int,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let topleft = topleft[topleft_off..].as_ptr().cast();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallbacks are safe; asm is supposed to do the same, where the fallbacks are:
-        // * `fn splat_dc`
-        // * `fn ipred_{v,h}_rust`
-        // * `fn ipred_paeth_rust`
-        // * `fn ipred_smooth_rust`
-        // * `fn ipred_smooth_{v,h}_rust`
-        // * `fn ipred_z{1,2,3}_rust`
-        // * `fn ipred_filter_rust`
-        unsafe {
-            self.get()(
-                dst_ptr,
-                stride,
-                topleft,
-                width,
-                height,
-                angle,
-                max_width,
-                max_height,
-                bd,
-                topleft_off,
-                dst,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = mode;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let stride = dst.stride();
+                let topleft = topleft[topleft_off..].as_ptr().cast();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallbacks are safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr,
+                        stride,
+                        topleft,
+                        width,
+                        height,
+                        angle,
+                        max_width,
+                        max_height,
+                        bd,
+                        topleft_off,
+                        dst,
+                    )
+                }
+            } else {
+                let _ = self;
+                intra_pred_direct::<BD>(
+                    mode,
+                    dst,
+                    topleft,
+                    topleft_off,
+                    width,
+                    height,
+                    angle,
+                    max_width,
+                    max_height,
+                    bd,
+                )
+            }
         }
     }
 }
@@ -121,24 +271,64 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cfl_ac(
     h_pad: c_int,
     cw: c_int,
     ch: c_int,
-    _y: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _y: *const FFISafe<PicOffset>,
 ) -> ());
 
+/// Direct dispatch for CFL AC - bypasses function pointer table.
+/// No safe_simd implementations exist, so this dispatches to scalar fallback.
+/// `layout`: pixel layout subsampling variant
+#[cfg(not(feature = "asm"))]
+fn cfl_ac_direct<BD: BitDepth>(
+    layout: Rav1dPixelLayoutSubSampled,
+    ac: &mut [i16; SCRATCH_AC_TXTP_LEN],
+    y: PicOffset,
+    w_pad: c_int,
+    h_pad: c_int,
+    cw: c_int,
+    ch: c_int,
+) {
+    let (is_ss_hor, is_ss_ver) = match layout {
+        Rav1dPixelLayoutSubSampled::I420 => (true, true),
+        Rav1dPixelLayoutSubSampled::I422 => (true, false),
+        Rav1dPixelLayoutSubSampled::I444 => (false, false),
+    };
+    cfl_ac_rust::<BD>(
+        ac,
+        y,
+        w_pad,
+        h_pad,
+        cw as usize,
+        ch as usize,
+        is_ss_hor,
+        is_ss_ver,
+    );
+}
+
 impl cfl_ac::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
+        layout: Rav1dPixelLayoutSubSampled,
         ac: &mut [i16; SCRATCH_AC_TXTP_LEN],
-        y: Rav1dPictureDataComponentOffset,
+        y: PicOffset,
         w_pad: c_int,
         h_pad: c_int,
         cw: c_int,
         ch: c_int,
     ) {
-        let y_ptr = y.as_ptr::<BD>().cast();
-        let stride = y.stride();
-        let y = FFISafe::new(&y);
-        // SAFETY: Fallback `fn cfl_ac_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(ac, y_ptr, stride, w_pad, h_pad, cw, ch, y) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = layout;
+                let y_ptr = y.as_ptr::<BD>().cast();
+                let stride = y.stride();
+                let y = FFISafe::new(&y);
+                // SAFETY: Fallback `fn cfl_ac_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(ac, y_ptr, stride, w_pad, h_pad, cw, ch, y) }
+            } else {
+                let _ = self;
+                cfl_ac_direct::<BD>(layout, ac, y, w_pad, h_pad, cw, ch)
+            }
+        }
     }
 }
 
@@ -152,13 +342,40 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cfl_pred(
     alpha: c_int,
     bitdepth_max: c_int,
     _topleft_off: usize,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
+/// Direct dispatch for CFL prediction - bypasses function pointer table.
+/// No safe_simd implementations exist, so this dispatches to scalar fallback.
+/// `mode`: CFL pred mode index (DC_PRED=0, DC_128_PRED=5, TOP_DC_PRED=4, LEFT_DC_PRED=3)
+#[cfg(not(feature = "asm"))]
+fn cfl_pred_direct<BD: BitDepth>(
+    mode: usize,
+    dst: PicOffset,
+    topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
+    topleft_off: usize,
+    width: c_int,
+    height: c_int,
+    ac: &[i16; SCRATCH_AC_TXTP_LEN],
+    alpha: c_int,
+    bd: BD,
+) {
+    let dc = match mode {
+        0 => DcGen::TopLeft.call::<BD>(topleft, topleft_off, width, height) as c_int,
+        3 => DcGen::Left.call::<BD>(topleft, topleft_off, width, height) as c_int,
+        4 => DcGen::Top.call::<BD>(topleft, topleft_off, width, height) as c_int,
+        5 => bd.bitdepth_max().as_::<c_int>() + 1 >> 1,
+        _ => unreachable!(),
+    };
+    cfl_pred(dst, width, height, dc, ac, alpha, bd);
+}
+
 impl cfl_pred::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        mode: usize,
+        dst: PicOffset,
         topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
         topleft_off: usize,
         width: c_int,
@@ -167,25 +384,43 @@ impl cfl_pred::Fn {
         alpha: c_int,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let topleft = topleft[topleft_off..].as_ptr().cast();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn cfl_pred` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr,
-                stride,
-                topleft,
-                width,
-                height,
-                ac,
-                alpha,
-                bd,
-                topleft_off,
-                dst,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = mode;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let stride = dst.stride();
+                let topleft = topleft[topleft_off..].as_ptr().cast();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn cfl_pred` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr,
+                        stride,
+                        topleft,
+                        width,
+                        height,
+                        ac,
+                        alpha,
+                        bd,
+                        topleft_off,
+                        dst,
+                    )
+                }
+            } else {
+                let _ = self;
+                cfl_pred_direct::<BD>(
+                    mode,
+                    dst,
+                    topleft,
+                    topleft_off,
+                    width,
+                    height,
+                    ac,
+                    alpha,
+                    bd,
+                )
+            }
         }
     }
 }
@@ -197,27 +432,48 @@ wrap_fn_ptr!(pub unsafe extern "C" fn pal_pred(
     idx: *const u8,
     w: c_int,
     h: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
+/// Direct dispatch for palette prediction - bypasses function pointer table.
+/// No safe_simd implementations exist, so this dispatches to scalar fallback.
+#[cfg(not(feature = "asm"))]
+fn pal_pred_direct<BD: BitDepth>(
+    dst: PicOffset,
+    pal: &[BD::Pixel; 8],
+    idx: &[u8],
+    w: c_int,
+    h: c_int,
+) {
+    pal_pred_rust::<BD>(dst, pal, idx, w, h);
+}
+
 impl pal_pred::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         pal: &[BD::Pixel; 8],
         idx: &[u8],
         w: c_int,
         h: c_int,
     ) {
-        // SAFETY: `DisjointMut` is unchecked for asm `fn`s,
-        // but passed through as an extra arg for the fallback `fn`.
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let pal = pal.as_ptr().cast();
-        let idx = idx[..(w * h) as usize / 2].as_ptr();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn pal_pred_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, stride, pal, idx, w, h, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                // SAFETY: `DisjointMut` is unchecked for asm `fn`s,
+                // but passed through as an extra arg for the fallback `fn`.
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let stride = dst.stride();
+                let pal = pal.as_ptr().cast();
+                let idx = idx[..(w * h) as usize / 2].as_ptr();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn pal_pred_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, stride, pal, idx, w, h, dst) }
+            } else {
+                let _ = self;
+                pal_pred_direct::<BD>(dst, pal, idx, w, h)
+            }
+        }
     }
 }
 
@@ -229,13 +485,7 @@ pub struct Rav1dIntraPredDSPContext {
 }
 
 #[inline(never)]
-fn splat_dc<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    width: c_int,
-    height: c_int,
-    dc: c_int,
-    bd: BD,
-) {
+fn splat_dc<BD: BitDepth>(dst: PicOffset, width: c_int, height: c_int, dc: c_int, bd: BD) {
     let height = height as isize;
     let width = width as usize;
     assert!(dc <= bd.bitdepth_max().as_::<c_int>());
@@ -259,7 +509,7 @@ fn splat_dc<BD: BitDepth>(
 
 #[inline(never)]
 fn cfl_pred<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     width: c_int,
     height: c_int,
     dc: c_int,
@@ -373,6 +623,7 @@ impl DcGen {
 /// `topleft_ptr` must be a pointer into an array of length [`SCRATCH_EDGE_LEN`]
 /// and is `topleft_off` elements from the beginning of the array. This should
 /// be guaranteed by the logic in `angular_ipred::call`.
+#[cfg(feature = "asm")]
 unsafe fn reconstruct_topleft<'a, BD: BitDepth>(
     topleft_ptr: *const DynPixel,
     topleft_off: usize,
@@ -389,6 +640,7 @@ unsafe fn reconstruct_topleft<'a, BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_dc_c_erased<BD: BitDepth, const DC_GEN: u8>(
     _dst_ptr: *mut DynPixel,
@@ -401,7 +653,7 @@ unsafe extern "C" fn ipred_dc_c_erased<BD: BitDepth, const DC_GEN: u8>(
     _max_height: c_int,
     bitdepth_max: c_int,
     topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     let dc_gen = DcGen::from_repr(DC_GEN).unwrap();
 
@@ -417,6 +669,7 @@ unsafe extern "C" fn ipred_dc_c_erased<BD: BitDepth, const DC_GEN: u8>(
 /// # Safety
 ///
 /// Must be called by [`cfl_pred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_cfl_c_erased<BD: BitDepth, const DC_GEN: u8>(
     _dst_ptr: *mut DynPixel,
@@ -428,7 +681,7 @@ unsafe extern "C" fn ipred_cfl_c_erased<BD: BitDepth, const DC_GEN: u8>(
     alpha: c_int,
     bitdepth_max: c_int,
     topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     let dc_gen = DcGen::from_repr(DC_GEN).unwrap();
 
@@ -444,6 +697,7 @@ unsafe extern "C" fn ipred_cfl_c_erased<BD: BitDepth, const DC_GEN: u8>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_dc_128_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -456,7 +710,7 @@ unsafe extern "C" fn ipred_dc_128_c_erased<BD: BitDepth>(
     _max_height: c_int,
     bitdepth_max: c_int,
     _topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -468,6 +722,7 @@ unsafe extern "C" fn ipred_dc_128_c_erased<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`cfl_pred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_cfl_128_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -479,7 +734,7 @@ unsafe extern "C" fn ipred_cfl_128_c_erased<BD: BitDepth>(
     alpha: c_int,
     bitdepth_max: c_int,
     _topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `cfl_pred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -489,7 +744,7 @@ unsafe extern "C" fn ipred_cfl_128_c_erased<BD: BitDepth>(
 }
 
 fn ipred_v_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
     topleft_off: usize,
     width: c_int,
@@ -511,6 +766,7 @@ fn ipred_v_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_v_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -523,7 +779,7 @@ unsafe extern "C" fn ipred_v_c_erased<BD: BitDepth>(
     _max_height: c_int,
     _bitdepth_max: c_int,
     topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -533,7 +789,7 @@ unsafe extern "C" fn ipred_v_c_erased<BD: BitDepth>(
 }
 
 fn ipred_h_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
     topleft_off: usize,
     width: c_int,
@@ -555,6 +811,7 @@ fn ipred_h_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_h_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -567,7 +824,7 @@ unsafe extern "C" fn ipred_h_c_erased<BD: BitDepth>(
     _max_height: c_int,
     _bitdepth_max: c_int,
     topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -577,7 +834,7 @@ unsafe extern "C" fn ipred_h_c_erased<BD: BitDepth>(
 }
 
 fn ipred_paeth_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tl: &[BD::Pixel; SCRATCH_EDGE_LEN],
     tl_off: usize,
     width: c_int,
@@ -613,6 +870,7 @@ fn ipred_paeth_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_paeth_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -625,7 +883,7 @@ unsafe extern "C" fn ipred_paeth_c_erased<BD: BitDepth>(
     _max_height: c_int,
     _bitdepth_max: c_int,
     topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -635,7 +893,7 @@ unsafe extern "C" fn ipred_paeth_c_erased<BD: BitDepth>(
 }
 
 fn ipred_smooth_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
     topleft_off: usize,
     width: c_int,
@@ -664,6 +922,7 @@ fn ipred_smooth_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_smooth_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -676,7 +935,7 @@ unsafe extern "C" fn ipred_smooth_c_erased<BD: BitDepth>(
     _max_height: c_int,
     _bitdepth_max: c_int,
     topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -686,7 +945,7 @@ unsafe extern "C" fn ipred_smooth_c_erased<BD: BitDepth>(
 }
 
 fn ipred_smooth_v_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
     topleft_off: usize,
     width: c_int,
@@ -711,6 +970,7 @@ fn ipred_smooth_v_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_smooth_v_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -723,7 +983,7 @@ unsafe extern "C" fn ipred_smooth_v_c_erased<BD: BitDepth>(
     _max_height: c_int,
     _bitdepth_max: c_int,
     topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -733,7 +993,7 @@ unsafe extern "C" fn ipred_smooth_v_c_erased<BD: BitDepth>(
 }
 
 fn ipred_smooth_h_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
     topleft_off: usize,
     width: c_int,
@@ -758,6 +1018,7 @@ fn ipred_smooth_h_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_smooth_h_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -770,7 +1031,7 @@ unsafe extern "C" fn ipred_smooth_h_c_erased<BD: BitDepth>(
     _max_height: c_int,
     _bitdepth_max: c_int,
     topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -879,7 +1140,7 @@ fn upsample_edge<BD: BitDepth>(
 }
 
 fn ipred_z1_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     topleft_in: &[BD::Pixel; SCRATCH_EDGE_LEN],
     topleft_in_off: usize,
     width: c_int,
@@ -963,7 +1224,7 @@ fn ipred_z1_rust<BD: BitDepth>(
 }
 
 fn ipred_z2_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     topleft_in: &[BD::Pixel; SCRATCH_EDGE_LEN],
     topleft_in_off: usize,
     width: c_int,
@@ -1099,7 +1360,7 @@ fn ipred_z2_rust<BD: BitDepth>(
 }
 
 fn ipred_z3_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     topleft_in: &[BD::Pixel; SCRATCH_EDGE_LEN],
     topleft_in_off: usize,
     width: c_int,
@@ -1194,6 +1455,7 @@ fn ipred_z3_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`angular_ipred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn ipred_z_c_erased<BD: BitDepth, const Z: usize>(
     _dst_ptr: *mut DynPixel,
@@ -1206,7 +1468,7 @@ unsafe extern "C" fn ipred_z_c_erased<BD: BitDepth, const Z: usize>(
     max_height: c_int,
     bitdepth_max: c_int,
     topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1227,7 +1489,7 @@ unsafe extern "C" fn ipred_z_c_erased<BD: BitDepth, const Z: usize>(
 }
 
 fn ipred_filter_rust<BD: BitDepth>(
-    mut dst: Rav1dPictureDataComponentOffset,
+    mut dst: PicOffset,
     topleft_in: &[BD::Pixel; SCRATCH_EDGE_LEN],
     topleft_off: usize,
     width: c_int,
@@ -1285,6 +1547,7 @@ fn ipred_filter_rust<BD: BitDepth>(
     }
 }
 
+#[cfg(feature = "asm")]
 unsafe extern "C" fn ipred_filter_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _stride: ptrdiff_t,
@@ -1296,7 +1559,7 @@ unsafe extern "C" fn ipred_filter_c_erased<BD: BitDepth>(
     max_height: c_int,
     bitdepth_max: c_int,
     topleft_off: usize,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1319,7 +1582,7 @@ unsafe extern "C" fn ipred_filter_c_erased<BD: BitDepth>(
 #[inline(never)]
 fn cfl_ac_rust<BD: BitDepth>(
     ac: &mut [i16; SCRATCH_AC_TXTP_LEN],
-    y_src: Rav1dPictureDataComponentOffset,
+    y_src: PicOffset,
     w_pad: c_int,
     h_pad: c_int,
     width: usize,
@@ -1384,6 +1647,7 @@ fn cfl_ac_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`cfl_ac::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn cfl_ac_c_erased<BD: BitDepth, const IS_SS_HOR: bool, const IS_SS_VER: bool>(
     ac: &mut [i16; SCRATCH_AC_TXTP_LEN],
@@ -1393,7 +1657,7 @@ unsafe extern "C" fn cfl_ac_c_erased<BD: BitDepth, const IS_SS_HOR: bool, const 
     h_pad: c_int,
     cw: c_int,
     ch: c_int,
-    y: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    y: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `cfl_ac::Fn::call`.
     let y = *unsafe { FFISafe::get(y) };
@@ -1403,7 +1667,7 @@ unsafe extern "C" fn cfl_ac_c_erased<BD: BitDepth, const IS_SS_HOR: bool, const 
 }
 
 fn pal_pred_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     pal: &[BD::Pixel; 8],
     idx: &[u8],
     w: c_int,
@@ -1430,6 +1694,7 @@ fn pal_pred_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`pal_pred::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn pal_pred_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
@@ -1438,7 +1703,7 @@ unsafe extern "C" fn pal_pred_c_erased<BD: BitDepth>(
     idx: *const u8,
     w: c_int,
     h: c_int,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(dst)` in `pal_pred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1987,7 +2252,7 @@ mod neon {
         max_height: c_int,
         bitdepth_max: c_int,
         topleft_off: usize,
-        _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        _dst: *const FFISafe<PicOffset>,
     ) {
         let dst = dst.cast();
         // SAFETY: Reconstructed from args passed by `angular_ipred::Fn::call`.
@@ -2010,49 +2275,60 @@ mod neon {
 
 impl Rav1dIntraPredDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
-        Self {
-            intra_pred: {
-                let mut a = [DefaultValue::DEFAULT; N_IMPL_INTRA_PRED_MODES];
-                a[DC_PRED as usize] =
-                    angular_ipred::Fn::new(ipred_dc_c_erased::<BD, { DcGen::TopLeft as u8 }>);
-                a[DC_128_PRED as usize] = angular_ipred::Fn::new(ipred_dc_128_c_erased::<BD>);
-                a[TOP_DC_PRED as usize] =
-                    angular_ipred::Fn::new(ipred_dc_c_erased::<BD, { DcGen::Top as u8 }>);
-                a[LEFT_DC_PRED as usize] =
-                    angular_ipred::Fn::new(ipred_dc_c_erased::<BD, { DcGen::Left as u8 }>);
-                a[HOR_PRED as usize] = angular_ipred::Fn::new(ipred_h_c_erased::<BD>);
-                a[VERT_PRED as usize] = angular_ipred::Fn::new(ipred_v_c_erased::<BD>);
-                a[PAETH_PRED as usize] = angular_ipred::Fn::new(ipred_paeth_c_erased::<BD>);
-                a[SMOOTH_PRED as usize] = angular_ipred::Fn::new(ipred_smooth_c_erased::<BD>);
-                a[SMOOTH_V_PRED as usize] = angular_ipred::Fn::new(ipred_smooth_v_c_erased::<BD>);
-                a[SMOOTH_H_PRED as usize] = angular_ipred::Fn::new(ipred_smooth_h_c_erased::<BD>);
-                a[Z1_PRED as usize] = angular_ipred::Fn::new(ipred_z_c_erased::<BD, 1>);
-                a[Z2_PRED as usize] = angular_ipred::Fn::new(ipred_z_c_erased::<BD, 2>);
-                a[Z3_PRED as usize] = angular_ipred::Fn::new(ipred_z_c_erased::<BD, 3>);
-                a[FILTER_PRED as usize] = angular_ipred::Fn::new(ipred_filter_c_erased::<BD>);
-                a
-            },
-            cfl_ac: enum_map!(Rav1dPixelLayoutSubSampled => cfl_ac::Fn; match key {
-                I420 => cfl_ac::Fn::new(cfl_ac_c_erased::<BD, true, true>),
-                I422 => cfl_ac::Fn::new(cfl_ac_c_erased::<BD, true, false>),
-                I444 => cfl_ac::Fn::new(cfl_ac_c_erased::<BD, false, false>),
-            }),
-            cfl_pred: {
-                // Not all elements are initialized with fns,
-                // so we default initialize first so that there is no uninitialized memory.
-                // The defaults just call `unimplemented!()`,
-                // which shouldn't slow down the other code paths at all.
-                let mut a = [DefaultValue::DEFAULT; 6];
-                a[DC_PRED as usize] =
-                    cfl_pred::Fn::new(ipred_cfl_c_erased::<BD, { DcGen::TopLeft as u8 }>);
-                a[DC_128_PRED as usize] = cfl_pred::Fn::new(ipred_cfl_128_c_erased::<BD>);
-                a[TOP_DC_PRED as usize] =
-                    cfl_pred::Fn::new(ipred_cfl_c_erased::<BD, { DcGen::Top as u8 }>);
-                a[LEFT_DC_PRED as usize] =
-                    cfl_pred::Fn::new(ipred_cfl_c_erased::<BD, { DcGen::Left as u8 }>);
-                a
-            },
-            pal_pred: pal_pred::Fn::new(pal_pred_c_erased::<BD>),
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                Self {
+                    intra_pred: {
+                        let mut a = [DefaultValue::DEFAULT; N_IMPL_INTRA_PRED_MODES];
+                        a[DC_PRED as usize] =
+                            angular_ipred::Fn::new(ipred_dc_c_erased::<BD, { DcGen::TopLeft as u8 }>);
+                        a[DC_128_PRED as usize] = angular_ipred::Fn::new(ipred_dc_128_c_erased::<BD>);
+                        a[TOP_DC_PRED as usize] =
+                            angular_ipred::Fn::new(ipred_dc_c_erased::<BD, { DcGen::Top as u8 }>);
+                        a[LEFT_DC_PRED as usize] =
+                            angular_ipred::Fn::new(ipred_dc_c_erased::<BD, { DcGen::Left as u8 }>);
+                        a[HOR_PRED as usize] = angular_ipred::Fn::new(ipred_h_c_erased::<BD>);
+                        a[VERT_PRED as usize] = angular_ipred::Fn::new(ipred_v_c_erased::<BD>);
+                        a[PAETH_PRED as usize] = angular_ipred::Fn::new(ipred_paeth_c_erased::<BD>);
+                        a[SMOOTH_PRED as usize] = angular_ipred::Fn::new(ipred_smooth_c_erased::<BD>);
+                        a[SMOOTH_V_PRED as usize] = angular_ipred::Fn::new(ipred_smooth_v_c_erased::<BD>);
+                        a[SMOOTH_H_PRED as usize] = angular_ipred::Fn::new(ipred_smooth_h_c_erased::<BD>);
+                        a[Z1_PRED as usize] = angular_ipred::Fn::new(ipred_z_c_erased::<BD, 1>);
+                        a[Z2_PRED as usize] = angular_ipred::Fn::new(ipred_z_c_erased::<BD, 2>);
+                        a[Z3_PRED as usize] = angular_ipred::Fn::new(ipred_z_c_erased::<BD, 3>);
+                        a[FILTER_PRED as usize] = angular_ipred::Fn::new(ipred_filter_c_erased::<BD>);
+                        a
+                    },
+                    cfl_ac: enum_map!(Rav1dPixelLayoutSubSampled => cfl_ac::Fn; match key {
+                        I420 => cfl_ac::Fn::new(cfl_ac_c_erased::<BD, true, true>),
+                        I422 => cfl_ac::Fn::new(cfl_ac_c_erased::<BD, true, false>),
+                        I444 => cfl_ac::Fn::new(cfl_ac_c_erased::<BD, false, false>),
+                    }),
+                    cfl_pred: {
+                        let mut a = [DefaultValue::DEFAULT; 6];
+                        a[DC_PRED as usize] =
+                            cfl_pred::Fn::new(ipred_cfl_c_erased::<BD, { DcGen::TopLeft as u8 }>);
+                        a[DC_128_PRED as usize] = cfl_pred::Fn::new(ipred_cfl_128_c_erased::<BD>);
+                        a[TOP_DC_PRED as usize] =
+                            cfl_pred::Fn::new(ipred_cfl_c_erased::<BD, { DcGen::Top as u8 }>);
+                        a[LEFT_DC_PRED as usize] =
+                            cfl_pred::Fn::new(ipred_cfl_c_erased::<BD, { DcGen::Left as u8 }>);
+                        a
+                    },
+                    pal_pred: pal_pred::Fn::new(pal_pred_c_erased::<BD>),
+                }
+            } else {
+                Self {
+                    intra_pred: [DefaultValue::DEFAULT; N_IMPL_INTRA_PRED_MODES],
+                    cfl_ac: enum_map!(Rav1dPixelLayoutSubSampled => cfl_ac::Fn; match key {
+                        I420 => cfl_ac::Fn::DEFAULT,
+                        I422 => cfl_ac::Fn::DEFAULT,
+                        I444 => cfl_ac::Fn::DEFAULT,
+                    }),
+                    cfl_pred: [DefaultValue::DEFAULT; 6],
+                    pal_pred: pal_pred::Fn::DEFAULT,
+                }
+            }
         }
     }
 
@@ -2242,136 +2518,6 @@ impl Rav1dIntraPredDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-    #[inline(always)]
-    const fn init_x86_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::src::safe_simd::ipred as safe_ipred;
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                // 8bpc implementations
-                self.intra_pred[DC_128_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_128_8bpc_avx2);
-                self.intra_pred[VERT_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_v_8bpc_avx2);
-                self.intra_pred[HOR_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_h_8bpc_avx2);
-                self.intra_pred[DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_8bpc_avx2);
-                self.intra_pred[TOP_DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_top_8bpc_avx2);
-                self.intra_pred[LEFT_DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_left_8bpc_avx2);
-                self.intra_pred[PAETH_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_paeth_8bpc_avx2);
-                self.intra_pred[SMOOTH_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_8bpc_avx2);
-                self.intra_pred[SMOOTH_V_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_v_8bpc_avx2);
-                self.intra_pred[SMOOTH_H_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_h_8bpc_avx2);
-                self.intra_pred[FILTER_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_filter_8bpc_avx2);
-                self.intra_pred[Z1_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_z1_8bpc_avx2);
-                self.intra_pred[Z2_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_z2_8bpc_avx2);
-                self.intra_pred[Z3_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_z3_8bpc_avx2);
-            }
-            BPC::BPC16 => {
-                // 16bpc implementations (10/12-bit)
-                self.intra_pred[DC_128_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_128_16bpc_avx2);
-                self.intra_pred[VERT_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_v_16bpc_avx2);
-                self.intra_pred[HOR_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_h_16bpc_avx2);
-                self.intra_pred[DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_16bpc_avx2);
-                self.intra_pred[TOP_DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_top_16bpc_avx2);
-                self.intra_pred[LEFT_DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_left_16bpc_avx2);
-                self.intra_pred[PAETH_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_paeth_16bpc_avx2);
-                self.intra_pred[SMOOTH_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_16bpc_avx2);
-                self.intra_pred[SMOOTH_V_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_v_16bpc_avx2);
-                self.intra_pred[SMOOTH_H_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_h_16bpc_avx2);
-                self.intra_pred[FILTER_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_filter_16bpc_avx2);
-                self.intra_pred[Z1_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_z1_16bpc_avx2);
-                self.intra_pred[Z2_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_z2_16bpc_avx2);
-                self.intra_pred[Z3_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_z3_16bpc_avx2);
-            }
-        }
-
-        self
-    }
-
-    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-    #[inline(always)]
-    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::ipred_arm as safe_ipred;
-
-        // Wire up ARM NEON implementations
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.intra_pred[DC_128_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_128_8bpc_neon);
-                self.intra_pred[VERT_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_v_8bpc_neon);
-                self.intra_pred[HOR_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_h_8bpc_neon);
-                self.intra_pred[DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_8bpc_neon);
-                self.intra_pred[TOP_DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_top_8bpc_neon);
-                self.intra_pred[LEFT_DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_left_8bpc_neon);
-                self.intra_pred[PAETH_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_paeth_8bpc_neon);
-                self.intra_pred[SMOOTH_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_8bpc_neon);
-                self.intra_pred[SMOOTH_V_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_v_8bpc_neon);
-                self.intra_pred[SMOOTH_H_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_h_8bpc_neon);
-            }
-            BPC::BPC16 => {
-                self.intra_pred[DC_128_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_128_16bpc_neon);
-                self.intra_pred[VERT_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_v_16bpc_neon);
-                self.intra_pred[HOR_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_h_16bpc_neon);
-                self.intra_pred[DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_16bpc_neon);
-                self.intra_pred[TOP_DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_top_16bpc_neon);
-                self.intra_pred[LEFT_DC_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_dc_left_16bpc_neon);
-                self.intra_pred[PAETH_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_paeth_16bpc_neon);
-                self.intra_pred[SMOOTH_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_16bpc_neon);
-                self.intra_pred[SMOOTH_V_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_v_16bpc_neon);
-                self.intra_pred[SMOOTH_H_PRED as usize] =
-                    angular_ipred::Fn::new(safe_ipred::ipred_smooth_h_16bpc_neon);
-            }
-        }
-
-        self
-    }
-
     #[inline(always)]
     #[cfg(feature = "asm")]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
@@ -2394,16 +2540,6 @@ impl Rav1dIntraPredDSPContext {
     #[inline(always)]
     #[cfg(not(feature = "asm"))]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
-        #[cfg(target_arch = "x86_64")]
-        {
-            return self.init_x86_safe_simd::<BD>(flags);
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            return self.init_arm_safe_simd::<BD>(flags);
-        }
-
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
         {
             let _ = flags;

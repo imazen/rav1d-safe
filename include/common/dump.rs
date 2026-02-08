@@ -1,7 +1,7 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use crate::include::common::bitdepth::BitDepth;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::strided::Strided as _;
 use std::fmt::Display;
 use std::io;
@@ -35,7 +35,7 @@ pub fn hex_dump<BD: BitDepth>(buf: &[BD::Pixel], stride: usize, w: usize, h: usi
 #[inline]
 pub fn hex_fdump_pic<BD: BitDepth>(
     out: &mut impl io::Write,
-    buf: Rav1dPictureDataComponentOffset,
+    buf: PicOffset,
     w: usize,
     h: usize,
     what: &str,
@@ -53,12 +53,7 @@ pub fn hex_fdump_pic<BD: BitDepth>(
 }
 
 #[inline]
-pub fn hex_dump_pic<BD: BitDepth>(
-    buf: Rav1dPictureDataComponentOffset,
-    w: usize,
-    h: usize,
-    what: &str,
-) {
+pub fn hex_dump_pic<BD: BitDepth>(buf: PicOffset, w: usize, h: usize, what: &str) {
     hex_fdump_pic::<BD>(&mut stdout(), buf, w, h, what).unwrap();
 }
 

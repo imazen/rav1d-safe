@@ -1,5 +1,5 @@
 [workspace]
-members = ["."]
+members = [".", "crates/disjoint-mut"]
 
 [package]
 name = "rav1d-safe"
@@ -21,6 +21,7 @@ assert_matches = "1.5.0"
 atomig = { version = "0.4.0", features = ["derive"] }
 bitflags = "2.4.0"
 cfg-if = "1.0.0"
+disjoint-mut = { path = "crates/disjoint-mut" }
 libc = "0.2"
 parking_lot = "0.12.2"
 paste = "1.0.14"
@@ -30,7 +31,7 @@ to_method = "1.1.0"
 zerocopy = { version = "0.7.32", features = ["derive"] }
 
 # Safe SIMD dependencies
-archmage = { version = "0.4.0", features = ["macros"] }
+archmage = { version = "0.5.0", features = ["macros"] }
 safe_unaligned_simd = "0.2.4"
 
 [build-dependencies]
@@ -38,15 +39,27 @@ cc = "1.0.79"
 nasm-rs = { version = "0.3", features = ["parallel"] }
 
 [features]
-default = ["asm", "bitdepth_8", "bitdepth_16"]
+# Default: Maximum safety (forbid_unsafe) - single-threaded, safe-only data structures
+default = ["bitdepth_8", "bitdepth_16"]
 
-# Original asm feature - uses hand-written assembly
-asm = []
+# Progressive safety levels (each depends on previous):
+# Level 1: Sound abstractions (Arc, Mutex, threading)
+quite-safe = []
+
+# Level 2: Unchecked slice access in hot paths (get_unchecked with debug_assert!)
+unchecked = ["quite-safe"]
+
+# Level 3: C FFI API compatibility (unsafe extern "C" functions)
+# Enables: dav1d_* C API, FFISafe, c_arc, c_box
+c-ffi = ["unchecked"]
+
+# Level 4: Hand-written assembly (maximum performance)
+asm = ["c-ffi"]
 asm_arm64_dotprod = ["asm"]
 asm_arm64_i8mm = ["asm"]
 asm_arm64_sve2 = ["asm"]
 
-
+# Bit depth support
 bitdepth_8 = []
 bitdepth_16 = []
 

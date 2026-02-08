@@ -1,4 +1,7 @@
 //! Safe SIMD implementations for Loop Restoration
+#![allow(deprecated)] // FFI wrappers need to forge tokens
+#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
 //!
 //! Loop restoration applies two types of filtering:
 //! 1. Wiener filter - 7-tap or 5-tap separable filter
@@ -10,23 +13,29 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+use archmage::{arcane, Desktop64, SimdToken};
 use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
 use std::slice;
 
+#[cfg(target_arch = "x86_64")]
+use crate::src::safe_simd::partial_simd;
+#[cfg(target_arch = "x86_64")]
+use crate::src::safe_simd::pixel_access::load_128;
+
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
-use crate::include::common::bitdepth::BitDepth8;
 use crate::include::common::bitdepth::BitDepth16;
+use crate::include::common::bitdepth::BitDepth8;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::bitdepth::LeftPixelRow;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::ffi_safe::FFISafe;
-use crate::src::looprestoration::{padding, LrEdgeFlags, LooprestorationParams};
+use crate::src::looprestoration::{padding, LooprestorationParams, LrEdgeFlags};
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_sgr_x_by_x;
 use libc::ptrdiff_t;
@@ -44,9 +53,10 @@ const REST_UNIT_STRIDE: usize = 256 * 3 / 2 + 3 + 3; // = 390
 /// - Horizontal: 7-tap filter on each row, output is 16-bit
 /// - Vertical: 7-tap filter on columns of the horizontal output
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn wiener_filter7_8bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+#[arcane]
+fn wiener_filter7_8bpc_avx2_inner(
+    _token: Desktop64,
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -101,15 +111,15 @@ unsafe fn wiener_filter7_8bpc_avx2_inner(
     let stride = p.pixel_stride::<BitDepth8>();
 
     // Load filter coefficients into AVX2 registers (broadcast to all lanes)
-    let vf0 = unsafe { _mm256_set1_epi32(filter[1][0] as i32) };
-    let vf1 = unsafe { _mm256_set1_epi32(filter[1][1] as i32) };
-    let vf2 = unsafe { _mm256_set1_epi32(filter[1][2] as i32) };
-    let vf3 = unsafe { _mm256_set1_epi32(filter[1][3] as i32) };
-    let vf4 = unsafe { _mm256_set1_epi32(filter[1][4] as i32) };
-    let vf5 = unsafe { _mm256_set1_epi32(filter[1][5] as i32) };
-    let vf6 = unsafe { _mm256_set1_epi32(filter[1][6] as i32) };
-    let v_round_offset = unsafe { _mm256_set1_epi32(-round_offset) };
-    let v_rounding = unsafe { _mm256_set1_epi32(rounding_off_v) };
+    let vf0 = _mm256_set1_epi32(filter[1][0] as i32);
+    let vf1 = _mm256_set1_epi32(filter[1][1] as i32);
+    let vf2 = _mm256_set1_epi32(filter[1][2] as i32);
+    let vf3 = _mm256_set1_epi32(filter[1][3] as i32);
+    let vf4 = _mm256_set1_epi32(filter[1][4] as i32);
+    let vf5 = _mm256_set1_epi32(filter[1][5] as i32);
+    let vf6 = _mm256_set1_epi32(filter[1][6] as i32);
+    let v_round_offset = _mm256_set1_epi32(-round_offset);
+    let v_rounding = _mm256_set1_epi32(rounding_off_v);
 
     for j in 0..h {
         let mut dst_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);
@@ -117,61 +127,59 @@ unsafe fn wiener_filter7_8bpc_avx2_inner(
 
         // Process 8 pixels at a time with AVX2
         while i + 8 <= w {
-            unsafe {
-                // Load 8 u16 values from each of the 7 rows and convert to i32
-                // We need to process low and high halves separately
-                let row0 = &hor[(j + 0) * REST_UNIT_STRIDE + i..];
-                let row1 = &hor[(j + 1) * REST_UNIT_STRIDE + i..];
-                let row2 = &hor[(j + 2) * REST_UNIT_STRIDE + i..];
-                let row3 = &hor[(j + 3) * REST_UNIT_STRIDE + i..];
-                let row4 = &hor[(j + 4) * REST_UNIT_STRIDE + i..];
-                let row5 = &hor[(j + 5) * REST_UNIT_STRIDE + i..];
-                let row6 = &hor[(j + 6) * REST_UNIT_STRIDE + i..];
+            // Load 8 u16 values from each of the 7 rows and convert to i32
+            // We need to process low and high halves separately
+            let row0 = &hor[(j + 0) * REST_UNIT_STRIDE + i..];
+            let row1 = &hor[(j + 1) * REST_UNIT_STRIDE + i..];
+            let row2 = &hor[(j + 2) * REST_UNIT_STRIDE + i..];
+            let row3 = &hor[(j + 3) * REST_UNIT_STRIDE + i..];
+            let row4 = &hor[(j + 4) * REST_UNIT_STRIDE + i..];
+            let row5 = &hor[(j + 5) * REST_UNIT_STRIDE + i..];
+            let row6 = &hor[(j + 6) * REST_UNIT_STRIDE + i..];
 
-                // Load 8 u16 values as __m128i
-                let r0 = _mm_loadu_si128(row0.as_ptr() as *const __m128i);
-                let r1 = _mm_loadu_si128(row1.as_ptr() as *const __m128i);
-                let r2 = _mm_loadu_si128(row2.as_ptr() as *const __m128i);
-                let r3 = _mm_loadu_si128(row3.as_ptr() as *const __m128i);
-                let r4 = _mm_loadu_si128(row4.as_ptr() as *const __m128i);
-                let r5 = _mm_loadu_si128(row5.as_ptr() as *const __m128i);
-                let r6 = _mm_loadu_si128(row6.as_ptr() as *const __m128i);
+            // Load 8 u16 values as __m128i via safe macro
+            let r0 = load_128!(&row0[..8], [u16; 8]);
+            let r1 = load_128!(&row1[..8], [u16; 8]);
+            let r2 = load_128!(&row2[..8], [u16; 8]);
+            let r3 = load_128!(&row3[..8], [u16; 8]);
+            let r4 = load_128!(&row4[..8], [u16; 8]);
+            let r5 = load_128!(&row5[..8], [u16; 8]);
+            let r6 = load_128!(&row6[..8], [u16; 8]);
 
-                // Process low 4 pixels (expand u16 to i32)
-                let r0_lo = _mm256_cvtepu16_epi32(r0);
-                let r1_lo = _mm256_cvtepu16_epi32(r1);
-                let r2_lo = _mm256_cvtepu16_epi32(r2);
-                let r3_lo = _mm256_cvtepu16_epi32(r3);
-                let r4_lo = _mm256_cvtepu16_epi32(r4);
-                let r5_lo = _mm256_cvtepu16_epi32(r5);
-                let r6_lo = _mm256_cvtepu16_epi32(r6);
+            // Process low 4 pixels (expand u16 to i32)
+            let r0_lo = _mm256_cvtepu16_epi32(r0);
+            let r1_lo = _mm256_cvtepu16_epi32(r1);
+            let r2_lo = _mm256_cvtepu16_epi32(r2);
+            let r3_lo = _mm256_cvtepu16_epi32(r3);
+            let r4_lo = _mm256_cvtepu16_epi32(r4);
+            let r5_lo = _mm256_cvtepu16_epi32(r5);
+            let r6_lo = _mm256_cvtepu16_epi32(r6);
 
-                // sum = -round_offset + sum(row[k] * filter[k])
-                let mut sum = v_round_offset;
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r0_lo, vf0));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r1_lo, vf1));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r2_lo, vf2));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r3_lo, vf3));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r4_lo, vf4));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r5_lo, vf5));
-                sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r6_lo, vf6));
+            // sum = -round_offset + sum(row[k] * filter[k])
+            let mut sum = v_round_offset;
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r0_lo, vf0));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r1_lo, vf1));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r2_lo, vf2));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r3_lo, vf3));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r4_lo, vf4));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r5_lo, vf5));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r6_lo, vf6));
 
-                // Add rounding and shift
-                sum = _mm256_add_epi32(sum, v_rounding);
-                sum = _mm256_srai_epi32::<11>(sum); // round_bits_v = 11 for 8bpc
+            // Add rounding and shift
+            sum = _mm256_add_epi32(sum, v_rounding);
+            sum = _mm256_srai_epi32::<11>(sum); // round_bits_v = 11 for 8bpc
 
-                // Clip to 0-255 and pack to bytes
-                // packus_epi32 saturates to 0-65535, then packus_epi16 saturates to 0-255
-                let sum16 = _mm256_packus_epi32(sum, sum); // i32 -> u16, gives [0-7][0-7]
-                let sum16_lo = _mm256_castsi256_si128(sum16);
-                let sum16_hi = _mm256_extracti128_si256(sum16, 1);
-                let sum16_combined = _mm_unpacklo_epi64(sum16_lo, sum16_hi);
-                let sum8 = _mm_packus_epi16(sum16_combined, sum16_combined); // u16 -> u8
+            // Clip to 0-255 and pack to bytes
+            // packus_epi32 saturates to 0-65535, then packus_epi16 saturates to 0-255
+            let sum16 = _mm256_packus_epi32(sum, sum); // i32 -> u16, gives [0-7][0-7]
+            let sum16_lo = _mm256_castsi256_si128(sum16);
+            let sum16_hi = _mm256_extracti128_si256(sum16, 1);
+            let sum16_combined = _mm_unpacklo_epi64(sum16_lo, sum16_hi);
+            let sum8 = _mm_packus_epi16(sum16_combined, sum16_combined); // u16 -> u8
 
-                // Store 8 bytes
-                let dst_ptr = dst_row.as_mut_ptr().add(i);
-                _mm_storel_epi64(dst_ptr as *mut __m128i, sum8);
-            }
+            // Store 8 bytes via safe partial_simd
+            let dst_arr: &mut [u8; 8] = (&mut dst_row[i..i + 8]).try_into().unwrap();
+            partial_simd::mm_storel_epi64(dst_arr, sum8);
             i += 8;
         }
 
@@ -191,9 +199,10 @@ unsafe fn wiener_filter7_8bpc_avx2_inner(
 ///
 /// Same as 7-tap but filter[0][0] = filter[0][6] = 0 and filter[1][0] = filter[1][6] = 0
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn wiener_filter5_8bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+#[arcane]
+fn wiener_filter5_8bpc_avx2_inner(
+    _token: Desktop64,
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -203,10 +212,7 @@ unsafe fn wiener_filter5_8bpc_avx2_inner(
     edges: LrEdgeFlags,
 ) {
     // 5-tap is identical to 7-tap, the coefficient array just has zeros at edges
-    // SAFETY: Called within unsafe fn, maintains same invariants
-    unsafe {
-        wiener_filter7_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    wiener_filter7_8bpc_avx2_inner(_token, p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 // ============================================================================
@@ -220,9 +226,8 @@ unsafe fn wiener_filter5_8bpc_avx2_inner(
 /// - Different shift amounts based on 10bpc vs 12bpc
 /// - 16-bit pixel values
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn wiener_filter7_16bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+fn wiener_filter7_16bpc_avx2_inner(
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -294,9 +299,8 @@ unsafe fn wiener_filter7_16bpc_avx2_inner(
 
 /// Wiener filter 5-tap for 16bpc using AVX2
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn wiener_filter5_16bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+fn wiener_filter5_16bpc_avx2_inner(
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -306,9 +310,7 @@ unsafe fn wiener_filter5_16bpc_avx2_inner(
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
 ) {
-    unsafe {
-        wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 // ============================================================================
@@ -318,11 +320,11 @@ unsafe fn wiener_filter5_16bpc_avx2_inner(
 /// Reconstructs lpf offset from pointer
 fn reconstruct_lpf_offset(lpf: &DisjointMut<AlignedVec64<u8>>, ptr: *const u8) -> isize {
     let base = lpf.as_mut_ptr();
-    (ptr as isize - base as isize)
+    ptr as isize - base as isize
 }
 
 /// FFI wrapper for Wiener filter 7-tap 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn wiener_filter7_8bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -334,7 +336,7 @@ pub unsafe extern "C" fn wiener_filter7_8bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     // SAFETY: p and lpf were passed as FFISafe::new(_) in loop_restoration_filter::Fn::call
@@ -348,14 +350,13 @@ pub unsafe extern "C" fn wiener_filter7_8bpc_avx2(
     // SAFETY: Length was sliced in loop_restoration_filter::Fn::call
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    // SAFETY: All parameters validated, target_feature enabled
-    unsafe {
-        wiener_filter7_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    // SAFETY: AVX2 available (checked by dispatch)
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    wiener_filter7_8bpc_avx2_inner(token, p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 /// FFI wrapper for Wiener filter 5-tap 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -367,7 +368,7 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     // SAFETY: p and lpf were passed as FFISafe::new(_) in loop_restoration_filter::Fn::call
@@ -381,20 +382,19 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
     // SAFETY: Length was sliced in loop_restoration_filter::Fn::call
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    // SAFETY: All parameters validated, target_feature enabled
-    unsafe {
-        wiener_filter5_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    // SAFETY: AVX2 available (checked by dispatch)
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    wiener_filter5_8bpc_avx2_inner(token, p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 /// Reconstructs lpf offset from pointer for 16bpc
 fn reconstruct_lpf_offset_16bpc(lpf: &DisjointMut<AlignedVec64<u8>>, ptr: *const u16) -> isize {
     let base = lpf.as_mut_ptr().cast::<u16>();
-    (ptr as isize - base as isize) / 2 // Divide by sizeof(u16)
+    ptr as isize - base as isize / 2 // Divide by sizeof(u16)
 }
 
 /// FFI wrapper for Wiener filter 7-tap 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -406,7 +406,7 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -418,13 +418,11 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 /// FFI wrapper for Wiener filter 5-tap 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -436,7 +434,7 @@ pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -448,9 +446,7 @@ pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        wiener_filter5_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    wiener_filter5_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 // ============================================================================
@@ -497,10 +493,14 @@ fn boxsum5_8bpc(
             sumsq_v += REST_UNIT_STRIDE;
             sum[sum_v] = (a + b + c + d + e) as i16;
             sumsq[sumsq_v] = a2 + b2 + c2 + d2 + e2;
-            a = b; a2 = b2;
-            b = c; b2 = c2;
-            c = d; c2 = d2;
-            d = e; d2 = e2;
+            a = b;
+            a2 = b2;
+            b = c;
+            b2 = c2;
+            c = d;
+            c2 = d2;
+            d = e;
+            d2 = e2;
         }
     }
 
@@ -568,8 +568,10 @@ fn boxsum3_8bpc(
             sumsq_v += REST_UNIT_STRIDE;
             sum[sum_v] = (a + b + c) as i16;
             sumsq[sumsq_v] = a2 + b2 + c2;
-            a = b; a2 = b2;
-            b = c; b2 = c2;
+            a = b;
+            a2 = b2;
+            b = c;
+            b2 = c2;
         }
     }
 
@@ -666,10 +668,14 @@ fn selfguided_filter_8bpc(
                 let b_six = {
                     let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
                     let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
-                    let above_left = sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let above_right = sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
-                    let below_left = sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let below_right = sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let above_left =
+                        sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let above_right =
+                        sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let below_left =
+                        sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let below_right =
+                        sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 // six_neighbors for a (sumsq array)
@@ -684,7 +690,8 @@ fn selfguided_filter_8bpc(
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i32;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_six - b_six * src_val + (1 << 8)) >> 9) as i16;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_six - b_six * src_val + (1 << 8)) >> 9) as i16;
             }
 
             // Odd row: simplified 3-neighbor horizontal calculation
@@ -706,7 +713,8 @@ fn selfguided_filter_8bpc(
                     };
 
                     let src_val = src[src_base + (j + 1) * REST_UNIT_STRIDE + i] as i32;
-                    dst[(j + 1) * MAX_RESTORATION_WIDTH + i] = ((a_horiz - b_horiz * src_val + (1 << 7)) >> 8) as i16;
+                    dst[(j + 1) * MAX_RESTORATION_WIDTH + i] =
+                        ((a_horiz - b_horiz * src_val + (1 << 7)) >> 8) as i16;
                 }
             }
             j += 2;
@@ -718,10 +726,14 @@ fn selfguided_filter_8bpc(
                 let b_six = {
                     let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
                     let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
-                    let above_left = sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let above_right = sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
-                    let below_left = sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let below_right = sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let above_left =
+                        sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let above_right =
+                        sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let below_left =
+                        sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let below_right =
+                        sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 let a_six = {
@@ -735,7 +747,8 @@ fn selfguided_filter_8bpc(
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i32;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_six - b_six * src_val + (1 << 8)) >> 9) as i16;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_six - b_six * src_val + (1 << 8)) >> 9) as i16;
             }
         }
     } else {
@@ -750,10 +763,14 @@ fn selfguided_filter_8bpc(
                     let right = sum.get(idx + 1).copied().unwrap_or(0) as i32;
                     let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
                     let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
-                    let above_left = sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let above_right = sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
-                    let below_left = sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
-                    let below_right = sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let above_left =
+                        sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let above_right =
+                        sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                    let below_left =
+                        sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                    let below_right =
+                        sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
@@ -773,7 +790,8 @@ fn selfguided_filter_8bpc(
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i32;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_eight - b_eight * src_val + (1 << 8)) >> 9) as i16;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_eight - b_eight * src_val + (1 << 8)) >> 9) as i16;
             }
         }
     }
@@ -781,9 +799,8 @@ fn selfguided_filter_8bpc(
 
 /// SGR 5x5 filter for 8bpc using AVX2
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_5x5_8bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+fn sgr_5x5_8bpc_avx2_inner(
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -814,9 +831,8 @@ unsafe fn sgr_5x5_8bpc_avx2_inner(
 
 /// SGR 3x3 filter for 8bpc using AVX2
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_3x3_8bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+fn sgr_3x3_8bpc_avx2_inner(
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -847,9 +863,8 @@ unsafe fn sgr_3x3_8bpc_avx2_inner(
 
 /// SGR mix filter for 8bpc using AVX2 (combines 5x5 and 3x3)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_mix_8bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+fn sgr_mix_8bpc_avx2_inner(
+    p: PicOffset,
     left: &[LeftPixelRow<u8>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -876,7 +891,7 @@ unsafe fn sgr_mix_8bpc_avx2_inner(
         let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);
         for i in 0..w {
             let v = w0 * dst0[j * MAX_RESTORATION_WIDTH + i] as i32
-                  + w1 * dst1[j * MAX_RESTORATION_WIDTH + i] as i32;
+                + w1 * dst1[j * MAX_RESTORATION_WIDTH + i] as i32;
             p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
         }
     }
@@ -887,7 +902,7 @@ unsafe fn sgr_mix_8bpc_avx2_inner(
 // ============================================================================
 
 /// FFI wrapper for SGR 5x5 filter 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_5x5_8bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -899,7 +914,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_8bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -911,13 +926,11 @@ pub unsafe extern "C" fn sgr_filter_5x5_8bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_5x5_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    sgr_5x5_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 /// FFI wrapper for SGR 3x3 filter 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_3x3_8bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -929,7 +942,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_8bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -941,13 +954,11 @@ pub unsafe extern "C" fn sgr_filter_3x3_8bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_3x3_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    sgr_3x3_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 /// FFI wrapper for SGR mix filter 8bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_mix_8bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -959,7 +970,7 @@ pub unsafe extern "C" fn sgr_filter_mix_8bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     _bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -971,9 +982,7 @@ pub unsafe extern "C" fn sgr_filter_mix_8bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_mix_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
-    }
+    sgr_mix_8bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 // ============================================================================
@@ -1014,10 +1023,14 @@ fn boxsum5_16bpc(
             sumsq_v += REST_UNIT_STRIDE;
             sum[sum_v] = (a + b + c + d + e) as i32;
             sumsq[sumsq_v] = a2 + b2 + c2 + d2 + e2;
-            a = b; a2 = b2;
-            b = c; b2 = c2;
-            c = d; c2 = d2;
-            d = e; d2 = e2;
+            a = b;
+            a2 = b2;
+            b = c;
+            b2 = c2;
+            c = d;
+            c2 = d2;
+            d = e;
+            d2 = e2;
         }
     }
 
@@ -1085,8 +1098,10 @@ fn boxsum3_16bpc(
             sumsq_v += REST_UNIT_STRIDE;
             sum[sum_v] = (a + b + c) as i32;
             sumsq[sumsq_v] = a2 + b2 + c2;
-            a = b; a2 = b2;
-            b = c; b2 = c2;
+            a = b;
+            a2 = b2;
+            b = c;
+            b2 = c2;
         }
     }
 
@@ -1164,7 +1179,8 @@ fn selfguided_filter_16bpc(
             let b_val = sum.get(idx).copied().unwrap_or(0) as i64;
 
             // Apply bitdepth scaling: a >> (2 * bitdepth_min_8), b >> bitdepth_min_8
-            let a_scaled = ((a_val + (1 << (2 * bitdepth_min_8 - 1))) >> (2 * bitdepth_min_8)) as i32;
+            let a_scaled =
+                ((a_val + (1 << (2 * bitdepth_min_8 - 1))) >> (2 * bitdepth_min_8)) as i32;
             let b_scaled = ((b_val + (1 << (bitdepth_min_8 - 1))) >> bitdepth_min_8) as i32;
 
             let p = cmp::max(a_scaled * n - b_scaled * b_scaled, 0) as u32;
@@ -1192,25 +1208,34 @@ fn selfguided_filter_16bpc(
                 let b_six = {
                     let above = bb.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = bb.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 // six_neighbors for a (aa array)
                 let a_six = {
                     let above = aa.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = aa.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i64;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_six - b_six * src_val + (1 << 8)) >> 9) as i32;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_six - b_six * src_val + (1 << 8)) >> 9) as i32;
             }
 
             // Odd row: simplified 3-neighbor horizontal calculation
@@ -1232,7 +1257,8 @@ fn selfguided_filter_16bpc(
                     };
 
                     let src_val = src[src_base + (j + 1) * REST_UNIT_STRIDE + i] as i64;
-                    dst[(j + 1) * MAX_RESTORATION_WIDTH + i] = ((a_horiz - b_horiz * src_val + (1 << 7)) >> 8) as i32;
+                    dst[(j + 1) * MAX_RESTORATION_WIDTH + i] =
+                        ((a_horiz - b_horiz * src_val + (1 << 7)) >> 8) as i32;
                 }
             }
             j += 2;
@@ -1244,24 +1270,33 @@ fn selfguided_filter_16bpc(
                 let b_six = {
                     let above = bb.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = bb.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 let a_six = {
                     let above = aa.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = aa.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i64;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_six - b_six * src_val + (1 << 8)) >> 9) as i32;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_six - b_six * src_val + (1 << 8)) >> 9) as i32;
             }
         }
     } else {
@@ -1276,10 +1311,14 @@ fn selfguided_filter_16bpc(
                     let right = bb.get(idx + 1).copied().unwrap_or(0) as i64;
                     let above = bb.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = bb.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
@@ -1290,16 +1329,21 @@ fn selfguided_filter_16bpc(
                     let right = aa.get(idx + 1).copied().unwrap_or(0) as i64;
                     let above = aa.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
                     let below = aa.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let above_left = aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let above_right = aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
-                    let below_left = aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
-                    let below_right = aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let above_left =
+                        aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let above_right =
+                        aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                    let below_left =
+                        aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                    let below_right =
+                        aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
 
                 let src_val = src[src_base + j * REST_UNIT_STRIDE + i] as i64;
-                dst[j * MAX_RESTORATION_WIDTH + i] = ((a_eight - b_eight * src_val + (1 << 8)) >> 9) as i32;
+                dst[j * MAX_RESTORATION_WIDTH + i] =
+                    ((a_eight - b_eight * src_val + (1 << 8)) >> 9) as i32;
             }
         }
     }
@@ -1307,9 +1351,8 @@ fn selfguided_filter_16bpc(
 
 /// SGR 5x5 filter for 16bpc using AVX2
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_5x5_16bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+fn sgr_5x5_16bpc_avx2_inner(
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -1341,9 +1384,8 @@ unsafe fn sgr_5x5_16bpc_avx2_inner(
 
 /// SGR 3x3 filter for 16bpc using AVX2
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_3x3_16bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+fn sgr_3x3_16bpc_avx2_inner(
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -1375,9 +1417,8 @@ unsafe fn sgr_3x3_16bpc_avx2_inner(
 
 /// SGR mix filter for 16bpc using AVX2 (combines 5x5 and 3x3)
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn sgr_mix_16bpc_avx2_inner(
-    p: Rav1dPictureDataComponentOffset,
+fn sgr_mix_16bpc_avx2_inner(
+    p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -1404,8 +1445,8 @@ unsafe fn sgr_mix_16bpc_avx2_inner(
     for j in 0..h {
         let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth16>(w);
         for i in 0..w {
-            let v = w0 * dst0[j * MAX_RESTORATION_WIDTH + i]
-                  + w1 * dst1[j * MAX_RESTORATION_WIDTH + i];
+            let v =
+                w0 * dst0[j * MAX_RESTORATION_WIDTH + i] + w1 * dst1[j * MAX_RESTORATION_WIDTH + i];
             p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max) as u16;
         }
     }
@@ -1416,7 +1457,7 @@ unsafe fn sgr_mix_16bpc_avx2_inner(
 // ============================================================================
 
 /// FFI wrapper for SGR 5x5 filter 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_5x5_16bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -1428,7 +1469,7 @@ pub unsafe extern "C" fn sgr_filter_5x5_16bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -1440,13 +1481,11 @@ pub unsafe extern "C" fn sgr_filter_5x5_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_5x5_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    sgr_5x5_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 /// FFI wrapper for SGR 3x3 filter 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_3x3_16bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -1458,7 +1497,7 @@ pub unsafe extern "C" fn sgr_filter_3x3_16bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -1470,13 +1509,11 @@ pub unsafe extern "C" fn sgr_filter_3x3_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_3x3_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    sgr_3x3_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 /// FFI wrapper for SGR mix filter 16bpc
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn sgr_filter_mix_16bpc_avx2(
     _p_ptr: *mut DynPixel,
@@ -1488,7 +1525,7 @@ pub unsafe extern "C" fn sgr_filter_mix_16bpc_avx2(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     let p = unsafe { *FFISafe::get(p) };
@@ -1500,9 +1537,7 @@ pub unsafe extern "C" fn sgr_filter_mix_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    unsafe {
-        sgr_mix_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
-    }
+    sgr_mix_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 // ============================================================================
@@ -1524,4 +1559,100 @@ mod tests {
     fn test_max_restoration_width() {
         assert_eq!(MAX_RESTORATION_WIDTH, 384);
     }
+}
+
+/// Safe dispatch for lr_filter. Returns true if SIMD was used.
+#[cfg(target_arch = "x86_64")]
+pub fn lr_filter_dispatch<BD: BitDepth>(
+    variant: usize,
+    dst: PicOffset,
+    left: &[LeftPixelRow<BD::Pixel>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: c_int,
+    h: c_int,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+
+    let Some(token) = Desktop64::summon() else { return false };
+
+    let w = w as usize;
+    let h = h as usize;
+    use crate::src::safe_simd::pixel_access::reinterpret_slice;
+    let left_8 =
+        || -> &[LeftPixelRow<u8>] { reinterpret_slice(left).expect("BD::Pixel layout matches u8") };
+    let left_16 = || -> &[LeftPixelRow<u16>] {
+        reinterpret_slice(left).expect("BD::Pixel layout matches u16")
+    };
+
+    match (BD::BPC, variant) {
+        (BPC::BPC8, 0) => {
+            wiener_filter7_8bpc_avx2_inner(token, dst, left_8(), lpf, lpf_off, w, h, params, edges)
+        }
+        (BPC::BPC8, 1) => {
+            wiener_filter5_8bpc_avx2_inner(token, dst, left_8(), lpf, lpf_off, w, h, params, edges)
+        }
+        (BPC::BPC8, 2) => sgr_5x5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+        (BPC::BPC8, 3) => sgr_3x3_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+        (BPC::BPC8, _) => sgr_mix_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
+        (BPC::BPC16, 0) => wiener_filter7_16bpc_avx2_inner(
+            dst,
+            left_16(),
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bd.into_c(),
+        ),
+        (BPC::BPC16, 1) => wiener_filter5_16bpc_avx2_inner(
+            dst,
+            left_16(),
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bd.into_c(),
+        ),
+        (BPC::BPC16, 2) => sgr_5x5_16bpc_avx2_inner(
+            dst,
+            left_16(),
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bd.into_c(),
+        ),
+        (BPC::BPC16, 3) => sgr_3x3_16bpc_avx2_inner(
+            dst,
+            left_16(),
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bd.into_c(),
+        ),
+        (BPC::BPC16, _) => sgr_mix_16bpc_avx2_inner(
+            dst,
+            left_16(),
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bd.into_c(),
+        ),
+    }
+    true
 }

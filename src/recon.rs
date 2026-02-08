@@ -1,5 +1,4 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
+#![forbid(unsafe_code)]
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::ToPrimitive;
@@ -16,9 +15,9 @@ use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::headers::Rav1dWarpedMotionParams;
 use crate::include::dav1d::headers::Rav1dWarpedMotionType;
+use crate::include::dav1d::picture::PicOffset;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
-use crate::src::assume::assume;
+
 use crate::src::cdef_apply::rav1d_cdef_brow;
 use crate::src::ctx::CaseSet;
 use crate::src::env::get_uv_inter_txtp;
@@ -74,6 +73,7 @@ use crate::src::msac::rav1d_msac_decode_symbol_adapt4;
 use crate::src::msac::rav1d_msac_decode_symbol_adapt8;
 use crate::src::msac::MsacContext;
 use crate::src::picture::Rav1dThreadPicture;
+#[cfg(feature = "asm")]
 use crate::src::pixels::Pixels as _;
 use crate::src::scan::dav1d_scans;
 use crate::src::strided::Strided as _;
@@ -725,11 +725,11 @@ fn decode_coefs<BD: BitDepth>(
     impl<'a, BD: BitDepth> Cf<'a, BD> {
         fn index(&self, rc: u16) -> usize {
             let i = rc as usize & (self.0.len() - 1);
-            // SAFETY: `self.0.len()` is either `cf_len` or `CF_LEN`,
+            // `self.0.len()` is either `cf_len` or `CF_LEN`,
             // both of which are powers of 2.
             // `cf_len` is a power of 2 since it's from `1 << n`, etc.
             // Thus, `& (self.0.len() - 1)` is the same as `% self.0.len()`.
-            unsafe { assume(i < self.0.len()) };
+            debug_assert!(i < self.0.len());
             i
         }
 
@@ -1271,7 +1271,7 @@ fn read_coef_tree<BD: BitDepth>(
     tx_split: [u16; 2],
     x_off: c_int,
     y_off: c_int,
-    mut y_dst: Option<Rav1dPictureDataComponentOffset>,
+    mut y_dst: Option<PicOffset>,
 ) {
     let bd = BD::from_c(f.bitdepth_max);
 
@@ -1443,7 +1443,14 @@ fn read_coef_tree<BD: BitDepth>(
                         "dq",
                     );
                 }
-                f.dsp.itx.itxfm_add[ytx as usize][txtp as usize].call::<BD>(y_dst, cf, eob, bd);
+                f.dsp.itx.itxfm_add[ytx as usize][txtp as usize].call::<BD>(
+                    ytx as usize,
+                    txtp as usize,
+                    y_dst,
+                    cf,
+                    eob,
+                    bd,
+                );
                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                     hex_dump_pic::<BD>(y_dst, t_dim.w as usize * 4, t_dim.h as usize * 4, "recon");
                 }
@@ -1698,7 +1705,7 @@ pub(crate) fn rav1d_read_coef_blocks<BD: BitDepth>(
 
 enum MaybeTempPixels<'a, TmpStride> {
     NonTemp {
-        dst: Rav1dPictureDataComponentOffset<'a>,
+        dst: PicOffset<'a>,
     },
     Temp {
         tmp: &'a mut [i16],
@@ -1765,7 +1772,7 @@ fn mc<BD: BitDepth>(
                 &ref_data[pl],
             );
             let stride = 192;
-            Rav1dPictureDataComponentOffset {
+            PicOffset {
                 data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
                 offset: stride * (my != 0) as usize * 3 + (mx != 0) as usize * 3,
             }
@@ -1780,10 +1787,10 @@ fn mc<BD: BitDepth>(
         let my = my << (ss_ver == 0) as u8;
         match dst {
             MaybeTempPixels::NonTemp { dst } => {
-                f.dsp.mc.mc[filter_2d].call::<BD>(dst, r#ref, w, h, mx, my, bd);
+                f.dsp.mc.mc[filter_2d].call::<BD>(filter_2d, dst, r#ref, w, h, mx, my, bd);
             }
             MaybeTempPixels::Temp { tmp, tmp_stride: _ } => {
-                f.dsp.mc.mct[filter_2d].call::<BD>(tmp, r#ref, w, h, mx, my, bd);
+                f.dsp.mc.mct[filter_2d].call::<BD>(filter_2d, tmp, r#ref, w, h, mx, my, bd);
             }
         }
     } else {
@@ -1838,7 +1845,7 @@ fn mc<BD: BitDepth>(
                 println!("Emu");
             }
             let stride = 320;
-            Rav1dPictureDataComponentOffset {
+            PicOffset {
                 data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
                 offset: stride * 3 + 3,
             }
@@ -1855,10 +1862,12 @@ fn mc<BD: BitDepth>(
         let dy = f.svc[refidx][1].step;
         match dst {
             MaybeTempPixels::NonTemp { dst } => {
-                f.dsp.mc.mc_scaled[filter_2d].call::<BD>(dst, r#ref, w, h, mx, my, dx, dy, bd);
+                f.dsp.mc.mc_scaled[filter_2d]
+                    .call::<BD>(filter_2d, dst, r#ref, w, h, mx, my, dx, dy, bd);
             }
             MaybeTempPixels::Temp { tmp, tmp_stride: _ } => {
-                f.dsp.mc.mct_scaled[filter_2d].call::<BD>(tmp, r#ref, w, h, mx, my, dx, dy, bd);
+                f.dsp.mc.mct_scaled[filter_2d]
+                    .call::<BD>(filter_2d, tmp, r#ref, w, h, mx, my, dx, dy, bd);
             }
         }
     }
@@ -1869,7 +1878,7 @@ fn mc<BD: BitDepth>(
 fn obmc<BD: BitDepth>(
     f: &Rav1dFrameData,
     t: &mut Rav1dTaskContext,
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     b_dim: &[u8; 4],
     pl: usize,
     bx4: c_int,
@@ -1906,7 +1915,7 @@ fn obmc<BD: BitDepth>(
                     &mut scratch.emu_edge,
                     t.b,
                     MaybeTempPixels::NonTemp {
-                        dst: Rav1dPictureDataComponentOffset {
+                        dst: PicOffset {
                             data: &Rav1dPictureDataComponent::wrap_buf::<BD>(
                                 lap,
                                 ow4 as usize * h_mul as usize,
@@ -1926,6 +1935,7 @@ fn obmc<BD: BitDepth>(
                         [*f.a[t.a].filter[0].index((bx4 + x + 1) as usize) as usize],
                 )?;
                 f.dsp.mc.blend_h.call::<BD>(
+                    true,
                     dst + (x * h_mul) as usize,
                     lap,
                     h_mul * ow4 as c_int,
@@ -1954,7 +1964,7 @@ fn obmc<BD: BitDepth>(
                     &mut scratch.emu_edge,
                     t.b,
                     MaybeTempPixels::NonTemp {
-                        dst: Rav1dPictureDataComponentOffset {
+                        dst: PicOffset {
                             data: &Rav1dPictureDataComponent::wrap_buf::<BD>(
                                 lap,
                                 ow4 as usize * h_mul as usize,
@@ -1974,6 +1984,7 @@ fn obmc<BD: BitDepth>(
                         [*t.l.filter[0].index((by4 + y + 1) as usize) as usize],
                 )?;
                 f.dsp.mc.blend_v.call::<BD>(
+                    false,
                     dst + (y * v_mul) as isize * dst.pixel_stride::<BD>(),
                     lap,
                     h_mul * ow4 as c_int,
@@ -2042,7 +2053,7 @@ fn warp_affine<BD: BitDepth>(
                     &ref_data[pl],
                 );
                 let stride = 32;
-                Rav1dPictureDataComponentOffset {
+                PicOffset {
                     data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
                     offset: stride * 3 + 3,
                 }
@@ -2235,6 +2246,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             bd,
                         );
                         f.dsp.ipred.intra_pred[m as usize].call(
+                            m as usize,
                             y_dst,
                             edge_array,
                             edge_offset,
@@ -2345,8 +2357,14 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                     "dq",
                                 );
                             }
-                            f.dsp.itx.itxfm_add[intra.tx as usize][txtp as usize]
-                                .call::<BD>(y_dst, cf, eob, bd);
+                            f.dsp.itx.itxfm_add[intra.tx as usize][txtp as usize].call::<BD>(
+                                intra.tx as usize,
+                                txtp as usize,
+                                y_dst,
+                                cf,
+                                eob,
+                                bd,
+                            );
                             if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                                 hex_dump_pic::<BD>(
                                     y_dst,
@@ -2399,6 +2417,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 let furthest_b = (ch4 << ss_ver) + t_dim.h as c_int - 1 & !(t_dim.h as c_int - 1);
                 let layout = f.cur.p.layout.try_into().unwrap();
                 f.dsp.ipred.cfl_ac[layout].call::<BD>(
+                    layout,
                     ac,
                     y_src,
                     cbw4 - (furthest_r >> ss_hor),
@@ -2449,6 +2468,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                         bd,
                     );
                     f.dsp.ipred.cfl_pred[m as usize].call(
+                        m as usize,
                         uv_dst,
                         edge_array,
                         edge_offset,
@@ -2609,6 +2629,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             );
                             angle |= intra_edge_filter_flag;
                             f.dsp.ipred.intra_pred[m as usize].call(
+                                m as usize,
                                 uv_dst,
                                 edge_array,
                                 edge_offset,
@@ -2722,8 +2743,14 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                         "dq",
                                     );
                                 }
-                                f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize]
-                                    .call::<BD>(uv_dst, cf, eob, bd);
+                                f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize].call::<BD>(
+                                    b.uvtx as usize,
+                                    txtp as usize,
+                                    uv_dst,
+                                    cf,
+                                    eob,
+                                    bd,
+                                );
                                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                                     hex_dump_pic::<BD>(
                                         uv_dst,
@@ -2917,6 +2944,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
             }
             CompInterType::Seg => {
                 f.dsp.mc.w_mask[chr_layout_idx_w_mask].call(
+                    chr_layout_idx_w_mask,
                     y_dst,
                     &tmp[inter.nd.one_d.mask_sign() as usize],
                     &tmp[!inter.nd.one_d.mask_sign() as usize],
@@ -3109,7 +3137,8 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
             );
             let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
             f.dsp.ipred.intra_pred[m as usize].call(
-                Rav1dPictureDataComponentOffset {
+                m as usize,
+                PicOffset {
                     data: &Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * bw4 as usize),
                     offset: 0,
                 },
@@ -3393,7 +3422,8 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                         );
                         let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
                         f.dsp.ipred.intra_pred[m as usize].call(
-                            Rav1dPictureDataComponentOffset {
+                            m as usize,
+                            PicOffset {
                                 data: &Rav1dPictureDataComponent::wrap_buf::<BD>(
                                     tmp,
                                     4 * cbw4 as usize,
@@ -3604,6 +3634,8 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                                     );
                                 }
                                 f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize].call::<BD>(
+                                    b.uvtx as usize,
+                                    txtp as usize,
                                     uv_dst + 4 * x as usize,
                                     cf,
                                     eob,

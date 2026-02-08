@@ -1,6 +1,8 @@
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 use crate::src::disjoint_mut::AsMutPtr;
 use crate::src::disjoint_mut::DisjointMut;
+#[cfg(feature = "asm")]
 use crate::src::pixels::Pixels;
 use crate::src::strided::Strided;
 use crate::src::strided::WithStride;
@@ -20,6 +22,7 @@ impl<'a, T: AsMutPtr<Target = u8>> Clone for PicOrBuf<'a, T> {
 
 impl<'a, T: AsMutPtr<Target = u8>> Copy for PicOrBuf<'a, T> {}
 
+#[cfg(feature = "asm")]
 impl<'a, T: AsMutPtr<Target = u8>> Pixels for PicOrBuf<'a, T> {
     fn byte_len(&self) -> usize {
         match self {

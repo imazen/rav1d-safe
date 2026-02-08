@@ -1,4 +1,4 @@
-use crate::src::assume::assume;
+#![forbid(unsafe_code)]
 use crate::src::const_fn::const_for;
 use crate::src::enum_map::DefaultValue;
 use std::fmt;
@@ -40,8 +40,7 @@ where
     }
 
     pub fn get(self) -> T {
-        // SAFETY: Checked in `Self::new`.
-        unsafe { assume(self.in_bounds()) };
+        debug_assert!(self.in_bounds());
         self.0
     }
 }

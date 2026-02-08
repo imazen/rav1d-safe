@@ -1,0 +1,263 @@
+name: Test Vectors
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      corpus:
+        description: 'Which test corpus to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - dav1d-only
+          - fluster-only
+          - argon-only
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Quick smoke test - dav1d-test-data (109 MB, ~160k files)
+  test-dav1d:
+    name: Test dav1d-test-data
+    runs-on: ubuntu-latest
+    if: github.event.inputs.corpus == 'all' || github.event.inputs.corpus == 'dav1d-only' || github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build decoder
+        run: cargo build --release --example managed_decode --no-default-features --features "bitdepth_8,bitdepth_16"
+
+      - name: Download dav1d test vectors
+        run: |
+          mkdir -p test-vectors
+          cd test-vectors
+          if [ ! -d dav1d-test-data ]; then
+            git clone --depth 1 https://code.videolan.org/videolan/dav1d-test-data.git
+          fi
+
+      - name: Cache dav1d vectors
+        uses: actions/cache@v5
+        with:
+          path: test-vectors/dav1d-test-data
+          key: dav1d-vectors-${{ hashFiles('scripts/download-test-vectors.sh') }}
+
+      - name: Test 8-bit samples (100 files)
+        run: |
+          PASS=0
+          FAIL=0
+          TOTAL=0
+          for ivf in $(find test-vectors/dav1d-test-data/8-bit -name "*.ivf" -o -name "*.obu" | head -100); do
+            ((TOTAL++))
+            if timeout 30 cargo run --release --example managed_decode --no-default-features \
+                --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then
+              ((PASS++))
+            else
+              ((FAIL++))
+              echo "FAIL: $ivf"
+            fi
+          done
+          echo "Results: $PASS/$TOTAL passed, $FAIL failed"
+          [ $FAIL -lt 10 ] || exit 1  # Allow up to 10 failures for now
+
+      - name: Test 10-bit samples (50 files)
+        run: |
+          PASS=0
+          FAIL=0
+          TOTAL=0
+          for ivf in $(find test-vectors/dav1d-test-data/10-bit -name "*.ivf" -o -name "*.obu" | head -50); do
+            ((TOTAL++))
+            if timeout 30 cargo run --release --example managed_decode --no-default-features \
+                --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then
+              ((PASS++))
+            else
+              ((FAIL++))
+              echo "FAIL: $ivf"
+            fi
+          done
+          echo "Results: $PASS/$TOTAL passed, $FAIL failed"
+          [ $FAIL -lt 5 ] || exit 1
+
+      - name: Test 12-bit samples (50 files)
+        run: |
+          PASS=0
+          FAIL=0
+          TOTAL=0
+          for ivf in $(find test-vectors/dav1d-test-data/12-bit -name "*.ivf" -o -name "*.obu" | head -50); do
+            ((TOTAL++))
+            if timeout 30 cargo run --release --example managed_decode --no-default-features \
+                --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then
+              ((PASS++))
+            else
+              ((FAIL++))
+              echo "FAIL: $ivf"
+            fi
+          done
+          echo "Results: $PASS/$TOTAL passed, $FAIL failed"
+          [ $FAIL -lt 5 ] || exit 1
+
+  # Medium test - Fluster AV1 vectors (17 MB, ~312 files)
+  test-fluster:
+    name: Test Fluster AV1 Vectors
+    runs-on: ubuntu-latest
+    if: github.event.inputs.corpus == 'all' || github.event.inputs.corpus == 'fluster-only' || github.event_name == 'schedule'
+    needs: test-dav1d  # Run after dav1d to save resources
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build decoder
+        run: cargo build --release --example managed_decode --no-default-features --features "bitdepth_8,bitdepth_16"
+
+      - name: Download Fluster test vectors
+        run: |
+          mkdir -p test-vectors
+          cd test-vectors
+          if [ ! -d fluster ]; then
+            git clone --depth 1 https://github.com/fluendo/fluster.git
+          fi
+          cd fluster
+          # Download AV1-TEST-VECTORS
+          ./fluster.py download AV1-TEST-VECTORS -j 4 || true
+
+      - name: Cache Fluster vectors
+        uses: actions/cache@v5
+        with:
+          path: test-vectors/fluster
+          key: fluster-vectors-v1
+
+      - name: Test AV1-TEST-VECTORS (all files)
+        run: |
+          PASS=0
+          FAIL=0
+          TOTAL=0
+          VECTORS_DIR="test-vectors/fluster/resources/test_vectors/av1"
+          
+          for suite in AV1-TEST-VECTORS CHROMIUM-8bit-AV1-TEST-VECTORS CHROMIUM-10bit-AV1-TEST-VECTORS; do
+            if [ -d "$VECTORS_DIR/$suite" ]; then
+              echo "Testing $suite..."
+              for ivf in $(find "$VECTORS_DIR/$suite" -name "*.ivf" -o -name "*.obu"); do
+                ((TOTAL++))
+                if timeout 60 cargo run --release --example managed_decode --no-default-features \
+                    --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then
+                  ((PASS++))
+                else
+                  ((FAIL++))
+                  echo "FAIL: $ivf"
+                fi
+              done
+            fi
+          done
+          
+          echo "Overall Results: $PASS/$TOTAL passed, $FAIL failed"
+          echo "Pass rate: $(( PASS * 100 / TOTAL ))%"
+          [ $FAIL -lt 50 ] || exit 1  # Allow some failures
+
+  # Large test - Argon conformance suite (5.1 GB, ~2763 files) - weekly only
+  test-argon:
+    name: Test Argon Conformance Suite
+    runs-on: ubuntu-latest
+    if: (github.event.inputs.corpus == 'all' || github.event.inputs.corpus == 'argon-only') && github.event_name != 'schedule'
+    # Only run on manual trigger, not on schedule
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build decoder
+        run: cargo build --release --example managed_decode --no-default-features --features "bitdepth_8,bitdepth_16"
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          df -h
+
+      - name: Download Argon conformance suite
+        run: bash scripts/download-all-test-vectors.sh
+
+      - name: Cache Argon vectors
+        uses: actions/cache@v5
+        with:
+          path: test-vectors/argon
+          key: argon-vectors-v1
+          restore-keys: argon-vectors-
+
+      - name: Test Argon samples (500 files)
+        run: |
+          PASS=0
+          FAIL=0
+          TOTAL=0
+          
+          if [ -d test-vectors/argon/argon ]; then
+            for ivf in $(find test-vectors/argon/argon -name "*.ivf" -o -name "*.obu" | shuf | head -500); do
+              ((TOTAL++))
+              if timeout 120 cargo run --release --example managed_decode --no-default-features \
+                  --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then
+                ((PASS++))
+                [ $(( TOTAL % 50 )) -eq 0 ] && echo "Progress: $PASS/$TOTAL passed"
+              else
+                ((FAIL++))
+                echo "FAIL: $(basename $ivf)"
+              fi
+            done
+          fi
+          
+          echo "Final Results: $PASS/$TOTAL passed, $FAIL failed"
+          echo "Pass rate: $(( PASS * 100 / TOTAL ))%"
+          [ $FAIL -lt 100 ] || exit 1  # Allow more failures for conformance suite
+
+      - name: Disk space after test
+        run: df -h
+
+  # Panic safety tests with sanitizers
+  test-sanitizers:
+    name: Memory Safety Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+          components: rust-src
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run panic safety tests
+        run: cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --test panic_safety_test --release
+
+      - name: Run tests with AddressSanitizer
+        run: |
+          RUSTFLAGS="-Z sanitizer=address" \
+          cargo +nightly test --no-default-features --features "bitdepth_8,bitdepth_16" \
+            --target x86_64-unknown-linux-gnu --lib --release
+        continue-on-error: true  # ASAN may have false positives initially
+
+      - name: Run tests with LeakSanitizer
+        run: |
+          RUSTFLAGS="-Z sanitizer=leak" \
+          cargo +nightly test --no-default-features --features "bitdepth_8,bitdepth_16" \
+            --target x86_64-unknown-linux-gnu --lib --release
+        continue-on-error: true  # LSAN may have false positives initially

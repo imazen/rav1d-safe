@@ -1,4 +1,7 @@
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
+#[cfg(feature = "asm")]
 use crate::include::common::bitdepth::BitDepth;
+#[cfg(feature = "asm")]
 use crate::src::pixels::Pixels;
 use crate::src::strided::Strided;
 use std::ops::Add;
@@ -80,6 +83,7 @@ impl<T> Sub<isize> for WithOffset<T> {
     }
 }
 
+#[cfg(feature = "asm")]
 impl<P: Pixels> WithOffset<P> {
     #[inline] // Inline to see bounds checks in order to potentially elide them.
     #[cfg_attr(debug_assertions, track_caller)]

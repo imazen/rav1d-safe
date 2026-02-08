@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::headers::Rav1dFrameHeader;
@@ -153,7 +153,7 @@ impl CdfThreadContext {
         }
     }
 
-    pub fn cdf_write(&self) -> RwLockWriteGuard<CdfContext> {
+    pub fn cdf_write(&self) -> RwLockWriteGuard<'_, CdfContext> {
         match self {
             Self::QCat(_) => panic!("Expected a Cdf"),
             Self::Cdf(cdf) => cdf.cdf.try_write().unwrap(),

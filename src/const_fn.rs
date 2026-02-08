@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 /// `for` loops aren't allowed in `const fn`s,
 /// so loops over integral ranges have to be written using `while` loops.
 /// This approximates `for` loops for [`Range`]s.

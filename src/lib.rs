@@ -1,3 +1,10 @@
+// Progressive safety levels:
+// - Default (no features): forbid(unsafe_code) - maximum safety, single-threaded
+// - quite-safe: Allow sound abstractions (Arc, Mutex, threading)
+// - unchecked: Allow unchecked slice access
+// - c-ffi: Allow C FFI functions
+// - asm: Allow hand-written assembly
+#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), forbid(unsafe_code))]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 #[cfg(feature = "bitdepth_16")]
@@ -5,26 +12,15 @@ use crate::include::common::bitdepth::BitDepth16;
 #[cfg(feature = "bitdepth_8")]
 use crate::include::common::bitdepth::BitDepth8;
 use crate::include::common::validate::validate_input;
-use crate::include::dav1d::common::Dav1dDataProps;
-use crate::include::dav1d::common::Rav1dDataProps;
-use crate::include::dav1d::data::Dav1dData;
 use crate::include::dav1d::data::Rav1dData;
-use crate::include::dav1d::dav1d::Dav1dContext;
-use crate::include::dav1d::dav1d::Dav1dEventFlags;
-use crate::include::dav1d::dav1d::Dav1dSettings;
 use crate::include::dav1d::dav1d::Rav1dDecodeFrameType;
 use crate::include::dav1d::dav1d::Rav1dInloopFilterType;
 use crate::include::dav1d::dav1d::Rav1dSettings;
-use crate::include::dav1d::headers::Dav1dSequenceHeader;
 use crate::include::dav1d::headers::Rav1dFilmGrainData;
-use crate::include::dav1d::picture::Dav1dPicture;
 use crate::include::dav1d::picture::Rav1dPicture;
-use crate::src::c_arc::RawArc;
-use crate::src::c_box::FnFree;
 use crate::src::cpu::rav1d_init_cpu;
 use crate::src::cpu::rav1d_num_logical_processors;
 use crate::src::decode::rav1d_decode_frame_exit;
-use crate::src::error::Dav1dResult;
 use crate::src::error::Rav1dError::EGeneric;
 use crate::src::error::Rav1dError::EAGAIN;
 use crate::src::error::Rav1dError::EINVAL;
@@ -45,29 +41,63 @@ use crate::src::iter::wrapping_iter;
 use crate::src::log::Rav1dLog as _;
 use crate::src::log::Rav1dLogger;
 use crate::src::obu::rav1d_parse_obus;
-use crate::src::obu::rav1d_parse_sequence_header;
 use crate::src::picture::rav1d_picture_alloc_copy;
 use crate::src::picture::PictureFlags;
+#[cfg(feature = "c-ffi")]
 use crate::src::send_sync_non_null::SendSyncNonNull;
 use crate::src::thread_task::rav1d_task_delayed_fg;
 use crate::src::thread_task::rav1d_worker_task;
 use crate::src::thread_task::FRAME_ERROR;
 use parking_lot::Mutex;
 use std::cmp;
-use std::ffi::c_char;
-use std::ffi::c_uint;
+#[cfg(feature = "c-ffi")]
 use std::ffi::c_void;
 use std::ffi::CStr;
 use std::mem;
-use std::ptr;
-use std::ptr::NonNull;
-use std::slice;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::Once;
 use std::thread;
+use std::thread::JoinHandle;
+#[cfg(feature = "c-ffi")]
+use std::time::Duration;
+#[cfg(feature = "c-ffi")]
+use std::ffi::c_char;
+#[cfg(feature = "c-ffi")]
+use std::ffi::c_uint;
+#[cfg(feature = "c-ffi")]
+use std::ptr;
+#[cfg(feature = "c-ffi")]
+use std::ptr::NonNull;
+#[cfg(feature = "c-ffi")]
+use std::slice;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::common::Rav1dDataProps;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::dav1d::Dav1dContext;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::dav1d::Dav1dSettings;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::data::Dav1dData;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::picture::Dav1dPicture;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::headers::Dav1dSequenceHeader;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::dav1d::Dav1dEventFlags;
+#[cfg(feature = "c-ffi")]
+use crate::include::dav1d::common::Dav1dDataProps;
+#[cfg(feature = "c-ffi")]
+use crate::src::error::Dav1dResult;
+#[cfg(feature = "c-ffi")]
+use crate::src::c_box::FnFree;
+#[cfg(feature = "c-ffi")]
+use crate::src::c_arc::RawArc;
+#[cfg(feature = "c-ffi")]
+use crate::src::obu::rav1d_parse_sequence_header;
+#[cfg(feature = "c-ffi")]
 use to_method::To as _;
 
 #[cold]
@@ -85,6 +115,7 @@ pub const fn rav1d_version() -> &'static str {
     RAV1D_VERSION
 }
 
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 #[cold]
 pub extern "C" fn dav1d_version() -> *const c_char {
@@ -99,6 +130,7 @@ pub const DAV1D_API_VERSION_PATCH: u8 = 0;
 ///
 /// Return a value in the format `0x00XXYYZZ`, where `XX` is the major version,
 /// `YY` the minor version, and `ZZ` the patch version.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 #[cold]
 pub extern "C" fn dav1d_version_api() -> c_uint {
@@ -133,6 +165,7 @@ impl Default for Rav1dSettings {
 ///
 /// * `s` must be valid to [`ptr::write`] to.
 ///   The former contents of `s` are not [`drop`]ped and it may be uninitialized.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 #[cold]
 pub unsafe extern "C" fn dav1d_default_settings(s: NonNull<Dav1dSettings>) {
@@ -172,6 +205,7 @@ pub(crate) fn rav1d_get_frame_delay(s: &Rav1dSettings) -> Rav1dResult<usize> {
 /// # Safety
 ///
 /// * `s`, if [`NonNull`], must valid to [`ptr::read`] from.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 #[cold]
 pub unsafe extern "C" fn dav1d_get_frame_delay(s: Option<NonNull<Dav1dSettings>>) -> Dav1dResult {
@@ -186,13 +220,16 @@ pub unsafe extern "C" fn dav1d_get_frame_delay(s: Option<NonNull<Dav1dSettings>>
 }
 
 #[cold]
-pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
+pub(crate) fn rav1d_open(
+    s: &Rav1dSettings,
+) -> Rav1dResult<(Arc<Rav1dContext>, Vec<JoinHandle<()>>)> {
     static initted: Once = Once::new();
     initted.call_once(|| init_internal());
 
     validate_input!((s.n_threads >= 0 && s.n_threads <= 256, EINVAL))?;
     validate_input!((s.max_frame_delay >= 0 && s.max_frame_delay <= 256, EINVAL))?;
     validate_input!((s.operating_point <= 31, EINVAL))?;
+    #[cfg(feature = "c-ffi")]
     validate_input!((
         !s.allocator.is_default() || s.allocator.cookie.is_none(),
         EINVAL
@@ -250,6 +287,7 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
         ..Default::default()
     });
 
+    let mut worker_handles = Vec::new();
     let tc = (0..n_tc)
         .map(|n| {
             let task_thread = Arc::clone(&task_thread);
@@ -262,7 +300,8 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
                     .name(format!("rav1d-worker-{n}"))
                     .spawn(|| rav1d_worker_task(thread_data_copy))
                     .unwrap();
-                Rav1dContextTaskType::Worker(handle)
+                worker_handles.push(handle);
+                Rav1dContextTaskType::Worker
             } else {
                 Rav1dContextTaskType::Single(Mutex::new(Box::new(Rav1dTaskContext::new(
                     thread_data_copy,
@@ -288,12 +327,16 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
         task_thread,
         state,
         tc,
-        ..Default::default()
+        flush: Default::default(),
+        dsp: Default::default(),
+        picture_pool: Default::default(),
     };
 
     // TODO fallible allocation
+    #[cfg_attr(not(feature = "c-ffi"), allow(unused_mut))]
     let mut c = Arc::new(c);
 
+    #[cfg(feature = "c-ffi")]
     if c.allocator.is_default() {
         let c = Arc::get_mut(&mut c).unwrap();
         // SAFETY: When `allocator.is_default()`, `allocator.cookie` should be a `&c.picture_pool`.
@@ -303,21 +346,25 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
     }
     let c = c;
 
+    // Set context reference and unpark worker threads
+    let mut handle_idx = 0;
     for tc in c.tc.iter() {
-        if let Rav1dContextTaskType::Worker(handle) = &tc.task {
+        if let Rav1dContextTaskType::Worker = &tc.task {
             // Unpark each thread once we set its `thread_data.c`.
             *tc.thread_data.c.lock() = Some(Arc::clone(&c));
-            handle.thread().unpark();
+            worker_handles[handle_idx].thread().unpark();
+            handle_idx += 1;
         }
     }
 
-    Ok(c)
+    Ok((c, worker_handles))
 }
 
 /// # Safety
 ///
 /// * `c_out`, if [`NonNull`], is valid to [`ptr::write`] to.
 /// * `s`, if [`NonNull`], is valid to [`ptr::read`] from.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 #[cold]
 pub unsafe extern "C" fn dav1d_open(
@@ -332,9 +379,34 @@ pub unsafe extern "C" fn dav1d_open(
         // SAFETY: `s` is safe to read from.
         let s = unsafe { s.as_ptr().read() };
         let s = s.try_into()?;
-        let c = rav1d_open(&s).inspect_err(|_| {
+        let (c, handles) = rav1d_open(&s).inspect_err(|_| {
             *c_out = None;
         })?;
+
+        // Spawn janitor thread to join worker handles on shutdown
+        // C FFI can't properly manage Rust JoinHandles, so we spawn a helper thread
+        if !handles.is_empty() {
+            let ctx_clone = Arc::clone(&c);
+            thread::spawn(move || {
+                // Wait for die signal on all worker threads
+                loop {
+                    let all_died = ctx_clone.tc.iter().all(|tc| {
+                        matches!(tc.task, Rav1dContextTaskType::Single(_))
+                            || tc.thread_data.die.get()
+                    });
+                    if all_died {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+
+                // Join all worker threads
+                for handle in handles {
+                    let _ = handle.join();
+                }
+            });
+        }
+
         *c_out = Some(RawArc::from_arc(c));
         Ok(())
     })()
@@ -345,6 +417,7 @@ pub unsafe extern "C" fn dav1d_open(
 ///
 /// * `out`, if [`NonNull`], is valid to [`ptr::write`] to.
 /// * `ptr`, if [`NonNull`], is the start of a `&[u8]` slice of length `sz`.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_parse_sequence_header(
     out: Option<NonNull<Dav1dSequenceHeader>>,
@@ -539,6 +612,7 @@ pub(crate) fn rav1d_send_data(c: &Rav1dContext, in_0: &mut Rav1dData) -> Rav1dRe
 ///
 /// * `c`, if [`NonNull`], must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
 /// * `r#in`, if [`NonNull`], must be valid to [`ptr::read`] from and [`ptr::write`] to.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_send_data(
     c: Option<Dav1dContext>,
@@ -580,6 +654,7 @@ pub(crate) fn rav1d_get_picture(c: &Rav1dContext, out: &mut Rav1dPicture) -> Rav
 ///
 /// * `c`, if [`NonNull`], must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
 /// * `out`, if [`NonNull`], must be valid to [`ptr::write`] to.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_get_picture(
     c: Option<Dav1dContext>,
@@ -639,6 +714,7 @@ pub(crate) fn rav1d_apply_grain(
 /// * `c`, if [`NonNull`], must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
 /// * `out`, if [`NonNull`], must be valid to [`ptr::write`] to.
 /// * `r#in`, if [`NonNull`], must be valid to [`ptr::read`] from.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_apply_grain(
     c: Option<Dav1dContext>,
@@ -718,6 +794,7 @@ pub(crate) fn rav1d_flush(c: &Rav1dContext) {
 /// # Safety
 ///
 /// * `c` must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_flush(c: Dav1dContext) {
     // SAFETY: `c` is from `dav1d_open` and thus from `RawArc::from_arc`.
@@ -737,6 +814,7 @@ pub(crate) fn rav1d_close(c: Arc<Rav1dContext>) {
 ///
 /// * `c_out`, if [`NonNull`], must be safe to [`ptr::read`] from and [`ptr::write`] to.
 ///   The `Dav1dContext` pointed to by `c_out` must be from [`dav1d_open`].
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 #[cold]
 pub unsafe extern "C" fn dav1d_close(c_out: Option<NonNull<Option<Dav1dContext>>>) {
@@ -753,7 +831,7 @@ pub unsafe extern "C" fn dav1d_close(c_out: Option<NonNull<Option<Dav1dContext>>
 }
 
 impl Rav1dContext {
-    fn tell_worker_threads_to_die(&self) {
+    pub(crate) fn tell_worker_threads_to_die(&self) {
         if self.tc.is_empty() {
             return;
         }
@@ -770,6 +848,7 @@ impl Rav1dContext {
 ///
 /// * `c`, if [`NonNull`], must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
 /// * `flags`, if [`NonNull`], must be valid to [`ptr::write`] to.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_get_event_flags(
     c: Option<Dav1dContext>,
@@ -795,6 +874,7 @@ pub unsafe extern "C" fn dav1d_get_event_flags(
 ///
 /// * `c`, if [`NonNull`], must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
 /// * `out`, if [`NonNull`], is valid to [`ptr::write`] to.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_get_decode_error_data_props(
     c: Option<Dav1dContext>,
@@ -819,6 +899,7 @@ pub unsafe extern "C" fn dav1d_get_decode_error_data_props(
 /// # Safety
 ///
 /// * `p`, if [`NonNull`], must be valid to [`ptr::read`] from and [`ptr::write`] to.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_picture_unref(p: Option<NonNull<Dav1dPicture>>) {
     let Ok(p) = validate_input!(p.ok_or(())) else {
@@ -837,6 +918,7 @@ pub unsafe extern "C" fn dav1d_picture_unref(p: Option<NonNull<Dav1dPicture>>) {
 ///
 /// * `buf`, if [`NonNull`], is valid to [`ptr::write`] to.
 ///   After this call, `buf.data` will be an allocated slice of length `sz`.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_data_create(buf: Option<NonNull<Dav1dData>>, sz: usize) -> *mut u8 {
     || -> Rav1dResult<*mut u8> {
@@ -860,6 +942,7 @@ pub unsafe extern "C" fn dav1d_data_create(buf: Option<NonNull<Dav1dData>>, sz: 
 /// * `buf`, if [`NonNull`], is valid to [`ptr::write`] to.
 /// * `ptr`, if [`NonNull`], is the start of a `&[u8]` slice of length `sz`.
 /// * `ptr`'s slice must be valid to dereference until `free_callback` is called on it, which must deallocate it.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_data_wrap(
     buf: Option<NonNull<Dav1dData>>,
@@ -888,6 +971,7 @@ pub unsafe extern "C" fn dav1d_data_wrap(
 ///
 /// * `buf`, if [`NonNull`], is valid to [`ptr::read`] from and [`ptr::write`] to.
 /// * `user_data`, if [`NonNull`], is valid to dereference until `free_callback` is called on it, which must deallocate it.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_data_wrap_user_data(
     buf: Option<NonNull<Dav1dData>>,
@@ -915,6 +999,7 @@ pub unsafe extern "C" fn dav1d_data_wrap_user_data(
 /// # Safety
 ///
 /// * `buf`, if [`NonNull`], is safe to [`ptr::read`] from and [`ptr::write`] from.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_data_unref(buf: Option<NonNull<Dav1dData>>) {
     let buf = validate_input!(buf.ok_or(()));
@@ -927,6 +1012,7 @@ pub unsafe extern "C" fn dav1d_data_unref(buf: Option<NonNull<Dav1dData>>) {
 /// # Safety
 ///
 /// * `props`, if [`NonNull`], is safe to [`ptr::read`] from and [`ptr::write`] from.
+#[cfg(feature = "c-ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_data_props_unref(props: Option<NonNull<Dav1dDataProps>>) {
     let props = validate_input!(props.ok_or(()));

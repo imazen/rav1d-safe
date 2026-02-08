@@ -1,14 +1,21 @@
+#[cfg(feature = "c-ffi")]
 use crate::src::send_sync_non_null::SendSyncNonNull;
+#[cfg(feature = "c-ffi")]
 use std::ffi::c_char;
+#[cfg(feature = "c-ffi")]
 use std::ffi::c_uint;
+#[cfg(feature = "c-ffi")]
 use std::ffi::c_void;
 use std::fmt;
+#[cfg(feature = "c-ffi")]
 use std::fmt::Write as _;
 use std::io::stderr;
 use std::io::stdout;
 use std::io::Write as _;
+#[cfg(feature = "c-ffi")]
 use std::ptr::fn_addr_eq;
 
+#[cfg(feature = "c-ffi")]
 pub type Dav1dLoggerCallback = unsafe extern "C" fn(
     // [`Dav1dLogger::cookie`].
     cookie: Option<SendSyncNonNull<c_void>>,
@@ -18,6 +25,7 @@ pub type Dav1dLoggerCallback = unsafe extern "C" fn(
     args: ...
 );
 
+#[cfg(feature = "c-ffi")]
 #[derive(Clone)]
 #[repr(C)]
 pub struct Dav1dLogger {
@@ -36,6 +44,7 @@ pub struct Dav1dLogger {
     callback: Option<Dav1dLoggerCallback>,
 }
 
+#[cfg(feature = "c-ffi")]
 impl Dav1dLogger {
     /// # Safety
     ///
@@ -52,6 +61,7 @@ impl Dav1dLogger {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl fmt::Write for Dav1dLogger {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let callback = self.callback.unwrap();
@@ -78,6 +88,7 @@ impl fmt::Write for Dav1dLogger {
 
 #[derive(Clone, Default)]
 pub(crate) enum Rav1dLogger {
+    #[cfg(feature = "c-ffi")]
     Dav1d(Dav1dLogger),
     Stdout,
     #[default]
@@ -108,6 +119,7 @@ impl Rav1dLog for Rav1dLogger {
     #[inline(never)]
     fn write_fmt(&self, args: fmt::Arguments) {
         match self {
+            #[cfg(feature = "c-ffi")]
             // The `dav1d.clone()` is because [`fmt::Write::write_fmt`] takes `&mut`
             // even though we don't need it to.
             // [`Dav1dLogger`] is trivial to [`Clone`], though, so we can just do that.
@@ -129,6 +141,7 @@ impl Rav1dLog for Option<Rav1dLogger> {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 mod marker {
     use super::*;
 
@@ -163,6 +176,7 @@ mod marker {
     };
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Dav1dLogger> for Option<Rav1dLogger> {
     fn from(logger: Dav1dLogger) -> Self {
         let Dav1dLogger { cookie, callback } = logger;
@@ -175,6 +189,7 @@ impl From<Dav1dLogger> for Option<Rav1dLogger> {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Option<Rav1dLogger>> for Dav1dLogger {
     fn from(logger: Option<Rav1dLogger>) -> Self {
         let cookie = match &logger {

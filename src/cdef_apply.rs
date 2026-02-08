@@ -1,10 +1,10 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::BPC;
 use crate::include::common::intops::ulog2;
 use crate::include::dav1d::headers::Rav1dPixelLayout;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::Align16;
 use crate::src::align::AlignedVec64;
 use crate::src::cdef::CdefEdgeFlags;
@@ -44,7 +44,7 @@ impl Backup2x8Flags {
 fn backup2lines<BD: BitDepth>(
     dst_buf: &DisjointMut<AlignedVec64<u8>>,
     dst_off: [usize; 3],
-    src: [Rav1dPictureDataComponentOffset; 3],
+    src: [PicOffset; 3],
     layout: Rav1dPixelLayout,
 ) {
     let y_stride = src[0].pixel_stride::<BD>();
@@ -83,7 +83,7 @@ fn backup2lines<BD: BitDepth>(
 #[inline(always)]
 fn backup2x8<BD: BitDepth>(
     dst: &mut [[[BD::Pixel; 2]; 8]; 3],
-    src: &[Rav1dPictureDataComponentOffset; 3],
+    src: &[PicOffset; 3],
     x_off: c_int,
     layout: Rav1dPixelLayout,
     flag: Backup2x8Flags,
@@ -135,7 +135,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
     c: &Rav1dContext,
     tc: &mut Rav1dTaskContext,
     f: &Rav1dFrameData,
-    p: [Rav1dPictureDataComponentOffset; 3],
+    p: [PicOffset; 3],
     lflvl_offset: i32,
     by_start: c_int,
     by_end: c_int,
@@ -333,6 +333,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                             let adj_y_pri_lvl = adjust_strength(y_pri_lvl, variance);
                             if adj_y_pri_lvl != 0 || y_sec_lvl != 0 {
                                 f.dsp.cdef.fb[0].call::<BD>(
+                                    0,
                                     bptrs[0],
                                     &lr_bak[bit as usize][0],
                                     top,
@@ -347,6 +348,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                             }
                         } else if y_sec_lvl != 0 {
                             f.dsp.cdef.fb[0].call::<BD>(
+                                0,
                                 bptrs[0],
                                 &lr_bak[bit as usize][0],
                                 top,
@@ -433,6 +435,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                                 });
 
                                 f.dsp.cdef.fb[uv_idx as usize].call::<BD>(
+                                    uv_idx as usize,
                                     bptrs[pl],
                                     &lr_bak[bit as usize][pl],
                                     top,

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use std::marker::PhantomData;
 use std::ops::Index;
 use std::ops::IndexMut;
@@ -108,6 +109,7 @@ macro_rules! enum_map {
         let mut i = 0;
         while i < <$K>::VALUES.len() {
             let key = <$K>::VALUES[i];
+            #[allow(unused_imports)]
             use $K::*;
             let value = match key { $($t)* };
             a[key as usize] = value;

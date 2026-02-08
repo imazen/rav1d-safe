@@ -1,5 +1,4 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
@@ -7,7 +6,7 @@ use crate::include::common::bitdepth::LeftPixelRow;
 use crate::include::common::bitdepth::ToPrimitive;
 use crate::include::common::bitdepth::BPC;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::cpu::CpuFlags;
 use crate::src::cursor::CursorMut;
@@ -24,6 +23,7 @@ use std::ffi::c_uint;
 use std::iter;
 use std::mem;
 use std::ops::Add;
+#[cfg(feature = "asm")]
 use std::slice;
 use to_method::To;
 use zerocopy::AsBytes;
@@ -38,6 +38,9 @@ use crate::include::common::bitdepth::bd_fn;
 
 #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]
 use crate::include::common::bitdepth::bpc_fn;
+
+#[cfg(not(feature = "asm"))]
+use crate::src::enum_map::DefaultValue;
 
 bitflags! {
     #[derive(Clone, Copy)]
@@ -118,9 +121,56 @@ wrap_fn_ptr!(pub unsafe extern "C" fn loop_restoration_filter(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
     _lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) -> ());
+
+/// Direct dispatch for loop restoration filter - bypasses function pointer table.
+/// Selects optimal SIMD implementation at runtime based on CPU features.
+/// `variant`: 0 = wiener7, 1 = wiener5, 2 = sgr_5x5, 3 = sgr_3x3, 4 = sgr_mix
+#[cfg(not(feature = "asm"))]
+fn lr_filter_direct<BD: BitDepth>(
+    variant: usize,
+    dst: PicOffset,
+    left: &[LeftPixelRow<BD::Pixel>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: c_int,
+    h: c_int,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::looprestoration::lr_filter_dispatch::<BD>(
+        variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
+    ) {
+        return;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::looprestoration_arm::lr_filter_dispatch::<BD>(
+        variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
+    ) {
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    {
+        let left = &left[..h as usize];
+        let w_usize = w as usize;
+        let h_usize = h as usize;
+        match variant {
+            0 | 1 => {
+                wiener_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd)
+            }
+            2 => sgr_5x5_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
+            3 => sgr_3x3_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
+            _ => sgr_mix_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
+        }
+    }
+}
 
 impl loop_restoration_filter::Fn {
     /// Although the spec applies restoration filters over 4x4 blocks,
@@ -133,9 +183,13 @@ impl loop_restoration_filter::Fn {
     /// aligned writes past the right edge of the buffer,
     /// aligned up to the minimum loop restoration unit size
     /// (which is 32 pixels for subsampled chroma and 64 pixels for luma).
+    ///
+    /// `variant`: 0 = wiener7, 1 = wiener5, 2 = sgr_5x5, 3 = sgr_3x3, 4 = sgr_mix
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        variant: usize,
+        dst: PicOffset,
         left: &[LeftPixelRow<BD::Pixel>],
         lpf: &DisjointMut<AlignedVec64<u8>>,
         lpf_off: isize,
@@ -145,27 +199,37 @@ impl loop_restoration_filter::Fn {
         edges: LrEdgeFlags,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let left = left[..h as usize].as_ptr().cast();
-        // NOTE: The calculated pointer may point to before the beginning of
-        // `lpf`, so we must use `.wrapping_offset` here. `.wrapping_offset` is
-        // needed since `.offset` requires the pointer to be in bounds, which
-        // `.wrapping_offset` does not, and delays that requirement to when the
-        // pointer is dereferenced.
-        let lpf_ptr = lpf
-            .as_mut_ptr()
-            .cast::<BD::Pixel>()
-            .wrapping_offset(lpf_off)
-            .cast();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        let lpf = FFISafe::new(lpf);
-        // SAFETY: Fallbacks `fn wiener_rust`, `fn sgr_{3x3,5x5,mix}_rust` are safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr, dst_stride, left, lpf_ptr, w, h, params, edges, bd, dst, lpf,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = variant;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let left = left[..h as usize].as_ptr().cast();
+                // NOTE: The calculated pointer may point to before the beginning of
+                // `lpf`, so we must use `.wrapping_offset` here. `.wrapping_offset` is
+                // needed since `.offset` requires the pointer to be in bounds, which
+                // `.wrapping_offset` does not, and delays that requirement to when the
+                // pointer is dereferenced.
+                let lpf_ptr = lpf
+                    .as_mut_ptr()
+                    .cast::<BD::Pixel>()
+                    .wrapping_offset(lpf_off)
+                    .cast();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                let lpf = FFISafe::new(lpf);
+                // SAFETY: Fallbacks `fn wiener_rust`, `fn sgr_{3x3,5x5,mix}_rust` are safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr, dst_stride, left, lpf_ptr, w, h, params, edges, bd, dst, lpf,
+                    )
+                }
+            } else {
+                let _ = self;
+                lr_filter_direct::<BD>(
+                    variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
+                )
+            }
         }
     }
 }
@@ -182,7 +246,7 @@ const REST_UNIT_STRIDE: usize = 256 * 3 / 2 + 3 + 3;
 #[inline(never)]
 pub(crate) fn padding<BD: BitDepth>(
     dst: &mut [BD::Pixel; (64 + 3 + 3) * REST_UNIT_STRIDE],
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<BD::Pixel>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -341,6 +405,7 @@ pub(crate) fn padding<BD: BitDepth>(
 /// [`offset_from`].
 ///
 /// [`offset_from`]: https://doc.rust-lang.org/stable/std/primitive.pointer.html#method.offset_from
+#[cfg(feature = "asm")]
 fn reconstruct_lpf_offset<BD: BitDepth>(
     lpf: &DisjointMut<AlignedVec64<u8>>,
     ptr: *const BD::Pixel,
@@ -352,6 +417,7 @@ fn reconstruct_lpf_offset<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn wiener_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -363,7 +429,7 @@ unsafe extern "C" fn wiener_c_erased<BD: BitDepth>(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `loop_restoration_filter::Fn::call`.
@@ -386,7 +452,7 @@ unsafe extern "C" fn wiener_c_erased<BD: BitDepth>(
 // FIXME Could implement a version that requires less temporary memory
 // (should be possible to implement with only 6 rows of temp storage)
 fn wiener_rust<BD: BitDepth>(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<BD::Pixel>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -768,6 +834,7 @@ fn selfguided_filter<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn sgr_5x5_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -779,7 +846,7 @@ unsafe extern "C" fn sgr_5x5_c_erased<BD: BitDepth>(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `loop_restoration_filter::Fn::call`.
@@ -798,7 +865,7 @@ unsafe extern "C" fn sgr_5x5_c_erased<BD: BitDepth>(
 }
 
 fn sgr_5x5_rust<BD: BitDepth>(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<BD::Pixel>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -834,6 +901,7 @@ fn sgr_5x5_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn sgr_3x3_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -845,7 +913,7 @@ unsafe extern "C" fn sgr_3x3_c_erased<BD: BitDepth>(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `loop_restoration_filter::Fn::call`.
@@ -864,7 +932,7 @@ unsafe extern "C" fn sgr_3x3_c_erased<BD: BitDepth>(
 }
 
 fn sgr_3x3_rust<BD: BitDepth>(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<BD::Pixel>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -895,6 +963,7 @@ fn sgr_3x3_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`loop_restoration_filter::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn sgr_mix_c_erased<BD: BitDepth>(
     _p_ptr: *mut DynPixel,
@@ -906,7 +975,7 @@ unsafe extern "C" fn sgr_mix_c_erased<BD: BitDepth>(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
-    p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `loop_restoration_filter::Fn::call`.
@@ -925,7 +994,7 @@ unsafe extern "C" fn sgr_mix_c_erased<BD: BitDepth>(
 }
 
 fn sgr_mix_rust<BD: BitDepth>(
-    p: Rav1dPictureDataComponentOffset,
+    p: PicOffset,
     left: &[LeftPixelRow<BD::Pixel>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
     lpf_off: isize,
@@ -1049,7 +1118,7 @@ mod neon {
         params: &LooprestorationParams,
         edges: LrEdgeFlags,
         bitdepth_max: c_int,
-        _p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        _p: *const FFISafe<PicOffset>,
         _lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
     ) {
         let p = p.cast();
@@ -1237,7 +1306,7 @@ mod neon {
         fn call<BD: BitDepth>(
             &self,
             tmp: &mut Align16<[i16; 64 * 384]>,
-            src: Rav1dPictureDataComponentOffset,
+            src: PicOffset,
             a: &[i32],
             b: &[i16],
             w: c_int,
@@ -1263,7 +1332,7 @@ mod neon {
     /// Filter with a 3x3 box (radius=1).
     fn rav1d_sgr_filter1_neon<BD: BitDepth>(
         tmp: &mut Align16<[i16; 64 * 384]>,
-        src: Rav1dPictureDataComponentOffset,
+        src: PicOffset,
         left: &[LeftPixelRow<BD::Pixel>],
         lpf: *const BD::Pixel,
         w: c_int,
@@ -1368,7 +1437,7 @@ mod neon {
     /// Filter with a 5x5 box (radius=2).
     fn rav1d_sgr_filter2_neon<BD: BitDepth>(
         tmp: &mut Align16<[i16; 64 * 384]>,
-        src: Rav1dPictureDataComponentOffset,
+        src: PicOffset,
         left: &[LeftPixelRow<BD::Pixel>],
         lpf: *const BD::Pixel,
         w: c_int,
@@ -1447,8 +1516,8 @@ mod neon {
     impl sgr_weighted1::Fn {
         fn call<BD: BitDepth>(
             &self,
-            dst: Rav1dPictureDataComponentOffset,
-            src: Rav1dPictureDataComponentOffset,
+            dst: PicOffset,
+            src: PicOffset,
             t1: &mut Align16<[i16; 64 * 384]>,
             w: c_int,
             h: c_int,
@@ -1486,8 +1555,8 @@ mod neon {
     impl sgr_weighted2::Fn {
         fn call<BD: BitDepth>(
             &self,
-            dst: Rav1dPictureDataComponentOffset,
-            src: Rav1dPictureDataComponentOffset,
+            dst: PicOffset,
+            src: PicOffset,
             t1: &mut Align16<[i16; 64 * 384]>,
             t2: &mut Align16<[i16; 64 * 384]>,
             w: c_int,
@@ -1514,7 +1583,7 @@ mod neon {
     }
 
     pub fn sgr_filter_5x5_neon<BD: BitDepth>(
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         left: &[LeftPixelRow<BD::Pixel>],
         lpf: *const BD::Pixel,
         w: usize,
@@ -1532,7 +1601,7 @@ mod neon {
     }
 
     pub fn sgr_filter_3x3_neon<BD: BitDepth>(
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         left: &[LeftPixelRow<BD::Pixel>],
         lpf: *const BD::Pixel,
         w: usize,
@@ -1550,7 +1619,7 @@ mod neon {
     }
 
     pub fn sgr_filter_mix_neon<BD: BitDepth>(
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         left: &[LeftPixelRow<BD::Pixel>],
         lpf: *const BD::Pixel,
         w: usize,
@@ -1742,7 +1811,7 @@ mod neon {
     impl sgr_finish_weighted1::Fn {
         fn call<BD: BitDepth>(
             &self,
-            dst: Rav1dPictureDataComponentOffset,
+            dst: PicOffset,
             a_ptrs: &mut [*mut i32; 3],
             b_ptrs: &mut [*mut i16; 3],
             w: c_int,
@@ -1781,7 +1850,7 @@ mod neon {
     impl sgr_finish_weighted2::Fn {
         fn call<BD: BitDepth>(
             &self,
-            dst: Rav1dPictureDataComponentOffset,
+            dst: PicOffset,
             a_ptrs: &mut [*mut i32; 2],
             b_ptrs: &mut [*mut i16; 2],
             w: c_int,
@@ -1823,7 +1892,7 @@ mod neon {
         fn call<BD: BitDepth, const N: usize>(
             &self,
             tmp: &mut Align16<[i16; 2 * FILTER_OUT_STRIDE]>,
-            src: Rav1dPictureDataComponentOffset,
+            src: PicOffset,
             a_ptrs: &mut [*mut i32; N],
             b_ptrs: &mut [*mut i16; N],
             w: c_int,
@@ -1877,7 +1946,7 @@ mod neon {
     }
 
     fn sgr_finish1_neon<BD: BitDepth>(
-        dst: &mut Rav1dPictureDataComponentOffset,
+        dst: &mut PicOffset,
         a_ptrs: &mut [*mut i32; 3],
         b_ptrs: &mut [*mut i16; 3],
         w: c_int,
@@ -1890,7 +1959,7 @@ mod neon {
     }
 
     fn sgr_finish2_neon<BD: BitDepth>(
-        dst: &mut Rav1dPictureDataComponentOffset,
+        dst: &mut PicOffset,
         a_ptrs: &mut [*mut i32; 2],
         b_ptrs: &mut [*mut i16; 2],
         w: c_int,
@@ -1919,7 +1988,7 @@ mod neon {
     impl sgr_weighted2::Fn {
         fn call<BD: BitDepth>(
             &self,
-            dst: Rav1dPictureDataComponentOffset,
+            dst: PicOffset,
             t1: &Align16<[i16; 2 * FILTER_OUT_STRIDE]>,
             t2: &Align16<[i16; 2 * FILTER_OUT_STRIDE]>,
             w: c_int,
@@ -1943,7 +2012,7 @@ mod neon {
     }
 
     fn sgr_finish_mix_neon<BD: BitDepth>(
-        dst: &mut Rav1dPictureDataComponentOffset,
+        dst: &mut PicOffset,
         a5_ptrs: &mut [*mut i32; 2],
         b5_ptrs: &mut [*mut i16; 2],
         a3_ptrs: &mut [*mut i32; 4],
@@ -1971,7 +2040,7 @@ mod neon {
     }
 
     pub fn sgr_filter_3x3_neon<BD: BitDepth>(
-        mut dst: Rav1dPictureDataComponentOffset,
+        mut dst: PicOffset,
         mut left: &[LeftPixelRow<BD::Pixel>],
         mut lpf: *const BD::Pixel,
         w: usize,
@@ -2252,7 +2321,7 @@ mod neon {
     }
 
     pub fn sgr_filter_5x5_neon<BD: BitDepth>(
-        mut dst: Rav1dPictureDataComponentOffset,
+        mut dst: PicOffset,
         mut left: &[LeftPixelRow<BD::Pixel>],
         mut lpf: *const BD::Pixel,
         w: usize,
@@ -2669,7 +2738,7 @@ mod neon {
     }
 
     pub fn sgr_filter_mix_neon<BD: BitDepth>(
-        mut dst: Rav1dPictureDataComponentOffset,
+        mut dst: PicOffset,
         mut left: &[LeftPixelRow<BD::Pixel>],
         mut lpf: *const BD::Pixel,
         w: usize,
@@ -3327,7 +3396,7 @@ mod neon_erased {
         params: &LooprestorationParams,
         edges: LrEdgeFlags,
         bitdepth_max: c_int,
-        p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        p: *const FFISafe<PicOffset>,
         _lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
     ) {
         // SAFETY: Was passed as `FFISafe::new(_)` in `loop_restoration_filter::Fn::call`.
@@ -3356,7 +3425,7 @@ mod neon_erased {
         params: &LooprestorationParams,
         edges: LrEdgeFlags,
         bitdepth_max: c_int,
-        p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        p: *const FFISafe<PicOffset>,
         _lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
     ) {
         // SAFETY: Was passed as `FFISafe::new(_)` in `loop_restoration_filter::Fn::call`.
@@ -3385,7 +3454,7 @@ mod neon_erased {
         params: &LooprestorationParams,
         edges: LrEdgeFlags,
         bitdepth_max: c_int,
-        p: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        p: *const FFISafe<PicOffset>,
         _lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
     ) {
         // SAFETY: Was passed as `FFISafe::new(_)` in `loop_restoration_filter::Fn::call`.
@@ -3403,13 +3472,22 @@ mod neon_erased {
 
 impl Rav1dLoopRestorationDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
-        Self {
-            wiener: [loop_restoration_filter::Fn::new(wiener_c_erased::<BD>); 2],
-            sgr: [
-                loop_restoration_filter::Fn::new(sgr_5x5_c_erased::<BD>),
-                loop_restoration_filter::Fn::new(sgr_3x3_c_erased::<BD>),
-                loop_restoration_filter::Fn::new(sgr_mix_c_erased::<BD>),
-            ],
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                Self {
+                    wiener: [loop_restoration_filter::Fn::new(wiener_c_erased::<BD>); 2],
+                    sgr: [
+                        loop_restoration_filter::Fn::new(sgr_5x5_c_erased::<BD>),
+                        loop_restoration_filter::Fn::new(sgr_3x3_c_erased::<BD>),
+                        loop_restoration_filter::Fn::new(sgr_mix_c_erased::<BD>),
+                    ],
+                }
+            } else {
+                Self {
+                    wiener: [loop_restoration_filter::Fn::DEFAULT; 2],
+                    sgr: [loop_restoration_filter::Fn::DEFAULT; 3],
+                }
+            }
         }
     }
 
@@ -3527,89 +3605,6 @@ impl Rav1dLoopRestorationDSPContext {
 
         self
     }
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-    #[inline(always)]
-    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::looprestoration as safe_lr;
-
-        if !flags.contains(CpuFlags::AVX2) {
-            return self;
-        }
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.wiener[0] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter7_8bpc_avx2);
-                self.wiener[1] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter5_8bpc_avx2);
-            }
-            BPC::BPC16 => {
-                self.wiener[0] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter7_16bpc_avx2);
-                self.wiener[1] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::wiener_filter5_16bpc_avx2);
-            }
-        }
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.sgr[0] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_5x5_8bpc_avx2);
-                self.sgr[1] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_3x3_8bpc_avx2);
-                self.sgr[2] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_mix_8bpc_avx2);
-            }
-            BPC::BPC16 => {
-                self.sgr[0] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_5x5_16bpc_avx2);
-                self.sgr[1] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_3x3_16bpc_avx2);
-                self.sgr[2] =
-                    loop_restoration_filter::decl_fn_safe!(safe_lr::sgr_filter_mix_16bpc_avx2);
-            }
-        }
-
-        self
-    }
-
-    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-    #[inline(always)]
-    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::looprestoration_arm as safe_lr;
-
-        // Wire up Wiener and SGR filters
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.wiener[0] =
-                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter7_8bpc_neon);
-                self.wiener[1] =
-                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter5_8bpc_neon);
-                self.sgr[0] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_5x5_8bpc_neon);
-                self.sgr[1] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_3x3_8bpc_neon);
-                self.sgr[2] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_mix_8bpc_neon);
-            }
-            BPC::BPC16 => {
-                self.wiener[0] =
-                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter7_16bpc_neon);
-                self.wiener[1] =
-                    loop_restoration_filter::Fn::new(safe_lr::wiener_filter5_16bpc_neon);
-                self.sgr[0] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_5x5_16bpc_neon);
-                self.sgr[1] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_3x3_16bpc_neon);
-                self.sgr[2] =
-                    loop_restoration_filter::Fn::new(safe_lr::sgr_filter_mix_16bpc_neon);
-            }
-        }
-
-        self
-    }
-
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags, bpc: u8) -> Self {
         #[cfg(feature = "asm")]
@@ -3622,18 +3617,6 @@ impl Rav1dLoopRestorationDSPContext {
             {
                 return self.init_arm::<BD>(flags, bpc);
             }
-        }
-
-        #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-        {
-            let _ = bpc;
-            return self.init_x86_safe_simd::<BD>(flags);
-        }
-
-        #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-        {
-            let _ = bpc;
-            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.

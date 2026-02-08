@@ -1,9 +1,9 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::include::dav1d::headers::Rav1dRestorationType;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::Align16;
 use crate::src::internal::Rav1dContext;
 use crate::src::internal::Rav1dFrameData;
@@ -33,7 +33,7 @@ bitflags! {
 fn lr_stripe<BD: BitDepth>(
     c: &Rav1dContext,
     f: &Rav1dFrameData,
-    mut p: Rav1dPictureDataComponentOffset,
+    mut p: PicOffset,
     left: &[[BD::Pixel; 4]; 128 + 8],
     x: c_int,
     mut y: c_int,
@@ -59,6 +59,7 @@ fn lr_stripe<BD: BitDepth>(
 
     let mut params = LooprestorationParams::default();
     let lr_fn;
+    let lr_variant;
     if lr.r#type == Rav1dRestorationType::Wiener {
         let filter = &mut params.filter;
         filter[0][0] = lr.filter_h[0] as i16;
@@ -82,7 +83,9 @@ fn lr_stripe<BD: BitDepth>(
         filter[1][4] = lr.filter_v[2] as i16;
         filter[1][3] = 128 - (filter[1][0] + filter[1][1] + filter[1][2]) * 2;
 
-        lr_fn = f.dsp.lr.wiener[((filter[0][0] | filter[1][0]) == 0) as usize];
+        let wiener_idx = ((filter[0][0] | filter[1][0]) == 0) as usize;
+        lr_fn = f.dsp.lr.wiener[wiener_idx];
+        lr_variant = wiener_idx; // 0 = wiener7, 1 = wiener5
     } else {
         let sgr_idx = assert_matches!(lr.r#type, Rav1dRestorationType::SgrProj(idx) => idx);
         let sgr_params = &dav1d_sgr_params[sgr_idx as usize];
@@ -92,7 +95,9 @@ fn lr_stripe<BD: BitDepth>(
             w0: lr.sgr_weights[0] as i16,
             w1: 128 - (lr.sgr_weights[0] as i16 + lr.sgr_weights[1] as i16),
         };
-        lr_fn = f.dsp.lr.sgr[(sgr_params[0] != 0) as usize + (sgr_params[1] != 0) as usize * 2 - 1];
+        let sgr_array_idx = (sgr_params[0] != 0) as usize + (sgr_params[1] != 0) as usize * 2 - 1;
+        lr_fn = f.dsp.lr.sgr[sgr_array_idx];
+        lr_variant = sgr_array_idx + 2; // 2 = sgr_5x5, 3 = sgr_3x3, 4 = sgr_mix
     }
 
     let mut left = &left[..];
@@ -102,6 +107,7 @@ fn lr_stripe<BD: BitDepth>(
             sby + 1 != f.sbh || y + stripe_h != row_h,
         );
         lr_fn.call::<BD>(
+            lr_variant,
             p,
             left,
             &f.lf.lr_line_buf,
@@ -125,11 +131,7 @@ fn lr_stripe<BD: BitDepth>(
     }
 }
 
-fn backup_4xu<BD: BitDepth>(
-    dst: &mut [[BD::Pixel; 4]; 128 + 8],
-    src: Rav1dPictureDataComponentOffset,
-    u: c_int,
-) {
+fn backup_4xu<BD: BitDepth>(dst: &mut [[BD::Pixel; 4]; 128 + 8], src: PicOffset, u: c_int) {
     let u = u as usize;
     let dst = &mut dst[..u];
     for i in 0..u {
@@ -144,7 +146,7 @@ fn backup_4xu<BD: BitDepth>(
 fn lr_sbrow<BD: BitDepth>(
     c: &Rav1dContext,
     f: &Rav1dFrameData,
-    mut p: Rav1dPictureDataComponentOffset,
+    mut p: PicOffset,
     y: c_int,
     w: c_int,
     h: c_int,
@@ -248,7 +250,7 @@ fn lr_sbrow<BD: BitDepth>(
 pub(crate) fn rav1d_lr_sbrow<BD: BitDepth>(
     c: &Rav1dContext,
     f: &Rav1dFrameData,
-    dst: [Rav1dPictureDataComponentOffset; 3],
+    dst: [PicOffset; 3],
     sby: c_int,
 ) {
     let offset_y = 8 * (sby != 0) as c_int;

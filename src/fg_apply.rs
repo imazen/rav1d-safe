@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::BPC;
@@ -89,10 +89,10 @@ pub(crate) fn rav1d_prep_grain<BD: BitDepth>(
     let [grain_lut_0, grain_lut_1, grain_lut_2] = &mut grain_lut.0;
     dsp.generate_grain_y.call(grain_lut_0, data, bd);
     if data.num_uv_points[0] != 0 || data.chroma_scaling_from_luma {
-        dsp.generate_grain_uv[layout()].call(grain_lut_1, grain_lut_0, data, false, bd);
+        dsp.generate_grain_uv[layout()].call(layout(), grain_lut_1, grain_lut_0, data, false, bd);
     }
     if data.num_uv_points[1] != 0 || data.chroma_scaling_from_luma {
-        dsp.generate_grain_uv[layout()].call(grain_lut_2, grain_lut_0, data, true, bd);
+        dsp.generate_grain_uv[layout()].call(layout(), grain_lut_2, grain_lut_0, data, true, bd);
     }
 
     // Generate scaling LUTs as needed

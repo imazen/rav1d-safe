@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use crate::include::common::intops::clip;
 use crate::include::common::intops::iclip;
 use crate::include::dav1d::headers::Rav1dFrameHeader;
@@ -18,7 +19,6 @@ use libc::ptrdiff_t;
 use parking_lot::RwLock;
 use std::cmp;
 use std::ffi::c_int;
-use std::mem::MaybeUninit;
 
 #[repr(C)]
 pub struct Av1FilterLUT {
@@ -100,7 +100,7 @@ pub struct Av1Restoration {
 /// * `txa[0][1][y][x_off * t_dim.w]` for all `y` in the range of the current block
 /// * `txa[1][1][y_off * t_dim.h][x]` for all `x` in the range of the current block
 fn decomp_tx(
-    txa: &mut [[[[MaybeUninit<u8>; 32]; 32]; 2]; 2],
+    txa: &mut [[[[u8; 32]; 32]; 2]; 2],
     from: TxfmSize,
     depth: usize,
     y_off: u8,
@@ -138,13 +138,13 @@ fn decomp_tx(
         debug_assert!(t_dim.w == 1 << t_dim.lw && t_dim.w <= 16);
         CaseSet::<16, false>::one((), t_dim.w as usize, x0, |case, ()| {
             for y in 0..t_dim.h as usize {
-                case.set(&mut txa[0][0][y0 + y], MaybeUninit::new(lw));
-                case.set(&mut txa[1][0][y0 + y], MaybeUninit::new(lh));
-                txa[0][1][y0 + y][x0].write(t_dim.w);
+                case.set(&mut txa[0][0][y0 + y], lw);
+                case.set(&mut txa[1][0][y0 + y], lh);
+                txa[0][1][y0 + y][x0] = t_dim.w;
             }
         });
         CaseSet::<16, false>::one((), t_dim.w as usize, x0, |case, ()| {
-            case.set(&mut txa[1][1][y0], MaybeUninit::new(t_dim.h));
+            case.set(&mut txa[1][1][y0], t_dim.h);
         });
     };
 }
@@ -166,7 +166,7 @@ fn mask_edges_inter(
 
     // See [`decomp_tx`]'s docs for the `txa` arg.
 
-    let mut txa = Align16([[[[MaybeUninit::uninit(); 32]; 32]; 2]; 2]);
+    let mut txa = Align16([[[[0u8; 32]; 32]; 2]; 2]);
 
     for (y_off, _) in (0..h4).step_by(t_dim.h as usize).enumerate() {
         for (x_off, _) in (0..w4).step_by(t_dim.w as usize).enumerate() {
@@ -185,8 +185,7 @@ fn mask_edges_inter(
         let mask = 1u32 << (by4 + y);
         let sidx = (mask >= 0x10000) as usize;
         let smask = mask >> (sidx << 4);
-        // SAFETY: y < h4 so txa[0][0][y][0] is initialized.
-        let txa_y = unsafe { txa[0][0][y][0].assume_init() };
+        let txa_y = txa[0][0][y][0];
         masks[0][bx4][cmp::min(txa_y, l[y]) as usize][sidx].update(|it| it | smask as u16);
     }
 
@@ -195,8 +194,7 @@ fn mask_edges_inter(
         let mask = 1u32 << (bx4 + x);
         let sidx = (mask >= 0x10000) as usize;
         let smask = mask >> (sidx << 4);
-        // SAFETY: x < h4 so txa[1][0][0][x] is initialized.
-        let txa_x = unsafe { txa[1][0][0][x].assume_init() };
+        let txa_x = txa[1][0][0][x];
         masks[1][by4][cmp::min(txa_x, a[x]) as usize][sidx].update(|it| it | smask as u16);
     }
     if !skip {
@@ -205,20 +203,14 @@ fn mask_edges_inter(
             let mask = 1u32 << (by4 + y);
             let sidx = (mask >= 0x10000) as usize;
             let smask = mask >> (sidx << 4);
-            // SAFETY: y < h4 so txa[0][0][y][0] is initialized.
-            let mut ltx = unsafe { txa[0][0][y][0].assume_init() };
-            // SAFETY: y < h4 and x == 0 so txa[0][1][y][0] is initialized.
-            let step = unsafe { txa[0][1][y][0].assume_init() } as usize;
+            let mut ltx = txa[0][0][y][0];
+            let step = txa[0][1][y][0] as usize;
             let mut x = step;
             while x < w4 {
-                // SAFETY: x < w4 and y < h4 so txa[0][0][y][x] is initialized.
-                let rtx = unsafe { txa[0][0][y][x].assume_init() };
+                let rtx = txa[0][0][y][x];
                 masks[0][bx4 + x][cmp::min(rtx, ltx) as usize][sidx].update(|it| it | smask as u16);
                 ltx = rtx;
-                // SAFETY: x is incremented by tdim.w from previously
-                // initialized element, so we know that this element is a block
-                // edge and also initialized.
-                let step = unsafe { txa[0][1][y][x].assume_init() } as usize;
+                let step = txa[0][1][y][x] as usize;
                 x += step;
             }
         }
@@ -230,35 +222,23 @@ fn mask_edges_inter(
             let mask = 1u32 << (bx4 + x);
             let sidx = (mask >= 0x10000) as usize;
             let smask = mask >> (sidx << 4);
-            // SAFETY: x < w4 so txa[1][0][0][x] is initialized.
-            let mut ttx = unsafe { txa[1][0][0][x].assume_init() };
-            // SAFETY: x < h4 and y == 0 so txa[1][1][0][x] is initialized.
-            let step = unsafe { txa[1][1][0][x].assume_init() } as usize;
+            let mut ttx = txa[1][0][0][x];
+            let step = txa[1][1][0][x] as usize;
             let mut y = step;
             while y < h4 {
-                // SAFETY: x < w4 and y < h4 so txa[1][0][y][x] is initialized.
-                let btx = unsafe { txa[1][0][y][x].assume_init() };
+                let btx = txa[1][0][y][x];
                 masks[1][by4 + y][cmp::min(ttx, btx) as usize][sidx].update(|it| it | smask as u16);
                 ttx = btx;
-                // SAFETY: y is incremented by tdim.h from previously
-                // initialized element, so we know that this element is a block
-                // edge and also initialized.
-                let step = unsafe { txa[1][1][y][x].assume_init() } as usize;
+                let step = txa[1][1][y][x] as usize;
                 y += step;
             }
         }
     }
 
     for y in 0..h4 {
-        // SAFETY: y < h4 and w4 - 1 < w4 so txa[0][0][y][w4 - 1] is initialized.
-        l[y] = unsafe { txa[0][0][y][w4 - 1].assume_init() };
+        l[y] = txa[0][0][y][w4 - 1];
     }
-    // SAFETY: h4 - 1 < h4 and ..w4 < w4 so txa[1][0][h4 - 1][..w4] is
-    // initialized. Note that this can be replaced by
-    // `MaybeUninit::slice_assume_init_ref` if it is stabilized.
-    let txa_slice =
-        unsafe { &*(&txa[1][0][h4 - 1][..w4] as *const [MaybeUninit<u8>] as *const [u8]) };
-    a[..w4].copy_from_slice(txa_slice);
+    a[..w4].copy_from_slice(&txa[1][0][h4 - 1][..w4]);
 }
 
 #[inline]

@@ -104,7 +104,6 @@ use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use std::thread::JoinHandle;
 use strum::FromRepr;
 use zerocopy::AsBytes;
 use zerocopy::FromBytes;
@@ -304,9 +303,13 @@ pub(crate) struct TaskThreadDataDelayedFg {
     pub grain: Grain,
 }
 
-// TODO(SJC): Remove when TaskThreadDataDelayedFg is thread-safe
+// SAFETY: TODO(SJC): Remove when TaskThreadDataDelayedFg is thread-safe.
+// Fields are protected by external synchronization via TaskThreadData's mutex.
+#[allow(unsafe_code)]
 unsafe impl Send for TaskThreadDataDelayedFg {}
-// TODO(SJC): Remove when TaskThreadDataDelayedFg is thread-safe
+// SAFETY: TODO(SJC): Remove when TaskThreadDataDelayedFg is thread-safe.
+// Fields are protected by external synchronization via TaskThreadData's mutex.
+#[allow(unsafe_code)]
 unsafe impl Sync for TaskThreadDataDelayedFg {}
 
 #[derive(Default)]
@@ -339,7 +342,7 @@ pub(crate) struct Rav1dContextRefs {
 
 pub(crate) enum Rav1dContextTaskType {
     /// Worker thread in a multi-threaded context.
-    Worker(JoinHandle<()>),
+    Worker,
     /// Main thread in a single-threaded context. There are no worker threads so
     /// we need to store a Rav1dTaskContext for work that requires it.
     // This Rav1dTaskContext is heap-allocated because we don't want to bloat
@@ -436,10 +439,15 @@ pub struct Rav1dContext {
     pub(crate) picture_pool: Arc<MemPool<u8>>,
 }
 
-// TODO(SJC): Remove when Rav1dContext is thread-safe
+// SAFETY: TODO(SJC): Remove when Rav1dContext is thread-safe.
+// Thread safety is managed externally by the caller's API contract.
+#[allow(unsafe_code)]
 unsafe impl Send for Rav1dContext {}
-// TODO(SJC): Remove when Rav1dContext is thread-safe
+// SAFETY: TODO(SJC): Remove when Rav1dContext is thread-safe.
+// Thread safety is managed externally by the caller's API contract.
+#[allow(unsafe_code)]
 unsafe impl Sync for Rav1dContext {}
+
 
 #[derive(Default)]
 #[repr(C)]

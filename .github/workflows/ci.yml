@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, feat/*, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-test:
+    name: Build & Test - ${{ matrix.os }} - ${{ matrix.features }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        features:
+          - "bitdepth_8,bitdepth_16"
+          - "asm,bitdepth_8,bitdepth_16"
+        include:
+          # ARM builds
+          - os: ubuntu-24.04-arm
+            features: "bitdepth_8,bitdepth_16"
+          - os: ubuntu-24.04-arm
+            features: "asm,bitdepth_8,bitdepth_16"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install NASM (Windows)
+        if: runner.os == 'Windows' && contains(matrix.features, 'asm')
+        run: choco install nasm
+
+      - name: Install NASM (macOS)
+        if: runner.os == 'macOS' && contains(matrix.features, 'asm')
+        run: brew install nasm
+
+      - name: Install NASM (Linux)
+        if: runner.os == 'Linux' && contains(matrix.features, 'asm')
+        run: sudo apt-get update && sudo apt-get install -y nasm
+
+      - name: Build (no default features)
+        run: cargo build --no-default-features --features "${{ matrix.features }}" --verbose
+
+      - name: Build (release)
+        run: cargo build --no-default-features --features "${{ matrix.features }}" --release --verbose
+
+      - name: Run unit tests
+        run: cargo test --no-default-features --features "${{ matrix.features }}" --lib --verbose
+
+      - name: Download test vectors
+        run: bash scripts/download-test-vectors.sh
+        continue-on-error: true
+
+      - name: Run integration tests
+        run: cargo test --no-default-features --features "${{ matrix.features }}" --test integration_decode -- --ignored
+        continue-on-error: true
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install NASM
+        run: sudo apt-get update && sudo apt-get install -y nasm
+      - name: Run clippy (no asm)
+        run: cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
+      - name: Run clippy (with asm)
+        run: cargo clippy --features "asm,bitdepth_8,bitdepth_16" --all-targets -- -D warnings
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  cross-compile:
+    name: Cross-compile - ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Cross build
+        run: cross build --target ${{ matrix.target }} --no-default-features --features "bitdepth_8,bitdepth_16"
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install NASM
+        run: sudo apt-get update && sudo apt-get install -y nasm
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
+      - name: Generate coverage
+        run: cargo llvm-cov --no-default-features --features "bitdepth_8,bitdepth_16" --lcov --output-path lcov.info
+      - name: Upload to codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+
+  test-vectors:
+    name: Test Vector Download
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download test vectors
+        run: bash scripts/download-test-vectors.sh
+      - name: Verify test vectors
+        run: |
+          ls -lh target/test-vectors/ || true
+          if [ -d target/test-vectors/dav1d-test-data ]; then
+            find target/test-vectors/dav1d-test-data -name "*.ivf" | wc -l
+          fi
+      - name: Cache test vectors
+        uses: actions/cache@v5
+        with:
+          path: target/test-vectors
+          key: test-vectors-${{ hashFiles('scripts/download-test-vectors.sh') }}

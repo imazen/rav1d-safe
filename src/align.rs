@@ -7,7 +7,7 @@
 //! specific aligment for use with SIMD instructions).
 
 use crate::src::assume::assume;
-use crate::src::disjoint_mut::AsMutPtr;
+use crate::src::disjoint_mut::ExternalAsMutPtr;
 use std::marker::PhantomData;
 use std::mem;
 use std::mem::MaybeUninit;
@@ -102,7 +102,8 @@ macro_rules! def_align {
         impl AlignedByteChunk for $name<[u8; $align]> {}
 
         /// SAFETY: We never materialize a `&mut [V]` since we do a direct cast.
-        unsafe impl<V, const N: usize> AsMutPtr for $name<[V; N]> {
+        #[allow(unsafe_code)]
+        unsafe impl<V: Copy, const N: usize> ExternalAsMutPtr for $name<[V; N]> {
             type Target = V;
 
             unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut V {
@@ -175,6 +176,7 @@ impl<T: Copy, C: AlignedByteChunk> AlignedVec<T, C> {
     }
 
     /// Extract a slice containing the entire vector.
+    #[allow(unsafe_code)]
     pub fn as_slice(&self) -> &[T] {
         // SAFETY: The first `len` elements have been
         // initialized to `T`s in `Self::resize_with`.
@@ -185,6 +187,7 @@ impl<T: Copy, C: AlignedByteChunk> AlignedVec<T, C> {
     }
 
     /// Extract a mutable slice of the entire vector.
+    #[allow(unsafe_code)]
     pub fn as_mut_slice(&mut self) -> &mut [T] {
         // SAFETY: The first `len` elements have been
         // initialized to `T`s in `Self::resize_with`.
@@ -194,6 +197,7 @@ impl<T: Copy, C: AlignedByteChunk> AlignedVec<T, C> {
         unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), self.len) }
     }
 
+    #[allow(unsafe_code)]
     pub fn resize(&mut self, new_len: usize, value: T) {
         let old_len = self.len();
 
@@ -266,29 +270,7 @@ impl<T: Copy, C: AlignedByteChunk> Default for AlignedVec<T, C> {
 pub type AlignedVec32<T> = AlignedVec<T, Align32<[u8; 32]>>;
 pub type AlignedVec64<T> = AlignedVec<T, Align64<[u8; 64]>>;
 
-/// SAFETY: We never materialize a `&mut [T]` since we
-/// only materialize a `&mut AlignedVec<T, _>` and call [`AlignedVec::as_mut_ptr`] on it,
-/// which calls [`Vec::as_mut_ptr`] and never materializes a `&mut [V]`.
-unsafe impl<T: Copy, C: AlignedByteChunk> AsMutPtr for AlignedVec<T, C> {
-    type Target = T;
-
-    unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
-        // SAFETY: `.as_mut_ptr()` does not materialize a `&mut` to
-        // the underlying slice, so we can still allow `&`s into this slice.
-        let ptr = unsafe { &mut *ptr }.as_mut_ptr();
-
-        // SAFETY: `AlignedVec` stores `C`s internally,
-        // so `*mut T` is really `*mut C`.
-        // Since it's stored in a `Vec`, it's aligned.
-        unsafe { assume(ptr.cast::<C>().is_aligned()) };
-
-        ptr
-    }
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
+// AsMutPtr impl for AlignedVec is in src/disjoint_mut.rs
 
 #[test]
 #[should_panic]

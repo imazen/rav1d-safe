@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 use crate::src::const_fn::const_for;
 use bitflags::bitflags;
 use std::ffi::c_uint;
@@ -248,6 +249,7 @@ pub fn rav1d_set_cpu_flags_mask(mask: c_uint) {
     rav1d_cpu_flags_mask.store(mask, Ordering::SeqCst);
 }
 
+#[cfg(feature = "asm")]
 #[no_mangle]
 #[cold]
 pub extern "C" fn dav1d_set_cpu_flags_mask(mask: c_uint) {

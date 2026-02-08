@@ -44,19 +44,19 @@ macro_rules! wrap_fn_ptr {
     ) -> $return_ty:ty) => {
         $vis mod $name {
             use $crate::src::enum_map::DefaultValue;
+            #[allow(unused_imports)]
             use super::*;
 
+            // When asm is enabled, use real function pointers for C calling convention.
+            #[cfg(feature = "asm")]
             pub type FnPtr = unsafe extern "C" fn($($arg_name: $arg_ty),*) -> $return_ty;
 
-            /// A newtype wrapped [`FnPtr`].
-            ///
-            /// This allows us to add a safer
-            /// (type-safe for sure, and increasingly fully safe)
-            /// interface for calling a `fn` ptr.
+            #[cfg(feature = "asm")]
             #[derive(Clone, Copy, PartialEq, Eq)]
             #[repr(transparent)]
             pub struct Fn(FnPtr);
 
+            #[cfg(feature = "asm")]
             impl Fn {
                 pub(super) const fn new(fn_ptr: FnPtr) -> Self {
                     Self(fn_ptr)
@@ -67,6 +67,7 @@ macro_rules! wrap_fn_ptr {
                 }
             }
 
+            #[cfg(feature = "asm")]
             impl DefaultValue for Fn {
                 const DEFAULT: Self = {
                     extern "C" fn default_unimplemented(
@@ -77,6 +78,31 @@ macro_rules! wrap_fn_ptr {
                     }
                     Self::new(default_unimplemented)
                 };
+            }
+
+            // When asm is disabled (including c-ffi without asm), use a unit struct.
+            // The `call` methods use direct dispatch and never dereference fn ptrs.
+            // The c-ffi feature only controls the dav1d_* extern "C" entry points,
+            // NOT the internal DSP dispatch mechanism.
+            #[cfg(not(feature = "asm"))]
+            #[derive(Clone, Copy, PartialEq, Eq)]
+            pub struct Fn(());
+
+            #[cfg(not(feature = "asm"))]
+            impl Fn {
+                /// Accept a function pointer but discard it — direct dispatch
+                /// bypasses function pointers entirely.
+                #[allow(dead_code)]
+                pub(super) const fn new(
+                    _fn_ptr: unsafe extern "C" fn($($arg_name: $arg_ty),*) -> $return_ty
+                ) -> Self {
+                    Fn(())
+                }
+            }
+
+            #[cfg(not(feature = "asm"))]
+            impl DefaultValue for Fn {
+                const DEFAULT: Self = Fn(());
             }
 
             #[cfg(feature = "asm")]
@@ -97,9 +123,9 @@ macro_rules! wrap_fn_ptr {
 
             /// Declare a safe SIMD function wrapper.
             ///
-            /// This is similar to `decl_fn!` but takes a Rust function
-            /// directly instead of declaring an extern "C" block.
-            /// Used when `safe-simd` feature is enabled.
+            /// When asm is disabled, this accepts a function path but
+            /// discards it — dispatch goes through direct calls in `call()`.
+            /// Kept for backward compatibility with init functions.
             #[cfg(not(feature = "asm"))]
             #[allow(unused_macros)]
             macro_rules! decl_fn_safe {

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use crate::include::common::intops::clip;
 use crate::src::align::Align16;
 use crate::src::align::Align8;
@@ -175,7 +176,9 @@ pub trait BitDepth: Clone + Copy {
         + ArrayDefault
         + FromPrimitive<i16>
         + FromPrimitive<c_int>
-        + ToPrimitive<c_int>;
+        + ToPrimitive<c_int>
+        + AsBytes
+        + FromBytes;
 
     type Scaling: AsRef<[u8]> + AsMut<[u8]> + ArrayDefault + Copy;
     const SCALING_BITS: usize;

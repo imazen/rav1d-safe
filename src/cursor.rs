@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use std::ops::Add;
 use std::ops::AddAssign;
 use std::ops::Index;

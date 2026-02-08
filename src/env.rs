@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use crate::include::common::intops::apply_sign;
 use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::headers::Rav1dFrameHeader;

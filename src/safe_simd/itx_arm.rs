@@ -5,7 +5,8 @@
 
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
-#![allow(unsafe_op_in_unsafe_fn)]
+#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -13,12 +14,12 @@ use core::arch::aarch64::*;
 use std::ffi::c_int;
 
 use crate::include::common::bitdepth::AsPrimitive;
-use crate::include::common::bitdepth::BitDepth8;
 use crate::include::common::bitdepth::BitDepth16;
+use crate::include::common::bitdepth::BitDepth8;
 use crate::include::common::bitdepth::DynCoef;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::intops::iclip;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 use libc::ptrdiff_t;
 
@@ -27,22 +28,22 @@ use libc::ptrdiff_t;
 // ============================================================================
 
 /// WHT 4x4 transform for 8bpc
-unsafe fn inv_txfm_add_wht_wht_4x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_wht_wht_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     // Row transform: load from column-major, store row-major
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 } >> 2;
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 } >> 2;
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 } >> 2;
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 } >> 2;
+        let in0 = coeff[y] as i32 >> 2;
+        let in1 = coeff[y + 4] as i32 >> 2;
+        let in2 = coeff[y + 8] as i32 >> 2;
+        let in3 = coeff[y + 12] as i32 >> 2;
 
         let t0 = in0 + in1;
         let t2 = in2 - in3;
@@ -77,38 +78,38 @@ unsafe fn inv_txfm_add_wht_wht_4x4_8bpc_inner(
 
     // Add to destination
     for y in 0..4 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         for x in 0..4 {
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let c = tmp[y * 4 + x];
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     // Clear coefficients
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// WHT 4x4 transform for 16bpc
-unsafe fn inv_txfm_add_wht_wht_4x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_wht_wht_4x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     // Row transform
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) } >> 2;
-        let in1 = unsafe { *c_ptr.add(y + 4) } >> 2;
-        let in2 = unsafe { *c_ptr.add(y + 8) } >> 2;
-        let in3 = unsafe { *c_ptr.add(y + 12) } >> 2;
+        let in0 = coeff[y] >> 2;
+        let in1 = coeff[y + 4] >> 2;
+        let in2 = coeff[y + 8] >> 2;
+        let in3 = coeff[y + 12] >> 2;
 
         let t0 = in0 + in1;
         let t2 = in2 - in3;
@@ -143,18 +144,18 @@ unsafe fn inv_txfm_add_wht_wht_4x4_16bpc_inner(
 
     // Add to destination
     for y in 0..4 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
         for x in 0..4 {
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let c = tmp[y * 4 + x];
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     // Clear coefficients
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -164,7 +165,7 @@ unsafe fn inv_txfm_add_wht_wht_4x4_16bpc_inner(
 
 /// DCT4 1D transform constants
 const DCT4_C1: i32 = 2896; // cos(pi/8) * 4096
-const DCT4_C2: i32 = 2896; // cos(3pi/8) * 4096  
+const DCT4_C2: i32 = 2896; // cos(3pi/8) * 4096
 const DCT4_C3: i32 = 1567; // sin(pi/8) * 4096
 const DCT4_C4: i32 = 3784; // sin(3pi/8) * 4096
 
@@ -180,7 +181,7 @@ fn dct4_1d(in0: i32, in1: i32, in2: i32, in3: i32) -> [i32; 4] {
     // Stage 2 (DCT2)
     let s0 = t0 + t1;
     let s1 = t0 - t1;
-    
+
     // Rotation for t2, t3
     let s2 = ((t2 * 1567 + t3 * 3784) + 2048) >> 12;
     let s3 = ((t2 * 3784 - t3 * 1567) + 2048) >> 12;
@@ -189,22 +190,22 @@ fn dct4_1d(in0: i32, in1: i32, in2: i32, in3: i32) -> [i32; 4] {
 }
 
 /// DCT 4x4 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_4x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     // Row transform (coefficients are in column-major order)
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 };
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 };
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 };
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 };
+        let in0 = coeff[y] as i32;
+        let in1 = coeff[y + 4] as i32;
+        let in2 = coeff[y + 8] as i32;
+        let in3 = coeff[y + 12] as i32;
 
         let out = dct4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -221,41 +222,41 @@ unsafe fn inv_txfm_add_dct_dct_4x4_8bpc_inner(
         let in3 = tmp[3 * 4 + x];
 
         let out = dct4_1d(in0, in1, in2, in3);
-        
+
         // Round and add to destination
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             // Apply rounding: (val + 8) >> 4
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     // Clear coefficients
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 4x4 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_4x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_4x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     // Row transform
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) };
-        let in1 = unsafe { *c_ptr.add(y + 4) };
-        let in2 = unsafe { *c_ptr.add(y + 8) };
-        let in3 = unsafe { *c_ptr.add(y + 12) };
+        let in0 = coeff[y];
+        let in1 = coeff[y + 4];
+        let in2 = coeff[y + 8];
+        let in3 = coeff[y + 12];
 
         let out = dct4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -272,19 +273,19 @@ unsafe fn inv_txfm_add_dct_dct_4x4_16bpc_inner(
         let in3 = tmp[3 * 4 + x];
 
         let out = dct4_1d(in0, in1, in2, in3);
-        
+
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     // Clear coefficients
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -293,13 +294,13 @@ unsafe fn inv_txfm_add_dct_dct_4x4_16bpc_inner(
 // ============================================================================
 
 /// DCT8 1D transform constants
-const COS_PI_1_16: i32 = 4017;  // cos(pi/16) * 4096
-const COS_PI_2_16: i32 = 3784;  // cos(2*pi/16) * 4096
-const COS_PI_3_16: i32 = 3406;  // cos(3*pi/16) * 4096
-const COS_PI_4_16: i32 = 2896;  // cos(4*pi/16) * 4096 = sqrt(2)/2 * 4096
-const COS_PI_5_16: i32 = 2276;  // cos(5*pi/16) * 4096
-const COS_PI_6_16: i32 = 1567;  // cos(6*pi/16) * 4096
-const COS_PI_7_16: i32 = 799;   // cos(7*pi/16) * 4096
+const COS_PI_1_16: i32 = 4017; // cos(pi/16) * 4096
+const COS_PI_2_16: i32 = 3784; // cos(2*pi/16) * 4096
+const COS_PI_3_16: i32 = 3406; // cos(3*pi/16) * 4096
+const COS_PI_4_16: i32 = 2896; // cos(4*pi/16) * 4096 = sqrt(2)/2 * 4096
+const COS_PI_5_16: i32 = 2276; // cos(5*pi/16) * 4096
+const COS_PI_6_16: i32 = 1567; // cos(6*pi/16) * 4096
+const COS_PI_7_16: i32 = 799; // cos(7*pi/16) * 4096
 
 /// DCT8 1D transform
 #[inline(always)]
@@ -340,21 +341,21 @@ fn dct8_1d(input: &[i32; 8]) -> [i32; 8] {
 }
 
 /// DCT 8x8 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_8x8_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_8x8_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     // Row transform (coefficients in column-major order)
     for y in 0..8 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) as i32 };
+            input[x] = coeff[y + x * 8] as i32;
         }
         let out = dct8_1d(&input);
         for x in 0..8 {
@@ -371,35 +372,35 @@ unsafe fn inv_txfm_add_dct_dct_8x8_8bpc_inner(
         let out = dct8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 32) >> 6;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     // Clear coefficients
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 8x8 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_8x8_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_8x8_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     for y in 0..8 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) };
+            input[x] = coeff[y + x * 8];
         }
         let out = dct8_1d(&input);
         for x in 0..8 {
@@ -415,16 +416,16 @@ unsafe fn inv_txfm_add_dct_dct_8x8_16bpc_inner(
         let out = dct8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 32) >> 6;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -494,21 +495,21 @@ fn dct16_1d(input: &[i32; 16]) -> [i32; 16] {
 }
 
 /// DCT 16x16 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_16x16_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_16x16_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 256];
 
     // Row transform
     for y in 0..16 {
         let mut input = [0i32; 16];
         for x in 0..16 {
-            input[x] = unsafe { *c_ptr.add(y + x * 16) as i32 };
+            input[x] = coeff[y + x * 16] as i32;
         }
         let out = dct16_1d(&input);
         for x in 0..16 {
@@ -525,34 +526,34 @@ unsafe fn inv_txfm_add_dct_dct_16x16_8bpc_inner(
         let out = dct16_1d(&input);
 
         for y in 0..16 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 128) >> 8;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..256 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 16x16 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_16x16_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_16x16_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 256];
 
     for y in 0..16 {
         let mut input = [0i32; 16];
         for x in 0..16 {
-            input[x] = unsafe { *c_ptr.add(y + x * 16) };
+            input[x] = coeff[y + x * 16];
         }
         let out = dct16_1d(&input);
         for x in 0..16 {
@@ -568,16 +569,16 @@ unsafe fn inv_txfm_add_dct_dct_16x16_16bpc_inner(
         let out = dct16_1d(&input);
 
         for y in 0..16 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 128) >> 8;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..256 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -586,170 +587,168 @@ unsafe fn inv_txfm_add_dct_dct_16x16_16bpc_inner(
 // ============================================================================
 
 /// Identity 4x4 transform for 8bpc
-unsafe fn inv_txfm_add_identity_identity_4x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_identity_identity_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let sqrt2 = 181i32; // sqrt(2) * 128
 
     for y in 0..4 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         for x in 0..4 {
-            let c = unsafe { *c_ptr.add(y + x * 4) as i32 };
+            let c = coeff[y + x * 4] as i32;
             // Scale by sqrt(2)^2 / 16 = 2/16 = 1/8
             // Actually: c * sqrt2 * sqrt2 / (128 * 128 * 4) with proper rounding
             let scaled = ((c * sqrt2 + 64) >> 7) * sqrt2;
             let final_val = (scaled + 2048) >> 12;
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let result = iclip(d + final_val, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// Identity 4x4 transform for 16bpc
-unsafe fn inv_txfm_add_identity_identity_4x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_identity_identity_4x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let sqrt2 = 181i32;
 
     for y in 0..4 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
         for x in 0..4 {
-            let c = unsafe { *c_ptr.add(y + x * 4) };
+            let c = coeff[y + x * 4];
             let scaled = ((c * sqrt2 + 64) >> 7) * sqrt2;
             let final_val = (scaled + 2048) >> 12;
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let result = iclip(d + final_val, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// Identity 8x8 transform for 8bpc
-unsafe fn inv_txfm_add_identity_identity_8x8_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_identity_identity_8x8_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
-
     for y in 0..8 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         for x in 0..8 {
-            let c = unsafe { *c_ptr.add(y + x * 8) as i32 };
+            let c = coeff[y + x * 8] as i32;
             // For 8x8, scale is 2 (no sqrt2 multiplication needed)
             let final_val = (c + 1) >> 1;
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let result = iclip(d + final_val, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// Identity 8x8 transform for 16bpc
-unsafe fn inv_txfm_add_identity_identity_8x8_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_identity_identity_8x8_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
-
     for y in 0..8 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
         for x in 0..8 {
-            let c = unsafe { *c_ptr.add(y + x * 8) };
+            let c = coeff[y + x * 8];
             let final_val = (c + 1) >> 1;
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let result = iclip(d + final_val, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// Identity 16x16 transform for 8bpc
-unsafe fn inv_txfm_add_identity_identity_16x16_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_identity_identity_16x16_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let sqrt2 = 181i32;
 
     for y in 0..16 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         for x in 0..16 {
-            let c = unsafe { *c_ptr.add(y + x * 16) as i32 };
+            let c = coeff[y + x * 16] as i32;
             // 16x16 scale: 2*sqrt(2)
             let scaled = (c * sqrt2 + 64) >> 7;
             let final_val = (scaled + 1) >> 1;
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let result = iclip(d + final_val, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..256 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// Identity 16x16 transform for 16bpc
-unsafe fn inv_txfm_add_identity_identity_16x16_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_identity_identity_16x16_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let sqrt2 = 181i32;
 
     for y in 0..16 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
         for x in 0..16 {
-            let c = unsafe { *c_ptr.add(y + x * 16) };
+            let c = coeff[y + x * 16];
             let scaled = (c * sqrt2 + 64) >> 7;
             let final_val = (scaled + 1) >> 1;
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let result = iclip(d + final_val, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..256 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -792,22 +791,22 @@ fn adst4_1d(in0: i32, in1: i32, in2: i32, in3: i32) -> [i32; 4] {
 }
 
 /// ADST 4x4 transform for 8bpc
-unsafe fn inv_txfm_add_adst_adst_4x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_adst_adst_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     // Row transform
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 };
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 };
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 };
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 };
+        let in0 = coeff[y] as i32;
+        let in1 = coeff[y + 4] as i32;
+        let in2 = coeff[y + 8] as i32;
+        let in3 = coeff[y + 12] as i32;
 
         let out = adst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -826,35 +825,35 @@ unsafe fn inv_txfm_add_adst_adst_4x4_8bpc_inner(
         let out = adst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// ADST 4x4 transform for 16bpc
-unsafe fn inv_txfm_add_adst_adst_4x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_adst_adst_4x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) };
-        let in1 = unsafe { *c_ptr.add(y + 4) };
-        let in2 = unsafe { *c_ptr.add(y + 8) };
-        let in3 = unsafe { *c_ptr.add(y + 12) };
+        let in0 = coeff[y];
+        let in1 = coeff[y + 4];
+        let in2 = coeff[y + 8];
+        let in3 = coeff[y + 12];
 
         let out = adst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -872,16 +871,16 @@ unsafe fn inv_txfm_add_adst_adst_4x4_16bpc_inner(
         let out = adst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -952,20 +951,20 @@ fn adst8_1d(input: &[i32; 8]) -> [i32; 8] {
 }
 
 /// ADST 8x8 transform for 8bpc
-unsafe fn inv_txfm_add_adst_adst_8x8_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_adst_adst_8x8_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     for y in 0..8 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) as i32 };
+            input[x] = coeff[y + x * 8] as i32;
         }
         let out = adst8_1d(&input);
         for x in 0..8 {
@@ -981,34 +980,34 @@ unsafe fn inv_txfm_add_adst_adst_8x8_8bpc_inner(
         let out = adst8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 32) >> 6;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// ADST 8x8 transform for 16bpc
-unsafe fn inv_txfm_add_adst_adst_8x8_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_adst_adst_8x8_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     for y in 0..8 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) };
+            input[x] = coeff[y + x * 8];
         }
         let out = adst8_1d(&input);
         for x in 0..8 {
@@ -1024,16 +1023,16 @@ unsafe fn inv_txfm_add_adst_adst_8x8_16bpc_inner(
         let out = adst8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 32) >> 6;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -1048,21 +1047,21 @@ fn flipadst4_1d(in0: i32, in1: i32, in2: i32, in3: i32) -> [i32; 4] {
 }
 
 /// FlipADST 4x4 transform for 8bpc
-unsafe fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 };
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 };
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 };
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 };
+        let in0 = coeff[y] as i32;
+        let in1 = coeff[y + 4] as i32;
+        let in2 = coeff[y + 8] as i32;
+        let in3 = coeff[y + 12] as i32;
 
         let out = flipadst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1080,35 +1079,35 @@ unsafe fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_inner(
         let out = flipadst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// FlipADST 4x4 transform for 16bpc
-unsafe fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) };
-        let in1 = unsafe { *c_ptr.add(y + 4) };
-        let in2 = unsafe { *c_ptr.add(y + 8) };
-        let in3 = unsafe { *c_ptr.add(y + 12) };
+        let in0 = coeff[y];
+        let in1 = coeff[y + 4];
+        let in2 = coeff[y + 8];
+        let in3 = coeff[y + 12];
 
         let out = flipadst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1126,16 +1125,16 @@ unsafe fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(
         let out = flipadst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -1144,22 +1143,22 @@ unsafe fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(
 // ============================================================================
 
 /// DCT-ADST 4x4 transform for 8bpc (DCT on rows, ADST on columns)
-unsafe fn inv_txfm_add_dct_adst_4x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_adst_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     // Row transform: DCT
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 };
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 };
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 };
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 };
+        let in0 = coeff[y] as i32;
+        let in1 = coeff[y + 4] as i32;
+        let in2 = coeff[y + 8] as i32;
+        let in3 = coeff[y + 12] as i32;
 
         let out = dct4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1178,36 +1177,36 @@ unsafe fn inv_txfm_add_dct_adst_4x4_8bpc_inner(
         let out = adst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// ADST-DCT 4x4 transform for 8bpc (ADST on rows, DCT on columns)
-unsafe fn inv_txfm_add_adst_dct_4x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_adst_dct_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     // Row transform: ADST
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 };
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 };
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 };
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 };
+        let in0 = coeff[y] as i32;
+        let in1 = coeff[y + 4] as i32;
+        let in2 = coeff[y + 8] as i32;
+        let in3 = coeff[y + 12] as i32;
 
         let out = adst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1226,35 +1225,35 @@ unsafe fn inv_txfm_add_adst_dct_4x4_8bpc_inner(
         let out = dct4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT-ADST 4x4 transform for 16bpc
-unsafe fn inv_txfm_add_dct_adst_4x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_adst_4x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) };
-        let in1 = unsafe { *c_ptr.add(y + 4) };
-        let in2 = unsafe { *c_ptr.add(y + 8) };
-        let in3 = unsafe { *c_ptr.add(y + 12) };
+        let in0 = coeff[y];
+        let in1 = coeff[y + 4];
+        let in2 = coeff[y + 8];
+        let in3 = coeff[y + 12];
 
         let out = dct4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1272,35 +1271,35 @@ unsafe fn inv_txfm_add_dct_adst_4x4_16bpc_inner(
         let out = adst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// ADST-DCT 4x4 transform for 16bpc
-unsafe fn inv_txfm_add_adst_dct_4x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_adst_dct_4x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) };
-        let in1 = unsafe { *c_ptr.add(y + 4) };
-        let in2 = unsafe { *c_ptr.add(y + 8) };
-        let in3 = unsafe { *c_ptr.add(y + 12) };
+        let in0 = coeff[y];
+        let in1 = coeff[y + 4];
+        let in2 = coeff[y + 8];
+        let in3 = coeff[y + 12];
 
         let out = adst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1318,16 +1317,16 @@ unsafe fn inv_txfm_add_adst_dct_4x4_16bpc_inner(
         let out = dct4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -1336,21 +1335,21 @@ unsafe fn inv_txfm_add_adst_dct_4x4_16bpc_inner(
 // ============================================================================
 
 /// DCT-FLIPADST 4x4 transform for 8bpc
-unsafe fn inv_txfm_add_dct_flipadst_4x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_flipadst_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 };
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 };
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 };
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 };
+        let in0 = coeff[y] as i32;
+        let in1 = coeff[y + 4] as i32;
+        let in2 = coeff[y + 8] as i32;
+        let in3 = coeff[y + 12] as i32;
 
         let out = dct4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1368,35 +1367,35 @@ unsafe fn inv_txfm_add_dct_flipadst_4x4_8bpc_inner(
         let out = flipadst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// FLIPADST-DCT 4x4 transform for 8bpc
-unsafe fn inv_txfm_add_flipadst_dct_4x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_flipadst_dct_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 };
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 };
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 };
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 };
+        let in0 = coeff[y] as i32;
+        let in1 = coeff[y + 4] as i32;
+        let in2 = coeff[y + 8] as i32;
+        let in3 = coeff[y + 12] as i32;
 
         let out = flipadst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1414,35 +1413,35 @@ unsafe fn inv_txfm_add_flipadst_dct_4x4_8bpc_inner(
         let out = dct4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT-FLIPADST 4x4 transform for 16bpc
-unsafe fn inv_txfm_add_dct_flipadst_4x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_flipadst_4x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) };
-        let in1 = unsafe { *c_ptr.add(y + 4) };
-        let in2 = unsafe { *c_ptr.add(y + 8) };
-        let in3 = unsafe { *c_ptr.add(y + 12) };
+        let in0 = coeff[y];
+        let in1 = coeff[y + 4];
+        let in2 = coeff[y + 8];
+        let in3 = coeff[y + 12];
 
         let out = dct4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1460,35 +1459,35 @@ unsafe fn inv_txfm_add_dct_flipadst_4x4_16bpc_inner(
         let out = flipadst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// FLIPADST-DCT 4x4 transform for 16bpc
-unsafe fn inv_txfm_add_flipadst_dct_4x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_flipadst_dct_4x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) };
-        let in1 = unsafe { *c_ptr.add(y + 4) };
-        let in2 = unsafe { *c_ptr.add(y + 8) };
-        let in3 = unsafe { *c_ptr.add(y + 12) };
+        let in0 = coeff[y];
+        let in1 = coeff[y + 4];
+        let in2 = coeff[y + 8];
+        let in3 = coeff[y + 12];
 
         let out = flipadst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1506,16 +1505,16 @@ unsafe fn inv_txfm_add_flipadst_dct_4x4_16bpc_inner(
         let out = dct4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -1524,21 +1523,21 @@ unsafe fn inv_txfm_add_flipadst_dct_4x4_16bpc_inner(
 // ============================================================================
 
 /// ADST-FLIPADST 4x4 transform for 8bpc
-unsafe fn inv_txfm_add_adst_flipadst_4x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_adst_flipadst_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 };
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 };
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 };
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 };
+        let in0 = coeff[y] as i32;
+        let in1 = coeff[y + 4] as i32;
+        let in2 = coeff[y + 8] as i32;
+        let in3 = coeff[y + 12] as i32;
 
         let out = adst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1556,35 +1555,35 @@ unsafe fn inv_txfm_add_adst_flipadst_4x4_8bpc_inner(
         let out = flipadst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// FLIPADST-ADST 4x4 transform for 8bpc
-unsafe fn inv_txfm_add_flipadst_adst_4x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_flipadst_adst_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 };
-        let in1 = unsafe { *c_ptr.add(y + 4) as i32 };
-        let in2 = unsafe { *c_ptr.add(y + 8) as i32 };
-        let in3 = unsafe { *c_ptr.add(y + 12) as i32 };
+        let in0 = coeff[y] as i32;
+        let in1 = coeff[y + 4] as i32;
+        let in2 = coeff[y + 8] as i32;
+        let in3 = coeff[y + 12] as i32;
 
         let out = flipadst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1602,35 +1601,35 @@ unsafe fn inv_txfm_add_flipadst_adst_4x4_8bpc_inner(
         let out = adst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// ADST-FLIPADST 4x4 transform for 16bpc
-unsafe fn inv_txfm_add_adst_flipadst_4x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_adst_flipadst_4x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) };
-        let in1 = unsafe { *c_ptr.add(y + 4) };
-        let in2 = unsafe { *c_ptr.add(y + 8) };
-        let in3 = unsafe { *c_ptr.add(y + 12) };
+        let in0 = coeff[y];
+        let in1 = coeff[y + 4];
+        let in2 = coeff[y + 8];
+        let in3 = coeff[y + 12];
 
         let out = adst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1648,35 +1647,35 @@ unsafe fn inv_txfm_add_adst_flipadst_4x4_16bpc_inner(
         let out = flipadst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// FLIPADST-ADST 4x4 transform for 16bpc
-unsafe fn inv_txfm_add_flipadst_adst_4x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_flipadst_adst_4x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 16];
 
     for y in 0..4 {
-        let in0 = unsafe { *c_ptr.add(y) };
-        let in1 = unsafe { *c_ptr.add(y + 4) };
-        let in2 = unsafe { *c_ptr.add(y + 8) };
-        let in3 = unsafe { *c_ptr.add(y + 12) };
+        let in0 = coeff[y];
+        let in1 = coeff[y + 4];
+        let in2 = coeff[y + 8];
+        let in3 = coeff[y + 12];
 
         let out = flipadst4_1d(in0, in1, in2, in3);
         tmp[y * 4 + 0] = out[0];
@@ -1694,16 +1693,16 @@ unsafe fn inv_txfm_add_flipadst_adst_4x4_16bpc_inner(
         let out = adst4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 8) >> 4;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..16 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -1711,7 +1710,7 @@ unsafe fn inv_txfm_add_flipadst_adst_4x4_16bpc_inner(
 // FFI WRAPPERS
 // ============================================================================
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1719,18 +1718,36 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_wht_wht_4x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1738,19 +1755,37 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_wht_wht_4x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1758,18 +1793,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_4x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1777,20 +1830,38 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_4x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
 // DCT_DCT 8x8 FFI Wrappers
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1798,18 +1869,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 64) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_8x8_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1817,20 +1906,38 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 64) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_8x8_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
 // DCT_DCT 16x16 FFI Wrappers
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1838,18 +1945,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 256) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_16x16_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1857,20 +1982,38 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 256) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_16x16_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
 // IDENTITY FFI Wrappers
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1878,18 +2021,36 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_identity_identity_4x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1897,19 +2058,37 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_identity_identity_4x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1917,18 +2096,36 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 64) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_identity_identity_8x8_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1936,19 +2133,37 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 64) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_identity_identity_8x8_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1956,18 +2171,36 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 256) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_identity_identity_16x16_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1975,20 +2208,38 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 256) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_identity_identity_16x16_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
 // ADST_ADST FFI Wrappers
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1996,18 +2247,36 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_adst_adst_4x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2015,19 +2284,37 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_adst_adst_4x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2035,18 +2322,36 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 64) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_adst_adst_8x8_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2054,20 +2359,38 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_8x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 64) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_adst_adst_8x8_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
 // FLIPADST_FLIPADST FFI Wrappers
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2075,18 +2398,36 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_flipadst_flipadst_4x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2094,20 +2435,38 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
 // DCT_ADST and ADST_DCT FFI Wrappers
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2115,18 +2474,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_adst_4x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2134,19 +2511,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_adst_4x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2154,18 +2549,36 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_adst_dct_4x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2173,20 +2586,38 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_adst_dct_4x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
 // DCT_FLIPADST and FLIPADST_DCT FFI Wrappers
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2194,18 +2625,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_flipadst_4x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2213,19 +2662,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_flipadst_4x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2233,18 +2700,36 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_flipadst_dct_4x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2252,20 +2737,38 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_flipadst_dct_4x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
 // ADST_FLIPADST and FLIPADST_ADST FFI Wrappers
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2273,18 +2776,36 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_adst_flipadst_4x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2292,19 +2813,37 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_adst_flipadst_4x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2312,18 +2851,36 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_flipadst_adst_4x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2331,13 +2888,31 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_flipadst_adst_4x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
@@ -2348,22 +2923,22 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_16bpc_neon(
 // ============================================================================
 
 /// DCT 4x8 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_4x8_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_4x8_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 32];
 
     // Row transform (4 columns, 8 rows): DCT4 on rows
     for y in 0..8 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 };
-        let in1 = unsafe { *c_ptr.add(y + 8) as i32 };
-        let in2 = unsafe { *c_ptr.add(y + 16) as i32 };
-        let in3 = unsafe { *c_ptr.add(y + 24) as i32 };
+        let in0 = coeff[y] as i32;
+        let in1 = coeff[y + 8] as i32;
+        let in2 = coeff[y + 16] as i32;
+        let in3 = coeff[y + 24] as i32;
 
         let out = dct4_1d(in0, in1, in2, in3);
         for x in 0..4 {
@@ -2380,35 +2955,35 @@ unsafe fn inv_txfm_add_dct_dct_4x8_8bpc_inner(
         let out = dct8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 16) >> 5;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..32 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 4x8 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_4x8_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_4x8_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 32];
 
     for y in 0..8 {
-        let in0 = unsafe { *c_ptr.add(y) };
-        let in1 = unsafe { *c_ptr.add(y + 8) };
-        let in2 = unsafe { *c_ptr.add(y + 16) };
-        let in3 = unsafe { *c_ptr.add(y + 24) };
+        let in0 = coeff[y];
+        let in1 = coeff[y + 8];
+        let in2 = coeff[y + 16];
+        let in3 = coeff[y + 24];
 
         let out = dct4_1d(in0, in1, in2, in3);
         for x in 0..4 {
@@ -2424,35 +2999,35 @@ unsafe fn inv_txfm_add_dct_dct_4x8_16bpc_inner(
         let out = dct8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 16) >> 5;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..32 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 8x4 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_8x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_8x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 32];
 
     // Row transform: DCT8 on rows
     for y in 0..4 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 4) as i32 };
+            input[x] = coeff[y + x * 4] as i32;
         }
         let out = dct8_1d(&input);
         for x in 0..8 {
@@ -2470,34 +3045,34 @@ unsafe fn inv_txfm_add_dct_dct_8x4_8bpc_inner(
         let out = dct4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 16) >> 5;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..32 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 8x4 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_8x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_8x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 32];
 
     for y in 0..4 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 4) };
+            input[x] = coeff[y + x * 4];
         }
         let out = dct8_1d(&input);
         for x in 0..8 {
@@ -2514,16 +3089,16 @@ unsafe fn inv_txfm_add_dct_dct_8x4_16bpc_inner(
         let out = dct4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 16) >> 5;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..32 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -2532,21 +3107,21 @@ unsafe fn inv_txfm_add_dct_dct_8x4_16bpc_inner(
 // ============================================================================
 
 /// DCT 8x16 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_8x16_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_8x16_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 128];
 
     // Row transform: DCT8 on 16 rows
     for y in 0..16 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 16) as i32 };
+            input[x] = coeff[y + x * 16] as i32;
         }
         let out = dct8_1d(&input);
         for x in 0..8 {
@@ -2563,34 +3138,34 @@ unsafe fn inv_txfm_add_dct_dct_8x16_8bpc_inner(
         let out = dct16_1d(&input);
 
         for y in 0..16 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 64) >> 7;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..128 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 8x16 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_8x16_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_8x16_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 128];
 
     for y in 0..16 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 16) };
+            input[x] = coeff[y + x * 16];
         }
         let out = dct8_1d(&input);
         for x in 0..8 {
@@ -2606,35 +3181,35 @@ unsafe fn inv_txfm_add_dct_dct_8x16_16bpc_inner(
         let out = dct16_1d(&input);
 
         for y in 0..16 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 64) >> 7;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..128 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 16x8 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_16x8_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_16x8_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 128];
 
     // Row transform: DCT16 on 8 rows
     for y in 0..8 {
         let mut input = [0i32; 16];
         for x in 0..16 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) as i32 };
+            input[x] = coeff[y + x * 8] as i32;
         }
         let out = dct16_1d(&input);
         for x in 0..16 {
@@ -2651,34 +3226,34 @@ unsafe fn inv_txfm_add_dct_dct_16x8_8bpc_inner(
         let out = dct8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 64) >> 7;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..128 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 16x8 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_16x8_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_16x8_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 128];
 
     for y in 0..8 {
         let mut input = [0i32; 16];
         for x in 0..16 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) };
+            input[x] = coeff[y + x * 8];
         }
         let out = dct16_1d(&input);
         for x in 0..16 {
@@ -2694,16 +3269,16 @@ unsafe fn inv_txfm_add_dct_dct_16x8_16bpc_inner(
         let out = dct8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 64) >> 7;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..128 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -2712,20 +3287,20 @@ unsafe fn inv_txfm_add_dct_dct_16x8_16bpc_inner(
 // ============================================================================
 
 /// DCT-ADST 8x8 transform for 8bpc
-unsafe fn inv_txfm_add_dct_adst_8x8_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_adst_8x8_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     for y in 0..8 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) as i32 };
+            input[x] = coeff[y + x * 8] as i32;
         }
         let out = dct8_1d(&input);
         for x in 0..8 {
@@ -2741,34 +3316,34 @@ unsafe fn inv_txfm_add_dct_adst_8x8_8bpc_inner(
         let out = adst8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 32) >> 6;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// ADST-DCT 8x8 transform for 8bpc
-unsafe fn inv_txfm_add_adst_dct_8x8_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_adst_dct_8x8_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     for y in 0..8 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) as i32 };
+            input[x] = coeff[y + x * 8] as i32;
         }
         let out = adst8_1d(&input);
         for x in 0..8 {
@@ -2784,34 +3359,34 @@ unsafe fn inv_txfm_add_adst_dct_8x8_8bpc_inner(
         let out = dct8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 32) >> 6;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT-ADST 8x8 transform for 16bpc
-unsafe fn inv_txfm_add_dct_adst_8x8_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_adst_8x8_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     for y in 0..8 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) };
+            input[x] = coeff[y + x * 8];
         }
         let out = dct8_1d(&input);
         for x in 0..8 {
@@ -2827,34 +3402,34 @@ unsafe fn inv_txfm_add_dct_adst_8x8_16bpc_inner(
         let out = adst8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 32) >> 6;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// ADST-DCT 8x8 transform for 16bpc
-unsafe fn inv_txfm_add_adst_dct_8x8_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_adst_dct_8x8_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     for y in 0..8 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) };
+            input[x] = coeff[y + x * 8];
         }
         let out = adst8_1d(&input);
         for x in 0..8 {
@@ -2870,16 +3445,16 @@ unsafe fn inv_txfm_add_adst_dct_8x8_16bpc_inner(
         let out = dct8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 32) >> 6;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -2887,7 +3462,7 @@ unsafe fn inv_txfm_add_adst_dct_8x8_16bpc_inner(
 // RECTANGULAR FFI WRAPPERS
 // ============================================================================
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2895,18 +3470,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 32) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_4x8_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2914,19 +3507,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 32) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_4x8_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2934,18 +3545,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 32) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_8x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2953,19 +3582,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 32) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_8x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2973,18 +3620,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 128) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_8x16_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2992,19 +3657,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 128) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_8x16_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3012,18 +3695,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 128) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_16x8_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3031,20 +3732,38 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 128) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_16x8_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
 // 8x8 Hybrid FFI Wrappers
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3052,18 +3771,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 64) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_adst_8x8_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3071,19 +3808,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_8x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 64) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_adst_8x8_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_adst_dct_8x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3091,18 +3846,36 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_8x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 64) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_adst_dct_8x8_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_adst_dct_8x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3110,13 +3883,31 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_8x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 64) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_adst_dct_8x8_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
@@ -3138,18 +3929,18 @@ fn dct32_1d(input: &[i32; 32]) -> [i32; 32] {
 
     // DCT16 on even terms (t[0..16])
     let even_input = [
-        t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7],
-        t[8], t[9], t[10], t[11], t[12], t[13], t[14], t[15],
+        t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8], t[9], t[10], t[11], t[12], t[13],
+        t[14], t[15],
     ];
     let even_out = dct16_1d(&even_input);
 
     // Odd terms need rotation pairs (simplified version)
     // Using approximate constants for 32-point DCT
-    let c1 = 4091;  // cos(pi/64) * 4096
-    let c3 = 4076;  // cos(3pi/64) * 4096
-    let c5 = 4017;  // cos(5pi/64) * 4096
-    let c7 = 3920;  // cos(7pi/64) * 4096
-    let c9 = 3784;  // cos(9pi/64) * 4096
+    let c1 = 4091; // cos(pi/64) * 4096
+    let c3 = 4076; // cos(3pi/64) * 4096
+    let c5 = 4017; // cos(5pi/64) * 4096
+    let c7 = 3920; // cos(7pi/64) * 4096
+    let c9 = 3784; // cos(9pi/64) * 4096
     let c11 = 3612; // cos(11pi/64) * 4096
     let c13 = 3406; // cos(13pi/64) * 4096
     let c15 = 3166; // cos(15pi/64) * 4096
@@ -3187,21 +3978,21 @@ fn dct32_1d(input: &[i32; 32]) -> [i32; 32] {
 }
 
 /// DCT 32x32 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_32x32_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_32x32_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 1024];
 
     // Row transform
     for y in 0..32 {
         let mut input = [0i32; 32];
         for x in 0..32 {
-            input[x] = unsafe { *c_ptr.add(y + x * 32) as i32 };
+            input[x] = coeff[y + x * 32] as i32;
         }
         let out = dct32_1d(&input);
         for x in 0..32 {
@@ -3218,34 +4009,34 @@ unsafe fn inv_txfm_add_dct_dct_32x32_8bpc_inner(
         let out = dct32_1d(&input);
 
         for y in 0..32 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 512) >> 10;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..1024 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 32x32 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_32x32_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_32x32_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 1024];
 
     for y in 0..32 {
         let mut input = [0i32; 32];
         for x in 0..32 {
-            input[x] = unsafe { *c_ptr.add(y + x * 32) };
+            input[x] = coeff[y + x * 32];
         }
         let out = dct32_1d(&input);
         for x in 0..32 {
@@ -3261,16 +4052,16 @@ unsafe fn inv_txfm_add_dct_dct_32x32_16bpc_inner(
         let out = dct32_1d(&input);
 
         for y in 0..32 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 512) >> 10;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..1024 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -3279,22 +4070,22 @@ unsafe fn inv_txfm_add_dct_dct_32x32_16bpc_inner(
 // ============================================================================
 
 /// DCT 4x16 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_4x16_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_4x16_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     // Row transform: DCT4 on 16 rows
     for y in 0..16 {
-        let in0 = unsafe { *c_ptr.add(y) as i32 };
-        let in1 = unsafe { *c_ptr.add(y + 16) as i32 };
-        let in2 = unsafe { *c_ptr.add(y + 32) as i32 };
-        let in3 = unsafe { *c_ptr.add(y + 48) as i32 };
+        let in0 = coeff[y] as i32;
+        let in1 = coeff[y + 16] as i32;
+        let in2 = coeff[y + 32] as i32;
+        let in3 = coeff[y + 48] as i32;
 
         let out = dct4_1d(in0, in1, in2, in3);
         for x in 0..4 {
@@ -3311,35 +4102,35 @@ unsafe fn inv_txfm_add_dct_dct_4x16_8bpc_inner(
         let out = dct16_1d(&input);
 
         for y in 0..16 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 64) >> 7;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 4x16 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_4x16_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_4x16_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     for y in 0..16 {
-        let in0 = unsafe { *c_ptr.add(y) };
-        let in1 = unsafe { *c_ptr.add(y + 16) };
-        let in2 = unsafe { *c_ptr.add(y + 32) };
-        let in3 = unsafe { *c_ptr.add(y + 48) };
+        let in0 = coeff[y];
+        let in1 = coeff[y + 16];
+        let in2 = coeff[y + 32];
+        let in3 = coeff[y + 48];
 
         let out = dct4_1d(in0, in1, in2, in3);
         for x in 0..4 {
@@ -3355,35 +4146,35 @@ unsafe fn inv_txfm_add_dct_dct_4x16_16bpc_inner(
         let out = dct16_1d(&input);
 
         for y in 0..16 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 64) >> 7;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 16x4 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_16x4_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_16x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     // Row transform: DCT16 on 4 rows
     for y in 0..4 {
         let mut input = [0i32; 16];
         for x in 0..16 {
-            input[x] = unsafe { *c_ptr.add(y + x * 4) as i32 };
+            input[x] = coeff[y + x * 4] as i32;
         }
         let out = dct16_1d(&input);
         for x in 0..16 {
@@ -3401,34 +4192,34 @@ unsafe fn inv_txfm_add_dct_dct_16x4_8bpc_inner(
         let out = dct4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 64) >> 7;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 16x4 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_16x4_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_16x4_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 64];
 
     for y in 0..4 {
         let mut input = [0i32; 16];
         for x in 0..16 {
-            input[x] = unsafe { *c_ptr.add(y + x * 4) };
+            input[x] = coeff[y + x * 4];
         }
         let out = dct16_1d(&input);
         for x in 0..16 {
@@ -3445,16 +4236,16 @@ unsafe fn inv_txfm_add_dct_dct_16x4_16bpc_inner(
         let out = dct4_1d(in0, in1, in2, in3);
 
         for y in 0..4 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 64) >> 7;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..64 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -3463,21 +4254,21 @@ unsafe fn inv_txfm_add_dct_dct_16x4_16bpc_inner(
 // ============================================================================
 
 /// DCT 16x32 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_16x32_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_16x32_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 512];
 
     // Row transform: DCT16 on 32 rows
     for y in 0..32 {
         let mut input = [0i32; 16];
         for x in 0..16 {
-            input[x] = unsafe { *c_ptr.add(y + x * 32) as i32 };
+            input[x] = coeff[y + x * 32] as i32;
         }
         let out = dct16_1d(&input);
         for x in 0..16 {
@@ -3494,34 +4285,34 @@ unsafe fn inv_txfm_add_dct_dct_16x32_8bpc_inner(
         let out = dct32_1d(&input);
 
         for y in 0..32 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 256) >> 9;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..512 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 16x32 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_16x32_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_16x32_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 512];
 
     for y in 0..32 {
         let mut input = [0i32; 16];
         for x in 0..16 {
-            input[x] = unsafe { *c_ptr.add(y + x * 32) };
+            input[x] = coeff[y + x * 32];
         }
         let out = dct16_1d(&input);
         for x in 0..16 {
@@ -3537,35 +4328,35 @@ unsafe fn inv_txfm_add_dct_dct_16x32_16bpc_inner(
         let out = dct32_1d(&input);
 
         for y in 0..32 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 256) >> 9;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..512 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 32x16 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_32x16_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_32x16_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 512];
 
     // Row transform: DCT32 on 16 rows
     for y in 0..16 {
         let mut input = [0i32; 32];
         for x in 0..32 {
-            input[x] = unsafe { *c_ptr.add(y + x * 16) as i32 };
+            input[x] = coeff[y + x * 16] as i32;
         }
         let out = dct32_1d(&input);
         for x in 0..32 {
@@ -3582,34 +4373,34 @@ unsafe fn inv_txfm_add_dct_dct_32x16_8bpc_inner(
         let out = dct16_1d(&input);
 
         for y in 0..16 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 256) >> 9;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..512 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 32x16 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_32x16_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_32x16_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 512];
 
     for y in 0..16 {
         let mut input = [0i32; 32];
         for x in 0..32 {
-            input[x] = unsafe { *c_ptr.add(y + x * 16) };
+            input[x] = coeff[y + x * 16];
         }
         let out = dct32_1d(&input);
         for x in 0..32 {
@@ -3625,16 +4416,16 @@ unsafe fn inv_txfm_add_dct_dct_32x16_16bpc_inner(
         let out = dct16_1d(&input);
 
         for y in 0..16 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 256) >> 9;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..512 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -3642,7 +4433,7 @@ unsafe fn inv_txfm_add_dct_dct_32x16_16bpc_inner(
 // LARGER SIZE FFI WRAPPERS
 // ============================================================================
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3650,18 +4441,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 1024) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_32x32_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3669,19 +4478,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 1024) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_32x32_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3689,18 +4516,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 64) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_4x16_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3708,19 +4553,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 64) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_4x16_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3728,18 +4591,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 64) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_16x4_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3747,19 +4628,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 64) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_16x4_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3767,18 +4666,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 512) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_16x32_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3786,19 +4703,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 512) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_16x32_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3806,18 +4741,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 512) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_32x16_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3825,13 +4778,31 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 512) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_32x16_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
@@ -3879,21 +4850,21 @@ fn dct64_1d(input: &[i32; 64]) -> [i32; 64] {
 }
 
 /// DCT 64x64 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_64x64_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_64x64_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 4096];
 
     // Row transform
     for y in 0..64 {
         let mut input = [0i32; 64];
         for x in 0..64 {
-            input[x] = unsafe { *c_ptr.add(y + x * 64) as i32 };
+            input[x] = coeff[y + x * 64] as i32;
         }
         let out = dct64_1d(&input);
         for x in 0..64 {
@@ -3910,34 +4881,34 @@ unsafe fn inv_txfm_add_dct_dct_64x64_8bpc_inner(
         let out = dct64_1d(&input);
 
         for y in 0..64 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 2048) >> 12;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..4096 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 64x64 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_64x64_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_64x64_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 4096];
 
     for y in 0..64 {
         let mut input = [0i32; 64];
         for x in 0..64 {
-            input[x] = unsafe { *c_ptr.add(y + x * 64) };
+            input[x] = coeff[y + x * 64];
         }
         let out = dct64_1d(&input);
         for x in 0..64 {
@@ -3953,16 +4924,16 @@ unsafe fn inv_txfm_add_dct_dct_64x64_16bpc_inner(
         let out = dct64_1d(&input);
 
         for y in 0..64 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 2048) >> 12;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..4096 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -3971,21 +4942,21 @@ unsafe fn inv_txfm_add_dct_dct_64x64_16bpc_inner(
 // ============================================================================
 
 /// DCT 8x32 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_8x32_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_8x32_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 256];
 
     // Row transform: DCT8 on 32 rows
     for y in 0..32 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 32) as i32 };
+            input[x] = coeff[y + x * 32] as i32;
         }
         let out = dct8_1d(&input);
         for x in 0..8 {
@@ -4002,34 +4973,34 @@ unsafe fn inv_txfm_add_dct_dct_8x32_8bpc_inner(
         let out = dct32_1d(&input);
 
         for y in 0..32 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 256) >> 9;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..256 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 8x32 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_8x32_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_8x32_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 256];
 
     for y in 0..32 {
         let mut input = [0i32; 8];
         for x in 0..8 {
-            input[x] = unsafe { *c_ptr.add(y + x * 32) };
+            input[x] = coeff[y + x * 32];
         }
         let out = dct8_1d(&input);
         for x in 0..8 {
@@ -4045,35 +5016,35 @@ unsafe fn inv_txfm_add_dct_dct_8x32_16bpc_inner(
         let out = dct32_1d(&input);
 
         for y in 0..32 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 256) >> 9;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..256 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 32x8 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_32x8_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_32x8_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 256];
 
     // Row transform: DCT32 on 8 rows
     for y in 0..8 {
         let mut input = [0i32; 32];
         for x in 0..32 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) as i32 };
+            input[x] = coeff[y + x * 8] as i32;
         }
         let out = dct32_1d(&input);
         for x in 0..32 {
@@ -4090,34 +5061,34 @@ unsafe fn inv_txfm_add_dct_dct_32x8_8bpc_inner(
         let out = dct8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 256) >> 9;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..256 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 32x8 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_32x8_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_32x8_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 256];
 
     for y in 0..8 {
         let mut input = [0i32; 32];
         for x in 0..32 {
-            input[x] = unsafe { *c_ptr.add(y + x * 8) };
+            input[x] = coeff[y + x * 8];
         }
         let out = dct32_1d(&input);
         for x in 0..32 {
@@ -4133,16 +5104,16 @@ unsafe fn inv_txfm_add_dct_dct_32x8_16bpc_inner(
         let out = dct8_1d(&input);
 
         for y in 0..8 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 256) >> 9;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..256 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -4151,20 +5122,20 @@ unsafe fn inv_txfm_add_dct_dct_32x8_16bpc_inner(
 // ============================================================================
 
 /// DCT 32x64 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_32x64_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_32x64_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 2048];
 
     for y in 0..64 {
         let mut input = [0i32; 32];
         for x in 0..32 {
-            input[x] = unsafe { *c_ptr.add(y + x * 64) as i32 };
+            input[x] = coeff[y + x * 64] as i32;
         }
         let out = dct32_1d(&input);
         for x in 0..32 {
@@ -4180,34 +5151,34 @@ unsafe fn inv_txfm_add_dct_dct_32x64_8bpc_inner(
         let out = dct64_1d(&input);
 
         for y in 0..64 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 1024) >> 11;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..2048 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 32x64 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_32x64_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_32x64_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 2048];
 
     for y in 0..64 {
         let mut input = [0i32; 32];
         for x in 0..32 {
-            input[x] = unsafe { *c_ptr.add(y + x * 64) };
+            input[x] = coeff[y + x * 64];
         }
         let out = dct32_1d(&input);
         for x in 0..32 {
@@ -4223,34 +5194,34 @@ unsafe fn inv_txfm_add_dct_dct_32x64_16bpc_inner(
         let out = dct64_1d(&input);
 
         for y in 0..64 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 1024) >> 11;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..2048 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 64x32 transform for 8bpc
-unsafe fn inv_txfm_add_dct_dct_64x32_8bpc_inner(
-    dst: *mut u8,
+fn inv_txfm_add_dct_dct_64x32_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 2048];
 
     for y in 0..32 {
         let mut input = [0i32; 64];
         for x in 0..64 {
-            input[x] = unsafe { *c_ptr.add(y + x * 32) as i32 };
+            input[x] = coeff[y + x * 32] as i32;
         }
         let out = dct64_1d(&input);
         for x in 0..64 {
@@ -4266,34 +5237,34 @@ unsafe fn inv_txfm_add_dct_dct_64x32_8bpc_inner(
         let out = dct32_1d(&input);
 
         for y in 0..32 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 1024) >> 11;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..2048 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// DCT 64x32 transform for 16bpc
-unsafe fn inv_txfm_add_dct_dct_64x32_16bpc_inner(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn inv_txfm_add_dct_dct_64x32_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let c_ptr = coeff;
     let mut tmp = [0i32; 2048];
 
     for y in 0..32 {
         let mut input = [0i32; 64];
         for x in 0..64 {
-            input[x] = unsafe { *c_ptr.add(y + x * 32) };
+            input[x] = coeff[y + x * 32];
         }
         let out = dct64_1d(&input);
         for x in 0..64 {
@@ -4309,16 +5280,16 @@ unsafe fn inv_txfm_add_dct_dct_64x32_16bpc_inner(
         let out = dct32_1d(&input);
 
         for y in 0..32 {
-            let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+            let d = dst[row_off + x] as i32;
             let c = (out[y] + 1024) >> 11;
             let result = iclip(d + c, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..2048 {
-        unsafe { *c_ptr.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -4326,7 +5297,7 @@ unsafe fn inv_txfm_add_dct_dct_64x32_16bpc_inner(
 // LARGE SIZE FFI WRAPPERS
 // ============================================================================
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4334,18 +5305,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 4096) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 63usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 64;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 64;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_64x64_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4353,19 +5342,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 4096) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 63usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 64;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 64;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_64x64_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4373,18 +5380,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 256) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_8x32_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4392,19 +5417,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 256) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_8x32_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4412,18 +5455,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 256) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_32x8_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4431,19 +5492,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 256) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_32x8_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4451,18 +5530,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 2048) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 63usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_32x64_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4470,19 +5567,37 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 2048) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 63usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_32x64_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4490,18 +5605,36 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 2048) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 64;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 64;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_64x32_8bpc_inner(
-        dst_ptr as *mut u8,
+        dst_slice,
+        base,
         dst_stride,
-        coeff as *mut i16,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4509,13 +5642,31 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_neon(
     eob: i32,
     bitdepth_max: i32,
     _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) {
-    let dst_stride_u16 = dst_stride / 2;
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 2048) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 64;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 64;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     inv_txfm_add_dct_dct_64x32_16bpc_inner(
-        dst_ptr as *mut u16,
-        dst_stride_u16,
-        coeff as *mut i32,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
         eob,
         bitdepth_max,
     );
@@ -4565,10 +5716,11 @@ fn rect2_scale(v: i32) -> i32 {
 // ============================================================================
 
 /// Generic rectangular identity transform for 8bpc
-unsafe fn identity_rect_8bpc_inner<const W: usize, const H: usize>(
-    dst: *mut u8,
+fn identity_rect_8bpc_inner<const W: usize, const H: usize>(
+    dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
-    coeff: *mut i16,
+    coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
     row_fn: fn(&mut [i32], usize),
@@ -4580,7 +5732,7 @@ unsafe fn identity_rect_8bpc_inner<const W: usize, const H: usize>(
     for y in 0..H {
         let mut row = [0i32; W];
         for x in 0..W {
-            let c = unsafe { *coeff.add(y + x * H) as i32 };
+            let c = coeff[y + x * H] as i32;
             row[x] = if is_rect2 { rect2_scale(c) } else { c };
         }
         row_fn(&mut row, 1);
@@ -4594,25 +5746,26 @@ unsafe fn identity_rect_8bpc_inner<const W: usize, const H: usize>(
     }
 
     for y in 0..H {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         for x in 0..W {
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let val = (tmp[y * W + x] + 8) >> 4;
             let result = iclip(d + val, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u8 };
+            dst[row_off + x] = result as u8;
         }
     }
 
     for i in 0..(W * H) {
-        unsafe { *coeff.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
 /// Generic rectangular identity transform for 16bpc
-unsafe fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
-    dst: *mut u16,
-    dst_stride: isize,
-    coeff: *mut i32,
+fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
     row_fn: fn(&mut [i32], usize),
@@ -4624,7 +5777,7 @@ unsafe fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
     for y in 0..H {
         let mut row = [0i32; W];
         for x in 0..W {
-            let c = unsafe { *coeff.add(y + x * H) };
+            let c = coeff[y + x * H];
             row[x] = if is_rect2 { rect2_scale(c) } else { c };
         }
         row_fn(&mut row, 1);
@@ -4638,17 +5791,17 @@ unsafe fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
     }
 
     for y in 0..H {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
         for x in 0..W {
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let val = (tmp[y * W + x] + 8) >> 4;
             let result = iclip(d + val, 0, bitdepth_max);
-            unsafe { *dst_row.add(x) = result as u16 };
+            dst[row_off + x] = result as u16;
         }
     }
 
     for i in 0..(W * H) {
-        unsafe { *coeff.add(i) = 0 };
+        coeff[i] = 0;
     }
 }
 
@@ -4656,75 +5809,249 @@ unsafe fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
 // RECTANGULAR IDENTITY_IDENTITY FFI WRAPPERS - 16BPC ONLY
 // ============================================================================
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 32) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_16bpc_inner::<4, 8>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity4_1d_arm, identity8_1d_arm, true,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity4_1d_arm,
+        identity8_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 32) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_16bpc_inner::<8, 4>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity8_1d_arm, identity4_1d_arm, true,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity4_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 64) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_16bpc_inner::<4, 16>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity4_1d_arm, identity16_1d_arm, true,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity4_1d_arm,
+        identity16_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 64) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_16bpc_inner::<16, 4>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity16_1d_arm, identity4_1d_arm, true,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity4_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 128) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_16bpc_inner::<8, 16>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity8_1d_arm, identity16_1d_arm, true,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity16_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 128) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_16bpc_inner::<16, 8>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity16_1d_arm, identity8_1d_arm, true,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity8_1d_arm,
+        true,
     );
 }
 
@@ -4732,123 +6059,408 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_neon(
 // RECTANGULAR IDENTITY_IDENTITY - 8BPC + 16BPC
 // ============================================================================
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 256) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_8bpc_inner::<8, 32>(
-        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
-        eob, bitdepth_max, identity8_1d_arm, identity32_1d_arm, true,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity32_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 256) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 8;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 8;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_16bpc_inner::<8, 32>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity8_1d_arm, identity32_1d_arm, true,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity8_1d_arm,
+        identity32_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 256) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_8bpc_inner::<32, 8>(
-        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
-        eob, bitdepth_max, identity32_1d_arm, identity8_1d_arm, true,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity8_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 256) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 7usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_16bpc_inner::<32, 8>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity32_1d_arm, identity8_1d_arm, true,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity8_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 512) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_8bpc_inner::<16, 32>(
-        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
-        eob, bitdepth_max, identity16_1d_arm, identity32_1d_arm, true,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity32_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 512) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_16bpc_inner::<16, 32>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity16_1d_arm, identity32_1d_arm, true,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity16_1d_arm,
+        identity32_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 512) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_8bpc_inner::<32, 16>(
-        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
-        eob, bitdepth_max, identity32_1d_arm, identity16_1d_arm, true,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity16_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 512) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_16bpc_inner::<32, 16>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity32_1d_arm, identity16_1d_arm, true,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity16_1d_arm,
+        true,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 1024) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_8bpc_inner::<32, 32>(
-        dst_ptr as *mut u8, dst_stride, coeff as *mut i16,
-        eob, bitdepth_max, identity32_1d_arm, identity32_1d_arm, false,
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity32_1d_arm,
+        false,
     );
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
 ) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 1024) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 31usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 32;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 32;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
     identity_rect_16bpc_inner::<32, 32>(
-        dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32,
-        eob, bitdepth_max, identity32_1d_arm, identity32_1d_arm, false,
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+        identity32_1d_arm,
+        identity32_1d_arm,
+        false,
     );
 }
 
@@ -4856,332 +6468,785 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
 // HYBRID IDENTITY TRANSFORMS 4x4 8BPC
 // ============================================================================
 
-unsafe fn inv_txfm_add_dct_identity_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+fn inv_txfm_add_dct_identity_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
+    dst_stride: isize,
+    coeff: &mut [i16],
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
-        let c0 = unsafe { *coeff.add(y) as i32 };
-        let c1 = unsafe { *coeff.add(y + 4) as i32 };
-        let c2 = unsafe { *coeff.add(y + 8) as i32 };
-        let c3 = unsafe { *coeff.add(y + 12) as i32 };
+        let c0 = coeff[y] as i32;
+        let c1 = coeff[y + 4] as i32;
+        let c2 = coeff[y + 8] as i32;
+        let c3 = coeff[y + 12] as i32;
         let out = dct4_1d(c0, c1, c2, c3);
-        for x in 0..4 { tmp[y * 4 + x] = out[x]; }
-    }
-    for x in 0..4 { identity4_1d_arm(&mut tmp[x..], 4); }
-    for y in 0..4 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
         for x in 0..4 {
-            let d = unsafe { *dst_row.add(x) as i32 };
-            let val = (tmp[y * 4 + x] + 8) >> 4;
-            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+            tmp[y * 4 + x] = out[x];
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    for x in 0..4 {
+        identity4_1d_arm(&mut tmp[x..], 4);
+    }
+    for y in 0..4 {
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+        for x in 0..4 {
+            let d = dst[row_off + x] as i32;
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
+        }
+    }
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
-unsafe fn inv_txfm_add_identity_dct_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+fn inv_txfm_add_identity_dct_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
+    dst_stride: isize,
+    coeff: &mut [i16],
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
         let mut row = [0i32; 4];
-        for x in 0..4 { row[x] = unsafe { *coeff.add(y + x * 4) as i32 }; }
-        identity4_1d_arm(&mut row, 1);
-        for x in 0..4 { tmp[y * 4 + x] = row[x]; }
-    }
-    for x in 0..4 {
-        let out = dct4_1d(tmp[0 * 4 + x], tmp[1 * 4 + x], tmp[2 * 4 + x], tmp[3 * 4 + x]);
-        for y in 0..4 { tmp[y * 4 + x] = out[y]; }
-    }
-    for y in 0..4 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
         for x in 0..4 {
-            let d = unsafe { *dst_row.add(x) as i32 };
-            let val = (tmp[y * 4 + x] + 8) >> 4;
-            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+            row[x] = coeff[y + x * 4] as i32;
+        }
+        identity4_1d_arm(&mut row, 1);
+        for x in 0..4 {
+            tmp[y * 4 + x] = row[x];
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    for x in 0..4 {
+        let out = dct4_1d(
+            tmp[0 * 4 + x],
+            tmp[1 * 4 + x],
+            tmp[2 * 4 + x],
+            tmp[3 * 4 + x],
+        );
+        for y in 0..4 {
+            tmp[y * 4 + x] = out[y];
+        }
+    }
+    for y in 0..4 {
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+        for x in 0..4 {
+            let d = dst[row_off + x] as i32;
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
+        }
+    }
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
-unsafe fn inv_txfm_add_adst_identity_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+fn inv_txfm_add_adst_identity_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
+    dst_stride: isize,
+    coeff: &mut [i16],
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
         let out = adst4_1d(
-            unsafe { *coeff.add(y) as i32 }, unsafe { *coeff.add(y + 4) as i32 },
-            unsafe { *coeff.add(y + 8) as i32 }, unsafe { *coeff.add(y + 12) as i32 },
+            coeff[y] as i32,
+            coeff[y + 4] as i32,
+            coeff[y + 8] as i32,
+            coeff[y + 12] as i32,
         );
-        for x in 0..4 { tmp[y * 4 + x] = out[x]; }
-    }
-    for x in 0..4 { identity4_1d_arm(&mut tmp[x..], 4); }
-    for y in 0..4 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
         for x in 0..4 {
-            let d = unsafe { *dst_row.add(x) as i32 };
-            let val = (tmp[y * 4 + x] + 8) >> 4;
-            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+            tmp[y * 4 + x] = out[x];
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    for x in 0..4 {
+        identity4_1d_arm(&mut tmp[x..], 4);
+    }
+    for y in 0..4 {
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+        for x in 0..4 {
+            let d = dst[row_off + x] as i32;
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
+        }
+    }
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
-unsafe fn inv_txfm_add_identity_adst_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+fn inv_txfm_add_identity_adst_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
+    dst_stride: isize,
+    coeff: &mut [i16],
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
         let mut row = [0i32; 4];
-        for x in 0..4 { row[x] = unsafe { *coeff.add(y + x * 4) as i32 }; }
-        identity4_1d_arm(&mut row, 1);
-        for x in 0..4 { tmp[y * 4 + x] = row[x]; }
-    }
-    for x in 0..4 {
-        let out = adst4_1d(tmp[0 * 4 + x], tmp[1 * 4 + x], tmp[2 * 4 + x], tmp[3 * 4 + x]);
-        for y in 0..4 { tmp[y * 4 + x] = out[y]; }
-    }
-    for y in 0..4 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
         for x in 0..4 {
-            let d = unsafe { *dst_row.add(x) as i32 };
-            let val = (tmp[y * 4 + x] + 8) >> 4;
-            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+            row[x] = coeff[y + x * 4] as i32;
+        }
+        identity4_1d_arm(&mut row, 1);
+        for x in 0..4 {
+            tmp[y * 4 + x] = row[x];
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    for x in 0..4 {
+        let out = adst4_1d(
+            tmp[0 * 4 + x],
+            tmp[1 * 4 + x],
+            tmp[2 * 4 + x],
+            tmp[3 * 4 + x],
+        );
+        for y in 0..4 {
+            tmp[y * 4 + x] = out[y];
+        }
+    }
+    for y in 0..4 {
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+        for x in 0..4 {
+            let d = dst[row_off + x] as i32;
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
+        }
+    }
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
-unsafe fn inv_txfm_add_flipadst_identity_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+fn inv_txfm_add_flipadst_identity_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
+    dst_stride: isize,
+    coeff: &mut [i16],
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
         let out = flipadst4_1d(
-            unsafe { *coeff.add(y) as i32 }, unsafe { *coeff.add(y + 4) as i32 },
-            unsafe { *coeff.add(y + 8) as i32 }, unsafe { *coeff.add(y + 12) as i32 },
+            coeff[y] as i32,
+            coeff[y + 4] as i32,
+            coeff[y + 8] as i32,
+            coeff[y + 12] as i32,
         );
-        for x in 0..4 { tmp[y * 4 + x] = out[x]; }
-    }
-    for x in 0..4 { identity4_1d_arm(&mut tmp[x..], 4); }
-    for y in 0..4 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
         for x in 0..4 {
-            let d = unsafe { *dst_row.add(x) as i32 };
-            let val = (tmp[y * 4 + x] + 8) >> 4;
-            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+            tmp[y * 4 + x] = out[x];
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    for x in 0..4 {
+        identity4_1d_arm(&mut tmp[x..], 4);
+    }
+    for y in 0..4 {
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+        for x in 0..4 {
+            let d = dst[row_off + x] as i32;
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
+        }
+    }
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
-unsafe fn inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+fn inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
+    dst_stride: isize,
+    coeff: &mut [i16],
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16];
     for y in 0..4 {
         let mut row = [0i32; 4];
-        for x in 0..4 { row[x] = unsafe { *coeff.add(y + x * 4) as i32 }; }
-        identity4_1d_arm(&mut row, 1);
-        for x in 0..4 { tmp[y * 4 + x] = row[x]; }
-    }
-    for x in 0..4 {
-        let out = flipadst4_1d(tmp[0 * 4 + x], tmp[1 * 4 + x], tmp[2 * 4 + x], tmp[3 * 4 + x]);
-        for y in 0..4 { tmp[y * 4 + x] = out[y]; }
-    }
-    for y in 0..4 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
         for x in 0..4 {
-            let d = unsafe { *dst_row.add(x) as i32 };
-            let val = (tmp[y * 4 + x] + 8) >> 4;
-            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+            row[x] = coeff[y + x * 4] as i32;
+        }
+        identity4_1d_arm(&mut row, 1);
+        for x in 0..4 {
+            tmp[y * 4 + x] = row[x];
         }
     }
-    unsafe { for i in 0..16 { *coeff.add(i) = 0; } }
+    for x in 0..4 {
+        let out = flipadst4_1d(
+            tmp[0 * 4 + x],
+            tmp[1 * 4 + x],
+            tmp[2 * 4 + x],
+            tmp[3 * 4 + x],
+        );
+        for y in 0..4 {
+            tmp[y * 4 + x] = out[y];
+        }
+    }
+    for y in 0..4 {
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+        for x in 0..4 {
+            let d = dst[row_off + x] as i32;
+            let val = (tmp[y * 4 + x] + 8) >> 4;
+            dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
+        }
+    }
+    for i in 0..16 {
+        coeff[i] = 0;
+    }
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-) { inv_txfm_add_dct_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
+) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
+    inv_txfm_add_dct_identity_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
+}
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-) { inv_txfm_add_identity_dct_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
+) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
+    inv_txfm_add_identity_dct_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
+}
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-) { inv_txfm_add_adst_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
+) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
+    inv_txfm_add_adst_identity_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
+}
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-) { inv_txfm_add_identity_adst_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
+) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
+    inv_txfm_add_identity_adst_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
+}
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-) { inv_txfm_add_flipadst_identity_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
+) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
+    inv_txfm_add_flipadst_identity_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
+}
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-) { inv_txfm_add_identity_flipadst_4x4_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
+) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 3usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 4;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 4;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
+    inv_txfm_add_identity_flipadst_4x4_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
+}
 
 // ============================================================================
 // DCT_DCT 16x64 and 64x16
 // ============================================================================
 
-unsafe fn inv_txfm_add_dct_dct_16x64_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+fn inv_txfm_add_dct_dct_16x64_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
+    dst_stride: isize,
+    coeff: &mut [i16],
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16 * 64];
     for y in 0..64 {
         let mut row = [0i32; 16];
-        for x in 0..16 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 64) as i32 }); }
+        for x in 0..16 {
+            row[x] = rect2_scale(coeff[y + x * 64] as i32);
+        }
         let out = dct16_1d(&row);
-        for x in 0..16 { tmp[y * 16 + x] = (out[x] + 1) >> 1; }
+        for x in 0..16 {
+            tmp[y * 16 + x] = (out[x] + 1) >> 1;
+        }
     }
     for x in 0..16 {
         let mut col = [0i32; 64];
-        for y in 0..64 { col[y] = tmp[y * 16 + x]; }
+        for y in 0..64 {
+            col[y] = tmp[y * 16 + x];
+        }
         let out = dct64_1d(&col);
-        for y in 0..64 { tmp[y * 16 + x] = out[y]; }
-    }
-    for y in 0..64 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-        for x in 0..16 {
-            let d = unsafe { *dst_row.add(x) as i32 };
-            let val = (tmp[y * 16 + x] + 8) >> 4;
-            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+        for y in 0..64 {
+            tmp[y * 16 + x] = out[y];
         }
     }
-    for i in 0..(16 * 64) { unsafe { *coeff.add(i) = 0; } }
+    for y in 0..64 {
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+        for x in 0..16 {
+            let d = dst[row_off + x] as i32;
+            let val = (tmp[y * 16 + x] + 8) >> 4;
+            dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
+        }
+    }
+    for i in 0..(16 * 64) {
+        coeff[i] = 0;
+    }
 }
 
-unsafe fn inv_txfm_add_dct_dct_16x64_16bpc_inner(
-    dst: *mut u16, dst_stride: isize, coeff: *mut i32, _eob: i32, bitdepth_max: i32,
+fn inv_txfm_add_dct_dct_16x64_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 16 * 64];
     for y in 0..64 {
         let mut row = [0i32; 16];
-        for x in 0..16 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 64) }); }
+        for x in 0..16 {
+            row[x] = rect2_scale(coeff[y + x * 64]);
+        }
         let out = dct16_1d(&row);
-        for x in 0..16 { tmp[y * 16 + x] = (out[x] + 1) >> 1; }
+        for x in 0..16 {
+            tmp[y * 16 + x] = (out[x] + 1) >> 1;
+        }
     }
     for x in 0..16 {
         let mut col = [0i32; 64];
-        for y in 0..64 { col[y] = tmp[y * 16 + x]; }
+        for y in 0..64 {
+            col[y] = tmp[y * 16 + x];
+        }
         let out = dct64_1d(&col);
-        for y in 0..64 { tmp[y * 16 + x] = out[y]; }
+        for y in 0..64 {
+            tmp[y * 16 + x] = out[y];
+        }
     }
     for y in 0..64 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
         for x in 0..16 {
-            let d = unsafe { *dst_row.add(x) as i32 };
+            let d = dst[row_off + x] as i32;
             let val = (tmp[y * 16 + x] + 8) >> 4;
-            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u16 };
+            dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u16;
         }
     }
-    for i in 0..(16 * 64) { unsafe { *coeff.add(i) = 0; } }
+    for i in 0..(16 * 64) {
+        coeff[i] = 0;
+    }
 }
 
-unsafe fn inv_txfm_add_dct_dct_64x16_8bpc_inner(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, _eob: i32, bitdepth_max: i32,
+fn inv_txfm_add_dct_dct_64x16_8bpc_inner(
+    dst: &mut [u8],
+    dst_base: usize,
+    dst_stride: isize,
+    coeff: &mut [i16],
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 64 * 16];
     for y in 0..16 {
         let mut row = [0i32; 64];
-        for x in 0..64 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 16) as i32 }); }
+        for x in 0..64 {
+            row[x] = rect2_scale(coeff[y + x * 16] as i32);
+        }
         let out = dct64_1d(&row);
-        for x in 0..64 { tmp[y * 64 + x] = (out[x] + 1) >> 1; }
+        for x in 0..64 {
+            tmp[y * 64 + x] = (out[x] + 1) >> 1;
+        }
     }
     for x in 0..64 {
         let mut col = [0i32; 16];
-        for y in 0..16 { col[y] = tmp[y * 64 + x]; }
+        for y in 0..16 {
+            col[y] = tmp[y * 64 + x];
+        }
         let out = dct16_1d(&col);
-        for y in 0..16 { tmp[y * 64 + x] = out[y]; }
-    }
-    for y in 0..16 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-        for x in 0..64 {
-            let d = unsafe { *dst_row.add(x) as i32 };
-            let val = (tmp[y * 64 + x] + 8) >> 4;
-            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u8 };
+        for y in 0..16 {
+            tmp[y * 64 + x] = out[y];
         }
     }
-    for i in 0..(64 * 16) { unsafe { *coeff.add(i) = 0; } }
+    for y in 0..16 {
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
+        for x in 0..64 {
+            let d = dst[row_off + x] as i32;
+            let val = (tmp[y * 64 + x] + 8) >> 4;
+            dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u8;
+        }
+    }
+    for i in 0..(64 * 16) {
+        coeff[i] = 0;
+    }
 }
 
-unsafe fn inv_txfm_add_dct_dct_64x16_16bpc_inner(
-    dst: *mut u16, dst_stride: isize, coeff: *mut i32, _eob: i32, bitdepth_max: i32,
+fn inv_txfm_add_dct_dct_64x16_16bpc_inner(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
+    _eob: i32,
+    bitdepth_max: i32,
 ) {
     let mut tmp = [0i32; 64 * 16];
     for y in 0..16 {
         let mut row = [0i32; 64];
-        for x in 0..64 { row[x] = rect2_scale(unsafe { *coeff.add(y + x * 16) }); }
+        for x in 0..64 {
+            row[x] = rect2_scale(coeff[y + x * 16]);
+        }
         let out = dct64_1d(&row);
-        for x in 0..64 { tmp[y * 64 + x] = (out[x] + 1) >> 1; }
+        for x in 0..64 {
+            tmp[y * 64 + x] = (out[x] + 1) >> 1;
+        }
     }
     for x in 0..64 {
         let mut col = [0i32; 16];
-        for y in 0..16 { col[y] = tmp[y * 64 + x]; }
+        for y in 0..16 {
+            col[y] = tmp[y * 64 + x];
+        }
         let out = dct16_1d(&col);
-        for y in 0..16 { tmp[y * 64 + x] = out[y]; }
-    }
-    for y in 0..16 {
-        let dst_row = unsafe { dst.offset(y as isize * dst_stride) };
-        for x in 0..64 {
-            let d = unsafe { *dst_row.add(x) as i32 };
-            let val = (tmp[y * 64 + x] + 8) >> 4;
-            unsafe { *dst_row.add(x) = iclip(d + val, 0, bitdepth_max) as u16 };
+        for y in 0..16 {
+            tmp[y * 64 + x] = out[y];
         }
     }
-    for i in 0..(64 * 16) { unsafe { *coeff.add(i) = 0; } }
+    for y in 0..16 {
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
+        for x in 0..64 {
+            let d = dst[row_off + x] as i32;
+            let val = (tmp[y * 64 + x] + 8) >> 4;
+            dst[row_off + x] = iclip(d + val, 0, bitdepth_max) as u16;
+        }
+    }
+    for i in 0..(64 * 16) {
+        coeff[i] = 0;
+    }
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-) { inv_txfm_add_dct_dct_16x64_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
+) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 1024) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 63usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
+    inv_txfm_add_dct_dct_16x64_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
+}
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-) { inv_txfm_add_dct_dct_16x64_16bpc_inner(dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max); }
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
+) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 1024) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 63usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 16;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 16;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
+    inv_txfm_add_dct_dct_16x64_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
+}
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-) { inv_txfm_add_dct_dct_64x16_8bpc_inner(dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max); }
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
+) {
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 1024) };
+    let abs_stride = dst_stride.unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if dst_stride >= 0 {
+        let len = rows * abs_stride + 64;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 64;
+        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
+    inv_txfm_add_dct_dct_64x16_8bpc_inner(
+        dst_slice,
+        base,
+        dst_stride,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
+}
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_neon(
-    dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
-    eob: i32, bitdepth_max: i32, _coeff_len: u16,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-) { inv_txfm_add_dct_dct_64x16_16bpc_inner(dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max); }
+    dst_ptr: *mut DynPixel,
+    dst_stride: isize,
+    coeff: *mut DynCoef,
+    eob: i32,
+    bitdepth_max: i32,
+    _coeff_len: u16,
+    _dst: *const FFISafe<PicOffset>,
+) {
+    let stride_u16 = dst_stride / 2;
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 1024) };
+    let abs_stride = (stride_u16 as isize).unsigned_abs();
+    let rows = 15usize;
+    let (dst_slice, base) = if stride_u16 >= 0 {
+        let len = rows * abs_stride + 64;
+        (
+            unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) },
+            0usize,
+        )
+    } else {
+        let len = rows * abs_stride + 64;
+        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+        (
+            unsafe { std::slice::from_raw_parts_mut(start, len) },
+            rows * abs_stride,
+        )
+    };
+    inv_txfm_add_dct_dct_64x16_16bpc_inner(
+        dst_slice,
+        base,
+        stride_u16 as isize,
+        coeff_slice,
+        eob,
+        bitdepth_max,
+    );
+}
 
 // ============================================================================
 // GENERIC TRANSFORM ENGINE
@@ -5191,18 +7256,26 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_neon(
 // combination, we use the existing 1D transform functions from itx_1d.rs and compose them
 // generically, exactly like the C fallback does.
 
-use std::num::NonZeroUsize;
-use std::cmp;
 use crate::src::itx_1d::*;
+use std::cmp;
+use std::num::NonZeroUsize;
 
 type Itx1dFn = fn(&mut [i32], NonZeroUsize, i32, i32);
 
 /// Generic 8bpc inverse transform: apply row_fn across rows, then col_fn down columns,
 /// then add residuals to dst pixels.
-unsafe fn inv_txfm_add_generic_8bpc(
-    dst: *mut u8, dst_stride: isize, coeff: *mut i16, eob: i32, _bitdepth_max: i32,
-    w: usize, h: usize, shift: u8,
-    row_fn: Itx1dFn, col_fn: Itx1dFn,
+fn inv_txfm_add_generic_8bpc(
+    dst: &mut [u8],
+    dst_base: usize,
+    dst_stride: isize,
+    coeff: &mut [i16],
+    eob: i32,
+    _bitdepth_max: i32,
+    w: usize,
+    h: usize,
+    shift: u8,
+    row_fn: Itx1dFn,
+    col_fn: Itx1dFn,
     has_dc_only: bool,
 ) {
     let is_rect2 = w * 2 == h || h * 2 == w;
@@ -5210,17 +7283,19 @@ unsafe fn inv_txfm_add_generic_8bpc(
 
     // DC-only fast path
     if eob < has_dc_only as i32 {
-        let mut dc = unsafe { *coeff as i32 };
-        unsafe { *coeff = 0; }
-        if is_rect2 { dc = (dc * 181 + 128) >> 8; }
+        let mut dc = coeff[0] as i32;
+        coeff[0] = 0;
+        if is_rect2 {
+            dc = (dc * 181 + 128) >> 8;
+        }
         dc = (dc * 181 + 128) >> 8;
         dc = (dc + rnd) >> shift;
         dc = (dc * 181 + 128 + 2048) >> 12;
         for y in 0..h {
-            let row = unsafe { dst.offset(y as isize * dst_stride) };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
             for x in 0..w {
-                let p = unsafe { *row.add(x) } as i32 + dc;
-                unsafe { *row.add(x) = p.max(0).min(255) as u8; }
+                let p = dst[row_off + x] as i32 + dc;
+                dst[row_off + x] = p.max(0).min(255) as u8;
             }
         }
         return;
@@ -5240,18 +7315,25 @@ unsafe fn inv_txfm_add_generic_8bpc(
     for y in 0..sh {
         if is_rect2 {
             for x in 0..sw {
-                tmp[y * w + x] = (unsafe { *coeff.add(y + x * sh) } as i32 * 181 + 128) >> 8;
+                tmp[y * w + x] = (coeff[y + x * sh] as i32 * 181 + 128) >> 8;
             }
         } else {
             for x in 0..sw {
-                tmp[y * w + x] = unsafe { *coeff.add(y + x * sh) } as i32;
+                tmp[y * w + x] = coeff[y + x * sh] as i32;
             }
         }
-        row_fn(&mut tmp[y * w..], 1.try_into().unwrap(), row_clip_min, row_clip_max);
+        row_fn(
+            &mut tmp[y * w..],
+            1.try_into().unwrap(),
+            row_clip_min,
+            row_clip_max,
+        );
     }
 
     // Clear coefficients
-    for i in 0..(sh * sw) { unsafe { *coeff.add(i) = 0; } }
+    for i in 0..(sh * sw) {
+        coeff[i] = 0;
+    }
 
     // Apply shift + clip
     for i in 0..(w * sh) {
@@ -5260,24 +7342,37 @@ unsafe fn inv_txfm_add_generic_8bpc(
 
     // Column transforms
     for x in 0..w {
-        col_fn(&mut tmp[x..], w.try_into().unwrap(), col_clip_min, col_clip_max);
+        col_fn(
+            &mut tmp[x..],
+            w.try_into().unwrap(),
+            col_clip_min,
+            col_clip_max,
+        );
     }
 
     // Add to dst
     for y in 0..h {
-        let row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         for x in 0..w {
-            let p = unsafe { *row.add(x) } as i32 + ((tmp[y * w + x] + 8) >> 4);
-            unsafe { *row.add(x) = p.max(0).min(255) as u8; }
+            let p = dst[row_off + x] as i32 + ((tmp[y * w + x] + 8) >> 4);
+            dst[row_off + x] = p.max(0).min(255) as u8;
         }
     }
 }
 
 /// Generic 16bpc inverse transform
-unsafe fn inv_txfm_add_generic_16bpc(
-    dst: *mut u16, dst_stride: isize, coeff: *mut i32, eob: i32, bitdepth_max: i32,
-    w: usize, h: usize, shift: u8,
-    row_fn: Itx1dFn, col_fn: Itx1dFn,
+fn inv_txfm_add_generic_16bpc(
+    dst: &mut [u16],
+    dst_base: usize,
+    dst_stride_u16: isize,
+    coeff: &mut [i32],
+    eob: i32,
+    bitdepth_max: i32,
+    w: usize,
+    h: usize,
+    shift: u8,
+    row_fn: Itx1dFn,
+    col_fn: Itx1dFn,
     has_dc_only: bool,
 ) {
     let is_rect2 = w * 2 == h || h * 2 == w;
@@ -5285,17 +7380,19 @@ unsafe fn inv_txfm_add_generic_16bpc(
 
     // DC-only fast path
     if eob < has_dc_only as i32 {
-        let mut dc = unsafe { *coeff };
-        unsafe { *coeff = 0; }
-        if is_rect2 { dc = (dc * 181 + 128) >> 8; }
+        let mut dc = coeff[0];
+        coeff[0] = 0;
+        if is_rect2 {
+            dc = (dc * 181 + 128) >> 8;
+        }
         dc = (dc * 181 + 128) >> 8;
         dc = (dc + rnd) >> shift;
         dc = (dc * 181 + 128 + 2048) >> 12;
         for y in 0..h {
-            let row = unsafe { dst.offset(y as isize * dst_stride) };
+            let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
             for x in 0..w {
-                let p = unsafe { *row.add(x) } as i32 + dc;
-                unsafe { *row.add(x) = p.max(0).min(bitdepth_max) as u16; }
+                let p = dst[row_off + x] as i32 + dc;
+                dst[row_off + x] = p.max(0).min(bitdepth_max) as u16;
             }
         }
         return;
@@ -5315,18 +7412,25 @@ unsafe fn inv_txfm_add_generic_16bpc(
     for y in 0..sh {
         if is_rect2 {
             for x in 0..sw {
-                tmp[y * w + x] = (unsafe { *coeff.add(y + x * sh) } * 181 + 128) >> 8;
+                tmp[y * w + x] = (coeff[y + x * sh] * 181 + 128) >> 8;
             }
         } else {
             for x in 0..sw {
-                tmp[y * w + x] = unsafe { *coeff.add(y + x * sh) };
+                tmp[y * w + x] = coeff[y + x * sh];
             }
         }
-        row_fn(&mut tmp[y * w..], 1.try_into().unwrap(), row_clip_min, row_clip_max);
+        row_fn(
+            &mut tmp[y * w..],
+            1.try_into().unwrap(),
+            row_clip_min,
+            row_clip_max,
+        );
     }
 
     // Clear coefficients
-    for i in 0..(sh * sw) { unsafe { *coeff.add(i) = 0; } }
+    for i in 0..(sh * sw) {
+        coeff[i] = 0;
+    }
 
     // Apply shift + clip
     for i in 0..(w * sh) {
@@ -5335,15 +7439,20 @@ unsafe fn inv_txfm_add_generic_16bpc(
 
     // Column transforms
     for x in 0..w {
-        col_fn(&mut tmp[x..], w.try_into().unwrap(), col_clip_min, col_clip_max);
+        col_fn(
+            &mut tmp[x..],
+            w.try_into().unwrap(),
+            col_clip_min,
+            col_clip_max,
+        );
     }
 
     // Add to dst
     for y in 0..h {
-        let row = unsafe { dst.offset(y as isize * dst_stride) };
+        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
         for x in 0..w {
-            let p = unsafe { *row.add(x) } as i32 + ((tmp[y * w + x] + 8) >> 4);
-            unsafe { *row.add(x) = p.max(0).min(bitdepth_max) as u16; }
+            let p = dst[row_off + x] as i32 + ((tmp[y * w + x] + 8) >> 4);
+            dst[row_off + x] = p.max(0).min(bitdepth_max) as u16;
         }
     }
 }
@@ -5403,34 +7512,61 @@ fn shift_for(w: usize, h: usize) -> u8 {
 macro_rules! gen_itx_arm {
     ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
         paste::paste! {
-            #[cfg(target_arch = "aarch64")]
+            #[cfg(all(feature = "asm", target_arch = "aarch64"))]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _8bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
                 eob: i32, bitdepth_max: i32, _coeff_len: u16,
-                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+                _dst: *const FFISafe<PicOffset>,
             ) {
-                inv_txfm_add_generic_8bpc(
-                    dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max,
-                    $w, $h, shift_for($w, $h),
-                    resolve_1d(stringify!($row_name), $w),
-                    resolve_1d(stringify!($col_name), $h),
-                    $is_dct_dct,
-                );
+                {
+                    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, $w * $h) };
+                    let abs_stride = dst_stride.unsigned_abs();
+                    let rows = ($h - 1) as usize;
+                    let (dst_slice, base) = if dst_stride >= 0 {
+                        let len = rows * abs_stride + $w;
+                        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+                    } else {
+                        let len = rows * abs_stride + $w;
+                        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+                        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+                    };
+                    inv_txfm_add_generic_8bpc(
+                        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+                        $w, $h, shift_for($w, $h),
+                        resolve_1d(stringify!($row_name), $w),
+                        resolve_1d(stringify!($col_name), $h),
+                        $is_dct_dct,
+                    );
+                }
             }
 
-            #[cfg(target_arch = "aarch64")]
+            #[cfg(all(feature = "asm", target_arch = "aarch64"))]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _16bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
                 eob: i32, bitdepth_max: i32, _coeff_len: u16,
-                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+                _dst: *const FFISafe<PicOffset>,
             ) {
-                inv_txfm_add_generic_16bpc(
-                    dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max,
-                    $w, $h, shift_for($w, $h),
-                    resolve_1d(stringify!($row_name), $w),
-                    resolve_1d(stringify!($col_name), $h),
-                    $is_dct_dct,
-                );
+                {
+                    let stride_u16 = dst_stride / 2;
+                    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, $w * $h) };
+                    let abs_stride = (stride_u16 as isize).unsigned_abs();
+                    let rows = ($h - 1) as usize;
+                    let (dst_slice, base) = if stride_u16 >= 0 {
+                        let len = rows * abs_stride + $w;
+                        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+                    } else {
+                        let len = rows * abs_stride + $w;
+                        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+                        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+                    };
+                    inv_txfm_add_generic_16bpc(
+                        dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max,
+                        $w, $h, shift_for($w, $h),
+                        resolve_1d(stringify!($row_name), $w),
+                        resolve_1d(stringify!($col_name), $h),
+                        $is_dct_dct,
+                    );
+                }
             }
         }
     };
@@ -5440,19 +7576,32 @@ macro_rules! gen_itx_arm {
 macro_rules! gen_itx_arm_8bpc {
     ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
         paste::paste! {
-            #[cfg(target_arch = "aarch64")]
+            #[cfg(all(feature = "asm", target_arch = "aarch64"))]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _8bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
                 eob: i32, bitdepth_max: i32, _coeff_len: u16,
-                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+                _dst: *const FFISafe<PicOffset>,
             ) {
-                inv_txfm_add_generic_8bpc(
-                    dst_ptr as *mut u8, dst_stride, coeff as *mut i16, eob, bitdepth_max,
-                    $w, $h, shift_for($w, $h),
-                    resolve_1d(stringify!($row_name), $w),
-                    resolve_1d(stringify!($col_name), $h),
-                    $is_dct_dct,
-                );
+                {
+                    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, $w * $h) };
+                    let abs_stride = dst_stride.unsigned_abs();
+                    let rows = ($h - 1) as usize;
+                    let (dst_slice, base) = if dst_stride >= 0 {
+                        let len = rows * abs_stride + $w;
+                        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, len) }, 0usize)
+                    } else {
+                        let len = rows * abs_stride + $w;
+                        let start = unsafe { (dst_ptr as *mut u8).offset(rows as isize * dst_stride) };
+                        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+                    };
+                    inv_txfm_add_generic_8bpc(
+                        dst_slice, base, dst_stride, coeff_slice, eob, bitdepth_max,
+                        $w, $h, shift_for($w, $h),
+                        resolve_1d(stringify!($row_name), $w),
+                        resolve_1d(stringify!($col_name), $h),
+                        $is_dct_dct,
+                    );
+                }
             }
         }
     };
@@ -5462,19 +7611,33 @@ macro_rules! gen_itx_arm_8bpc {
 macro_rules! gen_itx_arm_16bpc {
     ($row_name:ident, $col_name:ident, $w:literal, $h:literal, $is_dct_dct:expr) => {
         paste::paste! {
-            #[cfg(target_arch = "aarch64")]
+            #[cfg(all(feature = "asm", target_arch = "aarch64"))]
             pub unsafe extern "C" fn [<inv_txfm_add_ $row_name _ $col_name _ $w x $h _16bpc_neon>](
                 dst_ptr: *mut DynPixel, dst_stride: isize, coeff: *mut DynCoef,
                 eob: i32, bitdepth_max: i32, _coeff_len: u16,
-                _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+                _dst: *const FFISafe<PicOffset>,
             ) {
-                inv_txfm_add_generic_16bpc(
-                    dst_ptr as *mut u16, dst_stride / 2, coeff as *mut i32, eob, bitdepth_max,
-                    $w, $h, shift_for($w, $h),
-                    resolve_1d(stringify!($row_name), $w),
-                    resolve_1d(stringify!($col_name), $h),
-                    $is_dct_dct,
-                );
+                {
+                    let stride_u16 = dst_stride / 2;
+                    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, $w * $h) };
+                    let abs_stride = (stride_u16 as isize).unsigned_abs();
+                    let rows = ($h - 1) as usize;
+                    let (dst_slice, base) = if stride_u16 >= 0 {
+                        let len = rows * abs_stride + $w;
+                        (unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, len) }, 0usize)
+                    } else {
+                        let len = rows * abs_stride + $w;
+                        let start = unsafe { (dst_ptr as *mut u16).offset(rows as isize * stride_u16) };
+                        (unsafe { std::slice::from_raw_parts_mut(start, len) }, rows * abs_stride)
+                    };
+                    inv_txfm_add_generic_16bpc(
+                        dst_slice, base, stride_u16 as isize, coeff_slice, eob, bitdepth_max,
+                        $w, $h, shift_for($w, $h),
+                        resolve_1d(stringify!($row_name), $w),
+                        resolve_1d(stringify!($col_name), $h),
+                        $is_dct_dct,
+                    );
+                }
             }
         }
     };
@@ -5633,3 +7796,241 @@ gen_itx_arm_8bpc!(identity, identity, 16, 4, false);
 gen_itx_arm_8bpc!(identity, identity, 8, 16, false);
 gen_itx_arm_8bpc!(identity, identity, 16, 8, false);
 // 8x32, 32x8, 16x32, 32x16, 32x32: handwritten 8bpc+16bpc both exist, skip
+
+// ============================================================================
+// DISPATCH: Safe entry point for ITX SIMD dispatch on ARM
+// ============================================================================
+
+use crate::include::common::bitdepth::BitDepth;
+use crate::include::common::bitdepth::BPC;
+use crate::src::levels::TxfmSize;
+use crate::src::levels::TxfmType;
+use crate::src::levels::ADST_ADST;
+use crate::src::levels::ADST_DCT;
+use crate::src::levels::ADST_FLIPADST;
+use crate::src::levels::DCT_ADST;
+use crate::src::levels::DCT_DCT;
+use crate::src::levels::DCT_FLIPADST;
+use crate::src::levels::FLIPADST_ADST;
+use crate::src::levels::FLIPADST_DCT;
+use crate::src::levels::FLIPADST_FLIPADST;
+use crate::src::levels::H_ADST;
+use crate::src::levels::H_DCT;
+use crate::src::levels::H_FLIPADST;
+use crate::src::levels::IDTX;
+use crate::src::levels::V_ADST;
+use crate::src::levels::V_DCT;
+use crate::src::levels::V_FLIPADST;
+use crate::src::levels::WHT_WHT;
+use crate::src::strided::Strided as _;
+
+/// Macro to generate the per-arch/bpc direct dispatch functions for ITX.
+macro_rules! impl_itxfm_direct_dispatch {
+    (
+        fn $fn_name:ident, $mod_path:path,
+        itx16: [$(($sz16:expr, $w16:literal, $h16:literal)),* $(,)?],
+        itx12: [$(($sz12:expr, $w12:literal, $h12:literal)),* $(,)?],
+        itx2: [$(($sz2:expr, $w2:literal, $h2:literal)),* $(,)?],
+        itx1: [$(($sz1:expr, $w1:literal, $h1:literal)),* $(,)?],
+        wht: ($szw:expr, $ww:literal, $hw:literal),
+        $bpc:literal bpc, $ext:ident,
+        h_dct_fn: $h_dct_fn:ident, v_dct_fn: $v_dct_fn:ident,
+        h_adst_fn: $h_adst_fn:ident, v_adst_fn: $v_adst_fn:ident,
+        h_flipadst_fn: $h_flipadst_fn:ident, v_flipadst_fn: $v_flipadst_fn:ident
+    ) => {
+        paste::paste! {
+            #[cfg(feature = "asm")]
+            #[allow(non_upper_case_globals)]
+            fn $fn_name(
+                tx_size: usize,
+                tx_type: usize,
+                dst_ptr: *mut DynPixel,
+                dst_stride: isize,
+                coeff: *mut DynCoef,
+                eob: i32,
+                bitdepth_max: i32,
+                coeff_len: u16,
+                dst: *const FFISafe<PicOffset>,
+            ) -> bool {
+                use $mod_path as si;
+
+                macro_rules! c {
+                    ($func:expr) => {{
+                        unsafe { $func(dst_ptr, dst_stride, coeff, eob, bitdepth_max, coeff_len, dst) };
+                        return true;
+                    }};
+                }
+
+                const s4x4: usize = TxfmSize::S4x4 as usize;
+                const s8x8: usize = TxfmSize::S8x8 as usize;
+                const s16x16: usize = TxfmSize::S16x16 as usize;
+                const s32x32: usize = TxfmSize::S32x32 as usize;
+                const s64x64: usize = TxfmSize::S64x64 as usize;
+                const r4x8: usize = TxfmSize::R4x8 as usize;
+                const r8x4: usize = TxfmSize::R8x4 as usize;
+                const r8x16: usize = TxfmSize::R8x16 as usize;
+                const r16x8: usize = TxfmSize::R16x8 as usize;
+                const r16x32: usize = TxfmSize::R16x32 as usize;
+                const r32x16: usize = TxfmSize::R32x16 as usize;
+                const r32x64: usize = TxfmSize::R32x64 as usize;
+                const r64x32: usize = TxfmSize::R64x32 as usize;
+                const r4x16: usize = TxfmSize::R4x16 as usize;
+                const r16x4: usize = TxfmSize::R16x4 as usize;
+                const r8x32: usize = TxfmSize::R8x32 as usize;
+                const r32x8: usize = TxfmSize::R32x8 as usize;
+                const r16x64: usize = TxfmSize::R16x64 as usize;
+                const r64x16: usize = TxfmSize::R64x16 as usize;
+
+                match (tx_size, tx_type as TxfmType) {
+                    ($szw, WHT_WHT) => c!(si::[<inv_txfm_add_wht_wht_ $ww x $hw _ $bpc bpc_ $ext>]),
+                    $(
+                        ($sz16, DCT_DCT) => c!(si::[<inv_txfm_add_dct_dct_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, IDTX) => c!(si::[<inv_txfm_add_identity_identity_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, ADST_DCT) => c!(si::[<inv_txfm_add_dct_adst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, DCT_ADST) => c!(si::[<inv_txfm_add_adst_dct_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, ADST_ADST) => c!(si::[<inv_txfm_add_adst_adst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, FLIPADST_DCT) => c!(si::[<inv_txfm_add_dct_flipadst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, DCT_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_dct_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, FLIPADST_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_flipadst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, ADST_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_adst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, FLIPADST_ADST) => c!(si::[<inv_txfm_add_adst_flipadst_ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, H_DCT) => c!(si::[<inv_txfm_add_ $h_dct_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, V_DCT) => c!(si::[<inv_txfm_add_ $v_dct_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, H_ADST) => c!(si::[<inv_txfm_add_ $h_adst_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, V_ADST) => c!(si::[<inv_txfm_add_ $v_adst_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, H_FLIPADST) => c!(si::[<inv_txfm_add_ $h_flipadst_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                        ($sz16, V_FLIPADST) => c!(si::[<inv_txfm_add_ $v_flipadst_fn _ $w16 x $h16 _ $bpc bpc_ $ext>]),
+                    )*
+                    $(
+                        ($sz12, DCT_DCT) => c!(si::[<inv_txfm_add_dct_dct_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, IDTX) => c!(si::[<inv_txfm_add_identity_identity_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, ADST_DCT) => c!(si::[<inv_txfm_add_dct_adst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, DCT_ADST) => c!(si::[<inv_txfm_add_adst_dct_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, ADST_ADST) => c!(si::[<inv_txfm_add_adst_adst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, FLIPADST_DCT) => c!(si::[<inv_txfm_add_dct_flipadst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, DCT_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_dct_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, FLIPADST_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_flipadst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, ADST_FLIPADST) => c!(si::[<inv_txfm_add_flipadst_adst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, FLIPADST_ADST) => c!(si::[<inv_txfm_add_adst_flipadst_ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, H_DCT) => c!(si::[<inv_txfm_add_ $h_dct_fn _ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                        ($sz12, V_DCT) => c!(si::[<inv_txfm_add_ $v_dct_fn _ $w12 x $h12 _ $bpc bpc_ $ext>]),
+                    )*
+                    $(
+                        ($sz2, DCT_DCT) => c!(si::[<inv_txfm_add_dct_dct_ $w2 x $h2 _ $bpc bpc_ $ext>]),
+                        ($sz2, IDTX) => c!(si::[<inv_txfm_add_identity_identity_ $w2 x $h2 _ $bpc bpc_ $ext>]),
+                    )*
+                    $(
+                        ($sz1, DCT_DCT) => c!(si::[<inv_txfm_add_dct_dct_ $w1 x $h1 _ $bpc bpc_ $ext>]),
+                    )*
+                    _ => return false,
+                }
+            }
+        }
+    };
+}
+
+// ARM 8bpc direct dispatch
+impl_itxfm_direct_dispatch!(
+    fn itxfm_add_direct_arm_8bpc, crate::src::safe_simd::itx_arm,
+    itx16: [
+        (s4x4, 4, 4),
+        (s8x8, 8, 8),
+        (r4x8, 4, 8), (r8x4, 8, 4),
+        (r4x16, 4, 16), (r16x4, 16, 4),
+        (r8x16, 8, 16), (r16x8, 16, 8),
+    ],
+    itx12: [
+        (s16x16, 16, 16),
+    ],
+    itx2: [
+        (r8x32, 8, 32), (r32x8, 32, 8),
+        (r16x32, 16, 32), (r32x16, 32, 16),
+        (s32x32, 32, 32),
+    ],
+    itx1: [
+        (r16x64, 16, 64), (r32x64, 32, 64),
+        (r64x16, 64, 16), (r64x32, 64, 32),
+        (s64x64, 64, 64),
+    ],
+    wht: (s4x4, 4, 4),
+    8 bpc, neon,
+    h_dct_fn: dct_identity, v_dct_fn: identity_dct,
+    h_adst_fn: adst_identity, v_adst_fn: identity_adst,
+    h_flipadst_fn: flipadst_identity, v_flipadst_fn: identity_flipadst
+);
+
+// ARM 16bpc direct dispatch
+impl_itxfm_direct_dispatch!(
+    fn itxfm_add_direct_arm_16bpc, crate::src::safe_simd::itx_arm,
+    itx16: [
+        (s4x4, 4, 4),
+        (s8x8, 8, 8),
+        (r4x8, 4, 8), (r8x4, 8, 4),
+        (r4x16, 4, 16), (r16x4, 16, 4),
+        (r8x16, 8, 16), (r16x8, 16, 8),
+    ],
+    itx12: [
+        (s16x16, 16, 16),
+    ],
+    itx2: [
+        (r8x32, 8, 32), (r32x8, 32, 8),
+        (r16x32, 16, 32), (r32x16, 32, 16),
+        (s32x32, 32, 32),
+    ],
+    itx1: [
+        (r16x64, 16, 64), (r32x64, 32, 64),
+        (r64x16, 64, 16), (r64x32, 64, 32),
+        (s64x64, 64, 64),
+    ],
+    wht: (s4x4, 4, 4),
+    16 bpc, neon,
+    h_dct_fn: dct_identity, v_dct_fn: identity_dct,
+    h_adst_fn: adst_identity, v_adst_fn: identity_adst,
+    h_flipadst_fn: flipadst_identity, v_flipadst_fn: identity_flipadst
+);
+
+/// Safe dispatch entry point for ITX SIMD on ARM.
+pub fn itxfm_add_dispatch<BD: BitDepth>(
+    tx_size: usize,
+    tx_type: usize,
+    dst: PicOffset,
+    coeff: &mut [BD::Coef],
+    eob: i32,
+    bd: BD,
+) -> bool {
+    // When asm feature is not enabled, FFI wrappers are not compiled.
+    // Fall back to scalar path.
+    #[cfg(not(feature = "asm"))]
+    {
+        let _ = (tx_size, tx_type, &dst, coeff, eob, &bd);
+        return false;
+    }
+
+    #[cfg(feature = "asm")]
+    {
+        use crate::src::levels::TxfmSize;
+        use zerocopy::AsBytes;
+
+        // Get transform dimensions for tracked guard
+        let txfm = TxfmSize::from_repr(tx_size).unwrap_or_default();
+        let (w, h) = txfm.to_wh();
+
+        // Create tracked guard — ensures borrow tracker knows about this access
+        let (mut dst_guard, _dst_base) = dst.strided_slice_mut::<BD>(w, h);
+        let dst_ptr: *mut DynPixel = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+        let dst_stride = dst.stride();
+        let coeff_len = coeff.len() as u16;
+        let coeff_ptr = coeff.as_mut_ptr().cast();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+
+        match BD::BPC {
+            BPC::BPC8 => itxfm_add_direct_arm_8bpc(
+                tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi,
+            ),
+            BPC::BPC16 => itxfm_add_direct_arm_16bpc(
+                tx_size, tx_type, dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi,
+            ),
+        }
+    }
+}

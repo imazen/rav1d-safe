@@ -1,6 +1,7 @@
+#![forbid(unsafe_code)]
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
+use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::const_fn::const_for;
 use crate::src::disjoint_mut::DisjointMut;
@@ -169,7 +170,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
     w: c_int,
     h: c_int,
     edge_flags: EdgeFlags,
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     // Buffer and offset pair. `isize` value is the base offset that should be used
     // when indexing into the buffer.
     prefilter_toplevel_sb_edge: Option<(&DisjointMut<AlignedVec64<u8>>, isize)>,

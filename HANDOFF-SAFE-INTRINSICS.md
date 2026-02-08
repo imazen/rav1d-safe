@@ -1,5 +1,46 @@
 # Handoff: Refactor to Fully Safe Intrinsics
 
+## Progress (2026-02-04)
+
+### Completed
+- **pal.rs** (x86_64): Fully refactored with `#[arcane]` + `safe_unaligned_simd` + `partial_simd`
+  - Inner function: **ZERO** unsafe blocks
+  - FFI wrapper: 3 unavoidable unsafe blocks (pointer-to-slice, token forge)
+  - Verified via `cargo asm`: same instructions (vmovdqu, vmovq, vpmaddubsw, etc.)
+  - No performance regression
+
+- **mc_arm.rs** (aarch64): Fully refactored with `#[arcane]` + `safe_unaligned_simd`
+  - **ZERO** non-FFI unsafe blocks (down from 39)
+  - Only 8 unavoidable `forge_token_dangerously()` in FFI wrappers
+  - All NEON memory ops use `safe_unaligned_simd::aarch64`
+  - ARM cross-compilation verified
+
+- **safe_unaligned_simd 0.2.3+**: Has full aarch64 NEON support!
+  - `vld1_u8`, `vld1_u16`, `vld1_s16`, `vld1_s32`, etc.
+  - `vld1q_u8`, `vld1q_u16`, `vld1q_s16`, `vld1q_s32`, etc.
+  - Multi-register variants: `vld1_u8_x2`, `vld1_u8_x3`, `vld1_u8_x4`, etc.
+  - **partial_simd module is now obsolete** - can be removed
+
+- **partial_simd module**: Legacy wrappers (can be deprecated)
+  - x86_64: `mm_loadl_epi64`, `mm_storel_epi64` for 64-bit SSE ops
+  - aarch64: Was used before discovering safe_unaligned_simd has NEON support
+
+### Findings for archmage
+
+1. **`safe_unaligned_simd` compiles to identical code**:
+   `safe_simd::_mm256_loadu_si256(arr)` → `vmovdqu` (same as raw pointer)
+
+2. **Slice-to-array conversion has no overhead**:
+   `slice[..32].try_into().unwrap()` optimizes away in release builds
+
+3. **SOLVED: Created `partial_simd` module** for 64-bit operations:
+   - `mm_loadl_epi64(&[u8; 8])` → `vmovq` load
+   - `mm_storel_epi64(&mut [u8; 8], val)` → `vmovq` store
+   - Uses `Is64BitsUnaligned` sealed trait pattern
+   - Safe functions with `#[target_feature]` - callable from `#[arcane]` without `unsafe`
+   - Zero overhead verified via `cargo asm`
+   - Pattern could be upstreamed to safe_unaligned_simd
+
 ## Ultimate Goal
 
 **Pure Rust API** - FFI should be feature-gated, not the default. The end state:
@@ -14,9 +55,9 @@ Eliminate most `unsafe` blocks in safe_simd modules by using:
 
 ## Current State
 
-- **Branch:** `feat/fully-safe-intrinsics` (created from main at 5148b8b)
-- **Rust:** 1.95 nightly (supports safe value intrinsics)
-- **Dependencies:** archmage 0.4.0, safe_unaligned_simd 0.2.4 already in Cargo.toml
+- **Branch:** `feat/fully-safe-intrinsics`
+- **Rust:** 1.93 (supports safe value intrinsics)
+- **Dependencies:** archmage 0.4.0, safe_unaligned_simd 0.2.4
 
 ### Unsafe Breakdown (before refactor)
 
@@ -27,20 +68,22 @@ Eliminate most `unsafe` blocks in safe_simd modules by using:
 | FFI pointer ops | ~2,000 | ❌ No - required for `extern "C"` |
 | **Total in safe_simd** | ~3,200 | ~50% reducible |
 
-## How It Works
+## Pattern: Before → After
 
-### Before (current pattern)
+### Before (current pattern in most modules)
 ```rust
+#![allow(unsafe_op_in_unsafe_fn)]
+
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn my_func(dst: *mut u8, src: *const u8, w: i32) {
-    // All intrinsics need unsafe blocks
-    let v = unsafe { _mm256_loadu_si256(src as *const __m256i) };
-    let result = unsafe { _mm256_add_epi8(v, v) };
-    unsafe { _mm256_storeu_si256(dst as *mut __m256i, result) };
+    // All intrinsics implicitly unsafe
+    let v = _mm256_loadu_si256(src as *const __m256i);
+    let result = _mm256_add_epi8(v, v);
+    _mm256_storeu_si256(dst as *mut __m256i, result);
 }
 ```
 
-### After (with archmage)
+### After (with archmage + safe_unaligned_simd)
 ```rust
 use archmage::{arcane, Desktop64, SimdToken};
 use safe_unaligned_simd::x86_64 as safe_simd;
@@ -48,54 +91,53 @@ use safe_unaligned_simd::x86_64 as safe_simd;
 #[arcane]
 fn my_func_inner(_token: Desktop64, dst: &mut [u8], src: &[u8]) {
     // Memory ops use safe_unaligned_simd (SAFE!)
-    let v = safe_simd::_mm256_loadu_si256(src);
+    let src_arr: &[u8; 32] = src[..32].try_into().unwrap();
+    let v = safe_simd::_mm256_loadu_si256(src_arr);
 
     // Value intrinsics are SAFE inside #[arcane]!
     let result = _mm256_add_epi8(v, v);
 
     // Memory ops use safe_unaligned_simd (SAFE!)
-    safe_simd::_mm256_storeu_si256(dst, result);
+    let dst_arr: &mut [u8; 32] = (&mut dst[..32]).try_into().unwrap();
+    safe_simd::_mm256_storeu_si256(dst_arr, result);
 }
 
 // FFI wrapper (still unsafe - unavoidable)
+#[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn my_func(dst: *mut u8, src: *const u8, w: i32) {
-    let token = Desktop64::forge_token_dangerously();
-    let dst_slice = std::slice::from_raw_parts_mut(dst, w as usize);
-    let src_slice = std::slice::from_raw_parts(src, w as usize);
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst, w as usize) };
+    let src_slice = unsafe { std::slice::from_raw_parts(src, w as usize) };
     my_func_inner(token, dst_slice, src_slice);
 }
 ```
 
 ## Refactoring Strategy
 
-### Phase 1: x86_64 Modules (Priority Order)
+### Phase 1: x86_64 Modules (Priority Order by value intrinsic count)
 
-1. **pal.rs** (~140 lines) - Smallest, good test case
-2. **refmvs.rs** (~60 lines) - Small
+1. ~~**pal.rs** (~140 lines)~~ ✅ DONE
+2. **refmvs.rs** (~60 lines) - Few value intrinsics, low priority
 3. **filmgrain.rs** (~1k lines) - Medium
 4. **cdef.rs** (~800 lines) - Medium
 5. **loopfilter.rs** (~1.2k lines) - Medium
-6. **mc.rs** (~5k lines) - Large, most impact
-7. **looprestoration.rs** (~2k lines) - Large
-8. **ipred.rs** (~4k lines) - Large
-9. **itx.rs** (~12k lines) - Largest, most complex
+6. **looprestoration.rs** (~2k lines) - Large
+7. **ipred.rs** (~4k lines) - Large (91 value intrinsics)
+8. **mc.rs** (~5k lines) - Large (477 value intrinsics)
+9. **itx.rs** (~12k lines) - Largest (500 value intrinsics)
 
 ### Phase 2: ARM NEON Modules
 
-Same order, using `Arm64` token instead of `Desktop64`.
+Same pattern, using `Arm64` token and `safe_unaligned_simd::aarch64` for memory ops.
 
-- mc_arm.rs (already partially uses archmage - extend it)
-- ipred_arm.rs
-- cdef_arm.rs
-- loopfilter_arm.rs
-- looprestoration_arm.rs
-- itx_arm.rs
-- filmgrain_arm.rs
-- refmvs_arm.rs
-
-### Phase 3: msac (inline in msac.rs)
-
-The msac SIMD is inline in `src/msac.rs`. Same pattern applies.
+1. ~~**mc_arm.rs** (~4k lines)~~ ✅ DONE - Zero non-FFI unsafe blocks
+2. **ipred_arm.rs** (~2k lines) - Next priority
+3. **cdef_arm.rs** (~800 lines)
+4. **loopfilter_arm.rs** (~1k lines)
+5. **looprestoration_arm.rs** (~2k lines)
+6. **itx_arm.rs** (~6k lines)
+7. **filmgrain_arm.rs** (~750 lines)
+8. **refmvs_arm.rs** (~50 lines)
 
 ## Token Mapping
 
@@ -103,30 +145,6 @@ The msac SIMD is inline in `src/msac.rs`. Same pattern applies.
 |--------------|-------|----------|
 | x86_64 AVX2 | `Desktop64` / `X64V3Token` | AVX2 + FMA |
 | aarch64 NEON | `Arm64` / `NeonToken` | NEON (always available) |
-
-## safe_unaligned_simd Functions
-
-### x86_64 (require feature = "avx512" for some)
-```rust
-use safe_unaligned_simd::x86_64::*;
-
-// Loads
-_mm_loadu_si128(src: &[u8; 16]) -> __m128i
-_mm256_loadu_si256(src: &[u8; 32]) -> __m256i
-
-// Stores
-_mm_storeu_si128(dst: &mut [u8; 16], v: __m128i)
-_mm256_storeu_si256(dst: &mut [u8; 32], v: __m256i)
-```
-
-### aarch64
-```rust
-use safe_unaligned_simd::aarch64::*;
-
-// Reference-based loads/stores
-vld1q_u8(src: &[u8; 16]) -> uint8x16_t
-vst1q_u8(dst: &mut [u8; 16], v: uint8x16_t)
-```
 
 ## Testing After Each Module
 
@@ -137,77 +155,54 @@ cargo build --no-default-features --features "bitdepth_8,bitdepth_16" --release
 # Cross-compile check for ARM
 cargo check --target aarch64-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16"
 
+# Check asm output
+cargo asm --lib --no-default-features --features "bitdepth_8,bitdepth_16" "function_name"
+
 # Benchmark (should stay ~1.11-1.15s)
 cd /home/lilith/work/zenavif && touch src/lib.rs && cargo build --release --example decode_avif
 time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/work/aom-decode/tests/test.avif /dev/null 2>/dev/null; done
 ```
 
-## Expected Outcome
+## FFI Elimination (Future Work)
 
-| Metric | Before | After |
-|--------|--------|-------|
-| unsafe blocks in safe_simd | ~3,200 | ~1,500 |
-| Performance | ~1.13s | ~1.13s (unchanged) |
-| Safety | Auditable unsafe | Maximally safe |
+The current architecture has an artificial FFI boundary:
 
-## mc_arm.rs Reference
+```
+call site → avg::Fn.call() → converts safe types to pointers
+         → calls extern "C" fn pointer
+         → implementation converts pointers back to slices
+```
 
-`src/safe_simd/mc_arm.rs` already uses archmage partially. Use it as a reference for the pattern:
+**Why it exists:** `wrap_fn_ptr!` macro creates `extern "C"` function types to support
+linking external assembly. Even when asm is disabled, the same types are used.
 
+**To fully eliminate FFI:**
+
+1. **Change `wrap_fn_ptr!`** to generate Rust `fn` types when `feature = "asm"` is off
+2. **Change function signatures** from raw pointers to `Rav1dPictureDataComponentOffset` etc.
+3. **Update all `call()` implementations** to not do pointer conversions
+4. **This is a large refactor** touching mc.rs, itx.rs, cdef.rs, ipred.rs, etc.
+
+**Alternative: Bypass dispatch entirely**
+
+For pure Rust builds, replace function pointer dispatch with:
 ```rust
-use archmage::{arcane, Arm64, SimdToken};
-
-#[arcane]
-fn avg_8bpc_inner(_token: Arm64, dst: &mut [u8], ...) {
-    // SIMD ops here - value intrinsics are SAFE
-}
-
-pub unsafe extern "C" fn avg_8bpc_neon(...) {
-    let token = unsafe { Arm64::forge_token_dangerously() };
-    // Convert raw pointers to slices, call inner
-    avg_8bpc_inner(token, dst_slice, ...);
+match backend {
+    SimdBackend::Avx2 => mc::avg_avx2::<BD>(dst, tmp1, tmp2, w, h, bd),
+    SimdBackend::Neon => mc::avg_neon::<BD>(dst, tmp1, tmp2, w, h, bd),
+    SimdBackend::Rust => mc::avg_rust::<BD>(dst, tmp1, tmp2, w, h, bd),
 }
 ```
 
-## Phase 2: FFI Feature Gate
-
-After safe intrinsics refactor, restructure so FFI is optional:
-
-```rust
-// Inner function - always safe, pure Rust API
-#[arcane]
-pub fn avg_8bpc(token: Desktop64, dst: &mut [u8], src1: &[i16], src2: &[i16], w: usize, h: usize) {
-    // Safe SIMD implementation
-}
-
-// FFI wrapper - only compiled with feature = "ffi"
-#[cfg(feature = "ffi")]
-pub unsafe extern "C" fn avg_8bpc_avx2(
-    dst: *mut DynPixel, dst_stride: isize, ...
-) {
-    let token = Desktop64::forge_token_dangerously();
-    // Convert pointers to slices, call safe inner
-    avg_8bpc(token, dst_slice, src1_slice, src2_slice, w, h);
-}
-```
-
-### Cargo.toml changes needed:
-```toml
-[features]
-default = ["bitdepth_8", "bitdepth_16"]  # Pure Rust by default
-ffi = []  # Enable extern "C" wrappers for rav1d interop
-asm = ["ffi"]  # Original ASM (implies ffi)
-```
-
-### Benefits:
-- Pure Rust users get fully safe API with zero unsafe
-- C interop users enable `ffi` feature
-- Original rav1d behavior with `asm` feature
+This would require making the `*_rust` fallback functions `pub(crate)` and creating
+new SIMD implementations that take safe types directly.
 
 ## Notes
 
-1. **Phase 1: Don't change FFI signatures** - They must match rav1d's dispatch system
+1. **Don't change FFI signatures yet** - Requires architectural refactor
 2. **Keep `#![allow(unsafe_op_in_unsafe_fn)]`** at module top for FFI wrappers
 3. **Use `forge_token_dangerously()`** in FFI wrappers - we know features are available because dispatch already checked
 4. **Benchmark after each module** to ensure no performance regression
 5. **Commit incrementally** - one module at a time
+6. ~~**Partial 64-bit ops still need unsafe**~~ SOLVED: `safe_unaligned_simd` has full NEON support
+7. ~~**safe_unaligned_simd lacks aarch64 support**~~ WRONG: 0.2.3+ has full aarch64 NEON support

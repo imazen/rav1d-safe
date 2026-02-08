@@ -1,5 +1,4 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
@@ -7,8 +6,8 @@ use crate::include::common::intops::clip;
 use crate::include::common::intops::iclip;
 use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
+use crate::include::dav1d::picture::PicOffset;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::cpu::CpuFlags;
 use crate::src::enum_map::enum_map;
@@ -30,10 +29,14 @@ use crate::src::tables::dav1d_resize_filter;
 use crate::src::with_offset::WithOffset;
 use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::cmp;
+#[cfg(feature = "asm")]
 use std::ffi::c_int;
 use std::iter;
+#[cfg(feature = "asm")]
 use std::mem;
+#[cfg(feature = "asm")]
 use std::ptr;
+#[cfg(feature = "asm")]
 use std::slice;
 use to_method::To;
 
@@ -50,12 +53,7 @@ use crate::include::common::bitdepth::{bpc_fn, BPC};
 use crate::include::common::bitdepth::bpc_fn;
 
 #[inline(never)]
-fn put_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
-    w: usize,
-    h: usize,
-) {
+fn put_rust<BD: BitDepth>(dst: PicOffset, src: PicOffset, w: usize, h: usize) {
     for y in 0..h {
         let src = src + y as isize * src.pixel_stride::<BD>();
         let dst = dst + y as isize * dst.pixel_stride::<BD>();
@@ -66,13 +64,7 @@ fn put_rust<BD: BitDepth>(
 }
 
 #[inline(never)]
-fn prep_rust<BD: BitDepth>(
-    tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
-    w: usize,
-    h: usize,
-    bd: BD,
-) {
+fn prep_rust<BD: BitDepth>(tmp: &mut [i16], src: PicOffset, w: usize, h: usize, bd: BD) {
     let intermediate_bits = bd.get_intermediate_bits();
     for y in 0..h {
         let src = src + y as isize * src.pixel_stride::<BD>();
@@ -123,12 +115,7 @@ fn filter_8tap_mid(mid: &[[i16; MID_STRIDE]], x: usize, f: &[i8; 8]) -> FilterRe
     FilterResult { pixel }
 }
 
-fn filter_8tap<BD: BitDepth>(
-    src: Rav1dPictureDataComponentOffset,
-    x: usize,
-    f: &[i8; 8],
-    stride: isize,
-) -> FilterResult {
+fn filter_8tap<BD: BitDepth>(src: PicOffset, x: usize, f: &[i8; 8], stride: isize) -> FilterResult {
     let pixel = (0..f.len())
         .map(|y| {
             let px = *(src + x + (y as isize - 3) * stride).index::<BD>();
@@ -150,8 +137,8 @@ fn get_filter(m: usize, d: usize, filter_type: Rav1dFilterMode) -> Option<&'stat
 
 #[inline(never)]
 fn put_8tap_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -218,8 +205,8 @@ fn put_8tap_rust<BD: BitDepth>(
 
 #[inline(never)]
 fn put_8tap_scaled_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -278,7 +265,7 @@ fn put_8tap_scaled_rust<BD: BitDepth>(
 #[inline(never)]
 fn prep_8tap_rust<BD: BitDepth>(
     tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -341,7 +328,7 @@ fn prep_8tap_rust<BD: BitDepth>(
 #[inline(never)]
 fn prep_8tap_scaled_rust<BD: BitDepth>(
     tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -399,12 +386,7 @@ fn filter_bilin_mid(mid: &[[i16; MID_STRIDE]], x: usize, mxy: usize) -> FilterRe
     FilterResult { pixel }
 }
 
-fn filter_bilin<BD: BitDepth>(
-    src: Rav1dPictureDataComponentOffset,
-    x: usize,
-    mxy: usize,
-    stride: isize,
-) -> FilterResult {
+fn filter_bilin<BD: BitDepth>(src: PicOffset, x: usize, mxy: usize, stride: isize) -> FilterResult {
     let src = |y: isize, x: usize| -> i32 { (*(src + x + y * stride).index::<BD>()).to::<i32>() };
     let x0 = src(0, x);
     let x1 = src(1, x);
@@ -413,8 +395,8 @@ fn filter_bilin<BD: BitDepth>(
 }
 
 fn put_bilin_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -476,8 +458,8 @@ fn put_bilin_rust<BD: BitDepth>(
 }
 
 fn put_bilin_scaled_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -522,7 +504,7 @@ fn put_bilin_scaled_rust<BD: BitDepth>(
 
 fn prep_bilin_rust<BD: BitDepth>(
     tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -579,7 +561,7 @@ fn prep_bilin_rust<BD: BitDepth>(
 
 fn prep_bilin_scaled_rust<BD: BitDepth>(
     tmp: &mut [i16],
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     w: usize,
     h: usize,
     mx: usize,
@@ -621,8 +603,412 @@ fn prep_bilin_scaled_rust<BD: BitDepth>(
     }
 }
 
+/// Direct dispatch for avg - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn avg_direct<BD: BitDepth>(
+    dst: PicOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, bd) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, bd) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    avg_rust(dst, tmp1, tmp2, w as usize, h as usize, bd);
+}
+
+/// Direct dispatch for w_avg - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn w_avg_direct<BD: BitDepth>(
+    dst: PicOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    weight: i32,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::w_avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, weight, bd) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::w_avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, weight, bd) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    w_avg_rust(dst, tmp1, tmp2, w as usize, h as usize, weight, bd);
+}
+
+/// Direct dispatch for mask - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn mask_direct<BD: BitDepth>(
+    dst: PicOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &[u8],
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::mask_dispatch::<BD>(dst, tmp1, tmp2, w, h, mask, bd) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::mask_dispatch::<BD>(dst, tmp1, tmp2, w, h, mask, bd) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    mask_rust(dst, tmp1, tmp2, w as usize, h as usize, mask, bd);
+}
+
+/// Direct dispatch for blend - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn blend_direct<BD: BitDepth>(
+    dst: PicOffset,
+    tmp: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN],
+    w: i32,
+    h: i32,
+    mask: &[u8],
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::blend_dispatch::<BD>(dst, tmp, w, h, mask) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::blend_dispatch::<BD>(dst, tmp, w, h, mask) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    blend_rust::<BD>(dst, tmp, w as usize, h as usize, mask);
+}
+
+/// Direct dispatch for mc (put) - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn mc_put_direct<BD: BitDepth>(
+    filter: Filter2d,
+    dst: PicOffset,
+    src: PicOffset,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    {
+        let w = w as usize;
+        let h = h as usize;
+        let mx = mx as usize;
+        let my = my as usize;
+        match filter {
+            Filter2d::Bilinear => put_bilin_rust(dst, src, w, h, mx, my, bd),
+            _ => put_8tap_rust(dst, src, w, h, mx, my, filter.hv(), bd),
+        }
+    }
+}
+
+/// Direct dispatch for mct (prep) - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn mct_prep_direct<BD: BitDepth>(
+    filter: Filter2d,
+    tmp: &mut [i16],
+    src: PicOffset,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    {
+        let w = w as usize;
+        let h = h as usize;
+        let mx = mx as usize;
+        let my = my as usize;
+        let tmp = &mut tmp[..w * h];
+        match filter {
+            Filter2d::Bilinear => prep_bilin_rust(tmp, src, w, h, mx, my, bd),
+            _ => prep_8tap_rust(tmp, src, w, h, mx, my, filter.hv(), bd),
+        }
+    }
+}
+
+/// Direct dispatch for mc_scaled (put_scaled) - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn mc_scaled_direct<BD: BitDepth>(
+    filter: Filter2d,
+    dst: PicOffset,
+    src: PicOffset,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    dx: i32,
+    dy: i32,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::mc_scaled_dispatch::<BD>(
+        filter, dst, src, w, h, mx, my, dx, dy, bd,
+    ) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::mc_scaled_dispatch::<BD>(
+        filter, dst, src, w, h, mx, my, dx, dy, bd,
+    ) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    {
+        let w = w as usize;
+        let h = h as usize;
+        let mx = mx as usize;
+        let my = my as usize;
+        let dx = dx as usize;
+        let dy = dy as usize;
+        match filter {
+            Filter2d::Bilinear => put_bilin_scaled_rust(dst, src, w, h, mx, my, dx, dy, bd),
+            _ => put_8tap_scaled_rust(dst, src, w, h, mx, my, dx, dy, filter.hv(), bd),
+        }
+    }
+}
+
+/// Direct dispatch for mct_scaled (prep_scaled) - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn mct_scaled_direct<BD: BitDepth>(
+    filter: Filter2d,
+    tmp: &mut [i16],
+    src: PicOffset,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    dx: i32,
+    dy: i32,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::mct_scaled_dispatch::<BD>(
+        filter, tmp, src, w, h, mx, my, dx, dy, bd,
+    ) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::mct_scaled_dispatch::<BD>(
+        filter, tmp, src, w, h, mx, my, dx, dy, bd,
+    ) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    {
+        let w = w as usize;
+        let h = h as usize;
+        let mx = mx as usize;
+        let my = my as usize;
+        let dx = dx as usize;
+        let dy = dy as usize;
+        let tmp = &mut tmp[..w * h];
+        match filter {
+            Filter2d::Bilinear => prep_bilin_scaled_rust(tmp, src, w, h, mx, my, dx, dy, bd),
+            _ => prep_8tap_scaled_rust(tmp, src, w, h, mx, my, dx, dy, filter.hv(), bd),
+        }
+    }
+}
+
+/// Direct dispatch for blend_dir (blend_h/blend_v) - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn blend_dir_direct<BD: BitDepth>(
+    is_h: bool,
+    dst: PicOffset,
+    tmp: &[BD::Pixel; SCRATCH_LAP_LEN],
+    w: i32,
+    h: i32,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::blend_dir_dispatch::<BD>(is_h, dst, tmp, w, h) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::blend_dir_dispatch::<BD>(is_h, dst, tmp, w, h) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    if is_h {
+        blend_h_rust::<BD>(dst, tmp, w as usize, h as usize);
+    } else {
+        blend_v_rust::<BD>(dst, tmp, w as usize, h as usize);
+    }
+}
+
+/// Direct dispatch for w_mask - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn w_mask_direct<BD: BitDepth>(
+    layout: Rav1dPixelLayoutSubSampled,
+    dst: PicOffset,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &mut [u8; SEG_MASK_LEN],
+    sign: i32,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::w_mask_dispatch::<BD>(
+        layout, dst, tmp1, tmp2, w, h, mask, sign, bd,
+    ) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::w_mask_dispatch::<BD>(
+        layout, dst, tmp1, tmp2, w, h, mask, sign, bd,
+    ) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    {
+        let w = w as usize;
+        let h = h as usize;
+        debug_assert!(sign == 1 || sign == 0);
+        let sign = sign != 0;
+        let (ss_hor, ss_ver) = match layout {
+            Rav1dPixelLayoutSubSampled::I420 => (true, true),
+            Rav1dPixelLayoutSubSampled::I422 => (true, false),
+            Rav1dPixelLayoutSubSampled::I444 => (false, false),
+        };
+        w_mask_rust(dst, tmp1, tmp2, w, h, mask, sign, ss_hor, ss_ver, bd);
+    }
+}
+
+/// Direct dispatch for warp8x8 - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn warp8x8_direct<BD: BitDepth>(
+    dst: PicOffset,
+    src: PicOffset,
+    abcd: &[i16; 4],
+    mx: i32,
+    my: i32,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::warp8x8_dispatch::<BD>(dst, src, abcd, mx, my, bd) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::warp8x8_dispatch::<BD>(dst, src, abcd, mx, my, bd) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    warp_affine_8x8_rust(dst, src, abcd, mx, my, bd);
+}
+
+/// Direct dispatch for warp8x8t - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn warp8x8t_direct<BD: BitDepth>(
+    tmp: &mut [i16],
+    tmp_stride: usize,
+    src: PicOffset,
+    abcd: &[i16; 4],
+    mx: i32,
+    my: i32,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::warp8x8t_dispatch::<BD>(tmp, tmp_stride, src, abcd, mx, my, bd) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::warp8x8t_dispatch::<BD>(
+        tmp, tmp_stride, src, abcd, mx, my, bd,
+    ) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    warp_affine_8x8t_rust(tmp, tmp_stride, src, abcd, mx, my, bd);
+}
+
+/// Direct dispatch for emu_edge - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn emu_edge_direct<BD: BitDepth>(
+    bw: isize,
+    bh: isize,
+    iw: isize,
+    ih: isize,
+    x: isize,
+    y: isize,
+    dst: &mut [BD::Pixel; EMU_EDGE_LEN],
+    dst_stride: usize,
+    src: &Rav1dPictureDataComponent,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::emu_edge_dispatch::<BD>(
+        bw, bh, iw, ih, x, y, dst, dst_stride, src,
+    ) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::emu_edge_dispatch::<BD>(
+        bw, bh, iw, ih, x, y, dst, dst_stride, src,
+    ) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    emu_edge_rust::<BD>(bw, bh, iw, ih, x, y, dst, dst_stride, src);
+}
+
+/// Direct dispatch for resize - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn resize_direct<BD: BitDepth>(
+    dst: WithOffset<PicOrBuf<AlignedVec64<u8>>>,
+    src: PicOffset,
+    dst_w: usize,
+    h: usize,
+    src_w: usize,
+    dx: i32,
+    mx: i32,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::mc::resize_dispatch::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::mc_arm::resize_dispatch::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd) {
+        return;
+    }
+    #[allow(unreachable_code)]
+    resize_rust::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd);
+}
+
 fn avg_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: usize,
@@ -646,7 +1032,7 @@ fn avg_rust<BD: BitDepth>(
 }
 
 fn w_avg_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: usize,
@@ -672,7 +1058,7 @@ fn w_avg_rust<BD: BitDepth>(
 }
 
 fn mask_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: usize,
@@ -705,7 +1091,7 @@ fn blend_px<BD: BitDepth>(a: BD::Pixel, b: BD::Pixel, m: u8) -> BD::Pixel {
 }
 
 fn blend_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN],
     w: usize,
     h: usize,
@@ -721,7 +1107,7 @@ fn blend_rust<BD: BitDepth>(
 }
 
 fn blend_v_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp: &[BD::Pixel; SCRATCH_LAP_LEN],
     w: usize,
     h: usize,
@@ -739,7 +1125,7 @@ fn blend_v_rust<BD: BitDepth>(
 }
 
 fn blend_h_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
     tmp: &[BD::Pixel; SCRATCH_LAP_LEN],
     w: usize,
     h: usize,
@@ -757,7 +1143,7 @@ fn blend_h_rust<BD: BitDepth>(
 }
 
 fn w_mask_rust<BD: BitDepth>(
-    mut dst: Rav1dPictureDataComponentOffset,
+    mut dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
     tmp2: &[i16; COMPINTER_LEN],
     w: usize,
@@ -826,8 +1212,8 @@ fn w_mask_rust<BD: BitDepth>(
 }
 
 fn warp_affine_8x8_rust<BD: BitDepth>(
-    dst: Rav1dPictureDataComponentOffset,
-    src: Rav1dPictureDataComponentOffset,
+    dst: PicOffset,
+    src: PicOffset,
     abcd: &[i16; 4],
     mx: i32,
     my: i32,
@@ -878,7 +1264,7 @@ fn warp_affine_8x8_rust<BD: BitDepth>(
 fn warp_affine_8x8t_rust<BD: BitDepth>(
     tmp: &mut [i16],
     tmp_stride: usize,
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     abcd: &[i16; 4],
     mx: i32,
     my: i32,
@@ -998,7 +1384,7 @@ fn emu_edge_rust<BD: BitDepth>(
 
 fn resize_rust<BD: BitDepth>(
     dst: WithOffset<PicOrBuf<AlignedVec64<u8>>>,
-    src: Rav1dPictureDataComponentOffset,
+    src: PicOffset,
     dst_w: usize,
     h: usize,
     src_w: usize,
@@ -1045,33 +1431,43 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mc(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl mc::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
-        src: Rav1dPictureDataComponentOffset,
+        filter: Filter2d,
+        dst: PicOffset,
+        src: PicOffset,
         w: i32,
         h: i32,
         mx: i32,
         my: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallbacks `fn put_{8tpap,bilin}_rust` are safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd, dst, src,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = filter;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallbacks `fn put_{8tpap,bilin}_rust` are safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd, dst, src,
+                    )
+                }
+            } else {
+                // Direct dispatch: no function pointers, no extern "C" ABI overhead
+                mc_put_direct::<BD>(filter, dst, src, w, h, mx, my, bd)
+            }
         }
     }
 }
@@ -1088,15 +1484,17 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mc_scaled(
     dx: i32,
     dy: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl mc_scaled::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
-        src: Rav1dPictureDataComponentOffset,
+        filter: Filter2d,
+        dst: PicOffset,
+        src: PicOffset,
         w: i32,
         h: i32,
         mx: i32,
@@ -1105,18 +1503,25 @@ impl mc_scaled::Fn {
         dy: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallbacks `fn put_{8tpap,bilin}_scaled_rust` are safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, dx, dy, bd, dst, src,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = filter;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallbacks `fn put_{8tpap,bilin}_scaled_rust` are safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, dx, dy, bd, dst, src,
+                    )
+                }
+            } else {
+                mc_scaled_direct::<BD>(filter, dst, src, w, h, mx, my, dx, dy, bd)
+            }
         }
     }
 }
@@ -1130,32 +1535,39 @@ wrap_fn_ptr!(pub unsafe extern "C" fn warp8x8(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl warp8x8::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
-        src: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
+        src: PicOffset,
         abcd: &[i16; 4],
         mx: i32,
         my: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallback `fn prep_c_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr, dst_stride, src_ptr, src_stride, abcd, mx, my, bd, dst, src,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallback `fn warp_affine_8x8_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr, dst_stride, src_ptr, src_stride, abcd, mx, my, bd, dst, src,
+                    )
+                }
+            } else {
+                warp8x8_direct::<BD>(dst, src, abcd, mx, my, bd)
+            }
         }
     }
 }
@@ -1169,27 +1581,36 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mct(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl mct::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
+        filter: Filter2d,
         tmp: &mut [i16],
-        src: Rav1dPictureDataComponentOffset,
+        src: PicOffset,
         w: i32,
         h: i32,
         mx: i32,
         my: i32,
         bd: BD,
     ) {
-        let tmp = tmp[..(w * h) as usize].as_mut_ptr();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallbacks `fn prep_{8tpap,bilin}_rust` are safe; asm is supposed to do the same.
-        unsafe { self.get()(tmp, src_ptr, src_stride, w, h, mx, my, bd, src) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = filter;
+                let tmp = tmp[..(w * h) as usize].as_mut_ptr();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallbacks `fn prep_{8tpap,bilin}_rust` are safe; asm is supposed to do the same.
+                unsafe { self.get()(tmp, src_ptr, src_stride, w, h, mx, my, bd, src) }
+            } else {
+                mct_prep_direct::<BD>(filter, tmp, src, w, h, mx, my, bd)
+            }
+        }
     }
 }
 
@@ -1204,14 +1625,16 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mct_scaled(
     dx: i32,
     dy: i32,
     bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl mct_scaled::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
+        filter: Filter2d,
         tmp: &mut [i16],
-        src: Rav1dPictureDataComponentOffset,
+        src: PicOffset,
         w: i32,
         h: i32,
         mx: i32,
@@ -1220,13 +1643,20 @@ impl mct_scaled::Fn {
         dy: i32,
         bd: BD,
     ) {
-        let tmp = tmp[..(w * h) as usize].as_mut_ptr();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallbacks `fn prep_{8tpap,bilin}_scaled_rust` are safe; asm is supposed to do the same.
-        unsafe { self.get()(tmp, src_ptr, src_stride, w, h, mx, my, dx, dy, bd, src) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = filter;
+                let tmp = tmp[..(w * h) as usize].as_mut_ptr();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallbacks `fn prep_{8tpap,bilin}_scaled_rust` are safe; asm is supposed to do the same.
+                unsafe { self.get()(tmp, src_ptr, src_stride, w, h, mx, my, dx, dy, bd, src) }
+            } else {
+                mct_scaled_direct::<BD>(filter, tmp, src, w, h, mx, my, dx, dy, bd)
+            }
+        }
     }
 }
 
@@ -1240,31 +1670,38 @@ wrap_fn_ptr!(pub unsafe extern "C" fn warp8x8t(
     my: i32,
     bitdepth_max: i32,
     _tmp_len: usize,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl warp8x8t::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         tmp: &mut [i16],
         tmp_stride: usize,
-        src: Rav1dPictureDataComponentOffset,
+        src: PicOffset,
         abcd: &[i16; 4],
         mx: i32,
         my: i32,
         bd: BD,
     ) {
-        let tmp_len = tmp.len();
-        let tmp = tmp.as_mut_ptr();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let bd = bd.into_c();
-        let src = FFISafe::new(&src);
-        // SAFETY: Fallback `fn warp_affine_8x8t_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                tmp, tmp_stride, src_ptr, src_stride, abcd, mx, my, bd, tmp_len, src,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let tmp_len = tmp.len();
+                let tmp = tmp.as_mut_ptr();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let bd = bd.into_c();
+                let src = FFISafe::new(&src);
+                // SAFETY: Fallback `fn warp_affine_8x8t_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        tmp, tmp_stride, src_ptr, src_stride, abcd, mx, my, bd, tmp_len, src,
+                    )
+                }
+            } else {
+                warp8x8t_direct::<BD>(tmp, tmp_stride, src, abcd, mx, my, bd)
+            }
         }
     }
 }
@@ -1277,25 +1714,33 @@ wrap_fn_ptr!(pub unsafe extern "C" fn avg(
     w: i32,
     h: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl avg::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         tmp1: &[i16; COMPINTER_LEN],
         tmp2: &[i16; COMPINTER_LEN],
         w: i32,
         h: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn avg_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn avg_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd, dst) }
+            } else {
+                // Direct dispatch: no function pointers, no extern "C" ABI overhead
+                avg_direct::<BD>(dst, tmp1, tmp2, w, h, bd)
+            }
+        }
     }
 }
 
@@ -1308,13 +1753,14 @@ wrap_fn_ptr!(pub unsafe extern "C" fn w_avg(
     h: i32,
     weight: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl w_avg::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         tmp1: &[i16; COMPINTER_LEN],
         tmp2: &[i16; COMPINTER_LEN],
         w: i32,
@@ -1322,12 +1768,18 @@ impl w_avg::Fn {
         weight: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn w_avg_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn w_avg_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd, dst) }
+            } else {
+                w_avg_direct::<BD>(dst, tmp1, tmp2, w, h, weight, bd)
+            }
+        }
     }
 }
 
@@ -1340,13 +1792,14 @@ wrap_fn_ptr!(pub unsafe extern "C" fn mask(
     h: i32,
     mask: *const u8,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl mask::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         tmp1: &[i16; COMPINTER_LEN],
         tmp2: &[i16; COMPINTER_LEN],
         w: i32,
@@ -1354,13 +1807,19 @@ impl mask::Fn {
         mask: &[u8],
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let mask = mask[..(w * h) as usize].as_ptr();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn mask_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, bd, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let mask = mask[..(w * h) as usize].as_ptr();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn mask_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, bd, dst) }
+            } else {
+                mask_direct::<BD>(dst, tmp1, tmp2, w, h, mask, bd)
+            }
+        }
     }
 }
 
@@ -1374,13 +1833,15 @@ wrap_fn_ptr!(pub unsafe extern "C" fn w_mask(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     bitdepth_max: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl w_mask::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        layout: Rav1dPixelLayoutSubSampled,
+        dst: PicOffset,
         tmp1: &[i16; COMPINTER_LEN],
         tmp2: &[i16; COMPINTER_LEN],
         w: i32,
@@ -1389,12 +1850,19 @@ impl w_mask::Fn {
         sign: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let bd = bd.into_c();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn w_mask_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = layout;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let bd = bd.into_c();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn w_mask_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd, dst) }
+            } else {
+                w_mask_direct::<BD>(layout, dst, tmp1, tmp2, w, h, mask, sign, bd)
+            }
+        }
     }
 }
 
@@ -1405,25 +1873,32 @@ wrap_fn_ptr!(pub unsafe extern "C" fn blend(
     w: i32,
     h: i32,
     mask: *const u8,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl blend::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        dst: PicOffset,
         tmp: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN],
         w: i32,
         h: i32,
         mask: &[u8],
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let tmp = ptr::from_ref(tmp).cast();
-        let mask = mask[..(w * h) as usize].as_ptr();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn blend_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp, w, h, mask, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let tmp = ptr::from_ref(tmp).cast();
+                let mask = mask[..(w * h) as usize].as_ptr();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn blend_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp, w, h, mask, dst) }
+            } else {
+                blend_direct::<BD>(dst, tmp, w, h, mask)
+            }
+        }
     }
 }
 
@@ -1433,23 +1908,32 @@ wrap_fn_ptr!(pub unsafe extern "C" fn blend_dir(
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    _dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl blend_dir::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
-        dst: Rav1dPictureDataComponentOffset,
+        is_h: bool,
+        dst: PicOffset,
         tmp: &[BD::Pixel; SCRATCH_LAP_LEN],
         w: i32,
         h: i32,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let tmp = ptr::from_ref(tmp).cast();
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn blend_{h,v}_rust` are safe; asm is supposed to do the same.
-        unsafe { self.get()(dst_ptr, dst_stride, tmp, w, h, dst) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = is_h;
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let tmp = ptr::from_ref(tmp).cast();
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn blend_{h,v}_rust` are safe; asm is supposed to do the same.
+                unsafe { self.get()(dst_ptr, dst_stride, tmp, w, h, dst) }
+            } else {
+                blend_dir_direct::<BD>(is_h, dst, tmp, w, h)
+            }
+        }
     }
 }
 
@@ -1468,6 +1952,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn emu_edge(
 ) -> ());
 
 impl emu_edge::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         bw: isize,
@@ -1480,16 +1965,22 @@ impl emu_edge::Fn {
         dst_pxstride: usize,
         src: &Rav1dPictureDataComponent,
     ) {
-        let dst = dst.as_mut_ptr().cast();
-        let dst_stride = (dst_pxstride * mem::size_of::<BD::Pixel>()) as isize;
-        let src_ptr = src.as_strided_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let src = FFISafe::new(src);
-        // SAFETY: Fallback `fn emu_edge_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                bw, bh, iw, ih, x, y, dst, dst_stride, src_ptr, src_stride, src,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst = dst.as_mut_ptr().cast();
+                let dst_stride = (dst_pxstride * mem::size_of::<BD::Pixel>()) as isize;
+                let src_ptr = src.as_strided_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let src = FFISafe::new(src);
+                // SAFETY: Fallback `fn emu_edge_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        bw, bh, iw, ih, x, y, dst, dst_stride, src_ptr, src_stride, src,
+                    )
+                }
+            } else {
+                emu_edge_direct::<BD>(bw, bh, iw, ih, x, y, dst, dst_pxstride, src)
+            }
         }
     }
 }
@@ -1505,15 +1996,16 @@ wrap_fn_ptr!(pub unsafe extern "C" fn resize(
     dx: i32,
     mx: i32,
     bitdepth_max: i32,
-    _src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _src: *const FFISafe<PicOffset>,
     _dst: *const FFISafe<WithOffset<PicOrBuf<AlignedVec64<u8>>>>,
 ) -> ());
 
 impl resize::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         dst: WithOffset<PicOrBuf<AlignedVec64<u8>>>,
-        src: Rav1dPictureDataComponentOffset,
+        src: PicOffset,
         dst_w: usize,
         h: usize,
         src_w: usize,
@@ -1521,21 +2013,27 @@ impl resize::Fn {
         mx: i32,
         bd: BD,
     ) {
-        let dst_ptr = dst.as_mut_ptr::<BD>().cast();
-        let dst_stride = dst.stride();
-        let src_ptr = src.as_ptr::<BD>().cast();
-        let src_stride = src.stride();
-        let dst_w = dst_w as c_int;
-        let h = h as c_int;
-        let src_w = src_w as c_int;
-        let bd = bd.into_c();
-        let src = FFISafe::new(&src);
-        let dst = FFISafe::new(&dst);
-        // SAFETY: Fallback `fn resize_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr, dst_stride, src_ptr, src_stride, dst_w, h, src_w, dx, mx, bd, src, dst,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let dst_ptr = dst.as_mut_ptr::<BD>().cast();
+                let dst_stride = dst.stride();
+                let src_ptr = src.as_ptr::<BD>().cast();
+                let src_stride = src.stride();
+                let dst_w = dst_w as c_int;
+                let h = h as c_int;
+                let src_w = src_w as c_int;
+                let bd = bd.into_c();
+                let src = FFISafe::new(&src);
+                let dst = FFISafe::new(&dst);
+                // SAFETY: Fallback `fn resize_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_ptr, dst_stride, src_ptr, src_stride, dst_w, h, src_w, dx, mx, bd, src, dst,
+                    )
+                }
+            } else {
+                resize_direct::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd)
+            }
         }
     }
 }
@@ -1562,6 +2060,7 @@ pub struct Rav1dMCDSPContext {
 ///
 /// Must be called by [`mc::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn put_c_erased<BD: BitDepth, const FILTER: usize>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -1572,8 +2071,8 @@ unsafe extern "C" fn put_c_erased<BD: BitDepth, const FILTER: usize>(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `mc::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1596,6 +2095,7 @@ unsafe extern "C" fn put_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`mc_scaled::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn put_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -1608,8 +2108,8 @@ unsafe extern "C" fn put_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
     dx: i32,
     dy: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `mc_scaled::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1634,6 +2134,7 @@ unsafe extern "C" fn put_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`mct::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn prep_c_erased<BD: BitDepth, const FILTER: usize>(
     tmp: *mut i16,
     _src_ptr: *const DynPixel,
@@ -1643,7 +2144,7 @@ unsafe extern "C" fn prep_c_erased<BD: BitDepth, const FILTER: usize>(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `mct::Fn::call`.
     let src = *unsafe { FFISafe::get(src) };
@@ -1666,6 +2167,7 @@ unsafe extern "C" fn prep_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`mct_scaled::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn prep_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
     tmp: *mut i16,
     _src_ptr: *const DynPixel,
@@ -1677,7 +2179,7 @@ unsafe extern "C" fn prep_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
     dx: i32,
     dy: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `mct_scaled::Fn::call`.
     let src = *unsafe { FFISafe::get(src) };
@@ -1702,6 +2204,7 @@ unsafe extern "C" fn prep_scaled_c_erased<BD: BitDepth, const FILTER: usize>(
 ///
 /// Must be called by [`avg::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn avg_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -1710,7 +2213,7 @@ unsafe extern "C" fn avg_c_erased<BD: BitDepth>(
     w: i32,
     h: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `avg::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1724,6 +2227,7 @@ unsafe extern "C" fn avg_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`w_avg::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn w_avg_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -1733,7 +2237,7 @@ unsafe extern "C" fn w_avg_c_erased<BD: BitDepth>(
     h: i32,
     weight: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `w_avg::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1747,6 +2251,7 @@ unsafe extern "C" fn w_avg_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`mask::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn mask_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -1756,7 +2261,7 @@ unsafe extern "C" fn mask_c_erased<BD: BitDepth>(
     h: i32,
     mask: *const u8,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `mask::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1772,6 +2277,7 @@ unsafe extern "C" fn mask_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`w_mask::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn w_mask_c_erased<const SS_HOR: bool, const SS_VER: bool, BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -1782,7 +2288,7 @@ unsafe extern "C" fn w_mask_c_erased<const SS_HOR: bool, const SS_VER: bool, BD:
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `w_mask::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1798,6 +2304,7 @@ unsafe extern "C" fn w_mask_c_erased<const SS_HOR: bool, const SS_VER: bool, BD:
 ///
 /// Must be called by [`blend::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn blend_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -1805,7 +2312,7 @@ unsafe extern "C" fn blend_c_erased<BD: BitDepth>(
     w: i32,
     h: i32,
     mask: *const u8,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `blend::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1822,13 +2329,14 @@ unsafe extern "C" fn blend_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`blend_dir::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn blend_v_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `blend_dir::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1843,13 +2351,14 @@ unsafe extern "C" fn blend_v_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`blend_dir::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn blend_h_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
     w: i32,
     h: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `blend_dir::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1864,6 +2373,7 @@ unsafe extern "C" fn blend_h_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`warp8x8::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn warp_affine_8x8_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -1873,8 +2383,8 @@ unsafe extern "C" fn warp_affine_8x8_c_erased<BD: BitDepth>(
     mx: i32,
     my: i32,
     bitdepth_max: i32,
-    dst: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst: *const FFISafe<PicOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `warp_8x8::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
@@ -1888,6 +2398,7 @@ unsafe extern "C" fn warp_affine_8x8_c_erased<BD: BitDepth>(
 ///
 /// Must be called by [`warp8x8t::Fn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn warp_affine_8x8t_c_erased<BD: BitDepth>(
     tmp: *mut i16,
     tmp_stride: usize,
@@ -1898,7 +2409,7 @@ unsafe extern "C" fn warp_affine_8x8t_c_erased<BD: BitDepth>(
     my: i32,
     bitdepth_max: i32,
     tmp_len: usize,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: `warp8x8t::Fn::call` passed `tmp.len()` as `tmp_len`.
     let tmp = unsafe { slice::from_raw_parts_mut(tmp, tmp_len) };
@@ -1909,6 +2420,7 @@ unsafe extern "C" fn warp_affine_8x8t_c_erased<BD: BitDepth>(
 }
 
 #[deny(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "asm")]
 unsafe extern "C" fn emu_edge_c_erased<BD: BitDepth>(
     bw: isize,
     bh: isize,
@@ -1931,6 +2443,7 @@ unsafe extern "C" fn emu_edge_c_erased<BD: BitDepth>(
     emu_edge_rust::<BD>(bw, bh, iw, ih, x, y, dst, dst_stride, r#ref)
 }
 
+#[cfg(feature = "asm")]
 unsafe extern "C" fn resize_c_erased<BD: BitDepth>(
     _dst_ptr: *mut DynPixel,
     _dst_stride: isize,
@@ -1942,7 +2455,7 @@ unsafe extern "C" fn resize_c_erased<BD: BitDepth>(
     dx: i32,
     mx0: i32,
     bitdepth_max: i32,
-    src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    src: *const FFISafe<PicOffset>,
     dst: *const FFISafe<WithOffset<PicOrBuf<AlignedVec64<u8>>>>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `resize::Fn::call`.
@@ -1958,70 +2471,102 @@ unsafe extern "C" fn resize_c_erased<BD: BitDepth>(
 
 impl Rav1dMCDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
-        Self {
-            mc: enum_map!(Filter2d => mc::Fn; match key {
-                Regular8Tap => mc::Fn::new(put_c_erased::<BD, {Regular8Tap as _}>),
-                RegularSmooth8Tap => mc::Fn::new(put_c_erased::<BD, {RegularSmooth8Tap as _}>),
-                RegularSharp8Tap => mc::Fn::new(put_c_erased::<BD, {RegularSharp8Tap as _}>),
-                SharpRegular8Tap => mc::Fn::new(put_c_erased::<BD, {SharpRegular8Tap as _}>),
-                SharpSmooth8Tap => mc::Fn::new(put_c_erased::<BD, {SharpSmooth8Tap as _}>),
-                Sharp8Tap => mc::Fn::new(put_c_erased::<BD, {Sharp8Tap as _}>),
-                SmoothRegular8Tap => mc::Fn::new(put_c_erased::<BD, {SmoothRegular8Tap as _}>),
-                Smooth8Tap => mc::Fn::new(put_c_erased::<BD, {Smooth8Tap as _}>),
-                SmoothSharp8Tap => mc::Fn::new(put_c_erased::<BD, {SmoothSharp8Tap as _}>),
-                Bilinear => mc::Fn::new(put_c_erased::<BD, {Bilinear as _}>),
-            }),
-            mct: enum_map!(Filter2d => mct::Fn; match key {
-                Regular8Tap => mct::Fn::new(prep_c_erased::<BD, {Regular8Tap as _}>),
-                RegularSmooth8Tap => mct::Fn::new(prep_c_erased::<BD, {RegularSmooth8Tap as _}>),
-                RegularSharp8Tap => mct::Fn::new(prep_c_erased::<BD, {RegularSharp8Tap as _}>),
-                SharpRegular8Tap => mct::Fn::new(prep_c_erased::<BD, {SharpRegular8Tap as _}>),
-                SharpSmooth8Tap => mct::Fn::new(prep_c_erased::<BD, {SharpSmooth8Tap as _}>),
-                Sharp8Tap => mct::Fn::new(prep_c_erased::<BD, {Sharp8Tap as _}>),
-                SmoothRegular8Tap => mct::Fn::new(prep_c_erased::<BD, {SmoothRegular8Tap as _}>),
-                Smooth8Tap => mct::Fn::new(prep_c_erased::<BD, {Smooth8Tap as _}>),
-                SmoothSharp8Tap => mct::Fn::new(prep_c_erased::<BD, {SmoothSharp8Tap as _}>),
-                Bilinear => mct::Fn::new(prep_c_erased::<BD, {Bilinear as _}>),
-            }),
-            mc_scaled: enum_map!(Filter2d => mc_scaled::Fn; match key {
-                Regular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Regular8Tap as _}>),
-                RegularSmooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {RegularSmooth8Tap as _}>),
-                RegularSharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {RegularSharp8Tap as _}>),
-                SharpRegular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SharpRegular8Tap as _}>),
-                SharpSmooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SharpSmooth8Tap as _}>),
-                Sharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Sharp8Tap as _}>),
-                SmoothRegular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SmoothRegular8Tap as _}>),
-                Smooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Smooth8Tap as _}>),
-                SmoothSharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SmoothSharp8Tap as _}>),
-                Bilinear => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Bilinear as _}>),
-            }),
-            mct_scaled: enum_map!(Filter2d => mct_scaled::Fn; match key {
-                Regular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Regular8Tap as _}>),
-                RegularSmooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {RegularSmooth8Tap as _}>),
-                RegularSharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {RegularSharp8Tap as _}>),
-                SharpRegular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SharpRegular8Tap as _}>),
-                SharpSmooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SharpSmooth8Tap as _}>),
-                Sharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Sharp8Tap as _}>),
-                SmoothRegular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SmoothRegular8Tap as _}>),
-                Smooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Smooth8Tap as _}>),
-                SmoothSharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SmoothSharp8Tap as _}>),
-                Bilinear => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Bilinear as _}>),
-            }),
-            avg: avg::Fn::new(avg_c_erased::<BD>),
-            w_avg: w_avg::Fn::new(w_avg_c_erased::<BD>),
-            mask: mask::Fn::new(mask_c_erased::<BD>),
-            w_mask: enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                I420 => w_mask::Fn::new(w_mask_c_erased::<true, true, BD>),
-                I422 => w_mask::Fn::new(w_mask_c_erased::<true, false, BD>),
-                I444 => w_mask::Fn::new(w_mask_c_erased::<false, false, BD>),
-            }),
-            blend: blend::Fn::new(blend_c_erased::<BD>),
-            blend_v: blend_dir::Fn::new(blend_v_c_erased::<BD>),
-            blend_h: blend_dir::Fn::new(blend_h_c_erased::<BD>),
-            warp8x8: warp8x8::Fn::new(warp_affine_8x8_c_erased::<BD>),
-            warp8x8t: warp8x8t::Fn::new(warp_affine_8x8t_c_erased::<BD>),
-            emu_edge: emu_edge::Fn::new(emu_edge_c_erased::<BD>),
-            resize: resize::Fn::new(resize_c_erased::<BD>),
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                Self {
+                    mc: enum_map!(Filter2d => mc::Fn; match key {
+                        Regular8Tap => mc::Fn::new(put_c_erased::<BD, {Regular8Tap as _}>),
+                        RegularSmooth8Tap => mc::Fn::new(put_c_erased::<BD, {RegularSmooth8Tap as _}>),
+                        RegularSharp8Tap => mc::Fn::new(put_c_erased::<BD, {RegularSharp8Tap as _}>),
+                        SharpRegular8Tap => mc::Fn::new(put_c_erased::<BD, {SharpRegular8Tap as _}>),
+                        SharpSmooth8Tap => mc::Fn::new(put_c_erased::<BD, {SharpSmooth8Tap as _}>),
+                        Sharp8Tap => mc::Fn::new(put_c_erased::<BD, {Sharp8Tap as _}>),
+                        SmoothRegular8Tap => mc::Fn::new(put_c_erased::<BD, {SmoothRegular8Tap as _}>),
+                        Smooth8Tap => mc::Fn::new(put_c_erased::<BD, {Smooth8Tap as _}>),
+                        SmoothSharp8Tap => mc::Fn::new(put_c_erased::<BD, {SmoothSharp8Tap as _}>),
+                        Bilinear => mc::Fn::new(put_c_erased::<BD, {Bilinear as _}>),
+                    }),
+                    mct: enum_map!(Filter2d => mct::Fn; match key {
+                        Regular8Tap => mct::Fn::new(prep_c_erased::<BD, {Regular8Tap as _}>),
+                        RegularSmooth8Tap => mct::Fn::new(prep_c_erased::<BD, {RegularSmooth8Tap as _}>),
+                        RegularSharp8Tap => mct::Fn::new(prep_c_erased::<BD, {RegularSharp8Tap as _}>),
+                        SharpRegular8Tap => mct::Fn::new(prep_c_erased::<BD, {SharpRegular8Tap as _}>),
+                        SharpSmooth8Tap => mct::Fn::new(prep_c_erased::<BD, {SharpSmooth8Tap as _}>),
+                        Sharp8Tap => mct::Fn::new(prep_c_erased::<BD, {Sharp8Tap as _}>),
+                        SmoothRegular8Tap => mct::Fn::new(prep_c_erased::<BD, {SmoothRegular8Tap as _}>),
+                        Smooth8Tap => mct::Fn::new(prep_c_erased::<BD, {Smooth8Tap as _}>),
+                        SmoothSharp8Tap => mct::Fn::new(prep_c_erased::<BD, {SmoothSharp8Tap as _}>),
+                        Bilinear => mct::Fn::new(prep_c_erased::<BD, {Bilinear as _}>),
+                    }),
+                    mc_scaled: enum_map!(Filter2d => mc_scaled::Fn; match key {
+                        Regular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Regular8Tap as _}>),
+                        RegularSmooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {RegularSmooth8Tap as _}>),
+                        RegularSharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {RegularSharp8Tap as _}>),
+                        SharpRegular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SharpRegular8Tap as _}>),
+                        SharpSmooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SharpSmooth8Tap as _}>),
+                        Sharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Sharp8Tap as _}>),
+                        SmoothRegular8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SmoothRegular8Tap as _}>),
+                        Smooth8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Smooth8Tap as _}>),
+                        SmoothSharp8Tap => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {SmoothSharp8Tap as _}>),
+                        Bilinear => mc_scaled::Fn::new(put_scaled_c_erased::<BD, {Bilinear as _}>),
+                    }),
+                    mct_scaled: enum_map!(Filter2d => mct_scaled::Fn; match key {
+                        Regular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Regular8Tap as _}>),
+                        RegularSmooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {RegularSmooth8Tap as _}>),
+                        RegularSharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {RegularSharp8Tap as _}>),
+                        SharpRegular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SharpRegular8Tap as _}>),
+                        SharpSmooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SharpSmooth8Tap as _}>),
+                        Sharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Sharp8Tap as _}>),
+                        SmoothRegular8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SmoothRegular8Tap as _}>),
+                        Smooth8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Smooth8Tap as _}>),
+                        SmoothSharp8Tap => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {SmoothSharp8Tap as _}>),
+                        Bilinear => mct_scaled::Fn::new(prep_scaled_c_erased::<BD, {Bilinear as _}>),
+                    }),
+                    avg: avg::Fn::new(avg_c_erased::<BD>),
+                    w_avg: w_avg::Fn::new(w_avg_c_erased::<BD>),
+                    mask: mask::Fn::new(mask_c_erased::<BD>),
+                    w_mask: enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                        I420 => w_mask::Fn::new(w_mask_c_erased::<true, true, BD>),
+                        I422 => w_mask::Fn::new(w_mask_c_erased::<true, false, BD>),
+                        I444 => w_mask::Fn::new(w_mask_c_erased::<false, false, BD>),
+                    }),
+                    blend: blend::Fn::new(blend_c_erased::<BD>),
+                    blend_v: blend_dir::Fn::new(blend_v_c_erased::<BD>),
+                    blend_h: blend_dir::Fn::new(blend_h_c_erased::<BD>),
+                    warp8x8: warp8x8::Fn::new(warp_affine_8x8_c_erased::<BD>),
+                    warp8x8t: warp8x8t::Fn::new(warp_affine_8x8t_c_erased::<BD>),
+                    emu_edge: emu_edge::Fn::new(emu_edge_c_erased::<BD>),
+                    resize: resize::Fn::new(resize_c_erased::<BD>),
+                }
+            } else {
+                Self {
+                    mc: enum_map!(Filter2d => mc::Fn; match key {
+                        _ => mc::Fn::DEFAULT,
+                    }),
+                    mct: enum_map!(Filter2d => mct::Fn; match key {
+                        _ => mct::Fn::DEFAULT,
+                    }),
+                    mc_scaled: enum_map!(Filter2d => mc_scaled::Fn; match key {
+                        _ => mc_scaled::Fn::DEFAULT,
+                    }),
+                    mct_scaled: enum_map!(Filter2d => mct_scaled::Fn; match key {
+                        _ => mct_scaled::Fn::DEFAULT,
+                    }),
+                    avg: avg::Fn::DEFAULT,
+                    w_avg: w_avg::Fn::DEFAULT,
+                    mask: mask::Fn::DEFAULT,
+                    w_mask: enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
+                        _ => w_mask::Fn::DEFAULT,
+                    }),
+                    blend: blend::Fn::DEFAULT,
+                    blend_v: blend_dir::Fn::DEFAULT,
+                    blend_h: blend_dir::Fn::DEFAULT,
+                    warp8x8: warp8x8::Fn::DEFAULT,
+                    warp8x8t: warp8x8t::Fn::DEFAULT,
+                    emu_edge: emu_edge::Fn::DEFAULT,
+                    resize: resize::Fn::DEFAULT,
+                }
+            }
         }
     }
 
@@ -2515,229 +3060,6 @@ impl Rav1dMCDSPContext {
         self
     }
 
-    /// Safe SIMD initialization for x86/x86_64 without hand-written assembly.
-    /// Uses Rust intrinsics via archmage/safe_unaligned_simd instead.
-    #[cfg(all(
-        not(feature = "asm"),
-        not(feature = "asm"),
-        any(target_arch = "x86", target_arch = "x86_64")
-    ))]
-    #[inline(always)]
-    const fn init_x86_safe_simd<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::mc as safe_mc;
-
-        if !flags.contains(CpuFlags::AVX2) {
-            // For now, require AVX2. Could add SSE4/SSSE3 paths later.
-            return self;
-        }
-
-        // Motion compensation blend functions
-        self.avg = match BD::BPC {
-            BPC::BPC8 => avg::decl_fn_safe!(safe_mc::avg_8bpc_avx2),
-            BPC::BPC16 => avg::decl_fn_safe!(safe_mc::avg_16bpc_avx2),
-        };
-        self.w_avg = match BD::BPC {
-            BPC::BPC8 => w_avg::decl_fn_safe!(safe_mc::w_avg_8bpc_avx2),
-            BPC::BPC16 => w_avg::decl_fn_safe!(safe_mc::w_avg_16bpc_avx2),
-        };
-        self.mask = match BD::BPC {
-            BPC::BPC8 => mask::decl_fn_safe!(safe_mc::mask_8bpc_avx2),
-            BPC::BPC16 => mask::decl_fn_safe!(safe_mc::mask_16bpc_avx2),
-        };
-        self.blend = match BD::BPC {
-            BPC::BPC8 => blend::decl_fn_safe!(safe_mc::blend_8bpc_avx2),
-            BPC::BPC16 => blend::decl_fn_safe!(safe_mc::blend_16bpc_avx2),
-        };
-        self.blend_v = match BD::BPC {
-            BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc::blend_v_8bpc_avx2),
-            BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_v_16bpc_avx2),
-        };
-        self.blend_h = match BD::BPC {
-            BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc::blend_h_8bpc_avx2),
-            BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_h_16bpc_avx2),
-        };
-
-        // w_mask
-        self.w_mask = match BD::BPC {
-            BPC::BPC8 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                I420 => w_mask::decl_fn_safe!(safe_mc::w_mask_420_8bpc_avx2),
-                I422 => w_mask::decl_fn_safe!(safe_mc::w_mask_422_8bpc_avx2),
-                I444 => w_mask::decl_fn_safe!(safe_mc::w_mask_444_8bpc_avx2),
-            }),
-            BPC::BPC16 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                I420 => w_mask::decl_fn_safe!(safe_mc::w_mask_420_16bpc_avx2),
-                I422 => w_mask::decl_fn_safe!(safe_mc::w_mask_422_16bpc_avx2),
-                I444 => w_mask::decl_fn_safe!(safe_mc::w_mask_444_16bpc_avx2),
-            }),
-        };
-
-        // mc (put_8tap + bilinear) and mct (prep_8tap + bilinear)
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.mc = enum_map!(Filter2d => mc::Fn; match key {
-                    Regular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_8bpc_avx2),
-                    RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_smooth_8bpc_avx2),
-                    RegularSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_sharp_8bpc_avx2),
-                    SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_regular_8bpc_avx2),
-                    Smooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_8bpc_avx2),
-                    SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_sharp_8bpc_avx2),
-                    SharpRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_regular_8bpc_avx2),
-                    SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_smooth_8bpc_avx2),
-                    Sharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_8bpc_avx2),
-                    Bilinear => mc::decl_fn_safe!(safe_mc::put_bilin_8bpc_avx2),
-                });
-                self.mct = enum_map!(Filter2d => mct::Fn; match key {
-                    Regular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_8bpc_avx2),
-                    RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_smooth_8bpc_avx2),
-                    RegularSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_sharp_8bpc_avx2),
-                    SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_regular_8bpc_avx2),
-                    Smooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_8bpc_avx2),
-                    SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_sharp_8bpc_avx2),
-                    SharpRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_regular_8bpc_avx2),
-                    SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_smooth_8bpc_avx2),
-                    Sharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_8bpc_avx2),
-                    Bilinear => mct::decl_fn_safe!(safe_mc::prep_bilin_8bpc_avx2),
-                });
-            }
-            BPC::BPC16 => {
-                self.mc = enum_map!(Filter2d => mc::Fn; match key {
-                    Regular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_16bpc_avx2),
-                    RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_smooth_16bpc_avx2),
-                    RegularSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_sharp_16bpc_avx2),
-                    SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_regular_16bpc_avx2),
-                    Smooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_16bpc_avx2),
-                    SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_sharp_16bpc_avx2),
-                    SharpRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_regular_16bpc_avx2),
-                    SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_smooth_16bpc_avx2),
-                    Sharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_16bpc_avx2),
-                    Bilinear => mc::decl_fn_safe!(safe_mc::put_bilin_16bpc_avx2),
-                });
-                self.mct = enum_map!(Filter2d => mct::Fn; match key {
-                    Regular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_16bpc_avx2),
-                    RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_smooth_16bpc_avx2),
-                    RegularSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_sharp_16bpc_avx2),
-                    SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_regular_16bpc_avx2),
-                    Smooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_16bpc_avx2),
-                    SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_sharp_16bpc_avx2),
-                    SharpRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_regular_16bpc_avx2),
-                    SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_smooth_16bpc_avx2),
-                    Sharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_16bpc_avx2),
-                    Bilinear => mct::decl_fn_safe!(safe_mc::prep_bilin_16bpc_avx2),
-                });
-            }
-        }
-
-        // mc_scaled/mct_scaled/warp/emu_edge/resize use pure Rust defaults for now
-
-        self
-    }
-
-    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::mc_arm as safe_mc_arm;
-
-        // NEON is always available on aarch64
-        self.avg = match BD::BPC {
-            BPC::BPC8 => avg::decl_fn_safe!(safe_mc_arm::avg_8bpc_neon),
-            BPC::BPC16 => avg::decl_fn_safe!(safe_mc_arm::avg_16bpc_neon),
-        };
-        self.w_avg = match BD::BPC {
-            BPC::BPC8 => w_avg::decl_fn_safe!(safe_mc_arm::w_avg_8bpc_neon),
-            BPC::BPC16 => w_avg::decl_fn_safe!(safe_mc_arm::w_avg_16bpc_neon),
-        };
-        self.mask = match BD::BPC {
-            BPC::BPC8 => mask::decl_fn_safe!(safe_mc_arm::mask_8bpc_neon),
-            BPC::BPC16 => mask::decl_fn_safe!(safe_mc_arm::mask_16bpc_neon),
-        };
-        self.blend = match BD::BPC {
-            BPC::BPC8 => blend::decl_fn_safe!(safe_mc_arm::blend_8bpc_neon),
-            BPC::BPC16 => blend::decl_fn_safe!(safe_mc_arm::blend_16bpc_neon),
-        };
-
-        self.blend_v = match BD::BPC {
-            BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_v_8bpc_neon),
-            BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_v_16bpc_neon),
-        };
-        self.blend_h = match BD::BPC {
-            BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_h_8bpc_neon),
-            BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc_arm::blend_h_16bpc_neon),
-        };
-
-        // w_mask for 8bpc and 16bpc
-        self.w_mask = match BD::BPC {
-            BPC::BPC8 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                I420 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_420_8bpc_neon),
-                I422 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_422_8bpc_neon),
-                I444 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_444_8bpc_neon),
-            }),
-            BPC::BPC16 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                I420 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_420_16bpc_neon),
-                I422 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_422_16bpc_neon),
-                I444 => w_mask::decl_fn_safe!(safe_mc_arm::w_mask_444_16bpc_neon),
-            }),
-        };
-
-        // mc (put_8tap + bilinear) and mct (prep_8tap + bilinear)
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.mc = enum_map!(Filter2d => mc::Fn; match key {
-                    Regular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_8bpc_neon),
-                    RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_smooth_8bpc_neon),
-                    RegularSharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_sharp_8bpc_neon),
-                    SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_regular_8bpc_neon),
-                    Smooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_8bpc_neon),
-                    SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_sharp_8bpc_neon),
-                    SharpRegular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_regular_8bpc_neon),
-                    SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_smooth_8bpc_neon),
-                    Sharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_8bpc_neon),
-                    Bilinear => mc::decl_fn_safe!(safe_mc_arm::put_bilin_8bpc_neon),
-                });
-                self.mct = enum_map!(Filter2d => mct::Fn; match key {
-                    Regular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_8bpc_neon),
-                    RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_smooth_8bpc_neon),
-                    RegularSharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_sharp_8bpc_neon),
-                    SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_regular_8bpc_neon),
-                    Smooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_8bpc_neon),
-                    SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_sharp_8bpc_neon),
-                    SharpRegular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_regular_8bpc_neon),
-                    SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_smooth_8bpc_neon),
-                    Sharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_8bpc_neon),
-                    Bilinear => mct::decl_fn_safe!(safe_mc_arm::prep_bilin_8bpc_neon),
-                });
-            }
-            BPC::BPC16 => {
-                self.mc = enum_map!(Filter2d => mc::Fn; match key {
-                    Regular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_16bpc_neon),
-                    RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_smooth_16bpc_neon),
-                    RegularSharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_regular_sharp_16bpc_neon),
-                    SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_regular_16bpc_neon),
-                    Smooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_16bpc_neon),
-                    SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_smooth_sharp_16bpc_neon),
-                    SharpRegular8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_regular_16bpc_neon),
-                    SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_smooth_16bpc_neon),
-                    Sharp8Tap => mc::decl_fn_safe!(safe_mc_arm::put_8tap_sharp_16bpc_neon),
-                    Bilinear => mc::decl_fn_safe!(safe_mc_arm::put_bilin_16bpc_neon),
-                });
-                self.mct = enum_map!(Filter2d => mct::Fn; match key {
-                    Regular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_16bpc_neon),
-                    RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_smooth_16bpc_neon),
-                    RegularSharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_regular_sharp_16bpc_neon),
-                    SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_regular_16bpc_neon),
-                    Smooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_16bpc_neon),
-                    SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_smooth_sharp_16bpc_neon),
-                    SharpRegular8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_regular_16bpc_neon),
-                    SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_smooth_16bpc_neon),
-                    Sharp8Tap => mct::decl_fn_safe!(safe_mc_arm::prep_8tap_sharp_16bpc_neon),
-                    Bilinear => mct::decl_fn_safe!(safe_mc_arm::prep_bilin_16bpc_neon),
-                });
-            }
-        }
-
-        self
-    }
-
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -2750,24 +3072,6 @@ impl Rav1dMCDSPContext {
             {
                 return self.init_arm::<BD>(flags);
             }
-        }
-
-        #[cfg(all(
-            not(feature = "asm"),
-            not(feature = "asm"),
-            any(target_arch = "x86", target_arch = "x86_64")
-        ))]
-        {
-            return self.init_x86_safe_simd::<BD>(flags);
-        }
-
-        #[cfg(all(
-            not(feature = "asm"),
-            not(feature = "asm"),
-            target_arch = "aarch64"
-        ))]
-        {
-            return self.init_arm_safe_simd::<BD>(flags);
         }
 
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.

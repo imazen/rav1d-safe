@@ -1,7 +1,10 @@
 use crate::src::c_arc::CArc;
+#[cfg(feature = "c-ffi")]
 use crate::src::c_arc::RawCArc;
+#[cfg(feature = "c-ffi")]
 use std::ptr::NonNull;
 
+#[cfg(feature = "c-ffi")]
 #[derive(Default)]
 #[repr(C)]
 pub struct Dav1dUserData {
@@ -11,6 +14,7 @@ pub struct Dav1dUserData {
 
 pub(crate) type Rav1dUserData = Option<CArc<u8>>;
 
+#[cfg(feature = "c-ffi")]
 impl From<Dav1dUserData> for Rav1dUserData {
     fn from(value: Dav1dUserData) -> Self {
         let Dav1dUserData { data: _, r#ref } = value;
@@ -21,6 +25,7 @@ impl From<Dav1dUserData> for Rav1dUserData {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Rav1dUserData> for Dav1dUserData {
     fn from(value: Rav1dUserData) -> Self {
         Self {
@@ -30,6 +35,7 @@ impl From<Rav1dUserData> for Dav1dUserData {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 #[derive(Default)]
 #[repr(C)]
 pub struct Dav1dDataProps {
@@ -62,6 +68,7 @@ impl Default for Rav1dDataProps {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Dav1dDataProps> for Rav1dDataProps {
     fn from(value: Dav1dDataProps) -> Self {
         let Dav1dDataProps {
@@ -81,6 +88,7 @@ impl From<Dav1dDataProps> for Rav1dDataProps {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl From<Rav1dDataProps> for Dav1dDataProps {
     fn from(value: Rav1dDataProps) -> Self {
         let Rav1dDataProps {

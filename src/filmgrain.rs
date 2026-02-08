@@ -1,5 +1,4 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynEntry;
@@ -9,9 +8,8 @@ use crate::include::common::intops::iclip;
 use crate::include::dav1d::headers::Dav1dFilmGrainData;
 use crate::include::dav1d::headers::Rav1dFilmGrainData;
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
+use crate::include::dav1d::picture::PicOffset;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
-use crate::include::dav1d::picture::Rav1dPictureDataComponentOffset;
-use crate::src::assume::assume;
 use crate::src::cpu::CpuFlags;
 use crate::src::enum_map::enum_map;
 use crate::src::enum_map::enum_map_ty;
@@ -30,6 +28,7 @@ use std::mem;
 use std::ops::Add;
 use std::ops::Shl;
 use std::ops::Shr;
+#[cfg(feature = "asm")]
 use std::ptr;
 use to_method::To;
 
@@ -54,17 +53,24 @@ wrap_fn_ptr!(pub unsafe extern "C" fn generate_grain_y(
 ) -> ());
 
 impl generate_grain_y::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         buf: &mut GrainLut<BD::Entry>,
         data: &Rav1dFilmGrainData,
         bd: BD,
     ) {
-        let buf = ptr::from_mut(buf).cast();
-        let data = &data.clone().into();
-        let bd = bd.into_c();
-        // SAFETY: Fallback `fn generate_grain_y_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(buf, data, bd) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let buf = ptr::from_mut(buf).cast();
+                let data = &data.clone().into();
+                let bd = bd.into_c();
+                // SAFETY: Fallback `fn generate_grain_y_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(buf, data, bd) }
+            } else {
+                generate_grain_y_direct::<BD>(buf, data, bd)
+            }
+        }
     }
 }
 
@@ -77,21 +83,30 @@ wrap_fn_ptr!(pub unsafe extern "C" fn generate_grain_uv(
 ) -> ());
 
 impl generate_grain_uv::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
+        layout: Rav1dPixelLayoutSubSampled,
         buf: &mut GrainLut<BD::Entry>,
         buf_y: &GrainLut<BD::Entry>,
         data: &Rav1dFilmGrainData,
         is_uv: bool,
         bd: BD,
     ) {
-        let buf = ptr::from_mut(buf).cast();
-        let buf_y = ptr::from_ref(buf_y).cast();
-        let data = &data.clone().into();
-        let uv = is_uv.into();
-        let bd = bd.into_c();
-        // SAFETY: Fallback `fn generate_grain_uv_rust` is safe; asm is supposed to do the same.
-        unsafe { self.get()(buf, buf_y, data, uv, bd) }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let _ = layout;
+                let buf = ptr::from_mut(buf).cast();
+                let buf_y = ptr::from_ref(buf_y).cast();
+                let data = &data.clone().into();
+                let uv = is_uv.into();
+                let bd = bd.into_c();
+                // SAFETY: Fallback `fn generate_grain_uv_rust` is safe; asm is supposed to do the same.
+                unsafe { self.get()(buf, buf_y, data, uv, bd) }
+            } else {
+                generate_grain_uv_direct::<BD>(layout, buf, buf_y, data, is_uv, bd)
+            }
+        }
     }
 }
 
@@ -106,11 +121,12 @@ wrap_fn_ptr!(pub unsafe extern "C" fn fgy_32x32xn(
     bh: c_int,
     row_num: c_int,
     bitdepth_max: c_int,
-    _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src_src: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst_row: *const FFISafe<PicOffset>,
+    _src_src: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl fgy_32x32xn::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         dst: &Rav1dPictureDataComponent,
@@ -123,36 +139,42 @@ impl fgy_32x32xn::Fn {
         row_num: usize,
         bd: BD,
     ) {
-        let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
-        let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
-        let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
-        let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
-        let src_row_ptr = src_row.as_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let data = &data.clone().into();
-        let scaling = ptr::from_ref(scaling).cast();
-        let grain_lut = ptr::from_ref(grain_lut).cast();
-        let bh = bh as c_int;
-        let row_num = row_num as c_int;
-        let bd = bd.into_c();
-        let dst_row = FFISafe::new(&dst_row);
-        let src_row = FFISafe::new(&src_row);
-        // SAFETY: Fallback `fn fgy_32x32xn_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_row_ptr,
-                src_row_ptr,
-                stride,
-                data,
-                pw,
-                scaling,
-                grain_lut,
-                bh,
-                row_num,
-                bd,
-                dst_row,
-                src_row,
-            )
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
+                let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
+                let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
+                let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
+                let src_row_ptr = src_row.as_ptr::<BD>().cast();
+                let stride = dst.stride();
+                let data = &data.clone().into();
+                let scaling = ptr::from_ref(scaling).cast();
+                let grain_lut = ptr::from_ref(grain_lut).cast();
+                let bh = bh as c_int;
+                let row_num = row_num as c_int;
+                let bd = bd.into_c();
+                let dst_row = FFISafe::new(&dst_row);
+                let src_row = FFISafe::new(&src_row);
+                // SAFETY: Fallback `fn fgy_32x32xn_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_row_ptr,
+                        src_row_ptr,
+                        stride,
+                        data,
+                        pw,
+                        scaling,
+                        grain_lut,
+                        bh,
+                        row_num,
+                        bd,
+                        dst_row,
+                        src_row,
+                    )
+                }
+            } else {
+                fgy_32x32xn_direct::<BD>(dst, src, data, pw, scaling, grain_lut, bh, row_num, bd)
+            }
         }
     }
 }
@@ -172,12 +194,13 @@ wrap_fn_ptr!(pub unsafe extern "C" fn fguv_32x32xn(
     uv_pl: c_int,
     is_id: c_int,
     bitdepth_max: c_int,
-    _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    _luma_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    _dst_row: *const FFISafe<PicOffset>,
+    _src_row: *const FFISafe<PicOffset>,
+    _luma_row: *const FFISafe<PicOffset>,
 ) -> ());
 
 impl fguv_32x32xn::Fn {
+    #[allow(dead_code)]
     pub fn call<BD: BitDepth>(
         &self,
         layout: Rav1dPixelLayoutSubSampled,
@@ -194,49 +217,199 @@ impl fguv_32x32xn::Fn {
         is_id: bool,
         bd: BD,
     ) {
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
+                let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
+                let dst_row = dst.with_offset::<BD>() + (row_strides * dst.pixel_stride::<BD>() >> ss_y);
+                let src_row = src.with_offset::<BD>() + (row_strides * src.pixel_stride::<BD>() >> ss_y);
+                let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
+                let src_row_ptr = src_row.as_ptr::<BD>().cast();
+                let stride = dst.stride();
+                let data = &data.clone().into();
+                let scaling = (scaling as *const BD::Scaling).cast();
+                let grain_lut = (grain_lut as *const GrainLut<BD::Entry>).cast();
+                let bh = bh as c_int;
+                let row_num = row_num as c_int;
+                let luma_row = luma.with_offset::<BD>() + (row_strides * luma.pixel_stride::<BD>());
+                let luma_row_ptr = luma_row.as_ptr::<BD>().cast();
+                let luma_stride = luma.stride();
+                let uv_pl = is_uv as c_int;
+                let is_id = is_id as c_int;
+                let bd = bd.into_c();
+                let dst_row = FFISafe::new(&dst_row);
+                let src_row = FFISafe::new(&src_row);
+                let luma_row = FFISafe::new(&luma_row);
+                // SAFETY: Fallback `fn fguv_32x32xn_rust` is safe; asm is supposed to do the same.
+                unsafe {
+                    self.get()(
+                        dst_row_ptr,
+                        src_row_ptr,
+                        stride,
+                        data,
+                        pw,
+                        scaling,
+                        grain_lut,
+                        bh,
+                        row_num,
+                        luma_row_ptr,
+                        luma_stride,
+                        uv_pl,
+                        is_id,
+                        bd,
+                        dst_row,
+                        src_row,
+                        luma_row,
+                    )
+                }
+            } else {
+                fguv_32x32xn_direct::<BD>(layout, dst, src, data, pw, scaling, grain_lut, bh, row_num, luma, is_uv, is_id, bd)
+            }
+        }
+    }
+}
+
+/// Direct dispatch for generate_grain_y - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn generate_grain_y_direct<BD: BitDepth>(
+    buf: &mut GrainLut<BD::Entry>,
+    data: &Rav1dFilmGrainData,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::filmgrain::generate_grain_y_dispatch::<BD>(buf, data, bd) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::filmgrain_arm::generate_grain_y_dispatch::<BD>(buf, data, bd) {
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    generate_grain_y_rust(buf, data, bd);
+}
+
+/// Direct dispatch for generate_grain_uv - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn generate_grain_uv_direct<BD: BitDepth>(
+    layout: Rav1dPixelLayoutSubSampled,
+    buf: &mut GrainLut<BD::Entry>,
+    buf_y: &GrainLut<BD::Entry>,
+    data: &Rav1dFilmGrainData,
+    is_uv: bool,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::filmgrain::generate_grain_uv_dispatch::<BD>(
+        layout, buf, buf_y, data, is_uv, bd,
+    ) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::filmgrain_arm::generate_grain_uv_dispatch::<BD>(
+        layout, buf, buf_y, data, is_uv, bd,
+    ) {
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    {
+        let (is_subx, is_suby) = match layout {
+            Rav1dPixelLayoutSubSampled::I420 => (true, true),
+            Rav1dPixelLayoutSubSampled::I422 => (true, false),
+            Rav1dPixelLayoutSubSampled::I444 => (false, false),
+        };
+        generate_grain_uv_rust(buf, buf_y, data, is_uv, is_subx, is_suby, bd);
+    }
+}
+
+/// Direct dispatch for fgy_32x32xn - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn fgy_32x32xn_direct<BD: BitDepth>(
+    dst: &Rav1dPictureDataComponent,
+    src: &Rav1dPictureDataComponent,
+    data: &Rav1dFilmGrainData,
+    pw: usize,
+    scaling: &BD::Scaling,
+    grain_lut: &GrainLut<BD::Entry>,
+    bh: usize,
+    row_num: usize,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::filmgrain::fgy_32x32xn_dispatch::<BD>(
+        dst, src, data, pw, scaling, grain_lut, bh, row_num, bd,
+    ) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::filmgrain_arm::fgy_32x32xn_dispatch::<BD>(
+        dst, src, data, pw, scaling, grain_lut, bh, row_num, bd,
+    ) {
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    {
+        let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
+        let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
+        let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
+        fgy_32x32xn_rust(
+            dst_row, src_row, data, pw, scaling, grain_lut, bh, row_num, bd,
+        );
+    }
+}
+
+/// Direct dispatch for fguv_32x32xn - bypasses function pointer table.
+#[cfg(not(feature = "asm"))]
+fn fguv_32x32xn_direct<BD: BitDepth>(
+    layout: Rav1dPixelLayoutSubSampled,
+    dst: &Rav1dPictureDataComponent,
+    src: &Rav1dPictureDataComponent,
+    data: &Rav1dFilmGrainData,
+    pw: usize,
+    scaling: &BD::Scaling,
+    grain_lut: &GrainLut<BD::Entry>,
+    bh: usize,
+    row_num: usize,
+    luma: &Rav1dPictureDataComponent,
+    is_uv: bool,
+    is_id: bool,
+    bd: BD,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::filmgrain::fguv_32x32xn_dispatch::<BD>(
+        layout, dst, src, data, pw, scaling, grain_lut, bh, row_num, luma, is_uv, is_id, bd,
+    ) {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::filmgrain_arm::fguv_32x32xn_dispatch::<BD>(
+        layout, dst, src, data, pw, scaling, grain_lut, bh, row_num, luma, is_uv, is_id, bd,
+    ) {
+        return;
+    }
+
+    // Scalar fallback
+    #[allow(unreachable_code)]
+    {
         let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
         let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
         let dst_row = dst.with_offset::<BD>() + (row_strides * dst.pixel_stride::<BD>() >> ss_y);
         let src_row = src.with_offset::<BD>() + (row_strides * src.pixel_stride::<BD>() >> ss_y);
-        let dst_row_ptr = dst_row.as_mut_ptr::<BD>().cast();
-        let src_row_ptr = src_row.as_ptr::<BD>().cast();
-        let stride = dst.stride();
-        let data = &data.clone().into();
-        let scaling = (scaling as *const BD::Scaling).cast();
-        let grain_lut = (grain_lut as *const GrainLut<BD::Entry>).cast();
-        let bh = bh as c_int;
-        let row_num = row_num as c_int;
         let luma_row = luma.with_offset::<BD>() + (row_strides * luma.pixel_stride::<BD>());
-        let luma_row_ptr = luma_row.as_ptr::<BD>().cast();
-        let luma_stride = luma.stride();
-        let uv_pl = is_uv as c_int;
-        let is_id = is_id as c_int;
-        let bd = bd.into_c();
-        let dst_row = FFISafe::new(&dst_row);
-        let src_row = FFISafe::new(&src_row);
-        let luma_row = FFISafe::new(&luma_row);
-        // SAFETY: Fallback `fn fguv_32x32xn_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_row_ptr,
-                src_row_ptr,
-                stride,
-                data,
-                pw,
-                scaling,
-                grain_lut,
-                bh,
-                row_num,
-                luma_row_ptr,
-                luma_stride,
-                uv_pl,
-                is_id,
-                bd,
-                dst_row,
-                src_row,
-                luma_row,
-            )
-        }
+        let (is_sx, is_sy) = match layout {
+            Rav1dPixelLayoutSubSampled::I420 => (true, true),
+            Rav1dPixelLayoutSubSampled::I422 => (true, false),
+            Rav1dPixelLayoutSubSampled::I444 => (false, false),
+        };
+        fguv_32x32xn_rust(
+            dst_row, src_row, data, pw, scaling, grain_lut, bh, row_num, luma_row, is_uv, is_id,
+            is_sx, is_sy, bd,
+        );
     }
 }
 
@@ -280,6 +453,7 @@ fn row_seed(rows: usize, row_num: usize, data: &Rav1dFilmGrainData) -> [c_uint; 
 /// # Safety
 ///
 /// Must be called by [`generate_grain_y::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn generate_grain_y_c_erased<BD: BitDepth>(
     buf: *mut GrainLut<DynEntry>,
@@ -445,12 +619,9 @@ fn generate_grain_uv_rust<BD: BitDepth>(
                         let mut luma = 0;
                         let (luma_y, luma_x) = is_sub.luma((y, x));
                         const _: () = IsSub::check_buf_index_all(&None::<GrainLut<()>>);
-                        // The optimizer is not smart enough to deduce this on its own.
-                        // SAFETY: The above static check checks all maximum index possibilities.
-                        unsafe {
-                            assume(luma_y < GRAIN_HEIGHT + 1 - 1);
-                            assume(luma_x < GRAIN_WIDTH - 1);
-                        }
+                        // The static check above proves these bounds at compile time.
+                        assert!(luma_y < GRAIN_HEIGHT + 1 - 1);
+                        assert!(luma_x < GRAIN_WIDTH - 1);
                         for i in 0..1 + is_sub.y as usize {
                             for j in 0..1 + is_sub.x as usize {
                                 luma += buf_y[luma_y + i][luma_x + j].as_::<c_int>();
@@ -476,6 +647,7 @@ fn generate_grain_uv_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`generate_grain_uv::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 #[inline(never)]
 unsafe extern "C" fn generate_grain_uv_c_erased<
@@ -526,6 +698,7 @@ fn sample_lut<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`fgy_32x32xn::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn fgy_32x32xn_c_erased<BD: BitDepth>(
     _dst_row_ptr: *mut DynPixel,
@@ -538,8 +711,8 @@ unsafe extern "C" fn fgy_32x32xn_c_erased<BD: BitDepth>(
     bh: c_int,
     row_num: c_int,
     bitdepth_max: c_int,
-    dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_row: *const FFISafe<PicOffset>,
+    src_row: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `fgy_32x32xn::Fn::call`.
     let [dst_row, src_row] = [dst_row, src_row].map(|it| *unsafe { FFISafe::get(it) });
@@ -557,8 +730,8 @@ unsafe extern "C" fn fgy_32x32xn_c_erased<BD: BitDepth>(
 }
 
 fn fgy_32x32xn_rust<BD: BitDepth>(
-    dst_row: Rav1dPictureDataComponentOffset,
-    src_row: Rav1dPictureDataComponentOffset,
+    dst_row: PicOffset,
+    src_row: PicOffset,
     data: &Rav1dFilmGrainData,
     pw: usize,
     scaling: &BD::Scaling,
@@ -692,15 +865,15 @@ fn fgy_32x32xn_rust<BD: BitDepth>(
 }
 
 fn fguv_32x32xn_rust<BD: BitDepth>(
-    dst_row: Rav1dPictureDataComponentOffset,
-    src_row: Rav1dPictureDataComponentOffset,
+    dst_row: PicOffset,
+    src_row: PicOffset,
     data: &Rav1dFilmGrainData,
     pw: usize,
     scaling: &BD::Scaling,
     grain_lut: &GrainLut<BD::Entry>,
     bh: usize,
     row_num: usize,
-    luma_row: Rav1dPictureDataComponentOffset,
+    luma_row: PicOffset,
     is_uv: bool,
     is_id: bool,
     is_sx: bool,
@@ -855,6 +1028,7 @@ fn fguv_32x32xn_rust<BD: BitDepth>(
 /// # Safety
 ///
 /// Must be called by [`fguv_32x32xn::Fn::call`].
+#[cfg(feature = "asm")]
 #[deny(unsafe_op_in_unsafe_fn)]
 #[inline(never)]
 unsafe extern "C" fn fguv_32x32xn_c_erased<
@@ -877,9 +1051,9 @@ unsafe extern "C" fn fguv_32x32xn_c_erased<
     uv_pl: c_int,
     is_id: c_int,
     bitdepth_max: c_int,
-    dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-    luma_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+    dst_row: *const FFISafe<PicOffset>,
+    src_row: *const FFISafe<PicOffset>,
+    luma_row: *const FFISafe<PicOffset>,
 ) {
     let [dst_row, src_row, luma_row] = [dst_row, src_row, luma_row].map(|row| {
         // SAFETY: Was passed as `FFISafe::new(_)` in `fguv_32x32xn::Fn::call`.
@@ -990,8 +1164,8 @@ mod neon {
         bh: c_int,
         row_num: c_int,
         bitdepth_max: c_int,
-        _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-        _src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        _dst_row: *const FFISafe<PicOffset>,
+        _src_row: *const FFISafe<PicOffset>,
     ) {
         let dst_row = dst_row_ptr.cast();
         let src_row = src_row_ptr.cast();
@@ -1154,9 +1328,9 @@ mod neon {
         uv: c_int,
         is_id: c_int,
         bitdepth_max: c_int,
-        _dst_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-        _src_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
-        _luma_row: *const FFISafe<Rav1dPictureDataComponentOffset>,
+        _dst_row: *const FFISafe<PicOffset>,
+        _src_row: *const FFISafe<PicOffset>,
+        _luma_row: *const FFISafe<PicOffset>,
     ) {
         let dst_row = dst_row_ptr.cast();
         let src_row = src_row_ptr.cast();
@@ -1263,19 +1437,38 @@ mod neon {
 
 impl Rav1dFilmGrainDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
-        Self {
-            generate_grain_y: generate_grain_y::Fn::new(generate_grain_y_c_erased::<BD>),
-            generate_grain_uv: enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
-                I420 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 420, true, true>),
-                I422 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 422, true, false>),
-                I444 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 444, false, false>),
-            }),
-            fgy_32x32xn: fgy_32x32xn::Fn::new(fgy_32x32xn_c_erased::<BD>),
-            fguv_32x32xn: enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
-                I420 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 420, true, true>),
-                I422 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 422, true, false>),
-                I444 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 444, false, false>),
-            }),
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "asm")] {
+                Self {
+                    generate_grain_y: generate_grain_y::Fn::new(generate_grain_y_c_erased::<BD>),
+                    generate_grain_uv: enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
+                        I420 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 420, true, true>),
+                        I422 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 422, true, false>),
+                        I444 => generate_grain_uv::Fn::new(generate_grain_uv_c_erased::<BD, 444, false, false>),
+                    }),
+                    fgy_32x32xn: fgy_32x32xn::Fn::new(fgy_32x32xn_c_erased::<BD>),
+                    fguv_32x32xn: enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
+                        I420 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 420, true, true>),
+                        I422 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 422, true, false>),
+                        I444 => fguv_32x32xn::Fn::new(fguv_32x32xn_c_erased::<BD, 444, false, false>),
+                    }),
+                }
+            } else {
+                Self {
+                    generate_grain_y: generate_grain_y::Fn::DEFAULT,
+                    generate_grain_uv: enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
+                        I420 => generate_grain_uv::Fn::DEFAULT,
+                        I422 => generate_grain_uv::Fn::DEFAULT,
+                        I444 => generate_grain_uv::Fn::DEFAULT,
+                    }),
+                    fgy_32x32xn: fgy_32x32xn::Fn::DEFAULT,
+                    fguv_32x32xn: enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
+                        I420 => fguv_32x32xn::Fn::DEFAULT,
+                        I422 => fguv_32x32xn::Fn::DEFAULT,
+                        I444 => fguv_32x32xn::Fn::DEFAULT,
+                    }),
+                }
+            }
         }
     }
 
@@ -1363,94 +1556,6 @@ impl Rav1dFilmGrainDSPContext {
         self
     }
 
-    #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-    #[inline(always)]
-    const fn init_x86_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::filmgrain as safe_fg;
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.generate_grain_y =
-                    generate_grain_y::Fn::new(safe_fg::generate_grain_y_8bpc_avx2);
-                self.generate_grain_uv = enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
-                    I420 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_420_8bpc_avx2),
-                    I422 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_422_8bpc_avx2),
-                    I444 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_444_8bpc_avx2),
-                });
-                self.fgy_32x32xn =
-                    fgy_32x32xn::Fn::new(safe_fg::fgy_32x32xn_8bpc_avx2);
-                self.fguv_32x32xn = enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
-                    I420 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i420_8bpc_avx2),
-                    I422 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i422_8bpc_avx2),
-                    I444 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i444_8bpc_avx2),
-                });
-            }
-            BPC::BPC16 => {
-                self.generate_grain_y =
-                    generate_grain_y::Fn::new(safe_fg::generate_grain_y_16bpc_avx2);
-                self.generate_grain_uv = enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
-                    I420 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_420_16bpc_avx2),
-                    I422 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_422_16bpc_avx2),
-                    I444 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_444_16bpc_avx2),
-                });
-                self.fgy_32x32xn =
-                    fgy_32x32xn::Fn::new(safe_fg::fgy_32x32xn_16bpc_avx2);
-                self.fguv_32x32xn = enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
-                    I420 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i420_16bpc_avx2),
-                    I422 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i422_16bpc_avx2),
-                    I444 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i444_16bpc_avx2),
-                });
-            }
-        }
-
-        self
-    }
-
-    #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-    #[inline(always)]
-    const fn init_arm_safe_simd<BD: BitDepth>(mut self, _flags: CpuFlags) -> Self {
-        use crate::include::common::bitdepth::BPC;
-        use crate::src::safe_simd::filmgrain_arm as safe_fg;
-
-        match BD::BPC {
-            BPC::BPC8 => {
-                self.generate_grain_y =
-                    generate_grain_y::Fn::new(safe_fg::generate_grain_y_8bpc_neon);
-                self.generate_grain_uv = enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
-                    I420 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_420_8bpc_neon),
-                    I422 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_422_8bpc_neon),
-                    I444 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_444_8bpc_neon),
-                });
-                self.fgy_32x32xn =
-                    fgy_32x32xn::Fn::new(safe_fg::fgy_32x32xn_8bpc_neon);
-                self.fguv_32x32xn = enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
-                    I420 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i420_8bpc_neon),
-                    I422 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i422_8bpc_neon),
-                    I444 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i444_8bpc_neon),
-                });
-            }
-            BPC::BPC16 => {
-                self.generate_grain_y =
-                    generate_grain_y::Fn::new(safe_fg::generate_grain_y_16bpc_neon);
-                self.generate_grain_uv = enum_map!(Rav1dPixelLayoutSubSampled => generate_grain_uv::Fn; match key {
-                    I420 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_420_16bpc_neon),
-                    I422 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_422_16bpc_neon),
-                    I444 => generate_grain_uv::Fn::new(safe_fg::generate_grain_uv_444_16bpc_neon),
-                });
-                self.fgy_32x32xn =
-                    fgy_32x32xn::Fn::new(safe_fg::fgy_32x32xn_16bpc_neon);
-                self.fguv_32x32xn = enum_map!(Rav1dPixelLayoutSubSampled => fguv_32x32xn::Fn; match key {
-                    I420 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i420_16bpc_neon),
-                    I422 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i422_16bpc_neon),
-                    I444 => fguv_32x32xn::Fn::new(safe_fg::fguv_32x32xn_i444_16bpc_neon),
-                });
-            }
-        }
-
-        self
-    }
-
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
         #[cfg(feature = "asm")]
@@ -1462,18 +1567,6 @@ impl Rav1dFilmGrainDSPContext {
             #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
             {
                 return self.init_arm::<BD>(flags);
-            }
-        }
-
-        #[cfg(not(feature = "asm"))]
-        {
-            #[cfg(target_arch = "x86_64")]
-            {
-                return self.init_x86_safe_simd::<BD>(flags);
-            }
-            #[cfg(target_arch = "aarch64")]
-            {
-                return self.init_arm_safe_simd::<BD>(flags);
             }
         }
 
