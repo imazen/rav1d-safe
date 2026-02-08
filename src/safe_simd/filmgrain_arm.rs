@@ -397,7 +397,7 @@ unsafe fn fgy_row_neon_8bpc(
 }
 
 #[allow(unsafe_code)]
-pub unsafe extern "C" fn fgy_32x32xn_8bpc_neon(
+unsafe fn fgy_inner_8bpc(
     dst_row_ptr: *mut DynPixel,
     src_row_ptr: *const DynPixel,
     stride: ptrdiff_t,
@@ -408,8 +408,6 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_neon(
     bh: c_int,
     row_num: c_int,
     _bitdepth_max: c_int,
-    _dst_row: *const FFISafe<PicOffset>,
-    _src_row: *const FFISafe<PicOffset>,
 ) {
     let dst = dst_row_ptr as *mut u8;
     let src = src_row_ptr as *const u8;
@@ -549,12 +547,30 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_neon(
     }
 }
 
+#[cfg(feature = "asm")]
+pub unsafe extern "C" fn fgy_32x32xn_8bpc_neon(
+    dst_row_ptr: *mut DynPixel,
+    src_row_ptr: *const DynPixel,
+    stride: ptrdiff_t,
+    data: &Dav1dFilmGrainData,
+    pw: usize,
+    scaling: *const DynScaling,
+    grain_lut: *const GrainLut<DynEntry>,
+    bh: c_int,
+    row_num: c_int,
+    _bitdepth_max: c_int,
+    _dst_row: *const FFISafe<PicOffset>,
+    _src_row: *const FFISafe<PicOffset>,
+) {
+    fgy_inner_8bpc(dst_row_ptr, src_row_ptr, stride, data, pw, scaling, grain_lut, bh, row_num, _bitdepth_max);
+}
+
 // ============================================================================
 // fgy_32x32xn - 16bpc NEON
 // ============================================================================
 
 #[allow(unsafe_code)]
-pub unsafe extern "C" fn fgy_32x32xn_16bpc_neon(
+unsafe fn fgy_inner_16bpc(
     dst_row_ptr: *mut DynPixel,
     src_row_ptr: *const DynPixel,
     stride: ptrdiff_t,
@@ -565,8 +581,6 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_neon(
     bh: c_int,
     row_num: c_int,
     bitdepth_max: c_int,
-    _dst_row: *const FFISafe<PicOffset>,
-    _src_row: *const FFISafe<PicOffset>,
 ) {
     let dst = dst_row_ptr as *mut u16;
     let src = src_row_ptr as *const u16;
@@ -726,6 +740,24 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_neon(
             }
         }
     }
+}
+
+#[cfg(feature = "asm")]
+pub unsafe extern "C" fn fgy_32x32xn_16bpc_neon(
+    dst_row_ptr: *mut DynPixel,
+    src_row_ptr: *const DynPixel,
+    stride: ptrdiff_t,
+    data: &Dav1dFilmGrainData,
+    pw: usize,
+    scaling: *const DynScaling,
+    grain_lut: *const GrainLut<DynEntry>,
+    bh: c_int,
+    row_num: c_int,
+    bitdepth_max: c_int,
+    _dst_row: *const FFISafe<PicOffset>,
+    _src_row: *const FFISafe<PicOffset>,
+) {
+    fgy_inner_16bpc(dst_row_ptr, src_row_ptr, stride, data, pw, scaling, grain_lut, bh, row_num, bitdepth_max);
 }
 
 // ============================================================================
@@ -1312,11 +1344,9 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     let bh_c = bh as c_int;
     let row_num_c = row_num as c_int;
     let bd_c = bd.into_c();
-    let dst_row_ffi = FFISafe::new(&dst_row);
-    let src_row_ffi = FFISafe::new(&src_row);
     unsafe {
         match BD::BPC {
-            BPC::BPC8 => fgy_32x32xn_8bpc_neon(
+            BPC::BPC8 => fgy_inner_8bpc(
                 dst_row_ptr,
                 src_row_ptr,
                 stride,
@@ -1327,10 +1357,8 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
                 bh_c,
                 row_num_c,
                 bd_c,
-                dst_row_ffi,
-                src_row_ffi,
             ),
-            BPC::BPC16 => fgy_32x32xn_16bpc_neon(
+            BPC::BPC16 => fgy_inner_16bpc(
                 dst_row_ptr,
                 src_row_ptr,
                 stride,
@@ -1341,8 +1369,6 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
                 bh_c,
                 row_num_c,
                 bd_c,
-                dst_row_ffi,
-                src_row_ffi,
             ),
         }
     }
