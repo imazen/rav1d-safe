@@ -151,3 +151,11 @@ pub mod src {
 } // mod src
 
 pub use src::error::Dav1dResult;
+
+// Re-export the managed API at the crate root for convenience.
+// Users can write `rav1d_safe::Decoder` instead of `rav1d_safe::src::managed::Decoder`.
+pub use src::managed::{
+    ColorInfo, ColorPrimaries, ColorRange, ContentLightLevel, DecodeFrameType, Decoder, Error,
+    Frame, InloopFilters, MasteringDisplay, MatrixCoefficients, PixelLayout, PlaneView16,
+    PlaneView8, Planes, Planes16, Planes8, Settings, TransferCharacteristics,
+};

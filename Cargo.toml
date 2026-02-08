@@ -8,7 +8,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
 description = "Safe SIMD fork of rav1d - Rust AV1 decoder with archmage intrinsics"
-license = "BSD-2-Clause"
+license = "AGPL-3.0-or-later"
 repository = "https://github.com/imazen/rav1d-safe"
 exclude = ["*.c", "*.h", "*.in", "meson*", "tests/", "doc/", "package/"]
 
