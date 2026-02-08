@@ -1,6 +1,6 @@
 //! Safe SIMD implementations for ITX (Inverse Transforms)
 #![allow(deprecated)] // FFI wrappers need to forge tokens
-#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 //!
 //! ITX is the largest DSP module (~42k asm lines). Strategy:
 //! 1. Implement full 2D transforms (not just 1D) for common sizes
@@ -45,8 +45,9 @@ const SQRT2_HALF: i32 = 181; // sqrt(2) * 128
 /// Full 2D DCT_DCT 4x4 inverse transform with add-to-destination
 /// Uses AVX2 to process all 4 rows simultaneously
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -208,6 +209,7 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
 /// DCT4 butterfly on 2 rows packed in __m256i
 /// Each 128-bit lane contains one row: [in0, in1, in2, in3] as i32
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
 fn dct4_2rows_avx2(_token: Desktop64, rows01: __m256i, rows23: __m256i) -> (__m256i, __m256i) {
     // DCT4: t0 = (in0 + in2) * 181 + 128 >> 8
@@ -342,7 +344,7 @@ fn dct4_2rows_avx2(_token: Desktop64, rows01: __m256i, rows23: __m256i) -> (__m2
 /// FFI wrapper for 4x4 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -369,8 +371,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_avx2(
 
 /// Full 2D DCT_DCT 4x4 inverse transform with add-to-destination (16bpc)
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -514,7 +517,7 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
 /// FFI wrapper for 4x4 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -621,7 +624,7 @@ fn inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
 /// FFI wrapper for 4x4 WHT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -723,7 +726,7 @@ fn inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
 /// FFI wrapper for 4x4 WHT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -764,8 +767,9 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_avx2(
 
 /// Identity transform - just scale by sqrt(2) and add to dst
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub fn inv_identity_add_4x4_8bpc_avx2(
     _token: Desktop64,
     dst: *mut u8,
@@ -829,7 +833,7 @@ pub fn inv_identity_add_4x4_8bpc_avx2(
 /// FFI wrapper for 4x4 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -859,8 +863,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_avx2(
 /// For 8x8 IDTX: row pass * 2, col pass * 2 = * 4
 /// Plus final shift: (+ 8) >> 4
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub fn inv_identity_add_8x8_8bpc_avx2(
     _token: Desktop64,
     dst: *mut u8,
@@ -915,7 +920,7 @@ pub fn inv_identity_add_8x8_8bpc_avx2(
 /// FFI wrapper for 8x8 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1200,8 +1205,9 @@ fn flipadst8_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
 
 /// Full 2D DCT_DCT 8x8 inverse transform with add-to-destination
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -1302,7 +1308,7 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
 /// FFI wrapper for 8x8 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1329,8 +1335,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_avx2(
 
 /// 8x8 DCT_DCT for 16bpc (10/12-bit pixels)
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -1432,7 +1439,7 @@ fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
 /// FFI wrapper for 8x8 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1462,8 +1469,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_avx2(
 /// For 16x16 IDTX: apply identity16 to rows, then identity16 to cols
 /// Plus final shift: (+ 8) >> 4
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub fn inv_identity_add_16x16_8bpc_avx2(
     _token: Desktop64,
     dst: *mut u8,
@@ -1556,7 +1564,7 @@ pub fn inv_identity_add_16x16_8bpc_avx2(
 /// FFI wrapper for 16x16 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1829,7 +1837,7 @@ fn identity16_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
 
 /// Generic 16x16 transform function
 #[inline]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_16x16_inner(
     tmp: &mut [i32; 256],
     coeff: *const i16,
@@ -1864,8 +1872,9 @@ fn inv_txfm_16x16_inner(
 
 /// Add transformed coefficients to destination with SIMD
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn add_16x16_to_dst(
     _token: Desktop64,
     dst: *mut u8,
@@ -1945,8 +1954,9 @@ fn add_16x16_to_dst(
 macro_rules! impl_16x16_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u8,
@@ -1981,7 +1991,7 @@ macro_rules! impl_16x16_ffi_wrapper {
     ($wrapper:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -2136,8 +2146,9 @@ impl_16x16_ffi_wrapper!(
 
 /// Full 2D DCT_DCT 16x16 inverse transform with add-to-destination
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -2243,7 +2254,7 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
 /// FFI wrapper for 16x16 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2270,8 +2281,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_8bpc_avx2(
 
 /// 16x16 DCT_DCT for 16bpc (10/12-bit pixels)
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -2383,7 +2395,7 @@ fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
 /// FFI wrapper for 16x16 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2410,8 +2422,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x16_16bpc_avx2(
 
 /// Full 2D DCT_DCT 4x8 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -2488,7 +2501,7 @@ fn inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(
 /// FFI wrapper for 4x8 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2511,8 +2524,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_8bpc_avx2(
 
 /// Full 2D DCT_DCT 8x4 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -2601,7 +2615,7 @@ fn inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
 /// FFI wrapper for 8x4 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2630,8 +2644,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_8bpc_avx2(
 macro_rules! impl_4x8_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u8,
@@ -2702,8 +2717,9 @@ macro_rules! impl_4x8_transform {
 macro_rules! impl_8x4_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u8,
@@ -2830,7 +2846,7 @@ macro_rules! impl_4x8_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -2891,7 +2907,7 @@ macro_rules! impl_8x4_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -3091,8 +3107,9 @@ impl_8x4_ffi_wrapper!(
 macro_rules! impl_8x16_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u8,
@@ -3182,8 +3199,9 @@ macro_rules! impl_8x16_transform {
 macro_rules! impl_16x8_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u8,
@@ -3369,7 +3387,7 @@ macro_rules! impl_8x16_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -3397,7 +3415,7 @@ macro_rules! impl_16x8_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -3626,8 +3644,9 @@ impl_16x8_ffi_wrapper!(
 
 /// Full 2D DCT_DCT 8x8 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -3716,7 +3735,7 @@ fn inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
 /// FFI wrapper for 8x16 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3739,8 +3758,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_8bpc_avx2(
 
 /// Full 2D DCT_DCT 16x8 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -3838,7 +3858,7 @@ fn inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
 /// FFI wrapper for 16x8 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3865,8 +3885,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_8bpc_avx2(
 
 /// Full 2D DCT_DCT 16x32 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -3964,7 +3985,7 @@ fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
 /// FFI wrapper for 16x32 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -3987,8 +4008,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_avx2(
 
 /// Full 2D DCT_DCT 32x16 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -4095,7 +4117,7 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
 /// FFI wrapper for 32x16 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4122,8 +4144,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_8bpc_avx2(
 
 /// 16x32 IDTX inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -4217,7 +4240,7 @@ fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
 /// FFI wrapper for 16x32 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4240,8 +4263,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_8bpc_avx2(
 
 /// 32x16 IDTX inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -4299,7 +4323,7 @@ fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
 /// FFI wrapper for 32x16 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4322,8 +4346,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_8bpc_avx2(
 
 /// Full 2D DCT_DCT 32x64 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -4439,7 +4464,7 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
 /// FFI wrapper for 32x64 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4462,8 +4487,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_8bpc_avx2(
 
 /// Full 2D DCT_DCT 64x32 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -4574,7 +4600,7 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
 /// FFI wrapper for 64x32 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4601,8 +4627,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_8bpc_avx2(
 
 /// Full 2D DCT_DCT 4x16 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -4662,7 +4689,7 @@ fn inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(
 /// FFI wrapper for 4x16 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4685,8 +4712,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_8bpc_avx2(
 
 /// Full 2D DCT_DCT 16x4 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -4782,7 +4810,7 @@ fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
 /// FFI wrapper for 16x4 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4811,8 +4839,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_8bpc_avx2(
 macro_rules! impl_4x16_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u8,
@@ -4873,8 +4902,9 @@ macro_rules! impl_4x16_transform {
 macro_rules! impl_16x4_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u8,
@@ -5058,7 +5088,7 @@ macro_rules! impl_4x16_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -5086,7 +5116,7 @@ macro_rules! impl_16x4_ffi_wrapper {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -5315,8 +5345,9 @@ impl_16x4_ffi_wrapper!(
 
 /// Full 2D DCT_DCT 8x32 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -5378,7 +5409,7 @@ fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
 /// FFI wrapper for 8x32 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -5401,8 +5432,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_8bpc_avx2(
 
 /// Full 2D DCT_DCT 32x8 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -5509,7 +5541,7 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
 /// FFI wrapper for 32x8 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -5536,8 +5568,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_8bpc_avx2(
 
 /// 8x32 IDTX inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -5593,7 +5626,7 @@ fn inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
 /// FFI wrapper for 8x32 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -5616,8 +5649,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_8bpc_avx2(
 
 /// 32x8 IDTX inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -5673,7 +5707,7 @@ fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
 /// FFI wrapper for 32x8 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -5700,8 +5734,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_8bpc_avx2(
 
 /// Full 2D DCT_DCT 16x64 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -5806,7 +5841,7 @@ fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
 /// FFI wrapper for 16x64 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -5829,8 +5864,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_8bpc_avx2(
 
 /// Full 2D DCT_DCT 64x16 inverse transform
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -5940,7 +5976,7 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
 /// FFI wrapper for 64x16 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6205,7 +6241,7 @@ pub fn inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
 /// FFI wrapper for ADST_DCT 4x4 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6242,7 +6278,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_dct_4x4_8bpc_avx2(
 /// FFI wrapper for DCT_ADST 4x4 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6279,7 +6315,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_adst_4x4_8bpc_avx2(
 /// FFI wrapper for ADST_ADST 4x4 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6563,7 +6599,7 @@ pub fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
 // FFI wrappers for FlipADST variants
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6599,7 +6635,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6635,7 +6671,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6671,7 +6707,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6707,7 +6743,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6877,8 +6913,9 @@ fn dct8_1d_scalar(
 macro_rules! impl_8x8_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         pub fn $name(
             _token: Desktop64,
             dst: *mut u8,
@@ -6999,7 +7036,7 @@ macro_rules! impl_8x8_ffi_wrapper {
     ($wrapper:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -7263,7 +7300,7 @@ pub fn inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
 // FFI wrappers for V/H ADST
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -7299,7 +7336,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_adst_4x4_8bpc_avx2(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -7335,7 +7372,7 @@ pub unsafe extern "C" fn inv_txfm_add_adst_identity_4x4_8bpc_avx2(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -7371,7 +7408,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_avx2(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -7508,7 +7545,7 @@ pub fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
 // FFI wrappers for V/H DCT
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -7544,7 +7581,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_identity_4x4_8bpc_avx2(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_dct_4x4_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -7853,7 +7890,7 @@ fn identity32_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
 
 /// Generic 32x32 transform function
 #[inline]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_32x32_inner(
     tmp: &mut [i32; 1024],
     coeff: *const i16,
@@ -7889,8 +7926,9 @@ fn inv_txfm_32x32_inner(
 
 /// Add transformed coefficients to destination with SIMD (32x32)
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn add_32x32_to_dst(
     _token: Desktop64,
     dst: *mut u8,
@@ -7965,6 +8003,7 @@ fn add_32x32_to_dst(
 
 /// 32x32 DCT_DCT inner function
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
 fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
     _token: Desktop64,
@@ -7995,6 +8034,7 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
 
 /// 32x32 IDTX inner function
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
 fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
     _token: Desktop64,
@@ -8026,7 +8066,7 @@ fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
 /// FFI wrapper for 32x32 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -8050,7 +8090,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_avx2(
 /// FFI wrapper for 32x32 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -8077,8 +8117,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_avx2(
 
 /// Add transformed coefficients to destination with SIMD (32x32 16bpc)
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn add_32x32_to_dst_16bpc(
     _token: Desktop64,
     dst: *mut u16,
@@ -8152,6 +8193,7 @@ fn add_32x32_to_dst_16bpc(
 
 /// 32x32 DCT_DCT inner function for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
 fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
     _token: Desktop64,
@@ -8184,7 +8226,7 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
 /// FFI wrapper for 32x32 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -8820,7 +8862,7 @@ fn identity64_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
 
 /// Generic 64x64 transform function
 #[inline]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_64x64_inner(
     tmp: &mut [i32; 4096],
     coeff: *const i16,
@@ -8853,8 +8895,9 @@ fn inv_txfm_64x64_inner(
 
 /// Add transformed coefficients to destination with SIMD (64x64)
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn add_64x64_to_dst(
     _token: Desktop64,
     dst: *mut u8,
@@ -8927,6 +8970,7 @@ fn add_64x64_to_dst(
 
 /// 64x64 DCT_DCT inner function
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
 fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
     _token: Desktop64,
@@ -8958,7 +9002,7 @@ fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
 /// FFI wrapper for 64x64 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -8985,8 +9029,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_avx2(
 
 /// Add transformed coefficients to destination with SIMD (64x64 16bpc)
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn add_64x64_to_dst_16bpc(
     _token: Desktop64,
     dst: *mut u16,
@@ -9060,6 +9105,7 @@ fn add_64x64_to_dst_16bpc(
 
 /// 64x64 DCT_DCT inner function for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
 fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
     _token: Desktop64,
@@ -9092,7 +9138,7 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
 /// FFI wrapper for 64x64 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -9119,8 +9165,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_avx2(
 
 /// 4x8 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -9193,7 +9240,7 @@ fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
 /// FFI wrapper for 4x8 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -9216,8 +9263,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x8_16bpc_avx2(
 
 /// 8x4 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -9299,7 +9347,7 @@ fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
 /// FFI wrapper for 8x4 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -9322,8 +9370,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x4_16bpc_avx2(
 
 /// 8x16 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -9409,7 +9458,7 @@ fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
 /// FFI wrapper for 8x16 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -9432,8 +9481,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x16_16bpc_avx2(
 
 /// 16x8 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -9535,7 +9585,7 @@ fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
 /// FFI wrapper for 16x8 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -9558,8 +9608,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x8_16bpc_avx2(
 
 /// 4x16 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -9632,7 +9683,7 @@ fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
 /// FFI wrapper for 4x16 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -9655,8 +9706,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x16_16bpc_avx2(
 
 /// 16x4 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -9754,7 +9806,7 @@ fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
 /// FFI wrapper for 16x4 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -9777,8 +9829,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x4_16bpc_avx2(
 
 /// 16x32 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -9879,7 +9932,7 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
 /// FFI wrapper for 16x32 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -9902,8 +9955,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_16bpc_avx2(
 
 /// 32x16 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -9999,7 +10053,7 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
 /// FFI wrapper for 32x16 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -10022,8 +10076,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x16_16bpc_avx2(
 
 /// 8x32 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -10109,7 +10164,7 @@ fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
 /// FFI wrapper for 8x32 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -10132,8 +10187,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x32_16bpc_avx2(
 
 /// 32x8 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -10229,7 +10285,7 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
 /// FFI wrapper for 32x8 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -10252,8 +10308,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x8_16bpc_avx2(
 
 /// 32x64 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -10346,7 +10403,7 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
 /// FFI wrapper for 32x64 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -10369,8 +10426,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x64_16bpc_avx2(
 
 /// 64x32 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -10463,7 +10521,7 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
 /// FFI wrapper for 64x32 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -10486,8 +10544,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x32_16bpc_avx2(
 
 /// 16x64 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -10585,7 +10644,7 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
 /// FFI wrapper for 16x64 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -10608,8 +10667,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x64_16bpc_avx2(
 
 /// 64x16 DCT_DCT for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -10702,7 +10762,7 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
 /// FFI wrapper for 64x16 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -10731,8 +10791,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_avx2(
 macro_rules! impl_8x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         pub fn $name(
             _token: Desktop64,
             dst: *mut u16,
@@ -10854,7 +10915,7 @@ macro_rules! impl_8x8_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -10918,7 +10979,7 @@ impl_8x8_ffi_wrapper_16bpc!(
 macro_rules! impl_4x4_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         pub fn $name(
             dst: &mut [u16],
             dst_base: usize,
@@ -11018,7 +11079,7 @@ macro_rules! impl_4x4_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -11099,8 +11160,9 @@ impl_4x4_ffi_wrapper_16bpc!(
 macro_rules! impl_16x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         pub fn $name(
             _token: Desktop64,
             dst: *mut u16,
@@ -11214,7 +11276,7 @@ macro_rules! impl_16x16_ffi_wrapper_16bpc {
     ($wrapper:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $wrapper(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -11276,8 +11338,9 @@ impl_16x16_ffi_wrapper_16bpc!(
 
 /// 4x4 IDTX (identity transform) for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub fn inv_identity_add_4x4_16bpc_avx2(
     _token: Desktop64,
     dst: *mut u16,
@@ -11335,7 +11398,7 @@ pub fn inv_identity_add_4x4_16bpc_avx2(
 /// FFI wrapper for 4x4 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -11358,8 +11421,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_16bpc_avx2(
 
 /// 8x8 IDTX (identity transform) for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub fn inv_identity_add_8x8_16bpc_avx2(
     _token: Desktop64,
     dst: *mut u16,
@@ -11420,7 +11484,7 @@ pub fn inv_identity_add_8x8_16bpc_avx2(
 /// FFI wrapper for 8x8 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -11443,8 +11507,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_16bpc_avx2(
 
 /// 16x16 IDTX (identity transform) for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub fn inv_identity_add_16x16_16bpc_avx2(
     _token: Desktop64,
     dst: *mut u16,
@@ -11527,7 +11592,7 @@ pub fn inv_identity_add_16x16_16bpc_avx2(
 /// FFI wrapper for 16x16 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -11554,6 +11619,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_16bpc_avx2(
 
 /// 32x32 IDTX inner function for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
 fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
     _token: Desktop64,
@@ -11586,7 +11652,7 @@ fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
 /// FFI wrapper for 32x32 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -11613,8 +11679,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_avx2(
 
 /// 4x8 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -11687,7 +11754,7 @@ fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
 /// FFI wrapper for 4x8 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -11710,8 +11777,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x8_16bpc_avx2(
 
 /// 8x4 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -11793,7 +11861,7 @@ fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
 /// FFI wrapper for 8x4 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -11816,8 +11884,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x4_16bpc_avx2(
 
 /// 8x16 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -11900,7 +11969,7 @@ fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
 /// FFI wrapper for 8x16 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -11923,8 +11992,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x16_16bpc_avx2(
 
 /// 16x8 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -12011,7 +12081,7 @@ fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
 /// FFI wrapper for 16x8 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -12034,8 +12104,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x8_16bpc_avx2(
 
 /// 4x16 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -12108,7 +12179,7 @@ fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
 /// FFI wrapper for 4x16 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -12131,8 +12202,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x16_16bpc_avx2(
 
 /// 16x4 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -12218,7 +12290,7 @@ fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
 /// FFI wrapper for 16x4 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -12241,8 +12313,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x4_16bpc_avx2(
 
 /// 16x32 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -12330,7 +12403,7 @@ fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
 /// FFI wrapper for 16x32 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -12353,8 +12426,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x32_16bpc_avx2(
 
 /// 32x16 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -12442,7 +12516,7 @@ fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
 /// FFI wrapper for 32x16 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -12465,8 +12539,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_avx2(
 
 /// 8x32 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -12548,7 +12623,7 @@ fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
 /// FFI wrapper for 8x32 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -12571,8 +12646,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x32_16bpc_avx2(
 
 /// 32x8 IDTX for 16bpc
 #[cfg(target_arch = "x86_64")]
+#[cfg(feature = "asm")]
 #[arcane]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -12659,7 +12735,7 @@ fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
 /// FFI wrapper for 32x8 IDTX 16bpc
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_avx2(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -12688,8 +12764,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x8_16bpc_avx2(
 macro_rules! impl_4x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u16,
@@ -12763,8 +12840,9 @@ macro_rules! impl_4x8_transform_16bpc {
 macro_rules! impl_8x4_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u16,
@@ -12848,7 +12926,7 @@ macro_rules! impl_ffi_wrapper_16bpc {
     ($name:ident, $inner:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -13025,8 +13103,9 @@ impl_ffi_wrapper_16bpc!(
 macro_rules! impl_8x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u16,
@@ -13110,8 +13189,9 @@ macro_rules! impl_8x16_transform_16bpc {
 macro_rules! impl_16x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u16,
@@ -13350,8 +13430,9 @@ impl_ffi_wrapper_16bpc!(
 macro_rules! impl_4x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u16,
@@ -13425,8 +13506,9 @@ macro_rules! impl_4x16_transform_16bpc {
 macro_rules! impl_16x4_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u16,
@@ -14014,8 +14096,9 @@ impl_ffi_wrapper_16bpc!(
 macro_rules! impl_8x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u16,
@@ -14155,8 +14238,9 @@ impl_ffi_wrapper_16bpc!(
 macro_rules! impl_4x4_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u16,
@@ -14283,8 +14367,9 @@ impl_ffi_wrapper_16bpc!(
 macro_rules! impl_16x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
+        #[cfg(feature = "asm")]
         #[arcane]
-        #[allow(unsafe_code)]
+        #[cfg(feature = "asm")]
         fn $name(
             _token: Desktop64,
             dst: *mut u16,
@@ -14469,7 +14554,7 @@ macro_rules! impl_itxfm_direct_dispatch {
     ) => {
         paste::paste! {
             #[allow(non_upper_case_globals)]
-            #[allow(unsafe_code)]
+            #[cfg(feature = "asm")]
             fn $fn_name(
                 tx_size: usize,
                 tx_type: usize,
@@ -14637,6 +14722,24 @@ impl_itxfm_direct_dispatch!(
 ///
 /// Takes safe Rust types, creates raw pointers internally, dispatches to the
 /// right SIMD function. Returns `true` if a SIMD implementation handled the call.
+/// When asm is disabled, returns `false` (scalar fallback handles it).
+#[cfg(not(feature = "asm"))]
+pub fn itxfm_add_dispatch<BD: BitDepth>(
+    _tx_size: usize,
+    _tx_type: usize,
+    _dst: PicOffset,
+    _coeff: &mut [BD::Coef],
+    _eob: i32,
+    _bd: BD,
+) -> bool {
+    false
+}
+
+/// Safe dispatch entry point for ITX SIMD on x86_64.
+///
+/// Takes safe Rust types, creates raw pointers internally, dispatches to the
+/// right SIMD function. Returns `true` if a SIMD implementation handled the call.
+#[cfg(feature = "asm")]
 #[allow(unsafe_code)]
 pub fn itxfm_add_dispatch<BD: BitDepth>(
     tx_size: usize,
