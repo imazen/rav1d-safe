@@ -27,6 +27,20 @@ Pick the next unfinished module and port it. Priority order:
 
 Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with safe Rust intrinsics.
 
+## MANDATORY: Do NOT block on safe_intrinsics
+
+**DO NOT pursue a path that requires Rust's `safe_intrinsics` feature or any nightly-only feature to achieve `forbid(unsafe_code)` in SIMD modules.**
+
+The `safe_intrinsics` feature is unstable, has no stabilization timeline, and would block the entire safety story on upstream Rust. Instead:
+
+- **Use `safe_unaligned_simd` crate** — provides safe wrappers for load/store intrinsics TODAY on stable Rust
+- **Use `archmage` `#[arcane]`** — makes computation intrinsics (add, sub, shuffle, etc.) safe via token-based dispatch
+- **Use `loadu_256!` / `storeu_256!` macros** — switch between safe (bounds-checked) and unchecked (raw pointer) via feature flag
+- **Gate FFI wrappers behind `feature = "asm"`** — so they don't pollute the default safe build
+- **Refactor dispatch to call `_inner`/`_impl` directly** — bypass extern "C" FFI wrappers in non-asm mode
+
+The path to `forbid(unsafe_code)` is: slices in fn signatures → safe load/store macros → arcane computation → no raw pointers needed. This works TODAY without any nightly features.
+
 ## Quick Commands
 
 ```bash
@@ -159,7 +173,7 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 **Module safety architecture (default build without asm/c-ffi on x86_64):**
 - Only **1 module** needs unconditional `#[allow(unsafe_code)]`: **safe_simd**
-  - ~2300 SIMD intrinsic calls (blocked by Rust safe_intrinsics feature)
+  - ~2300 SIMD intrinsic calls — being eliminated via `safe_unaligned_simd` + `archmage` (NOT blocked on nightly `safe_intrinsics`)
 - 2 modules conditionally allow unsafe by architecture:
   - refmvs: `cfg_attr(feature = "asm", allow(unsafe_code))` — extern C wrappers gated behind asm
   - msac: `cfg_attr(any(asm, aarch64), allow(unsafe_code))` — NEON intrinsics on aarch64 only
