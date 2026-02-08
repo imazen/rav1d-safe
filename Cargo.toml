@@ -34,6 +34,9 @@ zerocopy = { version = "0.7.32", features = ["derive"] }
 archmage = { version = "0.5.0", features = ["macros"] }
 safe_unaligned_simd = "0.2.4"
 
+[dev-dependencies]
+divan = "0.1"
+
 [build-dependencies]
 cc = "1.0.79"
 nasm-rs = { version = "0.3", features = ["parallel"] }
@@ -63,6 +66,14 @@ asm_arm64_sve2 = ["asm"]
 # Bit depth support
 bitdepth_8 = []
 bitdepth_16 = []
+
+[[bench]]
+name = "decode"
+harness = false
+
+[profile.bench]
+codegen-units = 1
+lto = "fat"
 
 [profile.dev]
 panic = "abort"

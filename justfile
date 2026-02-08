@@ -100,6 +100,18 @@ test-asan:
 test-lsan:
     RUSTFLAGS="-Z sanitizer=leak" cargo +nightly test --no-default-features --features "bitdepth_8,bitdepth_16" --target x86_64-unknown-linux-gnu
 
+# Benchmark decode (checked, default safety)
+bench:
+    cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16"
+
+# Benchmark decode (unchecked indexing)
+bench-unchecked:
+    cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16,unchecked"
+
+# Benchmark decode (hand-written asm)
+bench-asm:
+    cargo bench --bench decode --features "asm,bitdepth_8,bitdepth_16"
+
 # Run panic safety tests specifically
 test-panic:
     cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --test panic_safety_test --release
