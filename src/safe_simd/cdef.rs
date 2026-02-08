@@ -229,7 +229,8 @@ fn constrain_scalar(diff: i32, threshold: c_int, shift: c_int) -> i32 {
     }
 }
 
-/// Padding function for 8bpc - copies edge pixels into temporary buffer
+/// Padding function for 8bpc - copies edge pixels into temporary buffer.
+/// Merged loops: source + left + right in one pass to halve DisjointMut calls.
 fn padding_8bpc(
     tmp: &mut [u16],
     dst: PicOffset,
@@ -246,35 +247,28 @@ fn padding_8bpc(
 
     // Fill temporary buffer with CDEF_VERY_LARGE (8191 for 8bpc)
     let very_large = 8191u16;
-    tmp.iter_mut().for_each(|x| *x = very_large);
+    tmp.fill(very_large);
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
+    let need_left = edges.contains(CdefEdgeFlags::HAVE_LEFT);
+    let need_right = edges.contains(CdefEdgeFlags::HAVE_RIGHT);
 
-    // Copy source pixels
+    // Single pass: copy source pixels + left/right edges per row.
+    // This uses one DisjointMut slice per row instead of two (source + right).
+    let slice_w = w + if need_right { 2 } else { 0 };
     for y in 0..h {
         let row_offset = tmp_offset + y * TMP_STRIDE;
-        let src = (dst + (y as isize * stride)).slice::<BitDepth8>(w);
-        for x in 0..w {
-            tmp[row_offset + x] = src[x] as u16;
-        }
-    }
 
-    // Handle left edge
-    if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
-        for y in 0..h {
-            let row_offset = tmp_offset + y * TMP_STRIDE;
+        // Left edge (from separate left[] array, not PicOffset)
+        if need_left {
             tmp[row_offset - 2] = left[y][0] as u16;
             tmp[row_offset - 1] = left[y][1] as u16;
         }
-    }
 
-    // Handle right edge
-    if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
-        for y in 0..h {
-            let row_offset = tmp_offset + y * TMP_STRIDE;
-            let src = (dst + (y as isize * stride)).slice::<BitDepth8>(w + 2);
-            tmp[row_offset + w] = src[w] as u16;
-            tmp[row_offset + w + 1] = src[w + 1] as u16;
+        // Source pixels + right edge in one DisjointMut access
+        let src = (dst + (y as isize * stride)).slice::<BitDepth8>(slice_w);
+        for x in 0..slice_w {
+            tmp[row_offset + x] = src[x] as u16;
         }
     }
 
@@ -900,36 +894,28 @@ fn padding_16bpc(
     let _bd = BitDepth16::new(bitdepth_max as u16);
     // Fill temporary buffer with CDEF_VERY_LARGE
     let very_large = (bitdepth_max as u16) * 4; // ~4x max value
-    tmp.iter_mut().for_each(|x| *x = very_large);
+    tmp.fill(very_large);
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
+    let pixel_stride = dst.pixel_stride::<BitDepth16>();
+    let need_left = edges.contains(CdefEdgeFlags::HAVE_LEFT);
+    let need_right = edges.contains(CdefEdgeFlags::HAVE_RIGHT);
 
-    // Copy source pixels
+    // Single pass: copy source pixels + left/right edges per row.
+    let slice_w = w + if need_right { 2 } else { 0 };
     for y in 0..h {
         let row_offset = tmp_offset + y * TMP_STRIDE;
-        let src = (dst + (y as isize * dst.pixel_stride::<BitDepth16>())).slice::<BitDepth16>(w);
-        for x in 0..w {
-            tmp[row_offset + x] = src[x];
-        }
-    }
 
-    // Handle left edge
-    if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
-        for y in 0..h {
-            let row_offset = tmp_offset + y * TMP_STRIDE;
+        // Left edge (from separate left[] array)
+        if need_left {
             tmp[row_offset - 2] = left[y][0];
             tmp[row_offset - 1] = left[y][1];
         }
-    }
 
-    // Handle right edge
-    if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
-        for y in 0..h {
-            let row_offset = tmp_offset + y * TMP_STRIDE;
-            let src =
-                (dst + (y as isize * dst.pixel_stride::<BitDepth16>())).slice::<BitDepth16>(w + 2);
-            tmp[row_offset + w] = src[w];
-            tmp[row_offset + w + 1] = src[w + 1];
+        // Source pixels + right edge in one DisjointMut access
+        let src = (dst + (y as isize * pixel_stride)).slice::<BitDepth16>(slice_w);
+        for x in 0..slice_w {
+            tmp[row_offset + x] = src[x];
         }
     }
 
