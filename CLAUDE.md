@@ -142,16 +142,30 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 ## Safety Status
 
-**Crate-level deny(unsafe_code) when asm disabled.** `lib.rs` has `#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]` — compiler-enforced safety for the entire non-asm path.
+**Crate-level deny(unsafe_code) when asm/c-ffi disabled.** `lib.rs` has `#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]` — compiler-enforced safety for the entire non-asm, non-c-ffi path.
 
 **DisjointMut extracted to separate crate** (`crates/disjoint-mut/`):
 - Provably safe abstraction (like RefCell for ranges) with always-on bounds checking
 - Main crate re-exports + adds AlignedVec-specific impls
 - Enables future `forbid(unsafe_code)` at crate level
 
-**55/80 modules have explicit safety annotations:**
-- 42 with `forbid(unsafe_code)` — permanent, compiler-enforced (decode, recon, lf_mask, lf_apply, ctx, obu, cdf, managed, etc.)
-- 13 with conditional deny when asm disabled (cdef, filmgrain, ipred, itx, loopfilter, looprestoration, mc, pal, data, tables, cpu, safe_simd/pal, safe_simd/pixel_access)
+**C FFI types gated behind `cfg(feature = "c-ffi")`:**
+- `DavdPicture`, `DavdData`, `DavdDataProps`, `DavdUserData`, `DavdSettings`, `DavdLogger` — all gated
+- `From<Dav1d*>` / `From<Rav1d*> for Dav1d*` conversions (containing `unsafe { CArc::from_raw }`) — all gated
+- Safe picture allocator: per-plane `Vec<u8>` from MemPool, no C callbacks needed
+- Fallible allocation: `MemPool::pop_init` returns `Result<Vec, TryReserveError>`, propagated as `Rav1dError::ENOMEM`
+
+**Module safety annotations:**
+- 42+ modules with `forbid(unsafe_code)` — permanent, compiler-enforced
+- 13 with conditional deny when asm disabled (cdef, filmgrain, ipred, itx, etc.)
+- 3 modules conditionally safe when c-ffi disabled: picture.rs, lib.rs (entry point), log.rs
+- 12 modules with unconditional `allow(unsafe_code)` for sound abstractions
+
+**Remaining 12 unconditional `allow(unsafe_code)` modules:**
+- Sound abstractions: align, assume, c_arc, c_box, send_sync_non_null
+- Bridges: disjoint_mut, ffi_safe
+- Threading: internal, include/dav1d/
+- DSP: refmvs, msac, safe_simd (~2300 SIMD intrinsic calls)
 
 **FFI wrappers gated behind `feature = "asm"`** in: cdef, cdef_arm, loopfilter, loopfilter_arm, looprestoration, looprestoration_arm, filmgrain, filmgrain_arm, pal.
 
