@@ -1037,3 +1037,50 @@ impl MasteringDisplay {
     }
 }
 
+/// Returns a comma-delimited string of enabled compile-time feature flags.
+///
+/// Useful for runtime verification of which safety level and capabilities
+/// were compiled in.
+///
+/// ```
+/// let features = rav1d_safe::enabled_features();
+/// assert!(features.contains("bitdepth_8"));
+/// ```
+pub fn enabled_features() -> String {
+    let mut features = Vec::new();
+
+    if cfg!(feature = "asm") {
+        features.push("asm");
+    }
+    if cfg!(feature = "c-ffi") {
+        features.push("c-ffi");
+    }
+    if cfg!(feature = "unchecked") {
+        features.push("unchecked");
+    }
+    if cfg!(feature = "quite-safe") {
+        features.push("quite-safe");
+    }
+    if cfg!(feature = "bitdepth_8") {
+        features.push("bitdepth_8");
+    }
+    if cfg!(feature = "bitdepth_16") {
+        features.push("bitdepth_16");
+    }
+
+    // Safety level summary
+    if cfg!(feature = "asm") {
+        features.push("safety:asm");
+    } else if cfg!(feature = "c-ffi") {
+        features.push("safety:c-ffi");
+    } else if cfg!(feature = "unchecked") {
+        features.push("safety:unchecked");
+    } else if cfg!(feature = "quite-safe") {
+        features.push("safety:quite-safe");
+    } else {
+        features.push("safety:forbid-unsafe");
+    }
+
+    features.join(", ")
+}
+

@@ -97,7 +97,7 @@ All fallible operations return `Result<T, rav1d_safe::Error>`. Error variants: `
 
 ## Safety Model
 
-`deny(unsafe_code)` is enforced crate-wide when built without `asm` or `c-ffi` features. The managed API module uses `forbid(unsafe_code)` unconditionally.
+The default build (`deny(unsafe_code)` crate-wide) contains zero `unsafe` in the main crate. The only unsafe code lives in the [disjoint-mut](crates/disjoint-mut/) workspace sub-crate, a provably sound `RefCell`-for-ranges abstraction with always-on bounds checking. The managed API module uses `forbid(unsafe_code)` unconditionally.
 
 The SIMD path uses:
 - [archmage](https://crates.io/crates/archmage) for token-based target-feature dispatch (no manual `#[target_feature]`)
@@ -105,18 +105,18 @@ The SIMD path uses:
 - Value-type SIMD intrinsics, which are safe functions since Rust 1.93
 - Slice-based APIs throughout — no pointer arithmetic in SIMD code
 
-16 sound abstractions (`Send`/`Sync` impls, `AlignedVec`, `Pin`) require item-level `#[allow(unsafe_code)]` and cannot be eliminated without sub-crate extraction.
+Verify at runtime with `rav1d_safe::enabled_features()` — returns a comma-delimited list including the active safety level (e.g. `"bitdepth_8, bitdepth_16, safety:forbid-unsafe"`).
 
 ## Performance
 
-The safe SIMD path matches hand-written assembly performance. Tested on x86_64 with a 768x512 YUV420 8-bit AVIF (20 iterations via zenavif):
+Benchmarked on x86_64 (AVX2), single-threaded, 500 iterations via `examples/profile_decode`:
 
-| Build | Time |
-|-------|------|
-| ASM (hand-written assembly) | ~1.17s |
-| Safe-SIMD (this crate, default) | ~1.11s |
+| Build | kodim03 8bpc (768x512) | colors_hdr 16bpc |
+|-------|------------------------|------------------|
+| ASM (hand-written assembly) | 6.8 ms/frame | 1.9 ms/frame |
+| Safe-SIMD (this crate, default) | 22.9 ms/frame | 2.4 ms/frame |
 
-The safe path is competitive because Rust's SIMD intrinsics compile to the same instructions as hand-written assembly, and the compiler can inline across function boundaries in ways that assembly can't.
+The 16bpc path is near-parity. The 8bpc gap comes from DisjointMut borrow-tracking overhead per SIMD block — the safety abstraction that enforces exclusive mutable access at runtime. The SIMD intrinsics themselves compile to identical instructions.
 
 ## Building
 
