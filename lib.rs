@@ -5,9 +5,9 @@
     feature(stdarch_riscv_feature_detection)
 )]
 // When neither `asm` nor `c-ffi` is enabled, deny unsafe code crate-wide.
-// 42 modules use #![forbid(unsafe_code)] (compiler-enforced, permanent).
-// 13 modules use conditional deny (safe when asm disabled).
-// Remaining modules with #[allow(unsafe_code)] encapsulate unsafe behind safe APIs.
+// Only 3 modules need unconditional #[allow(unsafe_code)]: refmvs, msac, safe_simd.
+// 6 modules use conditional allow (only when c-ffi enabled).
+// All other unsafe uses item-level #[allow(unsafe_code)] on specific functions/impls.
 #![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
 #![allow(clippy::all)]
@@ -41,10 +41,13 @@ pub mod include {
     } // mod dav1d
 } // mod include
 pub mod src {
-    // === Modules with #[allow(unsafe_code)] ===
-    // These modules encapsulate unsafe behind safe APIs or contain
-    // fundamental primitives that require unsafe. Each should be
-    // audited and the allow removed as the code is made safe.
+    // === Module Safety Annotations ===
+    // Module-level #[allow(unsafe_code)] is used only when the entire module
+    // needs unsafe (SIMD intrinsics, pointer operations).
+    // For modules with isolated unsafe, item-level #[allow(unsafe_code)] is used
+    // on specific functions/impls instead, keeping the rest of the module deny'd.
+    // Conditional annotations (#[cfg_attr(feature = "c-ffi", allow(unsafe_code))])
+    // are used when unsafe is only needed for C FFI support.
 
     // Core primitives
     pub mod align;
