@@ -37,6 +37,12 @@ Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with saf
 
 2. **Target feature dispatch** — intrinsics are only safe when called within a function annotated with `#[target_feature(enable = "avx2")]` (or equivalent). `archmage` handles this via token-based dispatch (`Desktop64::summon()`, `#[arcane]`), so we **never manually write `is_x86_feature_detected!()` checks or `#[target_feature]` annotations on our functions**.
 
+3. **Slice access** — Use the `SliceExt` trait from `pixel_access.rs` for hot-path indexing:
+   - `slice.at(i)` / `slice.at_mut(i)` — single element access
+   - `slice.sub(start, len)` / `slice.sub_mut(start, len)` — subslice access
+   - Checked by default, unchecked (with `debug_assert!`) when `unchecked` feature is on
+   - Import: `use crate::src::safe_simd::pixel_access::SliceExt;`
+
 **Do NOT:**
 - Manually add `#[target_feature(enable = "...")]` to new functions — use `#[arcane]` instead
 - Manually call `is_x86_feature_detected!()` — use `Desktop64::summon()` / `CpuFlags` instead
