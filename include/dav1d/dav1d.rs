@@ -5,6 +5,7 @@ use crate::include::dav1d::picture::Rav1dPicAllocator;
 use crate::src::c_arc::RawArc;
 use crate::src::error::Rav1dError;
 use crate::src::internal::Rav1dContext;
+#[cfg(feature = "c-ffi")]
 pub use crate::src::log::Dav1dLogger;
 use crate::src::log::Rav1dLogger;
 use bitflags::bitflags;

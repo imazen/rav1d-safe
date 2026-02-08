@@ -64,7 +64,8 @@ pub mod src {
     #[allow(unsafe_code)]
     pub(super) mod internal;
     mod intra_edge;
-    #[allow(unsafe_code)]
+    #[cfg_attr(not(feature = "c-ffi"), deny(unsafe_code))]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod log;
     pub(crate) mod pixels;
     #[allow(unsafe_code)]
