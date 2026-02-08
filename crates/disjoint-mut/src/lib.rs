@@ -48,6 +48,7 @@ use std::ops::RangeToInclusive;
 use std::ptr;
 use std::ptr::addr_of_mut;
 use std::sync::Arc;
+use std::thread;
 use zerocopy::AsBytes;
 use zerocopy::FromBytes;
 
@@ -153,18 +154,23 @@ impl<T: AsMutPtr> DisjointMut<T> {
 // Guard types
 // =============================================================================
 
-/// Scope guard that deregisters a borrow if the indexing operation panics
-/// (e.g., out-of-bounds). Prevents permanently leaked borrow records.
-/// Disarmed via `mem::forget` on success.
+/// Scope guard that poisons the `DisjointMut` if the indexing operation panics
+/// (e.g., out-of-bounds). Disarmed via `mem::forget` on success.
+///
+/// Rather than cleaning up the leaked borrow record (which would allow the range
+/// to be re-borrowed in potentially inconsistent state), we poison the entire
+/// data structure. This follows the `std::sync::Mutex` pattern: after a panic,
+/// fail loudly on all subsequent access.
 struct BorrowCleanup<'a, T: ?Sized + AsMutPtr> {
     parent: Option<&'a DisjointMut<T>>,
-    borrow_id: checked::BorrowId,
 }
 
 impl<T: ?Sized + AsMutPtr> Drop for BorrowCleanup<'_, T> {
     fn drop(&mut self) {
+        // This only fires on panic (mem::forget on success path).
+        // Poison rather than clean up — the data structure is compromised.
         if let Some(parent) = self.parent {
-            parent.tracker.as_ref().unwrap().remove(self.borrow_id);
+            parent.tracker.as_ref().unwrap().poison();
         }
     }
 }
@@ -452,10 +458,8 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     /// Mutably borrow a slice or element.
     ///
     /// Validates that the requested range doesn't overlap with any outstanding
-    /// borrow, then creates the `&mut` reference. Panics on overlap or OOB.
-    ///
-    /// If the index is out of bounds, the borrow record is automatically cleaned
-    /// up (no permanent borrow leak).
+    /// borrow, then creates the `&mut` reference. Panics on overlap, OOB, or
+    /// if the data structure has been poisoned by a prior panic.
     #[inline] // Inline to see bounds checks in order to potentially elide them.
     #[track_caller]
     pub fn index_mut<'a, I>(&'a self, index: I) -> DisjointMutGuard<'a, T, I::Output>
@@ -472,9 +476,10 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
             None => checked::BorrowId::UNCHECKED,
         };
         let parent = self.tracker.as_ref().map(|_| self);
-        // Scope guard: if get_mut panics (OOB), deregister so the range
-        // isn't permanently locked.
-        let cleanup = BorrowCleanup { parent, borrow_id };
+        // Scope guard: if get_mut panics (OOB), poison the data structure.
+        // We don't try to clean up the leaked borrow — poisoning is stricter
+        // and prevents all future access, following std::sync::Mutex semantics.
+        let cleanup = BorrowCleanup { parent };
         // SAFETY: The borrow has been registered (or we're unchecked).
         // The indexed region is guaranteed disjoint from all other active borrows.
         let slice = unsafe { &mut *index.get_mut(self.as_mut_slice()) };
@@ -491,10 +496,8 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     /// Immutably borrow a slice or element.
     ///
     /// Validates that the requested range doesn't overlap with any outstanding
-    /// mutable borrow, then creates the `&` reference. Panics on overlap or OOB.
-    ///
-    /// If the index is out of bounds, the borrow record is automatically cleaned
-    /// up (no permanent borrow leak).
+    /// mutable borrow, then creates the `&` reference. Panics on overlap, OOB,
+    /// or if the data structure has been poisoned by a prior panic.
     #[inline] // Inline to see bounds checks in order to potentially elide them.
     #[track_caller]
     pub fn index<'a, I>(&'a self, index: I) -> DisjointImmutGuard<'a, T, I::Output>
@@ -508,7 +511,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
             None => checked::BorrowId::UNCHECKED,
         };
         let parent = self.tracker.as_ref().map(|_| self);
-        let cleanup = BorrowCleanup { parent, borrow_id };
+        let cleanup = BorrowCleanup { parent };
         // SAFETY: The borrow has been registered (or we're unchecked).
         let slice = unsafe { &*index.get_mut(self.as_mut_slice()).cast_const() };
         mem::forget(cleanup);
@@ -845,7 +848,7 @@ mod checked {
     use parking_lot::Mutex;
     use std::fmt::Debug;
     use std::panic::Location;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::thread;
     use std::thread::ThreadId;
 
@@ -889,8 +892,13 @@ mod checked {
     }
 
     /// All active borrows for a single `DisjointMut` instance.
+    ///
+    /// Like [`std::sync::Mutex`], the tracker poisons the data structure when a
+    /// thread panics while holding a mutable borrow guard. This prevents
+    /// subsequent access to potentially corrupted data.
     pub(super) struct BorrowTracker {
         borrows: Mutex<Vec<BorrowRecord>>,
+        poisoned: AtomicBool,
     }
 
     impl Default for BorrowTracker {
@@ -903,6 +911,19 @@ mod checked {
         pub const fn new() -> Self {
             Self {
                 borrows: Mutex::new(Vec::new()),
+                poisoned: AtomicBool::new(false),
+            }
+        }
+
+        /// Mark this tracker as poisoned. All future borrow attempts will panic.
+        pub fn poison(&self) {
+            self.poisoned.store(true, Ordering::Release);
+        }
+
+        /// Panic if the tracker has been poisoned.
+        fn check_poisoned(&self) {
+            if self.poisoned.load(Ordering::Acquire) {
+                panic!("DisjointMut poisoned: a thread panicked while holding a mutable borrow");
             }
         }
 
@@ -912,6 +933,7 @@ mod checked {
         /// Returns the BorrowId for later removal.
         #[track_caller]
         pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
+            self.check_poisoned();
             let id = BorrowId::next();
             let record = BorrowRecord {
                 id,
@@ -936,6 +958,7 @@ mod checked {
         /// Register an immutable borrow.
         #[track_caller]
         pub fn add_immut(&self, bounds: &Bounds) -> BorrowId {
+            self.check_poisoned();
             let id = BorrowId::next();
             let record = BorrowRecord {
                 id,
@@ -976,7 +999,14 @@ mod checked {
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
     fn drop(&mut self) {
         if let Some(parent) = self.parent {
-            parent.tracker.as_ref().unwrap().remove(self.borrow_id);
+            let tracker = parent.tracker.as_ref().unwrap();
+            // If the thread is panicking while we hold a mutable guard,
+            // the data may be partially written / inconsistent.
+            // Poison the data structure so all future borrows fail.
+            if thread::panicking() {
+                tracker.poison();
+            }
+            tracker.remove(self.borrow_id);
         }
     }
 }

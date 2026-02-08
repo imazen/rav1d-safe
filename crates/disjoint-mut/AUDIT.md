@@ -36,11 +36,15 @@ The default `as_mut_slice` called `(*ptr).len()` which auto-refs to `&[V; N]`. F
 
 **Fix:** Added `is_empty()` check — empty ranges never overlap.
 
-### MEDIUM: Borrow leak on OOB panic (FIXED)
+### MEDIUM: No panic safety (FIXED — poisoning)
 
-If `get_mut` panicked after borrow registration, the record was never removed, permanently locking the range.
+If `get_mut` panicked after borrow registration (e.g. OOB), or if user code panicked while holding a mutable guard, the data structure had no way to signal that it may be in an inconsistent state. Future borrows would succeed, potentially exposing partially-written data.
 
-**Fix:** `BorrowCleanup` scope guard deregisters the borrow on unwind. Disarmed via `mem::forget` on success.
+**Fix:** Added `std::sync::Mutex`-style poisoning. An `AtomicBool` flag on `BorrowTracker` is set when:
+1. A panic occurs between borrow registration and reference creation (`BorrowCleanup` scope guard)
+2. A mutable guard is dropped during panic unwinding (`DisjointMutGuard::drop` checks `thread::panicking()`)
+
+All future `index()` and `index_mut()` calls check the poison flag and panic with a clear message. Immutable guard panics do NOT poison (read-only access can't corrupt data).
 
 ### MEDIUM: Integer overflow in `Bounds` conversions (FIXED)
 
@@ -58,7 +62,7 @@ Docs didn't warn about intermediate `&mut` references causing SB retagging confl
 
 ### What's Sound
 
-1. **Core overlap tracking** — `BorrowTracker` uses `parking_lot::Mutex` to serialize registration. Registration before reference creation prevents TOCTOU. `BorrowCleanup` guard prevents borrow leaks on panic.
+1. **Core overlap tracking** — `BorrowTracker` uses `parking_lot::Mutex` to serialize registration. Registration before reference creation prevents TOCTOU. Poisoning on panic prevents access to potentially corrupted data.
 
 2. **Guard lifecycle** — RAII-based. Drop deregisters. `ManuallyDrop` in `cast_slice`/`cast` correctly transfers borrow ownership.
 
@@ -74,7 +78,7 @@ Docs didn't warn about intermediate `&mut` references causing SB retagging confl
 
 2. **`addr_of_mut!(**ptr)` for Box** — Raw pointer chain through Box's compiler-intrinsic deref creates no intermediate references. Miri confirms.
 
-3. **`parking_lot::Mutex` unwind safety** — Doesn't poison on panic. Lock always released. Combined with `BorrowCleanup`, no borrow leaks possible.
+3. **`parking_lot::Mutex` unwind safety** — `parking_lot::Mutex` doesn't poison (unlike `std::sync::Mutex`), but we add our own `AtomicBool` poisoning at the `BorrowTracker` level. Lock always released on unwind. Mutable guard Drop poisons if `thread::panicking()`.
 
 ## Remaining Work for crates.io
 

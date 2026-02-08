@@ -187,10 +187,12 @@ fn test_two_empty_ranges_same_position() {
     let _g2 = dm.index_mut(50..50);
 }
 
-/// OOB panic should not leak a borrow record. After recovery,
-/// the same range should be borrowable again.
+/// OOB panic poisons the data structure. After recovery, all borrows fail.
+/// This follows std::sync::Mutex semantics — after a panic, the data may be
+/// in an inconsistent state, so we fail loudly rather than silently allowing
+/// access to potentially corrupted data.
 #[test]
-fn test_no_borrow_leak_on_oob_panic() {
+fn test_oob_panic_poisons() {
     let dm = DisjointMut::new(vec![0u8; 10]);
 
     // This should panic because index is OOB
@@ -199,10 +201,48 @@ fn test_no_borrow_leak_on_oob_panic() {
     }));
     assert!(result.is_err());
 
-    // The borrow record should NOT be leaked — we should be able to
-    // borrow the same range again.
-    let g = dm.index_mut(0..5);
-    assert_eq!(g[0], 0);
+    // The DisjointMut is now poisoned — all future borrows should panic.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _g = dm.index_mut(0..5);
+    }));
+    assert!(result.is_err());
+}
+
+/// Panic while holding a mutable guard poisons the data structure.
+#[test]
+fn test_panic_during_mut_guard_poisons() {
+    let dm = DisjointMut::new(vec![0u8; 100]);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut g = dm.index_mut(0..50);
+        g[0] = 42;
+        panic!("simulated write failure");
+    }));
+    assert!(result.is_err());
+
+    // Poisoned — even non-overlapping borrows fail.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _g = dm.index(50..100);
+    }));
+    assert!(result.is_err());
+}
+
+/// Panic while holding an immutable guard does NOT poison.
+/// Immutable guards don't modify data, so no inconsistency is possible.
+#[test]
+fn test_panic_during_immut_guard_no_poison() {
+    let dm = DisjointMut::new(vec![42u8; 100]);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let g = dm.index(0..50);
+        assert_eq!(g[0], 42);
+        panic!("simulated read failure");
+    }));
+    assert!(result.is_err());
+
+    // NOT poisoned — immutable guards don't corrupt data.
+    let g = dm.index(0..50);
+    assert_eq!(g[0], 42);
 }
 
 /// Test: concurrent disjoint access with Box<[u8]> backing.
