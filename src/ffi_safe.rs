@@ -23,6 +23,7 @@ impl<'a, T> FFISafe<'a, T> {
     /// # Safety
     ///
     /// `this` must have been returned from [`Self::new`].
+    #[allow(unsafe_code)]
     pub unsafe fn get(this: *const Self) -> &'a T {
         // SAFETY: `this` originally was a `&'a T` in `Self::new`.
         unsafe { &*this.cast() }
@@ -31,6 +32,7 @@ impl<'a, T> FFISafe<'a, T> {
     /// # Safety
     ///
     /// `this` must have been returned from [`Self::new_mut`].
+    #[allow(unsafe_code)]
     pub unsafe fn _get_mut(this: *mut Self) -> &'a mut T {
         // SAFETY: `this` originally was a `&'a mut T` in `Self::new_mut`.
         unsafe { &mut *this.cast() }

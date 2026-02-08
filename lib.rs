@@ -47,18 +47,14 @@ pub mod src {
     // audited and the allow removed as the code is made safe.
 
     // Core primitives
-    #[allow(unsafe_code)]
     pub mod align;
-    #[allow(unsafe_code)]
     pub(crate) mod assume;
     #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod c_arc;
     #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod c_box;
     pub mod cpu;
-    #[allow(unsafe_code)]
     pub(crate) mod disjoint_mut;
-    #[allow(unsafe_code)]
     mod ffi_safe;
     mod in_range;
     pub(super) mod internal;

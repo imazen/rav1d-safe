@@ -102,6 +102,7 @@ macro_rules! def_align {
         impl AlignedByteChunk for $name<[u8; $align]> {}
 
         /// SAFETY: We never materialize a `&mut [V]` since we do a direct cast.
+        #[allow(unsafe_code)]
         unsafe impl<V: Copy, const N: usize> ExternalAsMutPtr for $name<[V; N]> {
             type Target = V;
 
@@ -175,6 +176,7 @@ impl<T: Copy, C: AlignedByteChunk> AlignedVec<T, C> {
     }
 
     /// Extract a slice containing the entire vector.
+    #[allow(unsafe_code)]
     pub fn as_slice(&self) -> &[T] {
         // SAFETY: The first `len` elements have been
         // initialized to `T`s in `Self::resize_with`.
@@ -185,6 +187,7 @@ impl<T: Copy, C: AlignedByteChunk> AlignedVec<T, C> {
     }
 
     /// Extract a mutable slice of the entire vector.
+    #[allow(unsafe_code)]
     pub fn as_mut_slice(&mut self) -> &mut [T] {
         // SAFETY: The first `len` elements have been
         // initialized to `T`s in `Self::resize_with`.
@@ -194,6 +197,7 @@ impl<T: Copy, C: AlignedByteChunk> AlignedVec<T, C> {
         unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), self.len) }
     }
 
+    #[allow(unsafe_code)]
     pub fn resize(&mut self, new_len: usize, value: T) {
         let old_len = self.len();
 

@@ -39,6 +39,7 @@ impl<V: Copy, C: AlignedByteChunk> Resizable for AlignedVec<V, C> {
 /// SAFETY: We never materialize a `&mut [T]` since we
 /// only materialize a `&mut AlignedVec<T, _>` and call [`AlignedVec::as_mut_ptr`] on it,
 /// which calls [`Vec::as_mut_ptr`] and never materializes a `&mut [V]`.
+#[allow(unsafe_code)]
 unsafe impl<T: Copy, C: AlignedByteChunk> ExternalAsMutPtr for AlignedVec<T, C> {
     type Target = T;
 
