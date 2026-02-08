@@ -1428,6 +1428,10 @@ fn ipred_z2_8bpc_inner(
         // SIMD path for top edge pixels - process 16 at a time
         while x + 16 <= switch_x {
             let base = (base_x0 + x as i32) as usize;
+            // Bounds check: need top_off + base + 17 <= topleft.len()
+            if top_off + base + 17 > topleft.len() {
+                break;
+            }
 
             let t0 = load_128!((&topleft[top_off + base..top_off + base + 16]), [u8; 16]);
             let t1 = load_128!((&topleft[top_off + base + 1..top_off + base + 17]), [u8; 16]);
@@ -1455,6 +1459,10 @@ fn ipred_z2_8bpc_inner(
         // Scalar for remaining top edge pixels
         while x < switch_x {
             let base = (base_x0 + x as i32) as usize;
+            // Bounds check: need top_off + base + 2 <= topleft.len()
+            if top_off + base + 2 > topleft.len() {
+                break;
+            }
             let t0 = topleft[top_off + base] as i32;
             let t1 = topleft[top_off + base + 1] as i32;
             let v = t0 * inv_frac_x as i32 + t1 * frac_x as i32;
@@ -1470,8 +1478,12 @@ fn ipred_z2_8bpc_inner(
             let inv_frac_y = 64 - frac_y;
 
             // left edge: tl[-1-base_y] and tl[-2-base_y]
-            let l0 = topleft[(tl_off as isize - 1 - base_y as isize) as usize] as i32;
-            let l1 = topleft[(tl_off as isize - 2 - base_y as isize) as usize] as i32;
+            // Clamp indices to valid range (asm reads padding bytes for OOB)
+            let tl_max = topleft.len() as isize - 1;
+            let l0_idx = (tl_off as isize - 1 - base_y as isize).clamp(0, tl_max) as usize;
+            let l1_idx = (tl_off as isize - 2 - base_y as isize).clamp(0, tl_max) as usize;
+            let l0 = topleft[l0_idx] as i32;
+            let l1 = topleft[l1_idx] as i32;
             let v = l0 * inv_frac_y + l1 * frac_y;
             dst[row_off + x] = ((v + 32) >> 6) as u8;
             x += 1;
@@ -2813,6 +2825,10 @@ fn ipred_z2_16bpc_inner(
 
             let load0 = top_off + base * 2;
             let load1 = top_off + (base + 1) * 2;
+            // Bounds check: need load1 + 16 <= topleft.len()
+            if load1 + 16 > topleft.len() {
+                break;
+            }
             let t0 = load_128!((&topleft[load0..load0 + 16]), [u8; 16]);
             let t1 = load_128!((&topleft[load1..load1 + 16]), [u8; 16]);
 
@@ -2842,6 +2858,10 @@ fn ipred_z2_16bpc_inner(
             let base = (base_x0 + x as i32) as usize;
             let t0_off = top_off + base * 2;
             let t1_off = top_off + (base + 1) * 2;
+            // Bounds check: need t1_off + 2 <= topleft.len()
+            if t1_off + 2 > topleft.len() {
+                break;
+            }
             let t0 = u16::from_ne_bytes(topleft[t0_off..t0_off + 2].try_into().unwrap()) as i32;
             let t1 = u16::from_ne_bytes(topleft[t1_off..t1_off + 2].try_into().unwrap()) as i32;
             let v = t0 * inv_frac_x + t1 * frac_x;
@@ -2858,8 +2878,10 @@ fn ipred_z2_16bpc_inner(
             let inv_frac_y = 64 - frac_y;
 
             // left edge: tl[-1-base_y] and tl[-2-base_y] in pixel units
-            let l0_off = (tl_off as isize - (1 + base_y as isize) * 2) as usize;
-            let l1_off = (tl_off as isize - (2 + base_y as isize) * 2) as usize;
+            // Clamp byte offsets to valid range (asm reads padding bytes for OOB)
+            let tl_max = topleft.len() as isize - 2;
+            let l0_off = (tl_off as isize - (1 + base_y as isize) * 2).clamp(0, tl_max) as usize;
+            let l1_off = (tl_off as isize - (2 + base_y as isize) * 2).clamp(0, tl_max) as usize;
             let l0 = u16::from_ne_bytes(topleft[l0_off..l0_off + 2].try_into().unwrap()) as i32;
             let l1 = u16::from_ne_bytes(topleft[l1_off..l1_off + 2].try_into().unwrap()) as i32;
             let v = l0 * inv_frac_y + l1 * frac_y;
@@ -3427,18 +3449,9 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             w,
             h,
         ),
-        (BPC::BPC8, 13) => ipred_filter_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-            angle as i32,
-            topleft_off,
-        ),
+        // Filter intra SIMD has double-offset bug and missing top-pointer update.
+        // Fall back to scalar until fixed.
+        (BPC::BPC8, 13) => return false,
         (BPC::BPC16, 0) => {
             let tl_off_bytes = topleft_off * 2;
             ipred_dc_16bpc_inner(
