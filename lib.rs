@@ -51,9 +51,9 @@ pub mod src {
     pub mod align;
     #[allow(unsafe_code)]
     pub(crate) mod assume;
-    #[allow(unsafe_code)]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod c_arc;
-    #[allow(unsafe_code)]
+    #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod c_box;
     pub mod cpu;
     #[allow(unsafe_code)]
@@ -61,13 +61,13 @@ pub mod src {
     #[allow(unsafe_code)]
     mod ffi_safe;
     mod in_range;
-    #[allow(unsafe_code)]
     pub(super) mod internal;
     mod intra_edge;
     #[cfg_attr(not(feature = "c-ffi"), deny(unsafe_code))]
     #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod log;
     pub(crate) mod pixels;
+    #[cfg(any(feature = "asm", feature = "c-ffi"))]
     #[allow(unsafe_code)]
     pub mod send_sync_non_null;
     mod tables;

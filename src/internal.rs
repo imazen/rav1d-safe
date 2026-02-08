@@ -305,9 +305,11 @@ pub(crate) struct TaskThreadDataDelayedFg {
 
 // SAFETY: TODO(SJC): Remove when TaskThreadDataDelayedFg is thread-safe.
 // Fields are protected by external synchronization via TaskThreadData's mutex.
+#[allow(unsafe_code)]
 unsafe impl Send for TaskThreadDataDelayedFg {}
 // SAFETY: TODO(SJC): Remove when TaskThreadDataDelayedFg is thread-safe.
 // Fields are protected by external synchronization via TaskThreadData's mutex.
+#[allow(unsafe_code)]
 unsafe impl Sync for TaskThreadDataDelayedFg {}
 
 #[derive(Default)]
@@ -439,9 +441,11 @@ pub struct Rav1dContext {
 
 // SAFETY: TODO(SJC): Remove when Rav1dContext is thread-safe.
 // Thread safety is managed externally by the caller's API contract.
+#[allow(unsafe_code)]
 unsafe impl Send for Rav1dContext {}
 // SAFETY: TODO(SJC): Remove when Rav1dContext is thread-safe.
 // Thread safety is managed externally by the caller's API contract.
+#[allow(unsafe_code)]
 unsafe impl Sync for Rav1dContext {}
 
 

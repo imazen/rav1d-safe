@@ -70,12 +70,15 @@ impl<T: ?Sized> Clone for StableRef<T> {
 impl<T: ?Sized> Copy for StableRef<T> {}
 
 /// SAFETY: [`StableRef`]`<T>`, if it follows its safety guarantees, is essentially a `&T`/`&mut T`, which is [`Send`] if `T: `[`Send`]`.
+#[allow(unsafe_code)]
 unsafe impl<T: Send + ?Sized> Send for StableRef<T> {}
 
 /// SAFETY: [`StableRef`]`<T>`, if it follows its safety guarantees, is essentially a `&T`/`&mut T`, which is [`Sync`] if `T: `[`Sync`].
+#[allow(unsafe_code)]
 unsafe impl<T: Send + ?Sized> Sync for StableRef<T> {}
 
 impl<T: ?Sized> AsRef<T> for CArc<T> {
+    #[allow(unsafe_code)]
     fn as_ref(&self) -> &T {
         #[cfg(debug_assertions)]
         {
