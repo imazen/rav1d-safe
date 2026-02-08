@@ -1369,9 +1369,9 @@ pub unsafe extern "C" fn blend_h_16bpc_neon(
 /// Core w_mask implementation for 8bpc
 /// SS_HOR and SS_VER control subsampling: 444=(false,false), 422=(true,false), 420=(true,true)
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
-#[target_feature(enable = "neon")]
-unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
+#[arcane]
+fn w_mask_8bpc_inner(
+    _token: Arm64,
     dst: &mut [u8],
     dst_stride: usize,
     tmp1: &[i16],
@@ -1380,6 +1380,8 @@ unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     h: usize,
     mask: &mut [u8],
     sign: u8,
+    ss_hor: bool,
+    ss_ver: bool,
 ) {
     // For 8bpc: intermediate_bits = 4, bitdepth = 8
     let intermediate_bits = 4i32;
@@ -1389,16 +1391,16 @@ unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     let mask_rnd = 1i32 << (mask_sh - 5);
 
     // Mask output dimensions depend on subsampling
-    let mask_w = if SS_HOR { w >> 1 } else { w };
+    let mask_w = if ss_hor { w >> 1 } else { w };
 
     for y in 0..h {
         let tmp1_row = &tmp1[y * w..][..w];
         let tmp2_row = &tmp2[y * w..][..w];
         let dst_row = &mut dst[y * dst_stride..][..w];
-        let mut mask_row = if SS_VER && (y & 1) != 0 {
+        let mut mask_row = if ss_ver && (y & 1) != 0 {
             None
         } else {
-            let mask_y = if SS_VER { y >> 1 } else { y };
+            let mask_y = if ss_ver { y >> 1 } else { y };
             Some(&mut mask[mask_y * mask_w..][..mask_w])
         };
 
@@ -1488,7 +1490,7 @@ unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
                 // For 444: 1:1 mask storage
                 // For 422: horizontal averaging (2 pixels -> 1 mask)
                 // For 420: also horizontal averaging
-                if !SS_HOR {
+                if !ss_hor {
                     // 444: store all mask values
                     let m_narrow = vqmovun_s16(m_16);
                     let mask_arr: &mut [u8; 8] = (&mut mask_row[col..col + 8]).try_into().unwrap();
@@ -1533,7 +1535,7 @@ unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
 
             // Store mask with subsampling
             if let Some(ref mut mask_row) = mask_row {
-                if !SS_HOR {
+                if !ss_hor {
                     mask_row[col] = m as u8;
                 } else if (col & 1) == 0 {
                     // For 422/420, store averaged pairs
@@ -1577,7 +1579,9 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs())
     };
 
-    w_mask_8bpc_inner::<false, false>(
+    let token = unsafe { Arm64::forge_token_dangerously() };
+    w_mask_8bpc_inner(
+        token,
         dst,
         dst_stride as usize,
         tmp1.as_slice(),
@@ -1586,6 +1590,7 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
         h,
         mask.as_mut_slice(),
         sign as u8,
+        false, false,
     );
 }
 
@@ -1611,7 +1616,9 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs())
     };
 
-    w_mask_8bpc_inner::<true, false>(
+    let token = unsafe { Arm64::forge_token_dangerously() };
+    w_mask_8bpc_inner(
+        token,
         dst,
         dst_stride as usize,
         tmp1.as_slice(),
@@ -1620,6 +1627,7 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
         h,
         mask.as_mut_slice(),
         sign as u8,
+        true, false,
     );
 }
 
@@ -1645,7 +1653,9 @@ pub unsafe extern "C" fn w_mask_420_8bpc_neon(
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs())
     };
 
-    w_mask_8bpc_inner::<true, true>(
+    let token = unsafe { Arm64::forge_token_dangerously() };
+    w_mask_8bpc_inner(
+        token,
         dst,
         dst_stride as usize,
         tmp1.as_slice(),
@@ -1654,6 +1664,7 @@ pub unsafe extern "C" fn w_mask_420_8bpc_neon(
         h,
         mask.as_mut_slice(),
         sign as u8,
+        true, true,
     );
 }
 
@@ -2432,9 +2443,7 @@ pub unsafe extern "C" fn prep_bilin_16bpc_neon(
 
 /// Core w_mask implementation for 16bpc
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
-#[target_feature(enable = "neon")]
-unsafe fn w_mask_16bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
+fn w_mask_16bpc_inner(
     dst: &mut [u16],
     dst_stride: usize,
     tmp1: &[i16],
@@ -2444,6 +2453,8 @@ unsafe fn w_mask_16bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     mask: &mut [u8],
     sign: u8,
     bitdepth_max: i32,
+    ss_hor: bool,
+    ss_ver: bool,
 ) {
     // For 16bpc: intermediate_bits = 4
     let bitdepth = if bitdepth_max == 1023 { 10u32 } else { 12u32 };
@@ -2453,16 +2464,16 @@ unsafe fn w_mask_16bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     let mask_sh = (bitdepth as i32 + intermediate_bits - 4) as u32;
     let mask_rnd = 1u16 << (mask_sh - 5);
 
-    let mask_w = if SS_HOR { w >> 1 } else { w };
+    let mask_w = if ss_hor { w >> 1 } else { w };
 
     for y in 0..h {
         let tmp1_row = &tmp1[y * w..][..w];
         let tmp2_row = &tmp2[y * w..][..w];
         let dst_row = &mut dst[y * dst_stride..][..w];
-        let mut mask_row = if SS_VER && (y & 1) != 0 {
+        let mut mask_row = if ss_ver && (y & 1) != 0 {
             None
         } else {
-            let mask_y = if SS_VER { y >> 1 } else { y };
+            let mask_y = if ss_ver { y >> 1 } else { y };
             Some(&mut mask[mask_y * mask_w..][..mask_w])
         };
 
@@ -2482,7 +2493,7 @@ unsafe fn w_mask_16bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
             dst_row[col] = pixel.clamp(0, bitdepth_max) as u16;
 
             if let Some(ref mut mask_row) = mask_row {
-                if !SS_HOR {
+                if !ss_hor {
                     mask_row[col] = m;
                 } else if (col & 1) == 0 {
                     let mask_idx = col >> 1;
@@ -2526,7 +2537,7 @@ pub unsafe extern "C" fn w_mask_444_16bpc_neon(
     // SAFETY: Pointers are valid and properly aligned
     let dst = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16) };
 
-    w_mask_16bpc_inner::<false, false>(
+    w_mask_16bpc_inner(
         dst,
         dst_stride_u16,
         tmp1.as_slice(),
@@ -2536,6 +2547,7 @@ pub unsafe extern "C" fn w_mask_444_16bpc_neon(
         mask.as_mut_slice(),
         sign as u8,
         bitdepth_max,
+        false, false,
     );
 }
 
@@ -2559,7 +2571,7 @@ pub unsafe extern "C" fn w_mask_422_16bpc_neon(
     // SAFETY: Pointers are valid and properly aligned
     let dst = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16) };
 
-    w_mask_16bpc_inner::<true, false>(
+    w_mask_16bpc_inner(
         dst,
         dst_stride_u16,
         tmp1.as_slice(),
@@ -2569,6 +2581,7 @@ pub unsafe extern "C" fn w_mask_422_16bpc_neon(
         mask.as_mut_slice(),
         sign as u8,
         bitdepth_max,
+        true, false,
     );
 }
 
@@ -2592,7 +2605,7 @@ pub unsafe extern "C" fn w_mask_420_16bpc_neon(
     // SAFETY: Pointers are valid and properly aligned
     let dst = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16) };
 
-    w_mask_16bpc_inner::<true, true>(
+    w_mask_16bpc_inner(
         dst,
         dst_stride_u16,
         tmp1.as_slice(),
@@ -2602,6 +2615,7 @@ pub unsafe extern "C" fn w_mask_420_16bpc_neon(
         mask.as_mut_slice(),
         sign as u8,
         bitdepth_max,
+        true, true,
     );
 }
 
@@ -4252,7 +4266,7 @@ define_prep_8tap_16bpc!(prep_8tap_sharp_16bpc_neon, Filter2d::Sharp8Tap);
 // ============================================================================
 
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
+#[cfg_attr(not(feature = "asm"), allow(unused_variables))]
 pub fn avg_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
@@ -4265,16 +4279,19 @@ pub fn avg_dispatch<BD: BitDepth>(
     #[cfg(feature = "asm")]
     {
         use zerocopy::AsBytes;
-        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-        let dst_stride = dst.stride();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        unsafe {
-            match BD::BPC {
-                BPC::BPC8 => avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
-                BPC::BPC16 => avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
+        #[allow(unsafe_code)]
+        {
+            let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+            let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+            let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+            let dst_stride = dst.stride();
+            let bd_c = bd.into_c();
+            let dst_ffi = FFISafe::new(&dst);
+            unsafe {
+                match BD::BPC {
+                    BPC::BPC8 => avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
+                    BPC::BPC16 => avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
+                }
             }
         }
     }
@@ -4292,13 +4309,12 @@ pub fn avg_dispatch<BD: BitDepth>(
                 avg_8bpc_inner(token, &mut dst_bytes[dst_base..], dst_stride, &tmp1[..], &tmp2[..], w_u, h_u);
             }
             BPC::BPC16 => {
-                use zerocopy::AsBytes;
+                use zerocopy::{AsBytes, FromBytes};
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
-                let dst_u16 = unsafe {
-                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u)
-                };
+                let byte_len = (h_u * stride_u16 + w_u) * 2;
+                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
                 avg_16bpc_inner(token, dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, bd.into_c());
             }
         }
@@ -4307,7 +4323,7 @@ pub fn avg_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
+#[cfg_attr(not(feature = "asm"), allow(unused_variables))]
 pub fn w_avg_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
@@ -4321,19 +4337,22 @@ pub fn w_avg_dispatch<BD: BitDepth>(
     #[cfg(feature = "asm")]
     {
         use zerocopy::AsBytes;
-        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-        let dst_stride = dst.stride();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        unsafe {
-            match BD::BPC {
-                BPC::BPC8 => {
-                    w_avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
-                }
-                BPC::BPC16 => {
-                    w_avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
+        #[allow(unsafe_code)]
+        {
+            let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+            let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+            let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+            let dst_stride = dst.stride();
+            let bd_c = bd.into_c();
+            let dst_ffi = FFISafe::new(&dst);
+            unsafe {
+                match BD::BPC {
+                    BPC::BPC8 => {
+                        w_avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
+                    }
+                    BPC::BPC16 => {
+                        w_avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
+                    }
                 }
             }
         }
@@ -4352,13 +4371,12 @@ pub fn w_avg_dispatch<BD: BitDepth>(
                 w_avg_8bpc_inner(token, &mut dst_bytes[dst_base..], dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, weight);
             }
             BPC::BPC16 => {
-                use zerocopy::AsBytes;
+                use zerocopy::{AsBytes, FromBytes};
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
-                let dst_u16 = unsafe {
-                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u)
-                };
+                let byte_len = (h_u * stride_u16 + w_u) * 2;
+                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
                 w_avg_16bpc_inner(token, dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, weight, bd.into_c());
             }
         }
@@ -4367,7 +4385,7 @@ pub fn w_avg_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
+#[cfg_attr(not(feature = "asm"), allow(unused_variables))]
 pub fn mask_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
@@ -4381,21 +4399,24 @@ pub fn mask_dispatch<BD: BitDepth>(
     #[cfg(feature = "asm")]
     {
         use zerocopy::AsBytes;
-        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-        let dst_stride = dst.stride();
-        let mask_ptr = mask[..(w * h) as usize].as_ptr();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        unsafe {
-            match BD::BPC {
-                BPC::BPC8 => mask_8bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
-                ),
-                BPC::BPC16 => mask_16bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
-                ),
+        #[allow(unsafe_code)]
+        {
+            let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+            let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+            let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+            let dst_stride = dst.stride();
+            let mask_ptr = mask[..(w * h) as usize].as_ptr();
+            let bd_c = bd.into_c();
+            let dst_ffi = FFISafe::new(&dst);
+            unsafe {
+                match BD::BPC {
+                    BPC::BPC8 => mask_8bpc_neon(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
+                    ),
+                    BPC::BPC16 => mask_16bpc_neon(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
+                    ),
+                }
             }
         }
     }
@@ -4414,13 +4435,12 @@ pub fn mask_dispatch<BD: BitDepth>(
                 mask_8bpc_inner(token, &mut dst_bytes[dst_base..], dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, mask_slice);
             }
             BPC::BPC16 => {
-                use zerocopy::AsBytes;
+                use zerocopy::{AsBytes, FromBytes};
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
-                let dst_u16 = unsafe {
-                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u)
-                };
+                let byte_len = (h_u * stride_u16 + w_u) * 2;
+                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
                 mask_16bpc_inner(token, dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, mask_slice, bd.into_c());
             }
         }
@@ -4429,7 +4449,7 @@ pub fn mask_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
+#[cfg_attr(not(feature = "asm"), allow(unused_variables))]
 pub fn blend_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN],
@@ -4441,17 +4461,20 @@ pub fn blend_dispatch<BD: BitDepth>(
     #[cfg(feature = "asm")]
     {
         use zerocopy::AsBytes;
-        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-        let dst_stride = dst.stride();
-        let tmp_ptr = std::ptr::from_ref(tmp).cast();
-        let mask_ptr = mask[..(w * h) as usize].as_ptr();
-        let dst_ffi = FFISafe::new(&dst);
-        unsafe {
-            match BD::BPC {
-                BPC::BPC8 => blend_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
-                BPC::BPC16 => blend_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
+        #[allow(unsafe_code)]
+        {
+            let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+            let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+            let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+            let dst_stride = dst.stride();
+            let tmp_ptr = std::ptr::from_ref(tmp).cast();
+            let mask_ptr = mask[..(w * h) as usize].as_ptr();
+            let dst_ffi = FFISafe::new(&dst);
+            unsafe {
+                match BD::BPC {
+                    BPC::BPC8 => blend_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
+                    BPC::BPC16 => blend_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
+                }
             }
         }
     }
@@ -4481,17 +4504,15 @@ pub fn blend_dispatch<BD: BitDepth>(
                 }
             }
             BPC::BPC16 => {
-                use zerocopy::AsBytes;
+                use zerocopy::{AsBytes, FromBytes};
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
-                let dst_u16 = unsafe {
-                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u)
-                };
+                let dst_byte_len = (h_u * stride_u16 + w_u) * 2;
+                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
-                let tmp_u16 = unsafe {
-                    std::slice::from_raw_parts(tmp_bytes.as_ptr() as *const u16, w_u * h_u)
-                };
+                let tmp_byte_len = w_u * h_u * 2;
+                let tmp_u16: &[u16] = FromBytes::slice_from(&tmp_bytes[..tmp_byte_len]).unwrap();
                 for row in 0..h_u {
                     let dst_row = &mut dst_u16[row * stride_u16..][..w_u];
                     let tmp_row = &tmp_u16[row * w_u..][..w_u];
@@ -4510,7 +4531,7 @@ pub fn blend_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
+#[cfg_attr(not(feature = "asm"), allow(unused_variables))]
 pub fn blend_dir_dispatch<BD: BitDepth>(
     is_h: bool,
     dst: PicOffset,
@@ -4522,18 +4543,21 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
     #[cfg(feature = "asm")]
     {
         use zerocopy::AsBytes;
-        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-        let dst_stride = dst.stride();
-        let tmp_ptr = std::ptr::from_ref(tmp).cast();
-        let dst_ffi = FFISafe::new(&dst);
-        unsafe {
-            match (BD::BPC, is_h) {
-                (BPC::BPC8, true) => blend_h_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                (BPC::BPC8, false) => blend_v_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                (BPC::BPC16, true) => blend_h_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-                (BPC::BPC16, false) => blend_v_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+        #[allow(unsafe_code)]
+        {
+            let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+            let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+            let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+            let dst_stride = dst.stride();
+            let tmp_ptr = std::ptr::from_ref(tmp).cast();
+            let dst_ffi = FFISafe::new(&dst);
+            unsafe {
+                match (BD::BPC, is_h) {
+                    (BPC::BPC8, true) => blend_h_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                    (BPC::BPC8, false) => blend_v_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                    (BPC::BPC16, true) => blend_h_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                    (BPC::BPC16, false) => blend_v_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                }
             }
         }
     }
@@ -4546,7 +4570,6 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
         let dst_stride = dst.stride() as usize;
         match (BD::BPC, is_h) {
             (BPC::BPC8, false) => {
-                // blend_v 8bpc: mask from obmc_masks[w..], dst_w = w*3/4
                 use zerocopy::AsBytes;
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let dst_slice = &mut dst_bytes[dst_base..];
@@ -4565,7 +4588,6 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                 }
             }
             (BPC::BPC8, true) => {
-                // blend_h 8bpc: mask from obmc_masks[h..], h_effective = h*3/4
                 use zerocopy::AsBytes;
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let dst_slice = &mut dst_bytes[dst_base..];
@@ -4584,18 +4606,15 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                 }
             }
             (BPC::BPC16, false) => {
-                // blend_v 16bpc
-                use zerocopy::AsBytes;
+                use zerocopy::{AsBytes, FromBytes};
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
-                let dst_u16 = unsafe {
-                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u)
-                };
+                let dst_byte_len = (h_u * stride_u16 + w_u) * 2;
+                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
-                let tmp_u16 = unsafe {
-                    std::slice::from_raw_parts(tmp_bytes.as_ptr() as *const u16, w_u * h_u)
-                };
+                let tmp_byte_len = w_u * h_u * 2;
+                let tmp_u16: &[u16] = FromBytes::slice_from(&tmp_bytes[..tmp_byte_len]).unwrap();
                 let mask = &dav1d_obmc_masks.0[w_u..];
                 let dst_w = w_u * 3 >> 2;
                 for row in 0..h_u {
@@ -4610,20 +4629,17 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                 }
             }
             (BPC::BPC16, true) => {
-                // blend_h 16bpc
-                use zerocopy::AsBytes;
+                use zerocopy::{AsBytes, FromBytes};
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
                 let mask = &dav1d_obmc_masks.0[h_u..];
                 let h_effective = h_u * 3 >> 2;
-                let dst_u16 = unsafe {
-                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_effective * stride_u16 + w_u)
-                };
+                let dst_byte_len = (h_effective * stride_u16 + w_u) * 2;
+                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
-                let tmp_u16 = unsafe {
-                    std::slice::from_raw_parts(tmp_bytes.as_ptr() as *const u16, w_u * h_effective)
-                };
+                let tmp_byte_len = w_u * h_effective * 2;
+                let tmp_u16: &[u16] = FromBytes::slice_from(&tmp_bytes[..tmp_byte_len]).unwrap();
                 for row in 0..h_effective {
                     let dst_row = &mut dst_u16[row * stride_u16..][..w_u];
                     let tmp_row = &tmp_u16[row * w_u..][..w_u];
@@ -4641,7 +4657,7 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
+#[cfg_attr(not(feature = "asm"), allow(unused_variables))]
 pub fn w_mask_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     dst: PicOffset,
@@ -4657,37 +4673,41 @@ pub fn w_mask_dispatch<BD: BitDepth>(
     #[cfg(feature = "asm")]
     {
         use zerocopy::AsBytes;
-        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-        let dst_stride = dst.stride();
-        let bd_c = bd.into_c();
-        let dst_ffi = FFISafe::new(&dst);
-        unsafe {
-            match (BD::BPC, layout) {
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_8bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-                ),
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_8bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-                ),
-                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_8bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-                ),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_16bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-                ),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_16bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-                ),
-                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_16bpc_neon(
-                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-                ),
+        #[allow(unsafe_code)]
+        {
+            let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+            let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+            let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+            let dst_stride = dst.stride();
+            let bd_c = bd.into_c();
+            let dst_ffi = FFISafe::new(&dst);
+            unsafe {
+                match (BD::BPC, layout) {
+                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_8bpc_neon(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                    ),
+                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_8bpc_neon(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                    ),
+                    (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_8bpc_neon(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                    ),
+                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_16bpc_neon(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                    ),
+                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_16bpc_neon(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                    ),
+                    (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_16bpc_neon(
+                        dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                    ),
+                }
             }
         }
     }
     #[cfg(not(feature = "asm"))]
     {
+        let token = Arm64::summon().unwrap();
         let w_u = w as usize;
         let h_u = h as usize;
         let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
@@ -4697,27 +4717,24 @@ pub fn w_mask_dispatch<BD: BitDepth>(
                 use zerocopy::AsBytes;
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let dst_slice = &mut dst_bytes[dst_base..];
-                unsafe {
-                    match layout {
-                        Rav1dPixelLayoutSubSampled::I420 => w_mask_8bpc_inner::<true, true>(dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8),
-                        Rav1dPixelLayoutSubSampled::I422 => w_mask_8bpc_inner::<true, false>(dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8),
-                        Rav1dPixelLayoutSubSampled::I444 => w_mask_8bpc_inner::<false, false>(dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8),
-                    }
+                match layout {
+                    Rav1dPixelLayoutSubSampled::I420 => w_mask_8bpc_inner(token, dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, true, true),
+                    Rav1dPixelLayoutSubSampled::I422 => w_mask_8bpc_inner(token, dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, true, false),
+                    Rav1dPixelLayoutSubSampled::I444 => w_mask_8bpc_inner(token, dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, false, false),
                 }
             }
             BPC::BPC16 => {
-                use zerocopy::AsBytes;
+                use zerocopy::{AsBytes, FromBytes};
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
-                let dst_u16 = unsafe { std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u) };
+                let byte_len = (h_u * stride_u16 + w_u) * 2;
+                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[start..start + byte_len]).unwrap();
                 let bd_c = bd.into_c();
-                unsafe {
-                    match layout {
-                        Rav1dPixelLayoutSubSampled::I420 => w_mask_16bpc_inner::<true, true>(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c),
-                        Rav1dPixelLayoutSubSampled::I422 => w_mask_16bpc_inner::<true, false>(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c),
-                        Rav1dPixelLayoutSubSampled::I444 => w_mask_16bpc_inner::<false, false>(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c),
-                    }
+                match layout {
+                    Rav1dPixelLayoutSubSampled::I420 => w_mask_16bpc_inner(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c, true, true),
+                    Rav1dPixelLayoutSubSampled::I422 => w_mask_16bpc_inner(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c, true, false),
+                    Rav1dPixelLayoutSubSampled::I444 => w_mask_16bpc_inner(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c, false, false),
                 }
             }
         }
@@ -4726,7 +4743,7 @@ pub fn w_mask_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
+#[cfg_attr(not(feature = "asm"), allow(unused_variables))]
 pub fn mc_put_dispatch<BD: BitDepth>(
     filter: Filter2d,
     dst: PicOffset,
@@ -4742,6 +4759,8 @@ pub fn mc_put_dispatch<BD: BitDepth>(
     #[cfg(feature = "asm")]
     {
         use zerocopy::AsBytes;
+        #[allow(unsafe_code)]
+        {
         let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
         let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
         let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
@@ -4817,6 +4836,7 @@ pub fn mc_put_dispatch<BD: BitDepth>(
                 ),
             }
         }
+        }
     }
     #[cfg(not(feature = "asm"))]
     {
@@ -4851,23 +4871,26 @@ pub fn mc_put_dispatch<BD: BitDepth>(
                 }
             }
             BPC::BPC16 => {
-                use zerocopy::AsBytes;
+                use zerocopy::{AsBytes, FromBytes};
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let src_bytes = src_guard.as_bytes();
                 let dst_stride_u16 = (dst_stride_raw as usize) / 2;
                 let src_stride_u16 = (src_stride_raw as usize) / 2;
                 let dst_start = dst_base * 2;
-                let dst_u16 = unsafe { std::slice::from_raw_parts_mut(dst_bytes[dst_start..].as_mut_ptr() as *mut u16, h_u * dst_stride_u16 + w_u) };
+                let dst_byte_len = (h_u * dst_stride_u16 + w_u) * 2;
+                let dst_u16: &mut [u16] = FromBytes::mut_slice_from(&mut dst_bytes[dst_start..dst_start + dst_byte_len]).unwrap();
 
                 if filter == Bilinear {
                     let src_start = src_base * 2;
-                    let src_u16 = unsafe { std::slice::from_raw_parts(src_bytes[src_start..].as_ptr() as *const u16, (h_u + 1) * src_stride_u16 + w_u + 1) };
+                    let src_byte_len = ((h_u + 1) * src_stride_u16 + w_u + 1) * 2;
+                    let src_u16: &[u16] = FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len]).unwrap();
                     put_bilin_16bpc_inner(token, dst_u16, dst_stride_u16, src_u16, src_stride_u16, w_u, h_u, mx, my, bd.into_c());
                 } else {
                     let src_start_u16 = src_base.wrapping_sub(3 * src_stride_u16 + 3);
                     let src_start = src_start_u16 * 2;
                     let src_len = (h_u + 7) * src_stride_u16 + w_u + 7;
-                    let src_full = unsafe { std::slice::from_raw_parts(src_bytes[src_start..].as_ptr() as *const u16, src_len) };
+                    let src_byte_len = src_len * 2;
+                    let src_full: &[u16] = FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len]).unwrap();
                     let src_adj = &src_full[3 * src_stride_u16 + 3..];
                     put_8tap_16bpc_inner(token, dst_u16, dst_stride_u16, src_adj, src_stride_u16, w_u, h_u, mx_u, my_u, get_h_filter_type(filter), get_v_filter_type(filter), bd.into_c() as u16);
                 }
@@ -4878,7 +4901,7 @@ pub fn mc_put_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_code)]
+#[cfg_attr(not(feature = "asm"), allow(unused_variables))]
 pub fn mct_prep_dispatch<BD: BitDepth>(
     filter: Filter2d,
     tmp: &mut [i16],
@@ -4893,6 +4916,8 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
     use Filter2d::*;
     #[cfg(feature = "asm")]
     {
+        #[allow(unsafe_code)]
+        {
         let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
         use zerocopy::AsBytes;
         let (src_guard, _src_base) = src.full_guard::<BD>();
@@ -4965,6 +4990,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                 }
             }
         }
+        }
     }
     #[cfg(not(feature = "asm"))]
     {
@@ -4995,19 +5021,21 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                 }
             }
             BPC::BPC16 => {
-                use zerocopy::AsBytes;
+                use zerocopy::{AsBytes, FromBytes};
                 let src_bytes = src_guard.as_bytes();
                 let src_stride_u16 = (src_stride_raw as usize) / 2;
 
                 if filter == Bilinear {
                     let src_start = src_base * 2;
-                    let src_u16 = unsafe { std::slice::from_raw_parts(src_bytes[src_start..].as_ptr() as *const u16, (h_u + 1) * src_stride_u16 + w_u + 1) };
+                    let src_byte_len = ((h_u + 1) * src_stride_u16 + w_u + 1) * 2;
+                    let src_u16: &[u16] = FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len]).unwrap();
                     prep_bilin_16bpc_inner(token, tmp_slice, src_u16, src_stride_u16, w_u, h_u, mx, my);
                 } else {
                     let src_start_u16 = src_base.wrapping_sub(3 * src_stride_u16 + 3);
                     let src_start = src_start_u16 * 2;
                     let src_len = (h_u + 7) * src_stride_u16 + w_u + 7;
-                    let src_full = unsafe { std::slice::from_raw_parts(src_bytes[src_start..].as_ptr() as *const u16, src_len) };
+                    let src_byte_len = src_len * 2;
+                    let src_full: &[u16] = FromBytes::slice_from(&src_bytes[src_start..src_start + src_byte_len]).unwrap();
                     let src_adj = &src_full[3 * src_stride_u16 + 3..];
                     prep_8tap_16bpc_inner(token, tmp_slice, src_adj, src_stride_u16, w_u, h_u, mx_u, my_u, get_h_filter_type(filter), get_v_filter_type(filter));
                 }
