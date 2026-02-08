@@ -120,6 +120,64 @@ pub fn idx_mut<T>(buf: &mut [T], i: usize) -> &mut T {
     &mut buf[i]
 }
 
+/// Extension trait for slices: checked by default, unchecked with `unchecked` feature.
+///
+/// Use `slice.at(i)` instead of `slice[i]` in SIMD hot paths. When the
+/// `unchecked` feature is enabled, indexing skips bounds checks (with
+/// `debug_assert!` in debug builds). Otherwise, normal bounds-checked indexing.
+pub trait SliceExt<T> {
+    fn at(&self, i: usize) -> &T;
+    fn at_mut(&mut self, i: usize) -> &mut T;
+    fn sub(&self, start: usize, len: usize) -> &[T];
+    fn sub_mut(&mut self, start: usize, len: usize) -> &mut [T];
+}
+
+impl<T> SliceExt<T> for [T] {
+    #[inline(always)]
+    fn at(&self, i: usize) -> &T {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(i < self.len());
+            unsafe { self.get_unchecked(i) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &self[i]
+    }
+
+    #[inline(always)]
+    fn at_mut(&mut self, i: usize) -> &mut T {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(i < self.len());
+            unsafe { self.get_unchecked_mut(i) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &mut self[i]
+    }
+
+    #[inline(always)]
+    fn sub(&self, start: usize, len: usize) -> &[T] {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(start + len <= self.len());
+            unsafe { self.get_unchecked(start..start + len) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &self[start..start + len]
+    }
+
+    #[inline(always)]
+    fn sub_mut(&mut self, start: usize, len: usize) -> &mut [T] {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(start + len <= self.len());
+            unsafe { self.get_unchecked_mut(start..start + len) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &mut self[start..start + len]
+    }
+}
+
 /// Safely reinterpret a slice of `[Src; N]` as a slice of `[Dst; N]`
 /// when both types have the same size and both implement zerocopy traits.
 ///
