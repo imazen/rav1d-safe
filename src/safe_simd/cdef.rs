@@ -3,6 +3,7 @@
 //! CDEF applies direction-dependent filtering to remove coding artifacts
 //! while preserving edges.
 
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 #![allow(unused_imports)]
 
 #[cfg(target_arch = "x86_64")]
@@ -151,8 +152,11 @@ fn cdef_find_dir_scalar<BD: BitDepth>(img: PicOffset, variance: &mut c_uint, bd:
 // ============================================================================
 
 #[cfg(test)]
+#[allow(unsafe_code)] // tests call #[target_feature] SIMD functions
 mod tests {
     use super::*;
+    #[cfg(target_arch = "x86_64")]
+    use crate::src::safe_simd::pixel_access::{loadu_256, storeu_256};
 
     #[test]
     fn test_constrain_avx2() {
@@ -183,17 +187,19 @@ mod tests {
             })
             .collect();
 
-        // SIMD
+        // SIMD - needs unsafe block because #[target_feature] functions can't be called
+        // from non-target_feature context without unsafe
+        #[allow(unsafe_code)]
         unsafe {
-            let diff_vec = _mm256_loadu_si256(diff.as_ptr() as *const __m256i);
+            let token = Desktop64::summon().expect("AVX2 required for test");
+            let diff_vec = loadu_256!(&diff);
             let thresh_vec = _mm256_set1_epi16(threshold);
             let shift_vec = _mm_cvtsi32_si128(shift);
 
-            let token = Desktop64::summon().expect("AVX2 required for test");
             let result = constrain_avx2(token, diff_vec, thresh_vec, shift_vec);
 
             let mut simd_results = [0i16; 16];
-            _mm256_storeu_si256(simd_results.as_mut_ptr() as *mut __m256i, result);
+            storeu_256!(&mut simd_results, result);
 
             assert_eq!(simd_results.as_slice(), scalar_results.as_slice());
         }

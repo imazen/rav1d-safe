@@ -13,6 +13,8 @@ use core::arch::x86_64::*;
 
 #[cfg(target_arch = "x86_64")]
 use archmage::{arcane, rite, Desktop64, SimdToken};
+#[cfg(target_arch = "x86_64")]
+use crate::src::safe_simd::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256};
 
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
@@ -76,10 +78,10 @@ unsafe fn avg_8bpc_avx2_inner(
             let t2_hi_arr: &[i16; 16] = tmp2_row[col + 16..col + 32].try_into().unwrap();
 
             // SAFETY: These loads are safe - safe_unaligned_simd handles alignment
-            let t1_lo = safe_unaligned_simd::x86_64::_mm256_loadu_si256(t1_lo_arr);
-            let t1_hi = safe_unaligned_simd::x86_64::_mm256_loadu_si256(t1_hi_arr);
-            let t2_lo = safe_unaligned_simd::x86_64::_mm256_loadu_si256(t2_lo_arr);
-            let t2_hi = safe_unaligned_simd::x86_64::_mm256_loadu_si256(t2_hi_arr);
+            let t1_lo = loadu_256!(t1_lo_arr);
+            let t1_hi = loadu_256!(t1_hi_arr);
+            let t2_lo = loadu_256!(t2_lo_arr);
+            let t2_hi = loadu_256!(t2_hi_arr);
 
             // Add: tmp1 + tmp2
             // SAFETY: AVX2 intrinsics are safe when target_feature is enabled
@@ -97,7 +99,7 @@ unsafe fn avg_8bpc_avx2_inner(
 
             // Store 32 bytes
             let dst_arr: &mut [u8; 32] = (&mut dst_row[col..col + 32]).try_into().unwrap();
-            safe_unaligned_simd::x86_64::_mm256_storeu_si256(dst_arr, result);
+            storeu_256!(dst_arr, result);
 
             col += 32;
         }
@@ -107,8 +109,8 @@ unsafe fn avg_8bpc_avx2_inner(
             let t1_arr: &[i16; 16] = tmp1_row[col..col + 16].try_into().unwrap();
             let t2_arr: &[i16; 16] = tmp2_row[col..col + 16].try_into().unwrap();
 
-            let t1 = safe_unaligned_simd::x86_64::_mm256_loadu_si256(t1_arr);
-            let t2 = safe_unaligned_simd::x86_64::_mm256_loadu_si256(t2_arr);
+            let t1 = loadu_256!(t1_arr);
+            let t2 = loadu_256!(t2_arr);
 
             let sum = _mm256_add_epi16(t1, t2);
             let avg = _mm256_mulhrs_epi16(sum, round);
@@ -120,7 +122,7 @@ unsafe fn avg_8bpc_avx2_inner(
             let result = _mm_unpacklo_epi64(lo, hi);
 
             let dst_arr: &mut [u8; 16] = (&mut dst_row[col..col + 16]).try_into().unwrap();
-            safe_unaligned_simd::x86_64::_mm_storeu_si128(dst_arr, result);
+            storeu_128!(dst_arr, result);
 
             col += 16;
         }
@@ -381,10 +383,10 @@ unsafe fn w_avg_8bpc_avx2_inner(
             let t2_lo_arr: &[i16; 16] = tmp2_row[col..col + 16].try_into().unwrap();
             let t2_hi_arr: &[i16; 16] = tmp2_row[col + 16..col + 32].try_into().unwrap();
 
-            let t1_lo = safe_unaligned_simd::x86_64::_mm256_loadu_si256(t1_lo_arr);
-            let t1_hi = safe_unaligned_simd::x86_64::_mm256_loadu_si256(t1_hi_arr);
-            let t2_lo = safe_unaligned_simd::x86_64::_mm256_loadu_si256(t2_lo_arr);
-            let t2_hi = safe_unaligned_simd::x86_64::_mm256_loadu_si256(t2_hi_arr);
+            let t1_lo = loadu_256!(t1_lo_arr);
+            let t1_hi = loadu_256!(t1_hi_arr);
+            let t2_lo = loadu_256!(t2_lo_arr);
+            let t2_hi = loadu_256!(t2_hi_arr);
 
             // diff = tmp1 - tmp2
             let diff_lo = _mm256_sub_epi16(t1_lo, t2_lo);
@@ -407,7 +409,7 @@ unsafe fn w_avg_8bpc_avx2_inner(
             let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
             let dst_arr: &mut [u8; 32] = (&mut dst_row[col..col + 32]).try_into().unwrap();
-            safe_unaligned_simd::x86_64::_mm256_storeu_si256(dst_arr, result);
+            storeu_256!(dst_arr, result);
 
             col += 32;
         }

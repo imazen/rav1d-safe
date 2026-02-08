@@ -1,5 +1,6 @@
 //! Safe SIMD implementations of film grain synthesis functions
 #![allow(deprecated)] // FFI wrappers need to forge tokens
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 //!
 //! Film grain synthesis adds artificial grain to decoded video to match
 //! the artistic intent of the original content.
@@ -14,6 +15,9 @@
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
+
+#[cfg(target_arch = "x86_64")]
+use crate::src::safe_simd::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256};
 
 use std::cmp;
 use std::ffi::c_int;
@@ -414,7 +418,6 @@ fn fgy_row_simd_8bpc_safe(
     min_value: i32,
     max_value: i32,
 ) {
-    use safe_unaligned_simd::x86_64 as safe_simd;
     let zero = _mm256_setzero_si256();
 
     // Process aligned 32-pixel chunks
@@ -422,7 +425,7 @@ fn fgy_row_simd_8bpc_safe(
     while x + 32 <= bw {
         // Load 32 source pixels
         let src_arr: &[u8; 32] = src[x..x + 32].try_into().unwrap();
-        let src_vec = safe_simd::_mm256_loadu_si256(src_arr);
+        let src_vec = loadu_256!(src_arr);
         let src_lo = _mm256_unpacklo_epi8(src_vec, zero);
         let src_hi = _mm256_unpackhi_epi8(src_vec, zero);
 
@@ -447,15 +450,15 @@ fn fgy_row_simd_8bpc_safe(
             sc_hi_bytes[16 + i * 2] = scaling[src[x + 24 + i] as usize];
         }
 
-        let sc_lo = safe_simd::_mm256_loadu_si256(&sc_lo_bytes);
-        let sc_hi = safe_simd::_mm256_loadu_si256(&sc_hi_bytes);
+        let sc_lo = loadu_256!(&sc_lo_bytes);
+        let sc_hi = loadu_256!(&sc_hi_bytes);
 
         // Load 32 grain values as bytes for SIMD
         let mut grain_bytes = [0u8; 32];
         for i in 0..32 {
             grain_bytes[i] = grain_row[x + i] as u8;
         }
-        let grain_vec = safe_simd::_mm256_loadu_si256(&grain_bytes);
+        let grain_vec = loadu_256!(&grain_bytes);
         let grain_lo = _mm256_unpacklo_epi8(grain_vec, zero);
         let grain_hi = _mm256_unpackhi_epi8(grain_vec, zero);
 
@@ -470,14 +473,14 @@ fn fgy_row_simd_8bpc_safe(
         let result = _mm256_min_epu8(result, max_vec);
 
         let dst_arr: &mut [u8; 32] = (&mut dst[x..x + 32]).try_into().unwrap();
-        safe_simd::_mm256_storeu_si256(dst_arr, result);
+        storeu_256!(dst_arr, result);
         x += 32;
     }
 
     // Process remaining 16-pixel chunk if present
     if x + 16 <= bw {
         let src_arr: &[u8; 16] = src[x..x + 16].try_into().unwrap();
-        let src_vec = safe_simd::_mm_loadu_si128(src_arr);
+        let src_vec = loadu_128!(src_arr);
         let src_lo = _mm256_cvtepu8_epi16(src_vec);
 
         let mut sc_bytes = [0u8; 32];
@@ -488,13 +491,13 @@ fn fgy_row_simd_8bpc_safe(
             sc_bytes[16 + i * 2] = scaling[src[x + 8 + i] as usize];
         }
 
-        let sc_vec = safe_simd::_mm256_loadu_si256(&sc_bytes);
+        let sc_vec = loadu_256!(&sc_bytes);
 
         let mut grain_16 = [0u8; 16];
         for i in 0..16 {
             grain_16[i] = grain_row[x + i] as u8;
         }
-        let grain_128 = safe_simd::_mm_loadu_si128(&grain_16);
+        let grain_128 = loadu_128!(&grain_16);
         let grain_interleaved = _mm256_unpacklo_epi8(_mm256_castsi128_si256(grain_128), zero);
         let grain_128_hi = _mm_srli_si128::<8>(grain_128);
         let grain_interleaved_hi = _mm256_unpacklo_epi8(_mm256_castsi128_si256(grain_128_hi), zero);
@@ -516,7 +519,7 @@ fn fgy_row_simd_8bpc_safe(
         let combined = _mm_min_epu8(combined, _mm256_castsi256_si128(max_vec));
 
         let dst_arr: &mut [u8; 16] = (&mut dst[x..x + 16]).try_into().unwrap();
-        safe_simd::_mm_storeu_si128(dst_arr, combined);
+        storeu_128!(dst_arr, combined);
         x += 16;
     }
 
@@ -1863,7 +1866,6 @@ fn fgy_inner_16bpc(
     row_num: usize,
     bitdepth_max: i32,
 ) {
-    use safe_unaligned_simd::x86_64 as safe_simd;
 
     let bitdepth_min_8 = if bitdepth_max >= 4095 { 4u8 } else { 2u8 };
     let grain_ctr = 128i32 << bitdepth_min_8;
@@ -1942,7 +1944,7 @@ fn fgy_inner_16bpc(
             let mut x = xstart;
             while x + 16 <= bw {
                 let src_chunk: &[u16; 16] = src[base + x..base + x + 16].try_into().unwrap();
-                let src_vec = safe_simd::_mm256_loadu_si256(src_chunk);
+                let src_vec = loadu_256!(src_chunk);
 
                 let mut noise_vals = [0i16; 16];
                 for i in 0..16 {
@@ -1952,13 +1954,13 @@ fn fgy_inner_16bpc(
                     noise_vals[i] = round2(sc * grain, scaling_shift) as i16;
                 }
 
-                let noise = safe_simd::_mm256_loadu_si256(&noise_vals);
+                let noise = loadu_256!(&noise_vals);
                 let result = _mm256_add_epi16(src_vec, noise);
                 let result = _mm256_max_epi16(result, min_vec);
                 let result = _mm256_min_epi16(result, max_vec);
                 let dst_chunk: &mut [u16; 16] =
                     (&mut dst[base + x..base + x + 16]).try_into().unwrap();
-                safe_simd::_mm256_storeu_si256(dst_chunk, result);
+                storeu_256!(dst_chunk, result);
                 x += 16;
             }
 
@@ -2054,7 +2056,6 @@ fn fguv_inner_safe_8bpc(
     is_sx: bool,
     is_sy: bool,
 ) {
-    use safe_unaligned_simd::x86_64 as safe_simd;
 
     let uv = is_uv as usize;
     let sx = is_sx as usize;
@@ -2153,7 +2154,7 @@ fn fguv_inner_safe_8bpc(
             let mut x = xstart;
             while x + 32 <= bw {
                 let src_arr: &[u8; 32] = src[base + x..base + x + 32].try_into().unwrap();
-                let src_vec = safe_simd::_mm256_loadu_si256(src_arr);
+                let src_vec = loadu_256!(src_arr);
                 let src_lo = _mm256_unpacklo_epi8(src_vec, zero);
                 let src_hi = _mm256_unpackhi_epi8(src_vec, zero);
 
@@ -2205,14 +2206,14 @@ fn fguv_inner_safe_8bpc(
                     );
                 }
 
-                let sc_lo = safe_simd::_mm256_loadu_si256(&sc_lo_bytes);
-                let sc_hi = safe_simd::_mm256_loadu_si256(&sc_hi_bytes);
+                let sc_lo = loadu_256!(&sc_lo_bytes);
+                let sc_hi = loadu_256!(&sc_hi_bytes);
 
                 let mut grain_bytes = [0u8; 32];
                 for i in 0..32 {
                     grain_bytes[i] = grain_lut[offy + y][offx + x + i] as u8;
                 }
-                let grain_vec = safe_simd::_mm256_loadu_si256(&grain_bytes);
+                let grain_vec = loadu_256!(&grain_bytes);
                 let grain_lo = _mm256_unpacklo_epi8(grain_vec, zero);
                 let grain_hi = _mm256_unpackhi_epi8(grain_vec, zero);
 
@@ -2229,7 +2230,7 @@ fn fguv_inner_safe_8bpc(
 
                 let dst_arr: &mut [u8; 32] =
                     (&mut dst[base + x..base + x + 32]).try_into().unwrap();
-                safe_simd::_mm256_storeu_si256(dst_arr, result);
+                storeu_256!(dst_arr, result);
                 x += 32;
             }
 
@@ -2440,6 +2441,7 @@ use crate::src::strided::Strided as _;
 /// Safe dispatch for generate_grain_y (x86_64 AVX2).
 /// Returns true if SIMD was used.
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)] // pointer cast GrainLut<BD::Entry> → GrainLut<i8/i16>
 pub fn generate_grain_y_dispatch<BD: BitDepth>(
     buf: &mut GrainLut<BD::Entry>,
     data: &Rav1dFilmGrainData,
@@ -2468,6 +2470,7 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
 /// Safe dispatch for generate_grain_uv (x86_64 AVX2).
 /// Returns true if SIMD was used.
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)] // pointer cast GrainLut<BD::Entry> → GrainLut<i8/i16>
 pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     buf: &mut GrainLut<BD::Entry>,
@@ -2506,6 +2509,7 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
 /// Safe dispatch for fgy_32x32xn (x86_64 AVX2).
 /// Returns true if SIMD was used.
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)] // slice::from_raw_parts for grain_lut byte view
 pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     dst: &Rav1dPictureDataComponent,
     src: &Rav1dPictureDataComponent,
@@ -2608,6 +2612,7 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
 /// Safe dispatch for fguv_32x32xn (x86_64 AVX2).
 /// Returns true if SIMD was used.
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)] // slice::from_raw_parts for grain_lut byte view
 pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     dst: &Rav1dPictureDataComponent,
