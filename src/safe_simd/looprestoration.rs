@@ -1,6 +1,7 @@
 //! Safe SIMD implementations for Loop Restoration
 #![allow(deprecated)] // FFI wrappers need to forge tokens
-#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
+#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
 //!
 //! Loop restoration applies two types of filtering:
 //! 1. Wiener filter - 7-tap or 5-tap separable filter

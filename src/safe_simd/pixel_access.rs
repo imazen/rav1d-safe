@@ -31,7 +31,10 @@
 //! - Uses raw `core::arch` intrinsics with pointer access (no bounds checks)
 //! - `debug_assert!` still validates in debug builds
 
+// When unchecked is off: deny unsafe (bounds-checked path only).
+// When unchecked is on: allow unsafe (raw pointer load/store for performance).
 #![cfg_attr(not(feature = "unchecked"), deny(unsafe_code))]
+#![cfg_attr(feature = "unchecked", allow(unsafe_code))]
 
 use zerocopy::{AsBytes, FromBytes, Ref};
 
@@ -434,6 +437,7 @@ macro_rules! loadu_256 {
         }
         #[cfg(feature = "unchecked")]
         {
+            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm256_loadu_si256(core::ptr::from_ref($src).cast())
             }
@@ -459,6 +463,7 @@ macro_rules! storeu_256 {
         }
         #[cfg(feature = "unchecked")]
         {
+            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm256_storeu_si256(core::ptr::from_mut($dst).cast(), $val)
             }
@@ -481,6 +486,7 @@ macro_rules! loadu_128 {
         }
         #[cfg(feature = "unchecked")]
         {
+            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm_loadu_si128(core::ptr::from_ref($src).cast())
             }
@@ -500,6 +506,7 @@ macro_rules! storeu_128 {
         }
         #[cfg(feature = "unchecked")]
         {
+            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm_storeu_si128(core::ptr::from_mut($dst).cast(), $val)
             }
@@ -603,6 +610,7 @@ macro_rules! load_256 {
         {
             let __s = $slice;
             debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 32);
+            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm256_loadu_si256(__s.as_ptr() as *const _)
             }
@@ -629,6 +637,7 @@ macro_rules! store_256 {
         {
             let __s = $slice;
             debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 32);
+            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm256_storeu_si256(__s.as_mut_ptr() as *mut _, $val)
             }
@@ -655,6 +664,7 @@ macro_rules! load_128 {
         {
             let __s = $slice;
             debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 16);
+            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm_loadu_si128(__s.as_ptr() as *const _)
             }
@@ -681,6 +691,7 @@ macro_rules! store_128 {
         {
             let __s = $slice;
             debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 16);
+            #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm_storeu_si128(__s.as_mut_ptr() as *mut _, $val)
             }
@@ -713,6 +724,7 @@ macro_rules! neon_ld1q_u8 {
         }
         #[cfg(feature = "unchecked")]
         {
+            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vld1q_u8(($src).as_ptr()) }
         }
     }};
@@ -729,6 +741,7 @@ macro_rules! neon_ld1q_u16 {
         }
         #[cfg(feature = "unchecked")]
         {
+            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vld1q_u16(($src).as_ptr()) }
         }
     }};
@@ -745,6 +758,7 @@ macro_rules! neon_ld1q_s16 {
         }
         #[cfg(feature = "unchecked")]
         {
+            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vld1q_s16(($src).as_ptr()) }
         }
     }};
@@ -761,6 +775,7 @@ macro_rules! neon_st1q_u8 {
         }
         #[cfg(feature = "unchecked")]
         {
+            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vst1q_u8(($dst).as_mut_ptr(), $val) }
         }
     }};
@@ -777,6 +792,7 @@ macro_rules! neon_st1q_u16 {
         }
         #[cfg(feature = "unchecked")]
         {
+            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vst1q_u16(($dst).as_mut_ptr(), $val) }
         }
     }};
@@ -793,6 +809,7 @@ macro_rules! neon_st1q_s16 {
         }
         #[cfg(feature = "unchecked")]
         {
+            #[allow(unsafe_code)]
             unsafe { core::arch::aarch64::vst1q_s16(($dst).as_mut_ptr(), $val) }
         }
     }};

@@ -5,7 +5,8 @@
 
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
-#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
+#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
