@@ -5,8 +5,8 @@
     feature(stdarch_riscv_feature_detection)
 )]
 // When neither `asm` nor `c-ffi` is enabled, deny unsafe code crate-wide.
-// Only 3 modules need unconditional #[allow(unsafe_code)]: refmvs, msac, safe_simd.
-// 6 modules use conditional allow (only when c-ffi enabled).
+// On x86_64: only safe_simd needs unconditional #[allow(unsafe_code)] (SIMD intrinsics).
+// On aarch64: safe_simd + msac (NEON intrinsics).
 // All other unsafe uses item-level #[allow(unsafe_code)] on specific functions/impls.
 #![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
