@@ -5,9 +5,11 @@
     feature(stdarch_riscv_feature_detection)
 )]
 // When neither `asm` nor `c-ffi` is enabled, deny unsafe code crate-wide.
-// On x86_64: only safe_simd needs unconditional #[allow(unsafe_code)] (SIMD intrinsics).
-// On aarch64: safe_simd + msac (NEON intrinsics).
-// All other unsafe uses item-level #[allow(unsafe_code)] on specific functions/impls.
+// Remaining #[allow(unsafe_code)] items (16 sound abstractions):
+//   safe_simd module: partial_simd.rs safety boundary (SIMD load/store wrappers)
+//   align.rs(4), assume.rs(1), c_arc.rs(3), c_box.rs(1), disjoint_mut.rs(1),
+//   internal.rs(4), msac.rs(2): Send/Sync impls, Pin, AlignedVec, unreachable_unchecked
+// 16 safe_simd sub-modules use forbid(unsafe_code) when asm off — compiler-enforced.
 #![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
 #![allow(clippy::all)]
