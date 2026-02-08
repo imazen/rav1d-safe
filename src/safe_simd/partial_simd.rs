@@ -30,6 +30,11 @@
 //! }
 //! ```
 
+// Safety boundary module: every function wraps exactly one unsafe intrinsic
+// in a safe public API with #[target_feature]. Module-level allow is appropriate
+// because wrapping unsafe intrinsics IS this module's sole purpose.
+#![allow(unsafe_code)]
+
 // ============================================================================
 // x86_64 SSE2 64-bit operations
 // ============================================================================

@@ -5,6 +5,8 @@
 //!
 //! Used automatically when built without `--features asm`.
 
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+
 pub mod partial_simd;
 pub mod pixel_access;
 
