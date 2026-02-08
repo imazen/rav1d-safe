@@ -43,6 +43,31 @@ Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with saf
 - Use raw pointer load/store intrinsics — use `loadu_256!` / `storeu_256!` macros instead
 - Block on any nightly-only feature for safety — everything works on stable Rust 1.93+
 
+## HARD RULES — STOP GOING IN CIRCLES
+
+**READ AND OBEY THESE EVERY TIME. DO NOT SKIP.**
+
+1. **`#[arcane]` NEVER needs `#[allow(unsafe_code)]`.** It is safe by design. If you find yourself adding `allow(unsafe_code)` to an `#[arcane]` function, YOU ARE DOING SOMETHING WRONG. The function body itself must be rewritten to not use `unsafe` — use slices, safe macros, and safe intrinsics.
+
+2. **`#[rite]` NEVER needs `#[allow(unsafe_code)]`.** Same as `#[arcane]` — it's a safe inner helper.
+
+3. **Inner SIMD functions (using core::arch intrinsics) are NOT assembly.** `safe_simd/` contains ZERO `asm!` macros. Do NOT gate inner SIMD functions behind `#[cfg(feature = "asm")]`. Only gate `pub unsafe extern "C" fn` FFI wrappers behind asm.
+
+4. **If an `#[arcane]` function won't compile under `forbid(unsafe_code)`, the function body is wrong.** Rewrite the body to use slices + safe macros. Do NOT add `#[allow(unsafe_code)]`. Do NOT gate behind `#[cfg(feature = "asm")]`.
+
+5. **Read the archmage README before touching dispatch.** `Desktop64::summon()` for detection, `#[arcane]` for entry points, `#[rite]` for inner helpers. The prelude re-exports safe intrinsics. `safe_unaligned_simd` provides reference-based load/store.
+
+6. **Conversion pattern for making `#[arcane]` functions safe:**
+   - Change `dst: *mut u8` → `dst: &mut [u8]`
+   - Change `coeff: *mut i16` → `coeff: &mut [i16]`
+   - Replace `unsafe { *ptr.add(n) }` → `slice[n]`
+   - Replace `unsafe { _mm256_loadu_si256(ptr) }` → `loadu_256!(&slice[off..off+32], [u8; 32])`
+   - Replace `unsafe { _mm256_storeu_si256(ptr, v) }` → `storeu_256!(&mut slice[off..off+32], [u8; 32], v)`
+   - Replace `unsafe { _mm_cvtsi32_si128(*(ptr as *const i32)) }` → `loadi32!(&slice[off..off+4])`
+   - Remove ALL `unsafe {}` blocks — if intrinsics need unsafe, you're not in a `#[target_feature]` context (use `#[arcane]`/`#[rite]`)
+
+7. **When you don't know how something works, READ THE README/DOCS FIRST.** Do not guess. Do not add workarounds. Especially for archmage, zerocopy, safe_unaligned_simd.
+
 ## Quick Commands
 
 ```bash
