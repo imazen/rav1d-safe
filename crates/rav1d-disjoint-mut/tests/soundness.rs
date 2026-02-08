@@ -2,7 +2,7 @@
 //! Run under: cargo +nightly miri test
 //! And: MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test
 
-use disjoint_mut::DisjointMut;
+use rav1d_disjoint_mut::DisjointMut;
 use std::sync::Arc;
 use std::thread;
 
@@ -249,7 +249,7 @@ fn test_panic_during_immut_guard_no_poison() {
 /// Probes whether addr_of_mut!(**ptr) creates conflicting retags.
 #[test]
 fn test_concurrent_disjoint_box_slice() {
-    use disjoint_mut::DisjointMutSlice;
+    use rav1d_disjoint_mut::DisjointMutSlice;
 
     let dm: DisjointMutSlice<u8> = DisjointMut::new(vec![0u8; 100].into_boxed_slice());
     let dm = Arc::new(dm);
@@ -330,7 +330,7 @@ fn test_zerocopy_cast_disjoint() {
 /// Test: DisjointMutArcSlice concurrent access.
 #[test]
 fn test_arc_slice_concurrent() {
-    use disjoint_mut::DisjointMutArcSlice;
+    use rav1d_disjoint_mut::DisjointMutArcSlice;
 
     let dm: DisjointMutArcSlice<u8> = (0..100u8).collect();
     let dm1 = dm.clone();

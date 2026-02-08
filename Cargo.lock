@@ -78,14 +78,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "disjoint-mut"
-version = "0.1.0"
-dependencies = [
- "parking_lot",
- "zerocopy",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -204,6 +196,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
+name = "rav1d-disjoint-mut"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "zerocopy",
+]
+
+[[package]]
 name = "rav1d-safe"
 version = "0.1.0"
 dependencies = [
@@ -213,11 +213,11 @@ dependencies = [
  "bitflags",
  "cc",
  "cfg-if",
- "disjoint-mut",
  "libc",
  "nasm-rs",
  "parking_lot",
  "paste",
+ "rav1d-disjoint-mut",
  "raw-cpuid",
  "safe_unaligned_simd",
  "strum",

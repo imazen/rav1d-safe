@@ -17,7 +17,7 @@
 //! # Example
 //!
 //! ```
-//! use disjoint_mut::DisjointMut;
+//! use rav1d_disjoint_mut::DisjointMut;
 //!
 //! let mut buf = DisjointMut::new(vec![0u8; 100]);
 //! // Borrow two non-overlapping regions simultaneously through &buf:
