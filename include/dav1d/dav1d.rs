@@ -18,6 +18,7 @@ use strum::FromRepr;
 #[cfg(feature = "c-ffi")]
 pub type Dav1dContext = RawArc<Rav1dContext>;
 
+#[cfg(feature = "c-ffi")]
 pub type Dav1dRef = ();
 
 pub type Dav1dInloopFilterType = c_uint;
