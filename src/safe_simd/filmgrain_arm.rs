@@ -15,6 +15,7 @@ use core::arch::aarch64::*;
 use archmage::{arcane, Arm64, SimdToken};
 #[cfg(target_arch = "aarch64")]
 use safe_unaligned_simd::aarch64 as safe_simd;
+use crate::src::safe_simd::pixel_access::Flex;
 
 use std::cmp;
 use std::ffi::c_int;
@@ -346,6 +347,10 @@ fn fgy_row_neon_8bpc(
     max_val: u8,
     scaling_shift: u8,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
+    let grain_row = grain_row.flex();
     let mul = vdupq_n_s16(1i16 << (15 - scaling_shift));
     let min_vec = vdupq_n_u8(min_val);
     let max_vec = vdupq_n_u8(max_val);
@@ -596,6 +601,10 @@ fn fgy_row_neon_16bpc(
     scaling_shift: u8,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
+    let grain_row = grain_row.flex();
     let min_vec = vdupq_n_s16(min_value as i16);
     let max_vec = vdupq_n_s16(max_value as i16);
     let mut x = xstart;
@@ -838,6 +847,11 @@ fn fguv_row_neon_8bpc(
     data: &Rav1dFilmGrainData,
     uv: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
+    let grain_row = grain_row.flex();
+    let luma_row = luma_row.flex();
     let mul = vdupq_n_s16(1i16 << (15 - scaling_shift));
     let min_vec = vdupq_n_u8(min_val);
     let max_vec = vdupq_n_u8(max_val);
@@ -853,12 +867,12 @@ fn fguv_row_neon_8bpc(
         for i in 0..16 {
             sc_arr[i] = compute_uv_scaling_val(
                 src[x + i],
-                luma_row,
+                &*luma_row,
                 (x + i) << sx,
                 is_sx,
                 data,
                 uv,
-                scaling,
+                &*scaling,
             ) as i16;
         }
         let sc_lo = safe_simd::vld1q_s16(
@@ -892,12 +906,12 @@ fn fguv_row_neon_8bpc(
     while x < bw {
         let sc = compute_uv_scaling_val(
             src[x],
-            luma_row,
+            &*luma_row,
             x << sx,
             is_sx,
             data,
             uv,
-            scaling,
+            &*scaling,
         ) as i32;
         let grain = grain_row[x] as i32;
         let noise = round2(sc * grain, scaling_shift);

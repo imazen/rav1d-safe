@@ -17,6 +17,7 @@ use core::arch::x86_64::*;
 use archmage::{arcane, rite, Desktop64, SimdToken};
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256, loadi64, storei64};
+use crate::src::safe_simd::pixel_access::Flex;
 
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
@@ -55,6 +56,7 @@ fn avg_8bpc_avx2_safe(
     w: i32,
     h: i32,
 ) {
+    let mut dst = dst.flex_mut();
     let w = w as usize;
     let h = h as usize;
 
@@ -181,6 +183,7 @@ fn avg_16bpc_avx2_safe(
     h: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
     let w = w as usize;
     let h = h as usize;
 
@@ -354,6 +357,7 @@ fn w_avg_8bpc_avx2_safe(
     h: i32,
     weight: i32,
 ) {
+    let mut dst = dst.flex_mut();
     let w = w as usize;
     let h = h as usize;
 
@@ -468,6 +472,7 @@ fn w_avg_16bpc_avx2_safe(
     weight: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
     let w = w as usize;
     let h = h as usize;
 
@@ -625,6 +630,8 @@ fn mask_8bpc_avx2_safe(
     h: i32,
     mask: &[u8],
 ) {
+    let mut dst = dst.flex_mut();
+    let mask = mask.flex();
     let w = w as usize;
     let h = h as usize;
 
@@ -745,6 +752,8 @@ fn mask_16bpc_avx2_safe(
     mask: &[u8],
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mask = mask.flex();
     let w = w as usize;
     let h = h as usize;
     let max = bitdepth_max as i32;
@@ -904,6 +913,9 @@ fn blend_8bpc_avx2_safe(
     h: i32,
     mask: &[u8],
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
+    let mask = mask.flex();
     let w = w as usize;
     let h = h as usize;
 
@@ -1003,6 +1015,9 @@ fn blend_16bpc_avx2_safe(
     h: i32,
     mask: &[u8],
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
+    let mask = mask.flex();
     let w = w as usize;
     let h = h as usize;
 
@@ -1116,6 +1131,8 @@ fn blend_v_8bpc_avx2_safe(
     w: i32,
     h: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
     let w = w as usize;
     let h = h as usize;
     let obmc_mask = &dav1d_obmc_masks.0[h..];
@@ -1206,6 +1223,8 @@ fn blend_h_8bpc_avx2_safe(
     w: i32,
     h: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
     let w = w as usize;
     let h = h as usize;
     let obmc_mask = &dav1d_obmc_masks.0[w..];
@@ -1297,6 +1316,8 @@ fn blend_v_16bpc_avx2_safe(
     w: i32,
     h: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
     let w = w as usize;
     let h = h as usize;
     let obmc_mask = &dav1d_obmc_masks.0[h..];
@@ -1391,6 +1412,8 @@ fn blend_h_16bpc_avx2_safe(
     w: i32,
     h: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
     let w = w as usize;
     let h = h as usize;
     let obmc_mask = &dav1d_obmc_masks.0[w..];
@@ -1514,6 +1537,8 @@ fn h_filter_8tap_8bpc_avx2_inner(
     filter: &[i8; 8],
     sh: u8,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     // by the target_feature attribute, and pointer operations are valid per caller contract.
         // For horizontal filtering, we need to load 8 consecutive pixels for each output
         // The source pointer is already offset by -3 (pointing to tap 0)
@@ -1628,6 +1653,7 @@ fn v_filter_8tap_8bpc_avx2_inner(
     sh: u8,
     max: i32,
 ) {
+    let mut dst = dst.flex_mut();
     // by the target_feature attribute, and pointer operations are valid per caller contract.
         let rnd = _mm256_set1_epi32((1i32 << sh) >> 1);
         let zero = _mm256_setzero_si256();
@@ -1751,6 +1777,8 @@ fn h_filter_8tap_8bpc_put_avx2_inner(
     w: usize,
     filter: &[i8; 8],
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         // Broadcast filter coefficients for maddubs
         let coeff_01 =
             _mm256_set1_epi16(((filter[1] as u8 as i16) << 8) | (filter[0] as u8 as i16));
@@ -1860,6 +1888,8 @@ fn v_filter_8tap_8bpc_direct_avx2_inner(
     w: usize,
     filter: &[i8; 8],
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         let c0 = _mm256_set1_epi32(filter[0] as i32);
         let c1 = _mm256_set1_epi32(filter[1] as i32);
         let c2 = _mm256_set1_epi32(filter[2] as i32);
@@ -1973,6 +2003,8 @@ fn put_8tap_8bpc_avx2_impl_inner(
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -2741,6 +2773,8 @@ fn prep_8tap_8bpc_avx2_impl_inner(
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
 ) {
+    let mut tmp = tmp.flex_mut();
+    let src = src.flex();
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -2859,6 +2893,7 @@ fn v_filter_8tap_to_i16_avx2_inner(
     filter: &[i8; 8],
     sh: u8,
 ) {
+        let mut dst = dst.flex_mut();
         let rnd = _mm256_set1_epi32((1i32 << sh) >> 1);
 
         let c0 = _mm256_set1_epi32(filter[0] as i32);
@@ -3519,6 +3554,8 @@ fn h_filter_8tap_16bpc_avx2_inner(
     filter: &[i8; 8],
     sh: i32,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         // Convert filter coefficients from i8 to i16 for pmaddwd
         let coeff0 =
             _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
@@ -3616,6 +3653,7 @@ fn v_filter_8tap_16bpc_avx2_inner(
     sh: i32,
     max: i32,
 ) {
+        let mut dst = dst.flex_mut();
         // Convert filter coefficients from i8 to i32 for multiplication
         let coeff: [i32; 8] = [
             filter[0] as i32,
@@ -3734,6 +3772,7 @@ fn v_filter_8tap_16bpc_prep_avx2_inner(
     sh: i32,
     prep_bias: i32,
 ) {
+        let mut dst = dst.flex_mut();
         let coeff: [i32; 8] = [
             filter[0] as i32,
             filter[1] as i32,
@@ -3841,6 +3880,8 @@ fn h_filter_8tap_16bpc_put_avx2_inner(
     filter: &[i8; 8],
     max: i32,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         // Convert filter coefficients from i8 to i16 for pmaddwd
         let coeff0 =
             _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
@@ -3941,6 +3982,8 @@ fn v_filter_8tap_16bpc_direct_avx2_inner(
     filter: &[i8; 8],
     max: i32,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         let coeff: [i32; 8] = [
             filter[0] as i32,
             filter[1] as i32,
@@ -4064,6 +4107,8 @@ fn h_filter_8tap_16bpc_prep_direct_avx2_inner(
     sh: i32,
     prep_bias: i32,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         // Convert filter coefficients from i8 to i16 for pmaddwd
         let coeff0 =
             _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
@@ -4165,6 +4210,8 @@ fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
     sh: i32,
     prep_bias: i32,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         let coeff: [i32; 8] = [
             filter[0] as i32,
             filter[1] as i32,
@@ -4298,6 +4345,8 @@ fn put_8tap_16bpc_avx2_impl_inner(
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -4415,6 +4464,8 @@ fn prep_8tap_16bpc_avx2_impl_inner(
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
 ) {
+    let mut tmp = tmp.flex_mut();
+    let src = src.flex();
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -5750,6 +5801,8 @@ fn h_filter_bilin_8bpc_avx2_inner(
     mx: usize,
     sh: u8,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         // Bilinear: pixel = (16 - mx) * src[x] + mx * src[x+1]
         // Using maddubs: need pairs of [src[x], src[x+1]] with coeffs [16-mx, mx]
         let mx = mx as i8;
@@ -5835,6 +5888,7 @@ fn v_filter_bilin_8bpc_avx2_inner(
     sh: u8,
     bd_max: i16,
 ) {
+        let mut dst = dst.flex_mut();
         let my = my as i16;
         let coeff0 = 16 - my;
         let coeff1 = my;
@@ -5918,6 +5972,8 @@ fn h_bilin_8bpc_put_avx2_inner(
     w: usize,
     mx: usize,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         let mx = mx as i8;
         let coeff0 = (16 - mx) as u8;
         let coeff1 = mx as u8;
@@ -5985,6 +6041,9 @@ fn v_bilin_8bpc_direct_avx2_inner(
     w: usize,
     my: usize,
 ) {
+        let mut dst = dst.flex_mut();
+        let src0 = src0.flex();
+        let src1 = src1.flex();
         let my = my as i8;
         let coeff0 = (16 - my) as u8;
         let coeff1 = my as u8;
@@ -6058,6 +6117,8 @@ fn put_bilin_8bpc_avx2_impl_inner(
     mx: i32,
     my: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -6207,6 +6268,8 @@ fn prep_bilin_8bpc_avx2_impl_inner(
     mx: i32,
     my: i32,
 ) {
+    let mut tmp = tmp.flex_mut();
+    let src = src.flex();
     let w = w as usize;
     let h = h as usize;
     let mx = mx as usize;
@@ -6461,7 +6524,8 @@ fn w_mask_444_8bpc_avx2_safe(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
 ) {
-    w_mask_8bpc_avx2_safe_impl::<false, false>(dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
+    let mut dst = dst.flex_mut();
+    w_mask_8bpc_avx2_safe_impl::<false, false>(&mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
 }
 
 /// w_mask 422 8bpc (horizontal subsampling only)
@@ -6478,7 +6542,8 @@ fn w_mask_422_8bpc_avx2_safe(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
 ) {
-    w_mask_8bpc_avx2_safe_impl::<true, false>(dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
+    let mut dst = dst.flex_mut();
+    w_mask_8bpc_avx2_safe_impl::<true, false>(&mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
 }
 
 /// w_mask 420 8bpc (horizontal and vertical subsampling)
@@ -6495,7 +6560,8 @@ fn w_mask_420_8bpc_avx2_safe(
     mask: &mut [u8; SEG_MASK_LEN],
     sign: i32,
 ) {
-    w_mask_8bpc_avx2_safe_impl::<true, true>(dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
+    let mut dst = dst.flex_mut();
+    w_mask_8bpc_avx2_safe_impl::<true, true>(&mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
 }
 
 /// w_mask for 4:4:4 (no subsampling)
@@ -6688,8 +6754,9 @@ fn w_mask_444_16bpc_avx2_safe(
     sign: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
     w_mask_16bpc_avx2_safe_impl::<false, false>(
-        dst, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max,
+        &mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max,
     );
 }
 
@@ -6708,8 +6775,9 @@ fn w_mask_422_16bpc_avx2_safe(
     sign: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
     w_mask_16bpc_avx2_safe_impl::<true, false>(
-        dst, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max,
+        &mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max,
     );
 }
 
@@ -6728,8 +6796,9 @@ fn w_mask_420_16bpc_avx2_safe(
     sign: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
     w_mask_16bpc_avx2_safe_impl::<true, true>(
-        dst, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max,
+        &mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign, bitdepth_max,
     );
 }
 
@@ -6841,6 +6910,8 @@ fn h_bilin_16bpc_avx2_inner(
     w: usize,
     mx: i32,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         // Bilinear weights: w0 = (16 - mx), w1 = mx
         let w0 = _mm256_set1_epi32(16 - mx);
         let w1 = _mm256_set1_epi32(mx);
@@ -6899,6 +6970,7 @@ fn v_bilin_16bpc_avx2_inner(
     sh: i32,
     max: i32,
 ) {
+        let mut dst = dst.flex_mut();
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
         let rnd = _mm256_set1_epi32((1 << sh) >> 1);
@@ -6972,6 +7044,7 @@ fn v_bilin_16bpc_prep_avx2_inner(
     sh: i32,
     prep_bias: i32,
 ) {
+        let mut dst = dst.flex_mut();
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
         let rnd = _mm256_set1_epi32((1 << sh) >> 1);
@@ -7041,6 +7114,8 @@ fn h_bilin_16bpc_put_avx2_inner(
     mx: i32,
     bd_max: i32,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         let w0 = _mm256_set1_epi32(16 - mx);
         let w1 = _mm256_set1_epi32(mx);
         let rnd = _mm256_set1_epi32(8);
@@ -7105,6 +7180,8 @@ fn v_bilin_16bpc_direct_avx2_inner(
     my: i32,
     bd_max: i32,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
         let rnd = _mm256_set1_epi32(8);
@@ -7175,6 +7252,8 @@ fn h_bilin_16bpc_prep_direct_avx2_inner(
     mx: i32,
     prep_bias: i32,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         let w0 = _mm256_set1_epi32(16 - mx);
         let w1 = _mm256_set1_epi32(mx);
         let rnd = _mm256_set1_epi32(8);
@@ -7244,6 +7323,8 @@ fn v_bilin_16bpc_prep_direct_avx2_inner(
     my: i32,
     prep_bias: i32,
 ) {
+        let mut dst = dst.flex_mut();
+        let src = src.flex();
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
         let rnd = _mm256_set1_epi32(8);

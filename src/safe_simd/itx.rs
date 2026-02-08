@@ -27,6 +27,7 @@ use std::ffi::c_int;
 use std::num::NonZeroUsize;
 use std::slice;
 use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128, loadu_256, storeu_256};
+use crate::src::safe_simd::pixel_access::Flex;
 
 // ============================================================================
 // CONSTANTS
@@ -57,6 +58,8 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     bitdepth_max: i32,
 ) {
     use crate::src::safe_simd::pixel_access::{loadi32, storei32, storeu_128};
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
 
     let row0 = _mm_set_epi32(coeff[12] as i32, coeff[8] as i32, coeff[4] as i32, coeff[0] as i32);
     let row1 = _mm_set_epi32(coeff[13] as i32, coeff[9] as i32, coeff[5] as i32, coeff[1] as i32);
@@ -154,7 +157,7 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     storei32!(&mut dst[off3..off3 + 4], sum3_8);
 
     // Clear coefficients
-    let coeff_bytes = zerocopy::AsBytes::as_bytes_mut(coeff);
+    let coeff_bytes = zerocopy::AsBytes::as_bytes_mut(&mut *coeff);
     storeu_128!(<&mut [u8; 16]>::try_from(&mut coeff_bytes[..16]).unwrap(), _mm_setzero_si128());
     storeu_128!(<&mut [u8; 16]>::try_from(&mut coeff_bytes[16..32]).unwrap(), _mm_setzero_si128());
 }
@@ -331,6 +334,8 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // For 16bpc, stride is in bytes but we access u16, so stride_u16 = stride / 2
     let stride_u16 = dst_stride / 2;
 
@@ -707,6 +712,8 @@ pub fn inv_identity_add_4x4_8bpc_avx2(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // Identity: out = (in * 181 + 128) >> 8
     // 4x4 IDTX = identity4 on rows, identity4 on cols
     // Total: * sqrt(2) * sqrt(2) = * 2
@@ -795,6 +802,8 @@ pub fn inv_identity_add_8x8_8bpc_avx2(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let zero = _mm_setzero_si128();
     let max_val = _mm_set1_epi16(bitdepth_max as i16);
 
@@ -1128,6 +1137,8 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // For 8bpc:
     // row_clip_min/max = i16::MIN/MAX (-32768, 32767)
     // col_clip_min/max = i16::MIN/MAX
@@ -1248,6 +1259,8 @@ fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // For 16bpc, stride is in bytes but we access u16
     let stride_u16 = dst_stride / 2;
 
@@ -1372,6 +1385,8 @@ pub fn inv_identity_add_16x16_8bpc_avx2(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
 
@@ -1765,6 +1780,8 @@ fn add_16x16_to_dst(
     coeff: &mut [i16],
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
@@ -1843,6 +1860,8 @@ macro_rules! impl_16x16_transform {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
             let row_clip_max = i16::MAX as i32;
             let col_clip_min = i16::MIN as i32;
@@ -1851,7 +1870,7 @@ macro_rules! impl_16x16_transform {
             let mut tmp = [0i32; 256];
             inv_txfm_16x16_inner(
                 &mut tmp,
-                coeff,
+                &*coeff,
                 $row_fn,
                 $col_fn,
                 row_clip_min,
@@ -1859,7 +1878,7 @@ macro_rules! impl_16x16_transform {
                 col_clip_min,
                 col_clip_max,
             );
-            add_16x16_to_dst(_token, dst, dst_stride, &tmp, coeff, bitdepth_max);
+            add_16x16_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
         }
     };
 }
@@ -2032,6 +2051,8 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // For 8bpc: row_clip = col_clip = i16 range
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -2157,6 +2178,8 @@ fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // For 16bpc, stride is in bytes but we access u16
     let stride_u16 = dst_stride / 2;
 
@@ -2288,6 +2311,8 @@ fn inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=4, H=8, shift=0 for 4x8
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -2382,6 +2407,8 @@ fn inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=8, H=4, shift=0 for 8x4
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -2495,6 +2522,8 @@ macro_rules! impl_4x8_transform {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
             let row_clip_max = i16::MAX as i32;
             let col_clip_min = i16::MIN as i32;
@@ -2562,6 +2591,8 @@ macro_rules! impl_8x4_transform {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
             let row_clip_max = i16::MAX as i32;
             let col_clip_min = i16::MIN as i32;
@@ -2944,6 +2975,8 @@ macro_rules! impl_8x16_transform {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
             let row_clip_max = i16::MAX as i32;
             let col_clip_min = i16::MIN as i32;
@@ -3028,6 +3061,8 @@ macro_rules! impl_16x8_transform {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
             let row_clip_max = i16::MAX as i32;
             let col_clip_min = i16::MIN as i32;
@@ -3460,6 +3495,8 @@ fn inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=8, H=16, shift=1 for 8x16
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -3564,6 +3601,8 @@ fn inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=16, H=8, shift=1 for 16x8
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -3681,6 +3720,8 @@ fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=16, H=32, shift=2 for 16x32
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -3794,6 +3835,8 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=32, H=16, shift=2 for 32x16
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -3915,6 +3958,8 @@ fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let clip_min = i16::MIN as i32;
     let clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 16 * 32];
@@ -4024,6 +4069,8 @@ fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let clip_min = i16::MIN as i32;
     let clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 32 * 16];
@@ -4097,6 +4144,8 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=32, H=64, shift=2 for 32x64
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -4223,6 +4272,8 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=64, H=32, shift=2 for 64x32
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -4348,6 +4399,8 @@ fn inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=4, H=16, 4:1 ratio
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -4423,6 +4476,8 @@ fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=16, H=4, 4:1 ratio
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -4541,6 +4596,8 @@ macro_rules! impl_4x16_transform {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
             let row_clip_max = i16::MAX as i32;
             let col_clip_min = i16::MIN as i32;
@@ -4596,6 +4653,8 @@ macro_rules! impl_16x4_transform {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let row_clip_min = i16::MIN as i32;
             let row_clip_max = i16::MAX as i32;
             let col_clip_min = i16::MIN as i32;
@@ -5026,6 +5085,8 @@ fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=8, H=32, 4:1 ratio
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -5103,6 +5164,8 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=32, H=8, 4:1 ratio
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -5224,6 +5287,8 @@ fn inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let clip_min = i16::MIN as i32;
     let clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 8 * 32];
@@ -5295,6 +5360,8 @@ fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let clip_min = i16::MIN as i32;
     let clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 32 * 8];
@@ -5370,6 +5437,8 @@ fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=16, H=64, 4:1 ratio
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -5490,6 +5559,8 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // W=64, H=16, 4:1 ratio
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
@@ -6493,6 +6564,8 @@ macro_rules! impl_8x8_transform {
             _bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             const MIN: i32 = i16::MIN as i32;
             const MAX: i32 = i16::MAX as i32;
 
@@ -7474,6 +7547,8 @@ fn add_32x32_to_dst(
     coeff: &mut [i16],
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
@@ -7546,6 +7621,8 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
     let col_clip_min = i16::MIN as i32;
@@ -7554,7 +7631,7 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
     let mut tmp = [0i32; 1024];
     inv_txfm_32x32_inner(
         &mut tmp,
-        coeff,
+        &*coeff,
         dct32_1d,
         dct32_1d,
         row_clip_min,
@@ -7562,7 +7639,7 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst(_token, dst, dst_stride, &tmp, coeff, bitdepth_max);
+    add_32x32_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
 }
 
 /// 32x32 IDTX inner function
@@ -7576,6 +7653,8 @@ fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
     let col_clip_min = i16::MIN as i32;
@@ -7584,7 +7663,7 @@ fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
     let mut tmp = [0i32; 1024];
     inv_txfm_32x32_inner(
         &mut tmp,
-        coeff,
+        &*coeff,
         identity32_1d,
         identity32_1d,
         row_clip_min,
@@ -7592,7 +7671,7 @@ fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst(_token, dst, dst_stride, &tmp, coeff, bitdepth_max);
+    add_32x32_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
 }
 
 /// FFI wrapper for 32x32 DCT_DCT 8bpc
@@ -7656,6 +7735,8 @@ fn add_32x32_to_dst_16bpc(
     coeff: &mut [i16],
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
 
     let zero = _mm256_setzero_si256();
@@ -7725,6 +7806,8 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // For 16bpc: use full i32 range
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -7734,7 +7817,7 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
     let mut tmp = [0i32; 1024];
     inv_txfm_32x32_inner(
         &mut tmp,
-        coeff,
+        &*coeff,
         dct32_1d,
         dct32_1d,
         row_clip_min,
@@ -7742,7 +7825,7 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst_16bpc(_token, dst, dst_stride, &tmp, coeff, bitdepth_max);
+    add_32x32_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
 }
 
 /// FFI wrapper for 32x32 DCT_DCT 16bpc
@@ -8436,6 +8519,8 @@ fn add_64x64_to_dst(
     coeff: &mut [i16],
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
@@ -8506,6 +8591,8 @@ fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let row_clip_min = i16::MIN as i32;
     let row_clip_max = i16::MAX as i32;
     let col_clip_min = i16::MIN as i32;
@@ -8514,7 +8601,7 @@ fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
     let mut tmp = [0i32; 4096];
     inv_txfm_64x64_inner(
         &mut tmp,
-        coeff,
+        &*coeff,
         dct64_1d,
         dct64_1d,
         row_clip_min,
@@ -8522,7 +8609,7 @@ fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_64x64_to_dst(_token, dst, dst_stride, &tmp, coeff, bitdepth_max);
+    add_64x64_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
 }
 
 /// FFI wrapper for 64x64 DCT_DCT 8bpc
@@ -8563,6 +8650,8 @@ fn add_64x64_to_dst_16bpc(
     coeff: &mut [i16],
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
 
     let zero = _mm256_setzero_si256();
@@ -8632,6 +8721,8 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // For 16bpc: use full i32 range
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -8641,7 +8732,7 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
     let mut tmp = [0i32; 4096];
     inv_txfm_64x64_inner(
         &mut tmp,
-        coeff,
+        &*coeff,
         dct64_1d,
         dct64_1d,
         row_clip_min,
@@ -8649,7 +8740,7 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_64x64_to_dst_16bpc(_token, dst, dst_stride, &tmp, coeff, bitdepth_max);
+    add_64x64_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
 }
 
 /// FFI wrapper for 64x64 DCT_DCT 16bpc
@@ -8690,6 +8781,8 @@ fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -8780,6 +8873,8 @@ fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -8879,6 +8974,8 @@ fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -8980,6 +9077,8 @@ fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -9097,6 +9196,8 @@ fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -9185,6 +9286,8 @@ fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -9298,6 +9401,8 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -9414,6 +9519,8 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -9525,6 +9632,8 @@ fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -9626,6 +9735,8 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -9737,6 +9848,8 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -9852,6 +9965,8 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -9965,6 +10080,8 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -10085,6 +10202,8 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -10205,6 +10324,8 @@ macro_rules! impl_8x8_transform_16bpc {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
             const MIN: i32 = i32::MIN;
             const MAX: i32 = i32::MAX;
@@ -10569,6 +10690,8 @@ macro_rules! impl_16x16_transform_16bpc {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
             const MIN: i32 = i32::MIN;
             const MAX: i32 = i32::MAX;
@@ -10740,6 +10863,8 @@ pub fn inv_identity_add_4x4_16bpc_avx2(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let zero = _mm_setzero_si128();
     let max_val = _mm_set1_epi32(bitdepth_max);
@@ -10816,6 +10941,8 @@ pub fn inv_identity_add_8x8_16bpc_avx2(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let zero = _mm_setzero_si128();
     let max_val = _mm_set1_epi32(bitdepth_max);
@@ -10893,6 +11020,8 @@ pub fn inv_identity_add_16x16_16bpc_avx2(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
 
     // Identity16 scale factor: f(x) = 2*x + (x*1697 + 1024) >> 11
@@ -10996,6 +11125,8 @@ fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     // For 16bpc: use full i32 range
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -11005,7 +11136,7 @@ fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
     let mut tmp = [0i32; 1024];
     inv_txfm_32x32_inner(
         &mut tmp,
-        coeff,
+        &*coeff,
         identity32_1d,
         identity32_1d,
         row_clip_min,
@@ -11013,7 +11144,7 @@ fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst_16bpc(_token, dst, dst_stride, &tmp, coeff, bitdepth_max);
+    add_32x32_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
 }
 
 /// FFI wrapper for 32x32 IDTX 16bpc
@@ -11054,6 +11185,8 @@ fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -11144,6 +11277,8 @@ fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -11243,6 +11378,8 @@ fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -11342,6 +11479,8 @@ fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -11445,6 +11584,8 @@ fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -11534,6 +11675,8 @@ fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -11636,6 +11779,8 @@ fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -11740,6 +11885,8 @@ fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -11844,6 +11991,8 @@ fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -11942,6 +12091,8 @@ fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
     _eob: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
     let row_clip_min = i32::MIN;
     let row_clip_max = i32::MAX;
@@ -12052,6 +12203,8 @@ macro_rules! impl_4x8_transform_16bpc {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
             let row_clip_min = i32::MIN;
             let row_clip_max = i32::MAX;
@@ -12122,6 +12275,8 @@ macro_rules! impl_8x4_transform_16bpc {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
             let row_clip_min = i32::MIN;
             let row_clip_max = i32::MAX;
@@ -12378,6 +12533,8 @@ macro_rules! impl_8x16_transform_16bpc {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
             let row_clip_min = i32::MIN;
             let row_clip_max = i32::MAX;
@@ -12457,6 +12614,8 @@ macro_rules! impl_16x8_transform_16bpc {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
             let row_clip_min = i32::MIN;
             let row_clip_max = i32::MAX;
@@ -12691,6 +12850,8 @@ macro_rules! impl_4x16_transform_16bpc {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
             let row_clip_min = i32::MIN;
             let row_clip_max = i32::MAX;
@@ -12760,6 +12921,8 @@ macro_rules! impl_16x4_transform_16bpc {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
             let row_clip_min = i32::MIN;
             let row_clip_max = i32::MAX;
@@ -13343,6 +13506,8 @@ macro_rules! impl_8x8_transform_16bpc {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
             let row_clip_min = i32::MIN;
             let row_clip_max = i32::MAX;
@@ -13478,6 +13643,8 @@ macro_rules! impl_4x4_transform_16bpc {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
             let row_clip_min = i32::MIN;
             let row_clip_max = i32::MAX;
@@ -13602,6 +13769,8 @@ macro_rules! impl_16x16_transform_16bpc {
             bitdepth_max: i32,
         ) {
             use crate::src::safe_simd::pixel_access::{loadi32, storei32, loadi64, storei64, loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
             let row_clip_min = i32::MIN;
             let row_clip_max = i32::MAX;
@@ -14225,6 +14394,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     use archmage::Desktop64;
     use crate::src::levels::TxfmSize;
     use zerocopy::AsBytes;
+use crate::src::safe_simd::pixel_access::Flex;
 
     let Some(_token) = Desktop64::summon() else { return false };
 

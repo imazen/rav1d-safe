@@ -195,6 +195,91 @@ pub struct FlexSlice<'a, T>(pub &'a [T]);
 /// Mutable slice wrapper: `slice.flex_mut()[i]` with the same guarantees.
 pub struct FlexSliceMut<'a, T>(pub &'a mut [T]);
 
+impl<'a, T> FlexSlice<'a, T> {
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[inline(always)]
+    pub fn as_slice(&self) -> &'a [T] {
+        self.0
+    }
+
+    #[inline(always)]
+    pub fn iter(&self) -> core::slice::Iter<'a, T> {
+        self.0.iter()
+    }
+}
+
+impl<'a, T> FlexSliceMut<'a, T> {
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[inline(always)]
+    pub fn as_slice(&self) -> &[T] {
+        self.0
+    }
+
+    #[inline(always)]
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        self.0
+    }
+
+    #[inline(always)]
+    pub fn iter(&self) -> core::slice::Iter<'_, T> {
+        self.0.iter()
+    }
+
+    #[inline(always)]
+    pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, T> {
+        self.0.iter_mut()
+    }
+
+    /// Re-borrow as immutable FlexSlice.
+    #[inline(always)]
+    pub fn flex(&self) -> FlexSlice<'_, T> {
+        FlexSlice(self.0)
+    }
+}
+
+impl<'a, T> core::ops::Deref for FlexSlice<'a, T> {
+    type Target = [T];
+    #[inline(always)]
+    fn deref(&self) -> &[T] {
+        self.0
+    }
+}
+
+impl<'a, T> core::ops::Deref for FlexSliceMut<'a, T> {
+    type Target = [T];
+    #[inline(always)]
+    fn deref(&self) -> &[T] {
+        self.0
+    }
+}
+
+impl<'a, T> core::ops::DerefMut for FlexSliceMut<'a, T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut [T] {
+        self.0
+    }
+}
+
+// --- FlexSlice Index impls ---
+
 impl<T> core::ops::Index<usize> for FlexSlice<'_, T> {
     type Output = T;
     #[inline(always)]
@@ -236,6 +321,30 @@ impl<T> core::ops::Index<core::ops::RangeFrom<usize>> for FlexSlice<'_, T> {
         &self.0[r]
     }
 }
+
+impl<T> core::ops::Index<core::ops::RangeTo<usize>> for FlexSlice<'_, T> {
+    type Output = [T];
+    #[inline(always)]
+    fn index(&self, r: core::ops::RangeTo<usize>) -> &[T] {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(r.end <= self.0.len());
+            unsafe { self.0.get_unchecked(r) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &self.0[r]
+    }
+}
+
+impl<T> core::ops::Index<core::ops::RangeFull> for FlexSlice<'_, T> {
+    type Output = [T];
+    #[inline(always)]
+    fn index(&self, _r: core::ops::RangeFull) -> &[T] {
+        self.0
+    }
+}
+
+// --- FlexSliceMut Index impls ---
 
 impl<T> core::ops::Index<usize> for FlexSliceMut<'_, T> {
     type Output = T;
@@ -315,6 +424,48 @@ impl<T> core::ops::IndexMut<core::ops::RangeFrom<usize>> for FlexSliceMut<'_, T>
         }
         #[cfg(not(feature = "unchecked"))]
         &mut self.0[r]
+    }
+}
+
+impl<T> core::ops::Index<core::ops::RangeTo<usize>> for FlexSliceMut<'_, T> {
+    type Output = [T];
+    #[inline(always)]
+    fn index(&self, r: core::ops::RangeTo<usize>) -> &[T] {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(r.end <= self.0.len());
+            unsafe { self.0.get_unchecked(r) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &self.0[r]
+    }
+}
+
+impl<T> core::ops::IndexMut<core::ops::RangeTo<usize>> for FlexSliceMut<'_, T> {
+    #[inline(always)]
+    fn index_mut(&mut self, r: core::ops::RangeTo<usize>) -> &mut [T] {
+        #[cfg(feature = "unchecked")]
+        {
+            debug_assert!(r.end <= self.0.len());
+            unsafe { self.0.get_unchecked_mut(r) }
+        }
+        #[cfg(not(feature = "unchecked"))]
+        &mut self.0[r]
+    }
+}
+
+impl<T> core::ops::Index<core::ops::RangeFull> for FlexSliceMut<'_, T> {
+    type Output = [T];
+    #[inline(always)]
+    fn index(&self, _r: core::ops::RangeFull) -> &[T] {
+        self.0
+    }
+}
+
+impl<T> core::ops::IndexMut<core::ops::RangeFull> for FlexSliceMut<'_, T> {
+    #[inline(always)]
+    fn index_mut(&mut self, _r: core::ops::RangeFull) -> &mut [T] {
+        self.0
     }
 }
 

@@ -15,6 +15,7 @@ use archmage::{arcane, Arm64, SimdToken};
 #[cfg(target_arch = "aarch64")]
 use safe_unaligned_simd::aarch64 as safe_simd;
 
+use crate::src::safe_simd::pixel_access::Flex;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::headers::Rav1dFilterMode;
@@ -47,6 +48,9 @@ fn avg_8bpc_inner(
     w: usize,
     h: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp1 = tmp1.flex();
+    let tmp2 = tmp2.flex();
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
@@ -154,6 +158,9 @@ fn avg_16bpc_inner(
     h: usize,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp1 = tmp1.flex();
+    let tmp2 = tmp2.flex();
     let intermediate_bits = 4;
 
     for row in 0..h {
@@ -265,6 +272,9 @@ fn w_avg_8bpc_inner(
     h: usize,
     weight: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp1 = tmp1.flex();
+    let tmp2 = tmp2.flex();
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
@@ -365,6 +375,9 @@ fn w_avg_16bpc_inner(
     weight: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp1 = tmp1.flex();
+    let tmp2 = tmp2.flex();
     let intermediate_bits = 4;
 
     for row in 0..h {
@@ -467,6 +480,10 @@ fn mask_8bpc_inner(
     h: usize,
     mask: &[u8],
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp1 = tmp1.flex();
+    let tmp2 = tmp2.flex();
+    let mask = mask.flex();
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
@@ -574,6 +591,10 @@ fn mask_16bpc_inner(
     mask: &[u8],
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp1 = tmp1.flex();
+    let tmp2 = tmp2.flex();
+    let mask = mask.flex();
     let intermediate_bits = 4;
 
     for row in 0..h {
@@ -692,6 +713,9 @@ fn blend_8bpc_inner(
     h: usize,
     mask: &[u8],
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
+    let mask = mask.flex();
     for row in 0..h {
         let tmp_row = &tmp[row * w..][..w];
         let mask_row = &mask[row * w..][..w];
@@ -802,6 +826,9 @@ fn blend_16bpc_inner(
     h: usize,
     mask: &[u8],
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
+    let mask = mask.flex();
     for row in 0..h {
         let tmp_row = &tmp[row * w..][..w];
         let mask_row = &mask[row * w..][..w];
@@ -934,6 +961,9 @@ fn blend_v_8bpc_inner(
     h: usize,
     obmc_masks: &[u8],
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
+    let obmc_masks = obmc_masks.flex();
     for row in 0..h {
         let tmp_row = &tmp[row * w..][..w];
         let dst_row = &mut dst[row * dst_stride..][..w];
@@ -1045,6 +1075,9 @@ fn blend_v_16bpc_inner(
     obmc_masks: &[u8],
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
+    let obmc_masks = obmc_masks.flex();
     for row in 0..h {
         let tmp_row = &tmp[row * w..][..w];
         let dst_row = &mut dst[row * dst_stride..][..w];
@@ -1147,6 +1180,9 @@ fn blend_h_8bpc_inner(
     h: usize,
     obmc_masks: &[u8],
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
+    let obmc_masks = obmc_masks.flex();
     for row in 0..h {
         let tmp_row = &tmp[row * w..][..w];
         let dst_row = &mut dst[row * dst_stride..][..w];
@@ -1263,6 +1299,9 @@ fn blend_h_16bpc_inner(
     obmc_masks: &[u8],
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp = tmp.flex();
+    let obmc_masks = obmc_masks.flex();
     for row in 0..h {
         let tmp_row = &tmp[row * w..][..w];
         let dst_row = &mut dst[row * dst_stride..][..w];
@@ -1384,6 +1423,10 @@ fn w_mask_8bpc_inner(
     ss_hor: bool,
     ss_ver: bool,
 ) {
+    let mut dst = dst.flex_mut();
+    let tmp1 = tmp1.flex();
+    let tmp2 = tmp2.flex();
+    let mut mask = mask.flex_mut();
     // For 8bpc: intermediate_bits = 4, bitdepth = 8
     let intermediate_bits = 4i32;
     let sh = intermediate_bits + 6;
@@ -1687,6 +1730,8 @@ fn put_bilin_8bpc_inner(
     mx: i32,
     my: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     match (mx, my) {
         (0, 0) => {
             // Simple copy
@@ -1932,6 +1977,8 @@ fn prep_bilin_8bpc_inner(
     mx: i32,
     my: i32,
 ) {
+    let mut tmp = tmp.flex_mut();
+    let src = src.flex();
     // PREP_BIAS for intermediate format
     const PREP_BIAS: i16 = 8192;
 
@@ -2178,6 +2225,8 @@ fn put_bilin_16bpc_inner(
     my: i32,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     match (mx, my) {
         (0, 0) => {
             // Simple copy
@@ -2322,6 +2371,8 @@ fn prep_bilin_16bpc_inner(
     mx: i32,
     my: i32,
 ) {
+    let mut tmp = tmp.flex_mut();
+    let src = src.flex();
     match (mx, my) {
         (0, 0) => {
             // Simple copy with bias
@@ -2651,6 +2702,8 @@ fn h_filter_8tap_8bpc_neon(
     filter: &[i8; 8],
     sh: u8,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let rnd = (1i16 << sh) >> 1;
 
     let mut col = 0;
@@ -2732,6 +2785,7 @@ fn v_filter_8tap_8bpc_neon(
     sh: u8,
     max: u16,
 ) {
+    let mut dst = dst.flex_mut();
     let rnd = (1i32 << sh) >> 1;
     let _ = max; // Unused for 8bpc, always 255
 
@@ -2838,6 +2892,8 @@ fn h_filter_8tap_8bpc_put_neon(
     w: usize,
     filter: &[i8; 8],
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let mut col = 0;
 
     while col + 8 <= w {
@@ -2910,6 +2966,8 @@ fn v_filter_8tap_8bpc_direct_neon(
     w: usize,
     filter: &[i8; 8],
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let mut col = 0;
 
     while col + 8 <= w {
@@ -3020,6 +3078,8 @@ fn put_8tap_8bpc_inner(
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let intermediate_bits = 4u8;
 
     let fh = get_filter_coeff(mx, w, h_filter_type);
@@ -3218,6 +3278,7 @@ fn v_filter_8tap_to_i16_neon(
     filter: &[i8; 8],
     sh: u8,
 ) {
+    let mut dst = dst.flex_mut();
     let rnd = (1i32 << sh) >> 1;
 
     let mut col = 0;
@@ -3298,6 +3359,8 @@ fn prep_8tap_8bpc_inner(
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
 ) {
+    let mut tmp = tmp.flex_mut();
+    let src = src.flex();
     let intermediate_bits = 4u8;
 
     let fh = get_filter_coeff(mx, w, h_filter_type);
@@ -3513,6 +3576,8 @@ fn h_filter_8tap_16bpc_neon(
     filter: &[i8; 8],
     sh: u8,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let rnd = (1i32 << sh) >> 1;
 
     let mut col = 0;
@@ -3589,6 +3654,7 @@ fn v_filter_8tap_16bpc_neon(
     sh: u8,
     max: u16,
 ) {
+    let mut dst = dst.flex_mut();
     let rnd = (1i32 << sh) >> 1;
 
     let mut col = 0;
@@ -3663,6 +3729,8 @@ fn h_filter_8tap_16bpc_put_neon(
     filter: &[i8; 8],
     max: u16,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let mut col = 0;
 
     while col + 4 <= w {
@@ -3741,6 +3809,8 @@ fn v_filter_8tap_16bpc_direct_neon(
     filter: &[i8; 8],
     max: u16,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let mut col = 0;
 
     while col + 4 <= w {
@@ -3824,6 +3894,8 @@ fn put_8tap_16bpc_inner(
     v_filter_type: Rav1dFilterMode,
     bitdepth_max: u16,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let intermediate_bits = 4u8;
 
     let fh = get_filter_coeff(mx, w, h_filter_type);
@@ -3992,6 +4064,7 @@ fn v_filter_8tap_16bpc_to_i16_neon(
     filter: &[i8; 8],
     sh: u8,
 ) {
+    let mut dst = dst.flex_mut();
     let rnd = (1i32 << sh) >> 1;
 
     let mut col = 0;
@@ -4060,6 +4133,8 @@ fn prep_8tap_16bpc_inner(
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
 ) {
+    let mut tmp = tmp.flex_mut();
+    let src = src.flex();
     let intermediate_bits = 4u8;
 
     let fh = get_filter_coeff(mx, w, h_filter_type);

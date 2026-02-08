@@ -113,11 +113,11 @@ Benchmarked on x86_64 (AVX2), single-threaded, 500 iterations via `examples/prof
 
 | Build | kodim03 8bpc (768x512) | colors_hdr 16bpc |
 |-------|------------------------|------------------|
-| ASM (hand-written assembly) | 6.8 ms/frame | 1.9 ms/frame |
-| Safe-SIMD (default, fully checked) | 22.9 ms/frame | 2.4 ms/frame |
-| Safe-SIMD + `unchecked` feature | 15.2 ms/frame | 2.0 ms/frame |
+| ASM (hand-written assembly) | 3.6 ms/frame | 1.0 ms/frame |
+| Safe-SIMD (default, fully checked) | 21.2 ms/frame | 2.4 ms/frame |
+| Safe-SIMD + `unchecked` feature | 15.4 ms/frame | 1.9 ms/frame |
 
-The 16bpc path is near-parity with `unchecked`. The 8bpc gap is partly DisjointMut borrow-tracking overhead (34% of safe-SIMD time) and partly function call / inlining differences vs hand-written assembly. The `unchecked` feature disables both DisjointMut runtime tracking and slice bounds checks.
+The `unchecked` feature disables DisjointMut runtime borrow tracking and slice bounds checks, giving ~27% speedup on 8bpc. The remaining gap vs ASM is function call and inlining differences — the safe SIMD uses the same AVX2 intrinsics but through Rust's calling conventions rather than hand-tuned register allocation.
 
 ## Building
 

@@ -16,6 +16,7 @@ use archmage::{arcane, Desktop64, SimdToken};
 use core::arch::x86_64::*;
 #[cfg(feature = "asm")]
 use std::ffi::c_int;
+use crate::src::safe_simd::pixel_access::Flex;
 
 /// Inner implementation using archmage for safe SIMD.
 ///
@@ -35,6 +36,8 @@ fn pal_idx_finish_inner(
     w: usize,
     h: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
     let dst_bw = bw / 2;
     let dst_w = w / 2;
 

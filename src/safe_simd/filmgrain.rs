@@ -18,7 +18,7 @@
 use core::arch::x86_64::*;
 
 #[cfg(target_arch = "x86_64")]
-use crate::src::safe_simd::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256};
+use crate::src::safe_simd::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256, Flex};
 
 use std::cmp;
 use std::ffi::c_int;
@@ -419,6 +419,10 @@ fn fgy_row_simd_8bpc_safe(
     min_value: i32,
     max_value: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
+    let grain_row = grain_row.flex();
     let zero = _mm256_setzero_si256();
 
     // Process aligned 32-pixel chunks
@@ -1721,6 +1725,9 @@ fn fgy_inner_8bpc(
     bh: usize,
     row_num: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
     let rows = 1 + (data.overlap_flag && row_num > 0) as usize;
     let scaling_shift = data.scaling_shift;
 
@@ -1801,7 +1808,7 @@ fn fgy_inner_8bpc(
                 token,
                 &mut dst[base..base + bw],
                 &src[base..base + bw],
-                scaling,
+                &*scaling,
                 &grain_lut[offy + y][offx..offx + bw],
                 bw,
                 xstart,
@@ -1867,6 +1874,9 @@ fn fgy_inner_16bpc(
     row_num: usize,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
 
     let bitdepth_min_8 = if bitdepth_max >= 4095 { 4u8 } else { 2u8 };
     let grain_ctr = 128i32 << bitdepth_min_8;
@@ -2057,6 +2067,10 @@ fn fguv_inner_safe_8bpc(
     is_sx: bool,
     is_sy: bool,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
+    let luma = luma.flex();
 
     let uv = is_uv as usize;
     let sx = is_sx as usize;
@@ -2165,45 +2179,45 @@ fn fguv_inner_safe_8bpc(
                 for i in 0..8 {
                     sc_lo_bytes[i * 2] = compute_uv_scaling_val_safe(
                         src[base + x + i],
-                        luma,
+                        &*luma,
                         luma_base + ((x + i) << sx),
                         is_sx,
                         data,
                         uv,
-                        scaling,
+                        &*scaling,
                     );
                 }
                 for i in 0..8 {
                     sc_lo_bytes[16 + i * 2] = compute_uv_scaling_val_safe(
                         src[base + x + 16 + i],
-                        luma,
+                        &*luma,
                         luma_base + ((x + 16 + i) << sx),
                         is_sx,
                         data,
                         uv,
-                        scaling,
+                        &*scaling,
                     );
                 }
                 for i in 0..8 {
                     sc_hi_bytes[i * 2] = compute_uv_scaling_val_safe(
                         src[base + x + 8 + i],
-                        luma,
+                        &*luma,
                         luma_base + ((x + 8 + i) << sx),
                         is_sx,
                         data,
                         uv,
-                        scaling,
+                        &*scaling,
                     );
                 }
                 for i in 0..8 {
                     sc_hi_bytes[16 + i * 2] = compute_uv_scaling_val_safe(
                         src[base + x + 24 + i],
-                        luma,
+                        &*luma,
                         luma_base + ((x + 24 + i) << sx),
                         is_sx,
                         data,
                         uv,
-                        scaling,
+                        &*scaling,
                     );
                 }
 
@@ -2298,6 +2312,10 @@ fn fguv_inner_safe_16bpc(
     is_sy: bool,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let scaling = scaling.flex();
+    let luma = luma.flex();
     let uv = is_uv as usize;
     let sx = is_sx as usize;
     let sy = is_sy as usize;

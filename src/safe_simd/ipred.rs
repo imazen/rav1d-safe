@@ -21,7 +21,7 @@ use libc::{c_int, ptrdiff_t};
 #[cfg(target_arch = "x86_64")]
 use super::partial_simd;
 #[cfg(target_arch = "x86_64")]
-use crate::src::safe_simd::pixel_access::{load_128, load_256, store_128, store_256};
+use crate::src::safe_simd::pixel_access::{load_128, load_256, store_128, store_256, Flex};
 
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::picture::PicOffset;
@@ -44,6 +44,7 @@ fn ipred_dc_128_8bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
     let fill_val = _mm256_set1_epi8(128u8 as i8);
 
     for y in 0..height {
@@ -112,6 +113,8 @@ fn ipred_v_8bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     // Top pixels start at topleft + 1
     let top_off = tl_off + 1;
 
@@ -212,6 +215,8 @@ fn ipred_h_8bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     for y in 0..height {
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let row = &mut dst[row_off..][..width];
@@ -285,6 +290,8 @@ fn ipred_dc_8bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     // Sum top pixels
     let mut sum: u32 = 0;
     for x in 0..width {
@@ -366,6 +373,8 @@ fn ipred_dc_top_8bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     // Sum top pixels
     let mut sum: u32 = 0;
     for x in 0..width {
@@ -442,6 +451,8 @@ fn ipred_dc_left_8bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     // Sum left pixels
     let mut sum: u32 = 0;
     for y in 0..height {
@@ -529,6 +540,8 @@ fn ipred_paeth_8bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let topleft_val = topleft[tl_off] as i32;
     let topleft_vec = _mm256_set1_epi32(topleft_val);
 
@@ -674,6 +687,8 @@ fn ipred_smooth_8bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let weights_hor = &dav1d_sm_weights.0[width..][..width];
     let weights_ver = &dav1d_sm_weights.0[height..][..height];
     let right_val = topleft[tl_off + width] as i32;
@@ -796,6 +811,8 @@ fn ipred_smooth_v_8bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let weights_ver = &dav1d_sm_weights.0[height..][..height];
     let bottom_val = topleft[tl_off - height] as i32;
     let bottom_vec = _mm256_set1_epi32(bottom_val);
@@ -897,6 +914,8 @@ fn ipred_smooth_h_8bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let weights_hor = &dav1d_sm_weights.0[width..][..width];
     let right_val = topleft[tl_off + width] as i32;
     let right_vec = _mm256_set1_epi32(right_val);
@@ -1010,6 +1029,8 @@ fn ipred_filter_8bpc_inner(
     filt_idx: i32,
     topleft_off: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let width = (width / 4) * 4; // Round down to multiple of 4
     let filt_idx = (filt_idx as usize) & 511;
 
@@ -1126,6 +1147,8 @@ fn ipred_z1_8bpc_inner(
     height: usize,
     angle: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let height = height as i32;
 
     // Extract angle flags
@@ -1145,7 +1168,7 @@ fn ipred_z1_8bpc_inner(
 
     if upsample_above {
         // Upsampling case - use scalar fallback for now
-        ipred_z1_scalar(dst, dst_base, stride, topleft, tl_off, width, height, dx, true);
+        ipred_z1_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, true);
         return;
     }
 
@@ -1157,7 +1180,7 @@ fn ipred_z1_8bpc_inner(
 
     if filter_strength != 0 {
         // Filtered case - use scalar fallback for now
-        ipred_z1_scalar(dst, dst_base, stride, topleft, tl_off, width, height, dx, false);
+        ipred_z1_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, false);
         return;
     }
 
@@ -1351,6 +1374,8 @@ fn ipred_z2_8bpc_inner(
     max_width: i32,
     max_height: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let width = width as i32;
     let height = height as i32;
 
@@ -1375,7 +1400,7 @@ fn ipred_z2_8bpc_inner(
     if upsample_left || upsample_above {
         // Fall back to scalar for upsampled cases
         ipred_z2_scalar(
-            dst, dst_base, stride, topleft, tl_off,
+            &mut *dst, dst_base, stride, &*topleft, tl_off,
             width, height, dx, dy,
             max_width, max_height, is_sm, enable_intra_edge_filter,
         );
@@ -1397,7 +1422,7 @@ fn ipred_z2_8bpc_inner(
     if filter_strength_above != 0 || filter_strength_left != 0 {
         // Fall back to scalar for filtered cases
         ipred_z2_scalar(
-            dst, dst_base, stride, topleft, tl_off,
+            &mut *dst, dst_base, stride, &*topleft, tl_off,
             width, height, dx, dy,
             max_width, max_height, is_sm, enable_intra_edge_filter,
         );
@@ -1598,6 +1623,8 @@ fn ipred_z3_8bpc_inner(
     height: usize,
     angle: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let height = height as i32;
 
     // Extract angle flags
@@ -1614,7 +1641,7 @@ fn ipred_z3_8bpc_inner(
         && (width as i32 + height) <= (16 >> is_sm as usize);
 
     if upsample_left {
-        ipred_z3_scalar(dst, dst_base, stride, topleft, tl_off, width, height, dy, true);
+        ipred_z3_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, true);
         return;
     }
 
@@ -1626,7 +1653,7 @@ fn ipred_z3_8bpc_inner(
     };
 
     if filter_strength != 0 {
-        ipred_z3_scalar(dst, dst_base, stride, topleft, tl_off, width, height, dy, false);
+        ipred_z3_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, false);
         return;
     }
 
@@ -1784,6 +1811,7 @@ fn ipred_dc_128_16bpc_inner(
     height: usize,
     bitdepth_max: i32,
 ) {
+    let mut dst = dst.flex_mut();
     // Mid-value is (bitdepth_max + 1) / 2
     let mid_val = ((bitdepth_max + 1) / 2) as u16;
     let fill_val = _mm256_set1_epi16(mid_val as i16);
@@ -1858,6 +1886,8 @@ fn ipred_v_16bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     // Top pixels start at topleft + 1 pixel = tl_off + 2 bytes
     let top_off = tl_off + 2;
 
@@ -1937,6 +1967,8 @@ fn ipred_h_16bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     for y in 0..height {
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         // Left pixel for this row: topleft[-(y+1)] in u16 units = tl_off - (y+1)*2 in bytes
@@ -2013,6 +2045,8 @@ fn ipred_dc_16bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     // Calculate average of top row and left column
     let mut sum = 0u32;
 
@@ -2102,6 +2136,8 @@ fn ipred_dc_top_16bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     // Calculate average of top row
     let mut sum = 0u32;
     for i in 1..=width {
@@ -2180,6 +2216,8 @@ fn ipred_dc_left_16bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     // Calculate average of left column
     let mut sum = 0u32;
     for i in 1..=height {
@@ -2258,6 +2296,8 @@ fn ipred_paeth_16bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let topleft_val = u16::from_ne_bytes(topleft[tl_off..tl_off + 2].try_into().unwrap()) as i32;
 
     for y in 0..height {
@@ -2334,6 +2374,8 @@ fn ipred_smooth_16bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let weights_hor = &dav1d_sm_weights.0[width..][..width];
     let weights_ver = &dav1d_sm_weights.0[height..][..height];
     let right_off = tl_off + width * 2;
@@ -2408,6 +2450,8 @@ fn ipred_smooth_v_16bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let weights_ver = &dav1d_sm_weights.0[height..][..height];
     let bottom_off = tl_off - height * 2;
     let bottom_val = u16::from_ne_bytes(topleft[bottom_off..bottom_off + 2].try_into().unwrap()) as i32;
@@ -2470,6 +2514,8 @@ fn ipred_smooth_h_16bpc_inner(
     width: usize,
     height: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let weights_hor = &dav1d_sm_weights.0[width..][..width];
     let right_off = tl_off + width * 2;
     let right_val = u16::from_ne_bytes(topleft[right_off..right_off + 2].try_into().unwrap()) as i32;
@@ -2537,6 +2583,8 @@ fn ipred_z1_16bpc_inner(
     height: usize,
     angle: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let height = height as i32;
 
     // Extract angle flags
@@ -2554,7 +2602,7 @@ fn ipred_z1_16bpc_inner(
 
     if upsample_above {
         // Upsampling case - use scalar fallback
-        ipred_z1_16bpc_scalar(dst, dst_base, stride, topleft, tl_off, width, height, dx, true);
+        ipred_z1_16bpc_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, true);
         return;
     }
 
@@ -2566,7 +2614,7 @@ fn ipred_z1_16bpc_inner(
 
     if filter_strength != 0 {
         // Filtered case - use scalar fallback
-        ipred_z1_16bpc_scalar(dst, dst_base, stride, topleft, tl_off, width, height, dx, false);
+        ipred_z1_16bpc_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, false);
         return;
     }
 
@@ -2749,6 +2797,8 @@ fn ipred_z2_16bpc_inner(
     max_width: i32,
     max_height: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let width = width as i32;
     let height = height as i32;
 
@@ -2770,7 +2820,7 @@ fn ipred_z2_16bpc_inner(
 
     if upsample_left || upsample_above {
         ipred_z2_16bpc_scalar(
-            dst, dst_base, stride, topleft, tl_off,
+            &mut *dst, dst_base, stride, &*topleft, tl_off,
             width, height, dx, dy,
             max_width, max_height, is_sm, enable_intra_edge_filter,
         );
@@ -2791,7 +2841,7 @@ fn ipred_z2_16bpc_inner(
 
     if filter_strength_above != 0 || filter_strength_left != 0 {
         ipred_z2_16bpc_scalar(
-            dst, dst_base, stride, topleft, tl_off,
+            &mut *dst, dst_base, stride, &*topleft, tl_off,
             width, height, dx, dy,
             max_width, max_height, is_sm, enable_intra_edge_filter,
         );
@@ -2998,6 +3048,8 @@ fn ipred_z3_16bpc_inner(
     height: usize,
     angle: i32,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let height = height as i32;
 
     // Extract angle flags
@@ -3014,7 +3066,7 @@ fn ipred_z3_16bpc_inner(
         && (width as i32 + height) <= (16 >> is_sm as usize);
 
     if upsample_left {
-        ipred_z3_16bpc_scalar(dst, dst_base, stride, topleft, tl_off, width, height, dy, true);
+        ipred_z3_16bpc_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, true);
         return;
     }
 
@@ -3026,7 +3078,7 @@ fn ipred_z3_16bpc_inner(
     };
 
     if filter_strength != 0 {
-        ipred_z3_16bpc_scalar(dst, dst_base, stride, topleft, tl_off, width, height, dy, false);
+        ipred_z3_16bpc_scalar(&mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, false);
         return;
     }
 
@@ -3168,6 +3220,8 @@ fn ipred_filter_16bpc_inner(
     bitdepth_max: i32,
     topleft_off: usize,
 ) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
     let width = (width as usize / 4) * 4; // Round down to multiple of 4
     let filt_idx = (filt_idx as usize) & 511;
 
