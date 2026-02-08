@@ -8382,6 +8382,9 @@ fn identity64_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
 }
 
 /// Generic 64x64 transform function
+///
+/// AV1 high-frequency zeroing: only 32x32 coefficients are stored for 64x64
+/// transforms. Coeff is column-major with stride 32, and has 1024 elements.
 #[inline]
 fn inv_txfm_64x64_inner(
     tmp: &mut [i32; 4096],
@@ -8394,16 +8397,25 @@ fn inv_txfm_64x64_inner(
     col_clip_max: i32,
 ) {
     // For 64x64: no intermediate shift (shift in final output only)
-    // Row transform
-    for y in 0..64 {
-        // Load row from column-major
-        for x in 0..64 {
-            tmp[x] = coeff[y + x * 64] as i32;
+    // Row transform - only first 32 rows have stored coefficients
+    for y in 0..32 {
+        // Load row from column-major (stride=32, only first 32 columns stored)
+        for x in 0..32 {
+            tmp[x] = coeff[y + x * 32] as i32;
+        }
+        // Zero-extend: columns 32..63 have no stored coefficients
+        for x in 32..64 {
+            tmp[x] = 0;
         }
         row_transform(&mut tmp[..64], 1, row_clip_min, row_clip_max);
-        // Store row-major (no intermediate shift for 64x64)
         for x in 0..64 {
             tmp[y * 64 + x] = tmp[x].clamp(col_clip_min, col_clip_max);
+        }
+    }
+    // Rows 32..63 have no stored coefficients - zero them
+    for y in 32..64 {
+        for x in 0..64 {
+            tmp[y * 64 + x] = 0;
         }
     }
 
@@ -8478,9 +8490,9 @@ fn add_64x64_to_dst(
         }
     }
 
-    // Clear coefficients (4096 * 2 = 8192 bytes = 256 * 32 bytes)
-    coeff[..4096].fill(0);
-    
+    // Clear coefficients (only 1024 stored due to high-frequency zeroing)
+    coeff[..1024].fill(0);
+
 }
 
 /// 64x64 DCT_DCT inner function
@@ -8605,8 +8617,8 @@ fn add_64x64_to_dst_16bpc(
         }
     }
 
-    // Clear coefficients (4096 * 2 = 8192 bytes = 256 * 32 bytes)
-    coeff[..4096].fill(0);
+    // Clear coefficients (only 1024 stored due to high-frequency zeroing)
+    coeff[..1024].fill(0);
 }
 
 /// 64x64 DCT_DCT inner function for 16bpc
@@ -9735,14 +9747,21 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
     // is_rect2 = true for 32x64
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
-    // Row transform
-    for y in 0..64 {
+    // Row transform - only first 32 rows have stored coefficients (high-freq zeroing)
+    // Coeff is column-major with stride 32
+    for y in 0..32 {
         for x in 0..32 {
-            tmp[x] = rect2_scale(coeff[y + x * 64] as i32);
+            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
         dct32_1d(&mut tmp[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
             tmp[y * 32 + x] = tmp[x];
+        }
+    }
+    // Zero-pad rows 32..63
+    for y in 32..64 {
+        for x in 0..32 {
+            tmp[y * 32 + x] = 0;
         }
     }
 
@@ -9795,8 +9814,8 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
         }
     }
 
-    // Clear coefficients
-    coeff[..2048].fill(0);
+    // Clear coefficients (only 1024 stored due to high-frequency zeroing)
+    coeff[..1024].fill(0);
 }
 
 /// FFI wrapper for 32x64 DCT_DCT 16bpc
@@ -9843,10 +9862,15 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
     // is_rect2 = true for 64x32
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
-    // Row transform
+    // Row transform - only first 32 columns have stored coefficients (high-freq zeroing)
+    // Coeff is column-major with stride 32
     for y in 0..32 {
-        for x in 0..64 {
+        for x in 0..32 {
             tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
+        }
+        // Zero-extend: columns 32..63 have no stored coefficients
+        for x in 32..64 {
+            tmp[x] = 0;
         }
         dct64_1d(&mut tmp[..64], 1, row_clip_min, row_clip_max);
         for x in 0..64 {
@@ -9903,8 +9927,8 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
         }
     }
 
-    // Clear coefficients
-    coeff[..2048].fill(0);
+    // Clear coefficients (only 1024 stored due to high-frequency zeroing)
+    coeff[..1024].fill(0);
 }
 
 /// FFI wrapper for 64x32 DCT_DCT 16bpc
@@ -9951,14 +9975,21 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
     // is_rect2 = true for 16x64 (4:1 ratio)
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
-    // Row transform
-    for y in 0..64 {
+    // Row transform - only first 32 rows have stored coefficients (high-freq zeroing)
+    // Coeff is column-major with stride 32
+    for y in 0..32 {
         for x in 0..16 {
-            tmp[x] = rect2_scale(coeff[y + x * 64] as i32);
+            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
         dct16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
             tmp[y * 16 + x] = tmp[x];
+        }
+    }
+    // Zero-pad rows 32..63
+    for y in 32..64 {
+        for x in 0..16 {
+            tmp[y * 16 + x] = 0;
         }
     }
 
@@ -10016,8 +10047,8 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
         storeu_256!(<&mut [u16; 16]>::try_from(&mut dst[dst_off..dst_off + 16]).unwrap(), packed);
     }
 
-    // Clear coefficients
-    coeff[..1024].fill(0);
+    // Clear coefficients (only 512 stored due to high-frequency zeroing)
+    coeff[..512].fill(0);
 }
 
 /// FFI wrapper for 16x64 DCT_DCT 16bpc
@@ -10064,10 +10095,15 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
     // is_rect2 = true for 64x16 (4:1 ratio)
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
-    // Row transform
+    // Row transform - only first 32 columns have stored coefficients (high-freq zeroing)
+    // Coeff is column-major with stride 16
     for y in 0..16 {
-        for x in 0..64 {
+        for x in 0..32 {
             tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+        }
+        // Zero-extend: columns 32..63 have no stored coefficients
+        for x in 32..64 {
+            tmp[x] = 0;
         }
         dct64_1d(&mut tmp[..64], 1, row_clip_min, row_clip_max);
         for x in 0..64 {
@@ -10124,8 +10160,8 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
         }
     }
 
-    // Clear coefficients
-    coeff[..1024].fill(0);
+    // Clear coefficients (only 512 stored due to high-frequency zeroing)
+    coeff[..512].fill(0);
 }
 
 /// FFI wrapper for 64x16 DCT_DCT 16bpc
@@ -13900,21 +13936,276 @@ impl_itxfm_direct_dispatch!(
     h_flipadst_fn: flipadst_identity, v_flipadst_fn: identity_flipadst
 );
 
-/// Safe dispatch entry point for ITX SIMD on x86_64.
+/// 8bpc dispatch: calls inner SIMD functions directly with slices.
+/// Arcane functions take (token, dst, stride_usize, coeff, eob, bdmax).
+/// Scalar functions take (dst, base, stride_isize, coeff, eob, bdmax).
+#[cfg(not(feature = "asm"))]
+#[cfg(target_arch = "x86_64")]
+#[allow(non_upper_case_globals)]
+fn itxfm_dispatch_8bpc(
+    token: Desktop64,
+    tx_size: usize,
+    tx_type: TxfmType,
+    dst: &mut [u8],
+    base: usize,
+    stride_u: usize,
+    stride_i: isize,
+    coeff: &mut [i16],
+    eob: i32,
+    bdmax: i32,
+) -> bool {
+    use crate::src::levels::TxfmSize;
+
+    // Arcane functions: dst starts at pixel (base=0 for positive stride)
+    macro_rules! arcane {
+        ($func:ident) => {{
+            $func(token, &mut dst[base..], stride_u, coeff, eob, bdmax);
+            return true;
+        }};
+    }
+    // Scalar functions: pass dst with base offset and signed stride
+    macro_rules! scalar {
+        ($func:ident) => {{
+            $func(dst, base, stride_i, coeff, eob, bdmax);
+            return true;
+        }};
+    }
+
+    const S4x4: usize = TxfmSize::S4x4 as usize;
+    const S8x8: usize = TxfmSize::S8x8 as usize;
+    const S16x16: usize = TxfmSize::S16x16 as usize;
+    const S32x32: usize = TxfmSize::S32x32 as usize;
+    const S64x64: usize = TxfmSize::S64x64 as usize;
+    const R4x8: usize = TxfmSize::R4x8 as usize;
+    const R8x4: usize = TxfmSize::R8x4 as usize;
+    const R8x16: usize = TxfmSize::R8x16 as usize;
+    const R16x8: usize = TxfmSize::R16x8 as usize;
+    const R16x32: usize = TxfmSize::R16x32 as usize;
+    const R32x16: usize = TxfmSize::R32x16 as usize;
+    const R32x64: usize = TxfmSize::R32x64 as usize;
+    const R64x32: usize = TxfmSize::R64x32 as usize;
+    const R4x16: usize = TxfmSize::R4x16 as usize;
+    const R16x4: usize = TxfmSize::R16x4 as usize;
+    const R8x32: usize = TxfmSize::R8x32 as usize;
+    const R32x8: usize = TxfmSize::R32x8 as usize;
+    const R16x64: usize = TxfmSize::R16x64 as usize;
+    const R64x16: usize = TxfmSize::R64x16 as usize;
+
+    match (tx_size, tx_type) {
+        // ===== WHT (scalar, 4x4 only) =====
+        (S4x4, WHT_WHT) => scalar!(inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner),
+
+        // ===== DCT_DCT (arcane, all 19 sizes) =====
+        (S4x4, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner),
+        (R4x8, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner),
+        (R8x4, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner),
+        (R4x16, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner),
+        (R16x4, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner),
+        (S8x8, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner),
+        (R8x16, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner),
+        (R16x8, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner),
+        (R8x32, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner),
+        (R32x8, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner),
+        (S16x16, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner),
+        (R16x32, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner),
+        (R32x16, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner),
+        (R16x64, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner),
+        (R64x16, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner),
+        (S32x32, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner),
+        (R32x64, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner),
+        (R64x32, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner),
+        (S64x64, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner),
+
+        // ===== IDTX (arcane, 8 sizes) =====
+        (S4x4, IDTX) => arcane!(inv_identity_add_4x4_8bpc_avx2),
+        (S8x8, IDTX) => arcane!(inv_identity_add_8x8_8bpc_avx2),
+        (S16x16, IDTX) => arcane!(inv_identity_add_16x16_8bpc_avx2),
+        (R8x32, IDTX) => arcane!(inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner),
+        (R32x8, IDTX) => arcane!(inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner),
+        (R16x32, IDTX) => arcane!(inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner),
+        (R32x16, IDTX) => arcane!(inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner),
+        (S32x32, IDTX) => arcane!(inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner),
+
+        // ===== 4x4 ADST/FLIPADST/hybrid (scalar, 14 types) =====
+        (S4x4, ADST_DCT) => scalar!(inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner),
+        (S4x4, DCT_ADST) => scalar!(inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner),
+        (S4x4, ADST_ADST) => scalar!(inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner),
+        (S4x4, FLIPADST_DCT) => scalar!(inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner),
+        (S4x4, DCT_FLIPADST) => scalar!(inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner),
+        (S4x4, FLIPADST_FLIPADST) => scalar!(inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner),
+        (S4x4, ADST_FLIPADST) => scalar!(inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner),
+        (S4x4, FLIPADST_ADST) => scalar!(inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner),
+        (S4x4, H_DCT) => scalar!(inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner),
+        (S4x4, V_DCT) => scalar!(inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner),
+        (S4x4, H_ADST) => scalar!(inv_txfm_add_h_adst_4x4_8bpc_avx2_inner),
+        (S4x4, V_ADST) => scalar!(inv_txfm_add_v_adst_4x4_8bpc_avx2_inner),
+        (S4x4, H_FLIPADST) => scalar!(inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner),
+        (S4x4, V_FLIPADST) => scalar!(inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner),
+
+        _ => return false,
+    }
+}
+
+/// 16bpc dispatch: calls inner SIMD functions directly with slices.
+/// All arcane functions take (token, dst: &mut [u16], byte_stride: usize, coeff, eob, bdmax).
+/// WHT takes (dst: &mut [u16], base, px_stride: isize, coeff, eob, bdmax).
+#[cfg(not(feature = "asm"))]
+#[cfg(target_arch = "x86_64")]
+#[allow(non_upper_case_globals)]
+fn itxfm_dispatch_16bpc(
+    token: Desktop64,
+    tx_size: usize,
+    tx_type: TxfmType,
+    dst: &mut [u16],
+    base: usize,
+    byte_stride: usize,
+    px_stride: isize,
+    coeff: &mut [i16],
+    eob: i32,
+    bdmax: i32,
+) -> bool {
+    use crate::src::levels::TxfmSize;
+
+    // Arcane 16bpc functions take byte_stride as usize
+    macro_rules! arcane {
+        ($func:ident) => {{
+            $func(token, &mut dst[base..], byte_stride, coeff, eob, bdmax);
+            return true;
+        }};
+    }
+    // WHT scalar takes pixel stride as isize
+    macro_rules! scalar {
+        ($func:ident) => {{
+            $func(dst, base, px_stride, coeff, eob, bdmax);
+            return true;
+        }};
+    }
+
+    const S4x4: usize = TxfmSize::S4x4 as usize;
+    const S8x8: usize = TxfmSize::S8x8 as usize;
+    const S16x16: usize = TxfmSize::S16x16 as usize;
+    const S32x32: usize = TxfmSize::S32x32 as usize;
+    const S64x64: usize = TxfmSize::S64x64 as usize;
+    const R4x8: usize = TxfmSize::R4x8 as usize;
+    const R8x4: usize = TxfmSize::R8x4 as usize;
+    const R8x16: usize = TxfmSize::R8x16 as usize;
+    const R16x8: usize = TxfmSize::R16x8 as usize;
+    const R16x32: usize = TxfmSize::R16x32 as usize;
+    const R32x16: usize = TxfmSize::R32x16 as usize;
+    const R32x64: usize = TxfmSize::R32x64 as usize;
+    const R64x32: usize = TxfmSize::R64x32 as usize;
+    const R4x16: usize = TxfmSize::R4x16 as usize;
+    const R16x4: usize = TxfmSize::R16x4 as usize;
+    const R8x32: usize = TxfmSize::R8x32 as usize;
+    const R32x8: usize = TxfmSize::R32x8 as usize;
+    const R16x64: usize = TxfmSize::R16x64 as usize;
+    const R64x16: usize = TxfmSize::R64x16 as usize;
+
+    match (tx_size, tx_type) {
+        // ===== WHT (scalar, 4x4 only) =====
+        (S4x4, WHT_WHT) => scalar!(inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner),
+
+        // ===== DCT_DCT (arcane, all 19 sizes) =====
+        (S4x4, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner),
+        (R4x8, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner),
+        (R8x4, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner),
+        (R4x16, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner),
+        (R16x4, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner),
+        (S8x8, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner),
+        (R8x16, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner),
+        (R16x8, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner),
+        (R8x32, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner),
+        (R32x8, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner),
+        (S16x16, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner),
+        (R16x32, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner),
+        (R32x16, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner),
+        (R16x64, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner),
+        (R64x16, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner),
+        (S32x32, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner),
+        (R32x64, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner),
+        (R64x32, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner),
+        (S64x64, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner),
+
+        // ===== IDTX (arcane, 14 sizes) =====
+        (S4x4, IDTX) => arcane!(inv_identity_add_4x4_16bpc_avx2),
+        (R4x8, IDTX) => arcane!(inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner),
+        (R8x4, IDTX) => arcane!(inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner),
+        (R4x16, IDTX) => arcane!(inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner),
+        (R16x4, IDTX) => arcane!(inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner),
+        (S8x8, IDTX) => arcane!(inv_identity_add_8x8_16bpc_avx2),
+        (R8x16, IDTX) => arcane!(inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner),
+        (R16x8, IDTX) => arcane!(inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner),
+        (R8x32, IDTX) => arcane!(inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner),
+        (R32x8, IDTX) => arcane!(inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner),
+        (S16x16, IDTX) => arcane!(inv_identity_add_16x16_16bpc_avx2),
+        (R16x32, IDTX) => arcane!(inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner),
+        (R32x16, IDTX) => arcane!(inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner),
+        (S32x32, IDTX) => arcane!(inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner),
+
+        _ => return false,
+    }
+}
+
+/// Safe dispatch entry point for ITX SIMD on x86_64 (non-asm path).
 ///
-/// Takes safe Rust types, creates raw pointers internally, dispatches to the
-/// right SIMD function. Returns `true` if a SIMD implementation handled the call.
-/// When asm is disabled, returns `false` (scalar fallback handles it).
+/// Calls inner SIMD functions directly with slices — no FFI wrappers, no raw pointers.
+/// Returns `true` if a SIMD implementation handled the call.
 #[cfg(not(feature = "asm"))]
 pub fn itxfm_add_dispatch<BD: BitDepth>(
-    _tx_size: usize,
-    _tx_type: usize,
-    _dst: PicOffset,
-    _coeff: &mut [BD::Coef],
-    _eob: i32,
-    _bd: BD,
+    tx_size: usize,
+    tx_type: usize,
+    dst: PicOffset,
+    coeff: &mut [BD::Coef],
+    eob: i32,
+    bd: BD,
 ) -> bool {
-    false
+    use crate::src::strided::Strided as _;
+    use zerocopy::AsBytes;
+
+    #[cfg(not(target_arch = "x86_64"))]
+    { let _ = (tx_size, tx_type, &dst, &coeff, eob, &bd); return false; }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        let Some(token) = Desktop64::summon() else { return false };
+
+        let txfm = match crate::src::levels::TxfmSize::from_repr(tx_size) {
+            Some(t) => t,
+            None => return false,
+        };
+        let (w, h) = txfm.to_wh();
+        let byte_stride_i = dst.stride(); // isize, in bytes
+        let byte_stride_u = byte_stride_i.unsigned_abs();
+        let bd_c = bd.into_c();
+
+        // Reinterpret coeff as &mut [i16] (safe via zerocopy)
+        let coeff_i16: &mut [i16] = zerocopy::FromBytes::mut_slice_from(coeff.as_bytes_mut())
+            .expect("coeff alignment/size mismatch for i16 reinterpretation");
+
+        match BD::BPC {
+            BPC::BPC8 => {
+                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
+                let dst_u8: &mut [u8] = guard.as_bytes_mut();
+                itxfm_dispatch_8bpc(
+                    token, tx_size, tx_type as TxfmType,
+                    dst_u8, base, byte_stride_u, byte_stride_i,
+                    coeff_i16, eob, bd_c,
+                )
+            }
+            BPC::BPC16 => {
+                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
+                let dst_bytes: &mut [u8] = guard.as_bytes_mut();
+                let dst_u16: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_bytes)
+                    .expect("dst alignment/size mismatch for u16 reinterpretation");
+                let px_stride_i = dst.pixel_stride::<BD>(); // isize, in pixels
+                itxfm_dispatch_16bpc(
+                    token, tx_size, tx_type as TxfmType,
+                    dst_u16, base, byte_stride_u, px_stride_i,
+                    coeff_i16, eob, bd_c,
+                )
+            }
+        }
+    }
 }
 
 /// Safe dispatch entry point for ITX SIMD on x86_64.
