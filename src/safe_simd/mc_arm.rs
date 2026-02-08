@@ -1,5 +1,5 @@
 //! Safe SIMD implementations of motion compensation functions for ARM NEON
-#![allow(deprecated)] // FFI wrappers need to forge tokens
+#![allow(deprecated)] // FFI wrappers forge tokens (asm feature only)
 #![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 //!
 //! These use archmage tokens to safely invoke NEON intrinsics.
@@ -106,7 +106,7 @@ fn avg_8bpc_inner(
 }
 
 /// AVG operation for 8-bit pixels - extern "C" wrapper for dispatch
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn avg_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -212,7 +212,7 @@ fn avg_16bpc_inner(
 }
 
 /// AVG operation for 16-bit pixels - extern "C" wrapper
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn avg_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -316,7 +316,7 @@ fn w_avg_8bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_avg_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -413,7 +413,7 @@ fn w_avg_16bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_avg_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -524,7 +524,7 @@ fn mask_8bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn mask_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -638,7 +638,7 @@ fn mask_16bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn mask_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -754,7 +754,7 @@ fn blend_8bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -864,7 +864,7 @@ fn blend_16bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -995,7 +995,7 @@ fn blend_v_8bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_v_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1093,7 +1093,7 @@ fn blend_v_16bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_v_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1210,7 +1210,7 @@ fn blend_h_8bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_h_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1324,7 +1324,7 @@ fn blend_h_16bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn blend_h_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1555,7 +1555,7 @@ unsafe fn w_mask_8bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_444_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1589,7 +1589,7 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
     );
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_422_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1623,7 +1623,7 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
     );
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_420_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1864,7 +1864,7 @@ fn put_bilin_8bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn put_bilin_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2116,7 +2116,7 @@ fn prep_bilin_8bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn prep_bilin_8bpc_neon(
     tmp: *mut i16,
@@ -2251,7 +2251,7 @@ fn put_bilin_16bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn put_bilin_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2396,7 +2396,7 @@ fn prep_bilin_16bpc_inner(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn prep_bilin_16bpc_neon(
     tmp: *mut i16,
@@ -2506,7 +2506,7 @@ unsafe fn w_mask_16bpc_inner<const SS_HOR: bool, const SS_VER: bool>(
     }
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_444_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2539,7 +2539,7 @@ pub unsafe extern "C" fn w_mask_444_16bpc_neon(
     );
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_422_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -2572,7 +2572,7 @@ pub unsafe extern "C" fn w_mask_422_16bpc_neon(
     );
 }
 
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn w_mask_420_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -3118,7 +3118,7 @@ fn get_v_filter_type(filter: Filter2d) -> Rav1dFilterMode {
 
 macro_rules! define_put_8tap_8bpc {
     ($name:ident, $filter:expr) => {
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
@@ -3413,7 +3413,7 @@ fn prep_8tap_8bpc_inner(
 
 macro_rules! define_prep_8tap_8bpc {
     ($name:ident, $filter:expr) => {
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             tmp: *mut i16,
@@ -3888,7 +3888,7 @@ fn put_8tap_16bpc_inner(
 
 macro_rules! define_put_8tap_16bpc {
     ($name:ident, $filter:expr) => {
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
@@ -4178,7 +4178,7 @@ fn prep_8tap_16bpc_inner(
 
 macro_rules! define_prep_8tap_16bpc {
     ($name:ident, $filter:expr) => {
-#[allow(unsafe_code)]
+#[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
         pub unsafe extern "C" fn $name(
             tmp: *mut i16,
@@ -4262,17 +4262,45 @@ pub fn avg_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use zerocopy::AsBytes;
-    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-    let dst_stride = dst.stride();
-    let bd_c = bd.into_c();
-    let dst_ffi = FFISafe::new(&dst);
-    unsafe {
+    #[cfg(feature = "asm")]
+    {
+        use zerocopy::AsBytes;
+        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+        let dst_stride = dst.stride();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+        unsafe {
+            match BD::BPC {
+                BPC::BPC8 => avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
+                BPC::BPC16 => avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
+            }
+        }
+    }
+    #[cfg(not(feature = "asm"))]
+    {
+        let token = Arm64::summon().unwrap();
+        let w_u = w as usize;
+        let h_u = h as usize;
+        let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+        let dst_stride = dst.stride() as usize;
         match BD::BPC {
-            BPC::BPC8 => avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
-            BPC::BPC16 => avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, bd_c, dst_ffi),
+            BPC::BPC8 => {
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                avg_8bpc_inner(token, &mut dst_bytes[dst_base..], dst_stride, &tmp1[..], &tmp2[..], w_u, h_u);
+            }
+            BPC::BPC16 => {
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let start = dst_base * 2;
+                let stride_u16 = dst_stride / 2;
+                let dst_u16 = unsafe {
+                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u)
+                };
+                avg_16bpc_inner(token, dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, bd.into_c());
+            }
         }
     }
     true
@@ -4290,20 +4318,48 @@ pub fn w_avg_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use zerocopy::AsBytes;
-    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-    let dst_stride = dst.stride();
-    let bd_c = bd.into_c();
-    let dst_ffi = FFISafe::new(&dst);
-    unsafe {
+    #[cfg(feature = "asm")]
+    {
+        use zerocopy::AsBytes;
+        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+        let dst_stride = dst.stride();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+        unsafe {
+            match BD::BPC {
+                BPC::BPC8 => {
+                    w_avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
+                }
+                BPC::BPC16 => {
+                    w_avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
+                }
+            }
+        }
+    }
+    #[cfg(not(feature = "asm"))]
+    {
+        let token = Arm64::summon().unwrap();
+        let w_u = w as usize;
+        let h_u = h as usize;
+        let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+        let dst_stride = dst.stride() as usize;
         match BD::BPC {
             BPC::BPC8 => {
-                w_avg_8bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                w_avg_8bpc_inner(token, &mut dst_bytes[dst_base..], dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, weight);
             }
             BPC::BPC16 => {
-                w_avg_16bpc_neon(dst_ptr, dst_stride, tmp1, tmp2, w, h, weight, bd_c, dst_ffi)
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let start = dst_base * 2;
+                let stride_u16 = dst_stride / 2;
+                let dst_u16 = unsafe {
+                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u)
+                };
+                w_avg_16bpc_inner(token, dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, weight, bd.into_c());
             }
         }
     }
@@ -4322,22 +4378,51 @@ pub fn mask_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use zerocopy::AsBytes;
-    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-    let dst_stride = dst.stride();
-    let mask_ptr = mask[..(w * h) as usize].as_ptr();
-    let bd_c = bd.into_c();
-    let dst_ffi = FFISafe::new(&dst);
-    unsafe {
+    #[cfg(feature = "asm")]
+    {
+        use zerocopy::AsBytes;
+        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+        let dst_stride = dst.stride();
+        let mask_ptr = mask[..(w * h) as usize].as_ptr();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+        unsafe {
+            match BD::BPC {
+                BPC::BPC8 => mask_8bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
+                ),
+                BPC::BPC16 => mask_16bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
+                ),
+            }
+        }
+    }
+    #[cfg(not(feature = "asm"))]
+    {
+        let token = Arm64::summon().unwrap();
+        let w_u = w as usize;
+        let h_u = h as usize;
+        let mask_slice = &mask[..(w_u * h_u)];
+        let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+        let dst_stride = dst.stride() as usize;
         match BD::BPC {
-            BPC::BPC8 => mask_8bpc_neon(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
-            ),
-            BPC::BPC16 => mask_16bpc_neon(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask_ptr, bd_c, dst_ffi,
-            ),
+            BPC::BPC8 => {
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                mask_8bpc_inner(token, &mut dst_bytes[dst_base..], dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, mask_slice);
+            }
+            BPC::BPC16 => {
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let start = dst_base * 2;
+                let stride_u16 = dst_stride / 2;
+                let dst_u16 = unsafe {
+                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u)
+                };
+                mask_16bpc_inner(token, dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, mask_slice, bd.into_c());
+            }
         }
     }
     true
@@ -4353,18 +4438,72 @@ pub fn blend_dispatch<BD: BitDepth>(
     mask: &[u8],
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use zerocopy::AsBytes;
-    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-    let dst_stride = dst.stride();
-    let tmp_ptr = std::ptr::from_ref(tmp).cast();
-    let mask_ptr = mask[..(w * h) as usize].as_ptr();
-    let dst_ffi = FFISafe::new(&dst);
-    unsafe {
+    #[cfg(feature = "asm")]
+    {
+        use zerocopy::AsBytes;
+        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+        let dst_stride = dst.stride();
+        let tmp_ptr = std::ptr::from_ref(tmp).cast();
+        let mask_ptr = mask[..(w * h) as usize].as_ptr();
+        let dst_ffi = FFISafe::new(&dst);
+        unsafe {
+            match BD::BPC {
+                BPC::BPC8 => blend_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
+                BPC::BPC16 => blend_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
+            }
+        }
+    }
+    #[cfg(not(feature = "asm"))]
+    {
+        let w_u = w as usize;
+        let h_u = h as usize;
+        let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+        let dst_stride = dst.stride() as usize;
+        let mask_slice = &mask[..(w_u * h_u)];
         match BD::BPC {
-            BPC::BPC8 => blend_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
-            BPC::BPC16 => blend_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, mask_ptr, dst_ffi),
+            BPC::BPC8 => {
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let dst_slice = &mut dst_bytes[dst_base..];
+                let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
+                for row in 0..h_u {
+                    let dst_row = &mut dst_slice[row * dst_stride..][..w_u];
+                    let tmp_row = &tmp_bytes[row * w_u..][..w_u];
+                    let mask_row = &mask_slice[row * w_u..][..w_u];
+                    for col in 0..w_u {
+                        let d = dst_row[col] as u32;
+                        let t = tmp_row[col] as u32;
+                        let m = mask_row[col] as u32;
+                        dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u8;
+                    }
+                }
+            }
+            BPC::BPC16 => {
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let start = dst_base * 2;
+                let stride_u16 = dst_stride / 2;
+                let dst_u16 = unsafe {
+                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u)
+                };
+                let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
+                let tmp_u16 = unsafe {
+                    std::slice::from_raw_parts(tmp_bytes.as_ptr() as *const u16, w_u * h_u)
+                };
+                for row in 0..h_u {
+                    let dst_row = &mut dst_u16[row * stride_u16..][..w_u];
+                    let tmp_row = &tmp_u16[row * w_u..][..w_u];
+                    let mask_row = &mask_slice[row * w_u..][..w_u];
+                    for col in 0..w_u {
+                        let d = dst_row[col] as u32;
+                        let t = tmp_row[col] as u32;
+                        let m = mask_row[col] as u32;
+                        dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u16;
+                    }
+                }
+            }
         }
     }
     true
@@ -4380,19 +4519,122 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
     h: i32,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use zerocopy::AsBytes;
-    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-    let dst_stride = dst.stride();
-    let tmp_ptr = std::ptr::from_ref(tmp).cast();
-    let dst_ffi = FFISafe::new(&dst);
-    unsafe {
+    #[cfg(feature = "asm")]
+    {
+        use zerocopy::AsBytes;
+        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+        let dst_stride = dst.stride();
+        let tmp_ptr = std::ptr::from_ref(tmp).cast();
+        let dst_ffi = FFISafe::new(&dst);
+        unsafe {
+            match (BD::BPC, is_h) {
+                (BPC::BPC8, true) => blend_h_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                (BPC::BPC8, false) => blend_v_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                (BPC::BPC16, true) => blend_h_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+                (BPC::BPC16, false) => blend_v_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+            }
+        }
+    }
+    #[cfg(not(feature = "asm"))]
+    {
+        use crate::src::tables::dav1d_obmc_masks;
+        let w_u = w as usize;
+        let h_u = h as usize;
+        let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+        let dst_stride = dst.stride() as usize;
         match (BD::BPC, is_h) {
-            (BPC::BPC8, true) => blend_h_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-            (BPC::BPC8, false) => blend_v_8bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-            (BPC::BPC16, true) => blend_h_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
-            (BPC::BPC16, false) => blend_v_16bpc_neon(dst_ptr, dst_stride, tmp_ptr, w, h, dst_ffi),
+            (BPC::BPC8, false) => {
+                // blend_v 8bpc: mask from obmc_masks[w..], dst_w = w*3/4
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let dst_slice = &mut dst_bytes[dst_base..];
+                let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
+                let mask = &dav1d_obmc_masks.0[w_u..];
+                let dst_w = w_u * 3 >> 2;
+                for row in 0..h_u {
+                    let dst_row = &mut dst_slice[row * dst_stride..][..dst_w];
+                    let tmp_row = &tmp_bytes[row * w_u..][..dst_w];
+                    for col in 0..dst_w {
+                        let d = dst_row[col] as u32;
+                        let t = tmp_row[col] as u32;
+                        let m = mask[col] as u32;
+                        dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u8;
+                    }
+                }
+            }
+            (BPC::BPC8, true) => {
+                // blend_h 8bpc: mask from obmc_masks[h..], h_effective = h*3/4
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let dst_slice = &mut dst_bytes[dst_base..];
+                let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
+                let mask = &dav1d_obmc_masks.0[h_u..];
+                let h_effective = h_u * 3 >> 2;
+                for row in 0..h_effective {
+                    let dst_row = &mut dst_slice[row * dst_stride..][..w_u];
+                    let tmp_row = &tmp_bytes[row * w_u..][..w_u];
+                    let m = mask[row] as u32;
+                    for col in 0..w_u {
+                        let d = dst_row[col] as u32;
+                        let t = tmp_row[col] as u32;
+                        dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u8;
+                    }
+                }
+            }
+            (BPC::BPC16, false) => {
+                // blend_v 16bpc
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let start = dst_base * 2;
+                let stride_u16 = dst_stride / 2;
+                let dst_u16 = unsafe {
+                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u)
+                };
+                let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
+                let tmp_u16 = unsafe {
+                    std::slice::from_raw_parts(tmp_bytes.as_ptr() as *const u16, w_u * h_u)
+                };
+                let mask = &dav1d_obmc_masks.0[w_u..];
+                let dst_w = w_u * 3 >> 2;
+                for row in 0..h_u {
+                    let dst_row = &mut dst_u16[row * stride_u16..][..dst_w];
+                    let tmp_row = &tmp_u16[row * w_u..][..dst_w];
+                    for col in 0..dst_w {
+                        let d = dst_row[col] as u32;
+                        let t = tmp_row[col] as u32;
+                        let m = mask[col] as u32;
+                        dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u16;
+                    }
+                }
+            }
+            (BPC::BPC16, true) => {
+                // blend_h 16bpc
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let start = dst_base * 2;
+                let stride_u16 = dst_stride / 2;
+                let mask = &dav1d_obmc_masks.0[h_u..];
+                let h_effective = h_u * 3 >> 2;
+                let dst_u16 = unsafe {
+                    std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_effective * stride_u16 + w_u)
+                };
+                let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
+                let tmp_u16 = unsafe {
+                    std::slice::from_raw_parts(tmp_bytes.as_ptr() as *const u16, w_u * h_effective)
+                };
+                for row in 0..h_effective {
+                    let dst_row = &mut dst_u16[row * stride_u16..][..w_u];
+                    let tmp_row = &tmp_u16[row * w_u..][..w_u];
+                    let m = mask[row] as u32;
+                    for col in 0..w_u {
+                        let d = dst_row[col] as u32;
+                        let t = tmp_row[col] as u32;
+                        dst_row[col] = ((d * (64 - m) + t * m + 32) >> 6) as u16;
+                    }
+                }
+            }
         }
     }
     true
@@ -4412,33 +4654,72 @@ pub fn w_mask_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use zerocopy::AsBytes;
-    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-    let dst_stride = dst.stride();
-    let bd_c = bd.into_c();
-    let dst_ffi = FFISafe::new(&dst);
-    unsafe {
-        match (BD::BPC, layout) {
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_8bpc_neon(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_8bpc_neon(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
-            (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_8bpc_neon(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_16bpc_neon(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_16bpc_neon(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
-            (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_16bpc_neon(
-                dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
-            ),
+    #[cfg(feature = "asm")]
+    {
+        use zerocopy::AsBytes;
+        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+        let dst_stride = dst.stride();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+        unsafe {
+            match (BD::BPC, layout) {
+                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_8bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                ),
+                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_8bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                ),
+                (BPC::BPC8, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_8bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                ),
+                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I420) => w_mask_420_16bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                ),
+                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I422) => w_mask_422_16bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                ),
+                (BPC::BPC16, Rav1dPixelLayoutSubSampled::I444) => w_mask_444_16bpc_neon(
+                    dst_ptr, dst_stride, tmp1, tmp2, w, h, mask, sign, bd_c, dst_ffi,
+                ),
+            }
+        }
+    }
+    #[cfg(not(feature = "asm"))]
+    {
+        let w_u = w as usize;
+        let h_u = h as usize;
+        let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+        let dst_stride = dst.stride() as usize;
+        match BD::BPC {
+            BPC::BPC8 => {
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let dst_slice = &mut dst_bytes[dst_base..];
+                unsafe {
+                    match layout {
+                        Rav1dPixelLayoutSubSampled::I420 => w_mask_8bpc_inner::<true, true>(dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8),
+                        Rav1dPixelLayoutSubSampled::I422 => w_mask_8bpc_inner::<true, false>(dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8),
+                        Rav1dPixelLayoutSubSampled::I444 => w_mask_8bpc_inner::<false, false>(dst_slice, dst_stride, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8),
+                    }
+                }
+            }
+            BPC::BPC16 => {
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let start = dst_base * 2;
+                let stride_u16 = dst_stride / 2;
+                let dst_u16 = unsafe { std::slice::from_raw_parts_mut(dst_bytes[start..].as_mut_ptr() as *mut u16, h_u * stride_u16 + w_u) };
+                let bd_c = bd.into_c();
+                unsafe {
+                    match layout {
+                        Rav1dPixelLayoutSubSampled::I420 => w_mask_16bpc_inner::<true, true>(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c),
+                        Rav1dPixelLayoutSubSampled::I422 => w_mask_16bpc_inner::<true, false>(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c),
+                        Rav1dPixelLayoutSubSampled::I444 => w_mask_16bpc_inner::<false, false>(dst_u16, stride_u16, &tmp1[..], &tmp2[..], w_u, h_u, &mut mask[..], sign as u8, bd_c),
+                    }
+                }
+            }
         }
     }
     true
@@ -4458,80 +4739,139 @@ pub fn mc_put_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
     use Filter2d::*;
-    use zerocopy::AsBytes;
-    let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
-    let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
-    let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
-    let dst_stride = dst.stride();
-    let (src_guard, _src_base) = src.full_guard::<BD>();
-    let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
-    let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
-    let src_stride = src.stride();
-    let bd_c = bd.into_c();
-    let dst_ffi = FFISafe::new(&dst);
-    let src_ffi = FFISafe::new(&src);
-    unsafe {
-        match (BD::BPC, filter) {
-            (BPC::BPC8, Regular8Tap) => put_8tap_regular_8bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC8, RegularSmooth8Tap) => put_8tap_regular_smooth_8bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC8, RegularSharp8Tap) => put_8tap_regular_sharp_8bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC8, SmoothRegular8Tap) => put_8tap_smooth_regular_8bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC8, Smooth8Tap) => put_8tap_smooth_8bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC8, SmoothSharp8Tap) => put_8tap_smooth_sharp_8bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC8, SharpRegular8Tap) => put_8tap_sharp_regular_8bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC8, SharpSmooth8Tap) => put_8tap_sharp_smooth_8bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC8, Sharp8Tap) => put_8tap_sharp_8bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC8, Bilinear) => put_bilin_8bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC16, Regular8Tap) => put_8tap_regular_16bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC16, RegularSmooth8Tap) => put_8tap_regular_smooth_16bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC16, RegularSharp8Tap) => put_8tap_regular_sharp_16bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC16, SmoothRegular8Tap) => put_8tap_smooth_regular_16bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC16, Smooth8Tap) => put_8tap_smooth_16bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC16, SmoothSharp8Tap) => put_8tap_smooth_sharp_16bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC16, SharpRegular8Tap) => put_8tap_sharp_regular_16bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC16, SharpSmooth8Tap) => put_8tap_sharp_smooth_16bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC16, Sharp8Tap) => put_8tap_sharp_16bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
-            (BPC::BPC16, Bilinear) => put_bilin_16bpc_neon(
-                dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
-            ),
+    #[cfg(feature = "asm")]
+    {
+        use zerocopy::AsBytes;
+        let (mut dst_guard, _dst_base) = dst.full_guard_mut::<BD>();
+        let dst_ptr = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+        let dst_ptr = unsafe { dst_ptr.add(_dst_base * std::mem::size_of::<BD::Pixel>()) };
+        let dst_stride = dst.stride();
+        let (src_guard, _src_base) = src.full_guard::<BD>();
+        let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
+        let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
+        let src_stride = src.stride();
+        let bd_c = bd.into_c();
+        let dst_ffi = FFISafe::new(&dst);
+        let src_ffi = FFISafe::new(&src);
+        unsafe {
+            match (BD::BPC, filter) {
+                (BPC::BPC8, Regular8Tap) => put_8tap_regular_8bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC8, RegularSmooth8Tap) => put_8tap_regular_smooth_8bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC8, RegularSharp8Tap) => put_8tap_regular_sharp_8bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC8, SmoothRegular8Tap) => put_8tap_smooth_regular_8bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC8, Smooth8Tap) => put_8tap_smooth_8bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC8, SmoothSharp8Tap) => put_8tap_smooth_sharp_8bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC8, SharpRegular8Tap) => put_8tap_sharp_regular_8bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC8, SharpSmooth8Tap) => put_8tap_sharp_smooth_8bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC8, Sharp8Tap) => put_8tap_sharp_8bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC8, Bilinear) => put_bilin_8bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC16, Regular8Tap) => put_8tap_regular_16bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC16, RegularSmooth8Tap) => put_8tap_regular_smooth_16bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC16, RegularSharp8Tap) => put_8tap_regular_sharp_16bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC16, SmoothRegular8Tap) => put_8tap_smooth_regular_16bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC16, Smooth8Tap) => put_8tap_smooth_16bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC16, SmoothSharp8Tap) => put_8tap_smooth_sharp_16bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC16, SharpRegular8Tap) => put_8tap_sharp_regular_16bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC16, SharpSmooth8Tap) => put_8tap_sharp_smooth_16bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC16, Sharp8Tap) => put_8tap_sharp_16bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+                (BPC::BPC16, Bilinear) => put_bilin_16bpc_neon(
+                    dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, bd_c, dst_ffi, src_ffi,
+                ),
+            }
+        }
+    }
+    #[cfg(not(feature = "asm"))]
+    {
+        let token = Arm64::summon().unwrap();
+        let w_u = w as usize;
+        let h_u = h as usize;
+        let mx_u = mx as usize;
+        let my_u = my as usize;
+        let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+        let (src_guard, src_base) = src.full_guard::<BD>();
+        let dst_stride_raw = dst.stride();
+        let src_stride_raw = src.stride();
+
+        match BD::BPC {
+            BPC::BPC8 => {
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let dst_slice = &mut dst_bytes[dst_base..];
+                let src_bytes = src_guard.as_bytes();
+                let dst_stride_u = dst_stride_raw as usize;
+                let src_stride_u = src_stride_raw as usize;
+
+                if filter == Bilinear {
+                    let src_slice = &src_bytes[src_base..];
+                    put_bilin_8bpc_inner(token, dst_slice, dst_stride_u, src_slice, src_stride_u, w_u, h_u, mx, my);
+                } else {
+                    let src_start = src_base.wrapping_sub(3 * src_stride_u + 3);
+                    let src_len = (h_u + 7) * src_stride_u + w_u + 7;
+                    let src_full = &src_bytes[src_start..][..src_len];
+                    let src_adj = &src_full[3 * src_stride_u + 3..];
+                    put_8tap_8bpc_inner(token, dst_slice, dst_stride_u, src_adj, src_stride_u, w_u, h_u, mx_u, my_u, get_h_filter_type(filter), get_v_filter_type(filter));
+                }
+            }
+            BPC::BPC16 => {
+                use zerocopy::AsBytes;
+                let dst_bytes = dst_guard.as_bytes_mut();
+                let src_bytes = src_guard.as_bytes();
+                let dst_stride_u16 = (dst_stride_raw as usize) / 2;
+                let src_stride_u16 = (src_stride_raw as usize) / 2;
+                let dst_start = dst_base * 2;
+                let dst_u16 = unsafe { std::slice::from_raw_parts_mut(dst_bytes[dst_start..].as_mut_ptr() as *mut u16, h_u * dst_stride_u16 + w_u) };
+
+                if filter == Bilinear {
+                    let src_start = src_base * 2;
+                    let src_u16 = unsafe { std::slice::from_raw_parts(src_bytes[src_start..].as_ptr() as *const u16, (h_u + 1) * src_stride_u16 + w_u + 1) };
+                    put_bilin_16bpc_inner(token, dst_u16, dst_stride_u16, src_u16, src_stride_u16, w_u, h_u, mx, my, bd.into_c());
+                } else {
+                    let src_start_u16 = src_base.wrapping_sub(3 * src_stride_u16 + 3);
+                    let src_start = src_start_u16 * 2;
+                    let src_len = (h_u + 7) * src_stride_u16 + w_u + 7;
+                    let src_full = unsafe { std::slice::from_raw_parts(src_bytes[src_start..].as_ptr() as *const u16, src_len) };
+                    let src_adj = &src_full[3 * src_stride_u16 + 3..];
+                    put_8tap_16bpc_inner(token, dst_u16, dst_stride_u16, src_adj, src_stride_u16, w_u, h_u, mx_u, my_u, get_h_filter_type(filter), get_v_filter_type(filter), bd.into_c() as u16);
+                }
+            }
         }
     }
     true
@@ -4551,75 +4891,126 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
     use Filter2d::*;
-    let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
-    use zerocopy::AsBytes;
-    let (src_guard, _src_base) = src.full_guard::<BD>();
-    let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
-    let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
-    let src_stride = src.stride();
-    let bd_c = bd.into_c();
-    let src_ffi = FFISafe::new(&src);
-    unsafe {
-        match (BD::BPC, filter) {
-            (BPC::BPC8, Regular8Tap) => prep_8tap_regular_8bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC8, RegularSmooth8Tap) => prep_8tap_regular_smooth_8bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC8, RegularSharp8Tap) => prep_8tap_regular_sharp_8bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC8, SmoothRegular8Tap) => prep_8tap_smooth_regular_8bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC8, Smooth8Tap) => prep_8tap_smooth_8bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC8, SmoothSharp8Tap) => prep_8tap_smooth_sharp_8bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC8, SharpRegular8Tap) => prep_8tap_sharp_regular_8bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC8, SharpSmooth8Tap) => prep_8tap_sharp_smooth_8bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC8, Sharp8Tap) => {
-                prep_8tap_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
+    #[cfg(feature = "asm")]
+    {
+        let tmp_ptr = tmp[..(w * h) as usize].as_mut_ptr();
+        use zerocopy::AsBytes;
+        let (src_guard, _src_base) = src.full_guard::<BD>();
+        let src_ptr = src_guard.as_bytes().as_ptr() as *const DynPixel;
+        let src_ptr = unsafe { src_ptr.add(_src_base * std::mem::size_of::<BD::Pixel>()) };
+        let src_stride = src.stride();
+        let bd_c = bd.into_c();
+        let src_ffi = FFISafe::new(&src);
+        unsafe {
+            match (BD::BPC, filter) {
+                (BPC::BPC8, Regular8Tap) => prep_8tap_regular_8bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC8, RegularSmooth8Tap) => prep_8tap_regular_smooth_8bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC8, RegularSharp8Tap) => prep_8tap_regular_sharp_8bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC8, SmoothRegular8Tap) => prep_8tap_smooth_regular_8bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC8, Smooth8Tap) => prep_8tap_smooth_8bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC8, SmoothSharp8Tap) => prep_8tap_smooth_sharp_8bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC8, SharpRegular8Tap) => prep_8tap_sharp_regular_8bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC8, SharpSmooth8Tap) => prep_8tap_sharp_smooth_8bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC8, Sharp8Tap) => {
+                    prep_8tap_sharp_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
+                }
+                (BPC::BPC8, Bilinear) => {
+                    prep_bilin_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
+                }
+                (BPC::BPC16, Regular8Tap) => prep_8tap_regular_16bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC16, RegularSmooth8Tap) => prep_8tap_regular_smooth_16bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC16, RegularSharp8Tap) => prep_8tap_regular_sharp_16bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC16, SmoothRegular8Tap) => prep_8tap_smooth_regular_16bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC16, Smooth8Tap) => prep_8tap_smooth_16bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC16, SmoothSharp8Tap) => prep_8tap_smooth_sharp_16bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC16, SharpRegular8Tap) => prep_8tap_sharp_regular_16bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC16, SharpSmooth8Tap) => prep_8tap_sharp_smooth_16bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC16, Sharp8Tap) => prep_8tap_sharp_16bpc_neon(
+                    tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
+                ),
+                (BPC::BPC16, Bilinear) => {
+                    prep_bilin_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
+                }
             }
-            (BPC::BPC8, Bilinear) => {
-                prep_bilin_8bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
+        }
+    }
+    #[cfg(not(feature = "asm"))]
+    {
+        let token = Arm64::summon().unwrap();
+        let w_u = w as usize;
+        let h_u = h as usize;
+        let mx_u = mx as usize;
+        let my_u = my as usize;
+        let tmp_slice = &mut tmp[..(w_u * h_u)];
+        let (src_guard, src_base) = src.full_guard::<BD>();
+        let src_stride_raw = src.stride();
+
+        match BD::BPC {
+            BPC::BPC8 => {
+                use zerocopy::AsBytes;
+                let src_bytes = src_guard.as_bytes();
+                let src_stride_u = src_stride_raw as usize;
+
+                if filter == Bilinear {
+                    let src_slice = &src_bytes[src_base..];
+                    prep_bilin_8bpc_inner(token, tmp_slice, src_slice, src_stride_u, w_u, h_u, mx, my);
+                } else {
+                    let src_start = src_base.wrapping_sub(3 * src_stride_u + 3);
+                    let src_len = (h_u + 7) * src_stride_u + w_u + 7;
+                    let src_full = &src_bytes[src_start..][..src_len];
+                    let src_adj = &src_full[3 * src_stride_u + 3..];
+                    prep_8tap_8bpc_inner(token, tmp_slice, src_adj, src_stride_u, w_u, h_u, mx_u, my_u, get_h_filter_type(filter), get_v_filter_type(filter));
+                }
             }
-            (BPC::BPC16, Regular8Tap) => prep_8tap_regular_16bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC16, RegularSmooth8Tap) => prep_8tap_regular_smooth_16bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC16, RegularSharp8Tap) => prep_8tap_regular_sharp_16bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC16, SmoothRegular8Tap) => prep_8tap_smooth_regular_16bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC16, Smooth8Tap) => prep_8tap_smooth_16bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC16, SmoothSharp8Tap) => prep_8tap_smooth_sharp_16bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC16, SharpRegular8Tap) => prep_8tap_sharp_regular_16bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC16, SharpSmooth8Tap) => prep_8tap_sharp_smooth_16bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC16, Sharp8Tap) => prep_8tap_sharp_16bpc_neon(
-                tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi,
-            ),
-            (BPC::BPC16, Bilinear) => {
-                prep_bilin_16bpc_neon(tmp_ptr, src_ptr, src_stride, w, h, mx, my, bd_c, src_ffi)
+            BPC::BPC16 => {
+                use zerocopy::AsBytes;
+                let src_bytes = src_guard.as_bytes();
+                let src_stride_u16 = (src_stride_raw as usize) / 2;
+
+                if filter == Bilinear {
+                    let src_start = src_base * 2;
+                    let src_u16 = unsafe { std::slice::from_raw_parts(src_bytes[src_start..].as_ptr() as *const u16, (h_u + 1) * src_stride_u16 + w_u + 1) };
+                    prep_bilin_16bpc_inner(token, tmp_slice, src_u16, src_stride_u16, w_u, h_u, mx, my);
+                } else {
+                    let src_start_u16 = src_base.wrapping_sub(3 * src_stride_u16 + 3);
+                    let src_start = src_start_u16 * 2;
+                    let src_len = (h_u + 7) * src_stride_u16 + w_u + 7;
+                    let src_full = unsafe { std::slice::from_raw_parts(src_bytes[src_start..].as_ptr() as *const u16, src_len) };
+                    let src_adj = &src_full[3 * src_stride_u16 + 3..];
+                    prep_8tap_16bpc_inner(token, tmp_slice, src_adj, src_stride_u16, w_u, h_u, mx_u, my_u, get_h_filter_type(filter), get_v_filter_type(filter));
+                }
             }
         }
     }
