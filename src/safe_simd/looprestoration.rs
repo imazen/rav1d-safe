@@ -22,7 +22,7 @@ use std::slice;
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::partial_simd;
 #[cfg(target_arch = "x86_64")]
-use crate::src::safe_simd::pixel_access::load_128;
+use crate::src::safe_simd::pixel_access::loadu_128;
 
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
@@ -138,13 +138,13 @@ fn wiener_filter7_8bpc_avx2_inner(
             let row6 = &hor[(j + 6) * REST_UNIT_STRIDE + i..];
 
             // Load 8 u16 values as __m128i via safe macro
-            let r0 = load_128!(&row0[..8], [u16; 8]);
-            let r1 = load_128!(&row1[..8], [u16; 8]);
-            let r2 = load_128!(&row2[..8], [u16; 8]);
-            let r3 = load_128!(&row3[..8], [u16; 8]);
-            let r4 = load_128!(&row4[..8], [u16; 8]);
-            let r5 = load_128!(&row5[..8], [u16; 8]);
-            let r6 = load_128!(&row6[..8], [u16; 8]);
+            let r0 = loadu_128!(&row0[..8], [u16; 8]);
+            let r1 = loadu_128!(&row1[..8], [u16; 8]);
+            let r2 = loadu_128!(&row2[..8], [u16; 8]);
+            let r3 = loadu_128!(&row3[..8], [u16; 8]);
+            let r4 = loadu_128!(&row4[..8], [u16; 8]);
+            let r5 = loadu_128!(&row5[..8], [u16; 8]);
+            let r6 = loadu_128!(&row6[..8], [u16; 8]);
 
             // Process low 4 pixels (expand u16 to i32)
             let r0_lo = _mm256_cvtepu16_epi32(r0);

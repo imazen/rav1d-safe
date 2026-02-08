@@ -9,7 +9,7 @@
 #[cfg(target_arch = "x86_64")]
 use super::partial_simd;
 #[cfg(target_arch = "x86_64")]
-use super::pixel_access::{load_256, load_128, store_256, store_128, loadu_256, storeu_256, loadu_128, storeu_128};
+use super::pixel_access::{loadu_256, storeu_256, loadu_128, storeu_128};
 #[cfg(target_arch = "x86_64")]
 use archmage::{arcane, Desktop64, SimdToken};
 #[cfg(target_arch = "x86_64")]
@@ -54,25 +54,21 @@ fn pal_idx_finish_inner(
 
         // Process 64 source bytes → 32 dst bytes at a time (AVX2)
         while x + 32 <= dst_w {
-            let src_a: &[u8; 32] = src_row[x * 2..][..32].try_into().unwrap();
-            let src_b: &[u8; 32] = src_row[x * 2 + 32..][..32].try_into().unwrap();
-            let a = loadu_256!(src_a);
-            let b = loadu_256!(src_b);
+            let a = loadu_256!(&src_row[x * 2..][..32], [u8; 32]);
+            let b = loadu_256!(&src_row[x * 2 + 32..][..32], [u8; 32]);
             let a16 = _mm256_maddubs_epi16(a, coeff);
             let b16 = _mm256_maddubs_epi16(b, coeff);
             let packed = _mm256_packus_epi16(a16, b16);
             // packus interleaves across lanes: [a_lo, b_lo, a_hi, b_hi]
             // permute to get contiguous: [a_lo, a_hi, b_lo, b_hi]
             let packed = _mm256_permute4x64_epi64::<0xD8>(packed);
-            let dst_arr: &mut [u8; 32] = (&mut dst_row[x..x + 32]).try_into().unwrap();
-            storeu_256!(dst_arr, packed);
+            storeu_256!(&mut dst_row[x..x + 32], [u8; 32], packed);
             x += 32;
         }
 
         // Process 32 source bytes → 16 dst bytes (AVX2, pack with zeros)
         if x + 16 <= dst_w {
-            let src_a: &[u8; 32] = src_row[x * 2..][..32].try_into().unwrap();
-            let a = loadu_256!(src_a);
+            let a = loadu_256!(&src_row[x * 2..][..32], [u8; 32]);
             let a16 = _mm256_maddubs_epi16(a, coeff);
             let zero = _mm256_setzero_si256();
             let packed = _mm256_packus_epi16(a16, zero);
@@ -80,15 +76,13 @@ fn pal_idx_finish_inner(
             let packed = _mm256_permute4x64_epi64::<0xD8>(packed);
             // Now: [a_lo(8), a_hi(8), zeros(16)]
             // Store lower 16 bytes
-            let dst_arr: &mut [u8; 16] = (&mut dst_row[x..x + 16]).try_into().unwrap();
-            storeu_128!(dst_arr, _mm256_castsi256_si128(packed));
+            storeu_128!(&mut dst_row[x..x + 16], [u8; 16], _mm256_castsi256_si128(packed));
             x += 16;
         }
 
         // Process 16 source bytes → 8 dst bytes (SSE)
         if x + 8 <= dst_w {
-            let src_a: &[u8; 16] = src_row[x * 2..][..16].try_into().unwrap();
-            let a = loadu_128!(src_a);
+            let a = loadu_128!(&src_row[x * 2..][..16], [u8; 16]);
             let a16 = _mm_maddubs_epi16(a, coeff128);
             let zero = _mm_setzero_si128();
             let packed = _mm_packus_epi16(a16, zero);
@@ -131,8 +125,7 @@ fn pal_idx_finish_inner(
                 let fill_vec = _mm256_set1_epi8(fill_val as i8);
                 let mut i = 0;
                 while i + 32 <= fill_len {
-                    let dst_arr: &mut [u8; 32] = (&mut fill_slice[i..i + 32]).try_into().unwrap();
-                    storeu_256!(dst_arr, fill_vec);
+                    storeu_256!(&mut fill_slice[i..i + 32], [u8; 32], fill_vec);
                     i += 32;
                 }
                 while i < fill_len {

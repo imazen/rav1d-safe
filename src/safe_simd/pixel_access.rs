@@ -563,21 +563,25 @@ pub unsafe fn strided_slice_from_ptr<'a, T>(
 // core::arch intrinsics (unchecked, pointer-based) depending on the `unchecked`
 // feature flag.
 //
-// Two forms per operation:
-//   - Direct: takes a typed array reference (&[u8; 32], &[u16; 16], etc.)
-//   - From-slice: takes a dynamically-sized slice + target type, does conversion
+// Each macro supports two forms:
+//   - 1-arg: takes a typed array reference (&[u8; 32], &[u16; 16], etc.)
+//   - 2-arg (load) / 3-arg (store): takes a slice + target type, does conversion
 //
 // All macros expand at the call site, inheriting the caller's #[target_feature].
 
 // --- x86_64 AVX/SSE macros ---
 
-/// Load 256 bits from a typed array reference.
+/// Load 256 bits from a typed array reference or a dynamic slice.
 ///
-/// `$src` must be a reference to a type implementing `Is256BitsUnaligned`
-/// (e.g., `&[u8; 32]`, `&[u16; 16]`, `&[i16; 16]`, `&[i32; 8]`).
+/// **Array ref form:** `$src` must be a reference to a type implementing
+/// `Is256BitsUnaligned` (e.g., `&[u8; 32]`, `&[u16; 16]`, `&[i16; 16]`, `&[i32; 8]`).
+///
+/// **Slice form:** `$slice` is `&[T]` and `$T` is the target array type.
+/// Converts via `try_into().unwrap()` in checked mode; raw pointer in unchecked mode.
 ///
 /// ```ignore
-/// let v: __m256i = loadu_256!(&arr); // arr: [u8; 32]
+/// let v: __m256i = loadu_256!(&arr);                          // arr: [u8; 32]
+/// let v: __m256i = loadu_256!(&src[off..off+32], [u8; 32]);   // from slice
 /// ```
 #[cfg(target_arch = "x86_64")]
 macro_rules! loadu_256 {
@@ -594,16 +598,36 @@ macro_rules! loadu_256 {
             }
         }
     }};
+    ($slice:expr, $T:ty) => {{
+        #[cfg(not(feature = "unchecked"))]
+        {
+            safe_unaligned_simd::x86_64::_mm256_loadu_si256::<$T>(($slice).try_into().unwrap())
+        }
+        #[cfg(feature = "unchecked")]
+        {
+            let __s = $slice;
+            debug_assert!(core::mem::size_of_val(__s) >= 32);
+            #[allow(unsafe_code)]
+            unsafe {
+                core::arch::x86_64::_mm256_loadu_si256(__s.as_ptr() as *const _)
+            }
+        }
+    }};
 }
 #[cfg(target_arch = "x86_64")]
 pub(crate) use loadu_256;
 
-/// Store 256 bits to a typed array reference.
+/// Store 256 bits to a typed array reference or a dynamic slice.
 ///
-/// `$dst` must be a mutable reference to a type implementing `Is256BitsUnaligned`.
+/// **Array ref form:** `$dst` must be a mutable reference to a type implementing
+/// `Is256BitsUnaligned`.
+///
+/// **Slice form:** `$slice` is `&mut [T]`, `$T` is the target array type,
+/// `$val` is the `__m256i` value.
 ///
 /// ```ignore
-/// storeu_256!(&mut arr, v); // arr: [u8; 32]
+/// storeu_256!(&mut arr, v);                              // arr: [u8; 32]
+/// storeu_256!(&mut dst[off..off+32], [u8; 32], v);       // from slice
 /// ```
 #[cfg(target_arch = "x86_64")]
 macro_rules! storeu_256 {
@@ -620,14 +644,36 @@ macro_rules! storeu_256 {
             }
         }
     }};
+    ($slice:expr, $T:ty, $val:expr) => {{
+        #[cfg(not(feature = "unchecked"))]
+        {
+            safe_unaligned_simd::x86_64::_mm256_storeu_si256::<$T>(($slice).try_into().unwrap(), $val)
+        }
+        #[cfg(feature = "unchecked")]
+        {
+            let __s = $slice;
+            debug_assert!(core::mem::size_of_val(__s) >= 32);
+            #[allow(unsafe_code)]
+            unsafe {
+                core::arch::x86_64::_mm256_storeu_si256(__s.as_mut_ptr() as *mut _, $val)
+            }
+        }
+    }};
 }
 #[cfg(target_arch = "x86_64")]
 pub(crate) use storeu_256;
 
-/// Load 128 bits from a typed array reference.
+/// Load 128 bits from a typed array reference or a dynamic slice.
 ///
-/// `$src` must be a reference to a type implementing `Is128BitsUnaligned`
-/// (e.g., `&[u8; 16]`, `&[u16; 8]`, `&[i16; 8]`, `&[i32; 4]`).
+/// **Array ref form:** `$src` must be a reference to a type implementing
+/// `Is128BitsUnaligned` (e.g., `&[u8; 16]`, `&[u16; 8]`, `&[i16; 8]`, `&[i32; 4]`).
+///
+/// **Slice form:** `$slice` is `&[T]` and `$T` is the target array type.
+///
+/// ```ignore
+/// let v: __m128i = loadu_128!(&arr);                          // arr: [u8; 16]
+/// let v: __m128i = loadu_128!(&src[off..off+16], [u8; 16]);   // from slice
+/// ```
 #[cfg(target_arch = "x86_64")]
 macro_rules! loadu_128 {
     ($src:expr) => {{
@@ -643,11 +689,37 @@ macro_rules! loadu_128 {
             }
         }
     }};
+    ($slice:expr, $T:ty) => {{
+        #[cfg(not(feature = "unchecked"))]
+        {
+            safe_unaligned_simd::x86_64::_mm_loadu_si128::<$T>(($slice).try_into().unwrap())
+        }
+        #[cfg(feature = "unchecked")]
+        {
+            let __s = $slice;
+            debug_assert!(core::mem::size_of_val(__s) >= 16);
+            #[allow(unsafe_code)]
+            unsafe {
+                core::arch::x86_64::_mm_loadu_si128(__s.as_ptr() as *const _)
+            }
+        }
+    }};
 }
 #[cfg(target_arch = "x86_64")]
 pub(crate) use loadu_128;
 
-/// Store 128 bits to a typed array reference.
+/// Store 128 bits to a typed array reference or a dynamic slice.
+///
+/// **Array ref form:** `$dst` must be a mutable reference to a type implementing
+/// `Is128BitsUnaligned`.
+///
+/// **Slice form:** `$slice` is `&mut [T]`, `$T` is the target array type,
+/// `$val` is the `__m128i` value.
+///
+/// ```ignore
+/// storeu_128!(&mut arr, v);                              // arr: [u8; 16]
+/// storeu_128!(&mut dst[off..off+16], [u8; 16], v);       // from slice
+/// ```
 #[cfg(target_arch = "x86_64")]
 macro_rules! storeu_128 {
     ($dst:expr, $val:expr) => {{
@@ -660,6 +732,21 @@ macro_rules! storeu_128 {
             #[allow(unsafe_code)]
             unsafe {
                 core::arch::x86_64::_mm_storeu_si128(core::ptr::from_mut($dst).cast(), $val)
+            }
+        }
+    }};
+    ($slice:expr, $T:ty, $val:expr) => {{
+        #[cfg(not(feature = "unchecked"))]
+        {
+            safe_unaligned_simd::x86_64::_mm_storeu_si128::<$T>(($slice).try_into().unwrap(), $val)
+        }
+        #[cfg(feature = "unchecked")]
+        {
+            let __s = $slice;
+            debug_assert!(core::mem::size_of_val(__s) >= 16);
+            #[allow(unsafe_code)]
+            unsafe {
+                core::arch::x86_64::_mm_storeu_si128(__s.as_mut_ptr() as *mut _, $val)
             }
         }
     }};
@@ -738,119 +825,6 @@ macro_rules! storei64 {
 }
 #[cfg(target_arch = "x86_64")]
 pub(crate) use storei64;
-
-/// Load 256 bits from a dynamic slice, converting to a fixed-size array.
-///
-/// `$slice` is `&[T]` and `$T` is the target array type (e.g., `[u8; 32]`).
-/// When unchecked is off, bounds-checks via `try_into().unwrap()`.
-/// When unchecked is on, uses raw pointer access with `debug_assert!`.
-///
-/// ```ignore
-/// let v = load_256!(&src[off..off+32], [u8; 32]);
-/// let v = load_256!(&src[off..off+16], [u16; 16]);
-/// ```
-#[cfg(target_arch = "x86_64")]
-macro_rules! load_256 {
-    ($slice:expr, $T:ty) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            use safe_unaligned_simd::x86_64 as __sus;
-            __sus::_mm256_loadu_si256::<$T>(($slice).try_into().unwrap())
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 32);
-            #[allow(unsafe_code)]
-            unsafe {
-                core::arch::x86_64::_mm256_loadu_si256(__s.as_ptr() as *const _)
-            }
-        }
-    }};
-}
-#[cfg(target_arch = "x86_64")]
-pub(crate) use load_256;
-
-/// Store 256 bits to a dynamic slice, converting to a fixed-size array.
-///
-/// ```ignore
-/// store_256!(&mut dst[off..off+32], [u8; 32], v);
-/// ```
-#[cfg(target_arch = "x86_64")]
-macro_rules! store_256 {
-    ($slice:expr, $T:ty, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            use safe_unaligned_simd::x86_64 as __sus;
-            __sus::_mm256_storeu_si256::<$T>(($slice).try_into().unwrap(), $val)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 32);
-            #[allow(unsafe_code)]
-            unsafe {
-                core::arch::x86_64::_mm256_storeu_si256(__s.as_mut_ptr() as *mut _, $val)
-            }
-        }
-    }};
-}
-#[cfg(target_arch = "x86_64")]
-pub(crate) use store_256;
-
-/// Load 128 bits from a dynamic slice, converting to a fixed-size array.
-///
-/// ```ignore
-/// let v = load_128!(&src[off..off+16], [u8; 16]);
-/// ```
-#[cfg(target_arch = "x86_64")]
-macro_rules! load_128 {
-    ($slice:expr, $T:ty) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            use safe_unaligned_simd::x86_64 as __sus;
-            __sus::_mm_loadu_si128::<$T>(($slice).try_into().unwrap())
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 16);
-            #[allow(unsafe_code)]
-            unsafe {
-                core::arch::x86_64::_mm_loadu_si128(__s.as_ptr() as *const _)
-            }
-        }
-    }};
-}
-#[cfg(target_arch = "x86_64")]
-pub(crate) use load_128;
-
-/// Store 128 bits to a dynamic slice, converting to a fixed-size array.
-///
-/// ```ignore
-/// store_128!(&mut dst[off..off+16], [u8; 16], v);
-/// ```
-#[cfg(target_arch = "x86_64")]
-macro_rules! store_128 {
-    ($slice:expr, $T:ty, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            use safe_unaligned_simd::x86_64 as __sus;
-            __sus::_mm_storeu_si128::<$T>(($slice).try_into().unwrap(), $val)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(__s.len() * core::mem::size_of_val(&__s[0]) >= 16);
-            #[allow(unsafe_code)]
-            unsafe {
-                core::arch::x86_64::_mm_storeu_si128(__s.as_mut_ptr() as *mut _, $val)
-            }
-        }
-    }};
-}
-#[cfg(target_arch = "x86_64")]
-pub(crate) use store_128;
 
 // --- aarch64 NEON macros ---
 

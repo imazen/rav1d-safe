@@ -429,8 +429,7 @@ fn fgy_row_simd_8bpc_safe(
     let mut x = xstart;
     while x + 32 <= bw {
         // Load 32 source pixels
-        let src_arr: &[u8; 32] = src[x..x + 32].try_into().unwrap();
-        let src_vec = loadu_256!(src_arr);
+        let src_vec = loadu_256!(&src[x..x + 32], [u8; 32]);
         let src_lo = _mm256_unpacklo_epi8(src_vec, zero);
         let src_hi = _mm256_unpackhi_epi8(src_vec, zero);
 
@@ -477,15 +476,13 @@ fn fgy_row_simd_8bpc_safe(
         let result = _mm256_max_epu8(result, min_vec);
         let result = _mm256_min_epu8(result, max_vec);
 
-        let dst_arr: &mut [u8; 32] = (&mut dst[x..x + 32]).try_into().unwrap();
-        storeu_256!(dst_arr, result);
+        storeu_256!(&mut dst[x..x + 32], [u8; 32], result);
         x += 32;
     }
 
     // Process remaining 16-pixel chunk if present
     if x + 16 <= bw {
-        let src_arr: &[u8; 16] = src[x..x + 16].try_into().unwrap();
-        let src_vec = loadu_128!(src_arr);
+        let src_vec = loadu_128!(&src[x..x + 16], [u8; 16]);
         let src_lo = _mm256_cvtepu8_epi16(src_vec);
 
         let mut sc_bytes = [0u8; 32];
@@ -523,8 +520,7 @@ fn fgy_row_simd_8bpc_safe(
         let combined = _mm_max_epu8(combined, _mm256_castsi256_si128(min_vec));
         let combined = _mm_min_epu8(combined, _mm256_castsi256_si128(max_vec));
 
-        let dst_arr: &mut [u8; 16] = (&mut dst[x..x + 16]).try_into().unwrap();
-        storeu_128!(dst_arr, combined);
+        storeu_128!(&mut dst[x..x + 16], [u8; 16], combined);
         x += 16;
     }
 
@@ -1954,8 +1950,7 @@ fn fgy_inner_16bpc(
             // SIMD 16 pixels at a time
             let mut x = xstart;
             while x + 16 <= bw {
-                let src_chunk: &[u16; 16] = src[base + x..base + x + 16].try_into().unwrap();
-                let src_vec = loadu_256!(src_chunk);
+                let src_vec = loadu_256!(&src[base + x..base + x + 16], [u16; 16]);
 
                 let mut noise_vals = [0i16; 16];
                 for i in 0..16 {
@@ -1969,9 +1964,7 @@ fn fgy_inner_16bpc(
                 let result = _mm256_add_epi16(src_vec, noise);
                 let result = _mm256_max_epi16(result, min_vec);
                 let result = _mm256_min_epi16(result, max_vec);
-                let dst_chunk: &mut [u16; 16] =
-                    (&mut dst[base + x..base + x + 16]).try_into().unwrap();
-                storeu_256!(dst_chunk, result);
+                storeu_256!(&mut dst[base + x..base + x + 16], [u16; 16], result);
                 x += 16;
             }
 
@@ -2168,8 +2161,7 @@ fn fguv_inner_safe_8bpc(
             // SIMD for main body
             let mut x = xstart;
             while x + 32 <= bw {
-                let src_arr: &[u8; 32] = src[base + x..base + x + 32].try_into().unwrap();
-                let src_vec = loadu_256!(src_arr);
+                let src_vec = loadu_256!(&src[base + x..base + x + 32], [u8; 32]);
                 let src_lo = _mm256_unpacklo_epi8(src_vec, zero);
                 let src_hi = _mm256_unpackhi_epi8(src_vec, zero);
 
@@ -2243,9 +2235,7 @@ fn fguv_inner_safe_8bpc(
                 let result = _mm256_max_epu8(result, min_vec);
                 let result = _mm256_min_epu8(result, max_vec);
 
-                let dst_arr: &mut [u8; 32] =
-                    (&mut dst[base + x..base + x + 32]).try_into().unwrap();
-                storeu_256!(dst_arr, result);
+                storeu_256!(&mut dst[base + x..base + x + 32], [u8; 32], result);
                 x += 32;
             }
 

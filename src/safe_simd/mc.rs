@@ -72,20 +72,12 @@ fn avg_8bpc_avx2_safe(
         // Process 32 pixels at a time (64 bytes of i16 input → 32 bytes of u8 output)
         let mut col = 0;
         while col + 32 <= w {
-            // Load using safe_unaligned_simd
-            let t1_lo_arr: &[i16; 16] = tmp1_row[col..col + 16].try_into().unwrap();
-            let t1_hi_arr: &[i16; 16] = tmp1_row[col + 16..col + 32].try_into().unwrap();
-            let t2_lo_arr: &[i16; 16] = tmp2_row[col..col + 16].try_into().unwrap();
-            let t2_hi_arr: &[i16; 16] = tmp2_row[col + 16..col + 32].try_into().unwrap();
-
-            // SAFETY: These loads are safe - safe_unaligned_simd handles alignment
-            let t1_lo = loadu_256!(t1_lo_arr);
-            let t1_hi = loadu_256!(t1_hi_arr);
-            let t2_lo = loadu_256!(t2_lo_arr);
-            let t2_hi = loadu_256!(t2_hi_arr);
+            let t1_lo = loadu_256!(&tmp1_row[col..col + 16], [i16; 16]);
+            let t1_hi = loadu_256!(&tmp1_row[col + 16..col + 32], [i16; 16]);
+            let t2_lo = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
+            let t2_hi = loadu_256!(&tmp2_row[col + 16..col + 32], [i16; 16]);
 
             // Add: tmp1 + tmp2
-            // SAFETY: AVX2 intrinsics are safe when target_feature is enabled
             let sum_lo = _mm256_add_epi16(t1_lo, t2_lo);
             let sum_hi = _mm256_add_epi16(t1_hi, t2_hi);
 
@@ -99,19 +91,16 @@ fn avg_8bpc_avx2_safe(
             let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
             // Store 32 bytes
-            let dst_arr: &mut [u8; 32] = (&mut dst_row[col..col + 32]).try_into().unwrap();
-            storeu_256!(dst_arr, result);
+            storeu_256!(&mut dst_row[col..col + 32], [u8; 32], result);
 
             col += 32;
         }
 
         // Process 16 pixels at a time for remainder
         while col + 16 <= w {
-            let t1_arr: &[i16; 16] = tmp1_row[col..col + 16].try_into().unwrap();
-            let t2_arr: &[i16; 16] = tmp2_row[col..col + 16].try_into().unwrap();
 
-            let t1 = loadu_256!(t1_arr);
-            let t2 = loadu_256!(t2_arr);
+            let t1 = loadu_256!(&tmp1_row[col..col + 16], [i16; 16]);
+            let t2 = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
 
             let sum = _mm256_add_epi16(t1, t2);
             let avg = _mm256_mulhrs_epi16(sum, round);
@@ -122,8 +111,7 @@ fn avg_8bpc_avx2_safe(
             let hi = _mm256_extracti128_si256(packed, 1);
             let result = _mm_unpacklo_epi64(lo, hi);
 
-            let dst_arr: &mut [u8; 16] = (&mut dst_row[col..col + 16]).try_into().unwrap();
-            storeu_128!(dst_arr, result);
+            storeu_128!(&mut dst_row[col..col + 16], [u8; 16], result);
 
             col += 16;
         }
@@ -205,11 +193,9 @@ fn avg_16bpc_avx2_safe(
         let mut col = 0usize;
 
         while col + 16 <= w {
-            let t1_arr: &[i16; 16] = tmp1_row[col..col + 16].try_into().unwrap();
-            let t2_arr: &[i16; 16] = tmp2_row[col..col + 16].try_into().unwrap();
 
-            let t1 = loadu_256!(t1_arr);
-            let t2 = loadu_256!(t2_arr);
+            let t1 = loadu_256!(&tmp1_row[col..col + 16], [i16; 16]);
+            let t2 = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
 
             let t1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t1));
             let t2_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t2));
@@ -228,8 +214,7 @@ fn avg_16bpc_avx2_safe(
             let packed = _mm256_packus_epi32(clamped_lo, clamped_hi);
             let packed = _mm256_permute4x64_epi64(packed, 0b11011000);
 
-            let dst_arr: &mut [u16; 16] = (&mut dst_row[col..col + 16]).try_into().unwrap();
-            storeu_256!(dst_arr, packed);
+            storeu_256!(&mut dst_row[col..col + 16], [u16; 16], packed);
 
             col += 16;
         }
@@ -377,15 +362,11 @@ fn w_avg_8bpc_avx2_safe(
 
         let mut col = 0;
         while col + 32 <= w {
-            let t1_lo_arr: &[i16; 16] = tmp1_row[col..col + 16].try_into().unwrap();
-            let t1_hi_arr: &[i16; 16] = tmp1_row[col + 16..col + 32].try_into().unwrap();
-            let t2_lo_arr: &[i16; 16] = tmp2_row[col..col + 16].try_into().unwrap();
-            let t2_hi_arr: &[i16; 16] = tmp2_row[col + 16..col + 32].try_into().unwrap();
 
-            let t1_lo = loadu_256!(t1_lo_arr);
-            let t1_hi = loadu_256!(t1_hi_arr);
-            let t2_lo = loadu_256!(t2_lo_arr);
-            let t2_hi = loadu_256!(t2_hi_arr);
+            let t1_lo = loadu_256!(&tmp1_row[col..col + 16], [i16; 16]);
+            let t1_hi = loadu_256!(&tmp1_row[col + 16..col + 32], [i16; 16]);
+            let t2_lo = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
+            let t2_hi = loadu_256!(&tmp2_row[col + 16..col + 32], [i16; 16]);
 
             // diff = tmp1 - tmp2
             let diff_lo = _mm256_sub_epi16(t1_lo, t2_lo);
@@ -407,8 +388,7 @@ fn w_avg_8bpc_avx2_safe(
             let packed = _mm256_packus_epi16(avg_lo, avg_hi);
             let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
-            let dst_arr: &mut [u8; 32] = (&mut dst_row[col..col + 32]).try_into().unwrap();
-            storeu_256!(dst_arr, result);
+            storeu_256!(&mut dst_row[col..col + 32], [u8; 32], result);
 
             col += 32;
         }
@@ -498,10 +478,8 @@ fn w_avg_16bpc_avx2_safe(
         // Process 8 pixels at a time (need 32-bit arithmetic)
         while col + 8 <= w {
             // Load 8x i16 values and sign-extend to 32-bit
-            let t1_arr: &[i16; 8] = tmp1_row[col..col + 8].try_into().unwrap();
-            let t2_arr: &[i16; 8] = tmp2_row[col..col + 8].try_into().unwrap();
-            let t1_16 = loadu_128!(t1_arr);
-            let t2_16 = loadu_128!(t2_arr);
+            let t1_16 = loadu_128!(&tmp1_row[col..col + 8], [i16; 8]);
+            let t2_16 = loadu_128!(&tmp2_row[col..col + 8], [i16; 8]);
             let t1 = _mm256_cvtepi16_epi32(t1_16);
             let t2 = _mm256_cvtepi16_epi32(t2_16);
 
@@ -523,8 +501,7 @@ fn w_avg_16bpc_avx2_safe(
             let result_128 = _mm_unpacklo_epi64(lo128, hi128);
 
             // Store 8x u16
-            let dst_arr: &mut [u16; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            storeu_128!(dst_arr, result_128);
+            storeu_128!(&mut dst_row[col..col + 8], [u16; 8], result_128);
 
             col += 8;
         }
@@ -647,13 +624,10 @@ fn mask_8bpc_avx2_safe(
 
         // Process 16 pixels at a time with AVX2
         while col + 16 <= w {
-            let t1_arr: &[i16; 16] = tmp1_row[col..col + 16].try_into().unwrap();
-            let t2_arr: &[i16; 16] = tmp2_row[col..col + 16].try_into().unwrap();
-            let mask_arr: &[u8; 16] = mask_row[col..col + 16].try_into().unwrap();
 
-            let t1_lo = loadu_256!(t1_arr);
-            let t2_lo = loadu_256!(t2_arr);
-            let mask_bytes = loadu_128!(mask_arr);
+            let t1_lo = loadu_256!(&tmp1_row[col..col + 16], [i16; 16]);
+            let t2_lo = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
+            let mask_bytes = loadu_128!(&mask_row[col..col + 16], [u8; 16]);
             let mask_lo = _mm256_cvtepu8_epi16(mask_bytes);
 
             // Compute (tmp1 - tmp2)
@@ -689,8 +663,7 @@ fn mask_8bpc_avx2_safe(
             let result_8 = _mm256_packus_epi16(result_16, result_16);
             let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
 
-            let dst_arr: &mut [u8; 16] = (&mut dst_row[col..col + 16]).try_into().unwrap();
-            storeu_128!(dst_arr, _mm256_castsi256_si128(result_8));
+            storeu_128!(&mut dst_row[col..col + 16], [u8; 16], _mm256_castsi256_si128(result_8));
 
             col += 16;
         }
@@ -777,10 +750,8 @@ fn mask_16bpc_avx2_safe(
 
         // Process 8 pixels at a time with 32-bit arithmetic
         while col + 8 <= w {
-            let t1_arr: &[i16; 8] = tmp1_row[col..col + 8].try_into().unwrap();
-            let t2_arr: &[i16; 8] = tmp2_row[col..col + 8].try_into().unwrap();
-            let t1_16 = loadu_128!(t1_arr);
-            let t2_16 = loadu_128!(t2_arr);
+            let t1_16 = loadu_128!(&tmp1_row[col..col + 8], [i16; 8]);
+            let t2_16 = loadu_128!(&tmp2_row[col..col + 8], [i16; 8]);
             let t1 = _mm256_cvtepi16_epi32(t1_16);
             let t2 = _mm256_cvtepi16_epi32(t2_16);
 
@@ -804,8 +775,7 @@ fn mask_16bpc_avx2_safe(
             let hi128 = _mm256_extracti128_si256(packed, 1);
             let result_128 = _mm_unpacklo_epi64(lo128, hi128);
 
-            let dst_arr: &mut [u16; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            storeu_128!(dst_arr, result_128);
+            storeu_128!(&mut dst_row[col..col + 8], [u16; 8], result_128);
 
             col += 8;
         }
@@ -931,13 +901,10 @@ fn blend_8bpc_avx2_safe(
 
         // Process 16 pixels at a time with AVX2
         while col + 16 <= w {
-            let dst_arr: &[u8; 16] = dst_row[col..col + 16].try_into().unwrap();
-            let tmp_arr: &[u8; 16] = tmp_row[col..col + 16].try_into().unwrap();
-            let mask_arr: &[u8; 16] = mask_row[col..col + 16].try_into().unwrap();
 
-            let dst_bytes = loadu_128!(dst_arr);
-            let tmp_bytes = loadu_128!(tmp_arr);
-            let mask_bytes = loadu_128!(mask_arr);
+            let dst_bytes = loadu_128!(&dst_row[col..col + 16], [u8; 16]);
+            let tmp_bytes = loadu_128!(&tmp_row[col..col + 16], [u8; 16]);
+            let mask_bytes = loadu_128!(&mask_row[col..col + 16], [u8; 16]);
 
             let dst_16 = _mm256_cvtepu8_epi16(dst_bytes);
             let tmp_16 = _mm256_cvtepu8_epi16(tmp_bytes);
@@ -954,8 +921,7 @@ fn blend_8bpc_avx2_safe(
             let result_8 = _mm256_packus_epi16(result_16, result_16);
             let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
 
-            let dst_out: &mut [u8; 16] = (&mut dst_row[col..col + 16]).try_into().unwrap();
-            storeu_128!(dst_out, _mm256_castsi256_si128(result_8));
+            storeu_128!(&mut dst_row[col..col + 16], [u8; 16], _mm256_castsi256_si128(result_8));
 
             col += 16;
         }
@@ -1035,11 +1001,9 @@ fn blend_16bpc_avx2_safe(
 
         // Process 8 pixels at a time with 32-bit arithmetic
         while col + 8 <= w {
-            let dst_arr: &[u16; 8] = dst_row[col..col + 8].try_into().unwrap();
-            let tmp_arr: &[u16; 8] = tmp_row[col..col + 8].try_into().unwrap();
 
-            let dst_16 = loadu_128!(dst_arr);
-            let tmp_16 = loadu_128!(tmp_arr);
+            let dst_16 = loadu_128!(&dst_row[col..col + 8], [u16; 8]);
+            let tmp_16 = loadu_128!(&tmp_row[col..col + 8], [u16; 8]);
             let dst_32 = _mm256_cvtepu16_epi32(dst_16);
             let tmp_32 = _mm256_cvtepu16_epi32(tmp_16);
 
@@ -1062,8 +1026,7 @@ fn blend_16bpc_avx2_safe(
             let hi128 = _mm256_extracti128_si256(packed, 1);
             let result_128 = _mm_unpacklo_epi64(lo128, hi128);
 
-            let dst_out: &mut [u16; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            storeu_128!(dst_out, result_128);
+            storeu_128!(&mut dst_row[col..col + 8], [u16; 8], result_128);
 
             col += 8;
         }
@@ -1152,11 +1115,9 @@ fn blend_v_8bpc_avx2_safe(
 
         // Process 16 pixels at a time
         while col + 16 <= w {
-            let dst_arr: &[u8; 16] = dst_row[col..col + 16].try_into().unwrap();
-            let tmp_arr: &[u8; 16] = tmp_row[col..col + 16].try_into().unwrap();
 
-            let dst_bytes = loadu_128!(dst_arr);
-            let tmp_bytes = loadu_128!(tmp_arr);
+            let dst_bytes = loadu_128!(&dst_row[col..col + 16], [u8; 16]);
+            let tmp_bytes = loadu_128!(&tmp_row[col..col + 16], [u8; 16]);
 
             let dst_16 = _mm256_cvtepu8_epi16(dst_bytes);
             let tmp_16 = _mm256_cvtepu8_epi16(tmp_bytes);
@@ -1169,8 +1130,7 @@ fn blend_v_8bpc_avx2_safe(
             let result_8 = _mm256_packus_epi16(result_16, result_16);
             let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
 
-            let dst_out: &mut [u8; 16] = (&mut dst_row[col..col + 16]).try_into().unwrap();
-            storeu_128!(dst_out, _mm256_castsi256_si128(result_8));
+            storeu_128!(&mut dst_row[col..col + 16], [u8; 16], _mm256_castsi256_si128(result_8));
 
             col += 16;
         }
@@ -1240,13 +1200,10 @@ fn blend_h_8bpc_avx2_safe(
 
         // Process 16 pixels at a time
         while col + 16 <= w {
-            let dst_arr: &[u8; 16] = dst_row[col..col + 16].try_into().unwrap();
-            let tmp_arr: &[u8; 16] = tmp_row[col..col + 16].try_into().unwrap();
-            let mask_arr: &[u8; 16] = obmc_mask[col..col + 16].try_into().unwrap();
 
-            let dst_bytes = loadu_128!(dst_arr);
-            let tmp_bytes = loadu_128!(tmp_arr);
-            let mask_bytes = loadu_128!(mask_arr);
+            let dst_bytes = loadu_128!(&dst_row[col..col + 16], [u8; 16]);
+            let tmp_bytes = loadu_128!(&tmp_row[col..col + 16], [u8; 16]);
+            let mask_bytes = loadu_128!(&obmc_mask[col..col + 16], [u8; 16]);
 
             let dst_16 = _mm256_cvtepu8_epi16(dst_bytes);
             let tmp_16 = _mm256_cvtepu8_epi16(tmp_bytes);
@@ -1261,8 +1218,7 @@ fn blend_h_8bpc_avx2_safe(
             let result_8 = _mm256_packus_epi16(result_16, result_16);
             let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
 
-            let dst_out: &mut [u8; 16] = (&mut dst_row[col..col + 16]).try_into().unwrap();
-            storeu_128!(dst_out, _mm256_castsi256_si128(result_8));
+            storeu_128!(&mut dst_row[col..col + 16], [u8; 16], _mm256_castsi256_si128(result_8));
 
             col += 16;
         }
@@ -1339,11 +1295,9 @@ fn blend_v_16bpc_avx2_safe(
 
         // Process 8 pixels at a time with 32-bit arithmetic
         while col + 8 <= w {
-            let dst_arr: &[u16; 8] = dst_row[col..col + 8].try_into().unwrap();
-            let tmp_arr: &[u16; 8] = tmp_row[col..col + 8].try_into().unwrap();
 
-            let dst_16 = loadu_128!(dst_arr);
-            let tmp_16 = loadu_128!(tmp_arr);
+            let dst_16 = loadu_128!(&dst_row[col..col + 8], [u16; 8]);
+            let tmp_16 = loadu_128!(&tmp_row[col..col + 8], [u16; 8]);
             let dst_32 = _mm256_cvtepu16_epi32(dst_16);
             let tmp_32 = _mm256_cvtepu16_epi32(tmp_16);
 
@@ -1358,8 +1312,7 @@ fn blend_v_16bpc_avx2_safe(
             let hi128 = _mm256_extracti128_si256(packed, 1);
             let result_128 = _mm_unpacklo_epi64(lo128, hi128);
 
-            let dst_out: &mut [u16; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            storeu_128!(dst_out, result_128);
+            storeu_128!(&mut dst_row[col..col + 8], [u16; 8], result_128);
 
             col += 8;
         }
@@ -1431,11 +1384,9 @@ fn blend_h_16bpc_avx2_safe(
 
         // Process 8 pixels at a time with 32-bit arithmetic
         while col + 8 <= w {
-            let dst_arr: &[u16; 8] = dst_row[col..col + 8].try_into().unwrap();
-            let tmp_arr: &[u16; 8] = tmp_row[col..col + 8].try_into().unwrap();
 
-            let dst_16 = loadu_128!(dst_arr);
-            let tmp_16 = loadu_128!(tmp_arr);
+            let dst_16 = loadu_128!(&dst_row[col..col + 8], [u16; 8]);
+            let tmp_16 = loadu_128!(&tmp_row[col..col + 8], [u16; 8]);
             let dst_32 = _mm256_cvtepu16_epi32(dst_16);
             let tmp_32 = _mm256_cvtepu16_epi32(tmp_16);
 
@@ -1457,8 +1408,7 @@ fn blend_h_16bpc_avx2_safe(
             let hi128 = _mm256_extracti128_si256(packed, 1);
             let result_128 = _mm_unpacklo_epi64(lo128, hi128);
 
-            let dst_out: &mut [u16; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            storeu_128!(dst_out, result_128);
+            storeu_128!(&mut dst_row[col..col + 8], [u16; 8], result_128);
 
             col += 8;
         }
