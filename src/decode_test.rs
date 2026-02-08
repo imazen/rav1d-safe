@@ -10,7 +10,6 @@
 //! internal rav1d_* API when c-ffi is not enabled.
 
 #[cfg(test)]
-#[allow(unsafe_code)]
 mod tests {
     use crate::include::common::bitdepth::BitDepth8;
     use crate::include::dav1d::data::Rav1dData;
