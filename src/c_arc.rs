@@ -2,6 +2,7 @@
 
 use crate::src::c_box::CBox;
 use crate::src::error::Rav1dResult;
+#[cfg(feature = "c-ffi")]
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::pin::Pin;
