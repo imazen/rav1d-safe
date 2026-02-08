@@ -1,16 +1,22 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+#[cfg(feature = "c-ffi")]
 use crate::src::send_sync_non_null::SendSyncNonNull;
+#[cfg(feature = "c-ffi")]
 use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::pin::Pin;
+#[cfg(feature = "c-ffi")]
 use std::ptr::drop_in_place;
+#[cfg(feature = "c-ffi")]
 use std::ptr::NonNull;
 
+#[cfg(feature = "c-ffi")]
 pub type FnFree = unsafe extern "C" fn(ptr: *const u8, cookie: Option<SendSyncNonNull<c_void>>);
 
 /// A `free` "closure", i.e. a [`FnFree`] and an enclosed context [`Self::cookie`].
+#[cfg(feature = "c-ffi")]
 #[derive(Debug)]
 pub struct Free {
     pub free: FnFree,
@@ -25,6 +31,7 @@ pub struct Free {
     pub cookie: Option<SendSyncNonNull<c_void>>,
 }
 
+#[cfg(feature = "c-ffi")]
 impl Free {
     /// # Safety
     ///
@@ -39,18 +46,7 @@ impl Free {
 }
 
 /// Same as [`core::ptr::Unique`].
-///
-/// A wrapper around a [`NonNull`]`<T>` that indicates that the possessor
-/// of this wrapper owns the referent.
-///
-/// [`Unique`]`<T>` behaves "as if" it were an instance of `T`.
-/// It implements [`Send`]/[`Sync`] if `T: `[`Send`]/[`Sync`].
-/// It also implies the kind of strong aliasing guarantees an instance of `T` can expect:
-/// the referent of the pointer should not be modified
-/// without a unique path to its owning [`Unique`].
-///
-/// Unlike [`NonNull`]`<T>`, `Unique<T>` is covariant over `T`.
-/// This should always be correct for any type which upholds [`Unique`]'s aliasing requirements.
+#[cfg(feature = "c-ffi")]
 #[derive(Debug)]
 pub struct Unique<T: ?Sized> {
     pointer: NonNull<T>,
@@ -62,10 +58,12 @@ pub struct Unique<T: ?Sized> {
     _marker: PhantomData<T>,
 }
 
+#[cfg(feature = "c-ffi")]
 /// SAFETY: [`Unique`] is [`Send`] if `T: `[`Send`]
 /// because the data it references is unaliased.
 unsafe impl<T: Send + ?Sized> Send for Unique<T> {}
 
+#[cfg(feature = "c-ffi")]
 /// SAFETY: [`Unique`] is [`Sync`] if `T: `[`Sync`]
 unsafe impl<T: Sync + ?Sized> Sync for Unique<T> {}
 
@@ -78,6 +76,7 @@ unsafe impl<T: Sync + ?Sized> Sync for Unique<T> {}
 #[derive(Debug)]
 pub enum CBox<T: ?Sized> {
     Rust(Box<T>),
+    #[cfg(feature = "c-ffi")]
     C {
         /// # SAFETY:
         ///
@@ -93,6 +92,7 @@ impl<T: ?Sized> AsRef<T> for CBox<T> {
     fn as_ref(&self) -> &T {
         match self {
             Self::Rust(r#box) => r#box.as_ref(),
+            #[cfg(feature = "c-ffi")]
             // SAFETY: `data` is a `Unique<T>`, which behaves as if it were a `T`,
             // so we can take `&` references of it.
             // Furthermore, `data` is never moved and is valid to dereference,
@@ -114,6 +114,7 @@ impl<T: ?Sized> Drop for CBox<T> {
     fn drop(&mut self) {
         match self {
             Self::Rust(_) => {} // Drop normally.
+            #[cfg(feature = "c-ffi")]
             Self::C { data, free, .. } => {
                 let ptr = data.pointer.as_ptr();
                 // SAFETY: See below.
@@ -135,6 +136,7 @@ impl<T: ?Sized> CBox<T> {
     /// until `free.free` is called on it, which must deallocate it.
     /// `free.free` is always called with `free.cookie`,
     /// which must be accessed thread-safely.
+    #[cfg(feature = "c-ffi")]
     pub unsafe fn from_c(data: NonNull<T>, free: Free) -> Self {
         Self::C {
             data: Unique {
