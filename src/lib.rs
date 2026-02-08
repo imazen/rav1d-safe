@@ -4,7 +4,7 @@
 // - unchecked: Allow unchecked slice access
 // - c-ffi: Allow C FFI functions
 // - asm: Allow hand-written assembly
-#![cfg_attr(not(feature = "quite-safe"), forbid(unsafe_code))]
+#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), forbid(unsafe_code))]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 #[cfg(feature = "bitdepth_16")]
