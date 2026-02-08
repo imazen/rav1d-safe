@@ -327,7 +327,7 @@ fn process(token: Desktop64, dst: &mut [u8], src: &[u8], w: usize) {
 - **pixel_access.rs: ✅ 0 allows** — SliceExt trait + FlexSlice zero-cost wrapper
 - **itx_arm.rs: ✅ 0 allows** — all FFI correctly gated behind asm
 - **ipred.rs: ✅ 0 allows** — all 28 inner SIMD fns converted to safe slices
-- **mc.rs: ⚠️ NEEDS CONVERSION** — 62 inner fns wrongly gated behind asm, 253 unsafe blocks, needs same itx.rs treatment
+- **mc.rs: ✅ FULLY SAFE when asm off** — 29 rite fns converted from raw pointers to slices, 0 unsafe outside FFI wrappers
 - mc_arm.rs: 10 allows (FFI gated, inner fns use NEON intrinsics)
 - filmgrain_arm.rs: 8 allows (FFI gated, inner fns use NEON)
 - loopfilter_arm.rs: 3 allows
