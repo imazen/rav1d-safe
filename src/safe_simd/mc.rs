@@ -1,5 +1,6 @@
 //! Safe SIMD implementations of motion compensation functions
 #![allow(deprecated)] // FFI wrappers need to forge tokens
+#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 //!
 //! These replace the hand-written assembly in src/x86/mc_*.asm
 //!
@@ -44,6 +45,7 @@ const PW_1024: i16 = 1024;
 /// - tmp1 and tmp2 must contain at least w*h elements
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn avg_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -162,6 +164,7 @@ pub unsafe extern "C" fn avg_8bpc_avx2(
 /// Same as avg_8bpc_avx2, plus bitdepth_max must be correct for the content.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn avg_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -342,6 +345,7 @@ const PW_2048: i16 = 2048;
 /// Same requirements as avg_8bpc_avx2, plus weight must be in [0, 16].
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn w_avg_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -453,6 +457,7 @@ pub unsafe extern "C" fn w_avg_8bpc_avx2(
 /// Same as w_avg_8bpc_avx2.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn w_avg_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -625,6 +630,7 @@ pub unsafe extern "C" fn w_avg_scalar(
 /// - mask values must be in [0, 64]
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn mask_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -747,6 +753,7 @@ pub unsafe extern "C" fn mask_8bpc_avx2(
 /// Mask blend for 16-bit pixels
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn mask_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -922,6 +929,7 @@ use crate::src::internal::{SCRATCH_INTER_INTRA_BUF_LEN, SCRATCH_LAP_LEN};
 /// - tmp and mask must be valid for reading w*h elements
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn blend_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -1020,6 +1028,7 @@ pub unsafe extern "C" fn blend_8bpc_avx2(
 /// Blend pixels for 16-bit
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn blend_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -1126,6 +1135,7 @@ use crate::src::tables::dav1d_obmc_masks;
 /// Uses predefined obmc_masks table for blend weights.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn blend_v_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -1214,6 +1224,7 @@ pub unsafe extern "C" fn blend_v_8bpc_avx2(
 /// Horizontal blend (overlapped block motion compensation)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn blend_h_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -1302,6 +1313,7 @@ pub unsafe extern "C" fn blend_h_8bpc_avx2(
 /// 16-bit blend_v
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn blend_v_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -1394,6 +1406,7 @@ pub unsafe extern "C" fn blend_v_16bpc_avx2(
 /// 16-bit blend_h
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn blend_h_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -1511,6 +1524,7 @@ fn get_filter(m: usize, d: usize, filter_idx: usize) -> Option<&'static [i8; 8]>
 /// Formula: sum(coeff[i] * src[x + i - 3]) for i in 0..8, then round and shift
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn h_filter_8tap_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut i16,
@@ -1610,6 +1624,7 @@ unsafe fn h_filter_8tap_8bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn h_filter_8tap_8bpc_avx2(
     dst: *mut i16,
     src: *const u8,
@@ -1626,6 +1641,7 @@ unsafe fn h_filter_8tap_8bpc_avx2(
 /// Processes `w` pixels for one row, reading from `mid` (8 rows), writing to `dst`
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -1719,6 +1735,7 @@ unsafe fn v_filter_8tap_8bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_8bpc_avx2(
     dst: *mut u8,
     mid: &[[i16; MID_STRIDE]],
@@ -1753,6 +1770,7 @@ fn get_filter_coeff(m: usize, d: usize, filter_type: Rav1dFilterMode) -> Option<
 /// Outputs directly to u8 with shift and clamp
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn h_filter_8tap_8bpc_put_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -1843,6 +1861,7 @@ unsafe fn h_filter_8tap_8bpc_put_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn h_filter_8tap_8bpc_put_avx2(
     dst: *mut u8,
     src: *const u8, // already offset by -3
@@ -1862,6 +1881,7 @@ unsafe fn h_filter_8tap_8bpc_put_avx2(
 /// Reads directly from u8 source with stride, outputs u8
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_8bpc_direct_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -1954,6 +1974,7 @@ unsafe fn v_filter_8tap_8bpc_direct_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_8bpc_direct_avx2(
     dst: *mut u8,
     src: *const u8, // already positioned at (y-3, 0)
@@ -1985,6 +2006,7 @@ unsafe fn v_filter_8tap_8bpc_direct_avx2(
 /// - src_ptr must be valid for reading (w+7)*(h+7) bytes (with proper padding)
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_8bpc_avx2_impl_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -2067,6 +2089,7 @@ unsafe fn put_8tap_8bpc_avx2_impl_inner(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_8bpc_avx2_impl(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2129,6 +2152,7 @@ pub unsafe extern "C" fn put_8tap_8bpc_avx2<const FILTER: usize>(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_regular_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -2197,6 +2221,7 @@ pub unsafe extern "C" fn put_8tap_regular_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_regular_smooth_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -2265,6 +2290,7 @@ pub unsafe extern "C" fn put_8tap_regular_smooth_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_regular_sharp_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -2333,6 +2359,7 @@ pub unsafe extern "C" fn put_8tap_regular_sharp_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_smooth_regular_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -2401,6 +2428,7 @@ pub unsafe extern "C" fn put_8tap_smooth_regular_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_smooth_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -2469,6 +2497,7 @@ pub unsafe extern "C" fn put_8tap_smooth_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_smooth_sharp_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -2537,6 +2566,7 @@ pub unsafe extern "C" fn put_8tap_smooth_sharp_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_sharp_regular_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -2605,6 +2635,7 @@ pub unsafe extern "C" fn put_8tap_sharp_regular_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_sharp_smooth_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -2673,6 +2704,7 @@ pub unsafe extern "C" fn put_8tap_sharp_smooth_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_sharp_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -2754,6 +2786,7 @@ pub unsafe extern "C" fn put_8tap_sharp_8bpc_avx2(
 /// - src_ptr must be valid for reading (w+7)*(h+7) bytes (with proper padding)
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_8bpc_avx2_impl_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -2845,6 +2878,7 @@ unsafe fn prep_8tap_8bpc_avx2_impl_inner(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_8bpc_avx2_impl(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
@@ -2876,6 +2910,7 @@ unsafe fn prep_8tap_8bpc_avx2_impl(
 /// Vertical 8-tap filter to i16 output (for prep functions)
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_to_i16_avx2_inner(
     _token: Desktop64,
     mid: &[[i16; MID_STRIDE]],
@@ -2953,6 +2988,7 @@ unsafe fn v_filter_8tap_to_i16_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_to_i16_avx2(
     mid: &[[i16; MID_STRIDE]],
     dst: *mut i16,
@@ -2991,6 +3027,7 @@ pub unsafe extern "C" fn prep_8tap_8bpc_avx2<const FILTER: usize>(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_regular_8bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -3051,6 +3088,7 @@ pub unsafe extern "C" fn prep_8tap_regular_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_regular_smooth_8bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -3111,6 +3149,7 @@ pub unsafe extern "C" fn prep_8tap_regular_smooth_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_regular_sharp_8bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -3171,6 +3210,7 @@ pub unsafe extern "C" fn prep_8tap_regular_sharp_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_smooth_regular_8bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -3231,6 +3271,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_regular_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_smooth_8bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -3291,6 +3332,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_smooth_sharp_8bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -3351,6 +3393,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_sharp_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_sharp_regular_8bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -3411,6 +3454,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_regular_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_sharp_smooth_8bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -3471,6 +3515,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_smooth_8bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_sharp_8bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -3538,6 +3583,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_8bpc_avx2(
 /// Output is 32-bit to preserve precision for vertical pass
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn h_filter_8tap_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut i32,
@@ -3620,6 +3666,7 @@ unsafe fn h_filter_8tap_16bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn h_filter_8tap_16bpc_avx2(
     dst: *mut i32,
     src: *const u16,
@@ -3635,6 +3682,7 @@ unsafe fn h_filter_8tap_16bpc_avx2(
 /// Input is 32-bit intermediate, output is 16-bit clamped to [0, max]
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -3739,6 +3787,7 @@ unsafe fn v_filter_8tap_16bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_16bpc_avx2(
     dst: *mut u16,
     mid: &[[i32; MID_STRIDE]],
@@ -3755,6 +3804,7 @@ unsafe fn v_filter_8tap_16bpc_avx2(
 /// Vertical 8-tap filter for 16bpc prep (output is i16 with PREP_BIAS subtracted)
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_16bpc_prep_avx2_inner(
     _token: Desktop64,
     dst: *mut i16,
@@ -3849,6 +3899,7 @@ unsafe fn v_filter_8tap_16bpc_prep_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_16bpc_prep_avx2(
     dst: *mut i16,
     mid: &[[i32; MID_STRIDE]],
@@ -3866,6 +3917,7 @@ unsafe fn v_filter_8tap_16bpc_prep_avx2(
 /// Input and output are both u16, shift=6, rnd=32, clamp to [0, max]
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn h_filter_8tap_16bpc_put_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -3952,6 +4004,7 @@ unsafe fn h_filter_8tap_16bpc_put_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn h_filter_8tap_16bpc_put_avx2(
     dst: *mut u16,
     src: *const u16,
@@ -3967,6 +4020,7 @@ unsafe fn h_filter_8tap_16bpc_put_avx2(
 /// Reads directly from u16 source with stride, outputs u16
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_16bpc_direct_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -4076,6 +4130,7 @@ unsafe fn v_filter_8tap_16bpc_direct_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_16bpc_direct_avx2(
     dst: *mut u16,
     src: *const u16,
@@ -4092,6 +4147,7 @@ unsafe fn v_filter_8tap_16bpc_direct_avx2(
 /// Input is u16, output is i16 with PREP_BIAS subtracted
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn h_filter_8tap_16bpc_prep_direct_avx2_inner(
     _token: Desktop64,
     dst: *mut i16,
@@ -4178,6 +4234,7 @@ unsafe fn h_filter_8tap_16bpc_prep_direct_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn h_filter_8tap_16bpc_prep_direct_avx2(
     dst: *mut i16,
     src: *const u16,
@@ -4194,6 +4251,7 @@ unsafe fn h_filter_8tap_16bpc_prep_direct_avx2(
 /// Reads directly from u16 source with stride, outputs i16 with bias
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
     _token: Desktop64,
     dst: *mut i16,
@@ -4303,6 +4361,7 @@ unsafe fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_filter_8tap_16bpc_prep_direct_avx2(
     dst: *mut i16,
     src: *const u16,
@@ -4325,6 +4384,7 @@ unsafe fn v_filter_8tap_16bpc_prep_direct_avx2(
 /// Similar to 8bpc but handles 16-bit pixels and different intermediate scaling
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_16bpc_avx2_impl_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -4413,6 +4473,7 @@ unsafe fn put_8tap_16bpc_avx2_impl_inner(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_16bpc_avx2_impl(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4448,6 +4509,7 @@ unsafe fn put_8tap_16bpc_avx2_impl(
 /// Generic 8-tap prep function for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_16bpc_avx2_impl_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -4546,6 +4608,7 @@ unsafe fn prep_8tap_16bpc_avx2_impl_inner(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_16bpc_avx2_impl(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
@@ -4638,6 +4701,7 @@ pub unsafe extern "C" fn prep_8tap_16bpc_avx2<const FILTER: usize>(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_regular_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -4705,6 +4769,7 @@ pub unsafe extern "C" fn put_8tap_regular_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_regular_smooth_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -4772,6 +4837,7 @@ pub unsafe extern "C" fn put_8tap_regular_smooth_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_regular_sharp_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -4839,6 +4905,7 @@ pub unsafe extern "C" fn put_8tap_regular_sharp_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_smooth_regular_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -4906,6 +4973,7 @@ pub unsafe extern "C" fn put_8tap_smooth_regular_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_smooth_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -4973,6 +5041,7 @@ pub unsafe extern "C" fn put_8tap_smooth_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_smooth_sharp_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -5040,6 +5109,7 @@ pub unsafe extern "C" fn put_8tap_smooth_sharp_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_sharp_regular_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -5107,6 +5177,7 @@ pub unsafe extern "C" fn put_8tap_sharp_regular_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_sharp_smooth_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -5174,6 +5245,7 @@ pub unsafe extern "C" fn put_8tap_sharp_smooth_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_8tap_sharp_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -5243,6 +5315,7 @@ pub unsafe extern "C" fn put_8tap_sharp_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_regular_16bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -5302,6 +5375,7 @@ pub unsafe extern "C" fn prep_8tap_regular_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_regular_smooth_16bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -5361,6 +5435,7 @@ pub unsafe extern "C" fn prep_8tap_regular_smooth_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_regular_sharp_16bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -5420,6 +5495,7 @@ pub unsafe extern "C" fn prep_8tap_regular_sharp_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_smooth_regular_16bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -5479,6 +5555,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_regular_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_smooth_16bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -5538,6 +5615,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_smooth_sharp_16bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -5597,6 +5675,7 @@ pub unsafe extern "C" fn prep_8tap_smooth_sharp_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_sharp_regular_16bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -5656,6 +5735,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_regular_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_sharp_smooth_16bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -5715,6 +5795,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_smooth_16bpc_avx2(
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_8tap_sharp_16bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -5790,6 +5871,7 @@ pub unsafe extern "C" fn prep_8tap_sharp_16bpc_avx2(
 /// Processes 32 pixels at a time, outputs to i16 intermediate buffer
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn h_filter_bilin_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut i16,
@@ -5867,6 +5949,7 @@ unsafe fn h_filter_bilin_8bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn h_filter_bilin_8bpc_avx2(dst: *mut i16, src: *const u8, w: usize, mx: usize, sh: u8) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe { h_filter_bilin_8bpc_avx2_inner(token, dst, src, w, mx, sh) }
@@ -5876,6 +5959,7 @@ unsafe fn h_filter_bilin_8bpc_avx2(dst: *mut i16, src: *const u8, w: usize, mx: 
 /// Reads from i16 intermediate buffer, outputs to u8
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_filter_bilin_8bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -5948,6 +6032,7 @@ unsafe fn v_filter_bilin_8bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_filter_bilin_8bpc_avx2(
     dst: *mut u8,
     mid: &[&[i16]],
@@ -5963,6 +6048,7 @@ unsafe fn v_filter_bilin_8bpc_avx2(
 /// Outputs directly to u8 with shift=4 and clamp to [0,255]
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn h_bilin_8bpc_put_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -6021,6 +6107,7 @@ unsafe fn h_bilin_8bpc_put_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn h_bilin_8bpc_put_avx2(dst: *mut u8, src: *const u8, w: usize, mx: usize) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe { h_bilin_8bpc_put_avx2_inner(token, dst, src, w, mx) }
@@ -6030,6 +6117,7 @@ unsafe fn h_bilin_8bpc_put_avx2(dst: *mut u8, src: *const u8, w: usize, mx: usiz
 /// Reads directly from u8 source, outputs u8
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_bilin_8bpc_direct_avx2_inner(
     _token: Desktop64,
     dst: *mut u8,
@@ -6087,6 +6175,7 @@ unsafe fn v_bilin_8bpc_direct_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_bilin_8bpc_direct_avx2(
     dst: *mut u8,
     src0: *const u8,
@@ -6101,6 +6190,7 @@ unsafe fn v_bilin_8bpc_direct_avx2(
 /// Core bilinear filter implementation for 8bpc
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn put_bilin_8bpc_avx2_impl_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -6186,6 +6276,7 @@ unsafe fn put_bilin_8bpc_avx2_impl_inner(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 unsafe fn put_bilin_8bpc_avx2_impl(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6207,6 +6298,7 @@ unsafe fn put_bilin_8bpc_avx2_impl(
 /// Bilinear put for 8bpc - extern "C" wrapper
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_bilin_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -6251,6 +6343,7 @@ pub unsafe extern "C" fn put_bilin_8bpc_avx2(
 /// Outputs to i16 intermediate buffer (prep format)
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn prep_bilin_8bpc_avx2_impl_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -6352,6 +6445,7 @@ unsafe fn prep_bilin_8bpc_avx2_impl_inner(
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 unsafe fn prep_bilin_8bpc_avx2_impl(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
@@ -6368,6 +6462,7 @@ unsafe fn prep_bilin_8bpc_avx2_impl(
 /// Bilinear prep for 8bpc - extern "C" wrapper
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_bilin_8bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -6415,6 +6510,7 @@ use crate::src::internal::SEG_MASK_LEN;
 /// SS_HOR and SS_VER control subsampling: 444=(false,false), 422=(true,false), 420=(true,true)
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 unsafe fn w_mask_8bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6507,6 +6603,7 @@ unsafe fn w_mask_8bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
 /// w_mask for 4:4:4 (no subsampling)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn w_mask_444_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -6544,6 +6641,7 @@ pub unsafe extern "C" fn w_mask_444_8bpc_avx2(
 /// w_mask for 4:2:2 (horizontal subsampling only)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn w_mask_422_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -6581,6 +6679,7 @@ pub unsafe extern "C" fn w_mask_422_8bpc_avx2(
 /// w_mask for 4:2:0 (horizontal and vertical subsampling)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn w_mask_420_8bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -6618,6 +6717,7 @@ pub unsafe extern "C" fn w_mask_420_8bpc_avx2(
 // 16bpc w_mask (scalar for now)
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 unsafe fn w_mask_16bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6701,6 +6801,7 @@ unsafe fn w_mask_16bpc_avx2_impl<const SS_HOR: bool, const SS_VER: bool>(
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn w_mask_444_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -6761,6 +6862,7 @@ pub unsafe extern "C" fn w_mask_444_16bpc_avx2(
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn w_mask_422_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -6821,6 +6923,7 @@ pub unsafe extern "C" fn w_mask_422_16bpc_avx2(
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn w_mask_420_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -6887,6 +6990,7 @@ pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
 /// Formula: pixel = 16 * x0 + mx * (x1 - x0) = (16 - mx) * x0 + mx * x1
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn h_bilin_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut i32,
@@ -6934,6 +7038,7 @@ unsafe fn h_bilin_16bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn h_bilin_16bpc_avx2(dst: *mut i32, src: *const u16, w: usize, mx: i32) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe { h_bilin_16bpc_avx2_inner(token, dst, src, w, mx) }
@@ -6943,6 +7048,7 @@ unsafe fn h_bilin_16bpc_avx2(dst: *mut i32, src: *const u16, w: usize, mx: i32) 
 /// Applies vertical filter to 32-bit intermediate, outputs clamped u16
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_bilin_16bpc_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -7001,6 +7107,7 @@ unsafe fn v_bilin_16bpc_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_bilin_16bpc_avx2(
     dst: *mut u16,
     mid: &[[i32; MID_STRIDE]],
@@ -7017,6 +7124,7 @@ unsafe fn v_bilin_16bpc_avx2(
 /// Vertical bilinear filter for 16bpc prep - outputs i16 with bias subtraction
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_bilin_16bpc_prep_avx2_inner(
     _token: Desktop64,
     dst: *mut i16,
@@ -7072,6 +7180,7 @@ unsafe fn v_bilin_16bpc_prep_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_bilin_16bpc_prep_avx2(
     dst: *mut i16,
     mid: &[[i32; MID_STRIDE]],
@@ -7089,6 +7198,7 @@ unsafe fn v_bilin_16bpc_prep_avx2(
 /// Outputs directly to u16 with shift and clamp
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn h_bilin_16bpc_put_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -7144,6 +7254,7 @@ unsafe fn h_bilin_16bpc_put_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn h_bilin_16bpc_put_avx2(dst: *mut u16, src: *const u16, w: usize, mx: i32, bd_max: i32) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe { h_bilin_16bpc_put_avx2_inner(token, dst, src, w, mx, bd_max) }
@@ -7153,6 +7264,7 @@ unsafe fn h_bilin_16bpc_put_avx2(dst: *mut u16, src: *const u16, w: usize, mx: i
 /// Reads directly from u16 source, outputs u16
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_bilin_16bpc_direct_avx2_inner(
     _token: Desktop64,
     dst: *mut u16,
@@ -7211,6 +7323,7 @@ unsafe fn v_bilin_16bpc_direct_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_bilin_16bpc_direct_avx2(
     dst: *mut u16,
     src: *const u16,
@@ -7227,6 +7340,7 @@ unsafe fn v_bilin_16bpc_direct_avx2(
 /// Outputs i16 with PREP_BIAS subtracted
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn h_bilin_16bpc_prep_direct_avx2_inner(
     _token: Desktop64,
     dst: *mut i16,
@@ -7281,6 +7395,7 @@ unsafe fn h_bilin_16bpc_prep_direct_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn h_bilin_16bpc_prep_direct_avx2(
     dst: *mut i16,
     src: *const u16,
@@ -7296,6 +7411,7 @@ unsafe fn h_bilin_16bpc_prep_direct_avx2(
 /// Reads directly from u16 source, outputs i16 with bias
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[allow(unsafe_code)]
 unsafe fn v_bilin_16bpc_prep_direct_avx2_inner(
     _token: Desktop64,
     dst: *mut i16,
@@ -7353,6 +7469,7 @@ unsafe fn v_bilin_16bpc_prep_direct_avx2_inner(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_code)]
 unsafe fn v_bilin_16bpc_prep_direct_avx2(
     dst: *mut i16,
     src: *const u16,
@@ -7368,6 +7485,7 @@ unsafe fn v_bilin_16bpc_prep_direct_avx2(
 /// Bilinear put for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn put_bilin_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -7444,6 +7562,7 @@ unsafe fn put_bilin_16bpc_avx2_inner(
 /// Non-FFI wrapper for bilinear put 16bpc (no FFISafe params)
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 unsafe fn put_bilin_16bpc_avx2_impl(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -7498,6 +7617,7 @@ pub unsafe extern "C" fn put_bilin_16bpc_avx2(
 /// Bilinear prep for 16bpc (scalar implementation)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
+#[allow(unsafe_code)]
 unsafe fn prep_bilin_16bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -7576,6 +7696,7 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
 /// Non-FFI wrapper for bilinear prep 16bpc (no FFISafe params)
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
+#[allow(unsafe_code)]
 unsafe fn prep_bilin_16bpc_avx2_impl(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
@@ -7612,6 +7733,7 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
 // ============================================================================
 
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn avg_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
@@ -7659,6 +7781,7 @@ pub fn avg_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn w_avg_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
@@ -7695,6 +7818,7 @@ pub fn w_avg_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn mask_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],
@@ -7746,6 +7870,7 @@ pub fn mask_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn blend_dispatch<BD: BitDepth>(
     dst: PicOffset,
     tmp: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN],
@@ -7781,6 +7906,7 @@ pub fn blend_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn blend_dir_dispatch<BD: BitDepth>(
     is_h: bool,
     dst: PicOffset,
@@ -7840,6 +7966,7 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn w_mask_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     dst: PicOffset,
@@ -7940,6 +8067,7 @@ pub fn w_mask_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn mc_put_dispatch<BD: BitDepth>(
     filter: Filter2d,
     dst: PicOffset,
@@ -7996,6 +8124,7 @@ pub fn mc_put_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn mct_prep_dispatch<BD: BitDepth>(
     filter: Filter2d,
     tmp: &mut [i16],
@@ -8051,6 +8180,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
 
 /// No SIMD for scaled variants on x86_64.
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn mc_scaled_dispatch<BD: BitDepth>(
     _filter: Filter2d,
     _dst: PicOffset,
@@ -8068,6 +8198,7 @@ pub fn mc_scaled_dispatch<BD: BitDepth>(
 
 /// No SIMD for scaled variants on x86_64.
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn mct_scaled_dispatch<BD: BitDepth>(
     _filter: Filter2d,
     _tmp: &mut [i16],
@@ -8085,6 +8216,7 @@ pub fn mct_scaled_dispatch<BD: BitDepth>(
 
 /// No SIMD for warp on x86_64.
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn warp8x8_dispatch<BD: BitDepth>(
     _dst: PicOffset,
     _src: PicOffset,
@@ -8098,6 +8230,7 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
 
 /// No SIMD for warp on x86_64.
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn warp8x8t_dispatch<BD: BitDepth>(
     _tmp: &mut [i16],
     _tmp_stride: usize,
@@ -8112,6 +8245,7 @@ pub fn warp8x8t_dispatch<BD: BitDepth>(
 
 /// No SIMD for emu_edge on x86_64.
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn emu_edge_dispatch<BD: BitDepth>(
     _bw: isize,
     _bh: isize,
@@ -8128,6 +8262,7 @@ pub fn emu_edge_dispatch<BD: BitDepth>(
 
 /// No SIMD for resize on x86_64.
 #[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
 pub fn resize_dispatch<BD: BitDepth>(
     _dst: crate::src::with_offset::WithOffset<
         crate::src::pic_or_buf::PicOrBuf<crate::src::align::AlignedVec64<u8>>,
@@ -8144,6 +8279,7 @@ pub fn resize_dispatch<BD: BitDepth>(
 }
 
 #[cfg(test)]
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
 
