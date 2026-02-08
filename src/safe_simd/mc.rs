@@ -15,7 +15,7 @@ use core::arch::x86_64::*;
 #[cfg(target_arch = "x86_64")]
 use archmage::{arcane, rite, Desktop64, SimdToken};
 #[cfg(target_arch = "x86_64")]
-use crate::src::safe_simd::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256};
+use crate::src::safe_simd::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256, loadi64, storei64};
 
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
@@ -1505,18 +1505,15 @@ fn get_filter(m: usize, d: usize, filter_idx: usize) -> Option<&'static [i8; 8]>
 /// Formula: sum(coeff[i] * src[x + i - 3]) for i in 0..8, then round and shift
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn h_filter_8tap_8bpc_avx2_inner(
+fn h_filter_8tap_8bpc_avx2_inner(
     _token: Desktop64,
-    dst: *mut i16,
-    src: *const u8,
+    dst: &mut [i16],
+    src: &[u8],
     w: usize,
     filter: &[i8; 8],
     sh: u8,
 ) {
-    // SAFETY: All operations inside this block require AVX2 which is guaranteed
     // by the target_feature attribute, and pointer operations are valid per caller contract.
-    unsafe {
         // For horizontal filtering, we need to load 8 consecutive pixels for each output
         // The source pointer is already offset by -3 (pointing to tap 0)
 
@@ -1539,17 +1536,17 @@ unsafe fn h_filter_8tap_8bpc_avx2_inner(
         // Process 16 pixels at a time
         while col + 16 <= w {
             // Load source bytes - we need 8 bytes for each output pixel, offset by tap position
-            let s = src.add(col);
+            // s offset = col
 
             // Load bytes at various offsets for the 8-tap filter
-            let src_0_15 = _mm_loadu_si128(s as *const __m128i);
-            let src_1_16 = _mm_loadu_si128(s.add(1) as *const __m128i);
-            let src_2_17 = _mm_loadu_si128(s.add(2) as *const __m128i);
-            let src_3_18 = _mm_loadu_si128(s.add(3) as *const __m128i);
-            let src_4_19 = _mm_loadu_si128(s.add(4) as *const __m128i);
-            let src_5_20 = _mm_loadu_si128(s.add(5) as *const __m128i);
-            let src_6_21 = _mm_loadu_si128(s.add(6) as *const __m128i);
-            let src_7_22 = _mm_loadu_si128(s.add(7) as *const __m128i);
+            let src_0_15 = loadu_128!(<&[u8; 16]>::try_from(&src[col..col + 16]).unwrap());
+            let src_1_16 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 1..col + 17]).unwrap());
+            let src_2_17 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 2..col + 18]).unwrap());
+            let src_3_18 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 3..col + 19]).unwrap());
+            let src_4_19 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 4..col + 20]).unwrap());
+            let src_5_20 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 5..col + 21]).unwrap());
+            let src_6_21 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 6..col + 22]).unwrap());
+            let src_7_22 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 7..col + 23]).unwrap());
 
             // Interleave bytes for maddubs
             let p01_lo = _mm_unpacklo_epi8(src_0_15, src_1_16);
@@ -1584,28 +1581,27 @@ unsafe fn h_filter_8tap_8bpc_avx2_inner(
             let result = _mm256_sra_epi16(_mm256_add_epi16(sum, rnd), shift_count);
 
             // Store 16 i16 values
-            _mm256_storeu_si256(dst.add(col) as *mut __m256i, result);
+            storeu_256!(<&mut [i16; 16]>::try_from(&mut dst[col..col + 16]).unwrap(), result);
 
             col += 16;
         }
 
         // Scalar fallback for remaining pixels
         while col < w {
-            let s = src.add(col);
+            // s offset = col
             let mut sum = 0i32;
             for i in 0..8 {
-                sum += filter[i] as i32 * (*s.add(i)) as i32;
+                sum += filter[i] as i32 * src[col + i] as i32;
             }
-            *dst.add(col) = ((sum + ((1 << sh) >> 1)) >> sh) as i16;
+            dst[col] = ((sum + ((1 << sh) >> 1)) >> sh) as i16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn h_filter_8tap_8bpc_avx2(
     dst: *mut i16,
     src: *const u8,
@@ -1622,19 +1618,16 @@ unsafe fn h_filter_8tap_8bpc_avx2(
 /// Processes `w` pixels for one row, reading from `mid` (8 rows), writing to `dst`
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_filter_8tap_8bpc_avx2_inner(
+fn v_filter_8tap_8bpc_avx2_inner(
     _token: Desktop64,
-    dst: *mut u8,
+    dst: &mut [u8],
     mid: &[[i16; MID_STRIDE]],
     w: usize,
     filter: &[i8; 8],
     sh: u8,
     max: i32,
 ) {
-    // SAFETY: All operations inside this block require AVX2 which is guaranteed
     // by the target_feature attribute, and pointer operations are valid per caller contract.
-    unsafe {
         let rnd = _mm256_set1_epi32((1i32 << sh) >> 1);
         let zero = _mm256_setzero_si256();
         let _max_vec = _mm256_set1_epi16(max as i16);
@@ -1655,21 +1648,21 @@ unsafe fn v_filter_8tap_8bpc_avx2_inner(
         while col + 8 <= w {
             // Load 8 i16 values from each of 8 rows and convert to i32
             let m0 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[0][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[0][col..col + 8]).unwrap()));
             let m1 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[1][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[1][col..col + 8]).unwrap()));
             let m2 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[2][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[2][col..col + 8]).unwrap()));
             let m3 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[3][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[3][col..col + 8]).unwrap()));
             let m4 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[4][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[4][col..col + 8]).unwrap()));
             let m5 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[5][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[5][col..col + 8]).unwrap()));
             let m6 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[6][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[6][col..col + 8]).unwrap()));
             let m7 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[7][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[7][col..col + 8]).unwrap()));
 
             // Multiply each row by its coefficient and accumulate
             let mut sum = _mm256_mullo_epi32(m0, c0);
@@ -1695,7 +1688,7 @@ unsafe fn v_filter_8tap_8bpc_avx2_inner(
 
             // Store 8 bytes
             let result_64 = _mm256_extract_epi64(packed8, 0);
-            std::ptr::copy_nonoverlapping(&result_64 as *const i64 as *const u8, dst.add(col), 8);
+            dst[col..col + 8].copy_from_slice(&result_64.to_ne_bytes());
 
             col += 8;
         }
@@ -1707,16 +1700,15 @@ unsafe fn v_filter_8tap_8bpc_avx2_inner(
                 sum += filter[i] as i32 * mid[i][col] as i32;
             }
             let val = ((sum + ((1 << sh) >> 1)) >> sh).clamp(0, max);
-            *dst.add(col) = val as u8;
+            dst[col] = val as u8;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_filter_8tap_8bpc_avx2(
     dst: *mut u8,
     mid: &[[i16; MID_STRIDE]],
@@ -1751,15 +1743,13 @@ fn get_filter_coeff(m: usize, d: usize, filter_type: Rav1dFilterMode) -> Option<
 /// Outputs directly to u8 with shift and clamp
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn h_filter_8tap_8bpc_put_avx2_inner(
+fn h_filter_8tap_8bpc_put_avx2_inner(
     _token: Desktop64,
-    dst: *mut u8,
-    src: *const u8, // already offset by -3
+    dst: &mut [u8],
+    src: &[u8], // already offset by -3
     w: usize,
     filter: &[i8; 8],
 ) {
-    unsafe {
         // Broadcast filter coefficients for maddubs
         let coeff_01 =
             _mm256_set1_epi16(((filter[1] as u8 as i16) << 8) | (filter[0] as u8 as i16));
@@ -1776,16 +1766,16 @@ unsafe fn h_filter_8tap_8bpc_put_avx2_inner(
         let mut col = 0usize;
 
         while col + 16 <= w {
-            let s = src.add(col);
+            // s offset = col
 
-            let src_0_15 = _mm_loadu_si128(s as *const __m128i);
-            let src_1_16 = _mm_loadu_si128(s.add(1) as *const __m128i);
-            let src_2_17 = _mm_loadu_si128(s.add(2) as *const __m128i);
-            let src_3_18 = _mm_loadu_si128(s.add(3) as *const __m128i);
-            let src_4_19 = _mm_loadu_si128(s.add(4) as *const __m128i);
-            let src_5_20 = _mm_loadu_si128(s.add(5) as *const __m128i);
-            let src_6_21 = _mm_loadu_si128(s.add(6) as *const __m128i);
-            let src_7_22 = _mm_loadu_si128(s.add(7) as *const __m128i);
+            let src_0_15 = loadu_128!(<&[u8; 16]>::try_from(&src[col..col + 16]).unwrap());
+            let src_1_16 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 1..col + 17]).unwrap());
+            let src_2_17 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 2..col + 18]).unwrap());
+            let src_3_18 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 3..col + 19]).unwrap());
+            let src_4_19 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 4..col + 20]).unwrap());
+            let src_5_20 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 5..col + 21]).unwrap());
+            let src_6_21 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 6..col + 22]).unwrap());
+            let src_7_22 = loadu_128!(<&[u8; 16]>::try_from(&src[col + 7..col + 23]).unwrap());
 
             let p01_lo = _mm_unpacklo_epi8(src_0_15, src_1_16);
             let p01_hi = _mm_unpackhi_epi8(src_0_15, src_1_16);
@@ -1821,28 +1811,27 @@ unsafe fn h_filter_8tap_8bpc_put_avx2_inner(
             let packed = _mm256_packus_epi16(clamped, clamped);
             let packed = _mm256_permute4x64_epi64(packed, 0b11011000);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(packed));
+            storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[col..col + 16]).unwrap(), _mm256_castsi256_si128(packed));
             col += 16;
         }
 
         // Scalar fallback
         while col < w {
-            let s = src.add(col);
+            // s offset = col
             let mut sum = 0i32;
             for i in 0..8 {
-                sum += filter[i] as i32 * *s.add(i) as i32;
+                sum += filter[i] as i32 * src[col + i] as i32;
             }
             let val = ((sum + 32) >> 6).clamp(0, 255);
-            *dst.add(col) = val as u8;
+            dst[col] = val as u8;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn h_filter_8tap_8bpc_put_avx2(
     dst: *mut u8,
     src: *const u8, // already offset by -3
@@ -1862,16 +1851,14 @@ unsafe fn h_filter_8tap_8bpc_put_avx2(
 /// Reads directly from u8 source with stride, outputs u8
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_filter_8tap_8bpc_direct_avx2_inner(
+fn v_filter_8tap_8bpc_direct_avx2_inner(
     _token: Desktop64,
-    dst: *mut u8,
-    src: *const u8, // already positioned at (y-3, 0)
+    dst: &mut [u8],
+    src: &[u8], // already positioned at (y-3, 0)
     src_stride: isize,
     w: usize,
     filter: &[i8; 8],
 ) {
-    unsafe {
         let c0 = _mm256_set1_epi32(filter[0] as i32);
         let c1 = _mm256_set1_epi32(filter[1] as i32);
         let c2 = _mm256_set1_epi32(filter[2] as i32);
@@ -1889,28 +1876,14 @@ unsafe fn v_filter_8tap_8bpc_direct_avx2_inner(
 
         while col + 8 <= w {
             // Load 8 u8 from each of 8 rows, zero-extend to i32
-            let p0 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(src.add(col) as *const __m128i));
-            let p1 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
-                src.offset(src_stride).add(col) as *const __m128i
-            ));
-            let p2 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
-                src.offset(2 * src_stride).add(col) as *const __m128i
-            ));
-            let p3 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
-                src.offset(3 * src_stride).add(col) as *const __m128i
-            ));
-            let p4 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
-                src.offset(4 * src_stride).add(col) as *const __m128i
-            ));
-            let p5 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
-                src.offset(5 * src_stride).add(col) as *const __m128i
-            ));
-            let p6 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
-                src.offset(6 * src_stride).add(col) as *const __m128i
-            ));
-            let p7 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(
-                src.offset(7 * src_stride).add(col) as *const __m128i
-            ));
+            let p0 = _mm256_cvtepu8_epi32(loadi64!(&src[col..col + 8]));
+            let p1 = _mm256_cvtepu8_epi32(loadi64!(&src[src_stride as usize + col..src_stride as usize + col + 8]));
+            let p2 = _mm256_cvtepu8_epi32(loadi64!(&src[2 * src_stride as usize + col..2 * src_stride as usize + col + 8]));
+            let p3 = _mm256_cvtepu8_epi32(loadi64!(&src[3 * src_stride as usize + col..3 * src_stride as usize + col + 8]));
+            let p4 = _mm256_cvtepu8_epi32(loadi64!(&src[4 * src_stride as usize + col..4 * src_stride as usize + col + 8]));
+            let p5 = _mm256_cvtepu8_epi32(loadi64!(&src[5 * src_stride as usize + col..5 * src_stride as usize + col + 8]));
+            let p6 = _mm256_cvtepu8_epi32(loadi64!(&src[6 * src_stride as usize + col..6 * src_stride as usize + col + 8]));
+            let p7 = _mm256_cvtepu8_epi32(loadi64!(&src[7 * src_stride as usize + col..7 * src_stride as usize + col + 8]));
 
             // Multiply and accumulate
             let mut sum = _mm256_mullo_epi32(p0, c0);
@@ -1933,7 +1906,7 @@ unsafe fn v_filter_8tap_8bpc_direct_avx2_inner(
             let packed8 = _mm256_packus_epi16(packed16, packed16);
 
             let result_64 = _mm256_extract_epi64(packed8, 0);
-            std::ptr::copy_nonoverlapping(&result_64 as *const i64 as *const u8, dst.add(col), 8);
+            dst[col..col + 8].copy_from_slice(&result_64.to_ne_bytes());
 
             col += 8;
         }
@@ -1942,20 +1915,19 @@ unsafe fn v_filter_8tap_8bpc_direct_avx2_inner(
         while col < w {
             let mut sum = 0i32;
             for i in 0..8 {
-                let px = *src.offset(i as isize * src_stride).add(col) as i32;
+                let px = src[(i as isize * src_stride) as usize + col] as i32;
                 sum += filter[i] as i32 * px;
             }
             let val = ((sum + 32) >> 6).clamp(0, 255);
-            *dst.add(col) = val as u8;
+            dst[col] = val as u8;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_filter_8tap_8bpc_direct_avx2(
     dst: *mut u8,
     src: *const u8, // already positioned at (y-3, 0)
@@ -1987,12 +1959,11 @@ unsafe fn v_filter_8tap_8bpc_direct_avx2(
 /// - src_ptr must be valid for reading (w+7)*(h+7) bytes (with proper padding)
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn put_8tap_8bpc_avx2_impl_inner(
+fn put_8tap_8bpc_avx2_impl_inner(
     _token: Desktop64,
-    dst_ptr: *mut DynPixel,
+    dst: &mut [u8],
     dst_stride: isize,
-    src_ptr: *const DynPixel,
+    src: &[u8],
     src_stride: isize,
     w: i32,
     h: i32,
@@ -2005,8 +1976,6 @@ unsafe fn put_8tap_8bpc_avx2_impl_inner(
     let h = h as usize;
     let mx = mx as usize;
     let my = my as usize;
-    let dst = dst_ptr as *mut u8;
-    let src = src_ptr as *const u8;
 
     // For 8bpc: intermediate_bits = 4
     let intermediate_bits = 4u8;
@@ -2014,8 +1983,6 @@ unsafe fn put_8tap_8bpc_avx2_impl_inner(
     let fh = get_filter_coeff(mx, w, h_filter_type);
     let fv = get_filter_coeff(my, h, v_filter_type);
 
-    // SAFETY: All operations require AVX2 which is guaranteed by target_feature
-    unsafe {
         match (fh, fv) {
             (Some(fh), Some(fv)) => {
                 // Case 1: Both H and V filtering
@@ -2024,10 +1991,11 @@ unsafe fn put_8tap_8bpc_avx2_impl_inner(
                 let mut mid = [[0i16; MID_STRIDE]; 135];
 
                 for y in 0..tmp_h {
-                    let src_row = src.offset((y as isize - 3) * src_stride);
-                    h_filter_8tap_8bpc_avx2(
-                        mid[y].as_mut_ptr(),
-                        src_row.sub(3), // Offset by -3 for tap 0
+                    let src_row_base = ((y as isize - 3) * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    h_filter_8tap_8bpc_avx2_inner(_token, 
+                        &mut mid[y],
+                        &src[src_row_base - 3..], // Offset by -3 for tap 0
                         w,
                         fh,
                         6 - intermediate_bits,
@@ -2036,41 +2004,43 @@ unsafe fn put_8tap_8bpc_avx2_impl_inner(
 
                 // Second pass: vertical filter to output
                 for y in 0..h {
-                    let dst_row = dst.offset(y as isize * dst_stride);
-                    v_filter_8tap_8bpc_avx2(dst_row, &mid[y..], w, fv, 6 + intermediate_bits, 255);
+                    let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+                    v_filter_8tap_8bpc_avx2_inner(_token, dst_row, &mid[y..], w, fv, 6 + intermediate_bits, 255);
                 }
             }
             (Some(fh), None) => {
                 // Case 2: H-only filtering (full SIMD)
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride);
-                    let dst_row = dst.offset(y as isize * dst_stride);
-                    h_filter_8tap_8bpc_put_avx2(dst_row, src_row.sub(3), w, fh);
+                    let src_row_base = (y as isize * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+                    h_filter_8tap_8bpc_put_avx2_inner(_token, dst_row, &src[src_row_base - 3..], w, fh);
                 }
             }
             (None, Some(fv)) => {
                 // Case 3: V-only filtering (full SIMD)
                 for y in 0..h {
-                    let src_row = src.offset((y as isize - 3) * src_stride);
-                    let dst_row = dst.offset(y as isize * dst_stride);
-                    v_filter_8tap_8bpc_direct_avx2(dst_row, src_row, src_stride, w, fv);
+                    let src_row_base = ((y as isize - 3) * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+                    v_filter_8tap_8bpc_direct_avx2_inner(_token, dst_row, src_row, src_stride, w, fv);
                 }
             }
             (None, None) => {
                 // Case 4: Simple copy
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride);
-                    let dst_row = dst.offset(y as isize * dst_stride);
-                    std::ptr::copy_nonoverlapping(src_row, dst_row, w);
+                    let src_row_base = (y as isize * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+                    dst_row[..w].copy_from_slice(&src_row[..w]);
                 }
             }
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
 unsafe fn put_8tap_8bpc_avx2_impl(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2758,11 +2728,10 @@ pub unsafe extern "C" fn put_8tap_sharp_8bpc_avx2(
 /// - src_ptr must be valid for reading (w+7)*(h+7) bytes (with proper padding)
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn prep_8tap_8bpc_avx2_impl_inner(
+fn prep_8tap_8bpc_avx2_impl_inner(
     _token: Desktop64,
-    tmp: *mut i16,
-    src_ptr: *const DynPixel,
+    tmp: &mut [i16],
+    src: &[u8],
     src_stride: isize,
     w: i32,
     h: i32,
@@ -2775,7 +2744,6 @@ unsafe fn prep_8tap_8bpc_avx2_impl_inner(
     let h = h as usize;
     let mx = mx as usize;
     let my = my as usize;
-    let src = src_ptr as *const u8;
 
     // For 8bpc: intermediate_bits = 4
     let intermediate_bits = 4u8;
@@ -2783,8 +2751,6 @@ unsafe fn prep_8tap_8bpc_avx2_impl_inner(
     let fh = get_filter_coeff(mx, w, h_filter_type);
     let fv = get_filter_coeff(my, h, v_filter_type);
 
-    // SAFETY: All operations require AVX2 which is guaranteed by target_feature
-    unsafe {
         match (fh, fv) {
             (Some(fh), Some(fv)) => {
                 // Case 1: Both H and V filtering
@@ -2793,10 +2759,11 @@ unsafe fn prep_8tap_8bpc_avx2_impl_inner(
 
                 // Horizontal pass
                 for y in 0..tmp_h {
-                    let src_row = src.offset((y as isize - 3) * src_stride);
-                    h_filter_8tap_8bpc_avx2(
-                        mid[y].as_mut_ptr(),
-                        src_row.sub(3),
+                    let src_row_base = ((y as isize - 3) * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    h_filter_8tap_8bpc_avx2_inner(_token, 
+                        &mut mid[y],
+                        &src[src_row_base - 3..],
                         w,
                         fh,
                         6 - intermediate_bits,
@@ -2805,52 +2772,53 @@ unsafe fn prep_8tap_8bpc_avx2_impl_inner(
 
                 // Vertical pass to intermediate output
                 for y in 0..h {
-                    let out_row = tmp.add(y * w);
-                    v_filter_8tap_to_i16_avx2(&mid[y..], out_row, w, fv, 6 + intermediate_bits);
+                    let out_row = y * w;
+                    v_filter_8tap_to_i16_avx2_inner(_token, &mid[y..], &mut tmp[out_row..], w, fv, 6 + intermediate_bits);
                 }
             }
             (Some(fh), None) => {
                 // Case 2: H-only filtering
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride);
-                    let out_row = tmp.add(y * w);
-                    h_filter_8tap_8bpc_avx2(out_row, src_row.sub(3), w, fh, intermediate_bits);
+                    let src_row_base = (y as isize * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    let out_row = y * w;
+                    h_filter_8tap_8bpc_avx2_inner(_token, &mut tmp[out_row..], &src[src_row_base - 3..], w, fh, intermediate_bits);
                 }
             }
             (None, Some(fv)) => {
                 // Case 3: V-only filtering
                 for y in 0..h {
-                    let out_row = tmp.add(y * w);
+                    let out_row = y * w;
 
                     // Build intermediate buffer from 8 source rows
                     let mut mid = [[0i16; MID_STRIDE]; 8];
                     for i in 0..8 {
-                        let src_row = src.offset((y as isize + i as isize - 3) * src_stride);
+                        let src_row = &src[((y as isize + i as isize - 3) * src_stride) as usize..];
                         for x in 0..w {
-                            mid[i][x] = (*src_row.add(x) as i16) << intermediate_bits;
+                            mid[i][x] = (src_row[x] as i16) << intermediate_bits;
                         }
                     }
 
-                    v_filter_8tap_to_i16_avx2(&mid, out_row, w, fv, 6);
+                    v_filter_8tap_to_i16_avx2_inner(_token, &mid, &mut tmp[out_row..], w, fv, 6);
                 }
             }
             (None, None) => {
                 // Case 4: Simple copy with intermediate scaling
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride);
-                    let out_row = tmp.add(y * w);
+                    let src_row_base = (y as isize * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    let out_row = y * w;
                     for x in 0..w {
-                        *out_row.add(x) = (*src_row.add(x) as i16) << intermediate_bits;
+                        tmp[out_row + x] = (src_row[x] as i16) << intermediate_bits;
                     }
                 }
             }
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
 unsafe fn prep_8tap_8bpc_avx2_impl(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
@@ -2882,17 +2850,14 @@ unsafe fn prep_8tap_8bpc_avx2_impl(
 /// Vertical 8-tap filter to i16 output (for prep functions)
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_filter_8tap_to_i16_avx2_inner(
+fn v_filter_8tap_to_i16_avx2_inner(
     _token: Desktop64,
     mid: &[[i16; MID_STRIDE]],
-    dst: *mut i16,
+    dst: &mut [i16],
     w: usize,
     filter: &[i8; 8],
     sh: u8,
 ) {
-    // SAFETY: All operations require AVX2 which is guaranteed by target_feature
-    unsafe {
         let rnd = _mm256_set1_epi32((1i32 << sh) >> 1);
 
         let c0 = _mm256_set1_epi32(filter[0] as i32);
@@ -2908,21 +2873,21 @@ unsafe fn v_filter_8tap_to_i16_avx2_inner(
 
         while col + 8 <= w {
             let m0 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[0][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[0][col..col + 8]).unwrap()));
             let m1 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[1][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[1][col..col + 8]).unwrap()));
             let m2 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[2][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[2][col..col + 8]).unwrap()));
             let m3 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[3][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[3][col..col + 8]).unwrap()));
             let m4 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[4][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[4][col..col + 8]).unwrap()));
             let m5 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[5][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[5][col..col + 8]).unwrap()));
             let m6 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[6][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[6][col..col + 8]).unwrap()));
             let m7 =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128(mid[7][col..].as_ptr() as *const __m128i));
+                _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[7][col..col + 8]).unwrap()));
 
             let mut sum = _mm256_mullo_epi32(m0, c0);
             sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m1, c1));
@@ -2941,7 +2906,7 @@ unsafe fn v_filter_8tap_to_i16_avx2_inner(
             let packed = _mm256_permute4x64_epi64(packed, 0b11011000);
 
             // Store 8 i16 values
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(packed));
+            storeu_128!(<&mut [i16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(packed));
 
             col += 8;
         }
@@ -2951,16 +2916,15 @@ unsafe fn v_filter_8tap_to_i16_avx2_inner(
             for i in 0..8 {
                 sum += filter[i] as i32 * mid[i][col] as i32;
             }
-            *dst.add(col) = ((sum + ((1 << sh) >> 1)) >> sh) as i16;
+            dst[col] = ((sum + ((1 << sh) >> 1)) >> sh) as i16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_filter_8tap_to_i16_avx2(
     mid: &[[i16; MID_STRIDE]],
     dst: *mut i16,
@@ -3546,17 +3510,14 @@ pub unsafe extern "C" fn prep_8tap_sharp_8bpc_avx2(
 /// Output is 32-bit to preserve precision for vertical pass
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn h_filter_8tap_16bpc_avx2_inner(
+fn h_filter_8tap_16bpc_avx2_inner(
     _token: Desktop64,
-    dst: *mut i32,
-    src: *const u16,
+    dst: &mut [i32],
+    src: &[u16],
     w: usize,
     filter: &[i8; 8],
     sh: i32,
 ) {
-    // SAFETY: AVX2 guaranteed by target_feature
-    unsafe {
         // Convert filter coefficients from i8 to i16 for pmaddwd
         let coeff0 =
             _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
@@ -3574,18 +3535,18 @@ unsafe fn h_filter_8tap_16bpc_avx2_inner(
 
         // Process 8 output pixels at a time
         while col + 8 <= w {
-            let s = src.add(col);
+            // s offset = col
 
             // Load pairs of pixels for each filter tap
             // For each output pixel x, we need src[x-3] through src[x+4]
-            let s0 = _mm256_loadu_si256(s.offset(-3) as *const __m256i); // pixels -3 to 12
-            let s1 = _mm256_loadu_si256(s.offset(-2) as *const __m256i); // pixels -2 to 13
-            let s2 = _mm256_loadu_si256(s.offset(-1) as *const __m256i); // pixels -1 to 14
-            let s3 = _mm256_loadu_si256(s as *const __m256i); // pixels 0 to 15
-            let s4 = _mm256_loadu_si256(s.offset(1) as *const __m256i); // pixels 1 to 16
-            let s5 = _mm256_loadu_si256(s.offset(2) as *const __m256i); // pixels 2 to 17
-            let s6 = _mm256_loadu_si256(s.offset(3) as *const __m256i); // pixels 3 to 18
-            let s7 = _mm256_loadu_si256(s.offset(4) as *const __m256i); // pixels 4 to 19
+            let s0 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (-3)) as usize..((col as isize) + (-3) + 16) as usize]).unwrap()); // pixels -3 to 12
+            let s1 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (-2)) as usize..((col as isize) + (-2) + 16) as usize]).unwrap()); // pixels -2 to 13
+            let s2 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (-1)) as usize..((col as isize) + (-1) + 16) as usize]).unwrap()); // pixels -1 to 14
+            let s3 = loadu_256!(<&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()); // pixels 0 to 15
+            let s4 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (1)) as usize..((col as isize) + (1) + 16) as usize]).unwrap()); // pixels 1 to 16
+            let s5 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (2)) as usize..((col as isize) + (2) + 16) as usize]).unwrap()); // pixels 2 to 17
+            let s6 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (3)) as usize..((col as isize) + (3) + 16) as usize]).unwrap()); // pixels 3 to 18
+            let s7 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (4)) as usize..((col as isize) + (4) + 16) as usize]).unwrap()); // pixels 4 to 19
 
             // Interleave consecutive pixels for madd_epi16
             // madd_epi16 does: (a[2i] * b[2i]) + (a[2i+1] * b[2i+1]) -> 32-bit
@@ -3607,29 +3568,28 @@ unsafe fn h_filter_8tap_16bpc_avx2_inner(
             let result = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
 
             // Store 8 32-bit results
-            _mm256_storeu_si256(dst.add(col) as *mut __m256i, result);
+            storeu_256!(<&mut [i32; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), result);
 
             col += 8;
         }
 
         // Scalar fallback for remaining pixels
         while col < w {
-            let s = src.add(col);
+            // s offset = col
             let mut sum = 0i32;
             for i in 0..8 {
-                sum += filter[i] as i32 * *s.offset(i as isize - 3) as i32;
+                sum += filter[i] as i32 * src[((col as isize) + (i as isize - 3)) as usize] as i32;
             }
             let r = (1 << sh) >> 1;
-            *dst.add(col) = (sum + r) >> sh;
+            dst[col] = (sum + r) >> sh;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn h_filter_8tap_16bpc_avx2(
     dst: *mut i32,
     src: *const u16,
@@ -3645,10 +3605,9 @@ unsafe fn h_filter_8tap_16bpc_avx2(
 /// Input is 32-bit intermediate, output is 16-bit clamped to [0, max]
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_filter_8tap_16bpc_avx2_inner(
+fn v_filter_8tap_16bpc_avx2_inner(
     _token: Desktop64,
-    dst: *mut u16,
+    dst: &mut [u16],
     mid: &[[i32; MID_STRIDE]],
     w: usize,
     y: usize,
@@ -3656,8 +3615,6 @@ unsafe fn v_filter_8tap_16bpc_avx2_inner(
     sh: i32,
     max: i32,
 ) {
-    // SAFETY: AVX2 guaranteed by target_feature
-    unsafe {
         // Convert filter coefficients from i8 to i32 for multiplication
         let coeff: [i32; 8] = [
             filter[0] as i32,
@@ -3680,14 +3637,14 @@ unsafe fn v_filter_8tap_16bpc_avx2_inner(
         // Process 8 pixels at a time
         while col + 8 <= w {
             // Load 8 intermediate values from each of the 8 tap rows
-            let r0 = _mm256_loadu_si256(mid[y + 0][col..].as_ptr() as *const __m256i);
-            let r1 = _mm256_loadu_si256(mid[y + 1][col..].as_ptr() as *const __m256i);
-            let r2 = _mm256_loadu_si256(mid[y + 2][col..].as_ptr() as *const __m256i);
-            let r3 = _mm256_loadu_si256(mid[y + 3][col..].as_ptr() as *const __m256i);
-            let r4 = _mm256_loadu_si256(mid[y + 4][col..].as_ptr() as *const __m256i);
-            let r5 = _mm256_loadu_si256(mid[y + 5][col..].as_ptr() as *const __m256i);
-            let r6 = _mm256_loadu_si256(mid[y + 6][col..].as_ptr() as *const __m256i);
-            let r7 = _mm256_loadu_si256(mid[y + 7][col..].as_ptr() as *const __m256i);
+            let r0 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 0][col..col + 8]).unwrap());
+            let r1 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 1][col..col + 8]).unwrap());
+            let r2 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 2][col..col + 8]).unwrap());
+            let r3 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 3][col..col + 8]).unwrap());
+            let r4 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 4][col..col + 8]).unwrap());
+            let r5 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 5][col..col + 8]).unwrap());
+            let r6 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 6][col..col + 8]).unwrap());
+            let r7 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 7][col..col + 8]).unwrap());
 
             // Multiply each row by its coefficient and accumulate
             let c0 = _mm256_set1_epi32(coeff[0]);
@@ -3728,7 +3685,7 @@ unsafe fn v_filter_8tap_16bpc_avx2_inner(
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00); // [0,2,0,0]
 
             // Store 8 16-bit results
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
 
             col += 8;
         }
@@ -3741,16 +3698,15 @@ unsafe fn v_filter_8tap_16bpc_avx2_inner(
             }
             let r = (1 << sh) >> 1;
             let val = ((sum + r) >> sh).clamp(0, max);
-            *dst.add(col) = val as u16;
+            dst[col] = val as u16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_filter_8tap_16bpc_avx2(
     dst: *mut u16,
     mid: &[[i32; MID_STRIDE]],
@@ -3767,10 +3723,9 @@ unsafe fn v_filter_8tap_16bpc_avx2(
 /// Vertical 8-tap filter for 16bpc prep (output is i16 with PREP_BIAS subtracted)
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_filter_8tap_16bpc_prep_avx2_inner(
+fn v_filter_8tap_16bpc_prep_avx2_inner(
     _token: Desktop64,
-    dst: *mut i16,
+    dst: &mut [i16],
     mid: &[[i32; MID_STRIDE]],
     w: usize,
     y: usize,
@@ -3778,8 +3733,6 @@ unsafe fn v_filter_8tap_16bpc_prep_avx2_inner(
     sh: i32,
     prep_bias: i32,
 ) {
-    // SAFETY: AVX2 guaranteed by target_feature
-    unsafe {
         let coeff: [i32; 8] = [
             filter[0] as i32,
             filter[1] as i32,
@@ -3799,14 +3752,14 @@ unsafe fn v_filter_8tap_16bpc_prep_avx2_inner(
 
         // Process 8 pixels at a time
         while col + 8 <= w {
-            let r0 = _mm256_loadu_si256(mid[y + 0][col..].as_ptr() as *const __m256i);
-            let r1 = _mm256_loadu_si256(mid[y + 1][col..].as_ptr() as *const __m256i);
-            let r2 = _mm256_loadu_si256(mid[y + 2][col..].as_ptr() as *const __m256i);
-            let r3 = _mm256_loadu_si256(mid[y + 3][col..].as_ptr() as *const __m256i);
-            let r4 = _mm256_loadu_si256(mid[y + 4][col..].as_ptr() as *const __m256i);
-            let r5 = _mm256_loadu_si256(mid[y + 5][col..].as_ptr() as *const __m256i);
-            let r6 = _mm256_loadu_si256(mid[y + 6][col..].as_ptr() as *const __m256i);
-            let r7 = _mm256_loadu_si256(mid[y + 7][col..].as_ptr() as *const __m256i);
+            let r0 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 0][col..col + 8]).unwrap());
+            let r1 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 1][col..col + 8]).unwrap());
+            let r2 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 2][col..col + 8]).unwrap());
+            let r3 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 3][col..col + 8]).unwrap());
+            let r4 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 4][col..col + 8]).unwrap());
+            let r5 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 5][col..col + 8]).unwrap());
+            let r6 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 6][col..col + 8]).unwrap());
+            let r7 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 7][col..col + 8]).unwrap());
 
             let c0 = _mm256_set1_epi32(coeff[0]);
             let c1 = _mm256_set1_epi32(coeff[1]);
@@ -3840,7 +3793,7 @@ unsafe fn v_filter_8tap_16bpc_prep_avx2_inner(
             // Permute to fix lane order
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [i16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
 
             col += 8;
         }
@@ -3853,16 +3806,15 @@ unsafe fn v_filter_8tap_16bpc_prep_avx2_inner(
             }
             let r = (1 << sh) >> 1;
             let val = ((sum + r) >> sh) - prep_bias;
-            *dst.add(col) = val as i16;
+            dst[col] = val as i16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_filter_8tap_16bpc_prep_avx2(
     dst: *mut i16,
     mid: &[[i32; MID_STRIDE]],
@@ -3880,17 +3832,14 @@ unsafe fn v_filter_8tap_16bpc_prep_avx2(
 /// Input and output are both u16, shift=6, rnd=32, clamp to [0, max]
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn h_filter_8tap_16bpc_put_avx2_inner(
+fn h_filter_8tap_16bpc_put_avx2_inner(
     _token: Desktop64,
-    dst: *mut u16,
-    src: *const u16,
+    dst: &mut [u16],
+    src: &[u16],
     w: usize,
     filter: &[i8; 8],
     max: i32,
 ) {
-    // SAFETY: AVX2 guaranteed by target_feature
-    unsafe {
         // Convert filter coefficients from i8 to i16 for pmaddwd
         let coeff0 =
             _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
@@ -3909,17 +3858,17 @@ unsafe fn h_filter_8tap_16bpc_put_avx2_inner(
         let mut col = 0usize;
 
         while col + 8 <= w {
-            let s = src.add(col);
+            // s offset = col
 
             // Load pairs of pixels for each filter tap
-            let s0 = _mm256_loadu_si256(s.offset(-3) as *const __m256i);
-            let s1 = _mm256_loadu_si256(s.offset(-2) as *const __m256i);
-            let s2 = _mm256_loadu_si256(s.offset(-1) as *const __m256i);
-            let s3 = _mm256_loadu_si256(s as *const __m256i);
-            let s4 = _mm256_loadu_si256(s.offset(1) as *const __m256i);
-            let s5 = _mm256_loadu_si256(s.offset(2) as *const __m256i);
-            let s6 = _mm256_loadu_si256(s.offset(3) as *const __m256i);
-            let s7 = _mm256_loadu_si256(s.offset(4) as *const __m256i);
+            let s0 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (-3)) as usize..((col as isize) + (-3) + 16) as usize]).unwrap());
+            let s1 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (-2)) as usize..((col as isize) + (-2) + 16) as usize]).unwrap());
+            let s2 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (-1)) as usize..((col as isize) + (-1) + 16) as usize]).unwrap());
+            let s3 = loadu_256!(<&[u16; 16]>::try_from(&src[col..col + 16]).unwrap());
+            let s4 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (1)) as usize..((col as isize) + (1) + 16) as usize]).unwrap());
+            let s5 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (2)) as usize..((col as isize) + (2) + 16) as usize]).unwrap());
+            let s6 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (3)) as usize..((col as isize) + (3) + 16) as usize]).unwrap());
+            let s7 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (4)) as usize..((col as isize) + (4) + 16) as usize]).unwrap());
 
             // Interleave consecutive pixels for madd_epi16
             let p01 = _mm256_unpacklo_epi16(s0, s1);
@@ -3945,29 +3894,28 @@ unsafe fn h_filter_8tap_16bpc_put_avx2_inner(
             let packed = _mm256_packus_epi32(clamped, zero);
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
 
             col += 8;
         }
 
         // Scalar fallback
         while col < w {
-            let s = src.add(col);
+            // s offset = col
             let mut sum = 0i32;
             for i in 0..8 {
-                sum += filter[i] as i32 * *s.offset(i as isize - 3) as i32;
+                sum += filter[i] as i32 * src[((col as isize) + (i as isize - 3)) as usize] as i32;
             }
             let val = ((sum + 32) >> 6).clamp(0, max);
-            *dst.add(col) = val as u16;
+            dst[col] = val as u16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn h_filter_8tap_16bpc_put_avx2(
     dst: *mut u16,
     src: *const u16,
@@ -3983,18 +3931,15 @@ unsafe fn h_filter_8tap_16bpc_put_avx2(
 /// Reads directly from u16 source with stride, outputs u16
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_filter_8tap_16bpc_direct_avx2_inner(
+fn v_filter_8tap_16bpc_direct_avx2_inner(
     _token: Desktop64,
-    dst: *mut u16,
-    src: *const u16,
+    dst: &mut [u16],
+    src: &[u16],
     src_stride: isize,
     w: usize,
     filter: &[i8; 8],
     max: i32,
 ) {
-    // SAFETY: AVX2 guaranteed by target_feature
-    unsafe {
         let coeff: [i32; 8] = [
             filter[0] as i32,
             filter[1] as i32,
@@ -4024,27 +3969,27 @@ unsafe fn v_filter_8tap_16bpc_direct_avx2_inner(
 
         while col + 8 <= w {
             // Load 8 pixels from each of 8 rows (at offsets -3 to +4)
-            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(-3 * src_stride).add(col) as *const __m128i
+            let p0 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((-3) as isize * src_stride) as usize + col..((-3) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(-2 * src_stride).add(col) as *const __m128i
+            let p1 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((-2) as isize * src_stride) as usize + col..((-2) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p2 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(-1 * src_stride).add(col) as *const __m128i
+            let p2 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((-1) as isize * src_stride) as usize + col..((-1) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p3 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
-            let p4 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(1 * src_stride).add(col) as *const __m128i
+            let p3 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(&src[col..col + 8]).unwrap()));
+            let p4 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((1) as isize * src_stride) as usize + col..((1) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p5 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(2 * src_stride).add(col) as *const __m128i
+            let p5 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((2) as isize * src_stride) as usize + col..((2) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p6 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(3 * src_stride).add(col) as *const __m128i
+            let p6 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((3) as isize * src_stride) as usize + col..((3) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p7 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(4 * src_stride).add(col) as *const __m128i
+            let p7 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((4) as isize * src_stride) as usize + col..((4) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
 
             // Multiply and accumulate
@@ -4071,7 +4016,7 @@ unsafe fn v_filter_8tap_16bpc_direct_avx2_inner(
             let packed = _mm256_packus_epi32(clamped, zero);
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
 
             col += 8;
         }
@@ -4080,20 +4025,19 @@ unsafe fn v_filter_8tap_16bpc_direct_avx2_inner(
         while col < w {
             let mut sum = 0i32;
             for i in 0..8 {
-                let px = *src.offset((i as isize - 3) * src_stride).add(col) as i32;
+                let px = src[((i as isize - 3) * src_stride) as usize + col] as i32;
                 sum += coeff[i] * px;
             }
             let val = ((sum + 32) >> 6).clamp(0, max);
-            *dst.add(col) = val as u16;
+            dst[col] = val as u16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_filter_8tap_16bpc_direct_avx2(
     dst: *mut u16,
     src: *const u16,
@@ -4110,18 +4054,15 @@ unsafe fn v_filter_8tap_16bpc_direct_avx2(
 /// Input is u16, output is i16 with PREP_BIAS subtracted
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn h_filter_8tap_16bpc_prep_direct_avx2_inner(
+fn h_filter_8tap_16bpc_prep_direct_avx2_inner(
     _token: Desktop64,
-    dst: *mut i16,
-    src: *const u16,
+    dst: &mut [i16],
+    src: &[u16],
     w: usize,
     filter: &[i8; 8],
     sh: i32,
     prep_bias: i32,
 ) {
-    // SAFETY: AVX2 guaranteed by target_feature
-    unsafe {
         // Convert filter coefficients from i8 to i16 for pmaddwd
         let coeff0 =
             _mm256_set1_epi32(((filter[1] as i16 as i32) << 16) | (filter[0] as i16 as u16 as i32));
@@ -4139,17 +4080,17 @@ unsafe fn h_filter_8tap_16bpc_prep_direct_avx2_inner(
         let mut col = 0usize;
 
         while col + 8 <= w {
-            let s = src.add(col);
+            // s offset = col
 
             // Load pairs of pixels for each filter tap
-            let s0 = _mm256_loadu_si256(s.offset(-3) as *const __m256i);
-            let s1 = _mm256_loadu_si256(s.offset(-2) as *const __m256i);
-            let s2 = _mm256_loadu_si256(s.offset(-1) as *const __m256i);
-            let s3 = _mm256_loadu_si256(s as *const __m256i);
-            let s4 = _mm256_loadu_si256(s.offset(1) as *const __m256i);
-            let s5 = _mm256_loadu_si256(s.offset(2) as *const __m256i);
-            let s6 = _mm256_loadu_si256(s.offset(3) as *const __m256i);
-            let s7 = _mm256_loadu_si256(s.offset(4) as *const __m256i);
+            let s0 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (-3)) as usize..((col as isize) + (-3) + 16) as usize]).unwrap());
+            let s1 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (-2)) as usize..((col as isize) + (-2) + 16) as usize]).unwrap());
+            let s2 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (-1)) as usize..((col as isize) + (-1) + 16) as usize]).unwrap());
+            let s3 = loadu_256!(<&[u16; 16]>::try_from(&src[col..col + 16]).unwrap());
+            let s4 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (1)) as usize..((col as isize) + (1) + 16) as usize]).unwrap());
+            let s5 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (2)) as usize..((col as isize) + (2) + 16) as usize]).unwrap());
+            let s6 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (3)) as usize..((col as isize) + (3) + 16) as usize]).unwrap());
+            let s7 = loadu_256!(<&[u16; 16]>::try_from(&src[((col as isize) + (4)) as usize..((col as isize) + (4) + 16) as usize]).unwrap());
 
             // Interleave consecutive pixels for madd_epi16
             let p01 = _mm256_unpacklo_epi16(s0, s1);
@@ -4174,30 +4115,29 @@ unsafe fn h_filter_8tap_16bpc_prep_direct_avx2_inner(
             let packed = _mm256_packs_epi32(biased, biased);
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [i16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
 
             col += 8;
         }
 
         // Scalar fallback
         while col < w {
-            let s = src.add(col);
+            // s offset = col
             let mut sum = 0i32;
             for i in 0..8 {
-                sum += filter[i] as i32 * *s.offset(i as isize - 3) as i32;
+                sum += filter[i] as i32 * src[((col as isize) + (i as isize - 3)) as usize] as i32;
             }
             let r = (1 << sh) >> 1;
             let val = ((sum + r) >> sh) - prep_bias;
-            *dst.add(col) = val as i16;
+            dst[col] = val as i16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn h_filter_8tap_16bpc_prep_direct_avx2(
     dst: *mut i16,
     src: *const u16,
@@ -4214,19 +4154,16 @@ unsafe fn h_filter_8tap_16bpc_prep_direct_avx2(
 /// Reads directly from u16 source with stride, outputs i16 with bias
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
+fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
     _token: Desktop64,
-    dst: *mut i16,
-    src: *const u16,
+    dst: &mut [i16],
+    src: &[u16],
     src_stride: isize,
     w: usize,
     filter: &[i8; 8],
     sh: i32,
     prep_bias: i32,
 ) {
-    // SAFETY: AVX2 guaranteed by target_feature
-    unsafe {
         let coeff: [i32; 8] = [
             filter[0] as i32,
             filter[1] as i32,
@@ -4255,27 +4192,27 @@ unsafe fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
 
         while col + 8 <= w {
             // Load 8 pixels from each of 8 rows
-            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(-3 * src_stride).add(col) as *const __m128i
+            let p0 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((-3) as isize * src_stride) as usize + col..((-3) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(-2 * src_stride).add(col) as *const __m128i
+            let p1 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((-2) as isize * src_stride) as usize + col..((-2) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p2 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(-1 * src_stride).add(col) as *const __m128i
+            let p2 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((-1) as isize * src_stride) as usize + col..((-1) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p3 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
-            let p4 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(1 * src_stride).add(col) as *const __m128i
+            let p3 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(&src[col..col + 8]).unwrap()));
+            let p4 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((1) as isize * src_stride) as usize + col..((1) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p5 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(2 * src_stride).add(col) as *const __m128i
+            let p5 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((2) as isize * src_stride) as usize + col..((2) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p6 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(3 * src_stride).add(col) as *const __m128i
+            let p6 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((3) as isize * src_stride) as usize + col..((3) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
-            let p7 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(4 * src_stride).add(col) as *const __m128i
+            let p7 = _mm256_cvtepu16_epi32(loadu_128!(
+                <&[u16; 8]>::try_from(&src[((4) as isize * src_stride) as usize + col..((4) as isize * src_stride) as usize + col + 8]).unwrap()
             ));
 
             // Multiply and accumulate
@@ -4301,7 +4238,7 @@ unsafe fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
             let packed = _mm256_packs_epi32(biased, biased);
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [i16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
 
             col += 8;
         }
@@ -4310,21 +4247,20 @@ unsafe fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
         while col < w {
             let mut sum = 0i32;
             for i in 0..8 {
-                let px = *src.offset((i as isize - 3) * src_stride).add(col) as i32;
+                let px = src[((i as isize - 3) * src_stride) as usize + col] as i32;
                 sum += coeff[i] * px;
             }
             let r = (1 << sh) >> 1;
             let val = ((sum + r) >> sh) - prep_bias;
-            *dst.add(col) = val as i16;
+            dst[col] = val as i16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_filter_8tap_16bpc_prep_direct_avx2(
     dst: *mut i16,
     src: *const u16,
@@ -4347,12 +4283,11 @@ unsafe fn v_filter_8tap_16bpc_prep_direct_avx2(
 /// Similar to 8bpc but handles 16-bit pixels and different intermediate scaling
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn put_8tap_16bpc_avx2_impl_inner(
+fn put_8tap_16bpc_avx2_impl_inner(
     _token: Desktop64,
-    dst_ptr: *mut DynPixel,
+    dst: &mut [u16],
     dst_stride: isize,
-    src_ptr: *const DynPixel,
+    src: &[u16],
     src_stride: isize,
     w: i32,
     h: i32,
@@ -4366,8 +4301,6 @@ unsafe fn put_8tap_16bpc_avx2_impl_inner(
     let h = h as usize;
     let mx = mx as usize;
     let my = my as usize;
-    let dst = dst_ptr as *mut u16;
-    let src = src_ptr as *const u16;
     let dst_stride_elems = dst_stride / 2;
     let src_stride_elems = src_stride / 2;
     let max = bitdepth_max as i32;
@@ -4378,8 +4311,6 @@ unsafe fn put_8tap_16bpc_avx2_impl_inner(
     let fh = get_filter_coeff(mx, w, h_filter_type);
     let fv = get_filter_coeff(my, h, v_filter_type);
 
-    // SAFETY: All operations require AVX2 which is guaranteed by target_feature
-    unsafe {
         match (fh, fv) {
             (Some(fh), Some(fv)) => {
                 // Case 1: Both H and V filtering - two-pass through intermediate
@@ -4390,10 +4321,10 @@ unsafe fn put_8tap_16bpc_avx2_impl_inner(
 
                 // Horizontal pass using SIMD
                 for y in 0..tmp_h {
-                    let src_row = src.offset((y as isize - 3) * src_stride_elems);
-                    h_filter_8tap_16bpc_avx2(
-                        mid[y].as_mut_ptr(),
-                        src_row.offset(3), // offset by +3 since helper offsets by -3 internally
+                    let src_row = &src[((y as isize - 3) * src_stride_elems) as usize..];
+                    h_filter_8tap_16bpc_avx2_inner(_token, 
+                        &mut mid[y],
+                        &src_row[3..], // offset by +3 since helper offsets by -3 internally
                         w,
                         fh,
                         h_sh,
@@ -4402,41 +4333,40 @@ unsafe fn put_8tap_16bpc_avx2_impl_inner(
 
                 // Vertical pass using SIMD
                 for y in 0..h {
-                    let dst_row = dst.offset(y as isize * dst_stride_elems);
-                    v_filter_8tap_16bpc_avx2(dst_row, &mid, w, y, fv, v_sh, max);
+                    let dst_row = &mut dst[(y as isize * dst_stride_elems) as usize..];
+                    v_filter_8tap_16bpc_avx2_inner(_token, dst_row, &mid, w, y, fv, v_sh, max);
                 }
             }
             (Some(fh), None) => {
                 // Case 2: H-only filtering (SIMD)
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride_elems);
-                    let dst_row = dst.offset(y as isize * dst_stride_elems);
-                    h_filter_8tap_16bpc_put_avx2(dst_row, src_row, w, fh, max);
+                    let src_row = &src[(y as isize * src_stride_elems) as usize..];
+                    let dst_row = &mut dst[(y as isize * dst_stride_elems) as usize..];
+                    h_filter_8tap_16bpc_put_avx2_inner(_token, dst_row, src_row, w, fh, max);
                 }
             }
             (None, Some(fv)) => {
                 // Case 3: V-only filtering (SIMD)
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride_elems);
-                    let dst_row = dst.offset(y as isize * dst_stride_elems);
-                    v_filter_8tap_16bpc_direct_avx2(dst_row, src_row, src_stride_elems, w, fv, max);
+                    let src_row = &src[(y as isize * src_stride_elems) as usize..];
+                    let dst_row = &mut dst[(y as isize * dst_stride_elems) as usize..];
+                    v_filter_8tap_16bpc_direct_avx2_inner(_token, dst_row, src_row, src_stride_elems, w, fv, max);
                 }
             }
             (None, None) => {
                 // Case 4: Simple copy
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride_elems);
-                    let dst_row = dst.offset(y as isize * dst_stride_elems);
-                    std::ptr::copy_nonoverlapping(src_row, dst_row, w);
+                    let src_row = &src[(y as isize * src_stride_elems) as usize..];
+                    let dst_row = &mut dst[(y as isize * dst_stride_elems) as usize..];
+                    dst_row[..w].copy_from_slice(&src_row[..w]);
                 }
             }
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
 unsafe fn put_8tap_16bpc_avx2_impl(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4472,11 +4402,10 @@ unsafe fn put_8tap_16bpc_avx2_impl(
 /// Generic 8-tap prep function for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn prep_8tap_16bpc_avx2_impl_inner(
+fn prep_8tap_16bpc_avx2_impl_inner(
     _token: Desktop64,
-    tmp: *mut i16,
-    src_ptr: *const DynPixel,
+    tmp: &mut [i16],
+    src: &[u16],
     src_stride: isize,
     w: i32,
     h: i32,
@@ -4489,7 +4418,6 @@ unsafe fn prep_8tap_16bpc_avx2_impl_inner(
     let h = h as usize;
     let mx = mx as usize;
     let my = my as usize;
-    let src = src_ptr as *const u16;
     let src_stride_elems = src_stride / 2;
 
     // For 16bpc: intermediate_bits = 4, PREP_BIAS = 8192
@@ -4499,8 +4427,6 @@ unsafe fn prep_8tap_16bpc_avx2_impl_inner(
     let fh = get_filter_coeff(mx, w, h_filter_type);
     let fv = get_filter_coeff(my, h, v_filter_type);
 
-    // SAFETY: All operations require AVX2 which is guaranteed by target_feature
-    unsafe {
         match (fh, fv) {
             (Some(fh), Some(fv)) => {
                 // Two-pass filtering using SIMD
@@ -4511,10 +4437,10 @@ unsafe fn prep_8tap_16bpc_avx2_impl_inner(
 
                 // Horizontal pass using SIMD
                 for y in 0..tmp_h {
-                    let src_row = src.offset((y as isize - 3) * src_stride_elems);
-                    h_filter_8tap_16bpc_avx2(
-                        mid[y].as_mut_ptr(),
-                        src_row.offset(3), // offset by +3 since helper offsets by -3 internally
+                    let src_row = &src[((y as isize - 3) * src_stride_elems) as usize..];
+                    h_filter_8tap_16bpc_avx2_inner(_token, 
+                        &mut mid[y],
+                        &src_row[3..], // offset by +3 since helper offsets by -3 internally
                         w,
                         fh,
                         h_sh,
@@ -4523,27 +4449,27 @@ unsafe fn prep_8tap_16bpc_avx2_impl_inner(
 
                 // Vertical pass using SIMD (output to i16 with bias subtraction)
                 for y in 0..h {
-                    let out_row = tmp.add(y * w);
-                    v_filter_8tap_16bpc_prep_avx2(out_row, &mid, w, y, fv, v_sh, PREP_BIAS);
+                    let out_row = y * w;
+                    v_filter_8tap_16bpc_prep_avx2_inner(_token, &mut tmp[out_row..], &mid, w, y, fv, v_sh, PREP_BIAS);
                 }
             }
             (Some(fh), None) => {
                 // H-only filtering (SIMD)
                 let sh = 6 - intermediate_bits; // = 2 for 16bpc
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride_elems);
-                    let out_row = tmp.add(y * w);
-                    h_filter_8tap_16bpc_prep_direct_avx2(out_row, src_row, w, fh, sh, PREP_BIAS);
+                    let src_row = &src[(y as isize * src_stride_elems) as usize..];
+                    let out_row = y * w;
+                    h_filter_8tap_16bpc_prep_direct_avx2_inner(_token, &mut tmp[out_row..], src_row, w, fh, sh, PREP_BIAS);
                 }
             }
             (None, Some(fv)) => {
                 // V-only filtering (SIMD)
                 let sh = 6 - intermediate_bits; // = 2 for 16bpc
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride_elems);
-                    let out_row = tmp.add(y * w);
-                    v_filter_8tap_16bpc_prep_direct_avx2(
-                        out_row,
+                    let src_row = &src[(y as isize * src_stride_elems) as usize..];
+                    let out_row = y * w;
+                    v_filter_8tap_16bpc_prep_direct_avx2_inner(_token, 
+                        &mut tmp[out_row..],
                         src_row,
                         src_stride_elems,
                         w,
@@ -4556,22 +4482,21 @@ unsafe fn prep_8tap_16bpc_avx2_impl_inner(
             (None, None) => {
                 // Simple copy with scaling and bias
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride_elems);
-                    let out_row = tmp.add(y * w);
+                    let src_row = &src[(y as isize * src_stride_elems) as usize..];
+                    let out_row = y * w;
                     for x in 0..w {
-                        let px = *src_row.add(x) as i32;
+                        let px = src_row[x] as i32;
                         let val = (px << intermediate_bits) - PREP_BIAS;
-                        *out_row.add(x) = val as i16;
+                        tmp[out_row + x] = val as i16;
                     }
                 }
             }
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
 unsafe fn prep_8tap_16bpc_avx2_impl(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
@@ -5816,17 +5741,14 @@ pub unsafe extern "C" fn prep_8tap_sharp_16bpc_avx2(
 /// Processes 32 pixels at a time, outputs to i16 intermediate buffer
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn h_filter_bilin_8bpc_avx2_inner(
+fn h_filter_bilin_8bpc_avx2_inner(
     _token: Desktop64,
-    dst: *mut i16,
-    src: *const u8,
+    dst: &mut [i16],
+    src: &[u8],
     w: usize,
     mx: usize,
     sh: u8,
 ) {
-    // SAFETY: AVX2 is guaranteed by target_feature, caller ensures pointer validity
-    unsafe {
         // Bilinear: pixel = (16 - mx) * src[x] + mx * src[x+1]
         // Using maddubs: need pairs of [src[x], src[x+1]] with coeffs [16-mx, mx]
         let mx = mx as i8;
@@ -5849,8 +5771,8 @@ unsafe fn h_filter_bilin_8bpc_avx2_inner(
         let mut x = 0;
         while x + 32 <= w {
             // Load 33 bytes to get 32 pairs of adjacent pixels
-            let src_lo = _mm256_loadu_si256(src.add(x) as *const __m256i);
-            let src_hi = _mm256_loadu_si256(src.add(x + 1) as *const __m256i);
+            let src_lo = loadu_256!(<&[u8; 32]>::try_from(&src[x..x + 32]).unwrap());
+            let src_hi = loadu_256!(<&[u8; 32]>::try_from(&src[x + 1..x + 33]).unwrap());
 
             // Interleave for maddubs: need [src[0],src[1]], [src[1],src[2]], ...
             // unpacklo gives us pairs from low halves, unpackhi from high halves
@@ -5870,31 +5792,30 @@ unsafe fn h_filter_bilin_8bpc_avx2_inner(
             let lo_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x20); // lo lanes
             let hi_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x31); // hi lanes
 
-            _mm256_storeu_si256(dst.add(x) as *mut __m256i, lo_128);
-            _mm256_storeu_si256(dst.add(x + 16) as *mut __m256i, hi_128);
+            storeu_256!(<&mut [i16; 16]>::try_from(&mut dst[x..x + 16]).unwrap(), lo_128);
+            storeu_256!(<&mut [i16; 16]>::try_from(&mut dst[x + 16..x + 32]).unwrap(), hi_128);
             x += 32;
         }
 
         // Scalar fallback for remaining pixels
         while x < w {
-            let x0 = *src.add(x) as i32;
-            let x1 = *src.add(x + 1) as i32;
+            let x0 = src[x] as i32;
+            let x1 = src[x + 1] as i32;
             let pixel = (16 - mx as i32) * x0 + mx as i32 * x1;
             let result = if sh > 0 {
                 (pixel + (1 << (sh - 1))) >> sh
             } else {
                 pixel
             };
-            *dst.add(x) = result as i16;
+            dst[x] = result as i16;
             x += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn h_filter_bilin_8bpc_avx2(dst: *mut i16, src: *const u8, w: usize, mx: usize, sh: u8) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe { h_filter_bilin_8bpc_avx2_inner(token, dst, src, w, mx, sh) }
@@ -5904,18 +5825,15 @@ unsafe fn h_filter_bilin_8bpc_avx2(dst: *mut i16, src: *const u8, w: usize, mx: 
 /// Reads from i16 intermediate buffer, outputs to u8
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_filter_bilin_8bpc_avx2_inner(
+fn v_filter_bilin_8bpc_avx2_inner(
     _token: Desktop64,
-    dst: *mut u8,
+    dst: &mut [u8],
     mid: &[&[i16]],
     w: usize,
     my: usize,
     sh: u8,
     bd_max: i16,
 ) {
-    // SAFETY: AVX2 is guaranteed by target_feature, caller ensures pointer validity
-    unsafe {
         let my = my as i16;
         let coeff0 = 16 - my;
         let coeff1 = my;
@@ -5934,8 +5852,8 @@ unsafe fn v_filter_bilin_8bpc_avx2_inner(
         let mut x = 0;
         while x + 16 <= w {
             // Load 16 i16 values from each row
-            let row0 = _mm256_loadu_si256(mid[0].as_ptr().add(x) as *const __m256i);
-            let row1 = _mm256_loadu_si256(mid[1].as_ptr().add(x) as *const __m256i);
+            let row0 = loadu_256!(<&[i16; 16]>::try_from(&mid[0][x..x + 16]).unwrap());
+            let row1 = loadu_256!(<&[i16; 16]>::try_from(&mid[1][x..x + 16]).unwrap());
 
             // result = coeff0 * row0 + coeff1 * row1
             let mul0 = _mm256_mullo_epi16(row0, c0);
@@ -5954,7 +5872,7 @@ unsafe fn v_filter_bilin_8bpc_avx2_inner(
             let packed = _mm256_permute4x64_epi64(packed, 0xD8); // Fix lane order
 
             // Store 16 bytes
-            _mm_storeu_si128(dst.add(x) as *mut __m128i, _mm256_castsi256_si128(packed));
+            storeu_128!(<&mut [u8; 16]>::try_from(&mut dst[x..x + 16]).unwrap(), _mm256_castsi256_si128(packed));
             x += 16;
         }
 
@@ -5968,16 +5886,15 @@ unsafe fn v_filter_bilin_8bpc_avx2_inner(
             } else {
                 pixel.clamp(0, bd_max as i32)
             };
-            *dst.add(x) = result as u8;
+            dst[x] = result as u8;
             x += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_filter_bilin_8bpc_avx2(
     dst: *mut u8,
     mid: &[&[i16]],
@@ -5993,15 +5910,13 @@ unsafe fn v_filter_bilin_8bpc_avx2(
 /// Outputs directly to u8 with shift=4 and clamp to [0,255]
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn h_bilin_8bpc_put_avx2_inner(
+fn h_bilin_8bpc_put_avx2_inner(
     _token: Desktop64,
-    dst: *mut u8,
-    src: *const u8,
+    dst: &mut [u8],
+    src: &[u8],
     w: usize,
     mx: usize,
 ) {
-    unsafe {
         let mx = mx as i8;
         let coeff0 = (16 - mx) as u8;
         let coeff1 = mx as u8;
@@ -6012,8 +5927,8 @@ unsafe fn h_bilin_8bpc_put_avx2_inner(
 
         let mut x = 0;
         while x + 32 <= w {
-            let src_lo = _mm256_loadu_si256(src.add(x) as *const __m256i);
-            let src_hi = _mm256_loadu_si256(src.add(x + 1) as *const __m256i);
+            let src_lo = loadu_256!(<&[u8; 32]>::try_from(&src[x..x + 32]).unwrap());
+            let src_hi = loadu_256!(<&[u8; 32]>::try_from(&src[x + 1..x + 33]).unwrap());
 
             let pairs_lo = _mm256_unpacklo_epi8(src_lo, src_hi);
             let pairs_hi = _mm256_unpackhi_epi8(src_lo, src_hi);
@@ -6034,25 +5949,24 @@ unsafe fn h_bilin_8bpc_put_avx2_inner(
             let hi_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x31);
             let packed = _mm256_packus_epi16(lo_128, hi_128);
 
-            _mm256_storeu_si256(dst.add(x) as *mut __m256i, packed);
+            storeu_256!(<&mut [u8; 32]>::try_from(&mut dst[x..x + 32]).unwrap(), packed);
             x += 32;
         }
 
         while x < w {
-            let x0 = *src.add(x) as i32;
-            let x1 = *src.add(x + 1) as i32;
+            let x0 = src[x] as i32;
+            let x1 = src[x + 1] as i32;
             let pixel = (16 - mx as i32) * x0 + mx as i32 * x1;
             let result = ((pixel + 8) >> 4).clamp(0, 255);
-            *dst.add(x) = result as u8;
+            dst[x] = result as u8;
             x += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn h_bilin_8bpc_put_avx2(dst: *mut u8, src: *const u8, w: usize, mx: usize) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe { h_bilin_8bpc_put_avx2_inner(token, dst, src, w, mx) }
@@ -6062,16 +5976,14 @@ unsafe fn h_bilin_8bpc_put_avx2(dst: *mut u8, src: *const u8, w: usize, mx: usiz
 /// Reads directly from u8 source, outputs u8
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_bilin_8bpc_direct_avx2_inner(
+fn v_bilin_8bpc_direct_avx2_inner(
     _token: Desktop64,
-    dst: *mut u8,
-    src0: *const u8,
-    src1: *const u8,
+    dst: &mut [u8],
+    src0: &[u8],
+    src1: &[u8],
     w: usize,
     my: usize,
 ) {
-    unsafe {
         let my = my as i8;
         let coeff0 = (16 - my) as u8;
         let coeff1 = my as u8;
@@ -6083,8 +5995,8 @@ unsafe fn v_bilin_8bpc_direct_avx2_inner(
 
         let mut x = 0;
         while x + 32 <= w {
-            let s0 = _mm256_loadu_si256(src0.add(x) as *const __m256i);
-            let s1 = _mm256_loadu_si256(src1.add(x) as *const __m256i);
+            let s0 = loadu_256!(<&[u8; 32]>::try_from(&src0[x..x + 32]).unwrap());
+            let s1 = loadu_256!(<&[u8; 32]>::try_from(&src1[x..x + 32]).unwrap());
 
             let pairs_lo = _mm256_unpacklo_epi8(s0, s1);
             let pairs_hi = _mm256_unpackhi_epi8(s0, s1);
@@ -6102,25 +6014,24 @@ unsafe fn v_bilin_8bpc_direct_avx2_inner(
             let hi_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x31);
             let packed = _mm256_packus_epi16(lo_128, hi_128);
 
-            _mm256_storeu_si256(dst.add(x) as *mut __m256i, packed);
+            storeu_256!(<&mut [u8; 32]>::try_from(&mut dst[x..x + 32]).unwrap(), packed);
             x += 32;
         }
 
         while x < w {
-            let x0 = *src0.add(x) as i32;
-            let x1 = *src1.add(x) as i32;
+            let x0 = src0[x] as i32;
+            let x1 = src1[x] as i32;
             let pixel = (16 - my as i32) * x0 + my as i32 * x1;
             let result = ((pixel + 8) >> 4).clamp(0, 255);
-            *dst.add(x) = result as u8;
+            dst[x] = result as u8;
             x += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_bilin_8bpc_direct_avx2(
     dst: *mut u8,
     src0: *const u8,
@@ -6135,12 +6046,11 @@ unsafe fn v_bilin_8bpc_direct_avx2(
 /// Core bilinear filter implementation for 8bpc
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn put_bilin_8bpc_avx2_impl_inner(
+fn put_bilin_8bpc_avx2_impl_inner(
     _token: Desktop64,
-    dst_ptr: *mut DynPixel,
+    dst: &mut [u8],
     dst_stride: isize,
-    src_ptr: *const DynPixel,
+    src: &[u8],
     src_stride: isize,
     w: i32,
     h: i32,
@@ -6151,13 +6061,10 @@ unsafe fn put_bilin_8bpc_avx2_impl_inner(
     let h = h as usize;
     let mx = mx as usize;
     let my = my as usize;
-    let dst = dst_ptr as *mut u8;
-    let src = src_ptr as *const u8;
 
     // For 8bpc: intermediate_bits = 4
     let intermediate_bits = 4u8;
 
-    unsafe {
         match (mx != 0, my != 0) {
             (true, true) => {
                 // Case 1: Both H and V filtering
@@ -6166,9 +6073,10 @@ unsafe fn put_bilin_8bpc_avx2_impl_inner(
                 let mut mid = [[0i16; MID_STRIDE]; 130];
 
                 for y in 0..tmp_h {
-                    let src_row = src.offset(y as isize * src_stride);
-                    h_filter_bilin_8bpc_avx2(
-                        mid[y].as_mut_ptr(),
+                    let src_row_base = (y as isize * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    h_filter_bilin_8bpc_avx2_inner(_token, 
+                        &mut mid[y],
                         src_row,
                         w,
                         mx,
@@ -6178,9 +6086,9 @@ unsafe fn put_bilin_8bpc_avx2_impl_inner(
 
                 // Second pass: vertical filter to output
                 for y in 0..h {
-                    let dst_row = dst.offset(y as isize * dst_stride);
+                    let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
                     let mid_refs: [&[i16]; 2] = [&mid[y], &mid[y + 1]];
-                    v_filter_bilin_8bpc_avx2(
+                    v_filter_bilin_8bpc_avx2_inner(_token, 
                         dst_row,
                         &mid_refs,
                         w,
@@ -6193,35 +6101,36 @@ unsafe fn put_bilin_8bpc_avx2_impl_inner(
             (true, false) => {
                 // Case 2: H-only filtering (full SIMD)
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride);
-                    let dst_row = dst.offset(y as isize * dst_stride);
-                    h_bilin_8bpc_put_avx2(dst_row, src_row, w, mx);
+                    let src_row_base = (y as isize * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+                    h_bilin_8bpc_put_avx2_inner(_token, dst_row, src_row, w, mx);
                 }
             }
             (false, true) => {
                 // Case 3: V-only filtering (full SIMD)
                 for y in 0..h {
-                    let src_row0 = src.offset(y as isize * src_stride);
-                    let src_row1 = src.offset((y + 1) as isize * src_stride);
-                    let dst_row = dst.offset(y as isize * dst_stride);
-                    v_bilin_8bpc_direct_avx2(dst_row, src_row0, src_row1, w, my);
+                    let src_row0 = &src[(y as isize * src_stride) as usize..];
+                    let src_row1 = &src[((y + 1) as isize * src_stride) as usize..];
+                    let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+                    v_bilin_8bpc_direct_avx2_inner(_token, dst_row, src_row0, src_row1, w, my);
                 }
             }
             (false, false) => {
                 // Case 4: Simple copy
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride);
-                    let dst_row = dst.offset(y as isize * dst_stride);
-                    std::ptr::copy_nonoverlapping(src_row, dst_row, w);
+                    let src_row_base = (y as isize * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+                    dst_row[..w].copy_from_slice(&src_row[..w]);
                 }
             }
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
 unsafe fn put_bilin_8bpc_avx2_impl(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6287,11 +6196,10 @@ pub unsafe extern "C" fn put_bilin_8bpc_avx2(
 /// Outputs to i16 intermediate buffer (prep format)
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn prep_bilin_8bpc_avx2_impl_inner(
+fn prep_bilin_8bpc_avx2_impl_inner(
     _token: Desktop64,
-    tmp: *mut i16,
-    src_ptr: *const DynPixel,
+    tmp: &mut [i16],
+    src: &[u8],
     src_stride: isize,
     w: i32,
     h: i32,
@@ -6302,12 +6210,10 @@ unsafe fn prep_bilin_8bpc_avx2_impl_inner(
     let h = h as usize;
     let mx = mx as usize;
     let my = my as usize;
-    let src = src_ptr as *const u8;
 
     // For 8bpc: intermediate_bits = 4
     let intermediate_bits = 4u8;
 
-    unsafe {
         match (mx != 0, my != 0) {
             (true, true) => {
                 // Case 1: Both H and V filtering
@@ -6315,9 +6221,10 @@ unsafe fn prep_bilin_8bpc_avx2_impl_inner(
                 let mut mid = [[0i16; MID_STRIDE]; 130];
 
                 for y in 0..tmp_h {
-                    let src_row = src.offset(y as isize * src_stride);
-                    h_filter_bilin_8bpc_avx2(
-                        mid[y].as_mut_ptr(),
+                    let src_row_base = (y as isize * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    h_filter_bilin_8bpc_avx2_inner(_token, 
+                        &mut mid[y],
                         src_row,
                         w,
                         mx,
@@ -6327,7 +6234,7 @@ unsafe fn prep_bilin_8bpc_avx2_impl_inner(
 
                 // Second pass: vertical filter to output i16 buffer
                 for y in 0..h {
-                    let dst_row = tmp.add(y * w);
+                    let dst_row = y * w;
                     for x in 0..w {
                         let r0 = mid[y][x] as i32;
                         let r1 = mid[y + 1][x] as i32;
@@ -6337,59 +6244,60 @@ unsafe fn prep_bilin_8bpc_avx2_impl_inner(
                         // For prep, we keep intermediate precision
                         let result =
                             (pixel + (1 << (3 + intermediate_bits))) >> (4 + intermediate_bits);
-                        *dst_row.add(x) = ((result - 8192) << 4) as i16; // Apply PREP_BIAS adjustment
+                        tmp[dst_row + x] = ((result - 8192) << 4) as i16; // Apply PREP_BIAS adjustment
                     }
                 }
             }
             (true, false) => {
                 // Case 2: H-only filtering
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride);
-                    let dst_row = tmp.add(y * w);
+                    let src_row_base = (y as isize * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    let dst_row = y * w;
 
                     let mut tmp_buf = [0i16; MID_STRIDE];
-                    h_filter_bilin_8bpc_avx2(tmp_buf.as_mut_ptr(), src_row, w, mx, 4);
+                    h_filter_bilin_8bpc_avx2_inner(_token, &mut tmp_buf, src_row, w, mx, 4);
 
                     // Convert to prep format with bias
                     for x in 0..w {
-                        *dst_row.add(x) = (tmp_buf[x] - 8192 / 16) << 4;
+                        tmp[dst_row + x] = (tmp_buf[x] - 8192 / 16) << 4;
                     }
                 }
             }
             (false, true) => {
                 // Case 3: V-only filtering
                 for y in 0..h {
-                    let dst_row = tmp.add(y * w);
+                    let dst_row = y * w;
 
                     for x in 0..w {
-                        let r0 = *src.offset(y as isize * src_stride + x as isize) as i32;
-                        let r1 = *src.offset((y + 1) as isize * src_stride + x as isize) as i32;
+                        let r0 = src[(y as isize * src_stride + x as isize) as usize] as i32;
+                        let r1 = src[((y + 1) as isize * src_stride + x as isize) as usize] as i32;
                         let coeff0 = 16 - my as i32;
                         let coeff1 = my as i32;
                         let pixel = coeff0 * r0 + coeff1 * r1;
                         let result = (pixel + 8) >> 4; // sh = 4
-                        *dst_row.add(x) = ((result - 512) << 4) as i16;
+                        tmp[dst_row + x] = ((result - 512) << 4) as i16;
                     }
                 }
             }
             (false, false) => {
                 // Case 4: Simple copy to prep format
                 for y in 0..h {
-                    let src_row = src.offset(y as isize * src_stride);
-                    let dst_row = tmp.add(y * w);
+                    let src_row_base = (y as isize * src_stride) as usize;
+                    let src_row = &src[src_row_base..];
+                    let dst_row = y * w;
                     for x in 0..w {
-                        let pixel = *src_row.add(x) as i16;
-                        *dst_row.add(x) = (pixel - 512) << 4; // Center around 0
+                        let pixel = src_row[x] as i16;
+                        tmp[dst_row + x] = (pixel - 512) << 4; // Center around 0
                     }
                 }
             }
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
 unsafe fn prep_bilin_8bpc_avx2_impl(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
@@ -6925,15 +6833,13 @@ pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
 /// Formula: pixel = 16 * x0 + mx * (x1 - x0) = (16 - mx) * x0 + mx * x1
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn h_bilin_16bpc_avx2_inner(
+fn h_bilin_16bpc_avx2_inner(
     _token: Desktop64,
-    dst: *mut i32,
-    src: *const u16,
+    dst: &mut [i32],
+    src: &[u16],
     w: usize,
     mx: i32,
 ) {
-    unsafe {
         // Bilinear weights: w0 = (16 - mx), w1 = mx
         let w0 = _mm256_set1_epi32(16 - mx);
         let w1 = _mm256_set1_epi32(mx);
@@ -6943,9 +6849,9 @@ unsafe fn h_bilin_16bpc_avx2_inner(
         // Process 8 pixels at a time
         while col + 8 <= w {
             // Load 9 consecutive 16-bit pixels (8 output pixels need pixels 0..8)
-            let s = src.add(col);
-            let p0_7 = _mm_loadu_si128(s as *const __m128i); // pixels 0-7
-            let p1_8 = _mm_loadu_si128(s.add(1) as *const __m128i); // pixels 1-8
+            // s offset = col
+            let p0_7 = loadu_128!(<&[u16; 8]>::try_from(&src[col..col + 8]).unwrap()); // pixels 0-7
+            let p1_8 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 1..col + 9]).unwrap()); // pixels 1-8
 
             // Zero-extend to 32-bit
             let p0_lo = _mm256_cvtepu16_epi32(p0_7);
@@ -6956,24 +6862,23 @@ unsafe fn h_bilin_16bpc_avx2_inner(
             let term1 = _mm256_mullo_epi32(p1_lo, w1);
             let result = _mm256_add_epi32(term0, term1);
 
-            _mm256_storeu_si256(dst.add(col) as *mut __m256i, result);
+            storeu_256!(<&mut [i32; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), result);
             col += 8;
         }
 
         // Scalar fallback
         while col < w {
-            let x0 = *src.add(col) as i32;
-            let x1 = *src.add(col + 1) as i32;
-            *dst.add(col) = 16 * x0 + mx * (x1 - x0);
+            let x0 = src[col] as i32;
+            let x1 = src[col + 1] as i32;
+            dst[col] = 16 * x0 + mx * (x1 - x0);
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn h_bilin_16bpc_avx2(dst: *mut i32, src: *const u16, w: usize, mx: i32) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe { h_bilin_16bpc_avx2_inner(token, dst, src, w, mx) }
@@ -6983,10 +6888,9 @@ unsafe fn h_bilin_16bpc_avx2(dst: *mut i32, src: *const u16, w: usize, mx: i32) 
 /// Applies vertical filter to 32-bit intermediate, outputs clamped u16
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_bilin_16bpc_avx2_inner(
+fn v_bilin_16bpc_avx2_inner(
     _token: Desktop64,
-    dst: *mut u16,
+    dst: &mut [u16],
     mid: &[[i32; MID_STRIDE]],
     w: usize,
     y: usize,
@@ -6994,7 +6898,6 @@ unsafe fn v_bilin_16bpc_avx2_inner(
     sh: i32,
     max: i32,
 ) {
-    unsafe {
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
         let rnd = _mm256_set1_epi32((1 << sh) >> 1);
@@ -7006,8 +6909,8 @@ unsafe fn v_bilin_16bpc_avx2_inner(
 
         while col + 8 <= w {
             // Load 8 intermediate values from rows y and y+1
-            let r0 = _mm256_loadu_si256(mid[y][col..].as_ptr() as *const __m256i);
-            let r1 = _mm256_loadu_si256(mid[y + 1][col..].as_ptr() as *const __m256i);
+            let r0 = loadu_256!(<&[i32; 8]>::try_from(&mid[y][col..col + 8]).unwrap());
+            let r1 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 1][col..col + 8]).unwrap());
 
             // Compute: w0 * r0 + w1 * r1
             let term0 = _mm256_mullo_epi32(r0, w0);
@@ -7022,7 +6925,7 @@ unsafe fn v_bilin_16bpc_avx2_inner(
             let packed = _mm256_packus_epi32(clamped, zero);
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
             col += 8;
         }
 
@@ -7033,16 +6936,15 @@ unsafe fn v_bilin_16bpc_avx2_inner(
             let pixel = 16 * r0 + my * (r1 - r0);
             let r = (1 << sh) >> 1;
             let val = ((pixel + r) >> sh).clamp(0, max);
-            *dst.add(col) = val as u16;
+            dst[col] = val as u16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_bilin_16bpc_avx2(
     dst: *mut u16,
     mid: &[[i32; MID_STRIDE]],
@@ -7059,10 +6961,9 @@ unsafe fn v_bilin_16bpc_avx2(
 /// Vertical bilinear filter for 16bpc prep - outputs i16 with bias subtraction
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_bilin_16bpc_prep_avx2_inner(
+fn v_bilin_16bpc_prep_avx2_inner(
     _token: Desktop64,
-    dst: *mut i16,
+    dst: &mut [i16],
     mid: &[[i32; MID_STRIDE]],
     w: usize,
     y: usize,
@@ -7070,7 +6971,6 @@ unsafe fn v_bilin_16bpc_prep_avx2_inner(
     sh: i32,
     prep_bias: i32,
 ) {
-    unsafe {
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
         let rnd = _mm256_set1_epi32((1 << sh) >> 1);
@@ -7080,8 +6980,8 @@ unsafe fn v_bilin_16bpc_prep_avx2_inner(
         let mut col = 0usize;
 
         while col + 8 <= w {
-            let r0 = _mm256_loadu_si256(mid[y][col..].as_ptr() as *const __m256i);
-            let r1 = _mm256_loadu_si256(mid[y + 1][col..].as_ptr() as *const __m256i);
+            let r0 = loadu_256!(<&[i32; 8]>::try_from(&mid[y][col..col + 8]).unwrap());
+            let r1 = loadu_256!(<&[i32; 8]>::try_from(&mid[y + 1][col..col + 8]).unwrap());
 
             let term0 = _mm256_mullo_epi32(r0, w0);
             let term1 = _mm256_mullo_epi32(r1, w1);
@@ -7095,7 +6995,7 @@ unsafe fn v_bilin_16bpc_prep_avx2_inner(
             let packed = _mm256_packs_epi32(biased, biased);
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [i16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
             col += 8;
         }
 
@@ -7106,16 +7006,15 @@ unsafe fn v_bilin_16bpc_prep_avx2_inner(
             let pixel = 16 * r0 + my * (r1 - r0);
             let r = (1 << sh) >> 1;
             let val = ((pixel + r) >> sh) - prep_bias;
-            *dst.add(col) = val as i16;
+            dst[col] = val as i16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_bilin_16bpc_prep_avx2(
     dst: *mut i16,
     mid: &[[i32; MID_STRIDE]],
@@ -7133,16 +7032,14 @@ unsafe fn v_bilin_16bpc_prep_avx2(
 /// Outputs directly to u16 with shift and clamp
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn h_bilin_16bpc_put_avx2_inner(
+fn h_bilin_16bpc_put_avx2_inner(
     _token: Desktop64,
-    dst: *mut u16,
-    src: *const u16,
+    dst: &mut [u16],
+    src: &[u16],
     w: usize,
     mx: i32,
     bd_max: i32,
 ) {
-    unsafe {
         let w0 = _mm256_set1_epi32(16 - mx);
         let w1 = _mm256_set1_epi32(mx);
         let rnd = _mm256_set1_epi32(8);
@@ -7153,9 +7050,9 @@ unsafe fn h_bilin_16bpc_put_avx2_inner(
         let mut col = 0usize;
 
         while col + 8 <= w {
-            let s = src.add(col);
-            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(s as *const __m128i));
-            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(s.add(1) as *const __m128i));
+            // s offset = col
+            let p0 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(&src[col..col + 8]).unwrap()));
+            let p1 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(&src[col + 1..col + 9]).unwrap()));
 
             // (16 - mx) * p0 + mx * p1
             let term0 = _mm256_mullo_epi32(p0, w0);
@@ -7170,26 +7067,25 @@ unsafe fn h_bilin_16bpc_put_avx2_inner(
             let packed = _mm256_packus_epi32(clamped, zero);
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
             col += 8;
         }
 
         // Scalar fallback
         while col < w {
-            let x0 = *src.add(col) as i32;
-            let x1 = *src.add(col + 1) as i32;
+            let x0 = src[col] as i32;
+            let x1 = src[col + 1] as i32;
             let pixel = (16 - mx) * x0 + mx * x1;
             let result = ((pixel + 8) >> 4).clamp(0, bd_max);
-            *dst.add(col) = result as u16;
+            dst[col] = result as u16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn h_bilin_16bpc_put_avx2(dst: *mut u16, src: *const u16, w: usize, mx: i32, bd_max: i32) {
     let token = unsafe { Desktop64::forge_token_dangerously() };
     unsafe { h_bilin_16bpc_put_avx2_inner(token, dst, src, w, mx, bd_max) }
@@ -7199,17 +7095,15 @@ unsafe fn h_bilin_16bpc_put_avx2(dst: *mut u16, src: *const u16, w: usize, mx: i
 /// Reads directly from u16 source, outputs u16
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_bilin_16bpc_direct_avx2_inner(
+fn v_bilin_16bpc_direct_avx2_inner(
     _token: Desktop64,
-    dst: *mut u16,
-    src: *const u16,
+    dst: &mut [u16],
+    src: &[u16],
     src_stride: isize,
     w: usize,
     my: i32,
     bd_max: i32,
 ) {
-    unsafe {
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
         let rnd = _mm256_set1_epi32(8);
@@ -7221,10 +7115,8 @@ unsafe fn v_bilin_16bpc_direct_avx2_inner(
 
         while col + 8 <= w {
             // Load from row 0 and row 1
-            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
-            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(src_stride).add(col) as *const __m128i
-            ));
+            let p0 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(&src[col..col + 8]).unwrap()));
+            let p1 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(&src[src_stride as usize + col..src_stride as usize + col + 8]).unwrap()));
 
             // (16 - my) * p0 + my * p1
             let term0 = _mm256_mullo_epi32(p0, w0);
@@ -7239,26 +7131,25 @@ unsafe fn v_bilin_16bpc_direct_avx2_inner(
             let packed = _mm256_packus_epi32(clamped, zero);
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [u16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
             col += 8;
         }
 
         // Scalar fallback
         while col < w {
-            let x0 = *src.add(col) as i32;
-            let x1 = *src.offset(src_stride).add(col) as i32;
+            let x0 = src[col] as i32;
+            let x1 = src[(src_stride as usize + col)] as i32;
             let pixel = (16 - my) * x0 + my * x1;
             let result = ((pixel + 8) >> 4).clamp(0, bd_max);
-            *dst.add(col) = result as u16;
+            dst[col] = result as u16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_bilin_16bpc_direct_avx2(
     dst: *mut u16,
     src: *const u16,
@@ -7275,16 +7166,14 @@ unsafe fn v_bilin_16bpc_direct_avx2(
 /// Outputs i16 with PREP_BIAS subtracted
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn h_bilin_16bpc_prep_direct_avx2_inner(
+fn h_bilin_16bpc_prep_direct_avx2_inner(
     _token: Desktop64,
-    dst: *mut i16,
-    src: *const u16,
+    dst: &mut [i16],
+    src: &[u16],
     w: usize,
     mx: i32,
     prep_bias: i32,
 ) {
-    unsafe {
         let w0 = _mm256_set1_epi32(16 - mx);
         let w1 = _mm256_set1_epi32(mx);
         let rnd = _mm256_set1_epi32(8);
@@ -7294,9 +7183,9 @@ unsafe fn h_bilin_16bpc_prep_direct_avx2_inner(
         let mut col = 0usize;
 
         while col + 8 <= w {
-            let s = src.add(col);
-            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(s as *const __m128i));
-            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(s.add(1) as *const __m128i));
+            // s offset = col
+            let p0 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(&src[col..col + 8]).unwrap()));
+            let p1 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(&src[col + 1..col + 9]).unwrap()));
 
             // (16 - mx) * p0 + mx * p1
             let term0 = _mm256_mullo_epi32(p0, w0);
@@ -7311,26 +7200,25 @@ unsafe fn h_bilin_16bpc_prep_direct_avx2_inner(
             let packed = _mm256_packs_epi32(biased, biased);
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [i16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
             col += 8;
         }
 
         // Scalar fallback
         while col < w {
-            let x0 = *src.add(col) as i32;
-            let x1 = *src.add(col + 1) as i32;
+            let x0 = src[col] as i32;
+            let x1 = src[col + 1] as i32;
             let pixel = (16 - mx) * x0 + mx * x1;
             let result = ((pixel + 8) >> 4) - prep_bias;
-            *dst.add(col) = result as i16;
+            dst[col] = result as i16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn h_bilin_16bpc_prep_direct_avx2(
     dst: *mut i16,
     src: *const u16,
@@ -7346,17 +7234,15 @@ unsafe fn h_bilin_16bpc_prep_direct_avx2(
 /// Reads directly from u16 source, outputs i16 with bias
 #[cfg(target_arch = "x86_64")]
 #[rite]
-#[cfg(feature = "asm")]
-unsafe fn v_bilin_16bpc_prep_direct_avx2_inner(
+fn v_bilin_16bpc_prep_direct_avx2_inner(
     _token: Desktop64,
-    dst: *mut i16,
-    src: *const u16,
+    dst: &mut [i16],
+    src: &[u16],
     src_stride: isize,
     w: usize,
     my: i32,
     prep_bias: i32,
 ) {
-    unsafe {
         let w0 = _mm256_set1_epi32(16 - my);
         let w1 = _mm256_set1_epi32(my);
         let rnd = _mm256_set1_epi32(8);
@@ -7367,10 +7253,8 @@ unsafe fn v_bilin_16bpc_prep_direct_avx2_inner(
 
         while col + 8 <= w {
             // Load from row 0 and row 1
-            let p0 = _mm256_cvtepu16_epi32(_mm_loadu_si128(src.add(col) as *const __m128i));
-            let p1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
-                src.offset(src_stride).add(col) as *const __m128i
-            ));
+            let p0 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(&src[col..col + 8]).unwrap()));
+            let p1 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(&src[src_stride as usize + col..src_stride as usize + col + 8]).unwrap()));
 
             // (16 - my) * p0 + my * p1
             let term0 = _mm256_mullo_epi32(p0, w0);
@@ -7385,26 +7269,25 @@ unsafe fn v_bilin_16bpc_prep_direct_avx2_inner(
             let packed = _mm256_packs_epi32(biased, biased);
             let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
-            _mm_storeu_si128(dst.add(col) as *mut __m128i, _mm256_castsi256_si128(result));
+            storeu_128!(<&mut [i16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(), _mm256_castsi256_si128(result));
             col += 8;
         }
 
         // Scalar fallback
         while col < w {
-            let x0 = *src.add(col) as i32;
-            let x1 = *src.offset(src_stride).add(col) as i32;
+            let x0 = src[col] as i32;
+            let x1 = src[(src_stride as usize + col)] as i32;
             let pixel = (16 - my) * x0 + my * x1;
             let result = ((pixel + 8) >> 4) - prep_bias;
-            *dst.add(col) = result as i16;
+            dst[col] = result as i16;
             col += 1;
         }
-    }
 }
+#[cfg(feature = "asm")]
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
-#[cfg(feature = "asm")]
 unsafe fn v_bilin_16bpc_prep_direct_avx2(
     dst: *mut i16,
     src: *const u16,
@@ -7419,8 +7302,8 @@ unsafe fn v_bilin_16bpc_prep_direct_avx2(
 
 /// Bilinear put for 16bpc
 #[cfg(target_arch = "x86_64")]
-#[arcane]
 #[cfg(feature = "asm")]
+#[arcane]
 unsafe fn put_bilin_16bpc_avx2_inner(
     _token: Desktop64,
     dst_ptr: *mut DynPixel,
@@ -7460,20 +7343,20 @@ unsafe fn put_bilin_16bpc_avx2_inner(
                 // Horizontal pass using SIMD (output unshifted)
                 for y in 0..tmp_h {
                     let src_row = src.offset(y as isize * src_stride);
-                    h_bilin_16bpc_avx2(mid[y].as_mut_ptr(), src_row, w, mx as i32);
+                    h_bilin_16bpc_avx2_inner(_token, &mut mid[y], src_row, w, mx as i32);
                 }
 
                 // Vertical pass using SIMD
                 for y in 0..h {
                     let dst_row = dst.offset(y as isize * dst_stride);
-                    v_bilin_16bpc_avx2(dst_row, &mid, w, y, my as i32, v_pass_sh, bd_max);
+                    v_bilin_16bpc_avx2_inner(_token, dst_row, &mid, w, y, my as i32, v_pass_sh, bd_max);
                 }
             } else {
                 // H-only filtering (SIMD)
                 for y in 0..h {
                     let src_row = src.offset(y as isize * src_stride);
                     let dst_row = dst.offset(y as isize * dst_stride);
-                    h_bilin_16bpc_put_avx2(dst_row, src_row, w, mx as i32, bd_max);
+                    h_bilin_16bpc_put_avx2_inner(_token, dst_row, src_row, w, mx as i32, bd_max);
                 }
             }
         } else if my != 0 {
@@ -7481,7 +7364,7 @@ unsafe fn put_bilin_16bpc_avx2_inner(
             for y in 0..h {
                 let src_row = src.offset(y as isize * src_stride);
                 let dst_row = dst.offset(y as isize * dst_stride);
-                v_bilin_16bpc_direct_avx2(dst_row, src_row, src_stride, w, my as i32, bd_max);
+                v_bilin_16bpc_direct_avx2_inner(_token, dst_row, src_row, src_stride, w, my as i32, bd_max);
             }
         } else {
             // Simple copy
@@ -7495,9 +7378,9 @@ unsafe fn put_bilin_16bpc_avx2_inner(
 }
 
 /// Non-FFI wrapper for bilinear put 16bpc (no FFISafe params)
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
 unsafe fn put_bilin_16bpc_avx2_impl(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -7551,8 +7434,8 @@ pub unsafe extern "C" fn put_bilin_16bpc_avx2(
 
 /// Bilinear prep for 16bpc (scalar implementation)
 #[cfg(target_arch = "x86_64")]
-#[arcane]
 #[cfg(feature = "asm")]
+#[arcane]
 unsafe fn prep_bilin_16bpc_avx2_inner(
     _token: Desktop64,
     tmp: *mut i16,
@@ -7590,20 +7473,20 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
                 // Horizontal pass using SIMD
                 for y in 0..tmp_h {
                     let src_row = src.offset(y as isize * src_stride);
-                    h_bilin_16bpc_avx2(mid[y].as_mut_ptr(), src_row, w, mx as i32);
+                    h_bilin_16bpc_avx2_inner(_token, &mut mid[y], src_row, w, mx as i32);
                 }
 
                 // Vertical pass using SIMD (with bias subtraction)
                 for y in 0..h {
                     let dst_row = tmp.add(y * w);
-                    v_bilin_16bpc_prep_avx2(dst_row, &mid, w, y, my as i32, v_pass_sh, prep_bias);
+                    v_bilin_16bpc_prep_avx2_inner(_token, dst_row, &mid, w, y, my as i32, v_pass_sh, prep_bias);
                 }
             } else {
                 // H-only filtering (SIMD)
                 for y in 0..h {
                     let src_row = src.offset(y as isize * src_stride);
                     let dst_row = tmp.add(y * w);
-                    h_bilin_16bpc_prep_direct_avx2(dst_row, src_row, w, mx as i32, prep_bias);
+                    h_bilin_16bpc_prep_direct_avx2_inner(_token, dst_row, src_row, w, mx as i32, prep_bias);
                 }
             }
         } else if my != 0 {
@@ -7611,7 +7494,7 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
             for y in 0..h {
                 let src_row = src.offset(y as isize * src_stride);
                 let dst_row = tmp.add(y * w);
-                v_bilin_16bpc_prep_direct_avx2(
+                v_bilin_16bpc_prep_direct_avx2_inner(_token, 
                     dst_row, src_row, src_stride, w, my as i32, prep_bias,
                 );
             }
@@ -7620,7 +7503,7 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
                 let src_row = src.offset(y as isize * src_stride);
                 let dst_row = tmp.add(y * w);
                 for x in 0..w {
-                    let pixel = *src_row.add(x) as i32;
+                    let pixel = src_row[x] as i32;
                     *dst_row.add(x) = (pixel - prep_bias) as i16;
                 }
             }
@@ -7629,9 +7512,9 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
 }
 
 /// Non-FFI wrapper for bilinear prep 16bpc (no FFISafe params)
+#[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[cfg(feature = "asm")]
 unsafe fn prep_bilin_16bpc_avx2_impl(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
