@@ -2440,25 +2440,22 @@ use crate::src::strided::Strided as _;
 /// Safe dispatch for generate_grain_y (x86_64 AVX2).
 /// Returns true if SIMD was used.
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)] // pointer cast GrainLut<BD::Entry> → GrainLut<i8/i16>
 pub fn generate_grain_y_dispatch<BD: BitDepth>(
     buf: &mut GrainLut<BD::Entry>,
     data: &Rav1dFilmGrainData,
     bd: BD,
 ) -> bool {
     let Some(_token) = Desktop64::summon() else { return false };
-    // Call inner functions directly, bypassing FFI wrappers.
-    unsafe {
-        match BD::BPC {
-            BPC::BPC8 => {
-                let buf = &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i8>);
-                generate_grain_y_inner_8bpc(buf, data);
-            }
-            BPC::BPC16 => {
-                let buf = &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i16>);
-                let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
-                generate_grain_y_inner_16bpc(buf, data, bitdepth);
-            }
+    use zerocopy::{AsBytes, FromBytes};
+    match BD::BPC {
+        BPC::BPC8 => {
+            let buf: &mut GrainLut<i8> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            generate_grain_y_inner_8bpc(buf, data);
+        }
+        BPC::BPC16 => {
+            let buf: &mut GrainLut<i16> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
+            generate_grain_y_inner_16bpc(buf, data, bitdepth);
         }
     }
     true
@@ -2467,7 +2464,6 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
 /// Safe dispatch for generate_grain_uv (x86_64 AVX2).
 /// Returns true if SIMD was used.
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)] // pointer cast GrainLut<BD::Entry> → GrainLut<i8/i16>
 pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     buf: &mut GrainLut<BD::Entry>,
@@ -2477,25 +2473,23 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     let Some(_token) = Desktop64::summon() else { return false };
-    // Call inner functions directly, bypassing FFI wrappers.
     let (is_subx, is_suby) = match layout {
         Rav1dPixelLayoutSubSampled::I420 => (true, true),
         Rav1dPixelLayoutSubSampled::I422 => (true, false),
         Rav1dPixelLayoutSubSampled::I444 => (false, false),
     };
-    unsafe {
-        match BD::BPC {
-            BPC::BPC8 => {
-                let buf = &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i8>);
-                let buf_y = &*(buf_y as *const GrainLut<BD::Entry> as *const GrainLut<i8>);
-                generate_grain_uv_inner_8bpc(buf, buf_y, data, is_uv, is_subx, is_suby);
-            }
-            BPC::BPC16 => {
-                let buf = &mut *(buf as *mut GrainLut<BD::Entry> as *mut GrainLut<i16>);
-                let buf_y = &*(buf_y as *const GrainLut<BD::Entry> as *const GrainLut<i16>);
-                let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
-                generate_grain_uv_inner_16bpc(buf, buf_y, data, is_uv, is_subx, is_suby, bitdepth);
-            }
+    use zerocopy::{AsBytes, FromBytes};
+    match BD::BPC {
+        BPC::BPC8 => {
+            let buf: &mut GrainLut<i8> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let buf_y: &GrainLut<i8> = FromBytes::ref_from(buf_y.as_bytes()).unwrap();
+            generate_grain_uv_inner_8bpc(buf, buf_y, data, is_uv, is_subx, is_suby);
+        }
+        BPC::BPC16 => {
+            let buf: &mut GrainLut<i16> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let buf_y: &GrainLut<i16> = FromBytes::ref_from(buf_y.as_bytes()).unwrap();
+            let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
+            generate_grain_uv_inner_16bpc(buf, buf_y, data, is_uv, is_subx, is_suby, bitdepth);
         }
     }
     true
@@ -2504,7 +2498,6 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
 /// Safe dispatch for fgy_32x32xn (x86_64 AVX2).
 /// Returns true if SIMD was used.
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)] // slice::from_raw_parts for grain_lut byte view
 pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     dst: &Rav1dPictureDataComponent,
     src: &Rav1dPictureDataComponent,
@@ -2516,6 +2509,7 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     row_num: usize,
     bd: BD,
 ) -> bool {
+    use zerocopy::AsBytes;
     let Some(token) = Desktop64::summon() else { return false };
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
@@ -2530,15 +2524,7 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
         0
     };
 
-    // Convert grain_lut bytes for safe reinterpretation.
-    // SAFETY: BD::Entry is i8 (8bpc) or i16 (16bpc), both POD types with same layout as u8/u16.
-    // This is the one remaining unsafe: creating a byte view of the generic grain_lut.
-    let grain_lut_bytes: &[u8] = unsafe {
-        std::slice::from_raw_parts(
-            grain_lut as *const _ as *const u8,
-            std::mem::size_of_val(grain_lut),
-        )
-    };
+    let grain_lut_bytes: &[u8] = grain_lut.as_bytes();
 
     match BD::BPC {
         BPC::BPC8 => {
@@ -2601,7 +2587,6 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
 /// Safe dispatch for fguv_32x32xn (x86_64 AVX2).
 /// Returns true if SIMD was used.
 #[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)] // slice::from_raw_parts for grain_lut byte view
 pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     dst: &Rav1dPictureDataComponent,
@@ -2617,6 +2602,7 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     is_id: bool,
     bd: BD,
 ) -> bool {
+    use zerocopy::AsBytes;
     let Some(token) = Desktop64::summon() else { return false };
     let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
     let (is_sx, is_sy) = match layout {
@@ -2649,13 +2635,7 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
         0
     };
 
-    // SAFETY: grain_lut byte view for reinterpretation
-    let grain_lut_bytes: &[u8] = unsafe {
-        std::slice::from_raw_parts(
-            grain_lut as *const _ as *const u8,
-            std::mem::size_of_val(grain_lut),
-        )
-    };
+    let grain_lut_bytes: &[u8] = grain_lut.as_bytes();
 
     match BD::BPC {
         BPC::BPC8 => {

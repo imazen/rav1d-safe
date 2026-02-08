@@ -176,7 +176,9 @@ pub trait BitDepth: Clone + Copy {
         + ArrayDefault
         + FromPrimitive<i16>
         + FromPrimitive<c_int>
-        + ToPrimitive<c_int>;
+        + ToPrimitive<c_int>
+        + AsBytes
+        + FromBytes;
 
     type Scaling: AsRef<[u8]> + AsMut<[u8]> + ArrayDefault + Copy;
     const SCALING_BITS: usize;
