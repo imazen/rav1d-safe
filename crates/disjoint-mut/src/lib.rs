@@ -370,9 +370,11 @@ unsafe impl<T: ExternalAsMutPtr> AsMutPtr for T {
 
 impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     pub fn len(&self) -> usize {
-        // SAFETY: The inner cell is safe to access immutably. We never create a
-        // mutable reference to the inner value.
-        unsafe { (*self.inner.get()).len() }
+        // Use as_mut_slice to get a fat *mut [T] pointer and read length from
+        // the fat pointer metadata. This avoids creating &T which for some
+        // container types (e.g. Box<[V]>) would create &[V] to the heap data,
+        // conflicting with concurrent &mut [V] guards under Stacked Borrows.
+        self.as_mut_slice().len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -994,18 +996,29 @@ impl<T: AsMutPtr + ResizableWith> DisjointMut<T> {
 // AsMutPtr implementations for standard types
 // =============================================================================
 
-/// SAFETY: We never materialize a `&mut [V]` since we
-/// only materialize a `&mut Vec<V>` and call [`Vec::as_mut_ptr`] on it,
-/// which never materializes a `&mut [V]`.
+/// SAFETY: We only create `&Vec<V>` (shared reference), never `&mut Vec<V>`.
+/// This is critical for Stacked Borrows: `&mut Vec` creates a retag-write
+/// (Unique) on the Vec struct allocation, which conflicts with concurrent
+/// `&Vec` reads of `len`/`as_ptr` from other threads. Using only shared
+/// references avoids this data race.
+///
+/// The returned `*mut V` pointer retains write provenance from the original
+/// allocator, not from the reference we read it through. The `UnsafeCell`
+/// wrapper in `DisjointMut` provides the permission for concurrent writes
+/// to the heap data.
 unsafe impl<V: Copy> AsMutPtr for Vec<V> {
     type Target = V;
 
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
+        // SAFETY: Only creates &Vec (SharedReadOnly). The data pointer value
+        // stored inside Vec retains its original allocator provenance.
+        let vec_ref = unsafe { &*ptr };
+        ptr::slice_from_raw_parts_mut(vec_ref.as_ptr().cast_mut(), vec_ref.len())
+    }
+
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
-        // SAFETY: Mutably dereferencing and calling `.as_mut_ptr()` does not
-        // materialize a mutable reference to the underlying slice according to
-        // its documentated behavior, so we can still allow concurrent immutable
-        // references into that underlying slice.
-        unsafe { (*ptr).as_mut_ptr() }
+        // SAFETY: Only creates &Vec (SharedReadOnly), not &mut Vec.
+        unsafe { (*ptr).as_ptr().cast_mut() }
     }
 
     fn len(&self) -> usize {
@@ -1039,13 +1052,25 @@ unsafe impl<V: Copy> AsMutPtr for [V] {
     }
 }
 
-/// SAFETY: We never materialize a `&mut [V]` since we use [`addr_of_mut!`]
-/// to create a `*mut [V]` directly, which we then unsize cast.
+/// SAFETY: Uses `addr_of_mut!` to obtain `*mut [V]` through the raw pointer
+/// chain `*mut Box<[V]>` → `*mut [V]` without creating `&[V]` or `&mut [V]`.
+/// Box deref through a raw-pointer-derived place is a compiler built-in
+/// operation that does not create intermediate references.
+///
+/// This is critical for Stacked Borrows: creating `&[V]` to the heap would
+/// conflict with concurrent `&mut [V]` guards from other threads.
 unsafe impl<V: Copy> AsMutPtr for Box<[V]> {
     type Target = V;
 
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
+        // SAFETY: addr_of_mut! through raw pointer chain — no &[V] created.
+        // Box deref from a raw-pointer place is a compiler intrinsic that
+        // follows the Box's internal pointer without creating references.
+        unsafe { addr_of_mut!(**ptr) }
+    }
+
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
-        // SAFETY: `AsMutPtr::as_mut_ptr` may dereference `ptr`.
+        // SAFETY: Same raw pointer chain as as_mut_slice, then cast to thin pointer.
         unsafe { addr_of_mut!(**ptr) }.cast()
     }
 
