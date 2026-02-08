@@ -151,6 +151,7 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 **C FFI types gated behind `cfg(feature = "c-ffi")`:**
 - `DavdPicture`, `DavdData`, `DavdDataProps`, `DavdUserData`, `DavdSettings`, `DavdLogger` — all gated
+- `ITUTT35PayloadPtr`, `Dav1dITUTT35` struct (with `Send`/`Sync` impls) — gated; safe type alias when c-ffi off
 - `From<Dav1d*>` / `From<Rav1d*> for Dav1d*` conversions (containing `unsafe { CArc::from_raw }`) — all gated
 - Safe picture allocator: per-plane `Vec<u8>` from MemPool, no C callbacks needed
 - Fallible allocation: `MemPool::pop_init` returns `Result<Vec, TryReserveError>`, propagated as `Rav1dError::ENOMEM`
@@ -158,14 +159,18 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 **Module safety annotations:**
 - 42+ modules with `forbid(unsafe_code)` — permanent, compiler-enforced
 - 13 with conditional deny when asm disabled (cdef, filmgrain, ipred, itx, etc.)
-- 3 modules conditionally safe when c-ffi disabled: picture.rs, lib.rs (entry point), log.rs
-- 12 modules with unconditional `allow(unsafe_code)` for sound abstractions
+- 5 modules conditionally safe when c-ffi disabled: include/dav1d, picture.rs, lib.rs (entry point), log.rs, c_box.rs
+- 11 modules with unconditional `allow(unsafe_code)` for sound abstractions
 
-**Remaining 12 unconditional `allow(unsafe_code)` modules:**
+**Remaining 11 unconditional `allow(unsafe_code)` modules:**
 - Sound abstractions: align, assume, c_arc, c_box, send_sync_non_null
 - Bridges: disjoint_mut, ffi_safe
-- Threading: internal, include/dav1d/
+- Threading: internal
 - DSP: refmvs, msac, safe_simd (~2300 SIMD intrinsic calls)
+
+**c-ffi build fully working** (previously blocked by 320 `forge_token_dangerously` errors in safe_simd):
+- Fixed: wrapped all `forge_token_dangerously()` calls in `unsafe { }` blocks (Rust 2024 edition compliance)
+- Both `cargo check --features c-ffi` and `cargo test --features c-ffi` pass clean
 
 **FFI wrappers gated behind `feature = "asm"`** in: cdef, cdef_arm, loopfilter, loopfilter_arm, looprestoration, looprestoration_arm, filmgrain, filmgrain_arm, pal.
 
