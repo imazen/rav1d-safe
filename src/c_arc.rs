@@ -9,6 +9,7 @@ use std::ptr::NonNull;
 use std::slice::SliceIndex;
 use std::sync::Arc;
 
+#[cfg(feature = "c-ffi")]
 pub fn arc_into_raw<T: ?Sized>(arc: Arc<T>) -> NonNull<T> {
     let raw = Arc::into_raw(arc).cast_mut();
     // SAFETY: [`Arc::into_raw`] never returns null.
@@ -168,6 +169,7 @@ impl<T: ?Sized> CArc<T> {
 /// without `T` having to be `#[repr(C)]`,
 /// which it doesn't since it's opaque,
 /// while still keeping `T` in the type.
+#[cfg(feature = "c-ffi")]
 #[repr(transparent)]
 pub struct RawArc<T>(NonNull<PhantomData<T>>);
 
@@ -181,14 +183,17 @@ pub struct RawArc<T>(NonNull<PhantomData<T>>);
 /// Instead, [`RawArc::as_ref`] and [`RawArc::into_arc`] are `unsafe`,
 /// and require [`RawArc::clone`]s (actual explicit calls
 /// or implicit ones outside of Rust) to respect the rules of [`Arc`].
+#[cfg(feature = "c-ffi")]
 impl<T> Clone for RawArc<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl<T> Copy for RawArc<T> {}
 
+#[cfg(feature = "c-ffi")]
 impl<T> RawArc<T> {
     pub fn from_arc(arc: Arc<T>) -> Self {
         Self(arc_into_raw(arc).cast())
@@ -226,9 +231,11 @@ impl<T> RawArc<T> {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 #[repr(transparent)]
 pub struct RawCArc<T: ?Sized>(RawArc<Pin<CBox<T>>>);
 
+#[cfg(feature = "c-ffi")]
 impl<T: ?Sized> CArc<T> {
     /// Convert into a raw, opaque form suitable for C FFI.
     pub fn into_raw(self) -> RawCArc<T> {

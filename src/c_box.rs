@@ -153,6 +153,9 @@ impl<T: ?Sized> CBox<T> {
     }
 
     pub fn into_pin(self) -> Pin<Self> {
+        // With c-ffi, CBox::C variant's data is never moved until Drop.
+        // Without c-ffi, CBox is always Rust(Box<T>), but Pin::new requires Unpin
+        // which T might not implement, so we still need new_unchecked.
         // SAFETY:
         // If `self` is `Self::Rust`, `Box` can be pinned.
         // If `self` is `Self::C`, `data` is never moved until [`Self::drop`].
