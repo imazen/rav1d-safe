@@ -17,14 +17,17 @@ use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 
-// ============================================================================
-// DC_128 Prediction (fill with mid-value)
-// ============================================================================
+#[cfg(feature = "asm")]
+mod ffi {
+    use super::*;
 
-/// DC_128 prediction: fill block with 128 (8bpc) or 1 << (bitdepth - 1) (16bpc)
-#[allow(unsafe_code)]
-#[cfg(target_arch = "aarch64")]
-pub unsafe extern "C" fn ipred_dc_128_8bpc_neon(
+    // ============================================================================
+    // DC_128 Prediction (fill with mid-value)
+    // ============================================================================
+
+    /// DC_128 prediction: fill block with 128 (8bpc) or 1 << (bitdepth - 1) (16bpc)
+    #[cfg(target_arch = "aarch64")]
+    pub unsafe extern "C" fn ipred_dc_128_8bpc_neon(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     _topleft: *const DynPixel,
@@ -68,7 +71,6 @@ pub unsafe extern "C" fn ipred_dc_128_8bpc_neon(
     }
 }
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_128_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -121,7 +123,6 @@ pub unsafe extern "C" fn ipred_dc_128_16bpc_neon(
 // ============================================================================
 
 /// Vertical prediction: copy the top row to all rows in the block
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_v_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -169,7 +170,6 @@ pub unsafe extern "C" fn ipred_v_8bpc_neon(
     }
 }
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_v_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -222,7 +222,6 @@ pub unsafe extern "C" fn ipred_v_16bpc_neon(
 // ============================================================================
 
 /// Horizontal prediction: fill each row with the left pixel
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_h_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -270,7 +269,6 @@ pub unsafe extern "C" fn ipred_h_8bpc_neon(
     }
 }
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_h_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -323,7 +321,6 @@ pub unsafe extern "C" fn ipred_h_16bpc_neon(
 // ============================================================================
 
 /// DC prediction: average of top and left pixels
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -382,7 +379,6 @@ pub unsafe extern "C" fn ipred_dc_8bpc_neon(
     }
 }
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -445,7 +441,6 @@ pub unsafe extern "C" fn ipred_dc_16bpc_neon(
 // DC_TOP Prediction (average of top only)
 // ============================================================================
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_top_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -498,7 +493,6 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_neon(
     }
 }
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_top_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -556,7 +550,6 @@ pub unsafe extern "C" fn ipred_dc_top_16bpc_neon(
 // DC_LEFT Prediction (average of left only)
 // ============================================================================
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_left_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -609,7 +602,6 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_neon(
     }
 }
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_dc_left_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -686,7 +678,6 @@ fn paeth(left: i32, top: i32, topleft: i32) -> i32 {
     }
 }
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_paeth_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -723,7 +714,6 @@ pub unsafe extern "C" fn ipred_paeth_8bpc_neon(
     }
 }
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_paeth_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -764,7 +754,6 @@ pub unsafe extern "C" fn ipred_paeth_16bpc_neon(
 // Smooth Prediction
 // ============================================================================
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -813,7 +802,6 @@ pub unsafe extern "C" fn ipred_smooth_8bpc_neon(
     }
 }
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -862,7 +850,6 @@ pub unsafe extern "C" fn ipred_smooth_16bpc_neon(
 // Smooth V Prediction (vertical only)
 // ============================================================================
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_v_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -899,7 +886,6 @@ pub unsafe extern "C" fn ipred_smooth_v_8bpc_neon(
     }
 }
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_v_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -941,7 +927,6 @@ pub unsafe extern "C" fn ipred_smooth_v_16bpc_neon(
 // Smooth H Prediction (horizontal only)
 // ============================================================================
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_h_8bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -978,7 +963,6 @@ pub unsafe extern "C" fn ipred_smooth_h_8bpc_neon(
     }
 }
 
-#[allow(unsafe_code)]
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn ipred_smooth_h_16bpc_neon(
     dst_ptr: *mut DynPixel,
@@ -1016,18 +1000,26 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_neon(
     }
 }
 
+} // mod ffi
+
+#[cfg(feature = "asm")]
+pub use ffi::*;
+
 // ============================================================================
 // Safe dispatch wrapper for aarch64 NEON
 // ============================================================================
 
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 use crate::include::common::bitdepth::BitDepth;
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 use crate::src::internal::SCRATCH_EDGE_LEN;
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 use crate::src::strided::Strided as _;
 
 /// Safe dispatch for intra prediction on ARM. Returns true if SIMD was used.
 /// NEON is always available on aarch64, so this always returns true for
 /// supported modes and false only for unimplemented modes (Z1, Z2, Z3, FILTER).
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(feature = "asm", target_arch = "aarch64"))]
 #[allow(unsafe_code)]
 pub fn intra_pred_dispatch<BD: BitDepth>(
     mode: usize,
