@@ -889,12 +889,14 @@ pub fn inv_identity_add_8x8_8bpc_avx2(
             coeffs[x] = coeff[y + x * 8];
         }
 
-        // Identity8 scale: * 2 for each dimension = * 4 total
-        // Final shift: (+ 8) >> 4
-        // Combined: (c * 4 + 8) >> 4 = (c + 2) >> 2
+        // Identity8: out = in * 2 per dimension, with intermediate shift between passes.
+        // Row identity8: c * 2. Intermediate: (c*2 + 1) >> 1. Col identity8: * 2. Final: (+ 8) >> 4.
         let c_vec = loadu_128!(<&[i16; 8]>::try_from(&coeffs[..]).unwrap());
+        let c_row = _mm_slli_epi16(c_vec, 1); // row identity8: * 2
+        let c_inter = _mm_srai_epi16(_mm_add_epi16(c_row, _mm_set1_epi16(1)), 1); // intermediate (+ 1) >> 1
+        let c_col = _mm_slli_epi16(c_inter, 1); // col identity8: * 2
         let c_shifted = _mm_srai_epi16(
-            _mm_add_epi16(_mm_slli_epi16(c_vec, 2), _mm_set1_epi16(8)),
+            _mm_add_epi16(c_col, _mm_set1_epi16(8)),
             4,
         );
 
@@ -1488,27 +1490,31 @@ pub fn inv_identity_add_16x16_8bpc_avx2(
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
 
     // Identity16 scale factor: f(x) = 2*x + (x*1697 + 1024) >> 11
-    // For 16x16, applied twice (row + col), then final (+ 8) >> 4
-    // Combined row+col: g(x) = f(f(x))
-    // This is complex, so we'll use scalar for the coefficient transform
-    // and SIMD for the add-to-destination
+    // For 16x16: row_pass → intermediate shift (+ 2) >> 2 with clamp → col_pass → (+ 8) >> 4
+    // The intermediate shift is shift=2, rnd=2 for 16x16 (from inv_txfm_add_rust)
+    // Clamp to col_clip range: i16::MIN..=i16::MAX for 8bpc
 
-    // First, transform all coefficients in-place
+    // Row pass: identity16 on each row
     let mut tmp = [[0i32; 16]; 16];
     for y in 0..16 {
         for x in 0..16 {
             let c = coeff[y + x * 16] as i32;
-            // Row pass: identity16
             let r = 2 * c + ((c * 1697 + 1024) >> 11);
             tmp[y][x] = r;
         }
     }
 
-    // Column pass
+    // Intermediate shift: (val + 2) >> 2, clamped to i16 range
+    for y in 0..16 {
+        for x in 0..16 {
+            tmp[y][x] = ((tmp[y][x] + 2) >> 2).clamp(i16::MIN as i32, i16::MAX as i32);
+        }
+    }
+
+    // Column pass: identity16, then final shift
     for x in 0..16 {
         for y in 0..16 {
             let c = tmp[y][x];
-            // Col pass: identity16, then final shift
             let r = 2 * c + ((c * 1697 + 1024) >> 11);
             tmp[y][x] = (r + 8) >> 4;
         }
@@ -6222,7 +6228,7 @@ pub fn inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -6274,7 +6280,7 @@ pub fn inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -6326,7 +6332,7 @@ pub fn inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -6503,7 +6509,7 @@ pub fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -6552,7 +6558,7 @@ pub fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -6601,7 +6607,7 @@ pub fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -6647,7 +6653,7 @@ pub fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -6693,7 +6699,7 @@ pub fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -7256,7 +7262,7 @@ pub fn inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -7304,7 +7310,7 @@ pub fn inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -7352,7 +7358,7 @@ pub fn inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -7398,7 +7404,7 @@ pub fn inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -7593,7 +7599,7 @@ pub fn inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -7641,7 +7647,7 @@ pub fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
     let mut c = [[0i32; 4]; 4];
     for y in 0..4 {
         for x in 0..4 {
-            c[y][x] = coeff[y * 4 + x] as i32;
+            c[y][x] = coeff[y + x * 4] as i32;
         }
     }
 
@@ -11342,7 +11348,7 @@ macro_rules! impl_4x4_transform_16bpc {
             let mut c = [[0i32; 4]; 4];
             for y in 0..4 {
                 for x in 0..4 {
-                    c[y][x] = coeff[y * 4 + x] as i32;
+                    c[y][x] = coeff[y + x * 4] as i32;
                 }
             }
 
@@ -11802,12 +11808,17 @@ pub fn inv_identity_add_8x8_16bpc_avx2(
             coeffs[x] = coeff[y + x * 8] as i32;
         }
 
-        // Identity8 scale: * 2 for each dimension = * 4 total
-        // Final shift: (+ 8) >> 4
-        // Combined: (c * 4 + 8) >> 4 = (c + 2) >> 2
+        // Identity8: * 2 per dimension, with intermediate shift between passes
+        // For 8x8: shift=1, rnd=1, col_clip = (!bitdepth_max) << 5
+        // Row: c * 2. Intermediate: iclip((c*2 + 1) >> 1, ...). Col: * 2. Final: (+ 8) >> 4
+        let col_clip_min = (!(bitdepth_max)) << 5;
+        let col_clip_max = !col_clip_min;
         let mut results = [0i32; 8];
         for x in 0..8 {
-            results[x] = (coeffs[x] * 4 + 8) >> 4;
+            let row = coeffs[x] * 2; // identity8 row
+            let inter = ((row + 1) >> 1).clamp(col_clip_min, col_clip_max); // intermediate shift
+            let col = inter * 2; // identity8 col
+            results[x] = (col + 8) >> 4; // final shift
         }
 
         let c_lo = _mm_set_epi32(results[3], results[2], results[1], results[0]);
@@ -11872,21 +11883,30 @@ pub fn inv_identity_add_16x16_16bpc_avx2(
     let stride_u16 = dst_stride / 2;
 
     // Identity16 scale factor: f(x) = 2*x + (x*1697 + 1024) >> 11
-    // For 16x16, applied twice (row + col), then final (+ 8) >> 4
+    // For 16x16: row_pass → intermediate shift (+ 2) >> 2 with clamp → col_pass → (+ 8) >> 4
+    // The intermediate shift is shift=2, rnd=2 for 16x16 (from inv_txfm_add_rust)
+    // 16bpc clamp: col_clip_min = (!bitdepth_max) << 5, col_clip_max = !col_clip_min
     let identity16_scale = |v: i32| -> i32 { 2 * v + ((v * 1697 + 1024) >> 11) };
+    let col_clip_min = (!(bitdepth_max)) << 5;
+    let col_clip_max = !col_clip_min;
 
-    // First, transform all coefficients in-place
+    // Row pass: identity16 on each row
     let mut tmp = [[0i32; 16]; 16];
     for y in 0..16 {
         for x in 0..16 {
             let c = coeff[y + x * 16] as i32;
-            // Row pass: identity16
-            let r = identity16_scale(c);
-            tmp[y][x] = r;
+            tmp[y][x] = identity16_scale(c);
         }
     }
 
-    // Column pass
+    // Intermediate shift: (val + 2) >> 2, clamped to col_clip range
+    for y in 0..16 {
+        for x in 0..16 {
+            tmp[y][x] = ((tmp[y][x] + 2) >> 2).clamp(col_clip_min, col_clip_max);
+        }
+    }
+
+    // Column pass: identity16, then final shift
     for x in 0..16 {
         for y in 0..16 {
             tmp[y][x] = identity16_scale(tmp[y][x]);
