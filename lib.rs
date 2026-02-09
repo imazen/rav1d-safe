@@ -4,12 +4,10 @@
     any(target_arch = "riscv32", target_arch = "riscv64"),
     feature(stdarch_riscv_feature_detection)
 )]
-// When neither `asm` nor `c-ffi` is enabled, deny unsafe code crate-wide.
-// Remaining #[allow(unsafe_code)] items (16 sound abstractions):
-//   safe_simd module: partial_simd.rs safety boundary (SIMD load/store wrappers)
-//   align.rs(4), assume.rs(1), c_arc.rs(3), c_box.rs(1), disjoint_mut.rs(1),
-//   internal.rs(4), msac.rs(2): Send/Sync impls, Pin, AlignedVec, unreachable_unchecked
-// 16 safe_simd sub-modules use forbid(unsafe_code) when asm off — compiler-enforced.
+// Crate-wide deny(unsafe_code) when neither `asm` nor `c-ffi` is enabled.
+// This is deny (not forbid) so that specific items can #[allow(unsafe_code)]
+// for sound abstractions. Modules that need zero unsafe use forbid(unsafe_code)
+// internally for stronger protection.
 #![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
 #![allow(clippy::all)]
@@ -44,12 +42,10 @@ pub mod include {
 } // mod include
 pub mod src {
     // === Module Safety Annotations ===
-    // Module-level #[allow(unsafe_code)] is used only when the entire module
-    // needs unsafe (SIMD intrinsics, pointer operations).
-    // For modules with isolated unsafe, item-level #[allow(unsafe_code)] is used
-    // on specific functions/impls instead, keeping the rest of the module deny'd.
-    // Conditional annotations (#[cfg_attr(feature = "c-ffi", allow(unsafe_code))])
-    // are used when unsafe is only needed for C FFI support.
+    // - Modules with zero unsafe use forbid(unsafe_code) internally
+    // - Modules with isolated unsafe items use item-level #[allow(unsafe_code)]
+    // - Modules that need unsafe only for c-ffi use cfg_attr(feature, allow)
+    // - safe_simd sub-modules set their own forbid/deny (no parent blanket allow)
 
     // Core primitives
     pub mod align;
@@ -99,7 +95,6 @@ pub mod src {
 
     // Safe SIMD implementations
     #[cfg(not(feature = "asm"))]
-    #[allow(unsafe_code)]
     pub mod safe_simd;
 
     // C API entry point

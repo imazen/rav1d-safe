@@ -5,8 +5,8 @@
 //! - fgy_32x32xn: NEON SIMD inner loop for grain application
 //! - fguv_32x32xn: NEON SIMD inner loop for chroma grain application
 
-#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
-#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
+#![cfg_attr(feature = "unchecked", deny(unsafe_code))]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;

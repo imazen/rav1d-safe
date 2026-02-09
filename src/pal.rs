@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 use crate::src::cpu::CpuFlags;
 #[cfg(not(feature = "asm"))]
 use crate::src::enum_map::DefaultValue;

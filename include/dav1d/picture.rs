@@ -1,5 +1,4 @@
 #![deny(unsafe_op_in_unsafe_fn)]
-#![allow(unsafe_code)]
 
 use crate::include::common::bitdepth::BitDepth;
 #[cfg(feature = "c-ffi")]
@@ -73,16 +72,25 @@ pub const DAV1D_PICTURE_ALIGNMENT: usize = RAV1D_PICTURE_ALIGNMENT;
 #[repr(transparent)]
 struct PicDataPtr(NonNull<u8>);
 
-/// SAFETY: `PicDataPtr` always points to heap-allocated `u8` data owned by
-/// a `Vec<u8>` or `AlignedVec` that outlives this pointer (stored in the same
-/// `Rav1dPictureData` struct, or borrowed from a scratch buffer for the
-/// pointer's lifetime). `u8` is trivially `Send`.
+/// SAFETY: `PicDataPtr` points to heap-allocated `u8` data in one of two cases:
+///
+/// 1. **Owned buffers** (`new_from_vec`): Points into a `Vec<u8>` stored in
+///    the same `Rav1dPictureData` struct, behind `Arc`. The Vec cannot be
+///    grown or reallocated through `&Rav1dPictureData`, so the pointer stays
+///    valid. Concurrent access is tracked by `DisjointMut`.
+///
+/// 2. **Borrowed scratch buffers** (`wrap_buf`): Points into a `&mut [BD::Pixel]`
+///    that outlives the component. These are single-threaded temporaries in
+///    `recon.rs` — they are never shared across threads.
+///
+/// In both cases, the pointed-to `u8` data is `Send + Sync`.
 #[cfg(feature = "quite-safe")]
+#[allow(unsafe_code)]
 unsafe impl Send for PicDataPtr {}
 
-/// SAFETY: Same as `Send` — the pointed-to `u8` data has a stable heap
-/// address, is valid for the pointer's lifetime, and `u8` is `Sync`.
+/// SAFETY: See [`Send`] impl above.
 #[cfg(feature = "quite-safe")]
+#[allow(unsafe_code)]
 unsafe impl Sync for PicDataPtr {}
 
 impl PicDataPtr {
@@ -255,9 +263,18 @@ impl Rav1dPictureDataComponentInner {
         Self { ptr, len, stride }
     }
 
-    /// Safe constructor: creates a component pointing into an owned `Vec<u8>` buffer.
+    /// Creates a component pointing into an owned `Vec<u8>` buffer.
     /// The Vec must have enough capacity for alignment padding + `usable_len`.
-    /// Vec heap data is stable across moves, so the pointer remains valid.
+    ///
+    /// # Pointer validity
+    ///
+    /// The returned pointer is valid because:
+    /// - The Vec and this component are stored in the same [`Rav1dPictureData`],
+    ///   which is immediately placed inside an [`Arc`].
+    /// - Through `Arc`, only `&Rav1dPictureData` is available — nobody can grow,
+    ///   shrink, or reallocate the Vec.
+    /// - The Vec is only accessed mutably in [`Rav1dPictureData::drop`], at which
+    ///   point this component is also being destroyed.
     #[cfg(not(feature = "c-ffi"))]
     fn new_from_vec(buf: &mut Vec<u8>, usable_len: usize, stride: isize) -> Self {
         if usable_len == 0 {
@@ -269,7 +286,6 @@ impl Rav1dPictureDataComponentInner {
         }
         let align_offset = buf.as_ptr().align_offset(RAV1D_PICTURE_ALIGNMENT);
         assert!(align_offset + usable_len <= buf.len());
-        // Vec data lives on the heap; moving the Vec doesn't invalidate this pointer.
         let ptr = PicDataPtr::new(buf.as_mut_ptr().wrapping_add(align_offset)).unwrap();
         assert!(ptr.is_chunk_aligned());
         assert!(usable_len % RAV1D_PICTURE_MULTIPLE == 0);
@@ -296,6 +312,7 @@ impl Rav1dPictureDataComponentInner {
 }
 
 // SAFETY: We only store the raw pointer (via PicDataPtr), so we never materialize a `&mut`.
+#[allow(unsafe_code)]
 unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
     type Target = u8;
 
@@ -335,6 +352,7 @@ impl Pixels for Rav1dPictureDataComponent {
     }
 }
 
+#[allow(unsafe_code)]
 impl Strided for Rav1dPictureDataComponent {
     fn stride(&self) -> isize {
         // SAFETY: We're only accessing the `stride` fields, not `ptr`.
@@ -380,6 +398,10 @@ impl Rav1dPictureDataComponent {
     }
 
     /// Strided ptr to [`u8`] bytes.
+    ///
+    /// Only used by asm (mc emu_edge) and c-ffi (Dav1dPicture conversion).
+    #[cfg(any(feature = "asm", feature = "c-ffi"))]
+    #[allow(unsafe_code)]
     fn as_strided_byte_mut_ptr(&self) -> *mut u8 {
         let ptr = self.0.as_mut_ptr();
         let stride = self.stride();
@@ -395,12 +417,16 @@ impl Rav1dPictureDataComponent {
     }
 
     /// Strided ptr to [`BitDepth::Pixel`]s.
+    #[cfg(any(feature = "asm", feature = "c-ffi"))]
+    #[allow(unsafe_code)]
     pub fn as_strided_mut_ptr<BD: BitDepth>(&self) -> *mut BD::Pixel {
         // SAFETY: Transmutation is safe because we verify this with `zerocopy` in `Self::slice`.
         self.as_strided_byte_mut_ptr().cast()
     }
 
     /// Strided ptr to [`BitDepth::Pixel`]s.
+    #[cfg(feature = "asm")]
+    #[allow(unsafe_code)]
     pub fn as_strided_ptr<BD: BitDepth>(&self) -> *const BD::Pixel {
         self.as_strided_mut_ptr::<BD>().cast_const()
     }

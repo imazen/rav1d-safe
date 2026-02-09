@@ -1,7 +1,7 @@
 //! Safe SIMD implementations for ITX (Inverse Transforms)
 #![allow(deprecated)] // FFI wrappers need to forge tokens
-#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
-#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
+#![cfg_attr(feature = "unchecked", deny(unsafe_code))]
 //!
 //! ITX is the largest DSP module (~42k asm lines). Strategy:
 //! 1. Implement full 2D transforms (not just 1D) for common sizes

@@ -1,5 +1,5 @@
-#![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
-#![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
+#![cfg_attr(feature = "unchecked", deny(unsafe_code))]
 #![allow(deprecated)] // FFI wrappers need to forge tokens
 //! Safe SIMD implementation of pal_idx_finish using AVX2.
 //!

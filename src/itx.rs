@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 use strum::EnumCount;
 
 use crate::include::common::bitdepth::AsPrimitive;

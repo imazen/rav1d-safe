@@ -1,9 +1,6 @@
-// Progressive safety levels:
-// - Default (no features): forbid(unsafe_code) - maximum safety, single-threaded
-// - quite-safe: Allow sound abstractions (Arc, Mutex, threading)
-// - unchecked: Allow unchecked slice access
-// - c-ffi: Allow C FFI functions
-// - asm: Allow hand-written assembly
+// This module (C API entry point) uses forbid(unsafe_code) when c-ffi is off.
+// The crate root (lib.rs) uses deny(unsafe_code), which is weaker — modules
+// can override with #[allow] on specific items for sound abstractions.
 #![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), forbid(unsafe_code))]
 #![deny(unsafe_op_in_unsafe_fn)]
 
