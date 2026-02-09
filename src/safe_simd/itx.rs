@@ -7305,20 +7305,20 @@ pub fn inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
         }
     }
 
-    // First pass: Identity on rows
+    // First pass: ADST on rows (H_ADST = first=Adst, second=Identity per reference)
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
         tmp[y][3] = o3;
     }
 
-    // Second pass: ADST on columns
+    // Second pass: Identity on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7399,18 +7399,20 @@ pub fn inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
         }
     }
 
+    // First pass: FlipADST on rows (H_FLIPADST = first=FlipAdst, second=Identity per reference)
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
         tmp[y][3] = o3;
     }
 
+    // Second pass: Identity on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
