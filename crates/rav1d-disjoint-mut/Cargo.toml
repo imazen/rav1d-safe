@@ -18,8 +18,8 @@ std = ["dep:parking_lot"]
 unchecked = []
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
 aligned = ["dep:aligned", "dep:aligned-vec"]
-# StridedBuf: raw byte buffer wrapper for DisjointMut (used by rav1d picture data).
-strided-buf = []
+# PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).
+pic-buf = []
 # Zerocopy cast methods on guards (cast_slice, mut_slice_as, etc.).
 zerocopy = ["dep:zerocopy"]
 

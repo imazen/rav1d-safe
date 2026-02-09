@@ -44,7 +44,8 @@ use crate::src::with_offset::WithOffset;
 use libc::ptrdiff_t;
 #[cfg(feature = "c-ffi")]
 use libc::uintptr_t;
-use rav1d_disjoint_mut::StridedBuf;
+#[cfg(not(feature = "c-ffi"))]
+use rav1d_disjoint_mut::PicBuf;
 use std::array;
 use std::ffi::c_int;
 #[cfg(feature = "c-ffi")]
@@ -221,11 +222,11 @@ pub struct Rav1dPictureDataComponentInner {
     stride: isize,
 }
 
-/// Without c-ffi, the inner buffer is a [`StridedBuf`] from the disjoint-mut crate.
+/// Without c-ffi, the inner buffer is a [`PicBuf`] from the disjoint-mut crate.
 /// All unsafe for `AsMutPtr` is confined to that crate. Stride is stored separately
 /// in [`Rav1dPictureDataComponent`].
 #[cfg(not(feature = "c-ffi"))]
-pub type Rav1dPictureDataComponentInner = StridedBuf;
+pub type Rav1dPictureDataComponentInner = PicBuf;
 
 #[cfg(feature = "c-ffi")]
 impl Rav1dPictureDataComponentInner {
@@ -312,7 +313,7 @@ unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
 /// A picture data component: a disjoint-tracked buffer with stride.
 ///
 /// For c-ffi: stride is stored inside the inner type.
-/// Without c-ffi: stride is stored alongside the [`DisjointMut<StridedBuf>`].
+/// Without c-ffi: stride is stored alongside the [`DisjointMut<PicBuf>`].
 #[cfg(feature = "c-ffi")]
 pub struct Rav1dPictureDataComponent {
     data: DisjointMut<Rav1dPictureDataComponentInner>,
@@ -348,6 +349,16 @@ impl Rav1dPictureDataComponent {
         }
     }
 
+    /// Extract the owned `Vec<u8>` from this component's inner buffer, if any.
+    ///
+    /// Returns `Some(vec)` for owned allocations (from `alloc_picture_data`),
+    /// `None` for borrowed scratch buffers (from `wrap_buf`).
+    /// Used by [`Rav1dPictureData::drop`] to return buffers to the memory pool.
+    #[cfg(not(feature = "c-ffi"))]
+    fn take_buf(&mut self) -> Option<Vec<u8>> {
+        self.data.get_mut().take_buf()
+    }
+
     /// Create from a borrowed pixel buffer (used in recon.rs for scratch buffers).
     pub fn wrap_buf<BD: BitDepth>(buf: &mut [BD::Pixel], stride: usize) -> Self {
         let stride_bytes = (stride * mem::size_of::<BD::Pixel>()) as isize;
@@ -356,8 +367,8 @@ impl Rav1dPictureDataComponent {
                 Self::from_parts(Rav1dPictureDataComponentInner::wrap_buf::<BD>(buf, stride), stride_bytes)
             } else {
                 let buf = AsBytes::as_bytes_mut(buf);
-                let inner = StridedBuf::from_byte_slice(buf);
                 assert!(buf.len() % RAV1D_PICTURE_GUARANTEED_MULTIPLE == 0);
+                let inner = PicBuf::from_byte_slice(buf);
                 Self::from_parts(inner, stride_bytes)
             }
         }
@@ -663,7 +674,6 @@ pub struct Rav1dPictureData {
 #[cfg(not(feature = "c-ffi"))]
 pub struct Rav1dPictureData {
     pub data: [Rav1dPictureDataComponent; 3],
-    owned_bufs: [Vec<u8>; 3],
     pub(crate) allocator: Rav1dPicAllocator,
 }
 
@@ -682,9 +692,11 @@ impl Drop for Rav1dPictureData {
 #[cfg(not(feature = "c-ffi"))]
 impl Drop for Rav1dPictureData {
     fn drop(&mut self) {
-        for buf in &mut self.owned_bufs {
-            if !buf.is_empty() {
-                self.allocator.pool.push(mem::take(buf));
+        for component in &mut self.data {
+            if let Some(buf) = component.take_buf() {
+                if !buf.is_empty() {
+                    self.allocator.pool.push(buf);
+                }
             }
         }
     }
@@ -1163,21 +1175,21 @@ impl Rav1dPicAllocator {
                 .map_err(|_| Rav1dError::ENOMEM)
         };
 
-        let mut y_buf = alloc_plane(y_sz)?;
-        let mut u_buf = alloc_plane(uv_sz)?;
-        let mut v_buf = alloc_plane(uv_sz)?;
+        let y_buf = alloc_plane(y_sz)?;
+        let u_buf = alloc_plane(uv_sz)?;
+        let v_buf = alloc_plane(uv_sz)?;
 
         let data = [
             Rav1dPictureDataComponent::from_parts(
-                StridedBuf::from_vec_aligned(&mut y_buf, RAV1D_PICTURE_ALIGNMENT, y_sz),
+                PicBuf::from_vec_aligned(y_buf, RAV1D_PICTURE_ALIGNMENT, y_sz),
                 y_stride,
             ),
             Rav1dPictureDataComponent::from_parts(
-                StridedBuf::from_vec_aligned(&mut u_buf, RAV1D_PICTURE_ALIGNMENT, uv_sz),
+                PicBuf::from_vec_aligned(u_buf, RAV1D_PICTURE_ALIGNMENT, uv_sz),
                 uv_stride,
             ),
             Rav1dPictureDataComponent::from_parts(
-                StridedBuf::from_vec_aligned(&mut v_buf, RAV1D_PICTURE_ALIGNMENT, uv_sz),
+                PicBuf::from_vec_aligned(v_buf, RAV1D_PICTURE_ALIGNMENT, uv_sz),
                 uv_stride,
             ),
         ];
@@ -1189,7 +1201,6 @@ impl Rav1dPicAllocator {
             stride,
             data: Some(Arc::new(Rav1dPictureData {
                 data,
-                owned_bufs: [y_buf, u_buf, v_buf],
                 allocator: self.clone(),
             })),
             ..Default::default()
