@@ -6168,12 +6168,8 @@ mod tests {
 
 /// ADST4 1D transform applied to a single 4-element vector (returns 4 outputs)
 #[inline(always)]
-fn adst4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32) -> (i32, i32, i32, i32) {
-    // These formulas match the reference:
-    // out0 = (1321*in0 + (3803-4096)*in2 + (2482-4096)*in3 + (3344-4096)*in1 + 2048) >> 12 + in2 + in3 + in1
-    // out1 = ((2482-4096)*in0 - 1321*in2 - (3803-4096)*in3 + (3344-4096)*in1 + 2048) >> 12 + in0 - in3 + in1
-    // out2 = (209 * (in0 - in2 + in3) + 128) >> 8
-    // out3 = ((3803-4096)*in0 + (2482-4096)*in2 - 1321*in3 - (3344-4096)*in1 + 2048) >> 12 + in0 + in2 - in1
+fn adst4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32, min: i32, max: i32) -> (i32, i32, i32, i32) {
+    let clip = |v: i32| v.clamp(min, max);
 
     let out0 =
         ((1321 * in0 + (3803 - 4096) * in2 + (2482 - 4096) * in3 + (3344 - 4096) * in1 + 2048)
@@ -6195,18 +6191,19 @@ fn adst4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32) -> (i32, i32, i32, i3
         + in2
         - in1;
 
-    (out0, out1, out2, out3)
+    (clip(out0), clip(out1), clip(out2), clip(out3))
 }
 
 /// DCT4 1D transform (scalar, for combining with ADST)
 #[inline(always)]
-fn dct4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32) -> (i32, i32, i32, i32) {
+fn dct4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32, min: i32, max: i32) -> (i32, i32, i32, i32) {
+    let clip = |v: i32| v.clamp(min, max);
     let t0 = (in0 + in2) * 181 + 128 >> 8;
     let t1 = (in0 - in2) * 181 + 128 >> 8;
     let t2 = ((in1 * 1567 - in3 * (3784 - 4096) + 2048) >> 12) - in3;
     let t3 = ((in1 * (3784 - 4096) + in3 * 1567 + 2048) >> 12) + in1;
 
-    (t0 + t3, t1 + t2, t1 - t2, t0 - t3)
+    (clip(t0 + t3), clip(t1 + t2), clip(t1 - t2), clip(t0 - t3))
 }
 
 /// ADST_DCT 4x4: ADST on rows, DCT on columns
@@ -6230,7 +6227,7 @@ pub fn inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner(
     // First pass: ADST on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6240,7 +6237,7 @@ pub fn inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner(
     // Second pass: DCT on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6282,7 +6279,7 @@ pub fn inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner(
     // First pass: DCT on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6292,7 +6289,7 @@ pub fn inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner(
     // Second pass: ADST on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6334,7 +6331,7 @@ pub fn inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
     // First pass: ADST on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6344,7 +6341,7 @@ pub fn inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
     // Second pass: ADST on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6486,8 +6483,8 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_avx2(
 
 /// FlipADST4 1D transform - same as ADST but output in reverse order
 #[inline(always)]
-fn flipadst4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32) -> (i32, i32, i32, i32) {
-    let (o0, o1, o2, o3) = adst4_1d_scalar(in0, in1, in2, in3);
+fn flipadst4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32, min: i32, max: i32) -> (i32, i32, i32, i32) {
+    let (o0, o1, o2, o3) = adst4_1d_scalar(in0, in1, in2, in3, min, max);
     (o3, o2, o1, o0) // Flip the output order
 }
 
@@ -6511,7 +6508,7 @@ pub fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(
     // First pass: FlipADST on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6521,7 +6518,7 @@ pub fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(
     // Second pass: DCT on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6560,7 +6557,7 @@ pub fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(
     // First pass: DCT on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6570,7 +6567,7 @@ pub fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(
     // Second pass: FlipADST on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6608,7 +6605,7 @@ pub fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(
 
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6617,7 +6614,7 @@ pub fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6654,7 +6651,7 @@ pub fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(
 
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6663,7 +6660,7 @@ pub fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6700,7 +6697,7 @@ pub fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
 
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6709,7 +6706,7 @@ pub fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7233,9 +7230,9 @@ impl_8x8_ffi_wrapper!(
 
 /// Identity transform 4x4 - just pass through values (no transform)
 #[inline(always)]
-fn identity4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32) -> (i32, i32, i32, i32) {
+fn identity4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32, _min: i32, _max: i32) -> (i32, i32, i32, i32) {
     // identity4(x) = x + (x * 1697 + 2048) >> 12 ≈ x * sqrt(2)
-    // Matches rav1d_inv_identity4_1d_c in itx_1d.rs
+    // Matches rav1d_inv_identity4_1d_c in itx_1d.rs (which also ignores min/max)
     let o0 = in0 + ((in0 * 1697 + 2048) >> 12);
     let o1 = in1 + ((in1 * 1697 + 2048) >> 12);
     let o2 = in2 + ((in2 * 1697 + 2048) >> 12);
@@ -7263,7 +7260,7 @@ pub fn inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(
     // First pass: Identity on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7273,7 +7270,7 @@ pub fn inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(
     // Second pass: ADST on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7311,7 +7308,7 @@ pub fn inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
     // First pass: Identity on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7321,7 +7318,7 @@ pub fn inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
     // Second pass: ADST on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7358,7 +7355,7 @@ pub fn inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(
 
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7367,7 +7364,7 @@ pub fn inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7404,7 +7401,7 @@ pub fn inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
 
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7413,7 +7410,7 @@ pub fn inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7600,7 +7597,7 @@ pub fn inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
     // First pass: DCT on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7610,7 +7607,7 @@ pub fn inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
     // Second pass: Identity on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7648,7 +7645,7 @@ pub fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
     // First pass: Identity on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3]);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7658,7 +7655,7 @@ pub fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
     // Second pass: DCT on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -8074,7 +8071,7 @@ fn add_32x32_to_dst(
 
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
-    let rnd_final = _mm256_set1_epi32(4); // (+ 4) >> 3 for 32x32
+    let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
 
     for y in 0..32 {
         let dst_off = y * dst_stride;
@@ -8111,9 +8108,9 @@ fn add_32x32_to_dst(
                 tmp[y * 32 + x_base + 8],
             );
 
-            // Final scaling: (c + 4) >> 3
-            let c0_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c0, rnd_final));
-            let c1_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c1, rnd_final));
+            // Final scaling: (c + 8) >> 4
+            let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
+            let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
 
             let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
             let c16 = _mm256_permute4x64_epi64::<0b11_01_10_00>(c16);
@@ -8300,7 +8297,7 @@ fn add_32x32_to_dst_16bpc(
 
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(4); // (+ 4) >> 3 for 32x32
+    let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
 
     for y in 0..32 {
         let dst_off = y * stride_u16;
@@ -8334,8 +8331,8 @@ fn add_32x32_to_dst_16bpc(
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            // Final scaling: (c + 4) >> 3
-            let c_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c32, rnd_final));
+            // Final scaling: (c + 8) >> 4
+            let c_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c32, rnd_final));
 
             // Add to destination
             let sum = _mm256_add_epi32(d32, c_scaled);
@@ -9105,7 +9102,7 @@ fn add_64x64_to_dst(
 
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
-    let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2 for 64x64
+    let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
 
     for y in 0..64 {
         let dst_off = y * dst_stride;
@@ -9140,9 +9137,9 @@ fn add_64x64_to_dst(
                 tmp[y * 64 + x_base + 8],
             );
 
-            // Final scaling: (c + 2) >> 2
-            let c0_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c0, rnd_final));
-            let c1_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c1, rnd_final));
+            // Final scaling: (c + 8) >> 4
+            let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
+            let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
 
             let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
             let c16 = _mm256_permute4x64_epi64::<0b11_01_10_00>(c16);
@@ -9257,7 +9254,7 @@ fn add_64x64_to_dst_16bpc(
 
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2 for 64x64
+    let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
 
     for y in 0..64 {
         let dst_off = y * stride_u16;
@@ -9291,8 +9288,8 @@ fn add_64x64_to_dst_16bpc(
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            // Final scaling: (c + 2) >> 2
-            let c_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c32, rnd_final));
+            // Final scaling: (c + 8) >> 4
+            let c_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c32, rnd_final));
 
             // Add to destination
             let sum = _mm256_add_epi32(d32, c_scaled);
@@ -10142,7 +10139,7 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(4); // (+ 4) >> 3 for 16x32
+    let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
 
     for y in 0..32 {
         let dst_off = y * stride_u16;
@@ -10174,8 +10171,8 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
             tmp[y * 16 + 12],
         );
 
-        let c0_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c0, rnd_final));
-        let c1_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c1, rnd_final));
+        let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
+        let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
 
         let sum0 = _mm256_add_epi32(d_0_4, c0_scaled);
         let sum1 = _mm256_add_epi32(d_4_8, c1_scaled);
@@ -10274,7 +10271,7 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(4); // (+ 4) >> 3 for 32x16
+    let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
 
     for y in 0..16 {
         let dst_off = y * stride_u16;
@@ -10305,7 +10302,7 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            let c_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c32, rnd_final));
+            let c_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c32, rnd_final));
             let sum = _mm256_add_epi32(d32, c_scaled);
             let clamped = _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero);
 
@@ -10519,7 +10516,7 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(4); // (+ 4) >> 3
+    let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
 
     for y in 0..8 {
         let dst_off = y * stride_u16;
@@ -10550,7 +10547,7 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            let c_scaled = _mm256_srai_epi32::<3>(_mm256_add_epi32(c32, rnd_final));
+            let c_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c32, rnd_final));
             let sum = _mm256_add_epi32(d32, c_scaled);
             let clamped = _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero);
 
@@ -10651,7 +10648,7 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2
+    let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
 
     for y in 0..64 {
         let dst_off = y * stride_u16;
@@ -10682,7 +10679,7 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            let c_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c32, rnd_final));
+            let c_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c32, rnd_final));
             let sum = _mm256_add_epi32(d32, c_scaled);
             let clamped = _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero);
 
@@ -10781,7 +10778,7 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2
+    let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
 
     for y in 0..32 {
         let dst_off = y * stride_u16;
@@ -10812,7 +10809,7 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            let c_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c32, rnd_final));
+            let c_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c32, rnd_final));
             let sum = _mm256_add_epi32(d32, c_scaled);
             let clamped = _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero);
 
@@ -10913,7 +10910,7 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2
+    let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
 
     for y in 0..64 {
         let dst_off = y * stride_u16;
@@ -10945,8 +10942,8 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
             tmp[y * 16 + 12],
         );
 
-        let c0_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c0, rnd_final));
-        let c1_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c1, rnd_final));
+        let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
+        let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd_final));
 
         let sum0 = _mm256_add_epi32(d_0_4, c0_scaled);
         let sum1 = _mm256_add_epi32(d_4_8, c1_scaled);
@@ -11047,7 +11044,7 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
     // Add to destination
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
-    let rnd_final = _mm256_set1_epi32(2); // (+ 2) >> 2
+    let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
 
     for y in 0..16 {
         let dst_off = y * stride_u16;
@@ -11078,7 +11075,7 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
             let d32 = _mm256_set_m128i(d_hi, d_lo);
             let c32 = _mm256_set_m128i(c_hi, c_lo);
 
-            let c_scaled = _mm256_srai_epi32::<2>(_mm256_add_epi32(c32, rnd_final));
+            let c_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c32, rnd_final));
             let sum = _mm256_add_epi32(d32, c_scaled);
             let clamped = _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero);
 
@@ -11346,20 +11343,33 @@ macro_rules! impl_4x4_transform_16bpc {
                 }
             }
 
+            // Clip ranges for 16bpc (matching reference inv_txfm_add_rust)
+            let row_clip_min = (!bitdepth_max) << 7;
+            let row_clip_max = !row_clip_min;
+            let col_clip_min = (!bitdepth_max) << 5;
+            let col_clip_max = !col_clip_min;
+
             // First pass: transform on rows
             let mut tmp = [[0i32; 4]; 4];
             for y in 0..4 {
-                let (o0, o1, o2, o3) = $row_fn(c[y][0], c[y][1], c[y][2], c[y][3]);
+                let (o0, o1, o2, o3) = $row_fn(c[y][0], c[y][1], c[y][2], c[y][3], row_clip_min, row_clip_max);
                 tmp[y][0] = o0;
                 tmp[y][1] = o1;
                 tmp[y][2] = o2;
                 tmp[y][3] = o3;
             }
 
+            // Intermediate clip (shift=0 for 4x4)
+            for y in 0..4 {
+                for x in 0..4 {
+                    tmp[y][x] = tmp[y][x].clamp(col_clip_min, col_clip_max);
+                }
+            }
+
             // Second pass: transform on columns
             let mut out = [[0i32; 4]; 4];
             for x in 0..4 {
-                let (o0, o1, o2, o3) = $col_fn(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x]);
+                let (o0, o1, o2, o3) = $col_fn(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], col_clip_min, col_clip_max);
                 out[0][x] = o0;
                 out[1][x] = o1;
                 out[2][x] = o2;
