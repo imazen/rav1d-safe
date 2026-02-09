@@ -344,20 +344,9 @@ DisjointMut is:
 
 ## Relationship to Safety Levels
 
-### Level 0 (forbid_unsafe) 
-DisjointMut itself is unsafe (UnsafeCell interior), so:
-- ❌ Cannot use DisjointMut in forbid_unsafe mode
-- Must use alternative (single-threaded or crossbeam chunks_mut)
-
-### Level 1 (quite-safe)
-- ✅ DisjointMut allowed as "sound abstraction"
-- ⚠️ Must document safety contract
-- ⚠️ Must audit all usage sites
-
-### Level 2+ (unchecked/c-ffi/asm)
-- ✅ Fully available, same as quite-safe
-
-**Implication:** DisjointMut is a quite-safe-level feature, not default-safe.
+DisjointMut uses `UnsafeCell` internally but lives in the `rav1d-disjoint-mut` sub-crate.
+The main crate uses it via safe APIs only — `#![forbid(unsafe_code)]` is enforced on the default build.
+All unsafe is confined to the sub-crate, which is Miri-tested under both Stacked Borrows and Tree Borrows.
 
 ## Final Verdict
 

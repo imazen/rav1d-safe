@@ -219,11 +219,11 @@ under `#![forbid(unsafe_code)]` — the compiler guarantees zero unsafe in the e
 neither `asm` nor `c-ffi` features are enabled.
 
 All unsafe is now confined to:
-- `rav1d-disjoint-mut` sub-crate (StridedBuf, Align types, AlignedVec AsMutPtr impls)
+- `rav1d-disjoint-mut` sub-crate (PicBuf, Align types, AlignedVec AsMutPtr impls)
 - Code gated behind `#[cfg(feature = "asm")]` or `#[cfg(feature = "c-ffi")]`
 
 **How unsafe was eliminated from the default build:**
-- `picture.rs`: `Rav1dPictureDataComponentInner = StridedBuf` (type alias to disjoint-mut crate type)
+- `picture.rs`: `Rav1dPictureDataComponentInner = PicBuf` (type alias to disjoint-mut crate type)
 - `msac.rs`: `MsacAsmContextBuf { pos: usize, end: usize }` (indices, not pointers)
 - `c_box.rs`: No custom Drop without c-ffi → destructurable, no Pin::new_unchecked
 - `c_arc.rs`: `Arc<Box<T>>` with safe view slicing (no StableRef, no raw pointers)
@@ -692,199 +692,23 @@ fn test_decoder_thread_cleanup() {
 
 
 
-## Safety Levels (Progressive Trust Model)
-
-rav1d-safe uses a progressive safety model where the default is maximum safety, and features opt-in to less safety for more performance.
-
-### Level 0: Default (forbid_unsafe) - Maximum Safety
-
-**Build:** `cargo build --no-default-features --features "bitdepth_8,bitdepth_16"`
-
-**Guarantees:**
-- ✅ `#![forbid(unsafe_code)]` - Compiler-enforced, zero unsafe
-- ✅ Single-threaded only (no Arc, no threading primitives)
-- ✅ Safe-only data structures
-- ✅ Bounds-checked slice access
-- ✅ Ideal for: audit, fuzzing, correctness verification
-
-**Performance:** Slowest, but provably safe
-
-**Code Structure:**
-- Use `cfg(not(feature = "quite-safe"))` for safe-only alternatives
-- Example: Use `Rc` instead of `Arc`, `RefCell` instead of `Mutex`
-
-### Level 1: quite-safe - Sound Abstractions
-
-**Build:** Add `--features quite-safe`
-
-**Allows:**
-- ✅ Sound abstractions with unsafe internals (`Arc`, `Mutex`, `AtomicU32`)
-- ✅ Multi-threading via standard library primitives
-- ✅ Still bounds-checked slice access
-- ⚠️ Uses `#![deny(unsafe_code)]` where possible
-- ⚠️ Allows `#[allow(unsafe_code)]` for sound abstractions only
-
-**Performance:** Good, multi-threaded
-
-**Code Structure:**
-- Mark sound abstractions with `#[cfg(feature = "quite-safe")]`
-- Document safety invariants for each abstraction
-- Keep unsafe code isolated in minimal wrapper modules
-
-### Level 2: unchecked - Performance Mode
-
-**Build:** Add `--features unchecked`
-
-**Allows:**
-- ✅ Everything from quite-safe
-- ⚠️ Unchecked slice access (`get_unchecked`) in hot paths
-- ⚠️ Still maintains safety invariants (debug_assert! checks)
-
-**Performance:** Near-maximum, zero bounds checking overhead
-
-**Code Structure:**
-- Use `pixel_access::row_slice()` helpers (conditional on unchecked)
-- Always include `debug_assert!` for bounds validation
-- Example:
-  ```rust
-  #[cfg(feature = "unchecked")]
-  unsafe { slice.get_unchecked(idx) }
-  
-  #[cfg(not(feature = "unchecked"))]
-  &slice[idx]
-  ```
-
-### Level 3: c-ffi - C API Compatibility
-
-**Build:** Add `--features c-ffi`
-
-**Allows:**
-- ✅ Everything from unchecked
-- ⚠️ `unsafe extern "C"` FFI functions
-- ⚠️ Raw pointer conversions at FFI boundary
-- ⚠️ C ABI compatibility layer
-
-**Performance:** Maximum (FFI overhead minimal)
-
-**Code Structure:**
-- Gate all FFI code with `#[cfg(feature = "c-ffi")]`
-- FFI wrappers convert pointers → slices, then call safe inner functions
-- Example:
-  ```rust
-  #[cfg(feature = "c-ffi")]
-  pub unsafe extern "C" fn dav1d_filter(
-      dst: *mut u8, 
-      len: usize
-  ) {
-      let dst = unsafe { slice::from_raw_parts_mut(dst, len) };
-      filter_inner(dst); // Safe function
-  }
-  ```
-
-### Level 4: asm - Hand-Written Assembly
-
-**Build:** Add `--features asm`
-
-**Allows:**
-- ✅ Everything from c-ffi
-- ⚠️ Hand-written x86_64/aarch64 assembly
-- ⚠️ Function pointer dispatch to asm functions
-
-**Performance:** Maximum (assembly hot paths)
-
-**Code Structure:**
-- Gate all asm code with `#[cfg(feature = "asm")]`
-- Assembly functions must have safe Rust equivalents for testing
-- Document asm safety invariants clearly
-
-### Feature Dependency Chain
+## Feature Dependency Chain
 
 ```
-forbid_unsafe (default)
-  └─> quite-safe (enables threading + sound abstractions)
-       └─> unchecked (enables unchecked slice access)
-            └─> c-ffi (enables C API)
-                 └─> asm (enables hand-written assembly)
+default:    #![forbid(unsafe_code)] — compiler-enforced, zero unsafe
+  └─> unchecked: get_unchecked in hot paths, debug_assert! bounds checks
+       └─> c-ffi: unsafe extern "C" FFI wrappers, raw pointer conversions
+            └─> asm: hand-written x86_64/aarch64 assembly via function pointers
 ```
 
 **Cargo.toml:**
 ```toml
 [features]
-quite-safe = []
-unchecked = ["quite-safe"]
+default = ["bitdepth_8", "bitdepth_16"]
+unchecked = ["rav1d-disjoint-mut/unchecked"]
 c-ffi = ["unchecked"]
 asm = ["c-ffi"]
 ```
 
-### Audit Guidance
-
-**For auditors reviewing safety:**
-
-1. **Start with forbid_unsafe mode** - Verify it builds and tests pass
-2. **Review quite-safe additions** - Check each unsafe abstraction is sound
-3. **Review unchecked additions** - Verify bounds are checked in debug
-4. **Review c-ffi layer** - Ensure pointer conversions are correct
-5. **Review asm (optional)** - Compare against safe Rust equivalent
-
-**Code organization for easy audit:**
-
-```
-src/
-  managed.rs         - #![forbid(unsafe_code)] always
-  lib.rs            - Core decoder logic
-  internal.rs       - Data structures
-    #[cfg(not(feature = "quite-safe"))]
-    - Use Rc, RefCell, no threading
-    #[cfg(feature = "quite-safe")]
-    - Use Arc, Mutex, threading
-  
-  safe_simd/        - SIMD implementations
-    mc.rs           - Motion compensation
-      fn mc_inner(dst: &mut [u8], ...) { ... }  // Safe
-      
-      #[cfg(feature = "c-ffi")]
-      unsafe extern "C" fn mc_ffi(...) { ... }  // FFI wrapper
-```
-
-### Migration Checklist
-
-To migrate a module to this architecture:
-
-- [ ] Add `#![cfg_attr(not(feature = "quite-safe"), forbid(unsafe_code))]` at top
-- [ ] Move threading primitives behind `#[cfg(feature = "quite-safe")]`
-- [ ] Change raw pointer params to slices in inner functions
-- [ ] Use `pixel_access` helpers for slice access (respects `unchecked`)
-- [ ] Gate FFI wrappers with `#[cfg(feature = "c-ffi")]`
-- [ ] Document safety invariants for any unsafe code
-- [ ] Test that module builds in all safety levels
-
-### Current Status
-
-**Modules fully migrated:** 
-- `src/managed.rs` - already `#![forbid(unsafe_code)]`
-- (others TBD)
-
-**Work remaining:** ~20 safe_simd modules need migration
-
-
-### Implementation Status
-
-**Currently:** The codebase still uses Arc/Mutex/threading unconditionally, so `quite-safe` is effectively required to build. The default forbid_unsafe mode will fail to compile.
-
-**Target:** Conditionally compile single-threaded safe alternatives (Rc/RefCell) for default mode.
-
-**Example migration needed:**
-```rust
-// In src/internal.rs
-#[cfg(feature = "quite-safe")]
-use std::sync::{Arc, Mutex};
-#[cfg(not(feature = "quite-safe"))]
-use std::{rc::Rc as Arc, cell::RefCell as Mutex};
-
-// Decoder context switches between threaded and non-threaded versions
-```
-
-This is significant work - likely a week to fully migrate all threading code to be conditional.
-
-For now, use `quite-safe` feature as the practical default until migration is complete.
+All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crate (PicBuf, Align types, AlignedVec AsMutPtr impls). The main crate is provably safe — auditors only need to review the small sub-crate.
 
