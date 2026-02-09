@@ -1910,16 +1910,17 @@ fn obmc<BD: BitDepth>(
             if a_r.r#ref.r#ref[0] > 0 {
                 let ow4 = cmp::min(step4, b_dim[0]);
                 let oh4 = cmp::min(b_dim[1], 16) >> 1;
+                let lap_component = Rav1dPictureDataComponent::wrap_buf::<BD>(
+                    lap,
+                    ow4 as usize * h_mul as usize,
+                );
                 mc::<BD>(
                     f,
                     &mut scratch.emu_edge,
                     t.b,
                     MaybeTempPixels::NonTemp {
                         dst: PicOffset {
-                            data: &Rav1dPictureDataComponent::wrap_buf::<BD>(
-                                lap,
-                                ow4 as usize * h_mul as usize,
-                            ),
+                            data: &lap_component,
                             offset: 0,
                         },
                     },
@@ -1934,6 +1935,10 @@ fn obmc<BD: BitDepth>(
                     dav1d_filter_2d[*f.a[t.a].filter[1].index((bx4 + x + 1) as usize) as usize]
                         [*f.a[t.a].filter[0].index((bx4 + x + 1) as usize) as usize],
                 )?;
+                // In safe mode, wrap_buf copies into an owned Vec.
+                // Copy MC results back to scratch for blend to read.
+                #[cfg(not(feature = "c-ffi"))]
+                lap_component.copy_pixels_to::<BD>(lap);
                 f.dsp.mc.blend_h.call::<BD>(
                     true,
                     dst + (x * h_mul) as usize,
@@ -1959,16 +1964,17 @@ fn obmc<BD: BitDepth>(
             if l_r.r#ref.r#ref[0] > 0 {
                 let ow4 = cmp::min(b_dim[0], 16) >> 1;
                 let oh4 = cmp::min(step4, b_dim[1]);
+                let lap_component = Rav1dPictureDataComponent::wrap_buf::<BD>(
+                    lap,
+                    ow4 as usize * h_mul as usize,
+                );
                 mc::<BD>(
                     f,
                     &mut scratch.emu_edge,
                     t.b,
                     MaybeTempPixels::NonTemp {
                         dst: PicOffset {
-                            data: &Rav1dPictureDataComponent::wrap_buf::<BD>(
-                                lap,
-                                ow4 as usize * h_mul as usize,
-                            ),
+                            data: &lap_component,
                             offset: 0,
                         },
                     },
@@ -1983,6 +1989,8 @@ fn obmc<BD: BitDepth>(
                     dav1d_filter_2d[*t.l.filter[1].index((by4 + y + 1) as usize) as usize]
                         [*t.l.filter[0].index((by4 + y + 1) as usize) as usize],
                 )?;
+                #[cfg(not(feature = "c-ffi"))]
+                lap_component.copy_pixels_to::<BD>(lap);
                 f.dsp.mc.blend_v.call::<BD>(
                     false,
                     dst + (y * v_mul) as isize * dst.pixel_stride::<BD>(),
@@ -3136,10 +3144,12 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 bd,
             );
             let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
+            let tmp_component =
+                Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * bw4 as usize);
             f.dsp.ipred.intra_pred[m as usize].call(
                 m as usize,
                 PicOffset {
-                    data: &Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * bw4 as usize),
+                    data: &tmp_component,
                     offset: 0,
                 },
                 tl_edge_array,
@@ -3151,6 +3161,8 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 0,
                 bd,
             );
+            #[cfg(not(feature = "c-ffi"))]
+            tmp_component.copy_pixels_to::<BD>(tmp);
             let ii_mask = match interintra_type {
                 InterIntraType::Blend => {
                     dav1d_ii_masks[bs as usize][0][inter.nd.one_d.interintra_mode.get() as usize]
@@ -3421,13 +3433,14 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             bd,
                         );
                         let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
+                        let tmp_component = Rav1dPictureDataComponent::wrap_buf::<BD>(
+                            tmp,
+                            4 * cbw4 as usize,
+                        );
                         f.dsp.ipred.intra_pred[m as usize].call(
                             m as usize,
                             PicOffset {
-                                data: &Rav1dPictureDataComponent::wrap_buf::<BD>(
-                                    tmp,
-                                    4 * cbw4 as usize,
-                                ),
+                                data: &tmp_component,
                                 offset: 0,
                             },
                             tl_edge_array,
@@ -3439,6 +3452,8 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             0,
                             bd,
                         );
+                        #[cfg(not(feature = "c-ffi"))]
+                        tmp_component.copy_pixels_to::<BD>(tmp);
                         f.dsp
                             .mc
                             .blend

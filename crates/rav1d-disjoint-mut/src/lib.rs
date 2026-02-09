@@ -1278,39 +1278,34 @@ impl<T: Copy> Default for DisjointMutArcSlice<T> {
 mod pic_buf {
     use super::*;
 
-    /// A byte buffer for use in [`DisjointMut`], supporting both owned and borrowed data.
+    /// An owned byte buffer for use in [`DisjointMut`].
     ///
-    /// **Owned mode** (`from_vec_aligned`): Stores the `Vec<u8>` directly alongside a
-    /// pointer to the aligned subregion. The Vec keeps the pointer valid — no dangling
-    /// reference to separately-stored data.
+    /// Stores a `Vec<u8>` with an alignment offset and usable length.
+    /// The `Vec` owns the heap allocation, so `PicBuf` is automatically
+    /// `Send + Sync` (no raw pointers stored, no manual impls needed).
     ///
-    /// **Borrowed mode** (`from_byte_slice`): Stores a raw pointer into caller-owned data.
-    /// Only safe for temporaries whose lifetime is scoped to the caller (e.g. scratch
-    /// buffers on the stack).
+    /// For picture data: created via [`from_vec_aligned`](Self::from_vec_aligned)
+    /// with pool-allocated Vecs.
     ///
-    /// All unsafe is confined to the [`AsMutPtr`] implementation within this crate.
+    /// For scratch buffers: created via [`from_slice_copy`](Self::from_slice_copy)
+    /// which copies the data into an owned Vec.
+    #[derive(Default)]
     pub struct PicBuf {
-        /// The owning buffer, if this is an owned allocation.
-        /// When `Some`, `ptr` points into this Vec.
-        /// When `None`, `ptr` points into externally-owned data (borrowed mode).
-        buf: Option<Vec<u8>>,
-        ptr: *mut u8,
-        len: usize,
+        buf: Vec<u8>,
+        /// Byte offset from start of Vec to first usable byte (for alignment).
+        align_offset: usize,
+        /// Number of usable bytes starting from `align_offset`.
+        usable_len: usize,
     }
 
-    // SAFETY: PicBuf is only accessed through DisjointMut's borrow tracking,
-    // which prevents data races.
-    // - Owned mode: ptr points into the co-located Vec<u8>, which is Send+Sync.
-    // - Borrowed mode: ptr points into a &mut [u8] whose lifetime is managed by
-    //   the caller (single-threaded scratch temporaries in recon.rs).
-    unsafe impl Send for PicBuf {}
-    unsafe impl Sync for PicBuf {}
+    // No manual Send/Sync needed — Vec<u8> and usize are both Send + Sync.
 
     impl PicBuf {
         /// Create an owned buffer from a Vec with alignment offset.
         ///
         /// Takes ownership of the Vec. Computes the alignment offset from the
-        /// Vec's data pointer, then stores a pointer to the aligned position.
+        /// Vec's data pointer so that the usable region starts at the next
+        /// `alignment`-byte boundary.
         ///
         /// # Panics
         ///
@@ -1324,67 +1319,72 @@ mod pic_buf {
                 usable_len,
                 vec.len()
             );
-            // SAFETY: ptr points into the Vec we're about to store. The Vec won't
-            // be reallocated because we only access it through DisjointMut (no push/resize).
-            let ptr = vec.as_ptr().wrapping_add(align_offset) as *mut u8;
             Self {
-                buf: Some(vec),
-                ptr,
-                len: usable_len,
+                buf: vec,
+                align_offset,
+                usable_len,
             }
         }
 
-        /// Create a borrowed buffer from a mutable byte slice.
+        /// Create an owned buffer by copying a byte slice.
         ///
-        /// The caller must ensure the slice outlives this `PicBuf`.
-        /// Intended for temporary scratch buffers only.
-        pub fn from_byte_slice(slice: &mut [u8]) -> Self {
+        /// Used for scratch buffers: the data is copied into an owned Vec,
+        /// so no raw pointers or lifetime concerns.
+        pub fn from_slice_copy(data: &[u8]) -> Self {
+            let vec = data.to_vec();
+            let len = vec.len();
             Self {
-                buf: None,
-                ptr: slice.as_mut_ptr(),
-                len: slice.len(),
+                buf: vec,
+                align_offset: 0,
+                usable_len: len,
             }
         }
 
-        /// Take the owned Vec out of this buffer, if it has one.
+        /// Access the usable byte region as a slice.
         ///
-        /// After this call, the buffer is left in a default (null, zero-length) state.
+        /// Used to copy data back from a scratch-dst component after writing.
+        pub fn as_usable_bytes(&self) -> &[u8] {
+            &self.buf[self.align_offset..self.align_offset + self.usable_len]
+        }
+
+        /// Take the owned Vec out of this buffer.
+        ///
+        /// After this call, the buffer is left in a default (empty) state.
         /// Used by picture data to return buffers to a memory pool on drop.
         pub fn take_buf(&mut self) -> Option<Vec<u8>> {
-            self.ptr = core::ptr::null_mut();
-            self.len = 0;
-            self.buf.take()
-        }
-    }
-
-    impl Default for PicBuf {
-        fn default() -> Self {
-            Self {
-                buf: None,
-                ptr: core::ptr::null_mut(),
-                len: 0,
+            if self.buf.is_empty() && self.usable_len == 0 {
+                None
+            } else {
+                self.usable_len = 0;
+                self.align_offset = 0;
+                Some(core::mem::take(&mut self.buf))
             }
         }
     }
 
-    /// SAFETY: Pure pointer operations only — the stored pointer is returned directly.
-    /// `len` returns the stored length. No references are created to the data.
+    /// SAFETY: Pointer is derived from the Vec's heap allocation through a shared
+    /// reference (`&PicBuf` → `&Vec<u8>` → `as_ptr()`). This avoids creating
+    /// `&mut Vec` (which would cause a Unique retag under Stacked Borrows).
+    /// The heap data is a separate allocation from the Vec header, so the
+    /// SharedReadOnly tag on the PicBuf struct does not cover the heap bytes.
     unsafe impl AsMutPtr for PicBuf {
         type Target = u8;
 
         unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut u8 {
-            unsafe { (*ptr).ptr }
+            // SAFETY: SharedReadOnly reference to PicBuf. Reading Vec::as_ptr()
+            // only touches the Vec header (ptr, len, cap), not the heap data.
+            let this = unsafe { &*ptr };
+            this.buf.as_ptr().wrapping_add(this.align_offset).cast_mut()
         }
 
         unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [u8] {
-            unsafe {
-                let this = &*ptr;
-                core::ptr::slice_from_raw_parts_mut(this.ptr, this.len)
-            }
+            let this = unsafe { &*ptr };
+            let data_ptr = this.buf.as_ptr().wrapping_add(this.align_offset).cast_mut();
+            core::ptr::slice_from_raw_parts_mut(data_ptr, this.usable_len)
         }
 
         fn len(&self) -> usize {
-            self.len
+            self.usable_len
         }
     }
 

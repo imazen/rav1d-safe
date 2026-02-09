@@ -359,19 +359,37 @@ impl Rav1dPictureDataComponent {
         self.data.get_mut().take_buf()
     }
 
-    /// Create from a borrowed pixel buffer (used in recon.rs for scratch buffers).
+    /// Create from a pixel buffer for use as a scratch source or destination.
+    ///
+    /// In c-ffi mode: wraps a raw pointer into the caller's buffer (zero-copy).
+    /// In safe mode: copies the data into an owned `Vec<u8>` (no raw pointers,
+    /// auto `Send + Sync`). For dst-scratch usage, call [`copy_pixels_to`] after
+    /// writing to retrieve the results.
+    ///
+    /// [`copy_pixels_to`]: Self::copy_pixels_to
     pub fn wrap_buf<BD: BitDepth>(buf: &mut [BD::Pixel], stride: usize) -> Self {
         let stride_bytes = (stride * mem::size_of::<BD::Pixel>()) as isize;
         cfg_if::cfg_if! {
             if #[cfg(feature = "c-ffi")] {
                 Self::from_parts(Rav1dPictureDataComponentInner::wrap_buf::<BD>(buf, stride), stride_bytes)
             } else {
-                let buf = AsBytes::as_bytes_mut(buf);
-                assert!(buf.len() % RAV1D_PICTURE_GUARANTEED_MULTIPLE == 0);
-                let inner = PicBuf::from_byte_slice(buf);
+                let buf_bytes = AsBytes::as_bytes(buf);
+                assert!(buf_bytes.len() % RAV1D_PICTURE_GUARANTEED_MULTIPLE == 0);
+                let inner = PicBuf::from_slice_copy(buf_bytes);
                 Self::from_parts(inner, stride_bytes)
             }
         }
+    }
+
+    /// Copy pixels from this component back into a scratch buffer.
+    ///
+    /// Used after MC/ipred writes into a copy-backed scratch component
+    /// to retrieve the results for subsequent operations (e.g., blend).
+    #[cfg(not(feature = "c-ffi"))]
+    pub fn copy_pixels_to<BD: BitDepth>(&self, dst: &mut [BD::Pixel]) {
+        let n = self.pixel_len::<BD>();
+        let guard = self.slice::<BD, _>(..);
+        dst[..n].copy_from_slice(&guard[..n]);
     }
 }
 
