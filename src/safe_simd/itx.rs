@@ -1230,13 +1230,14 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
 
     for y in 0..8 {
         // Load row from column-major
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = coeff[y + x * 8] as i32;
+            scratch[x] = coeff[y + x * 8] as i32;
         }
-        dct8_1d(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+        dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         // Apply intermediate shift and store row-major
         for x in 0..8 {
-            tmp[y * 8 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -1363,13 +1364,14 @@ fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
 
     for y in 0..8 {
         // Load row from column-major
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = coeff[y + x * 8] as i32;
+            scratch[x] = coeff[y + x * 8] as i32;
         }
-        dct8_1d(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+        dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         // Apply intermediate shift and store row-major
         for x in 0..8 {
-            tmp[y * 8 + x] = (tmp[x] + rnd) >> shift;
+            tmp[y * 8 + x] = (scratch[x] + rnd) >> shift;
         }
     }
 
@@ -1854,13 +1856,14 @@ fn inv_txfm_16x16_inner(
     // Row transform
     for y in 0..16 {
         // Load row from column-major
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = coeff[y + x * 16] as i32;
+            scratch[x] = coeff[y + x * 16] as i32;
         }
-        row_transform(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        row_transform(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         // Apply intermediate shift and store row-major
         for x in 0..16 {
-            tmp[y * 16 + x] = ((tmp[x] + rnd) >> shift).clamp(col_clip_min, col_clip_max);
+            tmp[y * 16 + x] = ((scratch[x] + rnd) >> shift).clamp(col_clip_min, col_clip_max);
         }
     }
 
@@ -2184,13 +2187,14 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
 
     for y in 0..16 {
         // Load row from column-major
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = coeff[y + x * 16] as i32;
+            scratch[x] = coeff[y + x * 16] as i32;
         }
-        dct16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         // Apply intermediate shift and store row-major
         for x in 0..16 {
-            tmp[y * 16 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -2327,13 +2331,14 @@ fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
 
     for y in 0..16 {
         // Load row from column-major
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = coeff[y + x * 16] as i32;
+            scratch[x] = coeff[y + x * 16] as i32;
         }
-        dct16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         // Apply intermediate shift and store row-major
         for x in 0..16 {
-            tmp[y * 16 + x] = (tmp[x] + rnd) >> shift;
+            tmp[y * 16 + x] = (scratch[x] + rnd) >> shift;
         }
     }
 
@@ -2470,13 +2475,14 @@ fn inv_txfm_add_dct_dct_4x8_8bpc_avx2_inner(
     // Row transform (4 elements each, 8 rows)
     for y in 0..8 {
         // Load row from column-major with rect2 scaling
+        let mut scratch = [0i32; 4];
         for x in 0..4 {
-            tmp[x] = rect2_scale(coeff[y + x * 8] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
         }
-        dct4_1d(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+        dct4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         // Store row-major (no intermediate shift for 4x8)
         for x in 0..4 {
-            tmp[y * 4 + x] = iclip(tmp[x], col_clip_min, col_clip_max);
+            tmp[y * 4 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
         }
     }
 
@@ -2576,13 +2582,14 @@ fn inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
     // Row transform (8 elements each, 4 rows)
     for y in 0..4 {
         // Load row from column-major with rect2 scaling
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = rect2_scale(coeff[y + x * 4] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 4] as i32);
         }
-        dct8_1d(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+        dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         // Store row-major (no intermediate shift for 8x4)
         for x in 0..8 {
-            tmp[y * 8 + x] = iclip(tmp[x], col_clip_min, col_clip_max);
+            tmp[y * 8 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
         }
     }
 
@@ -2700,12 +2707,13 @@ macro_rules! impl_4x8_transform {
 
             // Row transform (4 elements each, 8 rows)
             for y in 0..8 {
+                let mut scratch = [0i32; 4];
                 for x in 0..4 {
-                    tmp[x] = rect2_scale(coeff[y + x * 8] as i32);
+                    scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
                 }
-                $row_fn(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..4], 1, row_clip_min, row_clip_max);
                 for x in 0..4 {
-                    tmp[y * 4 + x] = iclip(tmp[x], col_clip_min, col_clip_max);
+                    tmp[y * 4 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
                 }
             }
 
@@ -2771,12 +2779,13 @@ macro_rules! impl_8x4_transform {
 
             // Row transform (8 elements each, 4 rows)
             for y in 0..4 {
+                let mut scratch = [0i32; 8];
                 for x in 0..8 {
-                    tmp[x] = rect2_scale(coeff[y + x * 4] as i32);
+                    scratch[x] = rect2_scale(coeff[y + x * 4] as i32);
                 }
-                $row_fn(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..8], 1, row_clip_min, row_clip_max);
                 for x in 0..8 {
-                    tmp[y * 8 + x] = iclip(tmp[x], col_clip_min, col_clip_max);
+                    tmp[y * 8 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
                 }
             }
 
@@ -3171,12 +3180,13 @@ macro_rules! impl_8x16_transform {
             let rnd = 1;
             let shift = 1;
             for y in 0..16 {
+                let mut scratch = [0i32; 8];
                 for x in 0..8 {
-                    tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+                    scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
                 }
-                $row_fn(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..8], 1, row_clip_min, row_clip_max);
                 for x in 0..8 {
-                    tmp[y * 8 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+                    tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -3259,12 +3269,13 @@ macro_rules! impl_16x8_transform {
             let rnd = 1;
             let shift = 1;
             for y in 0..8 {
+                let mut scratch = [0i32; 16];
                 for x in 0..16 {
-                    tmp[x] = rect2_scale(coeff[y + x * 8] as i32);
+                    scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
                 }
-                $row_fn(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+                    tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -3710,12 +3721,13 @@ fn inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
     let rnd = 1;
     let shift = 1;
     for y in 0..16 {
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
         }
-        dct8_1d(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+        dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -3826,12 +3838,13 @@ fn inv_txfm_add_dct_dct_16x8_8bpc_avx2_inner(
     let rnd = 1;
     let shift = 1;
     for y in 0..8 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = rect2_scale(coeff[y + x * 8] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
         }
-        dct16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -3958,12 +3971,13 @@ fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
     let rnd = 2;
     let shift = 2;
     for y in 0..32 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
-        dct16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -4086,12 +4100,13 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
     let rnd = 2;
     let shift = 2;
     for y in 0..16 {
+        let mut scratch = [0i32; 32];
         for x in 0..32 {
-            tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
         }
-        dct32_1d(&mut tmp[..32], 1, row_clip_min, row_clip_max);
+        dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -4222,12 +4237,13 @@ fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
     let rnd = 2;
     let shift = 2;
     for y in 0..32 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
-        identity16_1d(&mut tmp[..16], 1, clip_min, clip_max);
+        identity16_1d(&mut scratch[..16], 1, clip_min, clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = iclip((tmp[x] + rnd) >> shift, clip_min, clip_max);
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, clip_min, clip_max);
         }
     }
 
@@ -4346,12 +4362,13 @@ fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
     let rnd = 2;
     let shift = 2;
     for y in 0..16 {
+        let mut scratch = [0i32; 32];
         for x in 0..32 {
-            tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
         }
-        identity32_1d(&mut tmp[..32], 1, clip_min, clip_max);
+        identity32_1d(&mut scratch[..32], 1, clip_min, clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = iclip((tmp[x] + rnd) >> shift, clip_min, clip_max);
+            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, clip_min, clip_max);
         }
     }
 
@@ -4436,13 +4453,14 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
     let rnd = 2;
     let shift = 2;
     for y in 0..32 {
+        let mut scratch = [0i32; 32];
         for x in 0..32 {
-            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
         // Use dct32 for rows
-        dct32_1d_tx64(&mut tmp[..32], 1, row_clip_min, row_clip_max);
+        dct32_1d_tx64(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -4581,15 +4599,16 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
     let rnd = 2;
     let shift = 2;
     for y in 0..32 {
+        let mut scratch = [0i32; 64];
         for x in 0..32 {
-            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
         for x in 32..64 {
-            tmp[x] = 0;
+            scratch[x] = 0;
         }
-        dct64_1d(&mut tmp[..64], 1, row_clip_min, row_clip_max);
+        dct64_1d(&mut scratch[..64], 1, row_clip_min, row_clip_max);
         for x in 0..64 {
-            tmp[y * 64 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 64 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -4722,12 +4741,13 @@ fn inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(
 
     // Row transform (4 elements each, 16 rows)
     for y in 0..16 {
+        let mut scratch = [0i32; 4];
         for x in 0..4 {
-            tmp[x] = rect4_scale(coeff[y + x * 16] as i32);
+            scratch[x] = rect4_scale(coeff[y + x * 16] as i32);
         }
-        dct4_1d(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+        dct4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         for x in 0..4 {
-            tmp[y * 4 + x] = iclip(tmp[x], col_clip_min, col_clip_max);
+            tmp[y * 4 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
         }
     }
 
@@ -4809,12 +4829,13 @@ fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
 
     // Row transform (16 elements each, 4 rows)
     for y in 0..4 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = rect4_scale(coeff[y + x * 4] as i32);
+            scratch[x] = rect4_scale(coeff[y + x * 4] as i32);
         }
-        dct16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = iclip(tmp[x], col_clip_min, col_clip_max);
+            tmp[y * 16 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
         }
     }
 
@@ -4942,12 +4963,13 @@ macro_rules! impl_4x16_transform {
 
             // Row transform (4 elements each, 16 rows)
             for y in 0..16 {
+                let mut scratch = [0i32; 4];
                 for x in 0..4 {
-                    tmp[x] = rect4_scale(coeff[y + x * 16] as i32);
+                    scratch[x] = rect4_scale(coeff[y + x * 16] as i32);
                 }
-                $row_fn(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..4], 1, row_clip_min, row_clip_max);
                 for x in 0..4 {
-                    tmp[y * 4 + x] = iclip(tmp[x], col_clip_min, col_clip_max);
+                    tmp[y * 4 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
                 }
             }
 
@@ -5001,12 +5023,13 @@ macro_rules! impl_16x4_transform {
 
             // Row transform (16 elements each, 4 rows)
             for y in 0..4 {
+                let mut scratch = [0i32; 16];
                 for x in 0..16 {
-                    tmp[x] = rect4_scale(coeff[y + x * 4] as i32);
+                    scratch[x] = rect4_scale(coeff[y + x * 4] as i32);
                 }
-                $row_fn(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = iclip(tmp[x], col_clip_min, col_clip_max);
+                    tmp[y * 16 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
                 }
             }
 
@@ -5452,12 +5475,13 @@ fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
     let rnd = 1;
     let shift = 1;
     for y in 0..32 {
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = rect4_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect4_scale(coeff[y + x * 32] as i32);
         }
-        dct8_1d(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+        dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -5541,12 +5565,13 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
     let rnd = 1;
     let shift = 1;
     for y in 0..8 {
+        let mut scratch = [0i32; 32];
         for x in 0..32 {
-            tmp[x] = rect4_scale(coeff[y + x * 8] as i32);
+            scratch[x] = rect4_scale(coeff[y + x * 8] as i32);
         }
-        dct32_1d(&mut tmp[..32], 1, row_clip_min, row_clip_max);
+        dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -5675,12 +5700,13 @@ fn inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
 
     // Row transform (8 elements each, 32 rows)
     for y in 0..32 {
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = rect4_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect4_scale(coeff[y + x * 32] as i32);
         }
-        identity8_1d(&mut tmp[..8], 1, clip_min, clip_max);
+        identity8_1d(&mut scratch[..8], 1, clip_min, clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = iclip(tmp[x], clip_min, clip_max);
+            tmp[y * 8 + x] = iclip(scratch[x], clip_min, clip_max);
         }
     }
 
@@ -5758,12 +5784,13 @@ fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
 
     // Row transform (32 elements each, 8 rows)
     for y in 0..8 {
+        let mut scratch = [0i32; 32];
         for x in 0..32 {
-            tmp[x] = rect4_scale(coeff[y + x * 8] as i32);
+            scratch[x] = rect4_scale(coeff[y + x * 8] as i32);
         }
-        identity32_1d(&mut tmp[..32], 1, clip_min, clip_max);
+        identity32_1d(&mut scratch[..32], 1, clip_min, clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = iclip(tmp[x], clip_min, clip_max);
+            tmp[y * 32 + x] = iclip(scratch[x], clip_min, clip_max);
         }
     }
 
@@ -5851,12 +5878,13 @@ fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
     let rnd = 2;
     let shift = 2;
     for y in 0..32 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = rect4_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect4_scale(coeff[y + x * 32] as i32);
         }
-        dct16_1d_tx64(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        dct16_1d_tx64(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -5986,15 +6014,16 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
     let rnd = 2;
     let shift = 2;
     for y in 0..16 {
+        let mut scratch = [0i32; 64];
         for x in 0..32 {
-            tmp[x] = rect4_scale(coeff[y + x * 16] as i32);
+            scratch[x] = rect4_scale(coeff[y + x * 16] as i32);
         }
         for x in 32..64 {
-            tmp[x] = 0;
+            scratch[x] = 0;
         }
-        dct64_1d(&mut tmp[..64], 1, row_clip_min, row_clip_max);
+        dct64_1d(&mut scratch[..64], 1, row_clip_min, row_clip_max);
         for x in 0..64 {
-            tmp[y * 64 + x] = iclip((tmp[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            tmp[y * 64 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -8012,13 +8041,14 @@ fn inv_txfm_32x32_inner(
     // Row transform
     for y in 0..32 {
         // Load row from column-major
+        let mut scratch = [0i32; 32];
         for x in 0..32 {
-            tmp[x] = coeff[y + x * 32] as i32;
+            scratch[x] = coeff[y + x * 32] as i32;
         }
-        row_transform(&mut tmp[..32], 1, row_clip_min, row_clip_max);
+        row_transform(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         // Apply intermediate shift and store row-major
         for x in 0..32 {
-            tmp[y * 32 + x] = ((tmp[x] + rnd) >> shift).clamp(col_clip_min, col_clip_max);
+            tmp[y * 32 + x] = ((scratch[x] + rnd) >> shift).clamp(col_clip_min, col_clip_max);
         }
     }
 
@@ -9033,16 +9063,17 @@ fn inv_txfm_64x64_inner(
     // Row transform - only first 32 rows have stored coefficients
     for y in 0..32 {
         // Load row from column-major (stride=32, only first 32 columns stored)
+        let mut scratch = [0i32; 64];
         for x in 0..32 {
-            tmp[x] = coeff[y + x * 32] as i32;
+            scratch[x] = coeff[y + x * 32] as i32;
         }
         // Zero-extend: columns 32..63 have no stored coefficients
         for x in 32..64 {
-            tmp[x] = 0;
+            scratch[x] = 0;
         }
-        row_transform(&mut tmp[..64], 1, row_clip_min, row_clip_max);
+        row_transform(&mut scratch[..64], 1, row_clip_min, row_clip_max);
         for x in 0..64 {
-            tmp[y * 64 + x] = tmp[x].clamp(col_clip_min, col_clip_max);
+            tmp[y * 64 + x] = scratch[x].clamp(col_clip_min, col_clip_max);
         }
     }
     // Rows 32..63 have no stored coefficients - zero them
@@ -9386,12 +9417,13 @@ fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
 
     // Row transform (4 elements each, 8 rows)
     for y in 0..8 {
+        let mut scratch = [0i32; 4];
         for x in 0..4 {
-            tmp[x] = rect2_scale(coeff[y + x * 8] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
         }
-        dct4_1d(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+        dct4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         for x in 0..4 {
-            tmp[y * 4 + x] = tmp[x];
+            tmp[y * 4 + x] = scratch[x];
         }
     }
 
@@ -9491,12 +9523,13 @@ fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
 
     // Row transform (8 elements each, 4 rows)
     for y in 0..4 {
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = rect2_scale(coeff[y + x * 4] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 4] as i32);
         }
-        dct8_1d(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+        dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = tmp[x];
+            tmp[y * 8 + x] = scratch[x];
         }
     }
 
@@ -9608,12 +9641,13 @@ fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
     let shift = 1;
 
     for y in 0..16 {
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
         }
-        dct8_1d(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+        dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = (tmp[x] + rnd) >> shift;
+            tmp[y * 8 + x] = (scratch[x] + rnd) >> shift;
         }
     }
 
@@ -9724,12 +9758,13 @@ fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
     let shift = 1;
 
     for y in 0..8 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = rect2_scale(coeff[y + x * 8] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
         }
-        dct16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = (tmp[x] + rnd) >> shift;
+            tmp[y * 16 + x] = (scratch[x] + rnd) >> shift;
         }
     }
 
@@ -9853,12 +9888,13 @@ fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
 
     // Row transform (4 elements each, 16 rows)
     for y in 0..16 {
+        let mut scratch = [0i32; 4];
         for x in 0..4 {
-            tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
         }
-        dct4_1d(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+        dct4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         for x in 0..4 {
-            tmp[y * 4 + x] = tmp[x];
+            tmp[y * 4 + x] = scratch[x];
         }
     }
 
@@ -9956,12 +9992,13 @@ fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
 
     // Row transform (16 elements each, 4 rows)
     for y in 0..4 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = rect2_scale(coeff[y + x * 4] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 4] as i32);
         }
-        dct16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = tmp[x];
+            tmp[y * 16 + x] = scratch[x];
         }
     }
 
@@ -10087,12 +10124,13 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
     let shift = 1;
 
     for y in 0..32 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
-        dct16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = (tmp[x] + rnd) >> shift;
+            tmp[y * 16 + x] = (scratch[x] + rnd) >> shift;
         }
     }
 
@@ -10218,12 +10256,13 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
     let shift = 1;
 
     for y in 0..16 {
+        let mut scratch = [0i32; 32];
         for x in 0..32 {
-            tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
         }
-        dct32_1d(&mut tmp[..32], 1, row_clip_min, row_clip_max);
+        dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = (tmp[x] + rnd) >> shift;
+            tmp[y * 32 + x] = (scratch[x] + rnd) >> shift;
         }
     }
 
@@ -10345,12 +10384,13 @@ fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
     let shift = 1;
 
     for y in 0..32 {
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
-        dct8_1d(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+        dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = (tmp[x] + rnd) >> shift;
+            tmp[y * 8 + x] = (scratch[x] + rnd) >> shift;
         }
     }
 
@@ -10461,12 +10501,13 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
     let shift = 1;
 
     for y in 0..8 {
+        let mut scratch = [0i32; 32];
         for x in 0..32 {
-            tmp[x] = rect2_scale(coeff[y + x * 8] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
         }
-        dct32_1d(&mut tmp[..32], 1, row_clip_min, row_clip_max);
+        dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = (tmp[x] + rnd) >> shift;
+            tmp[y * 32 + x] = (scratch[x] + rnd) >> shift;
         }
     }
 
@@ -10586,12 +10627,13 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
     // Row transform - only first 32 rows have stored coefficients (high-freq zeroing)
     // Coeff is column-major with stride 32
     for y in 0..32 {
+        let mut scratch = [0i32; 32];
         for x in 0..32 {
-            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
-        dct32_1d(&mut tmp[..32], 1, row_clip_min, row_clip_max);
+        dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = tmp[x];
+            tmp[y * 32 + x] = scratch[x];
         }
     }
     // Zero-pad rows 32..63
@@ -10717,16 +10759,17 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
     // Row transform - only first 32 columns have stored coefficients (high-freq zeroing)
     // Coeff is column-major with stride 32
     for y in 0..32 {
+        let mut scratch = [0i32; 64];
         for x in 0..32 {
-            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
         // Zero-extend: columns 32..63 have no stored coefficients
         for x in 32..64 {
-            tmp[x] = 0;
+            scratch[x] = 0;
         }
-        dct64_1d(&mut tmp[..64], 1, row_clip_min, row_clip_max);
+        dct64_1d(&mut scratch[..64], 1, row_clip_min, row_clip_max);
         for x in 0..64 {
-            tmp[y * 64 + x] = tmp[x];
+            tmp[y * 64 + x] = scratch[x];
         }
     }
 
@@ -10846,12 +10889,13 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
     // Row transform - only first 32 rows have stored coefficients (high-freq zeroing)
     // Coeff is column-major with stride 32
     for y in 0..32 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
-        dct16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = tmp[x];
+            tmp[y * 16 + x] = scratch[x];
         }
     }
     // Zero-pad rows 32..63
@@ -10981,16 +11025,17 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
     // Row transform - only first 32 columns have stored coefficients (high-freq zeroing)
     // Coeff is column-major with stride 16
     for y in 0..16 {
+        let mut scratch = [0i32; 64];
         for x in 0..32 {
-            tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
         }
         // Zero-extend: columns 32..63 have no stored coefficients
         for x in 32..64 {
-            tmp[x] = 0;
+            scratch[x] = 0;
         }
-        dct64_1d(&mut tmp[..64], 1, row_clip_min, row_clip_max);
+        dct64_1d(&mut scratch[..64], 1, row_clip_min, row_clip_max);
         for x in 0..64 {
-            tmp[y * 64 + x] = tmp[x];
+            tmp[y * 64 + x] = scratch[x];
         }
     }
 
@@ -12024,12 +12069,13 @@ fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
 
     // Row transform (4 elements each, 8 rows)
     for y in 0..8 {
+        let mut scratch = [0i32; 4];
         for x in 0..4 {
-            tmp[x] = rect2_scale(coeff[y + x * 8] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
         }
-        identity4_1d(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+        identity4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         for x in 0..4 {
-            tmp[y * 4 + x] = tmp[x];
+            tmp[y * 4 + x] = scratch[x];
         }
     }
 
@@ -12129,12 +12175,13 @@ fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
 
     // Row transform (8 elements each, 4 rows)
     for y in 0..4 {
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = rect2_scale(coeff[y + x * 4] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 4] as i32);
         }
-        identity8_1d(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+        identity8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = tmp[x];
+            tmp[y * 8 + x] = scratch[x];
         }
     }
 
@@ -12243,12 +12290,13 @@ fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
 
     // Row transform (8 elements each, 16 rows)
     for y in 0..16 {
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
         }
-        identity8_1d(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+        identity8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = tmp[x];
+            tmp[y * 8 + x] = scratch[x];
         }
     }
 
@@ -12357,12 +12405,13 @@ fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
 
     // Row transform (16 elements each, 8 rows)
     for y in 0..8 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = rect2_scale(coeff[y + x * 8] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
         }
-        identity16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        identity16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = tmp[x];
+            tmp[y * 16 + x] = scratch[x];
         }
     }
 
@@ -12475,12 +12524,13 @@ fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
 
     // Row transform (4 elements each, 16 rows)
     for y in 0..16 {
+        let mut scratch = [0i32; 4];
         for x in 0..4 {
-            tmp[x] = coeff[y + x * 16] as i32;
+            scratch[x] = coeff[y + x * 16] as i32;
         }
-        identity4_1d(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+        identity4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         for x in 0..4 {
-            tmp[y * 4 + x] = tmp[x];
+            tmp[y * 4 + x] = scratch[x];
         }
     }
 
@@ -12579,12 +12629,13 @@ fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
 
     // Row transform (16 elements each, 4 rows)
     for y in 0..4 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = coeff[y + x * 4] as i32;
+            scratch[x] = coeff[y + x * 4] as i32;
         }
-        identity16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        identity16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = tmp[x];
+            tmp[y * 16 + x] = scratch[x];
         }
     }
 
@@ -12698,12 +12749,13 @@ fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
 
     // Row transform (16 elements each, 32 rows)
     for y in 0..32 {
+        let mut scratch = [0i32; 16];
         for x in 0..16 {
-            tmp[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
-        identity16_1d(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+        identity16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = tmp[x];
+            tmp[y * 16 + x] = scratch[x];
         }
     }
 
@@ -12818,12 +12870,13 @@ fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
 
     // Row transform (32 elements each, 16 rows)
     for y in 0..16 {
+        let mut scratch = [0i32; 32];
         for x in 0..32 {
-            tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
         }
-        identity32_1d(&mut tmp[..32], 1, row_clip_min, row_clip_max);
+        identity32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = tmp[x];
+            tmp[y * 32 + x] = scratch[x];
         }
     }
 
@@ -12937,12 +12990,13 @@ fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
 
     // Row transform (8 elements each, 32 rows)
     for y in 0..32 {
+        let mut scratch = [0i32; 8];
         for x in 0..8 {
-            tmp[x] = coeff[y + x * 32] as i32;
+            scratch[x] = coeff[y + x * 32] as i32;
         }
-        identity8_1d(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+        identity8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = tmp[x];
+            tmp[y * 8 + x] = scratch[x];
         }
     }
 
@@ -13050,12 +13104,13 @@ fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
 
     // Row transform (32 elements each, 8 rows)
     for y in 0..8 {
+        let mut scratch = [0i32; 32];
         for x in 0..32 {
-            tmp[x] = coeff[y + x * 8] as i32;
+            scratch[x] = coeff[y + x * 8] as i32;
         }
-        identity32_1d(&mut tmp[..32], 1, row_clip_min, row_clip_max);
+        identity32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = tmp[x];
+            tmp[y * 32 + x] = scratch[x];
         }
     }
 
@@ -13179,12 +13234,13 @@ macro_rules! impl_4x8_transform_16bpc {
 
             // Row transform (4 elements each, 8 rows)
             for y in 0..8 {
+                let mut scratch = [0i32; 4];
                 for x in 0..4 {
-                    tmp[x] = rect2_scale(coeff[y + x * 8] as i32);
+                    scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
                 }
-                $row_fn(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..4], 1, row_clip_min, row_clip_max);
                 for x in 0..4 {
-                    tmp[y * 4 + x] = tmp[x];
+                    tmp[y * 4 + x] = scratch[x];
                 }
             }
 
@@ -13256,12 +13312,13 @@ macro_rules! impl_8x4_transform_16bpc {
 
             // Row transform (8 elements each, 4 rows)
             for y in 0..4 {
+                let mut scratch = [0i32; 8];
                 for x in 0..8 {
-                    tmp[x] = rect2_scale(coeff[y + x * 4] as i32);
+                    scratch[x] = rect2_scale(coeff[y + x * 4] as i32);
                 }
-                $row_fn(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..8], 1, row_clip_min, row_clip_max);
                 for x in 0..8 {
-                    tmp[y * 8 + x] = tmp[x];
+                    tmp[y * 8 + x] = scratch[x];
                 }
             }
 
@@ -13522,12 +13579,13 @@ macro_rules! impl_8x16_transform_16bpc {
 
             // Row transform (8 elements each, 16 rows)
             for y in 0..16 {
+                let mut scratch = [0i32; 8];
                 for x in 0..8 {
-                    tmp[x] = rect2_scale(coeff[y + x * 16] as i32);
+                    scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
                 }
-                $row_fn(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..8], 1, row_clip_min, row_clip_max);
                 for x in 0..8 {
-                    tmp[y * 8 + x] = tmp[x];
+                    tmp[y * 8 + x] = scratch[x];
                 }
             }
 
@@ -13608,12 +13666,13 @@ macro_rules! impl_16x8_transform_16bpc {
 
             // Row transform (16 elements each, 8 rows)
             for y in 0..8 {
+                let mut scratch = [0i32; 16];
                 for x in 0..16 {
-                    tmp[x] = rect2_scale(coeff[y + x * 8] as i32);
+                    scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
                 }
-                $row_fn(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = tmp[x];
+                    tmp[y * 16 + x] = scratch[x];
                 }
             }
 
@@ -13852,12 +13911,13 @@ macro_rules! impl_4x16_transform_16bpc {
 
             // Row transform (4 elements each, 16 rows)
             for y in 0..16 {
+                let mut scratch = [0i32; 4];
                 for x in 0..4 {
-                    tmp[x] = coeff[y + x * 16] as i32;
+                    scratch[x] = coeff[y + x * 16] as i32;
                 }
-                $row_fn(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..4], 1, row_clip_min, row_clip_max);
                 for x in 0..4 {
-                    tmp[y * 4 + x] = tmp[x];
+                    tmp[y * 4 + x] = scratch[x];
                 }
             }
 
@@ -13928,12 +13988,13 @@ macro_rules! impl_16x4_transform_16bpc {
 
             // Row transform (16 elements each, 4 rows)
             for y in 0..4 {
+                let mut scratch = [0i32; 16];
                 for x in 0..16 {
-                    tmp[x] = coeff[y + x * 4] as i32;
+                    scratch[x] = coeff[y + x * 4] as i32;
                 }
-                $row_fn(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = tmp[x];
+                    tmp[y * 16 + x] = scratch[x];
                 }
             }
 
@@ -14522,12 +14583,13 @@ macro_rules! impl_8x8_transform_16bpc {
 
             // Row transform (8 elements each, 8 rows)
             for y in 0..8 {
+                let mut scratch = [0i32; 8];
                 for x in 0..8 {
-                    tmp[x] = coeff[y + x * 8] as i32;
+                    scratch[x] = coeff[y + x * 8] as i32;
                 }
-                $row_fn(&mut tmp[..8], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..8], 1, row_clip_min, row_clip_max);
                 for x in 0..8 {
-                    tmp[y * 8 + x] = tmp[x];
+                    tmp[y * 8 + x] = scratch[x];
                 }
             }
 
@@ -14662,12 +14724,13 @@ macro_rules! impl_4x4_transform_16bpc {
 
             // Row transform (4 elements each, 4 rows)
             for y in 0..4 {
+                let mut scratch = [0i32; 4];
                 for x in 0..4 {
-                    tmp[x] = coeff[y + x * 4] as i32;
+                    scratch[x] = coeff[y + x * 4] as i32;
                 }
-                $row_fn(&mut tmp[..4], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..4], 1, row_clip_min, row_clip_max);
                 for x in 0..4 {
-                    tmp[y * 4 + x] = tmp[x];
+                    tmp[y * 4 + x] = scratch[x];
                 }
             }
 
@@ -14793,12 +14856,13 @@ macro_rules! impl_16x16_transform_16bpc {
 
             // Row transform (16 elements each, 16 rows)
             for y in 0..16 {
+                let mut scratch = [0i32; 16];
                 for x in 0..16 {
-                    tmp[x] = coeff[y + x * 16] as i32;
+                    scratch[x] = coeff[y + x * 16] as i32;
                 }
-                $row_fn(&mut tmp[..16], 1, row_clip_min, row_clip_max);
+                $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = tmp[x];
+                    tmp[y * 16 + x] = scratch[x];
                 }
             }
 
