@@ -3969,8 +3969,8 @@ fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
     // Row transform (16 elements each, 32 rows)
-    let rnd = 2;
-    let shift = 2;
+    let rnd = 1;
+    let shift = 1;
     for y in 0..32 {
         let mut scratch = [0i32; 16];
         for x in 0..16 {
@@ -4098,8 +4098,8 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
     // Row transform (32 elements each, 16 rows)
-    let rnd = 2;
-    let shift = 2;
+    let rnd = 1;
+    let shift = 1;
     for y in 0..16 {
         let mut scratch = [0i32; 32];
         for x in 0..32 {
@@ -4235,8 +4235,8 @@ fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
     // Row transform (16 elements each, 32 rows)
-    let rnd = 2;
-    let shift = 2;
+    let rnd = 1;
+    let shift = 1;
     for y in 0..32 {
         let mut scratch = [0i32; 16];
         for x in 0..16 {
@@ -4360,8 +4360,8 @@ fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
     // Row transform (32 elements each, 16 rows)
-    let rnd = 2;
-    let shift = 2;
+    let rnd = 1;
+    let shift = 1;
     for y in 0..16 {
         let mut scratch = [0i32; 32];
         for x in 0..32 {
@@ -4451,8 +4451,8 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
 
     // Row transform (32 elements each, 64 rows)
     // But only 32 rows of coefficients are present for 64-pt transforms
-    let rnd = 2;
-    let shift = 2;
+    let rnd = 1;
+    let shift = 1;
     for y in 0..32 {
         let mut scratch = [0i32; 32];
         for x in 0..32 {
@@ -4597,8 +4597,8 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
 
     // Row transform (64 elements each, 32 rows)
     // But only first 32 columns have coefficients for 64-pt transforms
-    let rnd = 2;
-    let shift = 2;
+    let rnd = 1;
+    let shift = 1;
     for y in 0..32 {
         let mut scratch = [0i32; 64];
         for x in 0..32 {
@@ -5473,8 +5473,8 @@ fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
     let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
 
     // Row transform (8 elements each, 32 rows)
-    let rnd = 1;
-    let shift = 1;
+    let rnd = 2;
+    let shift = 2;
     for y in 0..32 {
         let mut scratch = [0i32; 8];
         for x in 0..8 {
@@ -5563,8 +5563,8 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
     let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
 
     // Row transform (32 elements each, 8 rows)
-    let rnd = 1;
-    let shift = 1;
+    let rnd = 2;
+    let shift = 2;
     for y in 0..8 {
         let mut scratch = [0i32; 32];
         for x in 0..32 {
@@ -8035,8 +8035,8 @@ fn inv_txfm_32x32_inner(
     col_clip_max: i32,
 ) {
     // For 32x32: row_shift = 2, col_shift = 4 (total 6)
-    let rnd = 1;
-    let shift = 1;
+    let rnd = 2;
+    let shift = 2;
 
     // Row transform
     for y in 0..32 {
