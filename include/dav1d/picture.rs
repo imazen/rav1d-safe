@@ -59,6 +59,60 @@ use zerocopy::FromZeroes;
 pub(crate) const RAV1D_PICTURE_ALIGNMENT: usize = 64;
 pub const DAV1D_PICTURE_ALIGNMENT: usize = RAV1D_PICTURE_ALIGNMENT;
 
+/// Wrapper around [`NonNull<u8>`] for picture data pointers.
+///
+/// When the `quite-safe` feature is enabled, this type is [`Send`] + [`Sync`],
+/// enabling auto-derived `Send + Sync` for the entire picture data chain
+/// (`Rav1dPictureDataComponentInner` → `Rav1dPictureDataComponent` →
+/// `Rav1dPictureData` → `Rav1dPicture` → `Rav1dContext`).
+///
+/// Without `quite-safe`, this is just a `NonNull<u8>` wrapper with no
+/// Send/Sync, and the existing `unsafe impl` on `Rav1dContext` provides
+/// thread safety instead.
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+struct PicDataPtr(NonNull<u8>);
+
+/// SAFETY: `PicDataPtr` always points to heap-allocated `u8` data owned by
+/// a `Vec<u8>` or `AlignedVec` that outlives this pointer (stored in the same
+/// `Rav1dPictureData` struct, or borrowed from a scratch buffer for the
+/// pointer's lifetime). `u8` is trivially `Send`.
+#[cfg(feature = "quite-safe")]
+unsafe impl Send for PicDataPtr {}
+
+/// SAFETY: Same as `Send` — the pointed-to `u8` data has a stable heap
+/// address, is valid for the pointer's lifetime, and `u8` is `Sync`.
+#[cfg(feature = "quite-safe")]
+unsafe impl Sync for PicDataPtr {}
+
+impl PicDataPtr {
+    /// Create a dangling pointer with [`RAV1D_PICTURE_ALIGNMENT`] alignment.
+    fn dangling_aligned() -> Self {
+        Self(NonNull::<AlignedPixelChunk>::dangling().cast())
+    }
+
+    /// Create from a raw pointer. Returns `None` if null.
+    fn new(ptr: *mut u8) -> Option<Self> {
+        NonNull::new(ptr).map(Self)
+    }
+
+    /// Create from a `NonNull<u8>`.
+    #[cfg(feature = "c-ffi")]
+    fn from_non_null(ptr: NonNull<u8>) -> Self {
+        Self(ptr)
+    }
+
+    /// Get the raw pointer.
+    fn as_ptr(self) -> *mut u8 {
+        self.0.as_ptr()
+    }
+
+    /// Check if the pointer is aligned to [`AlignedPixelChunk`].
+    fn is_chunk_aligned(self) -> bool {
+        self.0.cast::<AlignedPixelChunk>().is_aligned()
+    }
+}
+
 #[derive(Default)]
 #[repr(C)]
 pub struct Dav1dPictureParameters {
@@ -148,7 +202,11 @@ pub struct Rav1dPictureDataComponentInner {
     /// even if [`Self::stride`] is negative.
     ///
     /// It is aligned to [`RAV1D_PICTURE_ALIGNMENT`].
-    ptr: NonNull<u8>,
+    ///
+    /// Uses [`PicDataPtr`] instead of raw [`NonNull<u8>`] so that
+    /// this struct auto-derives [`Send`] + [`Sync`] when `quite-safe`
+    /// is enabled.
+    ptr: PicDataPtr,
 
     /// The length of [`Self::ptr`] in [`u8`] bytes.
     ///
@@ -170,8 +228,7 @@ impl Rav1dPictureDataComponentInner {
         let ptr = match ptr {
             None => {
                 return Self {
-                    // Ensure it is aligned enough.
-                    ptr: NonNull::<AlignedPixelChunk>::dangling().cast(),
+                    ptr: PicDataPtr::dangling_aligned(),
                     len: 0,
                     stride,
                 };
@@ -189,9 +246,9 @@ impl Rav1dPictureDataComponentInner {
             // `.offset(-stride)` puts us at one element past the end of the slice,
             // and `.sub(len)` puts us back at the start of the slice.
             let ptr = unsafe { ptr.offset(-stride).sub(len) };
-            NonNull::new(ptr).unwrap()
+            PicDataPtr::new(ptr).unwrap()
         } else {
-            ptr
+            PicDataPtr::from_non_null(ptr)
         };
         // Guaranteed by `Dav1dPicAllocator::alloc_picture_callback`.
         assert!(len % RAV1D_PICTURE_MULTIPLE == 0);
@@ -205,7 +262,7 @@ impl Rav1dPictureDataComponentInner {
     fn new_from_vec(buf: &mut Vec<u8>, usable_len: usize, stride: isize) -> Self {
         if usable_len == 0 {
             return Self {
-                ptr: NonNull::<AlignedPixelChunk>::dangling().cast(),
+                ptr: PicDataPtr::dangling_aligned(),
                 len: 0,
                 stride,
             };
@@ -213,8 +270,8 @@ impl Rav1dPictureDataComponentInner {
         let align_offset = buf.as_ptr().align_offset(RAV1D_PICTURE_ALIGNMENT);
         assert!(align_offset + usable_len <= buf.len());
         // Vec data lives on the heap; moving the Vec doesn't invalidate this pointer.
-        let ptr = NonNull::new(buf.as_mut_ptr().wrapping_add(align_offset)).unwrap();
-        assert!(ptr.cast::<AlignedPixelChunk>().is_aligned());
+        let ptr = PicDataPtr::new(buf.as_mut_ptr().wrapping_add(align_offset)).unwrap();
+        assert!(ptr.is_chunk_aligned());
         assert!(usable_len % RAV1D_PICTURE_MULTIPLE == 0);
         Self {
             ptr,
@@ -229,8 +286,8 @@ impl Rav1dPictureDataComponentInner {
     /// so it is sound to further subdivide it into disjoint `&mut`s.
     pub fn wrap_buf<BD: BitDepth>(buf: &mut [BD::Pixel], stride: usize) -> Self {
         let buf = AsBytes::as_bytes_mut(buf);
-        let ptr = NonNull::new(buf.as_mut_ptr()).unwrap();
-        assert!(ptr.cast::<AlignedPixelChunk>().is_aligned());
+        let ptr = PicDataPtr::new(buf.as_mut_ptr()).unwrap();
+        assert!(ptr.is_chunk_aligned());
         let len = buf.len();
         assert!(len % RAV1D_PICTURE_GUARANTEED_MULTIPLE == 0);
         let stride = (stride * mem::size_of::<BD::Pixel>()) as isize;
@@ -238,7 +295,7 @@ impl Rav1dPictureDataComponentInner {
     }
 }
 
-// SAFETY: We only store the raw pointer, so we never materialize a `&mut`.
+// SAFETY: We only store the raw pointer (via PicDataPtr), so we never materialize a `&mut`.
 unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
     type Target = u8;
 
@@ -252,7 +309,7 @@ unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
         // Normally we'd store this as a slice so the compiler would know,
         // but since it's a ptr due to `DisjointMut`, we explicitly assume it here.
         // SAFETY: We already checked this in `Self::new`.
-        unsafe { assume(this.ptr.cast::<AlignedPixelChunk>().is_aligned()) };
+        unsafe { assume(this.ptr.is_chunk_aligned()) };
 
         this.ptr.as_ptr()
     }
