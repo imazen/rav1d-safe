@@ -212,12 +212,25 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 
 ## Safety Status
 
-**Crate-level deny(unsafe_code) when asm/c-ffi disabled.** `lib.rs` has `#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]` — compiler-enforced safety for the entire non-asm, non-c-ffi path.
+**MILESTONE: `#![forbid(unsafe_code)]` ACHIEVED for default build** (commit b67f378).
 
-**DisjointMut extracted to separate crate** (`crates/disjoint-mut/`):
-- Provably safe abstraction (like RefCell for ranges) with always-on bounds checking
-- Main crate re-exports + adds AlignedVec-specific impls
-- Enables future `forbid(unsafe_code)` at crate level
+The default build (`cargo build --no-default-features --features "bitdepth_8,bitdepth_16"`) compiles
+under `#![forbid(unsafe_code)]` — the compiler guarantees zero unsafe in the entire crate when
+neither `asm` nor `c-ffi` features are enabled.
+
+All unsafe is now confined to:
+- `rav1d-disjoint-mut` sub-crate (StridedBuf, Align types, AlignedVec AsMutPtr impls)
+- Code gated behind `#[cfg(feature = "asm")]` or `#[cfg(feature = "c-ffi")]`
+
+**How unsafe was eliminated from the default build:**
+- `picture.rs`: `Rav1dPictureDataComponentInner = StridedBuf` (type alias to disjoint-mut crate type)
+- `msac.rs`: `MsacAsmContextBuf { pos: usize, end: usize }` (indices, not pointers)
+- `c_box.rs`: No custom Drop without c-ffi → destructurable, no Pin::new_unchecked
+- `c_arc.rs`: `Arc<Box<T>>` with safe view slicing (no StableRef, no raw pointers)
+- `assume.rs`: Gated behind c-ffi (only used by picture.rs ExternalAsMutPtr)
+- `align.rs`: Align types + ExternalAsMutPtr moved to disjoint-mut crate
+- `internal.rs`: Send/Sync auto-derived (no manual unsafe impls needed)
+- `partial_simd.rs`: Safe `#[target_feature(enable = "sse2")]` wrappers (Rust 1.93+)
 
 **C FFI types gated behind `cfg(feature = "c-ffi")`:**
 - `DavdPicture`, `DavdData`, `DavdDataProps`, `DavdUserData`, `DavdSettings`, `DavdLogger` — all gated
@@ -226,21 +239,6 @@ pub unsafe extern "C" fn function_8bpc_avx2(
 - `From<Dav1d*>` / `From<Rav1d*> for Dav1d*` conversions (containing `unsafe { CArc::from_raw }`) — all gated
 - Safe picture allocator: per-plane `Vec<u8>` from MemPool, no C callbacks needed
 - Fallible allocation: `MemPool::pop_init` returns `Result<Vec, TryReserveError>`, propagated as `Rav1dError::ENOMEM`
-
-**Module safety architecture (default build without asm/c-ffi on x86_64):**
-- Only **1 module** needs unconditional `#[allow(unsafe_code)]`: **safe_simd**
-  - Remaining unsafe: pointer load/store intrinsics (use `safe_unaligned_simd` + macros to eliminate) and FFI wrappers (gate behind `feature = "asm"`)
-- 2 modules conditionally allow unsafe by architecture:
-  - refmvs: `cfg_attr(feature = "asm", allow(unsafe_code))` — extern C wrappers gated behind asm
-  - msac: `cfg_attr(any(asm, aarch64), allow(unsafe_code))` — NEON intrinsics on aarch64 only
-- 6 modules use conditional `allow(unsafe_code)` only when c-ffi enabled:
-  include/dav1d, c_arc, c_box, log, picture, lib (C API entry point)
-- 1 module gated entirely behind asm/c-ffi: send_sync_non_null
-- All other modules use **item-level** `#[allow(unsafe_code)]` on specific functions/impls:
-  align (4 items), assume (1 fn), ffi_safe (2 fns), disjoint_mut (1 impl),
-  c_arc (3 items), c_box (1 fn), internal (4 impls), refmvs (2 fns), msac (4 items)
-- 42+ modules with `#![forbid(unsafe_code)]` — permanent, compiler-enforced
-- 13 DSP modules with conditional deny when asm disabled
 
 **c-ffi build fully working** (previously blocked by 320 `forge_token_dangerously` errors in safe_simd):
 - Fixed: wrapped all `forge_token_dangerously()` calls in `unsafe { }` blocks (Rust 2024 edition compliance)
