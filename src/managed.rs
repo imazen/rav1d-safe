@@ -1058,9 +1058,6 @@ pub fn enabled_features() -> String {
     if cfg!(feature = "unchecked") {
         features.push("unchecked");
     }
-    if cfg!(feature = "quite-safe") {
-        features.push("quite-safe");
-    }
     if cfg!(feature = "bitdepth_8") {
         features.push("bitdepth_8");
     }
@@ -1075,8 +1072,6 @@ pub fn enabled_features() -> String {
         features.push("safety:c-ffi");
     } else if cfg!(feature = "unchecked") {
         features.push("safety:unchecked");
-    } else if cfg!(feature = "quite-safe") {
-        features.push("safety:quite-safe");
     } else {
         features.push("safety:forbid-unsafe");
     }
