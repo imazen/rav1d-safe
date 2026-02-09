@@ -7,6 +7,7 @@ use std::ffi::c_void;
 #[cfg(feature = "c-ffi")]
 use std::marker::PhantomData;
 use std::ops::Deref;
+#[cfg(feature = "c-ffi")]
 use std::pin::Pin;
 #[cfg(feature = "c-ffi")]
 use std::ptr::drop_in_place;
@@ -89,11 +90,20 @@ pub enum CBox<T: ?Sized> {
     },
 }
 
+// Without c-ffi, CBox is always CBox::Rust(Box<T>), so AsRef just delegates to Box.
+#[cfg(not(feature = "c-ffi"))]
+impl<T: ?Sized> AsRef<T> for CBox<T> {
+    fn as_ref(&self) -> &T {
+        let Self::Rust(r#box) = self;
+        r#box.as_ref()
+    }
+}
+
+#[cfg(feature = "c-ffi")]
 impl<T: ?Sized> AsRef<T> for CBox<T> {
     fn as_ref(&self) -> &T {
         match self {
             Self::Rust(r#box) => r#box.as_ref(),
-            #[cfg(feature = "c-ffi")]
             // SAFETY: `data` is a `Unique<T>`, which behaves as if it were a `T`,
             // so we can take `&` references of it.
             // Furthermore, `data` is never moved and is valid to dereference,
@@ -111,11 +121,13 @@ impl<T: ?Sized> Deref for CBox<T> {
     }
 }
 
+// Without c-ffi, CBox::Rust(Box<T>) doesn't need a custom Drop — Box handles it.
+// Only the C variant needs custom Drop to call the C free function.
+#[cfg(feature = "c-ffi")]
 impl<T: ?Sized> Drop for CBox<T> {
     fn drop(&mut self) {
         match self {
             Self::Rust(_) => {} // Drop normally.
-            #[cfg(feature = "c-ffi")]
             Self::C { data, free, .. } => {
                 let ptr = data.pointer.as_ptr();
                 // SAFETY: See below.
@@ -152,18 +164,25 @@ impl<T: ?Sized> CBox<T> {
         Self::Rust(data)
     }
 
-    #[allow(unsafe_code)]
+    /// Pin this CBox.
+    ///
+    /// Only available with c-ffi, where CArc uses `Arc<Pin<CBox<T>>>`.
+    /// Without c-ffi, CArc uses `Arc<Box<T>>` directly and doesn't need Pin.
+    #[cfg(feature = "c-ffi")]
     pub fn into_pin(self) -> Pin<Self> {
-        // With c-ffi, CBox::C variant's data is never moved until Drop.
-        // Without c-ffi, CBox is always Rust(Box<T>), but Pin::new requires Unpin
-        // which T might not implement, so we still need new_unchecked.
+        // With c-ffi, CBox::C variant contains Unique<T> which is !Unpin,
+        // but the data is never moved until Drop, making Pin sound.
         // SAFETY:
         // If `self` is `Self::Rust`, `Box` can be pinned.
         // If `self` is `Self::C`, `data` is never moved until [`Self::drop`].
-        unsafe { Pin::new_unchecked(self) }
+        #[allow(unsafe_code)]
+        unsafe {
+            Pin::new_unchecked(self)
+        }
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl<T: ?Sized> From<CBox<T>> for Pin<CBox<T>> {
     fn from(value: CBox<T>) -> Self {
         value.into_pin()

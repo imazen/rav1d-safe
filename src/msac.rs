@@ -11,8 +11,12 @@ use std::ffi::c_uint;
 use std::mem;
 use std::ops::Deref;
 use std::ops::DerefMut;
+#[cfg(feature = "asm")]
 use std::ops::Range;
+#[cfg(feature = "asm")]
 use std::ptr;
+#[cfg(feature = "asm")]
+use std::slice;
 
 // x86_64 SIMD intrinsics for safe_simd implementations
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
@@ -171,6 +175,8 @@ impl Default for Rav1dMsacDSPContext {
 
 pub type EcWin = usize;
 
+/// For asm builds: raw pointers into `MsacContext::data` for C FFI layout.
+///
 /// # Safety
 ///
 /// [`Self`] must be the first field of [`MsacAsmContext`] for asm layout purposes,
@@ -180,12 +186,14 @@ pub type EcWin = usize;
 /// and [`Self::end`] must point to the end of [`MsacContext::data`],
 /// where [`MsacContext::data`] is part of the [`MsacContext`]
 /// containing [`MsacAsmContext`] and thus also [`Self`].
+#[cfg(feature = "asm")]
 #[repr(C)]
 struct MsacAsmContextBuf {
     pos: *const u8,
     end: *const u8,
 }
 
+#[cfg(feature = "asm")]
 /// SAFETY: [`MsacAsmContextBuf`] is always contained in [`MsacAsmContext::buf`],
 /// which is always contained in [`MsacContext::asm`], whose [`MsacContext::data`] field
 /// is what is stored in [`MsacAsmContextBuf::pos`] and [`MsacAsmContextBuf::end`].
@@ -193,6 +201,7 @@ struct MsacAsmContextBuf {
 #[allow(unsafe_code)]
 unsafe impl Send for MsacAsmContextBuf {}
 
+#[cfg(feature = "asm")]
 /// SAFETY: [`MsacAsmContextBuf`] is always contained in [`MsacAsmContext::buf`],
 /// which is always contained in [`MsacContext::asm`], whose [`MsacContext::data`] field
 /// is what is stored in [`MsacAsmContextBuf::pos`] and [`MsacAsmContextBuf::end`].
@@ -200,6 +209,7 @@ unsafe impl Send for MsacAsmContextBuf {}
 #[allow(unsafe_code)]
 unsafe impl Sync for MsacAsmContextBuf {}
 
+#[cfg(feature = "asm")]
 impl Default for MsacAsmContextBuf {
     fn default() -> Self {
         Self {
@@ -209,6 +219,7 @@ impl Default for MsacAsmContextBuf {
     }
 }
 
+#[cfg(feature = "asm")]
 impl From<&[u8]> for MsacAsmContextBuf {
     fn from(value: &[u8]) -> Self {
         let Range { start, end } = value.as_ptr_range();
@@ -216,7 +227,28 @@ impl From<&[u8]> for MsacAsmContextBuf {
     }
 }
 
-#[repr(C)]
+/// For non-asm builds: byte indices into `MsacContext::data`.
+///
+/// Uses `usize` indices instead of raw pointers, so this type is
+/// automatically `Send + Sync` without any unsafe impls.
+#[cfg(not(feature = "asm"))]
+struct MsacAsmContextBuf {
+    /// Byte index of current position within `MsacContext::data`.
+    pos: usize,
+    /// Byte index of end (always `data.len()`).
+    /// Maintained for layout parity with asm but not read in non-asm path.
+    #[allow(dead_code)]
+    end: usize,
+}
+
+#[cfg(not(feature = "asm"))]
+impl Default for MsacAsmContextBuf {
+    fn default() -> Self {
+        Self { pos: 0, end: 0 }
+    }
+}
+
+#[cfg_attr(feature = "asm", repr(C))]
 pub struct MsacAsmContext {
     buf: MsacAsmContextBuf,
     pub dif: EcWin,
@@ -279,17 +311,31 @@ impl MsacContext {
     }
 
     pub fn buf_index(&self) -> usize {
-        // We safely subtract instead of unsafely use `ptr::offset_from`
-        // as asm sets `buf_pos`, so we don't need to rely on its safety,
-        // and because codegen is no less optimal this way.
-        self.buf.pos as usize - self.data().as_ptr() as usize
+        cfg_if! {
+            if #[cfg(feature = "asm")] {
+                // We safely subtract instead of unsafely use `ptr::offset_from`
+                // as asm sets `buf_pos`, so we don't need to rely on its safety,
+                // and because codegen is no less optimal this way.
+                self.buf.pos as usize - self.data().as_ptr() as usize
+            } else {
+                // Without asm, pos is already a byte index.
+                self.buf.pos
+            }
+        }
     }
 
     fn with_buf(&mut self, mut f: impl FnMut(&[u8]) -> &[u8]) {
         let data = &**self.data.as_ref().unwrap();
         let buf = &data[self.buf_index()..];
         let buf = f(buf);
-        self.buf.pos = buf.as_ptr();
+        cfg_if! {
+            if #[cfg(feature = "asm")] {
+                self.buf.pos = buf.as_ptr();
+            } else {
+                // Compute the new byte index from the returned sub-slice.
+                self.buf.pos = buf.as_ptr() as usize - data.as_ptr() as usize;
+            }
+        }
         // We don't actually need to set `self.buf_end` since it has not changed.
     }
 }
@@ -760,8 +806,17 @@ fn rav1d_msac_decode_symbol_adapt16_neon(
 
 impl MsacContext {
     pub fn new(data: CArc<[u8]>, disable_cdf_update_flag: bool, dsp: &Rav1dMsacDSPContext) -> Self {
+        let buf = {
+            cfg_if! {
+                if #[cfg(feature = "asm")] {
+                    MsacAsmContextBuf::from(data.as_ref())
+                } else {
+                    MsacAsmContextBuf { pos: 0, end: data.as_ref().len() }
+                }
+            }
+        };
         let asm = MsacAsmContext {
-            buf: data.as_ref().into(),
+            buf,
             dif: 0,
             rng: 0x8000,
             cnt: -15,

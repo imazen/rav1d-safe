@@ -4,11 +4,11 @@
     any(target_arch = "riscv32", target_arch = "riscv64"),
     feature(stdarch_riscv_feature_detection)
 )]
-// Crate-wide deny(unsafe_code) when neither `asm` nor `c-ffi` is enabled.
-// This is deny (not forbid) so that specific items can #[allow(unsafe_code)]
-// for sound abstractions. Modules that need zero unsafe use forbid(unsafe_code)
-// internally for stronger protection.
-#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), deny(unsafe_code))]
+// Crate-wide forbid(unsafe_code) when neither `asm` nor `c-ffi` is enabled.
+// All unsafe must live in separate crates (rav1d-disjoint-mut, rav1d-align, etc.)
+// or be gated behind cfg(feature = "asm") / cfg(feature = "c-ffi").
+// forbid cannot be overridden by #[allow] — any unsafe in the default build is a hard error.
+#![cfg_attr(not(any(feature = "asm", feature = "c-ffi")), forbid(unsafe_code))]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
 #![allow(clippy::all)]
 #![cfg_attr(
@@ -49,6 +49,7 @@ pub mod src {
 
     // Core primitives
     pub mod align;
+    #[cfg(feature = "c-ffi")]
     pub(crate) mod assume;
     #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod c_arc;

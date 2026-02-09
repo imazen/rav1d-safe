@@ -152,8 +152,10 @@ fn cdef_find_dir_scalar<BD: BitDepth>(img: PicOffset, variance: &mut c_uint, bd:
 // MODULE TESTS
 // ============================================================================
 
-#[cfg(test)]
-#[allow(unsafe_code)] // tests call #[target_feature] SIMD functions from non-target_feature context
+// Test module gated behind `asm` because calling #[target_feature] functions
+// from a non-target_feature context requires unsafe, which is forbidden in default build.
+#[cfg(all(test, feature = "asm"))]
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
     #[cfg(target_arch = "x86_64")]
@@ -188,9 +190,7 @@ mod tests {
             })
             .collect();
 
-        // SIMD - unsafe required because #[target_feature] functions can't be called
-        // from non-target_feature context without unsafe
-        #[allow(unsafe_code)]
+        // SAFETY: We checked is_x86_feature_detected!("avx2") above.
         unsafe {
             let token = Desktop64::summon().expect("AVX2 required for test");
             let diff_vec = loadu_256!(&diff);

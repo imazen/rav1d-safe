@@ -5,9 +5,10 @@ use crate::src::error::Rav1dResult;
 #[cfg(feature = "c-ffi")]
 use std::marker::PhantomData;
 use std::ops::Deref;
+#[cfg(feature = "c-ffi")]
 use std::pin::Pin;
+#[cfg(feature = "c-ffi")]
 use std::ptr::NonNull;
-use std::slice::SliceIndex;
 use std::sync::Arc;
 
 #[cfg(feature = "c-ffi")]
@@ -24,20 +25,31 @@ pub fn arc_into_raw<T: ?Sized>(arc: Arc<T>) -> NonNull<T> {
 /// instead of the normal [`Box`] (de)allocator.
 /// It can also store a normal [`Box`] as well.
 ///
-/// It is built around the [`CBox`] abstraction.
-/// However, that necessitates a double indirection
-/// to reach the ptr through the [`Arc`] and [`CBox`].
-/// To remedy this and improve performance,
-/// a stable pointer is stored inline,
-/// removing the double indirection.
-/// This self-referential ptr is sound
-/// because the [`CBox`] is [`Pin`]ned.
-/// As long as [`Self::owner`] is never replaced
-/// without also re-updating [`Self::stable_ref`], this is sound.
+/// ## c-ffi mode
 ///
-/// Furthermore, storing this stable ref ptr like this
-/// allows for provenance projections of [`Self::stable_ref`],
-/// such as slicing it for a `CArc<[T]>` (see [`Self::slice_in_place`]).
+/// With c-ffi, a [`StableRef`] raw pointer is stored inline for performance
+/// (avoids double indirection through [`Arc`] and [`CBox`]). The [`CBox`] is
+/// [`Pin`]ned to keep this self-referential pointer sound.
+///
+/// ## Safe mode (default)
+///
+/// Without c-ffi, [`CBox`] is always `Rust(Box<T>)`, so we unwrap it
+/// and store `Arc<Box<T>>` directly — no Pin, no raw pointers.
+/// Sub-slice views for `CArc<[T]>` are tracked via `(start, end)` indices.
+#[cfg(not(feature = "c-ffi"))]
+#[derive(Debug)]
+pub struct CArc<T: ?Sized> {
+    /// Without c-ffi, CBox is always Rust(Box<T>), so we skip the CBox/Pin
+    /// wrapper and just store Arc<Box<T>> for a clean, safe deref chain.
+    owner: Arc<Box<T>>,
+
+    /// For `CArc<[T]>`: tracks the current sub-slice view as `(start, end)`.
+    /// `None` means "full slice" (the default after construction).
+    /// For non-slice types (e.g. `CArc<u8>`), always `None` and unused.
+    view: Option<(usize, usize)>,
+}
+
+#[cfg(feature = "c-ffi")]
 #[derive(Debug)]
 pub struct CArc<T: ?Sized> {
     owner: Arc<Pin<CBox<T>>>,
@@ -58,25 +70,33 @@ pub struct CArc<T: ?Sized> {
 /// ptrs to `T` must remain valid and thus "stable".
 ///
 /// Thus, it can be stored relative to its owner.
+#[cfg(feature = "c-ffi")]
 #[derive(Debug)]
 struct StableRef<T: ?Sized>(NonNull<T>);
 
+#[cfg(feature = "c-ffi")]
 impl<T: ?Sized> Clone for StableRef<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl<T: ?Sized> Copy for StableRef<T> {}
 
+#[cfg(feature = "c-ffi")]
 /// SAFETY: [`StableRef`]`<T>`, if it follows its safety guarantees, is essentially a `&T`/`&mut T`, which is [`Send`] if `T: `[`Send`]`.
 #[allow(unsafe_code)]
 unsafe impl<T: Send + ?Sized> Send for StableRef<T> {}
 
+#[cfg(feature = "c-ffi")]
 /// SAFETY: [`StableRef`]`<T>`, if it follows its safety guarantees, is essentially a `&T`/`&mut T`, which is [`Sync`] if `T: `[`Sync`].
 #[allow(unsafe_code)]
 unsafe impl<T: Send + ?Sized> Sync for StableRef<T> {}
 
+// ===== AsRef / Deref =====
+
+#[cfg(feature = "c-ffi")]
 impl<T: ?Sized> AsRef<T> for CArc<T> {
     #[allow(unsafe_code)]
     fn as_ref(&self) -> &T {
@@ -86,16 +106,11 @@ impl<T: ?Sized> AsRef<T> for CArc<T> {
             use std::ptr;
             use to_method::To;
 
-            // Some extra checks to check if our ptrs are definitely invalid.
-
             let real_ref = (*self.owner).as_ref().get_ref();
             assert_eq!(real_ref.to::<NonNull<T>>(), self.base_stable_ref.0);
 
             let real_ptr = ptr::from_ref(real_ref);
             let stable_ptr = self.stable_ref.0.as_ptr().cast_const();
-            // Cast through `*const ()` to remove any fat ptr metadata.
-            // Use arithmetic on the addresses (similar to `.wrapping_*` methods),
-            // as they don't have safety conditions (which we're checking here).
             let [real_address, stable_address] =
                 [real_ptr, stable_ptr].map(|ptr| ptr.cast::<()>() as isize);
             let offset = stable_address - real_address;
@@ -114,13 +129,11 @@ impl<T: ?Sized> AsRef<T> for CArc<T> {
         // SAFETY: [`Self::stable_ref`] is a ptr
         // derived from [`Self::owner`]'s through [`CBox::as_ref`]
         // and is thus safe to dereference.
-        // The [`CBox`] is [`Pin`]ned and
-        // [`Self::stable_ref`] is always updated on writes to [`Self::owner`],
-        // so they are always in sync.
         unsafe { self.stable_ref.0.as_ref() }
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl<T: ?Sized> Deref for CArc<T> {
     type Target = T;
 
@@ -129,6 +142,45 @@ impl<T: ?Sized> Deref for CArc<T> {
     }
 }
 
+// Without c-ffi: safe deref through Arc<Box<T>>.
+// Separate impls for sized types vs slices because slice views
+// need sub-slicing while sized types just deref directly.
+
+#[cfg(not(feature = "c-ffi"))]
+impl Deref for CArc<u8> {
+    type Target = u8;
+
+    fn deref(&self) -> &u8 {
+        &self.owner
+    }
+}
+
+#[cfg(not(feature = "c-ffi"))]
+impl<T> Deref for CArc<[T]> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        let full: &[T] = &self.owner;
+        match self.view {
+            None => full,
+            Some((start, end)) => &full[start..end],
+        }
+    }
+}
+
+// ===== Clone =====
+
+#[cfg(not(feature = "c-ffi"))]
+impl<T: ?Sized> Clone for CArc<T> {
+    fn clone(&self) -> Self {
+        Self {
+            owner: self.owner.clone(),
+            view: self.view,
+        }
+    }
+}
+
+#[cfg(feature = "c-ffi")]
 impl<T: ?Sized> Clone for CArc<T> {
     fn clone(&self) -> Self {
         let Self {
@@ -146,6 +198,20 @@ impl<T: ?Sized> Clone for CArc<T> {
     }
 }
 
+// ===== Construction =====
+
+#[cfg(not(feature = "c-ffi"))]
+impl<T: ?Sized> CArc<T> {
+    pub fn wrap(owner: CBox<T>) -> Rav1dResult<Self> {
+        let CBox::Rust(boxed) = owner;
+        Ok(Self {
+            owner: Arc::new(boxed), // TODO fallible allocation
+            view: None,
+        })
+    }
+}
+
+#[cfg(feature = "c-ffi")]
 impl<T: ?Sized> From<Arc<Pin<CBox<T>>>> for CArc<T> {
     fn from(owner: Arc<Pin<CBox<T>>>) -> Self {
         let stable_ref = StableRef((*owner).as_ref().get_ref().into());
@@ -158,12 +224,15 @@ impl<T: ?Sized> From<Arc<Pin<CBox<T>>>> for CArc<T> {
     }
 }
 
+#[cfg(feature = "c-ffi")]
 impl<T: ?Sized> CArc<T> {
     pub fn wrap(owner: CBox<T>) -> Rav1dResult<Self> {
         let owner = Arc::new(owner.into_pin()); // TODO fallible allocation
         Ok(owner.into())
     }
 }
+
+// ===== RawArc / RawCArc: c-ffi only =====
 
 /// An opaque, raw [`Arc`] ptr.
 ///
@@ -210,14 +279,6 @@ impl<T> RawArc<T> {
     /// This must not be called after [`Self::into_arc`],
     /// including on [`Clone`]s.
     pub unsafe fn as_ref(&self) -> &T {
-        // SAFETY: `self` must be from `Self::from_arc`,
-        // which calls `Arc::into_raw`,
-        // which returns a ptr to its `T`.
-        // `Arc` allows us to get a `&T` from it,
-        // so this is allowed (unlike `&mut T`).
-        // We don't call `Self::into_arc` since that's consuming,
-        // so we'd have to `mem::forget` the `Arc`
-        // and also do a redundant dereference.
         unsafe { self.0.cast().as_ref() }
     }
 
@@ -228,9 +289,6 @@ impl<T> RawArc<T> {
     /// After calling this, the [`RawArc`] and [`Clone`]s of it may not be used anymore.
     pub unsafe fn into_arc(self) -> Arc<T> {
         let raw = self.0.cast().as_ptr();
-        // SAFETY: `self` must be from `Self::from_arc`,
-        // which calls `Arc::into_raw`.
-        // Thus, it is safe to call the inverse `Arc::from_raw` on it.
         unsafe { Arc::from_raw(raw) }
     }
 }
@@ -250,22 +308,55 @@ impl<T: ?Sized> CArc<T> {
     ///
     /// The [`RawCArc`] must be originally from [`Self::into_raw`].
     pub unsafe fn from_raw(raw: RawCArc<T>) -> Self {
-        // SAFETY: The [`RawCArc`] contains the output of [`Arc::into_raw`],
-        // so we can call [`Arc::from_raw`] on it.
         let owner = unsafe { raw.0.into_arc() };
         owner.into()
     }
 }
 
+// ===== Slice operations =====
+
+#[cfg(not(feature = "c-ffi"))]
 impl<T> CArc<[T]> {
-    /// Slice [`Self::stable_ref`] in-place.
+    /// Narrow the view of this `CArc<[T]>` to a sub-slice.
     ///
-    /// The slice stays owned by the [`Arc`],
-    /// but the [`Self::stable_ref`]/[`Self::as_ref`]/[`Self::deref`] view into it
-    /// is assigned to the new sub-slice.
+    /// The full slice stays owned by the [`Arc`],
+    /// but [`Deref`] will return only the sub-slice.
     pub fn slice_in_place<I>(&mut self, range: I)
     where
-        I: SliceIndex<[T], Output = [T]>,
+        I: std::slice::SliceIndex<[T], Output = [T]>,
+    {
+        // Get the current view
+        let full: &[T] = &self.owner;
+        let (cur_start, cur_end) = self.view.unwrap_or((0, full.len()));
+        let current = &full[cur_start..cur_end];
+
+        // Apply the new range to the current view
+        let sub = &current[range];
+
+        // Compute new absolute indices via pointer arithmetic (safe integer math)
+        let byte_offset = sub.as_ptr() as usize - current.as_ptr() as usize;
+        let elem_offset = byte_offset / std::mem::size_of::<T>();
+        let new_start = cur_start + elem_offset;
+        let new_end = new_start + sub.len();
+
+        self.view = Some((new_start, new_end));
+    }
+
+    pub fn split_at(this: Self, mid: usize) -> (Self, Self) {
+        let mut first = this.clone();
+        let mut second = this;
+        first.slice_in_place(..mid);
+        second.slice_in_place(mid..);
+        (first, second)
+    }
+}
+
+#[cfg(feature = "c-ffi")]
+impl<T> CArc<[T]> {
+    /// Slice [`Self::stable_ref`] in-place.
+    pub fn slice_in_place<I>(&mut self, range: I)
+    where
+        I: std::slice::SliceIndex<[T], Output = [T]>,
     {
         self.stable_ref = StableRef(self.as_ref()[range].into());
     }

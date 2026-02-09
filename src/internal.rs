@@ -303,17 +303,8 @@ pub(crate) struct TaskThreadDataDelayedFg {
     pub grain: Grain,
 }
 
-// When `quite-safe` is enabled, PicDataPtr is Send+Sync, so
-// TaskThreadDataDelayedFg auto-derives Send+Sync through the type system.
-// Without `quite-safe`, we fall back to the manual impls.
-#[cfg(not(feature = "quite-safe"))]
-#[allow(unsafe_code)]
-/// SAFETY: Fields are protected by external synchronization via TaskThreadData's mutex.
-unsafe impl Send for TaskThreadDataDelayedFg {}
-#[cfg(not(feature = "quite-safe"))]
-#[allow(unsafe_code)]
-/// SAFETY: Fields are protected by external synchronization via TaskThreadData's mutex.
-unsafe impl Sync for TaskThreadDataDelayedFg {}
+// PicDataPtr uses SendSyncNonNull<u8>, so TaskThreadDataDelayedFg
+// auto-derives Send+Sync through the type system in all configurations.
 
 #[derive(Default)]
 #[repr(C)]
@@ -442,17 +433,8 @@ pub struct Rav1dContext {
     pub(crate) picture_pool: Arc<MemPool<u8>>,
 }
 
-// When `quite-safe` is enabled, PicDataPtr is Send+Sync, so
-// Rav1dContext auto-derives Send+Sync through the type system.
-// Without `quite-safe`, we fall back to the manual impls.
-#[cfg(not(feature = "quite-safe"))]
-#[allow(unsafe_code)]
-/// SAFETY: Thread safety is managed externally by the caller's API contract.
-unsafe impl Send for Rav1dContext {}
-#[cfg(not(feature = "quite-safe"))]
-#[allow(unsafe_code)]
-/// SAFETY: Thread safety is managed externally by the caller's API contract.
-unsafe impl Sync for Rav1dContext {}
+// PicDataPtr uses SendSyncNonNull<u8>, so Rav1dContext
+// auto-derives Send+Sync through the type system in all configurations.
 
 #[derive(Default)]
 #[repr(C)]

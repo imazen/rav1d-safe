@@ -2,10 +2,9 @@
 //! structure.
 //!
 //! This module re-exports the core `DisjointMut` type from the `rav1d-disjoint-mut`
-//! crate (a provably safe abstraction with always-on bounds checking by default),
-//! and adds `AsMutPtr` implementations for rav1d-specific types (AlignedVec, Align*).
-
-#![deny(unsafe_op_in_unsafe_fn)]
+//! crate (a provably safe abstraction with always-on bounds checking by default).
+//!
+//! AlignedVec and Align* `ExternalAsMutPtr` impls live in the `rav1d-align` crate.
 
 // Re-export everything from the rav1d-disjoint-mut crate.
 pub use rav1d_disjoint_mut::AsMutPtr;
@@ -14,49 +13,6 @@ pub use rav1d_disjoint_mut::DisjointMut;
 pub use rav1d_disjoint_mut::DisjointMutArcSlice;
 pub use rav1d_disjoint_mut::DisjointMutGuard;
 pub use rav1d_disjoint_mut::DisjointMutSlice;
+#[cfg(feature = "c-ffi")]
 pub use rav1d_disjoint_mut::ExternalAsMutPtr;
-pub use rav1d_disjoint_mut::Resizable;
 pub use rav1d_disjoint_mut::SliceBounds;
-
-// rav1d-specific extensions: AlignedVec AsMutPtr + Resizable impls.
-
-use crate::src::align::AlignedByteChunk;
-use crate::src::align::AlignedVec;
-use crate::src::assume::assume;
-
-/// Implement Resizable so that `DisjointMut<AlignedVec<V, C>>` gains `.resize()`.
-impl<V: Copy, C: AlignedByteChunk> Resizable for AlignedVec<V, C> {
-    type Value = V;
-    fn resize(&mut self, new_len: usize, value: V) {
-        AlignedVec::resize(self, new_len, value)
-    }
-}
-
-/// SAFETY: We only create `&AlignedVec` (SharedReadOnly), never `&mut AlignedVec`.
-/// Creating `&mut AlignedVec` would produce a Unique retag (Stacked Borrows) covering
-/// the inner Vec struct, invalidating concurrent `&AlignedVec` reads from other threads.
-/// Instead, we read the data pointer through `as_ptr().cast_mut()` and the length
-/// through `self.len()`, both of which only require shared references.
-#[allow(unsafe_code)]
-unsafe impl<T: Copy, C: AlignedByteChunk> ExternalAsMutPtr for AlignedVec<T, C> {
-    type Target = T;
-
-    unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
-        // SAFETY: Only creates &AlignedVec (SharedReadOnly), not &mut AlignedVec.
-        // as_ptr() reads the inner Vec's pointer through a shared reference,
-        // which doesn't conflict with concurrent shared borrows from other threads.
-        let aligned_ref = unsafe { &*ptr };
-        let ptr = aligned_ref.as_ptr().cast_mut();
-
-        // SAFETY: `AlignedVec` stores `C`s internally,
-        // so `*mut T` is really `*mut C`.
-        // Since it's stored in a `Vec`, it's aligned.
-        unsafe { assume(ptr.cast::<C>().is_aligned()) };
-
-        ptr
-    }
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-}

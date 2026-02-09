@@ -25,7 +25,6 @@ mod tests {
     use crate::src::lib::rav1d_send_data;
     use std::env;
     use std::fs;
-    use std::sync::Arc;
 
     /// Parse an IVF file and return a Vec of frame data payloads.
     fn parse_ivf(data: &[u8]) -> Vec<Vec<u8>> {
