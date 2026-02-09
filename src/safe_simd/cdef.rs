@@ -289,6 +289,160 @@ fn cdef_filter_block_simd_8bpc(
 // CDEF DIRECTION FINDING
 // ============================================================================
 
+/// SSE SIMD implementation of cdef_find_dir for 8bpc.
+/// Vectorizes diagonal/alt partial sum accumulation: SIMD load/add/store of 8 i16
+/// values at variable offsets, reducing 8 scalar adds to 1 SIMD add per direction.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn cdef_find_dir_simd_8bpc(
+    _t: Desktop64,
+    img: PicOffset,
+    variance: &mut c_uint,
+) -> c_int {
+    use crate::include::common::bitdepth::BitDepth8;
+    use super::pixel_access::{loadu_128, storeu_128};
+
+    let sub128 = _mm_set1_epi16(128);
+
+    // Padded to 16 i16 for unaligned SIMD access at variable offsets.
+    let mut partial_sum_diag0 = [0i16; 16]; // indices 0..14
+    let mut partial_sum_diag1 = [0i16; 16]; // indices 0..14
+    let mut partial_sum_alt0 = [0i16; 16];  // indices 0..10
+    let mut partial_sum_alt1 = [0i16; 16];  // indices 0..10
+    let mut partial_sum_alt2 = [0i16; 16];  // indices 0..10
+    let mut partial_sum_alt3 = [0i16; 16];  // indices 0..10
+    let mut hv0 = [0i16; 8];
+    let mut hv1_vec = _mm_setzero_si128();
+
+    let stride = img.pixel_stride::<BitDepth8>();
+
+    for y in 0..8usize {
+        let row_img = img + (y as isize * stride);
+        let row_slice = row_img.slice::<BitDepth8>(8);
+
+        // Load 8 u8 pixels → i16 → subtract 128
+        let mut row_bytes = [0u8; 16];
+        row_bytes[0..8].copy_from_slice(&row_slice[..8]);
+        let row_u8 = loadu_128!(&row_bytes);
+        let row = _mm_sub_epi16(_mm_cvtepu8_epi16(row_u8), sub128);
+
+        // Extract to array for scatter operations (alt[0], alt[1], hv[0])
+        let mut px = [0i16; 8];
+        storeu_128!(&mut px, row);
+
+        // hv[0][y] = sum of row
+        hv0[y] = px[0] + px[1] + px[2] + px[3] + px[4] + px[5] + px[6] + px[7];
+
+        // hv[1]: vertical accumulation (each lane = one column)
+        hv1_vec = _mm_add_epi16(hv1_vec, row);
+
+        // diag[0][y+x]: 8 consecutive values at offset y (SIMD add)
+        let d0 = loadu_128!(&partial_sum_diag0[y..y + 8], [i16; 8]);
+        storeu_128!(
+            <&mut [i16; 8]>::try_from(&mut partial_sum_diag0[y..y + 8]).unwrap(),
+            _mm_add_epi16(d0, row)
+        );
+
+        // diag[1][7+y-x]: reversed row at offset y (SIMD byte-reverse + add)
+        let rev = _mm_shuffle_epi8(
+            row,
+            _mm_set_epi8(1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14),
+        );
+        let d1 = loadu_128!(&partial_sum_diag1[y..y + 8], [i16; 8]);
+        storeu_128!(
+            <&mut [i16; 8]>::try_from(&mut partial_sum_diag1[y..y + 8]).unwrap(),
+            _mm_add_epi16(d1, rev)
+        );
+
+        // alt[0][y + (x >> 1)]: pairwise sums → 4 values at offset y
+        let pair0 = px[0] + px[1];
+        let pair1 = px[2] + px[3];
+        let pair2 = px[4] + px[5];
+        let pair3 = px[6] + px[7];
+        partial_sum_alt0[y]     += pair0;
+        partial_sum_alt0[y + 1] += pair1;
+        partial_sum_alt0[y + 2] += pair2;
+        partial_sum_alt0[y + 3] += pair3;
+
+        // alt[1][3 + y - (x >> 1)]: reversed pairwise sums at offset y
+        partial_sum_alt1[y]     += pair3;
+        partial_sum_alt1[y + 1] += pair2;
+        partial_sum_alt1[y + 2] += pair1;
+        partial_sum_alt1[y + 3] += pair0;
+
+        // alt[2][3 - (y >> 1) + x]: 8 consecutive at offset (3 - y/2) (SIMD add)
+        let base2 = 3 - (y >> 1);
+        let a2 = loadu_128!(&partial_sum_alt2[base2..base2 + 8], [i16; 8]);
+        storeu_128!(
+            <&mut [i16; 8]>::try_from(&mut partial_sum_alt2[base2..base2 + 8]).unwrap(),
+            _mm_add_epi16(a2, row)
+        );
+
+        // alt[3][(y >> 1) + x]: 8 consecutive at offset (y/2) (SIMD add)
+        let base3 = y >> 1;
+        let a3 = loadu_128!(&partial_sum_alt3[base3..base3 + 8], [i16; 8]);
+        storeu_128!(
+            <&mut [i16; 8]>::try_from(&mut partial_sum_alt3[base3..base3 + 8]).unwrap(),
+            _mm_add_epi16(a3, row)
+        );
+    }
+
+    let mut hv1 = [0i16; 8];
+    storeu_128!(&mut hv1, hv1_vec);
+
+    // === Cost computation (scalar — small fixed-size loops) ===
+    let mut cost = [0u32; 8];
+    for n in 0..8 {
+        cost[2] += (hv0[n] as i32 * hv0[n] as i32) as u32;
+        cost[6] += (hv1[n] as i32 * hv1[n] as i32) as u32;
+    }
+    cost[2] *= 105;
+    cost[6] *= 105;
+
+    static DIV_TABLE: [u16; 7] = [840, 420, 280, 210, 168, 140, 120];
+    for n in 0..7 {
+        let d = DIV_TABLE[n] as i32;
+        cost[0] += ((partial_sum_diag0[n] as i32 * partial_sum_diag0[n] as i32
+            + partial_sum_diag0[14 - n] as i32 * partial_sum_diag0[14 - n] as i32)
+            * d) as u32;
+        cost[4] += ((partial_sum_diag1[n] as i32 * partial_sum_diag1[n] as i32
+            + partial_sum_diag1[14 - n] as i32 * partial_sum_diag1[14 - n] as i32)
+            * d) as u32;
+    }
+    cost[0] += (partial_sum_diag0[7] as i32 * partial_sum_diag0[7] as i32 * 105) as u32;
+    cost[4] += (partial_sum_diag1[7] as i32 * partial_sum_diag1[7] as i32 * 105) as u32;
+
+    let alt_arrays: [&[i16; 16]; 4] = [
+        &partial_sum_alt0, &partial_sum_alt1, &partial_sum_alt2, &partial_sum_alt3,
+    ];
+    for n in 0..4 {
+        let cost_ptr = &mut cost[n * 2 + 1];
+        for m in 0..5 {
+            let v = alt_arrays[n][3 + m] as i32;
+            *cost_ptr += (v * v) as u32;
+        }
+        *cost_ptr *= 105;
+        for m in 0..3 {
+            let d = DIV_TABLE[2 * m + 1] as i32;
+            let a = alt_arrays[n][m] as i32;
+            let b = alt_arrays[n][10 - m] as i32;
+            *cost_ptr += ((a * a + b * b) * d) as u32;
+        }
+    }
+
+    let mut best_dir = 0;
+    let mut best_cost = cost[0];
+    for n in 0..8 {
+        if cost[n] > best_cost {
+            best_cost = cost[n];
+            best_dir = n;
+        }
+    }
+
+    *variance = (best_cost - cost[best_dir ^ 4]) >> 10;
+    best_dir as c_int
+}
+
 /// Scalar implementation of cdef_find_dir (reference for SIMD development)
 /// Returns direction (0-7) and sets variance
 #[inline(never)]
@@ -917,9 +1071,9 @@ pub unsafe extern "C" fn cdef_find_dir_8bpc_avx2(
     use crate::include::common::bitdepth::BitDepth8;
 
     let dst = unsafe { *FFISafe::get(dst) };
-    let bd = BitDepth8::new(());
+    let token = Desktop64::summon().expect("AVX2 required");
 
-    cdef_find_dir_scalar::<BitDepth8>(dst, variance, bd)
+    cdef_find_dir_simd_8bpc(token, dst, variance)
 }
 
 // ============================================================================
@@ -1743,9 +1897,14 @@ pub fn cdef_dir_dispatch<BD: BitDepth>(
     variance: &mut c_uint,
     bd: BD,
 ) -> Option<c_int> {
-    let Some(_token) = Desktop64::summon() else {
+    use crate::include::common::bitdepth::BPC;
+
+    let Some(token) = Desktop64::summon() else {
         return None;
     };
 
-    Some(cdef_find_dir_scalar(dst, variance, bd))
+    match BD::BPC {
+        BPC::BPC8 => Some(cdef_find_dir_simd_8bpc(token, dst, variance)),
+        BPC::BPC16 => Some(cdef_find_dir_scalar(dst, variance, bd)),
+    }
 }
