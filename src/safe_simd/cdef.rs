@@ -175,7 +175,7 @@ fn cdef_filter_block_simd_8bpc(
 
                 // Rounding: (sum - (sum < 0) + 8) >> 4
                 let neg_mask = _mm_cmpgt_epi16(zero, sum);
-                let adjusted = _mm_sub_epi16(sum, neg_mask);
+                let adjusted = _mm_add_epi16(sum, neg_mask);
                 let adjusted = _mm_add_epi16(adjusted, _mm_set1_epi16(8));
                 let adjusted = _mm_srai_epi16::<4>(adjusted);
                 let result = _mm_add_epi16(px, adjusted);
@@ -216,7 +216,7 @@ fn cdef_filter_block_simd_8bpc(
                 }
 
                 let neg_mask = _mm_cmpgt_epi16(zero, sum);
-                let adjusted = _mm_sub_epi16(sum, neg_mask);
+                let adjusted = _mm_add_epi16(sum, neg_mask);
                 let adjusted = _mm_add_epi16(adjusted, _mm_set1_epi16(8));
                 let adjusted = _mm_srai_epi16::<4>(adjusted);
                 let result = _mm_add_epi16(px, adjusted);
@@ -267,7 +267,7 @@ fn cdef_filter_block_simd_8bpc(
             }
 
             let neg_mask = _mm_cmpgt_epi16(zero, sum);
-            let adjusted = _mm_sub_epi16(sum, neg_mask);
+            let adjusted = _mm_add_epi16(sum, neg_mask);
             let adjusted = _mm_add_epi16(adjusted, _mm_set1_epi16(8));
             let adjusted = _mm_srai_epi16::<4>(adjusted);
             let result = _mm_add_epi16(px, adjusted);
@@ -1284,7 +1284,7 @@ fn cdef_filter_block_simd_16bpc(
 
                 // Rounding: (sum - (sum < 0) + 8) >> 4
                 let neg_mask = _mm_cmpgt_epi16(zero, sum);
-                let adjusted = _mm_sub_epi16(sum, neg_mask);
+                let adjusted = _mm_add_epi16(sum, neg_mask);
                 let adjusted = _mm_add_epi16(adjusted, _mm_set1_epi16(8));
                 let adjusted = _mm_srai_epi16::<4>(adjusted);
                 let result = _mm_add_epi16(px, adjusted);
@@ -1320,7 +1320,7 @@ fn cdef_filter_block_simd_16bpc(
                 }
 
                 let neg_mask = _mm_cmpgt_epi16(zero, sum);
-                let adjusted = _mm_sub_epi16(sum, neg_mask);
+                let adjusted = _mm_add_epi16(sum, neg_mask);
                 let adjusted = _mm_add_epi16(adjusted, _mm_set1_epi16(8));
                 let adjusted = _mm_srai_epi16::<4>(adjusted);
                 let result = _mm_add_epi16(px, adjusted);
@@ -1369,7 +1369,7 @@ fn cdef_filter_block_simd_16bpc(
             }
 
             let neg_mask = _mm_cmpgt_epi16(zero, sum);
-            let adjusted = _mm_sub_epi16(sum, neg_mask);
+            let adjusted = _mm_add_epi16(sum, neg_mask);
             let adjusted = _mm_add_epi16(adjusted, _mm_set1_epi16(8));
             let adjusted = _mm_srai_epi16::<4>(adjusted);
             let result = _mm_add_epi16(px, adjusted);
