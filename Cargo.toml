@@ -36,6 +36,7 @@ safe_unaligned_simd = "0.2.4"
 
 [dev-dependencies]
 divan = "0.1"
+md5 = "0.8.0"
 
 [build-dependencies]
 cc = "1.0.79"

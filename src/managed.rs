@@ -530,15 +530,15 @@ impl<'a> Planes8<'a> {
         let guard = data.data[0].slice::<BitDepth8, _>(..);
 
         let stride = self.frame.inner.stride[0] as usize;
-        // Calculate actual height from buffer size to handle cases where
-        // the reported height exceeds the allocated buffer (e.g., with gainmaps)
-        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+        let buffer_height = if stride > 0 { guard.len() / stride } else { 0 };
+        // Use frame's reported height, capped at buffer capacity
+        let height = (self.frame.height() as usize).min(buffer_height);
 
         PlaneView8 {
             guard,
             stride,
             width: self.frame.width() as usize,
-            height: actual_height,
+            height,
         }
     }
 
@@ -548,7 +548,7 @@ impl<'a> Planes8<'a> {
             return None;
         }
 
-        let (w, _) = self.chroma_dimensions();
+        let (w, h) = self.chroma_dimensions();
         let data = self
             .frame
             .inner
@@ -558,14 +558,14 @@ impl<'a> Planes8<'a> {
         let guard = data.data[1].slice::<BitDepth8, _>(..);
 
         let stride = self.frame.inner.stride[1] as usize;
-        // Calculate actual height from buffer size
-        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+        let buffer_height = if stride > 0 { guard.len() / stride } else { 0 };
+        let height = h.min(buffer_height);
 
         Some(PlaneView8 {
             guard,
             stride,
             width: w,
-            height: actual_height,
+            height,
         })
     }
 
@@ -575,7 +575,7 @@ impl<'a> Planes8<'a> {
             return None;
         }
 
-        let (w, _) = self.chroma_dimensions();
+        let (w, h) = self.chroma_dimensions();
         let data = self
             .frame
             .inner
@@ -585,14 +585,14 @@ impl<'a> Planes8<'a> {
         let guard = data.data[2].slice::<BitDepth8, _>(..);
 
         let stride = self.frame.inner.stride[1] as usize;
-        // Calculate actual height from buffer size
-        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+        let buffer_height = if stride > 0 { guard.len() / stride } else { 0 };
+        let height = h.min(buffer_height);
 
         Some(PlaneView8 {
             guard,
             stride,
             width: w,
-            height: actual_height,
+            height,
         })
     }
 
@@ -600,8 +600,8 @@ impl<'a> Planes8<'a> {
         let w = self.frame.width() as usize;
         let h = self.frame.height() as usize;
         match self.frame.pixel_layout() {
-            PixelLayout::I420 => (w / 2, h / 2),
-            PixelLayout::I422 => (w / 2, h),
+            PixelLayout::I420 => ((w + 1) / 2, (h + 1) / 2),
+            PixelLayout::I422 => ((w + 1) / 2, h),
             PixelLayout::I444 => (w, h),
             PixelLayout::I400 => (0, 0),
         }
@@ -624,16 +624,16 @@ impl<'a> Planes16<'a> {
             .expect("missing picture data");
         let guard = data.data[0].slice::<BitDepth16, _>(..);
 
-        let stride = self.frame.inner.stride[0] as usize;
-        // Calculate actual height from buffer size to handle cases where
-        // the reported height exceeds the allocated buffer (e.g., with gainmaps)
-        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+        // stride[0] is in bytes; divide by 2 for u16 element stride
+        let stride = self.frame.inner.stride[0] as usize / 2;
+        let buffer_height = if stride > 0 { guard.len() / stride } else { 0 };
+        let height = (self.frame.height() as usize).min(buffer_height);
 
         PlaneView16 {
             guard,
             stride,
             width: self.frame.width() as usize,
-            height: actual_height,
+            height,
         }
     }
 
@@ -643,7 +643,7 @@ impl<'a> Planes16<'a> {
             return None;
         }
 
-        let (w, _) = self.chroma_dimensions();
+        let (w, h) = self.chroma_dimensions();
         let data = self
             .frame
             .inner
@@ -652,15 +652,16 @@ impl<'a> Planes16<'a> {
             .expect("missing picture data");
         let guard = data.data[1].slice::<BitDepth16, _>(..);
 
-        let stride = self.frame.inner.stride[1] as usize;
-        // Calculate actual height from buffer size
-        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+        // stride[1] is in bytes; divide by 2 for u16 element stride
+        let stride = self.frame.inner.stride[1] as usize / 2;
+        let buffer_height = if stride > 0 { guard.len() / stride } else { 0 };
+        let height = h.min(buffer_height);
 
         Some(PlaneView16 {
             guard,
             stride,
             width: w,
-            height: actual_height,
+            height,
         })
     }
 
@@ -670,7 +671,7 @@ impl<'a> Planes16<'a> {
             return None;
         }
 
-        let (w, _) = self.chroma_dimensions();
+        let (w, h) = self.chroma_dimensions();
         let data = self
             .frame
             .inner
@@ -679,15 +680,16 @@ impl<'a> Planes16<'a> {
             .expect("missing picture data");
         let guard = data.data[2].slice::<BitDepth16, _>(..);
 
-        let stride = self.frame.inner.stride[1] as usize;
-        // Calculate actual height from buffer size
-        let actual_height = if stride > 0 { guard.len() / stride } else { 0 };
+        // stride[1] is in bytes; divide by 2 for u16 element stride
+        let stride = self.frame.inner.stride[1] as usize / 2;
+        let buffer_height = if stride > 0 { guard.len() / stride } else { 0 };
+        let height = h.min(buffer_height);
 
         Some(PlaneView16 {
             guard,
             stride,
             width: w,
-            height: actual_height,
+            height,
         })
     }
 
@@ -695,8 +697,8 @@ impl<'a> Planes16<'a> {
         let w = self.frame.width() as usize;
         let h = self.frame.height() as usize;
         match self.frame.pixel_layout() {
-            PixelLayout::I420 => (w / 2, h / 2),
-            PixelLayout::I422 => (w / 2, h),
+            PixelLayout::I420 => ((w + 1) / 2, (h + 1) / 2),
+            PixelLayout::I422 => ((w + 1) / 2, h),
             PixelLayout::I444 => (w, h),
             PixelLayout::I400 => (0, 0),
         }
