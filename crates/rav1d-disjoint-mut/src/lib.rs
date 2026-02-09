@@ -1311,6 +1311,13 @@ mod pic_buf {
         ///
         /// Panics if `align_offset + usable_len > vec.len()`.
         pub fn from_vec_aligned(vec: Vec<u8>, alignment: usize, usable_len: usize) -> Self {
+            if usable_len == 0 {
+                return Self {
+                    buf: vec,
+                    align_offset: 0,
+                    usable_len: 0,
+                };
+            }
             let align_offset = vec.as_ptr().align_offset(alignment);
             assert!(
                 align_offset + usable_len <= vec.len(),
