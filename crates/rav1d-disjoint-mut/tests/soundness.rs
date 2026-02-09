@@ -130,27 +130,30 @@ fn test_guard_drop_enables_reborrow() {
     assert_eq!(g[0], 1);
 }
 
-/// Test: overlapping mut panics.
+/// Test: overlapping mut panics (only when tracking is active).
 #[test]
 #[should_panic(expected = "overlapping")]
+#[cfg(not(feature = "unchecked"))]
 fn test_overlapping_mut_panics() {
     let dm = DisjointMut::new(vec![0u8; 100]);
     let _g1 = dm.index_mut(0..60);
     let _g2 = dm.index_mut(40..100);
 }
 
-/// Test: mut overlapping with immut panics.
+/// Test: mut overlapping with immut panics (only when tracking is active).
 #[test]
 #[should_panic(expected = "overlapping")]
+#[cfg(not(feature = "unchecked"))]
 fn test_mut_overlapping_immut_panics() {
     let dm = DisjointMut::new(vec![0u8; 100]);
     let _g1 = dm.index(0..60);
     let _g2 = dm.index_mut(40..100);
 }
 
-/// Test: immut overlapping with existing mut panics.
+/// Test: immut overlapping with existing mut panics (only when tracking is active).
 #[test]
 #[should_panic(expected = "overlapping")]
+#[cfg(not(feature = "unchecked"))]
 fn test_immut_overlapping_mut_panics() {
     let dm = DisjointMut::new(vec![0u8; 100]);
     let _g1 = dm.index_mut(0..60);
@@ -192,6 +195,7 @@ fn test_two_empty_ranges_same_position() {
 /// in an inconsistent state, so we fail loudly rather than silently allowing
 /// access to potentially corrupted data.
 #[test]
+#[cfg(not(feature = "unchecked"))]
 fn test_oob_panic_poisons() {
     let dm = DisjointMut::new(vec![0u8; 10]);
 
@@ -211,7 +215,7 @@ fn test_oob_panic_poisons() {
 /// Panic while holding a mutable guard poisons the data structure.
 /// Requires `std` feature (poisoning uses `thread::panicking()`).
 #[test]
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", not(feature = "unchecked")))]
 fn test_panic_during_mut_guard_poisons() {
     let dm = DisjointMut::new(vec![0u8; 100]);
 
@@ -232,6 +236,7 @@ fn test_panic_during_mut_guard_poisons() {
 /// Panic while holding an immutable guard does NOT poison.
 /// Immutable guards don't modify data, so no inconsistency is possible.
 #[test]
+#[cfg(not(feature = "unchecked"))]
 fn test_panic_during_immut_guard_no_poison() {
     let dm = DisjointMut::new(vec![42u8; 100]);
 

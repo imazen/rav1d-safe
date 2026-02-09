@@ -150,21 +150,9 @@ impl<T: AsMutPtr> DisjointMut<T> {
     pub const fn new(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
+            #[cfg(not(feature = "unchecked"))]
             tracker: Some(checked::BorrowTracker::new()),
-        }
-    }
-
-    /// Create a `DisjointMut` without runtime overlap checking.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that all borrows obtained from this instance
-    /// are truly disjoint: no mutable borrow may overlap with any other borrow.
-    /// Violating this causes undefined behavior (aliasing `&mut`).
-    #[cfg(feature = "unchecked")]
-    pub const unsafe fn dangerously_unchecked(value: T) -> Self {
-        Self {
-            inner: UnsafeCell::new(value),
+            #[cfg(feature = "unchecked")]
             tracker: None,
         }
     }
@@ -1418,6 +1406,7 @@ fn test_overlapping_immut() {
 
 #[test]
 #[should_panic]
+#[cfg(not(feature = "unchecked"))]
 fn test_overlapping_mut() {
     let mut v: DisjointMut<Vec<u8>> = Default::default();
     v.resize(10, 0u8);
