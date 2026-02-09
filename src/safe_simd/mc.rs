@@ -16,18 +16,16 @@ use core::arch::x86_64::*;
 use crate::src::safe_simd::pixel_access::Flex;
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::{
-    loadi64, loadu_128, loadu_256, storei64, storeu_128, storeu_256,
+    loadi64, loadu_128, loadu_256, storeu_128, storeu_256,
 };
 #[cfg(target_arch = "x86_64")]
 use archmage::{arcane, rite, Desktop64, SimdToken};
 
 use crate::include::common::bitdepth::BitDepth;
-use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::headers::Rav1dFilterMode;
 #[cfg(target_arch = "x86_64")]
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::PicOffset;
-use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::COMPINTER_LEN;
 use crate::src::levels::Filter2d;
 use crate::src::strided::Strided as _;
@@ -1989,7 +1987,7 @@ fn put_8tap_8bpc_avx2_impl_inner(
 
             for y in 0..tmp_h {
                 let src_row_base = ((y as isize - 3) * src_stride) as usize;
-                let src_row = &src[src_row_base..];
+                let _src_row = &src[src_row_base..];
                 h_filter_8tap_8bpc_avx2_inner(
                     _token,
                     &mut mid[y],
@@ -2018,7 +2016,7 @@ fn put_8tap_8bpc_avx2_impl_inner(
             // Case 2: H-only filtering (full SIMD)
             for y in 0..h {
                 let src_row_base = (y as isize * src_stride) as usize;
-                let src_row = &src[src_row_base..];
+                let _src_row = &src[src_row_base..];
                 let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
                 h_filter_8tap_8bpc_put_avx2_inner(_token, dst_row, &src[src_row_base - 3..], w, fh);
             }
@@ -2767,7 +2765,7 @@ fn prep_8tap_8bpc_avx2_impl_inner(
             // Horizontal pass
             for y in 0..tmp_h {
                 let src_row_base = ((y as isize - 3) * src_stride) as usize;
-                let src_row = &src[src_row_base..];
+                let _src_row = &src[src_row_base..];
                 h_filter_8tap_8bpc_avx2_inner(
                     _token,
                     &mut mid[y],
@@ -2795,7 +2793,7 @@ fn prep_8tap_8bpc_avx2_impl_inner(
             // Case 2: H-only filtering
             for y in 0..h {
                 let src_row_base = (y as isize * src_stride) as usize;
-                let src_row = &src[src_row_base..];
+                let _src_row = &src[src_row_base..];
                 let out_row = y * w;
                 h_filter_8tap_8bpc_avx2_inner(
                     _token,
@@ -7387,7 +7385,7 @@ fn v_bilin_16bpc_direct_avx2_inner(
     // Scalar fallback
     while col < w {
         let x0 = src[col] as i32;
-        let x1 = src[(src_stride as usize + col)] as i32;
+        let x1 = src[src_stride as usize + col] as i32;
         let pixel = (16 - my) * x0 + my * x1;
         let result = ((pixel + 8) >> 4).clamp(0, bd_max);
         dst[col] = result as u16;
@@ -7542,7 +7540,7 @@ fn v_bilin_16bpc_prep_direct_avx2_inner(
     // Scalar fallback
     while col < w {
         let x0 = src[col] as i32;
-        let x1 = src[(src_stride as usize + col)] as i32;
+        let x1 = src[src_stride as usize + col] as i32;
         let pixel = (16 - my) * x0 + my * x1;
         let result = ((pixel + 8) >> 4) - prep_bias;
         dst[col] = result as i16;

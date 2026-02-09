@@ -13,7 +13,6 @@ use std::ops::Deref;
 use std::ops::DerefMut;
 use std::ops::Range;
 use std::ptr;
-use std::slice;
 
 // x86_64 SIMD intrinsics for safe_simd implementations
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
