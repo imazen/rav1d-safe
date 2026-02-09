@@ -72,3 +72,12 @@ fn range_start_bounds_colors_hdr() {
     let data = include_bytes!("crash_vectors/colors_hdr_rec2020.obu");
     let _ = decode_obu(data);
 }
+
+/// rav1d-disjoint-mut/src/lib.rs:1315 - PicBuf never allocated
+/// "PicBuf: aligned region (63 + 0) exceeds Vec length (0)"
+/// Affects 45/3261 real-world AVIF files (google-native + unsplash corpus)
+#[test]
+fn picbuf_empty_vec() {
+    let data = include_bytes!("crash_vectors/picbuf_empty_vec.obu");
+    let _ = decode_obu(data);
+}
