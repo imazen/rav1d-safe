@@ -229,14 +229,12 @@ fn test_obmc_blend_h_regression_00000327() {
     decode_ivf_file(&path);
 }
 
-/// Decode every 8-bit IVF test vector under 100KB.
-/// Catches regressions across the full dav1d test suite.
-#[test]
-#[ignore] // requires test vectors, slow
-fn test_decode_all_8bit_vectors() {
-    let dir = test_vectors_dir().join("dav1d-test-data/8-bit/data");
+/// Decode every IVF test vector under `max_bytes` in `subdir`.
+/// Catches regressions across the dav1d test suite.
+fn sweep_vectors(subdir: &str, max_bytes: u64) {
+    let dir = test_vectors_dir().join(subdir);
     if !dir.exists() {
-        eprintln!("Skipping: 8-bit test vectors not found");
+        eprintln!("Skipping: vectors not found at {}", dir.display());
         return;
     }
 
@@ -244,7 +242,7 @@ fn test_decode_all_8bit_vectors() {
         .expect("Failed to read dir")
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().is_some_and(|ext| ext == "ivf"))
-        .filter(|e| e.metadata().map(|m| m.len() <= 100_000).unwrap_or(false))
+        .filter(|e| e.metadata().map(|m| m.len() <= max_bytes).unwrap_or(false))
         .collect();
     entries.sort_by_key(|e| e.file_name());
 
@@ -262,9 +260,7 @@ fn test_decode_all_8bit_vectors() {
         });
 
         match result {
-            Ok(()) => {
-                passed += 1;
-            }
+            Ok(()) => passed += 1,
             Err(_) => {
                 eprintln!("FAILED: {name}");
                 failed.push(name);
@@ -272,11 +268,32 @@ fn test_decode_all_8bit_vectors() {
         }
     }
 
-    eprintln!("{passed}/{} vectors decoded successfully", entries.len());
+    eprintln!("{subdir}: {passed}/{} vectors decoded successfully", entries.len());
     assert!(
         failed.is_empty(),
-        "These vectors failed to decode: {failed:?}"
+        "{subdir}: these vectors failed to decode: {failed:?}"
     );
+}
+
+/// Decode every 8-bit IVF test vector under 100KB.
+#[test]
+#[ignore] // requires test vectors, slow
+fn test_decode_all_8bit_vectors() {
+    sweep_vectors("dav1d-test-data/8-bit/data", 100_000);
+}
+
+/// Decode every 10-bit IVF test vector under 100KB.
+#[test]
+#[ignore] // requires test vectors, slow
+fn test_decode_all_10bit_vectors() {
+    sweep_vectors("dav1d-test-data/10-bit/data", 100_000);
+}
+
+/// Decode every 12-bit IVF test vector under 100KB.
+#[test]
+#[ignore] // requires test vectors, slow
+fn test_decode_all_12bit_vectors() {
+    sweep_vectors("dav1d-test-data/12-bit/data", 100_000);
 }
 
 #[test]
