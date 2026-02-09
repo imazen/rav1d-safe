@@ -141,7 +141,7 @@ fn lr_filter_direct<BD: BitDepth>(
     edges: LrEdgeFlags,
     bd: BD,
 ) {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
     if crate::src::safe_simd::looprestoration::lr_filter_dispatch::<BD>(
         variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
     ) {

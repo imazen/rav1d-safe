@@ -34,7 +34,7 @@ fn pal_idx_finish_direct(
         let dst = &mut dst[..(bw / 2) * bh];
         let src = &tmp[..bw * bh];
 
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
         if crate::src::safe_simd::pal::pal_idx_finish_dispatch(dst, src, bw, bh, w, h) {
             return;
         }

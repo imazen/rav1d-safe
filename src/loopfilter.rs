@@ -60,7 +60,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     let wh = w as c_int;
     let bd_max = f.bitdepth_max;
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
     if crate::src::safe_simd::loopfilter::loopfilter_sb_dispatch::<BD>(
         dst, stride, mask, lvl, b4_stride, lut, wh, bd_max, is_y, is_v,
     ) {

@@ -910,7 +910,7 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt16_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
-        } else if #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))] {
+        } else if #[cfg(all(not(feature = "asm"), not(feature = "force_scalar"), target_arch = "x86_64"))] {
             // SIMD AVX2 with runtime check, scalar fallback
             if let Some(token) = Desktop64::summon() {
                 ret = rav1d_msac_decode_symbol_adapt16_avx2(token, s, cdf, n_symbols) as c_uint;

@@ -276,7 +276,7 @@ fn generate_grain_y_direct<BD: BitDepth>(
     data: &Rav1dFilmGrainData,
     bd: BD,
 ) {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
     if crate::src::safe_simd::filmgrain::generate_grain_y_dispatch::<BD>(buf, data, bd) {
         return;
     }
@@ -300,7 +300,7 @@ fn generate_grain_uv_direct<BD: BitDepth>(
     is_uv: bool,
     bd: BD,
 ) {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
     if crate::src::safe_simd::filmgrain::generate_grain_uv_dispatch::<BD>(
         layout, buf, buf_y, data, is_uv, bd,
     ) {
@@ -338,7 +338,7 @@ fn fgy_32x32xn_direct<BD: BitDepth>(
     row_num: usize,
     bd: BD,
 ) {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
     if crate::src::safe_simd::filmgrain::fgy_32x32xn_dispatch::<BD>(
         dst, src, data, pw, scaling, grain_lut, bh, row_num, bd,
     ) {
@@ -380,7 +380,7 @@ fn fguv_32x32xn_direct<BD: BitDepth>(
     is_id: bool,
     bd: BD,
 ) {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
     if crate::src::safe_simd::filmgrain::fguv_32x32xn_dispatch::<BD>(
         layout, dst, src, data, pw, scaling, grain_lut, bh, row_num, luma, is_uv, is_id, bd,
     ) {

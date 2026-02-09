@@ -427,11 +427,11 @@ impl itxfm::Fn {
             } else {
                 // Direct dispatch: no function pointers, no extern "C" ABI overhead.
                 let simd_handled = {
-                    #[cfg(target_arch = "x86_64")]
+                    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
                     { crate::src::safe_simd::itx::itxfm_add_dispatch::<BD>(tx_size, tx_type, dst, coeff, eob, bd) }
                     #[cfg(target_arch = "aarch64")]
                     { crate::src::safe_simd::itx_arm::itxfm_add_dispatch::<BD>(tx_size, tx_type, dst, coeff, eob, bd) }
-                    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+                    #[cfg(not(any(all(target_arch = "x86_64", not(feature = "force_scalar")), target_arch = "aarch64")))]
                     { let _ = (tx_size, tx_type, &dst, &coeff, eob, &bd); false }
                 };
                 if simd_handled {
