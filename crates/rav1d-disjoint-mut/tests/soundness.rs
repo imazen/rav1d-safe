@@ -318,6 +318,7 @@ fn test_concurrent_disjoint_array() {
 /// Test: zerocopy cast — u8 buffer accessed as [u8; 4] elements.
 /// Uses [u8; 4] instead of u32 to avoid alignment requirements that
 /// Miri may not satisfy for Vec<u8>.
+#[cfg(feature = "zerocopy")]
 #[test]
 fn test_zerocopy_cast_disjoint() {
     let dm = DisjointMut::new(vec![0u8; 16]);

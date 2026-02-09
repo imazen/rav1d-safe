@@ -33,6 +33,7 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+#[cfg(feature = "aligned")]
 pub mod align;
 
 use alloc::boxed::Box;
@@ -45,6 +46,7 @@ use core::fmt::Display;
 use core::fmt::Formatter;
 use core::marker::PhantomData;
 use core::mem;
+#[cfg(feature = "zerocopy")]
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 use core::ops::DerefMut;
@@ -57,7 +59,9 @@ use core::ops::RangeTo;
 use core::ops::RangeToInclusive;
 use core::ptr;
 use core::ptr::addr_of_mut;
+#[cfg(feature = "zerocopy")]
 use zerocopy::AsBytes;
+#[cfg(feature = "zerocopy")]
 use zerocopy::FromBytes;
 
 // =============================================================================
@@ -207,6 +211,7 @@ pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
     borrow_id: checked::BorrowId,
 }
 
+#[cfg(feature = "zerocopy")]
 impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
     #[inline] // Inline to see alignment to potentially elide checks.
     fn cast_slice<V: AsBytes + FromBytes>(self) -> DisjointMutGuard<'a, T, [V]> {
@@ -258,6 +263,7 @@ pub struct DisjointImmutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
     borrow_id: checked::BorrowId,
 }
 
+#[cfg(feature = "zerocopy")]
 impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
     #[inline]
     fn cast_slice<V: FromBytes>(self) -> DisjointImmutGuard<'a, T, [V]> {
@@ -559,6 +565,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
 // Zerocopy cast methods (for u8 buffers → typed access)
 // =============================================================================
 
+#[cfg(feature = "zerocopy")]
 impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     /// Check that a casted slice has the expected length.
     #[inline]
@@ -1267,103 +1274,111 @@ impl<T: Copy> Default for DisjointMutArcSlice<T> {
 // StridedBuf: raw buffer for use in DisjointMut without external unsafe
 // =============================================================================
 
-/// A raw mutable byte buffer for use in [`DisjointMut`].
-///
-/// This type stores a pointer and length, with constructors that are safe
-/// to call from external crates. All unsafe is confined to the [`AsMutPtr`]
-/// implementation within this crate.
-///
-/// Primary use case: picture data in rav1d-safe, where the buffer may point
-/// into an owned `Vec<u8>` (with alignment offset) or a borrowed `&mut [u8]`.
-/// Using `StridedBuf` inside `DisjointMut` avoids needing unsafe
-/// `ExternalAsMutPtr` implementations in the main crate.
-pub struct StridedBuf {
-    ptr: *mut u8,
-    len: usize,
+#[cfg(feature = "strided-buf")]
+mod strided_buf {
+    use super::*;
+
+    /// A raw mutable byte buffer for use in [`DisjointMut`].
+    ///
+    /// This type stores a pointer and length, with constructors that are safe
+    /// to call from external crates. All unsafe is confined to the [`AsMutPtr`]
+    /// implementation within this crate.
+    ///
+    /// Primary use case: picture data in rav1d-safe, where the buffer may point
+    /// into an owned `Vec<u8>` (with alignment offset) or a borrowed `&mut [u8]`.
+    /// Using `StridedBuf` inside `DisjointMut` avoids needing unsafe
+    /// `ExternalAsMutPtr` implementations in the main crate.
+    pub struct StridedBuf {
+        ptr: *mut u8,
+        len: usize,
+    }
+
+    // SAFETY: StridedBuf is only accessed through DisjointMut's borrow tracking,
+    // which prevents data races. The contained pointer refers to data that is
+    // Send+Sync (Vec<u8> or &mut [u8] from a Send+Sync context).
+    unsafe impl Send for StridedBuf {}
+    unsafe impl Sync for StridedBuf {}
+
+    impl StridedBuf {
+        /// Create from a mutable Vec with alignment offset.
+        ///
+        /// Computes the alignment offset from the Vec's data pointer, then stores
+        /// a pointer to the aligned position with the given usable length.
+        ///
+        /// # Panics
+        ///
+        /// Panics if `align_offset + usable_len > vec.len()`.
+        pub fn from_vec_aligned(vec: &mut Vec<u8>, alignment: usize, usable_len: usize) -> Self {
+            let align_offset = vec.as_ptr().align_offset(alignment);
+            assert!(
+                align_offset + usable_len <= vec.len(),
+                "StridedBuf: aligned region ({} + {}) exceeds Vec length ({})",
+                align_offset,
+                usable_len,
+                vec.len()
+            );
+            Self {
+                ptr: vec.as_mut_ptr().wrapping_add(align_offset),
+                len: usable_len,
+            }
+        }
+
+        /// Create from a mutable byte slice.
+        pub fn from_byte_slice(slice: &mut [u8]) -> Self {
+            Self {
+                ptr: slice.as_mut_ptr(),
+                len: slice.len(),
+            }
+        }
+
+        /// Create a dangling buffer with the given alignment and zero length.
+        ///
+        /// Useful for default/empty states. The pointer is dangling but aligned.
+        pub fn dangling_aligned(alignment: usize) -> Self {
+            // Use the alignment value itself as the pointer address — it's always
+            // a valid aligned non-zero value for a zero-length buffer.
+            Self {
+                ptr: alignment as *mut u8,
+                len: 0,
+            }
+        }
+    }
+
+    impl Default for StridedBuf {
+        fn default() -> Self {
+            Self {
+                ptr: core::ptr::null_mut(),
+                len: 0,
+            }
+        }
+    }
+
+    /// SAFETY: Pure pointer operations only — the stored pointer is returned directly.
+    /// `len` returns the stored length. No references are created to the data.
+    unsafe impl AsMutPtr for StridedBuf {
+        type Target = u8;
+
+        unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut u8 {
+            unsafe { (*ptr).ptr }
+        }
+
+        unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [u8] {
+            unsafe {
+                let this = &*ptr;
+                core::ptr::slice_from_raw_parts_mut(this.ptr, this.len)
+            }
+        }
+
+        fn len(&self) -> usize {
+            self.len
+        }
+    }
+
+    impl sealed::Sealed for StridedBuf {}
 }
 
-// SAFETY: StridedBuf is only accessed through DisjointMut's borrow tracking,
-// which prevents data races. The contained pointer refers to data that is
-// Send+Sync (Vec<u8> or &mut [u8] from a Send+Sync context).
-unsafe impl Send for StridedBuf {}
-unsafe impl Sync for StridedBuf {}
-
-impl StridedBuf {
-    /// Create from a mutable Vec with alignment offset.
-    ///
-    /// Computes the alignment offset from the Vec's data pointer, then stores
-    /// a pointer to the aligned position with the given usable length.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `align_offset + usable_len > vec.len()`.
-    pub fn from_vec_aligned(vec: &mut Vec<u8>, alignment: usize, usable_len: usize) -> Self {
-        let align_offset = vec.as_ptr().align_offset(alignment);
-        assert!(
-            align_offset + usable_len <= vec.len(),
-            "StridedBuf: aligned region ({} + {}) exceeds Vec length ({})",
-            align_offset,
-            usable_len,
-            vec.len()
-        );
-        Self {
-            ptr: vec.as_mut_ptr().wrapping_add(align_offset),
-            len: usable_len,
-        }
-    }
-
-    /// Create from a mutable byte slice.
-    pub fn from_byte_slice(slice: &mut [u8]) -> Self {
-        Self {
-            ptr: slice.as_mut_ptr(),
-            len: slice.len(),
-        }
-    }
-
-    /// Create a dangling buffer with the given alignment and zero length.
-    ///
-    /// Useful for default/empty states. The pointer is dangling but aligned.
-    pub fn dangling_aligned(alignment: usize) -> Self {
-        // Use the alignment value itself as the pointer address — it's always
-        // a valid aligned non-zero value for a zero-length buffer.
-        Self {
-            ptr: alignment as *mut u8,
-            len: 0,
-        }
-    }
-}
-
-impl Default for StridedBuf {
-    fn default() -> Self {
-        Self {
-            ptr: core::ptr::null_mut(),
-            len: 0,
-        }
-    }
-}
-
-/// SAFETY: Pure pointer operations only — the stored pointer is returned directly.
-/// `len` returns the stored length. No references are created to the data.
-unsafe impl AsMutPtr for StridedBuf {
-    type Target = u8;
-
-    unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut u8 {
-        unsafe { (*ptr).ptr }
-    }
-
-    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [u8] {
-        unsafe {
-            let this = &*ptr;
-            core::ptr::slice_from_raw_parts_mut(this.ptr, this.len)
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.len
-    }
-}
-
-impl sealed::Sealed for StridedBuf {}
+#[cfg(feature = "strided-buf")]
+pub use strided_buf::StridedBuf;
 
 // =============================================================================
 // Tests

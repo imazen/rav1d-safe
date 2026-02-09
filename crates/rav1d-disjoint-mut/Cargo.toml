@@ -16,9 +16,16 @@ default = ["std"]
 std = ["dep:parking_lot"]
 # Skip runtime overlap checking. The caller must ensure all borrows are disjoint.
 unchecked = []
+# Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
+aligned = ["dep:aligned", "dep:aligned-vec"]
+# StridedBuf: raw byte buffer wrapper for DisjointMut (used by rav1d picture data).
+strided-buf = []
+# Zerocopy cast methods on guards (cast_slice, mut_slice_as, etc.).
+zerocopy = ["dep:zerocopy"]
+
 [dependencies]
-aligned = { version = "0.4", default-features = false }
-aligned-vec = { version = "0.6", default-features = false }
+aligned = { version = "0.4", default-features = false, optional = true }
+aligned-vec = { version = "0.6", default-features = false, optional = true }
 parking_lot = { version = "0.12.2", optional = true }
 spin = { version = "0.10", default-features = false, features = ["mutex", "spin_mutex"] }
-zerocopy = { version = "0.7.32", default-features = false }
+zerocopy = { version = "0.7.32", default-features = false, optional = true }
