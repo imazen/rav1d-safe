@@ -6,6 +6,7 @@ use crate::include::dav1d::common::Rav1dDataProps;
 use crate::include::dav1d::data::Rav1dData;
 use crate::include::dav1d::dav1d::Rav1dDecodeFrameType;
 use crate::include::dav1d::headers::DRav1d;
+#[cfg(feature = "c-ffi")]
 use crate::include::dav1d::headers::Dav1dSequenceHeader;
 use crate::include::dav1d::headers::Rav1dAdaptiveBoolean;
 use crate::include::dav1d::headers::Rav1dChromaSamplePosition;
@@ -56,6 +57,7 @@ use crate::src::c_arc::CArc;
 use crate::src::decode::rav1d_submit_frame;
 use crate::src::env::get_poc_diff;
 use crate::src::error::Rav1dError::EINVAL;
+#[cfg(feature = "c-ffi")]
 use crate::src::error::Rav1dError::ENOENT;
 use crate::src::error::Rav1dError::ERANGE;
 use crate::src::error::Rav1dResult;
@@ -557,6 +559,7 @@ fn parse_seq_hdr(
     })
 }
 
+#[cfg(feature = "c-ffi")]
 pub(crate) fn rav1d_parse_sequence_header(
     mut data: &[u8],
 ) -> Rav1dResult<DRav1d<Rav1dSequenceHeader, Dav1dSequenceHeader>> {

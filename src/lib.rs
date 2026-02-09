@@ -194,6 +194,7 @@ fn get_num_threads(s: &Rav1dSettings) -> NumThreads {
     NumThreads { n_fc, n_tc }
 }
 
+#[cfg(feature = "c-ffi")]
 #[cold]
 pub(crate) fn rav1d_get_frame_delay(s: &Rav1dSettings) -> Rav1dResult<usize> {
     validate_input!((s.n_threads >= 0 && s.n_threads <= 256, EINVAL))?;
@@ -803,6 +804,7 @@ pub unsafe extern "C" fn dav1d_flush(c: Dav1dContext) {
     rav1d_flush(c)
 }
 
+#[cfg(any(feature = "c-ffi", test))]
 #[cold]
 pub(crate) fn rav1d_close(c: Arc<Rav1dContext>) {
     let c = &*c;

@@ -204,6 +204,7 @@ impl<'a> GetBits<'a> {
         self.state
     }
 
+    #[cfg(feature = "c-ffi")]
     pub const fn has_pending_bits(&self) -> bool {
         self.state != 0 || self.bits_left != 0
     }

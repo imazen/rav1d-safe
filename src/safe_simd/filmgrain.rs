@@ -2475,7 +2475,7 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
 /// Safe dispatch for generate_grain_uv (x86_64 AVX2).
 /// Returns true if SIMD was used.
 #[cfg(target_arch = "x86_64")]
-pub fn generate_grain_uv_dispatch<BD: BitDepth>(
+pub(crate) fn generate_grain_uv_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     buf: &mut GrainLut<BD::Entry>,
     buf_y: &GrainLut<BD::Entry>,
@@ -2602,7 +2602,7 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
 /// Safe dispatch for fguv_32x32xn (x86_64 AVX2).
 /// Returns true if SIMD was used.
 #[cfg(target_arch = "x86_64")]
-pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
+pub(crate) fn fguv_32x32xn_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     dst: &Rav1dPictureDataComponent,
     src: &Rav1dPictureDataComponent,

@@ -12,6 +12,7 @@ use crate::src::c_box::FnFree;
 use crate::src::c_box::Free;
 #[cfg(any(feature = "asm", feature = "c-ffi"))]
 use crate::src::error::Rav1dError::EINVAL;
+#[cfg(feature = "c-ffi")]
 use crate::src::error::Rav1dResult;
 #[cfg(any(feature = "asm", feature = "c-ffi"))]
 use crate::src::send_sync_non_null::SendSyncNonNull;
@@ -34,6 +35,7 @@ impl From<CArc<[u8]>> for Rav1dData {
 }
 
 impl Rav1dData {
+    #[cfg(feature = "c-ffi")]
     pub fn create(size: usize) -> Rav1dResult<Self> {
         let data = CArc::zeroed_slice(size)?;
         Ok(data.into())

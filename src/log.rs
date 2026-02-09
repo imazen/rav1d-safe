@@ -10,6 +10,7 @@ use std::fmt;
 #[cfg(feature = "c-ffi")]
 use std::fmt::Write as _;
 use std::io::stderr;
+#[cfg(feature = "c-ffi")]
 use std::io::stdout;
 use std::io::Write as _;
 #[cfg(feature = "c-ffi")]
@@ -90,6 +91,7 @@ impl fmt::Write for Dav1dLogger {
 pub(crate) enum Rav1dLogger {
     #[cfg(feature = "c-ffi")]
     Dav1d(Dav1dLogger),
+    #[cfg(feature = "c-ffi")]
     Stdout,
     #[default]
     Stderr,
@@ -124,6 +126,7 @@ impl Rav1dLog for Rav1dLogger {
             // even though we don't need it to.
             // [`Dav1dLogger`] is trivial to [`Clone`], though, so we can just do that.
             Self::Dav1d(dav1d) => dav1d.clone().write_fmt(args).unwrap(),
+            #[cfg(feature = "c-ffi")]
             Self::Stdout => stdout().write_fmt(args).unwrap(),
             Self::Stderr => stderr().write_fmt(args).unwrap(),
         }

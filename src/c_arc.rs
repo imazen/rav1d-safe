@@ -283,6 +283,7 @@ impl<T> CArc<[T]>
 where
     T: Default + 'static,
 {
+    #[cfg(feature = "c-ffi")]
     pub fn zeroed_slice(size: usize) -> Rav1dResult<Self> {
         let owned_slice = (0..size).map(|_| Default::default()).collect::<Box<[_]>>(); // TODO fallible allocation
         Self::wrap(CBox::from_box(owned_slice))

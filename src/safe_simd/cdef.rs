@@ -5,6 +5,7 @@
 
 #![cfg_attr(not(feature = "asm"), deny(unsafe_code))]
 #![allow(unused_imports)]
+#![allow(dead_code)]
 
 #[cfg(target_arch = "x86_64")]
 use archmage::{arcane, rite, Desktop64, SimdToken};

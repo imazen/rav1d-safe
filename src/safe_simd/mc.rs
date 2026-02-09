@@ -1,5 +1,6 @@
 //! Safe SIMD implementations of motion compensation functions
 #![allow(deprecated)] // FFI wrappers need to forge tokens
+#![allow(dead_code)]
 #![cfg_attr(not(any(feature = "asm", feature = "unchecked")), forbid(unsafe_code))]
 #![cfg_attr(all(not(feature = "asm"), feature = "unchecked"), deny(unsafe_code))]
 //!
@@ -8067,7 +8068,7 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
 }
 
 #[cfg(target_arch = "x86_64")]
-pub fn w_mask_dispatch<BD: BitDepth>(
+pub(crate) fn w_mask_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
     dst: PicOffset,
     tmp1: &[i16; COMPINTER_LEN],

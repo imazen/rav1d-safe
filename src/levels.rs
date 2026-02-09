@@ -69,6 +69,7 @@ impl ArrayDefault for TxfmSize {
 }
 
 impl TxfmSize {
+    #[cfg(feature = "asm")]
     pub const fn from_wh(w: usize, h: usize) -> Self {
         use TxfmSize::*;
         match (w, h) {

@@ -11,6 +11,7 @@
 //! Most common transforms: DCT_DCT 4x4, 8x8, 16x16
 
 #![allow(unused_imports)]
+#![allow(dead_code)]
 
 use archmage::{arcane, Desktop64, SimdToken};
 #[cfg(target_arch = "x86_64")]

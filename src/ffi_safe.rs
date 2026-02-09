@@ -12,6 +12,7 @@ pub struct FFISafe<'a, T> {
 }
 
 impl<'a, T> FFISafe<'a, T> {
+    #[cfg(feature = "asm")]
     pub fn new(this: &'a T) -> *const Self {
         ptr::from_ref(this).cast()
     }
