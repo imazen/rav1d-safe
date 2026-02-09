@@ -1,7 +1,9 @@
 #![forbid(unsafe_code)]
+use crate::src::align::aligned_inner;
 use crate::src::align::Align16;
 use crate::src::align::Align32;
 use crate::src::align::Align64;
+use crate::src::align::Aligned;
 use crate::src::const_fn::const_for;
 use crate::src::const_fn::const_min;
 use crate::src::levels::BlockSize;
@@ -288,20 +290,25 @@ impl<const LEN_444: usize, const LEN_422: usize, const LEN_420: usize>
         });
 
         Self {
-            masks_444: Align64(masks_444),
-            masks_422: Align64(masks_422),
-            masks_420: Align64(masks_420),
+            masks_444: Aligned(masks_444),
+            masks_422: Aligned(masks_422),
+            masks_420: Aligned(masks_420),
             signs,
         }
     }
 
     const fn slice(&self) -> [[[&[u8]; 16]; 2]; 3] {
         let Self {
-            masks_444: Align64(masks_444),
-            masks_422: Align64(masks_422),
-            masks_420: Align64(masks_420),
+            masks_444,
+            masks_422,
+            masks_420,
             signs,
         } = self;
+
+        // Use aligned_inner() because Deref is not const
+        let masks_444 = aligned_inner(masks_444);
+        let masks_422 = aligned_inner(masks_422);
+        let masks_420 = aligned_inner(masks_420);
 
         let mut masks = [[[&[] as &'static [u8]; 16]; 2]; 3];
 
@@ -409,7 +416,7 @@ pub static dav1d_wedge_masks: [[[[&'static [u8]; 16]; 2]; 3]; BlockSize::COUNT] 
     masks
 };
 
-static ii_dc_mask: Align64<[u8; 32 * 32]> = Align64([32; 32 * 32]);
+static ii_dc_mask: Align64<[u8; 32 * 32]> = Aligned([32; 32 * 32]);
 
 const N_II_PRED_MODES: usize = InterIntraPredMode::COUNT - 1;
 
@@ -442,23 +449,23 @@ const fn build_nondc_ii_masks<const N: usize>(
 }
 
 static ii_nondc_mask_32x32: Align64<[[u8; 32 * 32]; N_II_PRED_MODES]> =
-    Align64(build_nondc_ii_masks(32, 32, 1));
+    Aligned(build_nondc_ii_masks(32, 32, 1));
 static ii_nondc_mask_16x32: Align64<[[u8; 16 * 32]; N_II_PRED_MODES]> =
-    Align64(build_nondc_ii_masks(16, 32, 1));
+    Aligned(build_nondc_ii_masks(16, 32, 1));
 static ii_nondc_mask_16x16: Align64<[[u8; 16 * 16]; N_II_PRED_MODES]> =
-    Align64(build_nondc_ii_masks(16, 16, 2));
+    Aligned(build_nondc_ii_masks(16, 16, 2));
 static ii_nondc_mask_8x32: Align64<[[u8; 8 * 32]; N_II_PRED_MODES]> =
-    Align64(build_nondc_ii_masks(8, 32, 1));
+    Aligned(build_nondc_ii_masks(8, 32, 1));
 static ii_nondc_mask_8x16: Align64<[[u8; 8 * 16]; N_II_PRED_MODES]> =
-    Align64(build_nondc_ii_masks(8, 16, 2));
+    Aligned(build_nondc_ii_masks(8, 16, 2));
 static ii_nondc_mask_8x8: Align64<[[u8; 8 * 8]; N_II_PRED_MODES]> =
-    Align64(build_nondc_ii_masks(8, 8, 4));
+    Aligned(build_nondc_ii_masks(8, 8, 4));
 static ii_nondc_mask_4x16: Align64<[[u8; 4 * 16]; N_II_PRED_MODES]> =
-    Align64(build_nondc_ii_masks(4, 16, 2));
+    Aligned(build_nondc_ii_masks(4, 16, 2));
 static ii_nondc_mask_4x8: Align32<[[u8; 4 * 8]; N_II_PRED_MODES]> =
-    Align32(build_nondc_ii_masks(4, 8, 4));
+    Aligned(build_nondc_ii_masks(4, 8, 4));
 static ii_nondc_mask_4x4: Align16<[[u8; 4 * 4]; N_II_PRED_MODES]> =
-    Align16(build_nondc_ii_masks(4, 4, 8));
+    Aligned(build_nondc_ii_masks(4, 4, 8));
 
 pub static dav1d_ii_masks: [[[&'static [u8]; InterIntraPredMode::COUNT]; 3]; BlockSize::COUNT] = {
     use BlockSize::*;
@@ -470,10 +477,10 @@ pub static dav1d_ii_masks: [[[&'static [u8]; InterIntraPredMode::COUNT]; 3]; Blo
         ($h:literal x $w:literal) => {{
             let mut a = [&[] as &'static [u8]; InterIntraPredMode::COUNT];
             paste! {
-                a[Dc as usize] = &ii_dc_mask.0;
-                a[Vert as usize] = &[<ii_nondc_mask _ $h x $w>].0[Vert as usize - 1];
-                a[Hor as usize] = &[<ii_nondc_mask _ $h x $w>].0[Hor as usize - 1];
-                a[Smooth as usize] = &[<ii_nondc_mask _ $h x $w>].0[Smooth as usize - 1];
+                a[Dc as usize] = aligned_inner(&ii_dc_mask);
+                a[Vert as usize] = &aligned_inner(&[<ii_nondc_mask _ $h x $w>])[Vert as usize - 1];
+                a[Hor as usize] = &aligned_inner(&[<ii_nondc_mask _ $h x $w>])[Hor as usize - 1];
+                a[Smooth as usize] = &aligned_inner(&[<ii_nondc_mask _ $h x $w>])[Smooth as usize - 1];
             }
             a
         }};

@@ -404,8 +404,8 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
                 break 'block;
             }
             let h = l >> 4;
-            let e = lut.0.e[l as usize];
-            let i = lut.0.i[l as usize];
+            let e = lut.e[l as usize];
+            let i = lut.i[l as usize];
             let idx = match yuv {
                 YUV::Y => {
                     let idx = if vmask[2] & xy != 0 {

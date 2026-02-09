@@ -1820,7 +1820,7 @@ unsafe extern "C" fn splat_mv_c(
 }
 
 fn splat_mv_rust<'a>(rr: impl Iterator<Item = &'a mut [RefMvsBlock]>, rmv: &Align16<RefMvsBlock>) {
-    let rmv = rmv.0;
+    let rmv = **rmv;
     for r in rr {
         r.fill_with(|| rmv)
     }

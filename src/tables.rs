@@ -6,6 +6,7 @@ use crate::src::align::Align16;
 use crate::src::align::Align4;
 use crate::src::align::Align64;
 use crate::src::align::Align8;
+use crate::src::align::Aligned;
 use crate::src::enum_map::DefaultValue;
 use crate::src::levels::BlockLevel;
 use crate::src::levels::BlockPartition;
@@ -667,7 +668,7 @@ pub static dav1d_cdef_directions: [[i8; 2]; 12] = [
     [0 * 12 + 1, -1 * 12 + 2],
 ];
 
-pub static dav1d_sgr_params: Align4<[[u16; 2]; 16]> = Align4([
+pub static dav1d_sgr_params: Align4<[[u16; 2]; 16]> = Aligned([
     [140, 3236],
     [112, 2158],
     [93, 1618],
@@ -687,7 +688,7 @@ pub static dav1d_sgr_params: Align4<[[u16; 2]; 16]> = Align4([
 ]);
 
 #[cfg_attr(feature = "asm", no_mangle)]
-pub static dav1d_sgr_x_by_x: Align64<[u8; 256]> = Align64([
+pub static dav1d_sgr_x_by_x: Align64<[u8; 256]> = Aligned([
     255, 128, 85, 64, 51, 43, 37, 32, 28, 26, 23, 21, 20, 18, 17, 16, 15, 14, 13, 13, 12, 12, 11,
     11, 10, 10, 9, 9, 9, 9, 8, 8, 8, 8, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 5, 5, 5,
     5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
@@ -700,7 +701,7 @@ pub static dav1d_sgr_x_by_x: Align64<[u8; 256]> = Align64([
 ]);
 
 #[cfg_attr(feature = "asm", no_mangle)]
-pub static dav1d_mc_subpel_filters: Align8<[[[i8; 8]; 15]; 6]> = Align8([
+pub static dav1d_mc_subpel_filters: Align8<[[[i8; 8]; 15]; 6]> = Aligned([
     [
         [0, 1, -3, 63, 4, -1, 0, 0],
         [0, 1, -5, 61, 9, -2, 0, 0],
@@ -806,7 +807,7 @@ pub static dav1d_mc_subpel_filters: Align8<[[[i8; 8]; 15]; 6]> = Align8([
 ]);
 
 #[cfg_attr(feature = "asm", no_mangle)]
-pub static dav1d_mc_warp_filter: Align8<[[i8; 8]; 193]> = Align8([
+pub static dav1d_mc_warp_filter: Align8<[[i8; 8]; 193]> = Aligned([
     [0, 0, 127, 1, 0, 0, 0, 0],
     [0, -1, 127, 2, 0, 0, 0, 0],
     [1, -3, 127, 4, -1, 0, 0, 0],
@@ -1003,7 +1004,7 @@ pub static dav1d_mc_warp_filter: Align8<[[i8; 8]; 193]> = Align8([
 ]);
 
 #[cfg_attr(feature = "asm", no_mangle)]
-pub static dav1d_resize_filter: Align8<[[i8; 8]; 64]> = Align8([
+pub static dav1d_resize_filter: Align8<[[i8; 8]; 64]> = Aligned([
     [0, 0, 0, -128, 0, 0, 0, 0],
     [0, 0, 1, -128, -2, 1, 0, 0],
     [0, -1, 3, -127, -4, 2, -1, 0],
@@ -1071,7 +1072,7 @@ pub static dav1d_resize_filter: Align8<[[i8; 8]; 64]> = Align8([
 ]);
 
 #[cfg_attr(feature = "asm", no_mangle)]
-pub static dav1d_sm_weights: Align16<[u8; 128]> = Align16([
+pub static dav1d_sm_weights: Align16<[u8; 128]> = Aligned([
     0, 0, 255, 128, 255, 149, 85, 64, 255, 197, 146, 105, 73, 50, 37, 32, 255, 225, 196, 170, 145,
     123, 102, 84, 68, 54, 43, 33, 26, 20, 17, 16, 255, 240, 225, 210, 196, 182, 169, 157, 145, 133,
     122, 111, 101, 92, 83, 74, 66, 59, 52, 45, 39, 34, 29, 25, 21, 17, 14, 12, 10, 9, 8, 8, 255,
@@ -1125,7 +1126,7 @@ const fn gen_filters(f: [[i8; 7]; 8]) -> Align64<[i8; 64]> {
         i += 1;
     }
 
-    Align64(a)
+    Aligned(a)
 }
 
 #[cfg_attr(feature = "asm", no_mangle)]
@@ -1183,7 +1184,7 @@ pub static dav1d_filter_intra_taps: [Align64<[i8; 64]>; 5] = [
 ];
 
 #[cfg_attr(feature = "asm", no_mangle)]
-pub static dav1d_obmc_masks: Align16<[u8; 64]> = Align16([
+pub static dav1d_obmc_masks: Align16<[u8; 64]> = Aligned([
     0, 0, 19, 0, 25, 14, 5, 0, 28, 22, 16, 11, 7, 3, 0, 0, 30, 27, 24, 21, 18, 15, 12, 10, 8, 6, 4,
     3, 0, 0, 0, 0, 31, 29, 28, 26, 24, 23, 21, 20, 19, 17, 16, 14, 13, 12, 11, 9, 8, 7, 6, 5, 4, 4,
     3, 2, 0, 0, 0, 0, 0, 0, 0, 0,

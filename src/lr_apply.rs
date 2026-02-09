@@ -5,6 +5,7 @@ use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::include::dav1d::headers::Rav1dRestorationType;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::Align16;
+use crate::src::align::Aligned;
 use crate::src::internal::Rav1dContext;
 use crate::src::internal::Rav1dFrameData;
 use crate::src::lf_mask::Av1RestorationUnit;
@@ -176,7 +177,7 @@ fn lr_sbrow<BD: BitDepth>(
 
     // maximum sbrow height is 128 + 8 rows offset
     let mut pre_lr_border: Align16<[[[BD::Pixel; 4]; 128 + 8]; 2]> =
-        Align16([[[0.into(); 4]; 128 + 8]; 2]);
+        Aligned([[[0.into(); 4]; 128 + 8]; 2]);
     let mut lr = [Av1RestorationUnit::default(); 2];
     let mut edges = LrEdgeFlags::TOP.select(y > 0) | LrEdgeFlags::RIGHT;
     let mut aligned_unit_pos = row_y & !(unit_size - 1);

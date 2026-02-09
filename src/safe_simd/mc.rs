@@ -16,9 +16,7 @@ use core::arch::x86_64::*;
 
 use crate::src::safe_simd::pixel_access::Flex;
 #[cfg(target_arch = "x86_64")]
-use crate::src::safe_simd::pixel_access::{
-    loadi64, loadu_128, loadu_256, storeu_128, storeu_256,
-};
+use crate::src::safe_simd::pixel_access::{loadi64, loadu_128, loadu_256, storeu_128, storeu_256};
 #[cfg(target_arch = "x86_64")]
 use archmage::{arcane, rite, Desktop64, SimdToken};
 
@@ -1090,7 +1088,7 @@ fn blend_v_8bpc_avx2_safe(
     let w = w as usize;
     let h = h as usize;
     // blend_v: mask indexed by column, offset by w, only process w*3/4 columns
-    let obmc_mask = &dav1d_obmc_masks.0[w..];
+    let obmc_mask = &dav1d_obmc_masks[w..];
     let w_eff = w * 3 >> 2;
 
     let rnd = _mm256_set1_epi16(32);
@@ -1183,7 +1181,7 @@ fn blend_h_8bpc_avx2_safe(
     let w = w as usize;
     let h = h as usize;
     // blend_h: mask indexed by row, offset by h, only process h*3/4 rows
-    let obmc_mask = &dav1d_obmc_masks.0[h..];
+    let obmc_mask = &dav1d_obmc_masks[h..];
     let h_eff = h * 3 >> 2;
 
     let rnd = _mm256_set1_epi16(32);
@@ -1275,7 +1273,7 @@ fn blend_v_16bpc_avx2_safe(
     let w = w as usize;
     let h = h as usize;
     // blend_v: mask indexed by column, offset by w, only process w*3/4 columns
-    let obmc_mask = &dav1d_obmc_masks.0[w..];
+    let obmc_mask = &dav1d_obmc_masks[w..];
     let w_eff = w * 3 >> 2;
 
     let rnd = _mm256_set1_epi32(32);
@@ -1372,7 +1370,7 @@ fn blend_h_16bpc_avx2_safe(
     let w = w as usize;
     let h = h as usize;
     // blend_h: mask indexed by row, offset by h, only process h*3/4 rows
-    let obmc_mask = &dav1d_obmc_masks.0[h..];
+    let obmc_mask = &dav1d_obmc_masks[h..];
     let h_eff = h * 3 >> 2;
 
     let rnd = _mm256_set1_epi32(32);
@@ -1467,7 +1465,7 @@ fn get_filter(m: usize, d: usize, filter_idx: usize) -> Option<&'static [i8; 8]>
     } else {
         3 + (filter_idx & 1)
     };
-    Some(&dav1d_mc_subpel_filters.0[i][m])
+    Some(&dav1d_mc_subpel_filters[i][m])
 }
 
 /// Horizontal 8-tap filter for a row of 8bpc pixels
@@ -1715,7 +1713,7 @@ fn get_filter_coeff(m: usize, d: usize, filter_type: Rav1dFilterMode) -> Option<
     } else {
         3 + (filter_type as u8 & 1)
     };
-    Some(&dav1d_mc_subpel_filters.0[i as usize][m])
+    Some(&dav1d_mc_subpel_filters[i as usize][m])
 }
 
 /// Horizontal 8-tap filter for 8bpc put (H-only case)

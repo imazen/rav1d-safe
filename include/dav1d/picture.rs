@@ -27,7 +27,6 @@ use crate::src::disjoint_mut::DisjointMutGuard;
 #[cfg(feature = "c-ffi")]
 use crate::src::disjoint_mut::ExternalAsMutPtr;
 use crate::src::disjoint_mut::SliceBounds;
-use rav1d_disjoint_mut::StridedBuf;
 #[cfg(feature = "c-ffi")]
 use crate::src::error::Dav1dResult;
 use crate::src::error::Rav1dError;
@@ -45,6 +44,7 @@ use crate::src::with_offset::WithOffset;
 use libc::ptrdiff_t;
 #[cfg(feature = "c-ffi")]
 use libc::uintptr_t;
+use rav1d_disjoint_mut::StridedBuf;
 use std::array;
 use std::ffi::c_int;
 #[cfg(feature = "c-ffi")]
@@ -88,7 +88,9 @@ impl PicDataPtr {
     /// Create a dangling pointer with [`RAV1D_PICTURE_ALIGNMENT`] alignment.
     fn dangling_aligned() -> Self {
         // SAFETY: NonNull::dangling() is Send+Sync-safe (no real data behind it).
-        Self(unsafe { SendSyncNonNull::new_unchecked(NonNull::<AlignedPixelChunk>::dangling().cast()) })
+        Self(unsafe {
+            SendSyncNonNull::new_unchecked(NonNull::<AlignedPixelChunk>::dangling().cast())
+        })
     }
 
     /// Create from a raw pointer. Returns `None` if null.
@@ -333,12 +335,17 @@ impl Rav1dPictureDataComponent {
     /// For non-c-ffi, stride is stored separately.
     #[cfg(feature = "c-ffi")]
     fn from_parts(inner: Rav1dPictureDataComponentInner, _stride: isize) -> Self {
-        Self { data: DisjointMut::new(inner) }
+        Self {
+            data: DisjointMut::new(inner),
+        }
     }
 
     #[cfg(not(feature = "c-ffi"))]
     fn from_parts(inner: Rav1dPictureDataComponentInner, stride: isize) -> Self {
-        Self { data: DisjointMut::new(inner), stride }
+        Self {
+            data: DisjointMut::new(inner),
+            stride,
+        }
     }
 
     /// Create from a borrowed pixel buffer (used in recon.rs for scratch buffers).

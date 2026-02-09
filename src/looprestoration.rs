@@ -1032,6 +1032,7 @@ mod neon {
 
     use crate::include::common::bitdepth::bd_fn;
     use crate::src::align::Align16;
+    use crate::src::align::Aligned;
     use libc::intptr_t;
     use std::ptr;
 
@@ -1140,7 +1141,7 @@ mod neon {
         bd: BD,
     ) {
         let filter = &params.filter;
-        let mut mid = Align16([0; 68 * 384]);
+        let mut mid = Aligned([0; 68 * 384]);
         let mid_stride = w as usize + 7 & !7;
         bd_fn!(wiener_filter_h::decl_fn, BD, wiener_filter_h, neon).call(
             &mut mid.0[2 * mid_stride..],
@@ -1343,9 +1344,9 @@ mod neon {
     ) {
         const STRIDE: usize = 384 + 16;
 
-        let mut sumsq_mem = Align16([0; STRIDE * 68 + 8]);
+        let mut sumsq_mem = Aligned([0; STRIDE * 68 + 8]);
         let sumsq = &mut sumsq_mem.0[8..];
-        let mut sum_mem = Align16([0; STRIDE * 68 + 16]);
+        let mut sum_mem = Aligned([0; STRIDE * 68 + 16]);
         let sum = &mut sum_mem.0[16..];
         sgr_box3_h::Fn::neon::<BD>().call::<BD>(
             &mut sumsq[2 * STRIDE..],
@@ -1448,9 +1449,9 @@ mod neon {
     ) {
         const STRIDE: usize = 384 + 16;
 
-        let mut sumsq_mem = Align16([0; STRIDE * 68 + 8]);
+        let mut sumsq_mem = Aligned([0; STRIDE * 68 + 8]);
         let sumsq = &mut sumsq_mem.0[8..];
-        let mut sum_mem = Align16([0; STRIDE * 68 + 16]);
+        let mut sum_mem = Aligned([0; STRIDE * 68 + 16]);
         let sum = &mut sum_mem.0[16..];
         sgr_box5_h::Fn::neon::<BD>().call::<BD>(
             &mut sumsq[2 * STRIDE..],
@@ -1594,7 +1595,7 @@ mod neon {
     ) {
         let w = w as c_int;
         let h = h as c_int;
-        let mut tmp = Align16([0; 64 * 384]);
+        let mut tmp = Aligned([0; 64 * 384]);
         let sgr = params.sgr();
         rav1d_sgr_filter2_neon(&mut tmp, dst, left, lpf, w, h, sgr.s0, edges, bd);
         sgr_weighted1::Fn::neon::<BD>().call(dst, dst, &mut tmp, w, h, sgr.w0, bd);
@@ -1612,7 +1613,7 @@ mod neon {
     ) {
         let w = w as c_int;
         let h = h as c_int;
-        let mut tmp = Align16([0; 64 * 384]);
+        let mut tmp = Aligned([0; 64 * 384]);
         let sgr = params.sgr();
         rav1d_sgr_filter1_neon(&mut tmp, dst, left, lpf, w, h, sgr.s1, edges, bd);
         sgr_weighted1::Fn::neon::<BD>().call(dst, dst, &mut tmp, w, h, sgr.w1, bd);
@@ -1630,8 +1631,8 @@ mod neon {
     ) {
         let w = w as c_int;
         let h = h as c_int;
-        let mut tmp1 = Align16([0; 64 * 384]);
-        let mut tmp2 = Align16([0; 64 * 384]);
+        let mut tmp1 = Aligned([0; 64 * 384]);
+        let mut tmp2 = Aligned([0; 64 * 384]);
         let sgr = params.sgr();
         rav1d_sgr_filter2_neon(&mut tmp1, dst, left, lpf, w, h, sgr.s0, edges, bd);
         rav1d_sgr_filter1_neon(&mut tmp2, dst, left, lpf, w, h, sgr.s1, edges, bd);
@@ -1646,6 +1647,7 @@ mod neon {
     use super::*;
 
     use crate::src::align::Align16;
+    use crate::src::align::Aligned;
     use std::array;
     use std::ptr;
 
@@ -2023,8 +2025,8 @@ mod neon {
         w1: c_int,
         bd: BD,
     ) {
-        let mut tmp5 = Align16([0; 2 * FILTER_OUT_STRIDE]);
-        let mut tmp3 = Align16([0; 2 * FILTER_OUT_STRIDE]);
+        let mut tmp5 = Aligned([0; 2 * FILTER_OUT_STRIDE]);
+        let mut tmp3 = Aligned([0; 2 * FILTER_OUT_STRIDE]);
 
         sgr_finish_filter_2rows::Fn::neon2::<BD>()
             .call(&mut tmp5, *dst, a5_ptrs, b5_ptrs, w, h, bd);
@@ -2056,8 +2058,8 @@ mod neon {
 
         const BUF_STRIDE: usize = 384 + 16;
 
-        let mut sumsq_buf = Align16([0; BUF_STRIDE * 3 + 16]);
-        let mut sum_buf = Align16([0; BUF_STRIDE * 3 + 16]);
+        let mut sumsq_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
+        let mut sum_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
 
         let mut sumsq_ptrs;
         let mut sum_ptrs;
@@ -2065,8 +2067,8 @@ mod neon {
             array::from_fn(|i| sumsq_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let sum_rows = array::from_fn(|i| sum_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
 
-        let mut a_buf = Align16([0; BUF_STRIDE * 3 + 16]);
-        let mut b_buf = Align16([0; BUF_STRIDE * 3 + 16]);
+        let mut a_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
+        let mut b_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
 
         let mut a_ptrs = array::from_fn(|i| a_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let mut b_ptrs = array::from_fn(|i| b_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
@@ -2337,8 +2339,8 @@ mod neon {
 
         const BUF_STRIDE: usize = 384 + 16;
 
-        let mut sumsq_buf = Align16([0; BUF_STRIDE * 5 + 16]);
-        let mut sum_buf = Align16([0; BUF_STRIDE * 5 + 16]);
+        let mut sumsq_buf = Aligned([0; BUF_STRIDE * 5 + 16]);
+        let mut sum_buf = Aligned([0; BUF_STRIDE * 5 + 16]);
 
         let mut sumsq_ptrs;
         let mut sum_ptrs;
@@ -2347,8 +2349,8 @@ mod neon {
         let sum_rows: [_; 5] =
             array::from_fn(|i| sum_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
 
-        let mut a_buf = Align16([0; BUF_STRIDE * 2 + 16]);
-        let mut b_buf = Align16([0; BUF_STRIDE * 2 + 16]);
+        let mut a_buf = Aligned([0; BUF_STRIDE * 2 + 16]);
+        let mut b_buf = Aligned([0; BUF_STRIDE * 2 + 16]);
 
         let mut a_ptrs = array::from_fn(|i| a_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let mut b_ptrs = array::from_fn(|i| b_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
@@ -2754,30 +2756,30 @@ mod neon {
 
         const BUF_STRIDE: usize = 384 + 16;
 
-        let mut sumsq5_buf = Align16([0; BUF_STRIDE * 5 + 16]);
-        let mut sum5_buf = Align16([0; BUF_STRIDE * 5 + 16]);
+        let mut sumsq5_buf = Aligned([0; BUF_STRIDE * 5 + 16]);
+        let mut sum5_buf = Aligned([0; BUF_STRIDE * 5 + 16]);
 
         let sumsq5_rows: [_; 5] =
             array::from_fn(|i| sumsq5_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let sum5_rows: [_; 5] =
             array::from_fn(|i| sum5_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
 
-        let mut sumsq3_buf = Align16([0; BUF_STRIDE * 3 + 16]);
-        let mut sum3_buf = Align16([0; BUF_STRIDE * 3 + 16]);
+        let mut sumsq3_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
+        let mut sum3_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
 
         let sumsq3_rows: [_; 3] =
             array::from_fn(|i| sumsq3_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let sum3_rows: [_; 3] =
             array::from_fn(|i| sum3_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
 
-        let mut a5_buf = Align16([0; BUF_STRIDE * 2 + 16]);
-        let mut b5_buf = Align16([0; BUF_STRIDE * 2 + 16]);
+        let mut a5_buf = Aligned([0; BUF_STRIDE * 2 + 16]);
+        let mut b5_buf = Aligned([0; BUF_STRIDE * 2 + 16]);
 
         let mut a5_ptrs = array::from_fn(|i| a5_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let mut b5_ptrs = array::from_fn(|i| b5_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
 
-        let mut a3_buf = Align16([0; BUF_STRIDE * 4 + 16]);
-        let mut b3_buf = Align16([0; BUF_STRIDE * 4 + 16]);
+        let mut a3_buf = Aligned([0; BUF_STRIDE * 4 + 16]);
+        let mut b3_buf = Aligned([0; BUF_STRIDE * 4 + 16]);
 
         let mut a3_ptrs = array::from_fn(|i| a3_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let mut b3_ptrs = array::from_fn(|i| b3_buf.0[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());

@@ -629,7 +629,7 @@ fn decode_coefs<BD: BitDepth>(
             } else if t_dim.min == TxfmSize::S16x16 as _ {
                 idx = rav1d_msac_decode_symbol_adapt16(
                     &mut ts_c.msac,
-                    &mut ts_c.cdf.m.txtp_inter2.0,
+                    &mut *ts_c.cdf.m.txtp_inter2,
                     11,
                 );
                 dav1d_tx_types_per_set[idx as usize + 12]

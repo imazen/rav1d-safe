@@ -1264,68 +1264,6 @@ impl<T: Copy> Default for DisjointMutArcSlice<T> {
 }
 
 // =============================================================================
-// Optional: aligned-vec support (AVec<T, A>)
-// =============================================================================
-
-#[cfg(feature = "aligned-vec")]
-mod aligned_vec_impl {
-    use super::{ExternalAsMutPtr, Resizable};
-
-    /// SAFETY: We only create `&AVec` (SharedReadOnly), never `&mut AVec`.
-    /// `as_ptr()` takes `&self` and returns `*const T`, which we cast to `*mut T`.
-    /// This avoids the Stacked Borrows hazard of creating `&mut AVec` through
-    /// `as_mut_ptr(&mut self)`, which would issue a Unique retag over the heap data.
-    unsafe impl<T: Copy, A: aligned_vec::Alignment> ExternalAsMutPtr for aligned_vec::AVec<T, A> {
-        type Target = T;
-
-        unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut T {
-            // SAFETY: Only creates &AVec (SharedReadOnly).
-            let shared_ref = unsafe { &*ptr };
-            shared_ref.as_ptr().cast_mut()
-        }
-
-        fn len(&self) -> usize {
-            aligned_vec::AVec::len(self)
-        }
-    }
-
-    impl<T: Clone, A: aligned_vec::Alignment> Resizable for aligned_vec::AVec<T, A> {
-        type Value = T;
-        fn resize(&mut self, new_len: usize, value: T) {
-            aligned_vec::AVec::resize(self, new_len, value)
-        }
-    }
-}
-
-// =============================================================================
-// Optional: aligned support (Aligned<A, [V; N]>)
-// =============================================================================
-
-#[cfg(feature = "aligned")]
-mod aligned_impl {
-    use super::ExternalAsMutPtr;
-
-    /// SAFETY: `Aligned<A, T>` is `#[repr(C)]` with alignment `A`, wrapping a single
-    /// field of type `T`. A pointer to `Aligned<A, [V; N]>` has the same address as
-    /// the first element of the inner `[V; N]`, so `ptr.cast::<V>()` is valid.
-    /// We never create any references — just a direct pointer cast.
-    unsafe impl<A: aligned::Alignment, V: Copy, const N: usize> ExternalAsMutPtr
-        for aligned::Aligned<A, [V; N]>
-    {
-        type Target = V;
-
-        unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut V {
-            // Aligned is #[repr(C)] — pointer to struct == pointer to first field.
-            ptr.cast()
-        }
-
-        fn len(&self) -> usize {
-            N
-        }
-    }
-}
-
-// =============================================================================
 // StridedBuf: raw buffer for use in DisjointMut without external unsafe
 // =============================================================================
 
@@ -1416,7 +1354,7 @@ unsafe impl AsMutPtr for StridedBuf {
     unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [u8] {
         unsafe {
             let this = &*ptr;
-            core::slice::from_raw_parts_mut(this.ptr, this.len)
+            core::ptr::slice_from_raw_parts_mut(this.ptr, this.len)
         }
     }
 
@@ -1504,51 +1442,4 @@ fn test_range_overlap() {
     assert!(!overlaps(8..10, ..=7));
 }
 
-#[cfg(feature = "aligned-vec")]
-#[test]
-fn test_avec_disjoint_mut() {
-    use aligned_vec::{AVec, ConstAlign};
-
-    let mut v: AVec<u8, ConstAlign<64>> = AVec::new(64);
-    v.resize(100, 0u8);
-    let dm = DisjointMut::new(v);
-
-    // Write disjoint ranges
-    dm.index_mut(0..50).fill(1);
-    dm.index_mut(50..100).fill(2);
-
-    // Read back
-    let lo = dm.index(0..50);
-    let hi = dm.index(50..100);
-    assert!(lo.iter().all(|&x| x == 1));
-    assert!(hi.iter().all(|&x| x == 2));
-}
-
-#[cfg(feature = "aligned-vec")]
-#[test]
-fn test_avec_resizable() {
-    use aligned_vec::{AVec, ConstAlign};
-
-    let v: AVec<u8, ConstAlign<32>> = AVec::new(32);
-    let mut dm = DisjointMut::new(v);
-    dm.resize(64, 0xFFu8);
-    assert_eq!(dm.index(0..64).len(), 64);
-    assert!(dm.index(0..64).iter().all(|&x| x == 0xFF));
-}
-
-#[cfg(feature = "aligned")]
-#[test]
-fn test_aligned_disjoint_mut() {
-    use aligned::{Aligned, A64};
-
-    let data: Aligned<A64, [u8; 64]> = Aligned([0u8; 64]);
-    let dm = DisjointMut::new(data);
-
-    dm.index_mut(0..32).fill(0xAA);
-    dm.index_mut(32..64).fill(0xBB);
-
-    let lo = dm.index(0..32);
-    let hi = dm.index(32..64);
-    assert!(lo.iter().all(|&x| x == 0xAA));
-    assert!(hi.iter().all(|&x| x == 0xBB));
-}
+// NOTE: Tests for aligned/aligned-vec integration are in align.rs

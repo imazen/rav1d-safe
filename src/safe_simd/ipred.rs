@@ -730,8 +730,8 @@ fn ipred_smooth_8bpc_inner(
 ) {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
-    let weights_hor = &dav1d_sm_weights.0[width..][..width];
-    let weights_ver = &dav1d_sm_weights.0[height..][..height];
+    let weights_hor = &dav1d_sm_weights[width..][..width];
+    let weights_ver = &dav1d_sm_weights[height..][..height];
     let right_val = topleft[tl_off + width] as i32;
     let bottom_val = topleft[tl_off - height] as i32;
     let right_vec = _mm256_set1_epi32(right_val);
@@ -862,7 +862,7 @@ fn ipred_smooth_v_8bpc_inner(
 ) {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
-    let weights_ver = &dav1d_sm_weights.0[height..][..height];
+    let weights_ver = &dav1d_sm_weights[height..][..height];
     let bottom_val = topleft[tl_off - height] as i32;
     let bottom_vec = _mm256_set1_epi32(bottom_val);
     let rounding = _mm256_set1_epi32(128);
@@ -973,7 +973,7 @@ fn ipred_smooth_h_8bpc_inner(
 ) {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
-    let weights_hor = &dav1d_sm_weights.0[width..][..width];
+    let weights_hor = &dav1d_sm_weights[width..][..width];
     let right_val = topleft[tl_off + width] as i32;
     let right_vec = _mm256_set1_epi32(right_val);
     let rounding = _mm256_set1_epi32(128);
@@ -1131,7 +1131,7 @@ fn ipred_filter_8bpc_inner(
             let p = [p0, p1, p2, p3, p4, p5, p6];
 
             // Process 4x2 = 8 output pixels using filter taps
-            let flt = filter.0.as_slice();
+            let flt = filter.as_slice();
             let mut flt_offset = 0;
 
             // Row 0 (4 pixels)
@@ -2545,8 +2545,8 @@ fn ipred_smooth_16bpc_inner(
 ) {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
-    let weights_hor = &dav1d_sm_weights.0[width..][..width];
-    let weights_ver = &dav1d_sm_weights.0[height..][..height];
+    let weights_hor = &dav1d_sm_weights[width..][..width];
+    let weights_ver = &dav1d_sm_weights[height..][..height];
     let right_off = tl_off + width * 2;
     let right_val =
         u16::from_ne_bytes(topleft[right_off..right_off + 2].try_into().unwrap()) as i32;
@@ -2633,7 +2633,7 @@ fn ipred_smooth_v_16bpc_inner(
 ) {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
-    let weights_ver = &dav1d_sm_weights.0[height..][..height];
+    let weights_ver = &dav1d_sm_weights[height..][..height];
     let bottom_off = tl_off - height * 2;
     let bottom_val =
         u16::from_ne_bytes(topleft[bottom_off..bottom_off + 2].try_into().unwrap()) as i32;
@@ -2704,7 +2704,7 @@ fn ipred_smooth_h_16bpc_inner(
 ) {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
-    let weights_hor = &dav1d_sm_weights.0[width..][..width];
+    let weights_hor = &dav1d_sm_weights[width..][..width];
     let right_off = tl_off + width * 2;
     let right_val =
         u16::from_ne_bytes(topleft[right_off..right_off + 2].try_into().unwrap()) as i32;
@@ -3515,7 +3515,7 @@ fn ipred_filter_16bpc_inner(
             let p = [p0, p1, p2, p3, p4, p5, p6];
 
             // Process 4x2 = 8 output pixels using filter taps
-            let flt = filter.0.as_slice();
+            let flt = filter.as_slice();
             let mut flt_offset = 0;
 
             // Row 0 (4 pixels)

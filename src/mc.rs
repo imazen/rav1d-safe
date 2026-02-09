@@ -1112,7 +1112,7 @@ fn blend_v_rust<BD: BitDepth>(
     w: usize,
     h: usize,
 ) {
-    let mask = &dav1d_obmc_masks.0[w..];
+    let mask = &dav1d_obmc_masks[w..];
     let tmp = &tmp[..w * h];
     for y in 0..h {
         let dst = dst + (y as isize * dst.pixel_stride::<BD>());
@@ -1130,7 +1130,7 @@ fn blend_h_rust<BD: BitDepth>(
     w: usize,
     h: usize,
 ) {
-    let mask = &dav1d_obmc_masks.0[h..];
+    let mask = &dav1d_obmc_masks[h..];
     let h = h * 3 >> 2;
     let tmp = &tmp[..w * h];
     for y in 0..h {

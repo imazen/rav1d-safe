@@ -178,7 +178,8 @@ fn test_decode_hdr_metadata() {
 
 /// Decode all frames from an IVF file, asserting no panics and at least one frame produced.
 fn decode_ivf_file(path: &std::path::Path) {
-    let file = File::open(path).unwrap_or_else(|e| panic!("Failed to open {}: {e}", path.display()));
+    let file =
+        File::open(path).unwrap_or_else(|e| panic!("Failed to open {}: {e}", path.display()));
     let mut reader = BufReader::new(file);
     let frames = ivf_parser::parse_all_frames(&mut reader)
         .unwrap_or_else(|e| panic!("Failed to parse IVF {}: {e}", path.display()));
@@ -206,8 +207,7 @@ fn decode_ivf_file(path: &std::path::Path) {
 #[test]
 #[ignore] // requires test vectors
 fn test_obmc_blend_v_regression_00000315() {
-    let path = test_vectors_dir()
-        .join("dav1d-test-data/8-bit/data/00000315.ivf");
+    let path = test_vectors_dir().join("dav1d-test-data/8-bit/data/00000315.ivf");
     if !path.exists() {
         eprintln!("Skipping: test vector not found at {}", path.display());
         return;
@@ -220,8 +220,7 @@ fn test_obmc_blend_v_regression_00000315() {
 #[test]
 #[ignore] // requires test vectors
 fn test_obmc_blend_h_regression_00000327() {
-    let path = test_vectors_dir()
-        .join("dav1d-test-data/8-bit/data/00000327.ivf");
+    let path = test_vectors_dir().join("dav1d-test-data/8-bit/data/00000327.ivf");
     if !path.exists() {
         eprintln!("Skipping: test vector not found at {}", path.display());
         return;
@@ -268,7 +267,10 @@ fn sweep_vectors(subdir: &str, max_bytes: u64) {
         }
     }
 
-    eprintln!("{subdir}: {passed}/{} vectors decoded successfully", entries.len());
+    eprintln!(
+        "{subdir}: {passed}/{} vectors decoded successfully",
+        entries.len()
+    );
     assert!(
         failed.is_empty(),
         "{subdir}: these vectors failed to decode: {failed:?}"

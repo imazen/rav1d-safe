@@ -315,8 +315,8 @@ fn lpf_h_sb_y_8bpc_inner(
 
             if l != 0 {
                 let h = (l >> 4) as i32;
-                let e = lut.0.e[l as usize] as i32;
-                let i = lut.0.i[l as usize] as i32;
+                let e = lut.e[l as usize] as i32;
+                let i = lut.i[l as usize] as i32;
 
                 let idx = if vmask[2] & xy != 0 {
                     16
@@ -383,8 +383,8 @@ fn lpf_v_sb_y_8bpc_inner(
 
             if l != 0 {
                 let h = (l >> 4) as i32;
-                let e = lut.0.e[l as usize] as i32;
-                let i = lut.0.i[l as usize] as i32;
+                let e = lut.e[l as usize] as i32;
+                let i = lut.i[l as usize] as i32;
 
                 let idx = if vmask[2] & xy != 0 {
                     16
@@ -451,8 +451,8 @@ fn lpf_h_sb_uv_8bpc_inner(
 
             if l != 0 {
                 let h = (l >> 4) as i32;
-                let e = lut.0.e[l as usize] as i32;
-                let i = lut.0.i[l as usize] as i32;
+                let e = lut.e[l as usize] as i32;
+                let i = lut.i[l as usize] as i32;
 
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
 
@@ -513,8 +513,8 @@ fn lpf_v_sb_uv_8bpc_inner(
 
             if l != 0 {
                 let h = (l >> 4) as i32;
-                let e = lut.0.e[l as usize] as i32;
-                let i = lut.0.i[l as usize] as i32;
+                let e = lut.e[l as usize] as i32;
+                let i = lut.i[l as usize] as i32;
 
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
 
@@ -918,8 +918,8 @@ fn lpf_h_sb_y_16bpc_inner(
 
             if l != 0 {
                 let h = (l >> 4) as i32;
-                let e = lut.0.e[l as usize] as i32;
-                let i = lut.0.i[l as usize] as i32;
+                let e = lut.e[l as usize] as i32;
+                let i = lut.i[l as usize] as i32;
 
                 let idx = if vmask[2] & xy != 0 {
                     16
@@ -987,8 +987,8 @@ fn lpf_v_sb_y_16bpc_inner(
 
             if l != 0 {
                 let h = (l >> 4) as i32;
-                let e = lut.0.e[l as usize] as i32;
-                let i = lut.0.i[l as usize] as i32;
+                let e = lut.e[l as usize] as i32;
+                let i = lut.i[l as usize] as i32;
 
                 let idx = if vmask[2] & xy != 0 {
                     16
@@ -1055,8 +1055,8 @@ fn lpf_h_sb_uv_16bpc_inner(
 
             if l != 0 {
                 let h = (l >> 4) as i32;
-                let e = lut.0.e[l as usize] as i32;
-                let i = lut.0.i[l as usize] as i32;
+                let e = lut.e[l as usize] as i32;
+                let i = lut.i[l as usize] as i32;
 
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
 
@@ -1118,8 +1118,8 @@ fn lpf_v_sb_uv_16bpc_inner(
 
             if l != 0 {
                 let h = (l >> 4) as i32;
-                let e = lut.0.e[l as usize] as i32;
-                let i = lut.0.i[l as usize] as i32;
+                let e = lut.e[l as usize] as i32;
+                let i = lut.i[l as usize] as i32;
 
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
 

@@ -901,8 +901,8 @@ fn ipred_smooth_rust<BD: BitDepth>(
 ) {
     let [width, height] = [width, height].map(|it| it as usize);
 
-    let weights_hor = &dav1d_sm_weights.0[width..][..width];
-    let weights_ver = &dav1d_sm_weights.0[height..][..height];
+    let weights_hor = &dav1d_sm_weights[width..][..width];
+    let weights_ver = &dav1d_sm_weights[height..][..height];
     let right = topleft[topleft_off + width].as_::<c_int>();
     let bottom = topleft[topleft_off - height].as_::<c_int>();
 
@@ -953,7 +953,7 @@ fn ipred_smooth_v_rust<BD: BitDepth>(
 ) {
     let [width, height] = [width, height].map(|it| it as usize);
 
-    let weights_ver = &dav1d_sm_weights.0[height..][..height];
+    let weights_ver = &dav1d_sm_weights[height..][..height];
     let bottom = topleft[topleft_off - height].as_::<c_int>();
 
     for y in 0..height {
@@ -1001,7 +1001,7 @@ fn ipred_smooth_h_rust<BD: BitDepth>(
 ) {
     let [width, height] = [width, height].map(|it| it as usize);
 
-    let weights_hor = &dav1d_sm_weights.0[width..][..width];
+    let weights_hor = &dav1d_sm_weights[width..][..width];
     let right = topleft[topleft_off + width].as_::<c_int>();
 
     for y in 0..height {
@@ -1527,7 +1527,7 @@ fn ipred_filter_rust<BD: BitDepth>(
             }
             let p = [p0, p1, p2, p3, p4, p5, p6].map(|p| p.as_::<i32>());
             let mut ptr = dst + x;
-            let mut flt_ptr = filter.0.as_slice();
+            let mut flt_ptr = filter.as_slice();
 
             for _yy in 0..2 {
                 let ptr_slice = &mut *ptr.slice_mut::<BD>(4);

@@ -16,14 +16,9 @@ default = ["std"]
 std = ["dep:parking_lot"]
 # Skip runtime overlap checking. The caller must ensure all borrows are disjoint.
 unchecked = []
-# Implement ExternalAsMutPtr for aligned-vec::AVec (aligned heap allocations).
-aligned-vec = ["dep:aligned-vec"]
-# Implement ExternalAsMutPtr for aligned::Aligned (aligned newtypes).
-aligned = ["dep:aligned"]
-
 [dependencies]
-aligned = { version = "0.4", default-features = false, optional = true }
-aligned-vec = { version = "0.6", default-features = false, optional = true }
+aligned = { version = "0.4", default-features = false }
+aligned-vec = { version = "0.6", default-features = false }
 parking_lot = { version = "0.12.2", optional = true }
 spin = { version = "0.10", default-features = false, features = ["mutex", "spin_mutex"] }
 zerocopy = { version = "0.7.32", default-features = false }

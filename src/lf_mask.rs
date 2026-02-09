@@ -6,6 +6,7 @@ use crate::include::dav1d::headers::Rav1dLoopfilterModeRefDeltas;
 use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::include::dav1d::headers::Rav1dRestorationType;
 use crate::src::align::Align16;
+use crate::src::align::Aligned;
 use crate::src::align::ArrayDefault;
 use crate::src::ctx::CaseSet;
 use crate::src::disjoint_mut::DisjointMut;
@@ -166,11 +167,11 @@ fn mask_edges_inter(
 
     // See [`decomp_tx`]'s docs for the `txa` arg.
 
-    let mut txa = Align16([[[[0u8; 32]; 32]; 2]; 2]);
+    let mut txa: Align16<_> = Aligned([[[[0u8; 32]; 32]; 2]; 2]);
 
     for (y_off, _) in (0..h4).step_by(t_dim.h as usize).enumerate() {
         for (x_off, _) in (0..w4).step_by(t_dim.w as usize).enumerate() {
-            decomp_tx(&mut txa.0, max_tx, 0, y_off as u8, x_off as u8, tx_masks);
+            decomp_tx(&mut *txa, max_tx, 0, y_off as u8, x_off as u8, tx_masks);
         }
     }
 

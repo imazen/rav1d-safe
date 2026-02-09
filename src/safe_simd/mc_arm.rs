@@ -1047,7 +1047,7 @@ pub unsafe extern "C" fn blend_v_8bpc_neon(
         let tmp = std::slice::from_raw_parts(tmp as *const u8, w * h);
         (dst, tmp)
     };
-    let mask = &dav1d_obmc_masks.0[w..];
+    let mask = &dav1d_obmc_masks[w..];
     let dst_w = w * 3 >> 2;
 
     // blend_v formula: (dst * (64-m) + tmp * m + 32) >> 6
@@ -1149,7 +1149,7 @@ pub unsafe extern "C" fn blend_v_16bpc_neon(
         let tmp = std::slice::from_raw_parts(tmp as *const u16, w * h);
         (dst, tmp)
     };
-    let mask = &dav1d_obmc_masks.0[w..];
+    let mask = &dav1d_obmc_masks[w..];
     let dst_w = w * 3 >> 2;
 
     // blend_v formula: (dst * (64-m) + tmp * m + 32) >> 6
@@ -1261,7 +1261,7 @@ pub unsafe extern "C" fn blend_h_8bpc_neon(
 
     let w = w as usize;
     let h = h as usize;
-    let mask = &dav1d_obmc_masks.0[h..];
+    let mask = &dav1d_obmc_masks[h..];
     let h_effective = h * 3 >> 2;
 
     // SAFETY: Pointers are valid and properly aligned
@@ -1378,7 +1378,7 @@ pub unsafe extern "C" fn blend_h_16bpc_neon(
 
     let w = w as usize;
     let h = h as usize;
-    let mask = &dav1d_obmc_masks.0[h..];
+    let mask = &dav1d_obmc_masks[h..];
     let h_effective = h * 3 >> 2;
     let dst_stride_u16 = (dst_stride / 2) as usize;
 
@@ -2692,7 +2692,7 @@ fn get_filter_coeff(m: usize, d: usize, filter_type: Rav1dFilterMode) -> Option<
     } else {
         3 + (filter_type as u8 & 1)
     };
-    Some(&dav1d_mc_subpel_filters.0[i as usize][m])
+    Some(&dav1d_mc_subpel_filters[i as usize][m])
 }
 
 /// Horizontal 8-tap filter to intermediate buffer (i16)
@@ -4731,7 +4731,7 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let dst_slice = &mut dst_bytes[dst_base..];
                 let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
-                let mask = &dav1d_obmc_masks.0[w_u..];
+                let mask = &dav1d_obmc_masks[w_u..];
                 let dst_w = w_u * 3 >> 2;
                 for row in 0..h_u {
                     let dst_row = &mut dst_slice[row * dst_stride..][..dst_w];
@@ -4749,7 +4749,7 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let dst_slice = &mut dst_bytes[dst_base..];
                 let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
-                let mask = &dav1d_obmc_masks.0[h_u..];
+                let mask = &dav1d_obmc_masks[h_u..];
                 let h_effective = h_u * 3 >> 2;
                 for row in 0..h_effective {
                     let dst_row = &mut dst_slice[row * dst_stride..][..w_u];
@@ -4773,7 +4773,7 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                 let tmp_bytes: &[u8] = zerocopy::AsBytes::as_bytes(tmp.as_slice());
                 let tmp_byte_len = w_u * h_u * 2;
                 let tmp_u16: &[u16] = FromBytes::slice_from(&tmp_bytes[..tmp_byte_len]).unwrap();
-                let mask = &dav1d_obmc_masks.0[w_u..];
+                let mask = &dav1d_obmc_masks[w_u..];
                 let dst_w = w_u * 3 >> 2;
                 for row in 0..h_u {
                     let dst_row = &mut dst_u16[row * stride_u16..][..dst_w];
@@ -4791,7 +4791,7 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                 let dst_bytes = dst_guard.as_bytes_mut();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
-                let mask = &dav1d_obmc_masks.0[h_u..];
+                let mask = &dav1d_obmc_masks[h_u..];
                 let h_effective = h_u * 3 >> 2;
                 let dst_byte_len = (h_effective * stride_u16 + w_u) * 2;
                 let dst_u16: &mut [u16] =

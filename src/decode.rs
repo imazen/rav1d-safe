@@ -18,7 +18,7 @@ use crate::include::dav1d::headers::Rav1dWarpedMotionType;
 use crate::include::dav1d::headers::SgrIdx;
 use crate::include::dav1d::headers::RAV1D_PRIMARY_REF_NONE;
 use crate::include::dav1d::picture::Rav1dPicture;
-use crate::src::align::Align16;
+use crate::src::align::Aligned;
 use crate::src::align::AlignedVec64;
 use crate::src::c_arc::CArc;
 use crate::src::cdf::rav1d_cdf_thread_alloc;
@@ -219,20 +219,20 @@ fn read_mv_component_diff(
     mv_comp: &mut CdfMvComponent,
     mv_prec: i32,
 ) -> c_int {
-    let sign = rav1d_msac_decode_bool_adapt(msac, &mut mv_comp.sign.0);
-    let cl = rav1d_msac_decode_symbol_adapt16(msac, &mut mv_comp.classes.0, 10);
+    let sign = rav1d_msac_decode_bool_adapt(msac, &mut *mv_comp.sign);
+    let cl = rav1d_msac_decode_symbol_adapt16(msac, &mut *mv_comp.classes, 10);
     let mut up;
     let mut fp = 3;
     let mut hp = true;
 
     if cl == 0 {
-        up = rav1d_msac_decode_bool_adapt(msac, &mut mv_comp.class_0.0) as u16;
+        up = rav1d_msac_decode_bool_adapt(msac, &mut *mv_comp.class_0) as u16;
         if mv_prec >= 0 {
             // !force_integer_mv
             fp = rav1d_msac_decode_symbol_adapt4(msac, &mut mv_comp.class_0_fp[up as usize], 3);
             if mv_prec > 0 {
                 // allow_high_precision_mv
-                hp = rav1d_msac_decode_bool_adapt(msac, &mut mv_comp.class_0_hp.0);
+                hp = rav1d_msac_decode_bool_adapt(msac, &mut *mv_comp.class_0_hp);
             }
         }
     } else {
@@ -243,10 +243,10 @@ fn read_mv_component_diff(
         }
         if mv_prec >= 0 {
             // !force_integer_mv
-            fp = rav1d_msac_decode_symbol_adapt4(msac, &mut mv_comp.class_n_fp.0, 3);
+            fp = rav1d_msac_decode_symbol_adapt4(msac, &mut *mv_comp.class_n_fp, 3);
             if mv_prec > 0 {
                 // allow_high_precision_mv
-                hp = rav1d_msac_decode_bool_adapt(msac, &mut mv_comp.class_n_hp.0);
+                hp = rav1d_msac_decode_bool_adapt(msac, &mut *mv_comp.class_n_hp);
             }
         }
     }
@@ -264,7 +264,7 @@ fn read_mv_component_diff(
 fn read_mv_residual(ts_c: &mut Rav1dTileStateContext, ref_mv: &mut Mv, mv_prec: i32) {
     let mv_joint = MVJoint::from_bits_truncate(rav1d_msac_decode_symbol_adapt4(
         &mut ts_c.msac,
-        &mut ts_c.cdf.mv.joint.0,
+        &mut *ts_c.cdf.mv.joint,
         MVJoint::all().bits(),
     ) as u8);
 
@@ -906,7 +906,7 @@ fn splat_oneref_mv(
     bh4: usize,
 ) {
     let mode = inter.inter_mode;
-    let tmpl = Align16(RefMvsBlock {
+    let tmpl = Aligned(RefMvsBlock {
         mv: RefMvsMvPair {
             mv: [inter.nd.one_d.mv[0], Mv::ZERO],
         },
@@ -933,7 +933,7 @@ fn splat_intrabc_mv(
     bw4: usize,
     bh4: usize,
 ) {
-    let tmpl = Align16(RefMvsBlock {
+    let tmpl = Aligned(RefMvsBlock {
         mv: RefMvsMvPair {
             mv: [r#ref, Mv::ZERO],
         },
@@ -956,7 +956,7 @@ fn splat_tworef_mv(
 ) {
     assert!(bw4 >= 2 && bh4 >= 2);
     let mode = inter.inter_mode;
-    let tmpl = Align16(RefMvsBlock {
+    let tmpl = Aligned(RefMvsBlock {
         mv: RefMvsMvPair {
             mv: inter.nd.one_d.mv,
         },
@@ -978,7 +978,7 @@ fn splat_intraref(
     bw4: usize,
     bh4: usize,
 ) {
-    let tmpl = Align16(RefMvsBlock {
+    let tmpl = Aligned(RefMvsBlock {
         mv: RefMvsMvPair {
             mv: [Mv::INVALID, Mv::ZERO],
         },
@@ -1353,7 +1353,7 @@ fn decode_b(
                 let index = *ta.seg_pred.index(bx4 as usize) + *t.l.seg_pred.index(by4 as usize);
                 seg_pred = rav1d_msac_decode_bool_adapt(
                     &mut ts_c.msac,
-                    &mut ts_c.cdf.mi.seg_pred.0[index as usize],
+                    &mut ts_c.cdf.mi.seg_pred[index as usize],
                 );
                 seg_pred
             } {
@@ -1415,7 +1415,7 @@ fn decode_b(
         let smctx = *ta.skip_mode.index(bx4 as usize) + *t.l.skip_mode.index(by4 as usize);
         b.skip_mode = rav1d_msac_decode_bool_adapt(
             &mut ts_c.msac,
-            &mut ts_c.cdf.mi.skip_mode.0[smctx as usize],
+            &mut ts_c.cdf.mi.skip_mode[smctx as usize],
         ) as u8;
         if debug_block_info!(f, t.b) {
             println!("Post-skipmode[{}]: r={}", b.skip_mode, ts_c.msac.rng);
@@ -1445,7 +1445,7 @@ fn decode_b(
             let index = *ta.seg_pred.index(bx4 as usize) + *t.l.seg_pred.index(by4 as usize);
             seg_pred = rav1d_msac_decode_bool_adapt(
                 &mut ts_c.msac,
-                &mut ts_c.cdf.mi.seg_pred.0[index as usize],
+                &mut ts_c.cdf.mi.seg_pred[index as usize],
             );
             seg_pred
         } {
@@ -1540,7 +1540,7 @@ fn decode_b(
 
         if have_delta_q {
             let mut delta_q =
-                rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut ts_c.cdf.m.delta_q.0, 3)
+                rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut *ts_c.cdf.m.delta_q, 3)
                     as c_int;
             if delta_q == 3 {
                 let n_bits = 1 + rav1d_msac_decode_bools(&mut ts_c.msac, 3) as u8;
@@ -1632,15 +1632,17 @@ fn decode_b(
             seg.r#ref == 0
         } else {
             let ictx = get_intra_ctx(&ta, &t.l, by4, bx4, have_top, have_left);
-            let intra =
-                !rav1d_msac_decode_bool_adapt(&mut ts_c.msac, &mut ts_c.cdf.mi.intra[ictx.into()]);
+            let intra = !rav1d_msac_decode_bool_adapt(
+                &mut ts_c.msac,
+                &mut ts_c.cdf.mi.intra[ictx as usize],
+            );
             if debug_block_info!(f, t.b) {
                 println!("Post-intra[{}]: r={}", intra, ts_c.msac.rng);
             }
             intra
         }
     } else if frame_hdr.allow_intrabc {
-        let intra = !rav1d_msac_decode_bool_adapt(&mut ts_c.msac, &mut ts_c.cdf.m.intrabc.0);
+        let intra = !rav1d_msac_decode_bool_adapt(&mut ts_c.msac, &mut *ts_c.cdf.m.intrabc);
         if debug_block_info!(f, t.b) {
             println!("Post-intrabcflag[{}]: r={}", intra, ts_c.msac.rng);
         }
@@ -1698,7 +1700,7 @@ fn decode_b(
 
             if uv_mode == CFL_PRED {
                 let sign =
-                    rav1d_msac_decode_symbol_adapt8(&mut ts_c.msac, &mut ts_c.cdf.m.cfl_sign.0, 7)
+                    rav1d_msac_decode_symbol_adapt8(&mut ts_c.msac, &mut *ts_c.cdf.m.cfl_sign, 7)
                         + 1;
                 let sign_u = (sign as u16 * 0x56 >> 8) as u8;
                 let sign_v = sign - sign_u * 3;
@@ -1803,7 +1805,7 @@ fn decode_b(
                 y_mode = FILTER_PRED as u8;
                 y_angle = rav1d_msac_decode_symbol_adapt8(
                     &mut ts_c.msac,
-                    &mut ts_c.cdf.m.filter_intra.0,
+                    &mut *ts_c.cdf.m.filter_intra,
                     4,
                 ) as i8;
             }
@@ -2989,7 +2991,7 @@ fn decode_b(
                 let ctx1 = get_filter_ctx(ta, &t.l, comp, false, r#ref[0], by4, bx4);
                 let filter0 = Rav1dFilterMode::from_repr(rav1d_msac_decode_symbol_adapt4(
                     &mut ts_c.msac,
-                    &mut ts_c.cdf.mi.filter.0[0][ctx1 as usize],
+                    &mut ts_c.cdf.mi.filter[0][ctx1 as usize],
                     Rav1dFilterMode::N_SWITCHABLE_FILTERS as u8 - 1,
                 ) as usize)
                 .unwrap();
@@ -3003,7 +3005,7 @@ fn decode_b(
                     }
                     let filter1 = Rav1dFilterMode::from_repr(rav1d_msac_decode_symbol_adapt4(
                         &mut ts_c.msac,
-                        &mut ts_c.cdf.mi.filter.0[1][ctx2 as usize],
+                        &mut ts_c.cdf.mi.filter[1][ctx2 as usize],
                         Rav1dFilterMode::N_SWITCHABLE_FILTERS as u8 - 1,
                     ) as usize)
                     .unwrap();
@@ -3795,42 +3797,39 @@ fn decode_sb(
 }
 
 fn reset_context(ctx: &mut BlockContext, keyframe: bool, pass: c_int) {
-    ctx.intra.get_mut().0.fill(keyframe.into());
-    ctx.uvmode.get_mut().0.fill(DC_PRED);
+    ctx.intra.get_mut().fill(keyframe.into());
+    ctx.uvmode.get_mut().fill(DC_PRED);
     if keyframe {
-        ctx.mode.get_mut().0.fill(DC_PRED);
+        ctx.mode.get_mut().fill(DC_PRED);
     }
 
     if pass == 2 {
         return;
     }
 
-    ctx.partition.get_mut().0.fill(0);
-    ctx.skip.get_mut().0.fill(0);
-    ctx.skip_mode.get_mut().0.fill(0);
-    ctx.tx_lpf_y.get_mut().0.fill(2);
-    ctx.tx_lpf_uv.get_mut().0.fill(1);
-    ctx.tx_intra.get_mut().0.fill(-1);
-    ctx.tx.get_mut().0.fill(TxfmSize::S64x64);
+    ctx.partition.get_mut().fill(0);
+    ctx.skip.get_mut().fill(0);
+    ctx.skip_mode.get_mut().fill(0);
+    ctx.tx_lpf_y.get_mut().fill(2);
+    ctx.tx_lpf_uv.get_mut().fill(1);
+    ctx.tx_intra.get_mut().fill(-1);
+    ctx.tx.get_mut().fill(TxfmSize::S64x64);
     if !keyframe {
         for r#ref in &mut ctx.r#ref {
-            r#ref.get_mut().0.fill(-1);
+            r#ref.get_mut().fill(-1);
         }
-        ctx.comp_type.get_mut().0.fill(None);
-        ctx.mode.get_mut().0.fill(NEARESTMV);
+        ctx.comp_type.get_mut().fill(None);
+        ctx.mode.get_mut().fill(NEARESTMV);
     }
-    ctx.lcoef.get_mut().0.fill(0x40);
+    ctx.lcoef.get_mut().fill(0x40);
     for ccoef in &mut ctx.ccoef {
-        ccoef.get_mut().0.fill(0x40);
+        ccoef.get_mut().fill(0x40);
     }
     for filter in &mut ctx.filter {
-        filter
-            .get_mut()
-            .0
-            .fill(Rav1dFilterMode::N_SWITCHABLE_FILTERS);
+        filter.get_mut().fill(Rav1dFilterMode::N_SWITCHABLE_FILTERS);
     }
-    ctx.seg_pred.get_mut().0.fill(0);
-    ctx.pal_sz.get_mut().0.fill(0);
+    ctx.seg_pred.get_mut().fill(0);
+    ctx.pal_sz.get_mut().fill(0);
 }
 
 impl DefaultValue for [u8; 2] {
@@ -3972,11 +3971,8 @@ fn read_restoration_info(
     let lr_ref = ts.lr_ref.try_read().unwrap()[p];
 
     if frame_type == Rav1dRestorationType::Switchable {
-        let filter = rav1d_msac_decode_symbol_adapt4(
-            &mut ts_c.msac,
-            &mut ts_c.cdf.m.restore_switchable.0,
-            2,
-        );
+        let filter =
+            rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut *ts_c.cdf.m.restore_switchable, 2);
         lr.r#type = if filter != 0 {
             if filter == 2 {
                 Rav1dRestorationType::SgrProj(SgrIdx::I0)
@@ -3990,9 +3986,9 @@ fn read_restoration_info(
         let r#type = rav1d_msac_decode_bool_adapt(
             &mut ts_c.msac,
             if frame_type == Rav1dRestorationType::Wiener {
-                &mut ts_c.cdf.m.restore_wiener.0
+                &mut *ts_c.cdf.m.restore_wiener
             } else {
-                &mut ts_c.cdf.m.restore_sgrproj.0
+                &mut *ts_c.cdf.m.restore_sgrproj
             },
         );
         lr.r#type = if r#type {
@@ -4563,7 +4559,7 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
             .sum::<u8>(),
     );
     if frame_hdr.loopfilter.sharpness != f.lf.last_sharpness {
-        rav1d_calc_eih(&mut f.lf.lim_lut.0, frame_hdr.loopfilter.sharpness);
+        rav1d_calc_eih(&mut *f.lf.lim_lut, frame_hdr.loopfilter.sharpness);
         f.lf.last_sharpness = frame_hdr.loopfilter.sharpness;
     }
     rav1d_calc_lf_values(&mut f.lf.lvl, &frame_hdr, &[0, 0, 0, 0]);

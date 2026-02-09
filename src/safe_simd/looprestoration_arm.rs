@@ -470,7 +470,7 @@ fn selfguided_filter_8bpc(
 
             let p = cmp::max(a_val * n - b_val * b_val, 0) as u32;
             let z = (p * s + (1 << 19)) >> 20;
-            let x = dav1d_sgr_x_by_x.0[cmp::min(z, 255) as usize] as u32;
+            let x = dav1d_sgr_x_by_x[cmp::min(z, 255) as usize] as u32;
 
             // Store: a = x * b * sgr_one_by_x, b = x
             if let Some(aa) = sumsq.get_mut(idx) {
@@ -1008,7 +1008,7 @@ fn selfguided_filter_16bpc(
 
             let p = cmp::max(a_scaled * (n as i64) - b_scaled * b_scaled, 0) as u64;
             let z = ((p * (s as u64) + (1 << 19)) >> 20) as u32;
-            let x = dav1d_sgr_x_by_x.0[cmp::min(z, 255) as usize] as u32;
+            let x = dav1d_sgr_x_by_x[cmp::min(z, 255) as usize] as u32;
 
             // Store coefficients
             if let Some(aa) = sumsq.get_mut(idx) {

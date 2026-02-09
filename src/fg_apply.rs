@@ -86,7 +86,7 @@ pub(crate) fn rav1d_prep_grain<BD: BitDepth>(
     let layout = || r#in.p.layout.try_into().unwrap();
 
     // Generate grain LUTs as needed
-    let [grain_lut_0, grain_lut_1, grain_lut_2] = &mut grain_lut.0;
+    let [grain_lut_0, grain_lut_1, grain_lut_2] = &mut **grain_lut;
     dsp.generate_grain_y.call(grain_lut_0, data, bd);
     if data.num_uv_points[0] != 0 || data.chroma_scaling_from_luma {
         dsp.generate_grain_uv[layout()].call(layout(), grain_lut_1, grain_lut_0, data, false, bd);

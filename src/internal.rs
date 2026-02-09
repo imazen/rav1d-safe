@@ -21,6 +21,7 @@ use crate::include::dav1d::picture::Rav1dPicture;
 use crate::src::align::Align16;
 use crate::src::align::Align64;
 use crate::src::align::AlignedVec64;
+use crate::src::align::ArrayDefault;
 use crate::src::cdef::Rav1dCdefDSPContext;
 use crate::src::cdf::CdfContext;
 use crate::src::cdf::CdfThreadContext;
@@ -267,8 +268,8 @@ pub struct GrainBD<BD: BitDepth> {
 impl<BD: BitDepth> Default for GrainBD<BD> {
     fn default() -> Self {
         Self {
-            grain_lut: Default::default(),
-            scaling: Default::default(),
+            grain_lut: ArrayDefault::default(),
+            scaling: ArrayDefault::default(),
         }
     }
 }

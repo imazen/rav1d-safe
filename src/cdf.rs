@@ -6,6 +6,8 @@ use crate::src::align::Align16;
 use crate::src::align::Align32;
 use crate::src::align::Align4;
 use crate::src::align::Align8;
+use crate::src::align::Aligned;
+use crate::src::align::ArrayDefault;
 use crate::src::error::Rav1dResult;
 use crate::src::levels::BlockLevel;
 use crate::src::levels::BlockPartition;
@@ -55,7 +57,7 @@ pub struct CdfMvComponent {
     pub class_n: Align4<[[u16; 2]; 10]>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 #[repr(C)]
 pub struct CdfCoefContext {
     pub eob_bin_16: Align16<[[[u16; 8]; 2]; 2]>,
@@ -71,6 +73,26 @@ pub struct CdfCoefContext {
     pub eob_hi_bit: Align4<[[[[u16; 2]; 11]; 2]; 5]>,
     pub skip: Align4<[[[u16; 2]; 13]; 5]>,
     pub dc_sign: Align4<[[[u16; 2]; 3]; 2]>,
+}
+
+impl Default for CdfCoefContext {
+    fn default() -> Self {
+        Self {
+            eob_bin_16: Default::default(),
+            eob_bin_32: Default::default(),
+            eob_bin_64: Default::default(),
+            eob_bin_128: Default::default(),
+            eob_bin_256: Default::default(),
+            eob_bin_512: Default::default(),
+            eob_bin_1024: Default::default(),
+            eob_base_tok: Default::default(),
+            base_tok: ArrayDefault::default(),
+            br_tok: Default::default(),
+            eob_hi_bit: Default::default(),
+            skip: Default::default(),
+            dc_sign: Default::default(),
+        }
+    }
 }
 
 /// Buffers padded to [4]/[8]/[16] for SIMD where needed.
@@ -238,18 +260,18 @@ struct CdfDefaultContext {
 static default_cdf: CdfDefaultContext = CdfDefaultContext {
     coef: [
         CdfCoefContext {
-            eob_bin_16: Align16(cdf2d([
+            eob_bin_16: Aligned(cdf2d([
                 [[840, 1039, 1980, 4895], [370, 671, 1883, 4471]],
                 [[3247, 4950, 9688, 14563], [1904, 3354, 7763, 14647]],
             ])),
-            eob_bin_32: Align16(cdf2d([
+            eob_bin_32: Aligned(cdf2d([
                 [[400, 520, 977, 2102, 6542], [210, 405, 1315, 3326, 7537]],
                 [
                     [2636, 4273, 7588, 11794, 20401],
                     [1786, 3179, 6902, 11357, 19054],
                 ],
             ])),
-            eob_bin_64: Align16(cdf2d([
+            eob_bin_64: Aligned(cdf2d([
                 [
                     [329, 498, 1101, 1784, 3265, 7758],
                     [335, 730, 1459, 5494, 8755, 12997],
@@ -259,7 +281,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [1563, 2700, 4876, 10911, 14706, 22480],
                 ],
             ])),
-            eob_bin_128: Align16(cdf2d([
+            eob_bin_128: Aligned(cdf2d([
                 [
                     [219, 482, 1140, 2091, 3680, 6028, 12586],
                     [371, 699, 1254, 4830, 9479, 12562, 17497],
@@ -269,7 +291,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [2054, 3472, 5869, 14232, 18242, 20590, 26752],
                 ],
             ])),
-            eob_bin_256: Align32(cdf2d([
+            eob_bin_256: Aligned(cdf2d([
                 [
                     [310, 584, 1887, 3589, 6168, 8611, 11352, 15652],
                     [998, 1850, 2998, 5604, 17341, 19888, 22899, 25583],
@@ -279,17 +301,17 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [2203, 4130, 7435, 10739, 20652, 23681, 25609, 27261],
                 ],
             ])),
-            eob_bin_512: Align32(cdf1d([
+            eob_bin_512: Aligned(cdf1d([
                 [641, 983, 3707, 5430, 10234, 14958, 18788, 23412, 26061],
                 [5095, 6446, 9996, 13354, 16017, 17986, 20919, 26129, 29140],
             ])),
-            eob_bin_1024: Align32(cdf1d([
+            eob_bin_1024: Aligned(cdf1d([
                 [393, 421, 751, 1623, 3160, 6352, 13345, 18047, 22571, 25830],
                 [
                     1865, 1988, 2930, 4242, 10533, 16538, 21354, 27255, 28546, 31784,
                 ],
             ])),
-            eob_base_tok: Align8(cdf3d([
+            eob_base_tok: Aligned(cdf3d([
                 [
                     [
                         [17837, 29055],
@@ -351,7 +373,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            base_tok: Align8(cdf3d([
+            base_tok: Aligned(cdf3d([
                 [
                     [
                         [4034, 8930, 12727],
@@ -793,7 +815,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            br_tok: Align8(cdf3d([
+            br_tok: Aligned(cdf3d([
                 [
                     [
                         [14298, 20718, 24174],
@@ -987,7 +1009,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            eob_hi_bit: Align4(cdf3d([
+            eob_hi_bit: Aligned(cdf3d([
                 [
                     [
                         [16384],
@@ -1129,7 +1151,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            skip: Align4(cdf2d([
+            skip: Aligned(cdf2d([
                 [
                     [31849],
                     [5892],
@@ -1206,24 +1228,24 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [16384],
                 ],
             ])),
-            dc_sign: Align4(cdf2d([
+            dc_sign: Aligned(cdf2d([
                 [[16000], [13056], [18816]],
                 [[15232], [12928], [17280]],
             ])),
         },
         CdfCoefContext {
-            eob_bin_16: Align16(cdf2d([
+            eob_bin_16: Aligned(cdf2d([
                 [[2125, 2551, 5165, 8946], [513, 765, 1859, 6339]],
                 [[7637, 9498, 14259, 19108], [2497, 4096, 8866, 16993]],
             ])),
-            eob_bin_32: Align16(cdf2d([
+            eob_bin_32: Aligned(cdf2d([
                 [[989, 1249, 2019, 4151, 10785], [313, 441, 1099, 2917, 8562]],
                 [
                     [8394, 10352, 13932, 18855, 26014],
                     [2578, 4124, 8181, 13670, 24234],
                 ],
             ])),
-            eob_bin_64: Align16(cdf2d([
+            eob_bin_64: Aligned(cdf2d([
                 [
                     [1260, 1446, 2253, 3712, 6652, 13369],
                     [401, 605, 1029, 2563, 5845, 12626],
@@ -1233,7 +1255,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [1923, 3127, 5867, 9703, 14277, 27100],
                 ],
             ])),
-            eob_bin_128: Align16(cdf2d([
+            eob_bin_128: Aligned(cdf2d([
                 [
                     [685, 933, 1488, 2714, 4766, 8562, 19254],
                     [217, 352, 618, 2303, 5261, 9969, 17472],
@@ -1243,7 +1265,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [2310, 4160, 7471, 14997, 17931, 20768, 30240],
                 ],
             ])),
-            eob_bin_256: Align32(cdf2d([
+            eob_bin_256: Aligned(cdf2d([
                 [
                     [1448, 2109, 4151, 6263, 9329, 13260, 17944, 23300],
                     [399, 1019, 1749, 3038, 10444, 15546, 22739, 27294],
@@ -1253,11 +1275,11 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [1674, 3252, 5734, 10159, 22397, 23802, 24821, 30940],
                 ],
             ])),
-            eob_bin_512: Align32(cdf1d([
+            eob_bin_512: Aligned(cdf1d([
                 [1230, 2278, 5035, 7776, 11871, 15346, 19590, 24584, 28749],
                 [7265, 9979, 15819, 19250, 21780, 23846, 26478, 28396, 31811],
             ])),
-            eob_bin_1024: Align32(cdf1d([
+            eob_bin_1024: Aligned(cdf1d([
                 [
                     696, 948, 3145, 5702, 9706, 13217, 17851, 21856, 25692, 28034,
                 ],
@@ -1265,7 +1287,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     2672, 3591, 9330, 17084, 22725, 24284, 26527, 28027, 28377, 30876,
                 ],
             ])),
-            eob_base_tok: Align8(cdf3d([
+            eob_base_tok: Aligned(cdf3d([
                 [
                     [
                         [17560, 29888],
@@ -1327,7 +1349,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            base_tok: Align8(cdf3d([
+            base_tok: Aligned(cdf3d([
                 [
                     [
                         [6041, 11854, 15927],
@@ -1769,7 +1791,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            br_tok: Align8(cdf3d([
+            br_tok: Aligned(cdf3d([
                 [
                     [
                         [14995, 21341, 24749],
@@ -1963,7 +1985,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            eob_hi_bit: Align4(cdf3d([
+            eob_hi_bit: Aligned(cdf3d([
                 [
                     [
                         [16384],
@@ -2105,7 +2127,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            skip: Align4(cdf2d([
+            skip: Aligned(cdf2d([
                 [
                     [30371],
                     [7570],
@@ -2182,17 +2204,17 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [16384],
                 ],
             ])),
-            dc_sign: Align4(cdf2d([
+            dc_sign: Aligned(cdf2d([
                 [[16000], [13056], [18816]],
                 [[15232], [12928], [17280]],
             ])),
         },
         CdfCoefContext {
-            eob_bin_16: Align16(cdf2d([
+            eob_bin_16: Aligned(cdf2d([
                 [[4016, 4897, 8881, 14968], [716, 1105, 2646, 10056]],
                 [[11139, 13270, 18241, 23566], [3192, 5032, 10297, 19755]],
             ])),
-            eob_bin_32: Align16(cdf2d([
+            eob_bin_32: Aligned(cdf2d([
                 [
                     [2515, 3003, 4452, 8162, 16041],
                     [574, 821, 1836, 5089, 13128],
@@ -2202,7 +2224,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [3542, 5502, 10415, 16760, 25644],
                 ],
             ])),
-            eob_bin_64: Align16(cdf2d([
+            eob_bin_64: Aligned(cdf2d([
                 [
                     [2374, 2772, 4583, 7276, 12288, 19706],
                     [497, 810, 1315, 3000, 7004, 15641],
@@ -2212,7 +2234,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [4034, 6290, 10235, 14982, 21214, 28491],
                 ],
             ])),
-            eob_bin_128: Align16(cdf2d([
+            eob_bin_128: Aligned(cdf2d([
                 [
                     [1366, 1738, 2527, 5016, 9355, 15797, 24643],
                     [354, 558, 944, 2760, 7287, 14037, 21779],
@@ -2222,7 +2244,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [6275, 9889, 14769, 23164, 27988, 30493, 32272],
                 ],
             ])),
-            eob_bin_256: Align32(cdf2d([
+            eob_bin_256: Aligned(cdf2d([
                 [
                     [3089, 3920, 6038, 9460, 14266, 19881, 25766, 29176],
                     [1084, 2358, 3488, 5122, 11483, 18103, 26023, 29799],
@@ -2232,13 +2254,13 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [6571, 9610, 15516, 21826, 29092, 30829, 31842, 32708],
                 ],
             ])),
-            eob_bin_512: Align32(cdf1d([
+            eob_bin_512: Aligned(cdf1d([
                 [2624, 3936, 6480, 9686, 13979, 17726, 23267, 28410, 31078],
                 [
                     12015, 14769, 19588, 22052, 24222, 25812, 27300, 29219, 32114,
                 ],
             ])),
-            eob_bin_1024: Align32(cdf1d([
+            eob_bin_1024: Aligned(cdf1d([
                 [
                     2784, 3831, 7041, 10521, 14847, 18844, 23155, 26682, 29229, 31045,
                 ],
@@ -2246,7 +2268,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     9577, 12466, 17739, 20750, 22061, 23215, 24601, 25483, 25843, 32056,
                 ],
             ])),
-            eob_base_tok: Align8(cdf3d([
+            eob_base_tok: Aligned(cdf3d([
                 [
                     [
                         [20092, 30774],
@@ -2313,7 +2335,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            base_tok: Align8(cdf3d([
+            base_tok: Aligned(cdf3d([
                 [
                     [
                         [8896, 16227, 20630],
@@ -2755,7 +2777,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            br_tok: Align8(cdf3d([
+            br_tok: Aligned(cdf3d([
                 [
                     [
                         [16138, 22223, 25509],
@@ -2949,7 +2971,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            eob_hi_bit: Align4(cdf3d([
+            eob_hi_bit: Aligned(cdf3d([
                 [
                     [
                         [16384],
@@ -3091,7 +3113,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            skip: Align4(cdf2d([
+            skip: Aligned(cdf2d([
                 [
                     [29614],
                     [9068],
@@ -3168,17 +3190,17 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [16384],
                 ],
             ])),
-            dc_sign: Align4(cdf2d([
+            dc_sign: Aligned(cdf2d([
                 [[16000], [13056], [18816]],
                 [[15232], [12928], [17280]],
             ])),
         },
         CdfCoefContext {
-            eob_bin_16: Align16(cdf2d([
+            eob_bin_16: Aligned(cdf2d([
                 [[6708, 8958, 14746, 22133], [1222, 2074, 4783, 15410]],
                 [[19575, 21766, 26044, 29709], [7297, 10767, 19273, 28194]],
             ])),
-            eob_bin_32: Align16(cdf2d([
+            eob_bin_32: Aligned(cdf2d([
                 [
                     [4617, 5709, 8446, 13584, 23135],
                     [1156, 1702, 3675, 9274, 20539],
@@ -3188,7 +3210,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [7699, 10897, 20891, 26926, 31628],
                 ],
             ])),
-            eob_bin_64: Align16(cdf2d([
+            eob_bin_64: Aligned(cdf2d([
                 [
                     [6307, 7541, 12060, 16358, 22553, 27865],
                     [1289, 2320, 3971, 7926, 14153, 24291],
@@ -3198,7 +3220,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [8726, 12378, 19409, 26450, 30038, 32462],
                 ],
             ])),
-            eob_bin_128: Align16(cdf2d([
+            eob_bin_128: Aligned(cdf2d([
                 [
                     [3472, 4885, 7489, 12481, 18517, 24536, 29635],
                     [886, 1731, 3271, 8469, 15569, 22126, 28383],
@@ -3208,7 +3230,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [9165, 13282, 21150, 30286, 31894, 32571, 32712],
                 ],
             ])),
-            eob_bin_256: Align32(cdf2d([
+            eob_bin_256: Aligned(cdf2d([
                 [
                     [5348, 7113, 11820, 15924, 22106, 26777, 30334, 31757],
                     [2453, 4474, 6307, 8777, 16474, 22975, 29000, 31547],
@@ -3218,13 +3240,13 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [9998, 17661, 25178, 28097, 31308, 32038, 32403, 32695],
                 ],
             ])),
-            eob_bin_512: Align32(cdf1d([
+            eob_bin_512: Aligned(cdf1d([
                 [5927, 7809, 10923, 14597, 19439, 24135, 28456, 31142, 32060],
                 [
                     21093, 23043, 25742, 27658, 29097, 29716, 30073, 30820, 31956,
                 ],
             ])),
-            eob_bin_1024: Align32(cdf1d([
+            eob_bin_1024: Aligned(cdf1d([
                 [
                     6698, 8334, 11961, 15762, 20186, 23862, 27434, 29326, 31082, 32050,
                 ],
@@ -3232,7 +3254,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     20569, 22426, 25569, 26859, 28053, 28913, 29486, 29724, 29807, 32570,
                 ],
             ])),
-            eob_base_tok: Align8(cdf3d([
+            eob_base_tok: Aligned(cdf3d([
                 [
                     [
                         [22497, 31198],
@@ -3304,7 +3326,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            base_tok: Align8(cdf3d([
+            base_tok: Aligned(cdf3d([
                 [
                     [
                         [7062, 16472, 22319],
@@ -3746,7 +3768,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            br_tok: Align8(cdf3d([
+            br_tok: Aligned(cdf3d([
                 [
                     [
                         [18315, 24289, 27551],
@@ -3940,7 +3962,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            eob_hi_bit: Align4(cdf3d([
+            eob_hi_bit: Aligned(cdf3d([
                 [
                     [
                         [16384],
@@ -4082,7 +4104,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     ],
                 ],
             ])),
-            skip: Align4(cdf2d([
+            skip: Aligned(cdf2d([
                 [
                     [26887],
                     [6729],
@@ -4159,14 +4181,14 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                     [16384],
                 ],
             ])),
-            dc_sign: Align4(cdf2d([
+            dc_sign: Aligned(cdf2d([
                 [[16000], [13056], [18816]],
                 [[15232], [12928], [17280]],
             ])),
         },
     ],
     m: CdfModeContext {
-        uv_mode: Align32([
+        uv_mode: Aligned([
             cdf1d([
                 [
                     22631, 24152, 25378, 25661, 25986, 26520, 27055, 27923, 28244, 30059, 30941,
@@ -4274,7 +4296,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 ],
             ]),
         ]),
-        partition: Align32([
+        partition: Aligned([
             cdf1d([
                 [27899, 28219, 28529, 32484, 32539, 32619, 32639],
                 [6607, 6990, 8268, 32060, 32219, 32338, 32371],
@@ -4312,7 +4334,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 [9896, 18783, 25853],
             ]),
         ]),
-        cfl_alpha: Align32(cdf1d([
+        cfl_alpha: Aligned(cdf1d([
             [
                 7637, 20719, 31401, 32481, 32657, 32688, 32692, 32696, 32700, 32704, 32708, 32712,
                 32716, 32720, 32724,
@@ -4338,7 +4360,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 32622, 32656, 32660,
             ],
         ])),
-        txtp_inter1: Align32(cdf1d([
+        txtp_inter1: Aligned(cdf1d([
             [
                 4458, 5560, 7695, 9709, 13330, 14789, 17537, 20266, 21504, 22848, 23934, 25474,
                 27727, 28915, 30631,
@@ -4348,10 +4370,10 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 27116, 28856, 30749,
             ],
         ])),
-        txtp_inter2: Align32(cdf0d([
+        txtp_inter2: Aligned(cdf0d([
             770, 2421, 5225, 12907, 15819, 18927, 21561, 24089, 26595, 28526, 30529,
         ])),
-        txtp_intra1: Align16(cdf2d([
+        txtp_intra1: Aligned(cdf2d([
             [
                 [1535, 8035, 9461, 12751, 23467, 27825],
                 [564, 3335, 9709, 10870, 18143, 28094],
@@ -4383,7 +4405,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 [3511, 6332, 11165, 15335, 19323, 23594],
             ],
         ])),
-        txtp_intra2: Align16(cdf2d([
+        txtp_intra2: Aligned(cdf2d([
             [
                 [6554, 13107, 19661, 26214],
                 [6554, 13107, 19661, 26214],
@@ -4430,8 +4452,8 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 [1968, 5556, 12023, 18547],
             ],
         ])),
-        cfl_sign: Align16(cdf0d([1418, 2123, 13340, 18405, 26972, 28343, 32294])),
-        angle_delta: Align16(cdf1d([
+        cfl_sign: Aligned(cdf0d([1418, 2123, 13340, 18405, 26972, 28343, 32294])),
+        angle_delta: Aligned(cdf1d([
             [2180, 5032, 7567, 22776, 26989, 30217],
             [2301, 5608, 8801, 23487, 26974, 30330],
             [3780, 11018, 13699, 19354, 23083, 31286],
@@ -4441,13 +4463,13 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
             [2240, 11096, 15453, 20341, 22561, 28917],
             [3605, 10428, 12459, 17676, 21244, 30655],
         ])),
-        filter_intra: Align16(cdf0d([8949, 12776, 17211, 29558])),
-        seg_id: Align16(cdf1d([
+        filter_intra: Aligned(cdf0d([8949, 12776, 17211, 29558])),
+        seg_id: Aligned(cdf1d([
             [5622, 7893, 16093, 18233, 27809, 28373, 32533],
             [14274, 18230, 22557, 24935, 29980, 30851, 32344],
             [27527, 28487, 28723, 28890, 32397, 32647, 32679],
         ])),
-        pal_sz: Align16(cdf2d([
+        pal_sz: Aligned(cdf2d([
             [
                 [7952, 13000, 18149, 21478, 25527, 29241],
                 [7139, 11421, 16195, 19544, 23666, 28073],
@@ -4467,7 +4489,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 [1269, 5435, 10433, 18963, 21700, 25865],
             ],
         ])),
-        color_map: Align16([
+        color_map: Aligned([
             [
                 cdf1d([[28710], [16384], [10553], [27036], [31603]]),
                 cdf1d([
@@ -4559,25 +4581,25 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 ]),
             ],
         ]),
-        txsz: Align8(cdf2d([
+        txsz: Aligned(cdf2d([
             [[19968, 0], [19968, 0], [24320, 0]],
             [[12272, 30172], [12272, 30172], [18677, 30848]],
             [[12986, 15180], [12986, 15180], [24302, 25602]],
             [[5782, 11475], [5782, 11475], [16803, 22759]],
         ])),
-        delta_q: Align8(cdf0d([28160, 32120, 32677])),
-        delta_lf: Align8(cdf1d([
+        delta_q: Aligned(cdf0d([28160, 32120, 32677])),
+        delta_lf: Aligned(cdf1d([
             [28160, 32120, 32677],
             [28160, 32120, 32677],
             [28160, 32120, 32677],
             [28160, 32120, 32677],
             [28160, 32120, 32677],
         ])),
-        restore_switchable: Align8(cdf0d([9413, 22581])),
-        restore_wiener: Align4(cdf0d([11570])),
-        restore_sgrproj: Align4(cdf0d([16855])),
-        txtp_inter3: Align4(cdf1d([[16384], [4167], [1998], [748]])),
-        use_filter_intra: Align4(cdf1d([
+        restore_switchable: Aligned(cdf0d([9413, 22581])),
+        restore_wiener: Aligned(cdf0d([11570])),
+        restore_sgrproj: Aligned(cdf0d([16855])),
+        txtp_inter3: Aligned(cdf1d([[16384], [4167], [1998], [748]])),
+        use_filter_intra: Aligned(cdf1d([
             [16384],
             [16384],
             [16384],
@@ -4601,7 +4623,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
             [6743],
             [4621],
         ])),
-        txpart: Align4(cdf2d([
+        txpart: Aligned(cdf2d([
             [[28581], [23846], [20847]],
             [[24315], [18196], [12133]],
             [[18791], [10887], [11005]],
@@ -4610,8 +4632,8 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
             [[28015], [21546], [14400]],
             [[28165], [22401], [16088]],
         ])),
-        skip: Align4(cdf1d([[31671], [16515], [4576]])),
-        pal_y: Align4(cdf2d([
+        skip: Aligned(cdf1d([[31671], [16515], [4576]])),
+        pal_y: Aligned(cdf2d([
             [[31676], [3419], [1261]],
             [[31912], [2859], [980]],
             [[31823], [3400], [781]],
@@ -4620,11 +4642,11 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
             [[32265], [4015], [1521]],
             [[32450], [7946], [129]],
         ])),
-        pal_uv: Align4(cdf1d([[32461], [21488]])),
-        intrabc: Align4(cdf0d([30531])),
+        pal_uv: Aligned(cdf1d([[32461], [21488]])),
+        intrabc: Aligned(cdf0d([30531])),
     },
     mi: CdfModeInterContext {
-        y_mode: Align32(cdf1d([
+        y_mode: Aligned(cdf1d([
             [
                 22801, 23489, 24293, 24756, 25601, 26123, 26606, 27418, 27945, 29228, 29685, 30349,
             ],
@@ -4638,7 +4660,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 20155, 21301, 22838, 23178, 23261, 23533, 23703, 24804, 25352, 26575, 27016, 28049,
             ],
         ])),
-        wedge_idx: Align32(cdf1d([
+        wedge_idx: Aligned(cdf1d([
             [
                 2438, 4440, 6599, 8663, 11005, 12874, 15751, 18094, 20359, 22362, 24127, 25702,
                 27752, 29450, 31171,
@@ -4676,7 +4698,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 30960, 31933,
             ],
         ])),
-        comp_inter_mode: Align16(cdf1d([
+        comp_inter_mode: Aligned(cdf1d([
             [7760, 13823, 15808, 17641, 19156, 20666, 26891],
             [10730, 19452, 21145, 22749, 24039, 25131, 28724],
             [10664, 20221, 21588, 22906, 24295, 25387, 28436],
@@ -4686,7 +4708,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
             [17125, 24273, 25814, 27492, 28214, 28704, 30592],
             [13046, 23214, 24505, 25942, 27435, 28442, 29330],
         ])),
-        filter: Align8(cdf2d([
+        filter: Aligned(cdf2d([
             [
                 [31935, 32720],
                 [5568, 32719],
@@ -4708,7 +4730,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 [14969, 21398],
             ],
         ])),
-        motion_mode: Align8(cdf1d([
+        motion_mode: Aligned(cdf1d([
             [32507, 32558],
             [30878, 31335],
             [28898, 30397],
@@ -4732,14 +4754,14 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
             [0; 2],
             [0; 2],
         ])),
-        interintra_mode: Align8(cdf1d([
+        interintra_mode: Aligned(cdf1d([
             [8192, 16384, 24576],
             [1875, 11082, 27332],
             [2473, 9996, 26388],
             [4238, 11537, 25926],
         ])),
-        interintra: Align4(cdf1d([[16384], [26887], [27597], [30237], [0], [0], [0]])),
-        interintra_wedge: Align4(cdf1d([
+        interintra: Aligned(cdf1d([[16384], [26887], [27597], [30237], [0], [0], [0]])),
+        interintra_wedge: Aligned(cdf1d([
             [20036],
             [24957],
             [26704],
@@ -4748,9 +4770,9 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
             [29444],
             [26872],
         ])),
-        newmv_mode: Align4(cdf1d([[24035], [16630], [15339], [8386], [12222], [4676]])),
-        globalmv_mode: Align4(cdf1d([[2175], [1054]])),
-        refmv_mode: Align4(cdf1d([
+        newmv_mode: Aligned(cdf1d([[24035], [16630], [15339], [8386], [12222], [4676]])),
+        globalmv_mode: Aligned(cdf1d([[2175], [1054]])),
+        refmv_mode: Aligned(cdf1d([
             [23974],
             [24188],
             [17848],
@@ -4758,12 +4780,12 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
             [24312],
             [19923],
         ])),
-        drl_bit: Align4(cdf1d([[13104], [24560], [18945]])),
-        intra: Align4(cdf1d([[806], [16662], [20186], [26538]])),
-        comp: Align4(cdf1d([[26828], [24035], [12031], [10640], [2901]])),
-        comp_dir: Align4(cdf1d([[1198], [2070], [9166], [7499], [22475]])),
-        jnt_comp: Align4(cdf1d([[18244], [12865], [7053], [13259], [9334], [4644]])),
-        mask_comp: Align4(cdf1d([
+        drl_bit: Aligned(cdf1d([[13104], [24560], [18945]])),
+        intra: Aligned(cdf1d([[806], [16662], [20186], [26538]])),
+        comp: Aligned(cdf1d([[26828], [24035], [12031], [10640], [2901]])),
+        comp_dir: Aligned(cdf1d([[1198], [2070], [9166], [7499], [22475]])),
+        jnt_comp: Aligned(cdf1d([[18244], [12865], [7053], [13259], [9334], [4644]])),
+        mask_comp: Aligned(cdf1d([
             [26607],
             [22891],
             [18840],
@@ -4771,7 +4793,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
             [19934],
             [22674],
         ])),
-        wedge_comp: Align4(cdf1d([
+        wedge_comp: Aligned(cdf1d([
             [23431],
             [13171],
             [11470],
@@ -4782,7 +4804,7 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
             [11820],
             [7701],
         ])),
-        r#ref: Align4(cdf2d([
+        r#ref: Aligned(cdf2d([
             [[4897], [16973], [29744]],
             [[1555], [16751], [30279]],
             [[4236], [19647], [31194]],
@@ -4790,23 +4812,23 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
             [[904], [11014], [26875]],
             [[1444], [15087], [30304]],
         ])),
-        comp_fwd_ref: Align4(cdf2d([
+        comp_fwd_ref: Aligned(cdf2d([
             [[4946], [19891], [30731]],
             [[9468], [22441], [31059]],
             [[1503], [15160], [27544]],
         ])),
-        comp_bwd_ref: Align4(cdf2d([
+        comp_bwd_ref: Aligned(cdf2d([
             [[2235], [17182], [30606]],
             [[1423], [15175], [30489]],
         ])),
-        comp_uni_ref: Align4(cdf2d([
+        comp_uni_ref: Aligned(cdf2d([
             [[5284], [23152], [31774]],
             [[3865], [14173], [25120]],
             [[3128], [15270], [26710]],
         ])),
-        skip_mode: Align4(cdf1d([[32621], [20708], [8127]])),
-        seg_pred: Align4(cdf1d([[16384], [16384], [16384]])),
-        obmc: Align4(cdf1d([
+        skip_mode: Aligned(cdf1d([[32621], [20708], [8127]])),
+        seg_pred: Aligned(cdf1d([[16384], [16384], [16384]])),
+        obmc: Aligned(cdf1d([
             [32638],
             [31560],
             [31014],
@@ -4833,15 +4855,15 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
     },
     mv: CdfDefaultMvContext {
         comp: CdfMvComponent {
-            classes: Align32(cdf0d([
+            classes: Aligned(cdf0d([
                 28672, 30976, 31858, 32320, 32551, 32656, 32740, 32757, 32762, 32767,
             ])),
-            class_0_fp: Align8(cdf1d([[16384, 24576, 26624], [12288, 21248, 24128]])),
-            class_n_fp: Align8(cdf0d([8192, 17408, 21248])),
-            class_0_hp: Align4(cdf0d([20480])),
-            class_n_hp: Align4(cdf0d([16384])),
-            class_0: Align4(cdf0d([27648])),
-            class_n: Align4(cdf1d([
+            class_0_fp: Aligned(cdf1d([[16384, 24576, 26624], [12288, 21248, 24128]])),
+            class_n_fp: Aligned(cdf0d([8192, 17408, 21248])),
+            class_0_hp: Aligned(cdf0d([20480])),
+            class_n_hp: Aligned(cdf0d([16384])),
+            class_0: Aligned(cdf0d([27648])),
+            class_n: Aligned(cdf1d([
                 [17408],
                 [17920],
                 [18944],
@@ -4853,11 +4875,11 @@ static default_cdf: CdfDefaultContext = CdfDefaultContext {
                 [29952],
                 [30720],
             ])),
-            sign: Align4(cdf0d([16384])),
+            sign: Aligned(cdf0d([16384])),
         },
-        joint: Align8(cdf0d([4096, 11264, 19328])),
+        joint: Aligned(cdf0d([4096, 11264, 19328])),
     },
-    kfym: Align32(cdf2d([
+    kfym: Aligned(cdf2d([
         [
             [
                 15588, 17027, 19338, 20218, 20682, 21110, 21825, 23244, 24189, 28165, 29093, 30466,
@@ -5010,12 +5032,12 @@ pub(crate) fn rav1d_cdf_thread_update(
     }
     update_cdf_2d!(6, 15, m.cfl_alpha);
     update_cdf_2d!(2, 15, m.txtp_inter1);
-    update_cdf_1d!(11, m.txtp_inter2.0);
+    update_cdf_1d!(11, m.txtp_inter2);
     update_cdf_3d!(2, N_INTRA_PRED_MODES, 6, m.txtp_intra1);
     update_cdf_3d!(3, N_INTRA_PRED_MODES, 4, m.txtp_intra2);
-    update_cdf_1d!(7, m.cfl_sign.0);
+    update_cdf_1d!(7, m.cfl_sign);
     update_cdf_2d!(8, 6, m.angle_delta);
-    update_cdf_1d!(4, m.filter_intra.0);
+    update_cdf_1d!(4, m.filter_intra);
     update_cdf_2d!(3, SegmentId::COUNT - 1, m.seg_id);
     update_cdf_3d!(2, 7, 6, m.pal_sz);
     for l in 0..2 {
@@ -5026,9 +5048,9 @@ pub(crate) fn rav1d_cdf_thread_update(
     for k in 0..TxfmSize::NUM_SQUARE - 1 {
         update_cdf_2d!(3, cmp::min(k + 1, 2), m.txsz[k]);
     }
-    update_cdf_1d!(3, m.delta_q.0);
+    update_cdf_1d!(3, m.delta_q);
     update_cdf_2d!(5, 3, m.delta_lf);
-    update_cdf_1d!(2, m.restore_switchable.0);
+    update_cdf_1d!(2, m.restore_switchable);
     update_cdf_1d!(1, m.restore_wiener);
     update_cdf_1d!(1, m.restore_sgrproj);
     update_cdf_2d!(4, 1, m.txtp_inter3);
@@ -5077,16 +5099,16 @@ pub(crate) fn rav1d_cdf_thread_update(
     update_cdf_2d!(BlockSize::COUNT, 1, mi.obmc);
 
     for k in 0..2 {
-        update_cdf_1d!(10, mv.comp[k].classes.0);
+        update_cdf_1d!(10, mv.comp[k].classes);
         update_cdf_1d!(1, mv.comp[k].sign);
         update_cdf_1d!(1, mv.comp[k].class_0);
         update_cdf_2d!(2, 3, mv.comp[k].class_0_fp);
         update_cdf_1d!(1, mv.comp[k].class_0_hp);
         update_cdf_2d!(10, 1, mv.comp[k].class_n);
-        update_cdf_1d!(3, mv.comp[k].class_n_fp.0);
+        update_cdf_1d!(3, mv.comp[k].class_n_fp);
         update_cdf_1d!(1, mv.comp[k].class_n_hp);
     }
-    update_cdf_1d!(MVJoint::all().bits() as usize, mv.joint.0);
+    update_cdf_1d!(MVJoint::all().bits() as usize, mv.joint);
 }
 
 pub fn rav1d_cdf_thread_init_static(qidx: u8) -> CdfThreadContext {

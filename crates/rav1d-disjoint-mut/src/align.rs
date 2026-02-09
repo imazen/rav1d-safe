@@ -1,35 +1,21 @@
 //! Aligned newtypes and aligned Vec for SIMD-friendly data layout.
 //!
-//! Provides `Align{1,2,4,8,16,32,64}<T>` newtype wrappers that enforce
-//! alignment via `#[repr(C, align(N))]`, and `AlignedVec<T, C>` for heap-allocated
-//! aligned buffers. All types integrate with `DisjointMut` via `ExternalAsMutPtr`
-//! and `Resizable`.
+//! Thin wrappers around [`aligned::Aligned`] and [`aligned_vec::AVec`] that
+//! integrate with [`DisjointMut`](crate::DisjointMut) via [`ExternalAsMutPtr`]
+//! and [`Resizable`].
+//!
+//! The wrapper types preserve the same public API as the previous custom
+//! implementations: `Align{4,8,16,32,64}<T>` for stack alignment and
+//! `AlignedVec{32,64}<T>` for heap-allocated aligned buffers.
 
 use crate::ExternalAsMutPtr;
 use crate::Resizable;
-use alloc::vec::Vec;
-use core::hint::unreachable_unchecked;
-use core::marker::PhantomData;
-use core::mem;
-use core::mem::MaybeUninit;
-use core::ops::Deref;
-use core::ops::DerefMut;
-use core::ops::Index;
-use core::ops::IndexMut;
-use core::slice;
+use aligned_vec::{AVec, ConstAlign};
+use core::ops::{Deref, DerefMut};
 
-/// A stable version of [`core::intrinsics::assume`].
-///
-/// # Safety
-///
-/// `condition` must always be `true`.
-#[inline(always)]
-unsafe fn assume(condition: bool) {
-    if !condition {
-        // SAFETY: `condition` is `true` by the `# Safety` preconditions.
-        unsafe { unreachable_unchecked() };
-    }
-}
+// =============================================================================
+// ArrayDefault — workaround for Default not covering [T; N>32]
+// =============================================================================
 
 /// [`Default`] isn't `impl`emented for all arrays `[T; N]`
 /// because they were implemented before `const` generics
@@ -60,71 +46,57 @@ macro_rules! impl_ArrayDefault {
     };
 }
 
-// We want this to be implemented for all `T: Default` where `T` is not `[_; _]`,
-// but we can't do that, so we can just add individual
-// `impl`s here for types we need it for.
 impl_ArrayDefault!(u8);
 impl_ArrayDefault!(i8);
 impl_ArrayDefault!(i16);
 impl_ArrayDefault!(i32);
 impl_ArrayDefault!(u16);
 
-pub trait AlignedByteChunk
-where
-    Self: Sized,
-{
+// =============================================================================
+// Align wrappers — use aligned::Aligned for the actual alignment guarantee
+// =============================================================================
+
+/// Re-export so downstream can refer to `aligned::Aligned` if needed.
+pub use aligned::Aligned;
+
+/// Const-compatible accessor for the inner value of an [`Aligned`] wrapper.
+///
+/// [`Aligned`] is `#[repr(C)]` with layout `{ _alignment: [A; 0], value: T }`.
+/// Since `[A; 0]` is zero-sized, the pointer to the struct equals the pointer
+/// to `value`. This function uses `transmute` to access the inner `T` in
+/// `const` contexts where `Deref` is not available.
+///
+/// # Safety
+///
+/// This relies on the documented `#[repr(C)]` layout of [`aligned::Aligned`].
+/// The `[A; 0]` field has zero size and the same alignment as `A`, so
+/// `&Aligned<A, T>` and `&T` share the same address.
+pub const fn aligned_inner<A, T: ?Sized>(aligned: &Aligned<A, T>) -> &T {
+    // SAFETY: Aligned<A, T> is repr(C) with [A; 0] (ZST) followed by T.
+    // The address of the struct is the address of T.
+    unsafe { &*(aligned as *const Aligned<A, T> as *const T) }
 }
 
 macro_rules! def_align {
-    ($align:literal, $name:ident) => {
-        #[derive(Clone, Copy)]
-        #[repr(C, align($align))]
-        pub struct $name<T>(pub T);
+    ($align:literal, $align_ty:ident, $name:ident) => {
+        /// Aligned newtype wrapper. Enforces at least
+        #[doc = concat!(stringify!($align), "-byte")]
+        /// alignment.
+        ///
+        /// This is a type alias for [`aligned::Aligned`] with the corresponding
+        /// alignment marker.
+        pub type $name<T> = aligned::Aligned<aligned::$align_ty, T>;
 
-        impl<T> From<T> for $name<T> {
-            fn from(from: T) -> Self {
-                Self(from)
-            }
-        }
-
-        impl<T: Index<usize>> Index<usize> for $name<T> {
-            type Output = T::Output;
-
-            fn index(&self, index: usize) -> &Self::Output {
-                &self.0[index]
-            }
-        }
-
-        impl<T: IndexMut<usize>> IndexMut<usize> for $name<T> {
-            fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-                &mut self.0[index]
-            }
-        }
-
-        impl<T: ArrayDefault> ArrayDefault for $name<T> {
-            fn default() -> Self {
-                Self(T::default())
-            }
-        }
-
-        impl<T: ArrayDefault> Default for $name<T> {
-            fn default() -> Self {
-                <Self as ArrayDefault>::default()
-            }
-        }
-
-        impl AlignedByteChunk for $name<[u8; $align]> {}
-
-        /// SAFETY: We never materialize a `&mut [V]` since we do a direct cast.
-        unsafe impl<V: Copy, const N: usize> ExternalAsMutPtr for $name<[V; N]> {
+        /// SAFETY: `Aligned<$align_ty, [V; N]>` is `#[repr(C)]` with alignment `$align_ty`.
+        /// A pointer to the struct has the same address as the first element of the
+        /// inner `[V; N]`, so `ptr.cast::<V>()` is valid.
+        /// We never create any references — just a direct pointer cast.
+        unsafe impl<V: Copy, const N: usize> ExternalAsMutPtr
+            for aligned::Aligned<aligned::$align_ty, [V; N]>
+        {
             type Target = V;
 
             unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut V {
-                // SAFETY: `ptr` is safe to deref and thus is aligned.
-                unsafe { assume(ptr.is_aligned()) }
-
-                // SAFETY: `$name` (`Align*`) is a `#[repr(C)]` aligned wrapper around `[V; N]`,
-                // so a `*mut Self` is the same as a `*mut V` to the first `V`.
                 ptr.cast()
             }
 
@@ -135,207 +107,301 @@ macro_rules! def_align {
     };
 }
 
-def_align!(1, Align1);
-def_align!(2, Align2);
-def_align!(4, Align4);
-def_align!(8, Align8);
-def_align!(16, Align16);
-def_align!(32, Align32);
-def_align!(64, Align64);
+def_align!(4, A4, Align4);
+def_align!(8, A8, Align8);
+def_align!(16, A16, Align16);
+def_align!(32, A32, Align32);
+def_align!(64, A64, Align64);
 
-/// A [`Vec`] that uses [`mem::size_of`]`::<C>()` aligned allocations.
+// ArrayDefault for Aligned — allows Default to work for arrays with N > 32.
+impl<A, T: ArrayDefault> ArrayDefault for aligned::Aligned<A, T> {
+    fn default() -> Self {
+        aligned::Aligned(T::default())
+    }
+}
+
+// =============================================================================
+// AlignedVec wrappers — thin newtypes around aligned_vec::AVec
+// =============================================================================
+
+/// A heap-allocated, 64-byte-aligned buffer.
 ///
-/// Only works with [`Copy`] types so that we don't have to handle drop logic.
-pub struct AlignedVec<T: Copy, C: AlignedByteChunk> {
-    inner: Vec<MaybeUninit<C>>,
+/// Wraps [`AVec<T, ConstAlign<64>>`] with a [`Default`] impl and
+/// [`ExternalAsMutPtr`] integration for [`DisjointMut`](crate::DisjointMut).
+pub struct AlignedVec64<T>(AVec<T, ConstAlign<64>>);
 
-    /// The number of `T`s in [`Self::inner`] currently initialized.
-    len: usize,
-    _phantom: PhantomData<T>,
-}
-
-impl<T: Copy, C: AlignedByteChunk> AlignedVec<T, C> {
-    /// Must check in all constructors.
-    const fn check_byte_chunk_type_is_aligned() {
-        assert!(mem::size_of::<C>() == mem::align_of::<C>());
+impl<T> AlignedVec64<T> {
+    /// Create a new empty aligned vector.
+    pub fn new() -> Self {
+        Self(AVec::new(64))
     }
 
-    const fn check_inner_type_is_aligned() {
-        assert!(mem::align_of::<T>() <= mem::align_of::<C>());
-    }
-
-    pub const fn new() -> Self {
-        Self::check_byte_chunk_type_is_aligned();
-        Self::check_inner_type_is_aligned();
-
-        Self {
-            inner: Vec::new(),
-            len: 0,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Return the number of elements in the vector.
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub fn as_ptr(&self) -> *const T {
-        self.inner.as_ptr().cast()
-    }
-
-    pub fn as_mut_ptr(&mut self) -> *mut T {
-        self.inner.as_mut_ptr().cast()
-    }
-
-    /// Extract a slice containing the entire vector.
-    pub fn as_slice(&self) -> &[T] {
-        // SAFETY: The first `len` elements have been
-        // initialized to `T`s in `Self::resize`.
-        // SAFETY: The pointer is sufficiently aligned,
-        // as the chunks are always over-aligned with
-        // respect to `T`.
-        unsafe { slice::from_raw_parts(self.as_ptr(), self.len) }
-    }
-
-    /// Extract a mutable slice of the entire vector.
-    pub fn as_mut_slice(&mut self) -> &mut [T] {
-        // SAFETY: The first `len` elements have been
-        // initialized to `T`s in `Self::resize`.
-        // SAFETY: The pointer is sufficiently aligned,
-        // as the chunks are always over-aligned with
-        // respect to `T`.
-        unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), self.len) }
-    }
-
-    pub fn resize(&mut self, new_len: usize, value: T) {
-        let old_len = self.len();
-
-        // Resize the underlying vector to have enough chunks for the new length.
-        // The `new_bytes` calculation must not overflow,
-        // ensuring a mathematical match with the underlying `inner` buffer size.
-        // NOTE: one can still pass ludicrous requested buffer lengths, just not unsound ones.
-        let new_bytes = mem::size_of::<T>()
-            .checked_mul(new_len)
-            .expect("Resizing would overflow the underlying aligned buffer");
-
-        let chunk_size = mem::size_of::<C>();
-        let new_chunks = if (new_bytes % chunk_size) == 0 {
-            new_bytes / chunk_size
-        } else {
-            // NOTE: can not overflow. This case only occurs on `chunk_size >= 2`.
-            (new_bytes / chunk_size) + 1
-        };
-
-        // NOTE: We don't need to `drop` any elements if the `Vec` is truncated since `T: Copy`.
-        self.inner.resize_with(new_chunks, MaybeUninit::uninit);
-
-        // If we grew the vector, initialize the new elements past `len`.
-        for offset in old_len..new_len {
-            // SAFETY: We've allocated enough space to write
-            // up to `new_len` elements into the buffer.
-            // SAFETY: The pointer is sufficiently aligned,
-            // as the chunks are always over-aligned with
-            // respect to `T`.
-            unsafe { self.as_mut_ptr().add(offset).write(value) };
-        }
-
-        self.len = new_len;
+    /// Resize the buffer, filling new elements with `value`.
+    pub fn resize(&mut self, new_len: usize, value: T)
+    where
+        T: Clone,
+    {
+        self.0.resize(new_len, value);
     }
 }
 
-impl<T: Copy, C: AlignedByteChunk> AsRef<[T]> for AlignedVec<T, C> {
-    fn as_ref(&self) -> &[T] {
-        self.as_slice()
-    }
-}
-
-impl<T: Copy, C: AlignedByteChunk> AsMut<[T]> for AlignedVec<T, C> {
-    fn as_mut(&mut self) -> &mut [T] {
-        self.as_mut_slice()
-    }
-}
-
-impl<T: Copy, C: AlignedByteChunk> Deref for AlignedVec<T, C> {
-    type Target = [T];
-
-    fn deref(&self) -> &Self::Target {
-        self.as_slice()
-    }
-}
-
-impl<T: Copy, C: AlignedByteChunk> DerefMut for AlignedVec<T, C> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.as_mut_slice()
-    }
-}
-
-// NOTE: Custom impl so that we don't require `T: Default`.
-impl<T: Copy, C: AlignedByteChunk> Default for AlignedVec<T, C> {
+impl<T> Default for AlignedVec64<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub type AlignedVec32<T> = AlignedVec<T, Align32<[u8; 32]>>;
-pub type AlignedVec64<T> = AlignedVec<T, Align64<[u8; 64]>>;
-
-/// Implement Resizable so that `DisjointMut<AlignedVec<V, C>>` gains `.resize()`.
-impl<V: Copy, C: AlignedByteChunk> Resizable for AlignedVec<V, C> {
-    type Value = V;
-    fn resize(&mut self, new_len: usize, value: V) {
-        AlignedVec::resize(self, new_len, value)
+impl<T> Deref for AlignedVec64<T> {
+    type Target = [T];
+    #[inline(always)]
+    fn deref(&self) -> &[T] {
+        self.0.as_slice()
     }
 }
 
-/// SAFETY: We only create `&AlignedVec` (SharedReadOnly), never `&mut AlignedVec`.
-/// Creating `&mut AlignedVec` would produce a Unique retag (Stacked Borrows) covering
-/// the inner Vec struct, invalidating concurrent `&AlignedVec` reads from other threads.
-/// Instead, we read the data pointer through `as_ptr().cast_mut()` and the length
-/// through `self.len()`, both of which only require shared references.
-unsafe impl<T: Copy, C: AlignedByteChunk> ExternalAsMutPtr for AlignedVec<T, C> {
+impl<T> DerefMut for AlignedVec64<T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut [T] {
+        self.0.as_mut_slice()
+    }
+}
+
+impl<T> AsRef<[T]> for AlignedVec64<T> {
+    fn as_ref(&self) -> &[T] {
+        self.0.as_slice()
+    }
+}
+
+impl<T> AsMut<[T]> for AlignedVec64<T> {
+    fn as_mut(&mut self) -> &mut [T] {
+        self.0.as_mut_slice()
+    }
+}
+
+impl<T: Clone> Resizable for AlignedVec64<T> {
+    type Value = T;
+    fn resize(&mut self, new_len: usize, value: T) {
+        self.0.resize(new_len, value);
+    }
+}
+
+/// SAFETY: We only create `&AVec` (SharedReadOnly), never `&mut AVec`.
+/// `as_ptr()` takes `&self` and returns `*const T`, which we cast to `*mut T`.
+/// This avoids the Stacked Borrows hazard of creating `&mut AVec` through
+/// `as_mut_ptr(&mut self)`, which would issue a Unique retag over the heap data.
+unsafe impl<T: Copy> ExternalAsMutPtr for AlignedVec64<T> {
     type Target = T;
 
-    unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
-        // SAFETY: Only creates &AlignedVec (SharedReadOnly), not &mut AlignedVec.
-        // as_ptr() reads the inner Vec's pointer through a shared reference,
-        // which doesn't conflict with concurrent shared borrows from other threads.
-        let aligned_ref = unsafe { &*ptr };
-        let ptr = aligned_ref.as_ptr().cast_mut();
-
-        // SAFETY: `AlignedVec` stores `C`s internally,
-        // so `*mut T` is really `*mut C`.
-        // Since it's stored in a `Vec`, it's aligned.
-        unsafe { assume(ptr.cast::<C>().is_aligned()) };
-
-        ptr
+    unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut T {
+        // SAFETY: Only creates &Self (SharedReadOnly).
+        let shared_ref = unsafe { &*ptr };
+        shared_ref.0.as_ptr().cast_mut()
     }
 
     fn len(&self) -> usize {
-        self.len()
+        self.0.len()
     }
 }
 
-#[test]
-#[should_panic]
-fn align_vec_fails() {
-    let mut v = AlignedVec::<u16, Align8<[u8; 8]>>::new();
-    // This resize must fail. Otherwise, the code below creates a very small actual allocation, and
-    // consequently a slice reference that points to memory outside the buffer.
-    v.resize(isize::MAX as usize + 2, 0u16);
-    // Note that in Rust, no single allocation can exceed `isize::MAX` _bytes_. Meaning it is
-    // impossible to soundly create a slice of `u16` with `isize::MAX` elements. If we got to this
-    // point, everything is broken already. The indexing will the probably also wrap and appear to
-    // work.
-    assert_eq!(v.as_slice()[isize::MAX as usize], 0);
+/// A heap-allocated, 32-byte-aligned buffer.
+///
+/// Wraps [`AVec<T, ConstAlign<32>>`] with a [`Default`] impl and
+/// [`ExternalAsMutPtr`] integration for [`DisjointMut`](crate::DisjointMut).
+pub struct AlignedVec32<T>(AVec<T, ConstAlign<32>>);
+
+impl<T> AlignedVec32<T> {
+    /// Create a new empty aligned vector.
+    pub fn new() -> Self {
+        Self(AVec::new(32))
+    }
+
+    /// Resize the buffer, filling new elements with `value`.
+    pub fn resize(&mut self, new_len: usize, value: T)
+    where
+        T: Clone,
+    {
+        self.0.resize(new_len, value);
+    }
 }
 
-#[test]
-#[should_panic]
-fn under_aligned_storage_fails() {
-    let mut v = AlignedVec::<u128, Align1<[u8; 1]>>::new();
+impl<T> Default for AlignedVec32<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-    // Would be UB: unaligned write of type u128 to pointer aligned to 1 (or 8 in most allocators,
-    // but statically we only ensure an alignment of 1).
-    v.resize(1, 0u128);
+impl<T> Deref for AlignedVec32<T> {
+    type Target = [T];
+    #[inline(always)]
+    fn deref(&self) -> &[T] {
+        self.0.as_slice()
+    }
+}
+
+impl<T> DerefMut for AlignedVec32<T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut [T] {
+        self.0.as_mut_slice()
+    }
+}
+
+impl<T> AsRef<[T]> for AlignedVec32<T> {
+    fn as_ref(&self) -> &[T] {
+        self.0.as_slice()
+    }
+}
+
+impl<T> AsMut<[T]> for AlignedVec32<T> {
+    fn as_mut(&mut self) -> &mut [T] {
+        self.0.as_mut_slice()
+    }
+}
+
+impl<T: Clone> Resizable for AlignedVec32<T> {
+    type Value = T;
+    fn resize(&mut self, new_len: usize, value: T) {
+        self.0.resize(new_len, value);
+    }
+}
+
+/// SAFETY: See [`AlignedVec64`]'s impl for rationale.
+unsafe impl<T: Copy> ExternalAsMutPtr for AlignedVec32<T> {
+    type Target = T;
+
+    unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut T {
+        let shared_ref = unsafe { &*ptr };
+        shared_ref.0.as_ptr().cast_mut()
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::DisjointMut;
+
+    #[test]
+    fn align_type_alias_layout() {
+        assert_eq!(core::mem::align_of::<Align4<[u8; 3]>>(), 4);
+        assert_eq!(core::mem::align_of::<Align8<[u8; 3]>>(), 8);
+        assert_eq!(core::mem::align_of::<Align16<[u8; 3]>>(), 16);
+        assert_eq!(core::mem::align_of::<Align32<[u8; 3]>>(), 32);
+        assert_eq!(core::mem::align_of::<Align64<[u8; 3]>>(), 64);
+    }
+
+    #[test]
+    fn align_constructor_and_deref() {
+        use aligned::Aligned;
+
+        let x: Align16<[u16; 4]> = Aligned([1u16, 2, 3, 4]);
+        assert_eq!(x[2], 3);
+
+        let mut y: Align32<[u8; 8]> = Aligned([0u8; 8]);
+        y[5] = 42;
+        assert_eq!(y[5], 42);
+    }
+
+    #[test]
+    fn align_copy() {
+        use aligned::Aligned;
+
+        let x: Align16<[u8; 3]> = Aligned([1u8, 2, 3]);
+        let y = x;
+        let _ = x; // still valid (Copy)
+        assert_eq!(y[0], 1);
+    }
+
+    #[test]
+    fn align_array_default() {
+        // Small array (N <= 32) — uses standard Default
+        let x: Align16<[u16; 4]> = ArrayDefault::default();
+        assert_eq!(x[0], 0);
+
+        // Large array (N > 32) — uses ArrayDefault
+        let y: Align8<[[u16; 4]; 41]> = ArrayDefault::default();
+        assert_eq!(y[40][3], 0);
+    }
+
+    #[test]
+    fn align_in_repr_c_struct() {
+        use aligned::Aligned;
+
+        #[repr(C)]
+        struct Foo {
+            a: Align4<[u16; 2]>,
+            b: Align16<[u8; 32]>,
+        }
+
+        let f = Foo {
+            a: Aligned([100u16, 200]),
+            b: Aligned([0u8; 32]),
+        };
+        assert_eq!(f.a[1], 200);
+    }
+
+    #[test]
+    fn align_disjoint_mut() {
+        use aligned::Aligned;
+
+        let dm = DisjointMut::new(Aligned::<aligned::A16, _>([0u8; 64]));
+        dm.index_mut(0..32).fill(1);
+        dm.index_mut(32..64).fill(2);
+        assert!(dm.index(0..32).iter().all(|&x| x == 1));
+        assert!(dm.index(32..64).iter().all(|&x| x == 2));
+    }
+
+    #[test]
+    fn aligned_vec64_basic() {
+        let mut v = AlignedVec64::<u8>::new();
+        assert_eq!(v.len(), 0);
+        v.0.resize(100, 0u8);
+        assert_eq!(v.len(), 100);
+        v[50] = 42;
+        assert_eq!(v[50], 42);
+    }
+
+    #[test]
+    fn aligned_vec64_default() {
+        let v: AlignedVec64<u8> = Default::default();
+        assert_eq!(v.len(), 0);
+    }
+
+    #[test]
+    fn aligned_vec64_disjoint_mut() {
+        let mut v = AlignedVec64::<u8>::new();
+        v.0.resize(100, 0u8);
+        let dm = DisjointMut::new(v);
+
+        dm.index_mut(0..50).fill(1);
+        dm.index_mut(50..100).fill(2);
+
+        assert!(dm.index(0..50).iter().all(|&x| x == 1));
+        assert!(dm.index(50..100).iter().all(|&x| x == 2));
+    }
+
+    #[test]
+    fn aligned_vec64_resizable() {
+        let v = AlignedVec64::<u8>::new();
+        let mut dm = DisjointMut::new(v);
+        dm.resize(64, 0xFFu8);
+        assert_eq!(dm.index(0..64).len(), 64);
+        assert!(dm.index(0..64).iter().all(|&x| x == 0xFF));
+    }
+
+    #[test]
+    fn deref_to_inner() {
+        use aligned::Aligned;
+
+        let x: Align64<[u8; 4]> = Aligned([1, 2, 3, 4]);
+        // Access through Deref (no .0 or pattern destructure needed)
+        let inner: &[u8; 4] = &*x;
+        assert_eq!(*inner, [1, 2, 3, 4]);
+    }
 }

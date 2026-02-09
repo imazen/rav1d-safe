@@ -774,8 +774,8 @@ mod ffi {
         let dst = dst_ptr as *mut u8;
         let tl = topleft as *const u8;
 
-        let weights_hor = &dav1d_sm_weights.0[width..][..width];
-        let weights_ver = &dav1d_sm_weights.0[height..][..height];
+        let weights_hor = &dav1d_sm_weights[width..][..width];
+        let weights_ver = &dav1d_sm_weights[height..][..height];
         let right_val = unsafe { *tl.add(width) } as i32;
         let bottom_val = unsafe { *tl.offset(-(height as isize)) } as i32;
 
@@ -823,8 +823,8 @@ mod ffi {
         let dst = dst_ptr as *mut u16;
         let tl = topleft as *const u16;
 
-        let weights_hor = &dav1d_sm_weights.0[width..][..width];
-        let weights_ver = &dav1d_sm_weights.0[height..][..height];
+        let weights_hor = &dav1d_sm_weights[width..][..width];
+        let weights_ver = &dav1d_sm_weights[height..][..height];
         let right_val = unsafe { *tl.add(width) } as i32;
         let bottom_val = unsafe { *tl.offset(-(height as isize)) } as i32;
 
@@ -870,7 +870,7 @@ mod ffi {
         let dst = dst_ptr as *mut u8;
         let tl = topleft as *const u8;
 
-        let weights_ver = &dav1d_sm_weights.0[height..][..height];
+        let weights_ver = &dav1d_sm_weights[height..][..height];
         let bottom_val = unsafe { *tl.offset(-(height as isize)) } as i32;
 
         for y in 0..height {
@@ -907,7 +907,7 @@ mod ffi {
         let dst = dst_ptr as *mut u16;
         let tl = topleft as *const u16;
 
-        let weights_ver = &dav1d_sm_weights.0[height..][..height];
+        let weights_ver = &dav1d_sm_weights[height..][..height];
         let bottom_val = unsafe { *tl.offset(-(height as isize)) } as i32;
 
         for y in 0..height {
@@ -947,7 +947,7 @@ mod ffi {
         let dst = dst_ptr as *mut u8;
         let tl = topleft as *const u8;
 
-        let weights_hor = &dav1d_sm_weights.0[width..][..width];
+        let weights_hor = &dav1d_sm_weights[width..][..width];
         let right_val = unsafe { *tl.add(width) } as i32;
 
         for y in 0..height {
@@ -984,7 +984,7 @@ mod ffi {
         let dst = dst_ptr as *mut u16;
         let tl = topleft as *const u16;
 
-        let weights_hor = &dav1d_sm_weights.0[width..][..width];
+        let weights_hor = &dav1d_sm_weights[width..][..width];
         let right_val = unsafe { *tl.add(width) } as i32;
 
         for y in 0..height {

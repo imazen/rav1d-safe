@@ -6,6 +6,7 @@ use crate::include::common::intops::ulog2;
 use crate::include::dav1d::headers::Rav1dPixelLayout;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::Align16;
+use crate::src::align::Aligned;
 use crate::src::align::AlignedVec64;
 use crate::src::cdef::CdefEdgeFlags;
 use crate::src::disjoint_mut::DisjointMut;
@@ -195,8 +196,8 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
             backup2lines::<BD>(&f.lf.cdef_line_buf, cdef_top_bak, ptrs, layout);
         }
 
-        let mut lr_bak =
-            Align16([[[[0.into(); 2 /* x */]; 8 /* y */]; 3 /* plane */ ]; 2 /* idx */]);
+        let mut lr_bak: Align16<_> =
+            Aligned([[[[0.into(); 2 /* x */]; 8 /* y */]; 3 /* plane */ ]; 2 /* idx */]);
         let mut iptrs = ptrs;
         edges.remove(CdefEdgeFlags::HAVE_LEFT);
         edges.insert(CdefEdgeFlags::HAVE_RIGHT);
