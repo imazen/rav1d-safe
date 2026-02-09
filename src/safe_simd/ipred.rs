@@ -1213,7 +1213,7 @@ fn ipred_z1_8bpc_inner(
     width: usize,
     height: usize,
     angle: i32,
-) {
+) -> bool {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
     let height = height as i32;
@@ -1234,11 +1234,8 @@ fn ipred_z1_8bpc_inner(
         && (width + height as usize) <= (16 >> is_sm as usize);
 
     if upsample_above {
-        // Upsampling case - use scalar fallback for now
-        ipred_z1_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, true,
-        );
-        return;
+        // Upsampling requires edge preprocessing not implemented in SIMD yet
+        return false;
     }
 
     let filter_strength = if enable_intra_edge_filter {
@@ -1248,11 +1245,8 @@ fn ipred_z1_8bpc_inner(
     };
 
     if filter_strength != 0 {
-        // Filtered case - use scalar fallback for now
-        ipred_z1_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, false,
-        );
-        return;
+        // Edge filtering requires preprocessing not implemented in SIMD yet
+        return false;
     }
 
     // No filtering needed - direct access to top pixels
@@ -1329,6 +1323,7 @@ fn ipred_z1_8bpc_inner(
             x += 1;
         }
     }
+    true
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -1371,14 +1366,28 @@ fn get_filter_strength_simple(wh: i32, angle: i32, is_sm: bool) -> i32 {
         match (wh, angle) {
             (..=8, 64..) => 2,
             (..=8, 40..) => 1,
-            _ => 0,
+            (..=8, ..) => 0,
+            (..=16, 48..) => 2,
+            (..=16, 20..) => 1,
+            (..=16, ..) => 0,
+            (..=24, 4..) => 3,
+            (..=24, ..) => 0,
+            (.., _) => 3,
         }
     } else {
         match (wh, angle) {
-            (..=8, 56..) => 2,
-            (..=8, 40..) => 1,
+            (..=8, 56..) => 1,
+            (..=8, ..) => 0,
             (..=16, 40..) => 1,
-            _ => 0,
+            (..=16, ..) => 0,
+            (..=24, 32..) => 3,
+            (..=24, 16..) => 2,
+            (..=24, 8..) => 1,
+            (..=24, ..) => 0,
+            (..=32, 32..) => 3,
+            (..=32, 4..) => 2,
+            (..=32, ..) => 1,
+            (.., _) => 3,
         }
     }
 }
@@ -1452,7 +1461,7 @@ fn ipred_z2_8bpc_inner(
     angle: i32,
     max_width: i32,
     max_height: i32,
-) {
+) -> bool {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
     let width = width as i32;
@@ -1477,23 +1486,8 @@ fn ipred_z2_8bpc_inner(
         enable_intra_edge_filter && (angle - 90) < 40 && (width + height) <= (16 >> is_sm as usize);
 
     if upsample_left || upsample_above {
-        // Fall back to scalar for upsampled cases
-        ipred_z2_scalar(
-            &mut *dst,
-            dst_base,
-            stride,
-            &*topleft,
-            tl_off,
-            width,
-            height,
-            dx,
-            dy,
-            max_width,
-            max_height,
-            is_sm,
-            enable_intra_edge_filter,
-        );
-        return;
+        // Upsampling requires edge preprocessing not implemented in SIMD yet
+        return false;
     }
 
     // Check for edge filtering
@@ -1509,23 +1503,8 @@ fn ipred_z2_8bpc_inner(
     };
 
     if filter_strength_above != 0 || filter_strength_left != 0 {
-        // Fall back to scalar for filtered cases
-        ipred_z2_scalar(
-            &mut *dst,
-            dst_base,
-            stride,
-            &*topleft,
-            tl_off,
-            width,
-            height,
-            dx,
-            dy,
-            max_width,
-            max_height,
-            is_sm,
-            enable_intra_edge_filter,
-        );
-        return;
+        // Edge filtering requires preprocessing not implemented in SIMD yet
+        return false;
     }
 
     // No filtering - direct edge access
@@ -1620,6 +1599,7 @@ fn ipred_z2_8bpc_inner(
             x += 1;
         }
     }
+    true
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -1729,7 +1709,7 @@ fn ipred_z3_8bpc_inner(
     width: usize,
     height: usize,
     angle: i32,
-) {
+) -> bool {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
     let height = height as i32;
@@ -1748,10 +1728,8 @@ fn ipred_z3_8bpc_inner(
         && (width as i32 + height) <= (16 >> is_sm as usize);
 
     if upsample_left {
-        ipred_z3_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, true,
-        );
-        return;
+        // Upsampling requires edge preprocessing not implemented in SIMD yet
+        return false;
     }
 
     // Check for edge filtering
@@ -1762,10 +1740,8 @@ fn ipred_z3_8bpc_inner(
     };
 
     if filter_strength != 0 {
-        ipred_z3_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, false,
-        );
-        return;
+        // Edge filtering requires preprocessing not implemented in SIMD yet
+        return false;
     }
 
     // No filtering - direct access to left edge
@@ -1801,6 +1777,7 @@ fn ipred_z3_8bpc_inner(
             }
         }
     }
+    true
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -2779,7 +2756,7 @@ fn ipred_z1_16bpc_inner(
     width: usize,
     height: usize,
     angle: i32,
-) {
+) -> bool {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
     let height = height as i32;
@@ -2798,11 +2775,7 @@ fn ipred_z1_16bpc_inner(
         && (width as i32 + height) <= (16 >> is_sm as usize);
 
     if upsample_above {
-        // Upsampling case - use scalar fallback
-        ipred_z1_16bpc_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, true,
-        );
-        return;
+        return false;
     }
 
     let filter_strength = if enable_intra_edge_filter {
@@ -2812,11 +2785,7 @@ fn ipred_z1_16bpc_inner(
     };
 
     if filter_strength != 0 {
-        // Filtered case - use scalar fallback
-        ipred_z1_16bpc_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dx, false,
-        );
-        return;
+        return false;
     }
 
     // No filtering needed - direct access to top pixels
@@ -2895,6 +2864,7 @@ fn ipred_z1_16bpc_inner(
             x += 1;
         }
     }
+    true
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -2984,7 +2954,7 @@ fn ipred_z1_16bpc_scalar(
 }
 
 // ============================================================================
-// Z2 Prediction 16bpc (angular prediction for angles 90-180)
+// Z2 Prediction 16bpc (angular prediction for angles 90-180) { return false; }
 // ============================================================================
 
 /// Z2 prediction for 16bpc: directional prediction using both top AND left edges (angles 90-180°)
@@ -3002,7 +2972,7 @@ fn ipred_z2_16bpc_inner(
     angle: i32,
     max_width: i32,
     max_height: i32,
-) {
+) -> bool {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
     let width = width as i32;
@@ -3025,22 +2995,7 @@ fn ipred_z2_16bpc_inner(
         enable_intra_edge_filter && (angle - 90) < 40 && (width + height) <= (16 >> is_sm as usize);
 
     if upsample_left || upsample_above {
-        ipred_z2_16bpc_scalar(
-            &mut *dst,
-            dst_base,
-            stride,
-            &*topleft,
-            tl_off,
-            width,
-            height,
-            dx,
-            dy,
-            max_width,
-            max_height,
-            is_sm,
-            enable_intra_edge_filter,
-        );
-        return;
+        return false;
     }
 
     // Check for edge filtering
@@ -3056,22 +3011,7 @@ fn ipred_z2_16bpc_inner(
     };
 
     if filter_strength_above != 0 || filter_strength_left != 0 {
-        ipred_z2_16bpc_scalar(
-            &mut *dst,
-            dst_base,
-            stride,
-            &*topleft,
-            tl_off,
-            width,
-            height,
-            dx,
-            dy,
-            max_width,
-            max_height,
-            is_sm,
-            enable_intra_edge_filter,
-        );
-        return;
+        return false;
     }
 
     // No filtering - direct edge access
@@ -3166,6 +3106,7 @@ fn ipred_z2_16bpc_inner(
             x += 1;
         }
     }
+    true
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -3261,7 +3202,7 @@ fn ipred_z2_16bpc_scalar(
 }
 
 // ============================================================================
-// Z3 Prediction 16bpc (angular prediction for angles > 180)
+// Z3 Prediction 16bpc (angular prediction for angles > 180) { return false; }
 // ============================================================================
 
 /// Z3 prediction for 16bpc: directional prediction using left edge only (angles > 180°)
@@ -3277,7 +3218,7 @@ fn ipred_z3_16bpc_inner(
     width: usize,
     height: usize,
     angle: i32,
-) {
+) -> bool {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
     let height = height as i32;
@@ -3296,10 +3237,7 @@ fn ipred_z3_16bpc_inner(
         && (width as i32 + height) <= (16 >> is_sm as usize);
 
     if upsample_left {
-        ipred_z3_16bpc_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, true,
-        );
-        return;
+        return false;
     }
 
     // Check for edge filtering
@@ -3310,10 +3248,7 @@ fn ipred_z3_16bpc_inner(
     };
 
     if filter_strength != 0 {
-        ipred_z3_16bpc_scalar(
-            &mut *dst, dst_base, stride, &*topleft, tl_off, width, height, dy, false,
-        );
-        return;
+        return false;
     }
 
     // No filtering - direct access to left edge
@@ -3351,6 +3286,7 @@ fn ipred_z3_16bpc_inner(
             }
         }
     }
+    true
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -3444,7 +3380,7 @@ fn ipred_z3_16bpc_scalar(
 /// FILTER prediction for 16bpc: uses 7-tap filter for intra prediction
 ///
 /// Processes in 4x2 blocks. Each output pixel uses 7 input samples.
-/// Input pixels: p0 = topleft, p1-p4 = top row (4 pixels), p5-p6 = left column (2 pixels)
+/// Input pixels: p0 = topleft, p1-p4 = top row (4 pixels), p5-p6 = left column (2 pixels) { return false; }
 /// For 16bpc: out = (sum + 8) >> 4, clamped to [0, bitdepth_max]
 #[cfg(target_arch = "x86_64")]
 #[arcane]
@@ -3676,7 +3612,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         (BPC::BPC8, 5) => {
             ipred_dc_128_8bpc_inner(token, dst_bytes, dst_base_bytes, byte_stride, w, h)
         }
-        (BPC::BPC8, 6) => ipred_z1_8bpc_inner(
+        (BPC::BPC8, 6) => if !ipred_z1_8bpc_inner(
             token,
             dst_bytes,
             dst_base_bytes,
@@ -3686,8 +3622,9 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             w,
             h,
             angle as i32,
-        ),
-        (BPC::BPC8, 7) => ipred_z2_8bpc_inner(
+        ) { return false; },
+        (BPC::BPC8, 7) => return false,
+        (BPC::BPC8, 8) => if !ipred_z3_8bpc_inner(
             token,
             dst_bytes,
             dst_base_bytes,
@@ -3697,20 +3634,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             w,
             h,
             angle as i32,
-            max_width as i32,
-            max_height as i32,
-        ),
-        (BPC::BPC8, 8) => ipred_z3_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-            angle as i32,
-        ),
+        ) { return false; },
         (BPC::BPC8, 9) => ipred_smooth_8bpc_inner(
             token,
             dst_bytes,
@@ -3830,7 +3754,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         ),
         (BPC::BPC16, 6) => {
             let tl_off_bytes = topleft_off * 2;
-            ipred_z1_16bpc_inner(
+            if !ipred_z1_16bpc_inner(
                 token,
                 dst_bytes,
                 dst_base_bytes,
@@ -3840,27 +3764,12 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
                 angle as i32,
-            )
+            ) { return false; }
         }
-        (BPC::BPC16, 7) => {
-            let tl_off_bytes = topleft_off * 2;
-            ipred_z2_16bpc_inner(
-                token,
-                dst_bytes,
-                dst_base_bytes,
-                byte_stride,
-                tl_bytes,
-                tl_off_bytes,
-                w,
-                h,
-                angle as i32,
-                max_width as i32,
-                max_height as i32,
-            )
-        }
+        (BPC::BPC16, 7) => return false,
         (BPC::BPC16, 8) => {
             let tl_off_bytes = topleft_off * 2;
-            ipred_z3_16bpc_inner(
+            if !ipred_z3_16bpc_inner(
                 token,
                 dst_bytes,
                 dst_base_bytes,
@@ -3870,7 +3779,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
                 angle as i32,
-            )
+            ) { return false; }
         }
         (BPC::BPC16, 9) => {
             let tl_off_bytes = topleft_off * 2;
