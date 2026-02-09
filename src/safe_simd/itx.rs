@@ -780,12 +780,11 @@ pub fn inv_identity_add_4x4_8bpc_avx2(
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
-    // Identity: out = (in * 181 + 128) >> 8
-    // 4x4 IDTX = identity4 on rows, identity4 on cols
-    // Total: * sqrt(2) * sqrt(2) = * 2
-    // Plus shift: >> 0 for 4x4, then final (+ 8) >> 4
+    // identity4(x) = x + (x * 1697 + 2048) >> 12 ≈ x * sqrt(2)
+    // 4x4 IDTX = identity4 on rows, identity4 on cols, shift=0, then final (+ 8) >> 4
     let zero = _mm_setzero_si128();
     let max_val = _mm_set1_epi16(bitdepth_max as i16);
+    let identity4 = |v: i32| -> i32 { v + ((v * 1697 + 2048) >> 12) };
 
     for y in 0..4 {
         let dst_off = y * dst_stride;
@@ -800,13 +799,9 @@ pub fn inv_identity_add_4x4_8bpc_avx2(
         let c2 = coeff[y + 8] as i32;
         let c3 = coeff[y + 12] as i32;
 
-        // Identity4 scale: (c * 181 + 128) >> 8, twice (row + col)
-        let scale = |v: i32| -> i32 {
-            let t = (v * 181 + 128) >> 8;
-            (t * 181 + 128) >> 8
-        };
+        // Row: identity4, shift=0 (no intermediate shift), Col: identity4, final: (+ 8) >> 4
+        let scale = |v: i32| -> i32 { identity4(identity4(v)) };
 
-        // Final shift: (+ 8) >> 4
         let r0 = (scale(c0) + 8) >> 4;
         let r1 = (scale(c1) + 8) >> 4;
         let r2 = (scale(c2) + 8) >> 4;
@@ -7239,13 +7234,12 @@ impl_8x8_ffi_wrapper!(
 /// Identity transform 4x4 - just pass through values (no transform)
 #[inline(always)]
 fn identity4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32) -> (i32, i32, i32, i32) {
-    // Identity transform for 4x4: multiply by sqrt(2) * 2 = 2.828... ≈ 1697/1024 + 1
-    // Actually for ITX identity: out = in * sqrt(2) rounded
-    // The formula is: out = (in * 1697 + 1024) >> 11 + in
-    let o0 = (((in0 * 1697) + 1024) >> 11) + in0;
-    let o1 = (((in1 * 1697) + 1024) >> 11) + in1;
-    let o2 = (((in2 * 1697) + 1024) >> 11) + in2;
-    let o3 = (((in3 * 1697) + 1024) >> 11) + in3;
+    // identity4(x) = x + (x * 1697 + 2048) >> 12 ≈ x * sqrt(2)
+    // Matches rav1d_inv_identity4_1d_c in itx_1d.rs
+    let o0 = in0 + ((in0 * 1697 + 2048) >> 12);
+    let o1 = in1 + ((in1 * 1697 + 2048) >> 12);
+    let o2 = in2 + ((in2 * 1697 + 2048) >> 12);
+    let o3 = in3 + ((in3 * 1697 + 2048) >> 12);
     (o0, o1, o2, o3)
 }
 
@@ -7586,7 +7580,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_identity_4x4_8bpc_avx2(
 // V_DCT/H_DCT TRANSFORMS (DCT + Identity combinations)
 // ============================================================================
 
-/// V_DCT 4x4: DCT on rows, Identity on columns
+/// H_DCT 4x4: DCT on rows, Identity on columns
 #[cfg(target_arch = "x86_64")]
 pub fn inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
     dst: &mut [u8],
@@ -7634,7 +7628,7 @@ pub fn inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
     coeff[..16].fill(0);
 }
 
-/// H_DCT 4x4: Identity on rows, DCT on columns
+/// V_DCT 4x4: Identity on rows, DCT on columns
 #[cfg(target_arch = "x86_64")]
 pub fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
     dst: &mut [u8],
@@ -11723,13 +11717,11 @@ pub fn inv_identity_add_4x4_16bpc_avx2(
         let c2 = coeff[y + 8] as i32;
         let c3 = coeff[y + 12] as i32;
 
-        // Identity4 scale: (c * 181 + 128) >> 8, twice (row + col)
-        let scale = |v: i32| -> i32 {
-            let t = (v * 181 + 128) >> 8;
-            (t * 181 + 128) >> 8
-        };
+        // identity4(x) = x + (x * 1697 + 2048) >> 12 ≈ x * sqrt(2)
+        // Row: identity4, shift=0, Col: identity4, final: (+ 8) >> 4
+        let identity4 = |v: i32| -> i32 { v + ((v * 1697 + 2048) >> 12) };
+        let scale = |v: i32| -> i32 { identity4(identity4(v)) };
 
-        // Final shift: (+ 8) >> 4
         let r0 = (scale(c0) + 8) >> 4;
         let r1 = (scale(c1) + 8) >> 4;
         let r2 = (scale(c2) + 8) >> 4;
@@ -15172,9 +15164,9 @@ impl_itxfm_direct_dispatch!(
     ],
     wht: (s4x4, 4, 4),
     8 bpc, avx2,
-    h_dct_fn: identity_dct, v_dct_fn: dct_identity,
-    h_adst_fn: identity_adst, v_adst_fn: adst_identity,
-    h_flipadst_fn: identity_flipadst, v_flipadst_fn: flipadst_identity
+    h_dct_fn: dct_identity, v_dct_fn: identity_dct,
+    h_adst_fn: adst_identity, v_adst_fn: identity_adst,
+    h_flipadst_fn: flipadst_identity, v_flipadst_fn: identity_flipadst
 );
 
 // x86_64 16bpc direct dispatch
@@ -15203,7 +15195,6 @@ impl_itxfm_direct_dispatch!(
     ],
     wht: (s4x4, 4, 4),
     16 bpc, avx2,
-    // 16bpc x86: V_DCT->identity_dct, H_DCT->dct_identity (swapped from 8bpc)
     h_dct_fn: dct_identity, v_dct_fn: identity_dct,
     h_adst_fn: adst_identity, v_adst_fn: identity_adst,
     h_flipadst_fn: flipadst_identity, v_flipadst_fn: identity_flipadst
@@ -15308,8 +15299,8 @@ fn itxfm_dispatch_8bpc(
         (S4x4, FLIPADST_FLIPADST) => scalar!(inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner),
         (S4x4, ADST_FLIPADST) => scalar!(inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner),
         (S4x4, FLIPADST_ADST) => scalar!(inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner),
-        (S4x4, H_DCT) => scalar!(inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner),
-        (S4x4, V_DCT) => scalar!(inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner),
+        (S4x4, H_DCT) => scalar!(inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner),
+        (S4x4, V_DCT) => scalar!(inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner),
         (S4x4, H_ADST) => scalar!(inv_txfm_add_h_adst_4x4_8bpc_avx2_inner),
         (S4x4, V_ADST) => scalar!(inv_txfm_add_v_adst_4x4_8bpc_avx2_inner),
         (S4x4, H_FLIPADST) => scalar!(inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner),
