@@ -63,14 +63,14 @@ Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with saf
 
 ## Feature Flag Safety Model
 
-**`forbid(unsafe_code)` is ON by default.** When `asm` or `c-ffi` are enabled, it drops to `deny` so modules can use `#[allow(unsafe_code)]` on specific items (FFI wrappers, etc).
+**`forbid(unsafe_code)` is ON by default.** When `asm`, `c-ffi`, or `unchecked` are enabled, it drops to `deny` so modules can use `#[allow(unsafe_code)]` on specific items (FFI wrappers, unchecked slice access, etc).
 
 ```
-Default (no asm, no c-ffi): #![forbid(unsafe_code)]  — NO exceptions, NO #[allow] overrides
-asm or c-ffi enabled:       #![deny(unsafe_code)]    — modules can #[allow] specific items
+Default (no asm, no c-ffi, no unchecked): #![forbid(unsafe_code)]  — NO exceptions
+asm, c-ffi, or unchecked enabled:         #![deny(unsafe_code)]    — modules can #[allow]
 ```
 
-This means: **every `#[allow(unsafe_code)]` in the codebase MUST be gated behind `cfg(feature = "asm")` or `cfg(feature = "c-ffi")` or `cfg(target_arch)` that excludes the default build.** If an `#[allow(unsafe_code)]` item compiles in the default build, `forbid` will reject it.
+This means: **every `#[allow(unsafe_code)]` in the codebase MUST be gated behind `cfg(feature = "asm")`, `cfg(feature = "c-ffi")`, `cfg(feature = "unchecked")`, or `cfg(target_arch)` that excludes the default build.** If an `#[allow(unsafe_code)]` item compiles in the default build, `forbid` will reject it.
 
 ## HARD RULES — STOP GOING IN CIRCLES
 
@@ -151,12 +151,26 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | refmvs_arm | `src/safe_simd/refmvs_arm.rs` | **Complete** - splat_mv NEON |
 | msac | `src/msac.rs` (inline) | **Complete** - symbol_adapt16 NEON |
 
-## Performance Status (2026-02-05)
+## Performance Status (2026-02-09)
 
-Full-stack benchmark via zenavif (20 decodes of test.avif):
-- ASM: ~1.17s
-- Safe-SIMD: ~1.11s
-- **Safe-SIMD MATCHES or BEATS ASM performance!**
+Profiling: 39 frames, 8bpc allintra, release-with-debug, perf stat:
+- ASM: 156ms (baseline)
+- Safe-SIMD (unchecked): 197ms (1.26x vs asm)
+- Safe-SIMD (checked): 293ms (1.88x vs asm)
+
+**Bottleneck #1: DisjointMut BorrowTracker** — 40% of checked decode time.
+Fixed: `unchecked` feature now skips tracker entirely (was only unlocking unused constructor).
+
+**Bottleneck #2: msac entropy decoder** — 32% of unchecked decode time.
+`rav1d_msac_decode_symbol_adapt_rust` (scalar) vs `dav1d_msac_decode_symbol_adapt4_sse2` (asm).
+symbol_adapt16 already has AVX2 SIMD; symbol_adapt4/8 use scalar fallback.
+
+**SIMD modules are NOT the bottleneck** — looprestoration 6.4%, cdef 5.4%, itx 2.2%, ipred 1.8%.
+
+Previous zenavif benchmark (2026-02-05, full-stack AVIF decode):
+- ASM: ~1.17s (20 decodes)
+- Safe-SIMD: ~1.11s (20 decodes)
+- Note: zenavif currently broken (API mismatch), numbers may be stale
 
 ## Porting Progress (160k lines target)
 
