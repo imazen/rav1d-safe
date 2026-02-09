@@ -6573,11 +6573,11 @@ fn w_mask_8bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
     let h = h as usize;
     let sign = sign as u8;
 
-    // For 8bpc: intermediate_bits = 4, bitdepth = 8
+    // For 8bpc: intermediate_bits = 4, bitdepth = 8, PREP_BIAS = 0
     let intermediate_bits = 4u32;
     let bitdepth = 8u32;
     let sh = intermediate_bits + 6;
-    let rnd = (32i32 << intermediate_bits) + 8192 * 64;
+    let rnd = (32i32 << intermediate_bits) + 0; // PREP_BIAS = 0 for 8bpc
     let mask_sh = bitdepth + intermediate_bits - 4;
     let mask_rnd = 1u16 << (mask_sh - 5);
 

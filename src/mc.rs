@@ -1979,7 +1979,10 @@ impl emu_edge::Fn {
                     )
                 }
             } else {
-                emu_edge_direct::<BD>(bw, bh, iw, ih, x, y, dst, dst_pxstride, src)
+                // emu_edge_rust expects byte stride (it applies BD::pxstride internally).
+                // Convert pixel stride to byte stride to match the C convention.
+                let dst_byte_stride = dst_pxstride * std::mem::size_of::<BD::Pixel>();
+                emu_edge_direct::<BD>(bw, bh, iw, ih, x, y, dst, dst_byte_stride, src)
             }
         }
     }
