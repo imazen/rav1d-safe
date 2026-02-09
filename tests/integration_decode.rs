@@ -176,6 +176,109 @@ fn test_decode_hdr_metadata() {
     eprintln!("No HDR test vectors found");
 }
 
+/// Decode all frames from an IVF file, asserting no panics and at least one frame produced.
+fn decode_ivf_file(path: &std::path::Path) {
+    let file = File::open(path).unwrap_or_else(|e| panic!("Failed to open {}: {e}", path.display()));
+    let mut reader = BufReader::new(file);
+    let frames = ivf_parser::parse_all_frames(&mut reader)
+        .unwrap_or_else(|e| panic!("Failed to parse IVF {}: {e}", path.display()));
+
+    let mut decoder = Decoder::new().expect("Failed to create decoder");
+    let mut decoded = 0usize;
+
+    for ivf_frame in &frames {
+        match decoder.decode(&ivf_frame.data) {
+            Ok(Some(_frame)) => decoded += 1,
+            Ok(None) => {}
+            Err(_) => {}
+        }
+    }
+
+    if let Ok(remaining) = decoder.flush() {
+        decoded += remaining.len();
+    }
+
+    assert!(decoded > 0, "No frames decoded from {}", path.display());
+}
+
+/// Regression test: 00000315.ivf triggered a panic in blend_v (OBMC)
+/// before the mask axis and 3/4 reduction fix.
+#[test]
+#[ignore] // requires test vectors
+fn test_obmc_blend_v_regression_00000315() {
+    let path = test_vectors_dir()
+        .join("dav1d-test-data/8-bit/data/00000315.ivf");
+    if !path.exists() {
+        eprintln!("Skipping: test vector not found at {}", path.display());
+        return;
+    }
+    decode_ivf_file(&path);
+}
+
+/// Regression test: 00000327.ivf triggered a panic in blend_h (OBMC)
+/// before the mask axis and 3/4 reduction fix.
+#[test]
+#[ignore] // requires test vectors
+fn test_obmc_blend_h_regression_00000327() {
+    let path = test_vectors_dir()
+        .join("dav1d-test-data/8-bit/data/00000327.ivf");
+    if !path.exists() {
+        eprintln!("Skipping: test vector not found at {}", path.display());
+        return;
+    }
+    decode_ivf_file(&path);
+}
+
+/// Decode every 8-bit IVF test vector under 100KB.
+/// Catches regressions across the full dav1d test suite.
+#[test]
+#[ignore] // requires test vectors, slow
+fn test_decode_all_8bit_vectors() {
+    let dir = test_vectors_dir().join("dav1d-test-data/8-bit/data");
+    if !dir.exists() {
+        eprintln!("Skipping: 8-bit test vectors not found");
+        return;
+    }
+
+    let mut entries: Vec<_> = std::fs::read_dir(&dir)
+        .expect("Failed to read dir")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "ivf"))
+        .filter(|e| e.metadata().map(|m| m.len() <= 100_000).unwrap_or(false))
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    let mut passed = 0;
+    let mut failed = Vec::new();
+
+    for entry in &entries {
+        let path = entry.path();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+
+        // Catch panics so one bad vector doesn't abort the whole test
+        let path_clone = path.clone();
+        let result = std::panic::catch_unwind(|| {
+            decode_ivf_file(&path_clone);
+        });
+
+        match result {
+            Ok(()) => {
+                passed += 1;
+            }
+            Err(_) => {
+                eprintln!("FAILED: {name}");
+                failed.push(name);
+            }
+        }
+    }
+
+    eprintln!("{passed}/{} vectors decoded successfully", entries.len());
+    assert!(
+        failed.is_empty(),
+        "These vectors failed to decode: {failed:?}"
+    );
+}
+
 #[test]
 fn test_ivf_parser() {
     // Test IVF parser with a real file if available
