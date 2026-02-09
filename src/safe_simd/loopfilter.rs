@@ -306,8 +306,8 @@ fn lpf_h_sb_y_8bpc_inner(
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
-                if lvl_offset >= 4 * b4_strideb {
-                    read_lvl(lvl, lvl_offset - 4 * b4_strideb)
+                if lvl_offset >= b4_strideb {
+                    read_lvl(lvl, lvl_offset - b4_strideb)
                 } else {
                     0
                 }
@@ -342,7 +342,7 @@ fn lpf_h_sb_y_8bpc_inner(
 
         xy <<= 1;
         dst_offset = signed_idx(dst_offset, 4 * stridea);
-        lvl_offset += 4 * b4_stridea;
+        lvl_offset += b4_stridea;
     }
 }
 
@@ -374,8 +374,8 @@ fn lpf_v_sb_y_8bpc_inner(
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
-                if lvl_offset >= 4 * b4_strideb {
-                    read_lvl(lvl, lvl_offset - 4 * b4_strideb)
+                if lvl_offset >= b4_strideb {
+                    read_lvl(lvl, lvl_offset - b4_strideb)
                 } else {
                     0
                 }
@@ -410,7 +410,7 @@ fn lpf_v_sb_y_8bpc_inner(
 
         xy <<= 1;
         dst_offset = signed_idx(dst_offset, 4 * stridea);
-        lvl_offset += 4 * b4_stridea;
+        lvl_offset += b4_stridea;
     }
 }
 
@@ -442,8 +442,8 @@ fn lpf_h_sb_uv_8bpc_inner(
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
-                if lvl_offset >= 4 * b4_strideb {
-                    read_lvl(lvl, lvl_offset - 4 * b4_strideb)
+                if lvl_offset >= b4_strideb {
+                    read_lvl(lvl, lvl_offset - b4_strideb)
                 } else {
                     0
                 }
@@ -472,7 +472,7 @@ fn lpf_h_sb_uv_8bpc_inner(
 
         xy <<= 1;
         dst_offset = signed_idx(dst_offset, 4 * stridea);
-        lvl_offset += 4 * b4_stridea;
+        lvl_offset += b4_stridea;
     }
 }
 
@@ -504,8 +504,8 @@ fn lpf_v_sb_uv_8bpc_inner(
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
-                if lvl_offset >= 4 * b4_strideb {
-                    read_lvl(lvl, lvl_offset - 4 * b4_strideb)
+                if lvl_offset >= b4_strideb {
+                    read_lvl(lvl, lvl_offset - b4_strideb)
                 } else {
                     0
                 }
@@ -534,7 +534,7 @@ fn lpf_v_sb_uv_8bpc_inner(
 
         xy <<= 1;
         dst_offset = signed_idx(dst_offset, 4 * stridea);
-        lvl_offset += 4 * b4_stridea;
+        lvl_offset += b4_stridea;
     }
 }
 
@@ -909,8 +909,8 @@ fn lpf_h_sb_y_16bpc_inner(
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
-                if lvl_offset >= 4 * b4_strideb {
-                    read_lvl(lvl, lvl_offset - 4 * b4_strideb)
+                if lvl_offset >= b4_strideb {
+                    read_lvl(lvl, lvl_offset - b4_strideb)
                 } else {
                     0
                 }
@@ -945,7 +945,7 @@ fn lpf_h_sb_y_16bpc_inner(
 
         xy <<= 1;
         dst_offset = signed_idx(dst_offset, 4 * stridea);
-        lvl_offset += 4 * b4_stridea;
+        lvl_offset += b4_stridea;
     }
 }
 
@@ -1014,7 +1014,7 @@ fn lpf_v_sb_y_16bpc_inner(
 
         xy <<= 1;
         dst_offset = signed_idx(dst_offset, 4 * stridea);
-        lvl_offset += 4 * b4_stridea;
+        lvl_offset += b4_stridea;
     }
 }
 
@@ -1046,8 +1046,8 @@ fn lpf_h_sb_uv_16bpc_inner(
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
-                if lvl_offset >= 4 * b4_strideb {
-                    read_lvl(lvl, lvl_offset - 4 * b4_strideb)
+                if lvl_offset >= b4_strideb {
+                    read_lvl(lvl, lvl_offset - b4_strideb)
                 } else {
                     0
                 }
@@ -1076,7 +1076,7 @@ fn lpf_h_sb_uv_16bpc_inner(
 
         xy <<= 1;
         dst_offset = signed_idx(dst_offset, 4 * stridea);
-        lvl_offset += 4 * b4_stridea;
+        lvl_offset += b4_stridea;
     }
 }
 
@@ -1139,7 +1139,7 @@ fn lpf_v_sb_uv_16bpc_inner(
 
         xy <<= 1;
         dst_offset = signed_idx(dst_offset, 4 * stridea);
-        lvl_offset += 4 * b4_stridea;
+        lvl_offset += b4_stridea;
     }
 }
 
@@ -1299,7 +1299,7 @@ fn compute_buf_len_u16(stride: isize, _w: i32) -> usize {
 /// Compute a conservative lvl slice length (in [u8; 4] elements).
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 fn compute_lvl_len(b4_stride: isize, _w: i32) -> usize {
-    // Up to 32 iterations * 4 * b4_stride + lookback of 4 * b4_stride
+    // Up to 32 iterations * b4_stride + lookback of b4_stride (conservative)
     (b4_stride.unsigned_abs() as usize) * 132 + 4
 }
 
