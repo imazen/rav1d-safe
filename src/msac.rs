@@ -585,6 +585,129 @@ static MIN_PROB_16: [u16; 31] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // padding
 ];
 
+/// Branchless implementation of symbol_adapt for n_symbols <= 3 (adapt4).
+///
+/// Eliminates branch misprediction from the serial comparison loop by
+/// computing all v values and counting matches branchlessly.
+#[cfg(not(feature = "asm"))]
+#[inline(always)]
+fn rav1d_msac_decode_symbol_adapt4_branchless(
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
+    debug_assert!(n_symbols > 0 && n_symbols <= 3);
+    let c = (s.dif >> (EC_WIN_SIZE - 16)) as c_uint;
+    let r = s.rng >> 8;
+    let n = n_symbols as c_uint;
+
+    // Compute all v values (at most 3 for adapt4)
+    // NB: >> has lower precedence than + in Rust, so parens are required
+    let v0 = (r * ((cdf[0] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
+        + EC_MIN_PROB * n;
+    let v1 = if n > 1 {
+        (r * ((cdf[1] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
+            + EC_MIN_PROB * (n - 1)
+    } else {
+        0
+    };
+    let v2 = if n > 2 {
+        (r * ((cdf[2] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
+            + EC_MIN_PROB * (n - 2)
+    } else {
+        0
+    };
+
+    // Branchless: count how many v[i] have c < v[i]
+    // Since v is monotonically decreasing, this gives the first index where c >= v
+    let val = (c < v0) as u32 + (c < v1) as u32 + (c < v2) as u32;
+    debug_assert!(val <= n);
+
+    // v_arr[0..3] for indexed access, with sentinel for boundary
+    let v_arr = [v0, v1, v2, 0];
+    let u = if val == 0 { s.rng } else { v_arr[val as usize - 1] };
+    let v_val = v_arr[val as usize];
+
+    ctx_norm(
+        s,
+        s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+        u - v_val,
+    );
+
+    if s.allow_update_cdf() {
+        let n_usize = n_symbols as usize;
+        let count = cdf[n_usize];
+        let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
+        let val_usize = val as usize;
+        for i in 0..val_usize {
+            cdf[i] += (1u16 << 15).wrapping_sub(cdf[i]) >> rate;
+        }
+        for i in val_usize..n_usize {
+            cdf[i] -= cdf[i] >> rate;
+        }
+        cdf[n_usize] = count + (count < 32) as u16;
+    }
+
+    val as u8
+}
+
+/// Branchless implementation of symbol_adapt for n_symbols <= 7 (adapt8).
+///
+/// Same strategy as adapt4 but handles up to 7 symbols.
+#[cfg(not(feature = "asm"))]
+#[inline(always)]
+fn rav1d_msac_decode_symbol_adapt8_branchless(
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
+    debug_assert!(n_symbols > 0 && n_symbols <= 7);
+    let c = (s.dif >> (EC_WIN_SIZE - 16)) as c_uint;
+    let r = s.rng >> 8;
+    let n = n_symbols as c_uint;
+
+    // Compute v[i] = r * (cdf[i] >> 6) >> 1 + 4 * (n - i)
+    // Use a fixed-size array, compute only valid entries
+    // NB: >> has lower precedence than + in Rust, so parens are required
+    let mut v = [0u32; 8]; // v[7] stays 0 as sentinel
+    for i in 0..n_symbols as usize {
+        v[i] = (r * ((cdf[i] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
+            + EC_MIN_PROB * (n - i as c_uint);
+    }
+
+    // Branchless: count how many v[i] have c < v[i]
+    let mut val = 0u32;
+    for i in 0..n_symbols as usize {
+        val += (c < v[i]) as u32;
+    }
+    debug_assert!(val <= n);
+
+    let u = if val == 0 { s.rng } else { v[val as usize - 1] };
+    let v_val = v[val as usize];
+
+    ctx_norm(
+        s,
+        s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+        u - v_val,
+    );
+
+    if s.allow_update_cdf() {
+        let n_usize = n_symbols as usize;
+        let count = cdf[n_usize];
+        let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
+        let val_usize = val as usize;
+        for i in 0..val_usize {
+            cdf[i] += (1u16 << 15).wrapping_sub(cdf[i]) >> rate;
+        }
+        for i in val_usize..n_usize {
+            cdf[i] -= cdf[i] >> rate;
+        }
+        cdf[n_usize] = count + (count < 32) as u16;
+    }
+
+    val as u8
+}
+
 /// AVX2 implementation of symbol_adapt16
 /// Uses parallel CDF probability calculation and comparison
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
@@ -852,6 +975,8 @@ pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_s
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt4_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
+        } else if #[cfg(not(feature = "asm"))] {
+            ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
         } else {
             ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols);
         }
@@ -878,6 +1003,8 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt8_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
+        } else if #[cfg(not(feature = "asm"))] {
+            ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
         } else {
             ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols);
         }
