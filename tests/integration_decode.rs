@@ -298,6 +298,34 @@ fn test_decode_all_12bit_vectors() {
     sweep_vectors("dav1d-test-data/12-bit/data", 100_000);
 }
 
+/// Decode ALL IVF test vectors across every subdirectory (under 100KB each).
+#[test]
+#[ignore] // requires test vectors, very slow
+fn test_decode_all_vectors_comprehensive() {
+    let subdirs = [
+        "dav1d-test-data/8-bit/data",
+        "dav1d-test-data/8-bit/cdfupdate",
+        "dav1d-test-data/8-bit/features",
+        "dav1d-test-data/8-bit/film_grain",
+        "dav1d-test-data/8-bit/issues",
+        "dav1d-test-data/8-bit/mfmv",
+        "dav1d-test-data/8-bit/mv",
+        "dav1d-test-data/8-bit/quantizer",
+        "dav1d-test-data/8-bit/resize",
+        "dav1d-test-data/8-bit/size",
+        "dav1d-test-data/8-bit/svc",
+        "dav1d-test-data/10-bit/data",
+        "dav1d-test-data/10-bit/features",
+        "dav1d-test-data/10-bit/film_grain",
+        "dav1d-test-data/10-bit/quantizer",
+        "dav1d-test-data/12-bit/data",
+        "dav1d-test-data/12-bit/features",
+    ];
+    for subdir in &subdirs {
+        sweep_vectors(subdir, 100_000);
+    }
+}
+
 #[test]
 fn test_ivf_parser() {
     // Test IVF parser with a real file if available
