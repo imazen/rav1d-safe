@@ -629,13 +629,13 @@ fn selfguided_filter_8bpc(
     // For 8bpc, bitdepth_min_8 = 0, so the scaling factors are 1
     // Calculate filter coefficients a and b
     // After this loop: sumsq contains 'a', sum contains 'b' (renamed)
-    let base = 2 * REST_UNIT_STRIDE + 3;
+    //
+    // Scalar reference starts cursor aa at STRIDE+3, inner loop i from -1..w+1.
+    // So first access is at STRIDE+2. We use aa_base = (row_offset+1)*STRIDE+2
+    // with inner loop i from 0..w+2, giving the same index range.
 
     for row_offset in (0..(h + 2)).step_by(step) {
-        // Use signed arithmetic to avoid overflow when row_offset=0
-        // aa_base = base + (row_offset - 2) * REST_UNIT_STRIDE
-        let aa_base =
-            (base as isize + (row_offset as isize - 2) * REST_UNIT_STRIDE as isize) as usize;
+        let aa_base = (row_offset + 1) * REST_UNIT_STRIDE + 2;
 
         for i in 0..(w + 2) {
             let idx = aa_base + i;
@@ -657,6 +657,7 @@ fn selfguided_filter_8bpc(
     }
 
     // Apply neighbor-weighted filter to produce output
+    let base = 2 * REST_UNIT_STRIDE + 3; // matches scalar cursor a/b starting position
     let src_base = 3 * REST_UNIT_STRIDE + 3;
 
     if n == 25 {
@@ -1168,13 +1169,12 @@ fn selfguided_filter_16bpc(
     }
 
     // Calculate filter coefficients a and b with bitdepth scaling
-    let base = 2 * REST_UNIT_STRIDE + 3;
+    // Scalar reference starts cursor aa at STRIDE+3, inner loop i from -1..w+1.
+    // So first access is at STRIDE+2. We use aa_base = (row_offset+1)*STRIDE+2
+    // with inner loop i from 0..w+2, giving the same index range.
 
     for row_offset in (0..(h + 2)).step_by(step) {
-        // Use signed arithmetic to avoid overflow when row_offset=0
-        // aa_base = base + (row_offset - 2) * REST_UNIT_STRIDE
-        let aa_base =
-            (base as isize + (row_offset as isize - 2) * REST_UNIT_STRIDE as isize) as usize;
+        let aa_base = (row_offset + 1) * REST_UNIT_STRIDE + 2;
 
         for i in 0..(w + 2) {
             let idx = aa_base + i;
@@ -1199,6 +1199,7 @@ fn selfguided_filter_16bpc(
     }
 
     // Apply neighbor-weighted filter to produce output
+    let base = 2 * REST_UNIT_STRIDE + 3; // matches scalar cursor a/b starting position
     let src_base = 3 * REST_UNIT_STRIDE + 3;
 
     if n == 25 {
