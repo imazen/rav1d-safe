@@ -1808,12 +1808,11 @@ fn flipadst16_1d(c: &mut [i32], stride: usize, min: i32, max: i32) {
 /// Identity4 1D transform (strided, in-place)
 #[inline]
 fn identity4_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
-    // For 4pt identity: out = in * sqrt(2) = (in * 181 + 128) >> 8 + in
-    // Simplified: out = in * 1.414... but we just use multiply by sqrt(2)
-    // Actually AV1 uses different scaling per size. For 4x4: multiply by sqrt(2)
+    // Identity4: out = in + (in * 1697 + 2048) >> 12
+    // This is approximately in * sqrt(2) ≈ in * 1.414
     for i in 0..4 {
-        let v = c[i * stride];
-        c[i * stride] = ((v * 181 + 128) >> 8) + v;
+        let in_0 = c[i * stride];
+        c[i * stride] = in_0 + (in_0 * 1697 + 2048 >> 12);
     }
 }
 
@@ -1829,13 +1828,11 @@ fn identity8_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
 /// Identity16 1D transform (in-place)
 #[inline]
 fn identity16_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
-    // Identity16 multiplies by 2 * sqrt(2) ≈ 2.828
-    // Implemented as (x * 2 * 1.414) = (x * 5793 + 2048) >> 11 + x
-    // But simpler: for 16pt identity, out = in * 2 * sqrt(2)
-    // AV1 spec uses: out = (in * 2 * 181 + 128) >> 8 but that's only 1.414x
-    // Actually for 16x16 identity: out = in * 2 (same as 8x8)
+    // Identity16: out = 2 * in + (in * 1697 + 1024) >> 11
+    // This is approximately in * 2 * sqrt(2) ≈ in * 2.829
     for i in 0..16 {
-        c[i * stride] *= 2;
+        let in_0 = c[i * stride];
+        c[i * stride] = 2 * in_0 + (in_0 * 1697 + 1024 >> 11);
     }
 }
 
@@ -4458,8 +4455,8 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
         for x in 0..32 {
             scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
         }
-        // Use dct32 for rows
-        dct32_1d_tx64(&mut scratch[..32], 1, row_clip_min, row_clip_max);
+        // Use regular dct32 for rows (all 32 inputs are non-zero)
+        dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
             tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
@@ -4614,8 +4611,9 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
     }
 
     // Column transform (32 elements each, 64 columns)
+    // Use regular dct32 - all 32 rows are populated after row transform
     for x in 0..64 {
-        dct32_1d_tx64(&mut tmp[x..], 64, col_clip_min, col_clip_max);
+        dct32_1d(&mut tmp[x..], 64, col_clip_min, col_clip_max);
     }
 
     // Add to destination
@@ -5876,7 +5874,8 @@ fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
         for x in 0..16 {
             scratch[x] = coeff[y + x * 32] as i32;
         }
-        dct16_1d_tx64(&mut scratch[..16], 1, row_clip_min, row_clip_max);
+        // Use regular dct16 for rows (all 16 inputs are non-zero)
+        dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
             tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
@@ -6020,8 +6019,9 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
     }
 
     // Column transform (16 elements each, 64 columns)
+    // Use regular dct16 - all 16 rows are populated after row transform
     for x in 0..64 {
-        dct16_1d_tx64(&mut tmp[x..], 64, col_clip_min, col_clip_max);
+        dct16_1d(&mut tmp[x..], 64, col_clip_min, col_clip_max);
     }
 
     // Add to destination
