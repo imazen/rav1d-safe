@@ -696,7 +696,7 @@ impl TranslateRange for (RangeFrom<usize>, RangeTo<usize>) {
 pub struct Bounds {
     /// A [`Range::end`]` == `[`usize::MAX`] is considered unbounded,
     /// as lengths need to be less than [`isize::MAX`] already.
-    range: Range<usize>,
+    pub(crate) range: Range<usize>,
 }
 
 impl Display for Bounds {
@@ -720,10 +720,12 @@ impl Debug for Bounds {
 }
 
 impl Bounds {
+    #[cfg(test)]
     fn is_empty(&self) -> bool {
         self.range.start >= self.range.end
     }
 
+    #[cfg(test)]
     fn overlaps(&self, other: &Bounds) -> bool {
         // Empty ranges borrow zero bytes and never conflict.
         if self.is_empty() || other.is_empty() {
@@ -871,80 +873,175 @@ where
 
 mod checked {
     use super::*;
-    use alloc::vec::Vec;
     use core::panic::Location;
-    use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use core::sync::atomic::{AtomicBool, Ordering};
 
-    #[cfg(feature = "std")]
-    use parking_lot::Mutex;
-    #[cfg(not(feature = "std"))]
-    use spin::Mutex;
+    /// Lightweight spinlock for borrow tracking.
+    ///
+    /// Uses a simple `AtomicBool::swap` for the lock — cheaper than
+    /// `compare_exchange` on the uncontended fast path because `swap`
+    /// is an unconditional store (no branch on old value). For the
+    /// single-threaded case (rav1d threads=1), this never spins.
+    struct TinyLock(AtomicBool);
 
-    /// Monotonic ID generator for borrow records.
-    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+    impl TinyLock {
+        const fn new() -> Self {
+            Self(AtomicBool::new(false))
+        }
 
-    /// A unique identifier for a borrow registration.
+        #[inline(always)]
+        fn lock(&self) -> TinyGuard<'_> {
+            // Fast path: swap is cheaper than compare_exchange for uncontended locks.
+            // On x86_64, `xchg` is simpler than `lock cmpxchg`.
+            if self.0.swap(true, Ordering::Acquire) {
+                // Contended — spin. This should essentially never happen in rav1d.
+                self.lock_slow();
+            }
+            TinyGuard(&self.0)
+        }
+
+        #[cold]
+        #[inline(never)]
+        fn lock_slow(&self) {
+            loop {
+                // Spin-wait: read without writing to avoid cache line bouncing
+                while self.0.load(Ordering::Relaxed) {
+                    core::hint::spin_loop();
+                }
+                if !self.0.swap(true, Ordering::Acquire) {
+                    return;
+                }
+            }
+        }
+    }
+
+    struct TinyGuard<'a>(&'a AtomicBool);
+
+    impl<'a> Drop for TinyGuard<'a> {
+        #[inline(always)]
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::Release);
+        }
+    }
+
+    /// Maximum concurrent borrows per `DisjointMut` instance.
+    /// 32 slots allows use of a u32 bitmask for O(1) free-slot finding.
+    const MAX_BORROWS: usize = 32;
+
+    /// A unique identifier for a borrow registration, encoding a slot index.
     #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-    pub(super) struct BorrowId(u64);
+    pub(super) struct BorrowId(u8);
 
     impl BorrowId {
-        fn next() -> Self {
-            Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
+        /// Sentinel value for unchecked guards (no tracking).
+        pub const UNCHECKED: Self = Self(u8::MAX);
+    }
+
+    /// Fixed-capacity borrow record storage.
+    /// Uses a bitmask for O(1) slot allocation and O(1) deallocation.
+    struct BorrowSlots {
+        // Parallel arrays — smaller than an array of structs for cache efficiency
+        // during the overlap scan (we only need start/end/mutable, not the slot index).
+        starts: [usize; MAX_BORROWS],
+        ends: [usize; MAX_BORROWS],
+        mutable: [bool; MAX_BORROWS],
+        /// Bitmask of occupied slots. Bit `i` is set iff slot `i` is active.
+        occupied: u32,
+    }
+
+    impl BorrowSlots {
+        const fn new() -> Self {
+            Self {
+                starts: [0; MAX_BORROWS],
+                ends: [0; MAX_BORROWS],
+                mutable: [false; MAX_BORROWS],
+                occupied: 0,
+            }
         }
 
-        /// Sentinel value for unchecked guards.
-        pub const UNCHECKED: Self = Self(u64::MAX);
-    }
-
-    struct BorrowRecord {
-        id: BorrowId,
-        bounds: Bounds,
-        mutable: bool,
-        location: &'static Location<'static>,
-        #[cfg(feature = "std")]
-        thread: std::thread::ThreadId,
-    }
-
-    impl Debug for BorrowRecord {
-        fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-            let mut s = f.debug_struct("BorrowRecord");
-            s.field("id", &self.id)
-                .field("bounds", &self.bounds)
-                .field("mutable", &self.mutable)
-                .field("location", &self.location);
-            #[cfg(feature = "std")]
-            s.field("thread", &self.thread);
-            s.finish()
+        /// Allocate a slot and return its index.
+        #[inline(always)]
+        fn alloc(&mut self, start: usize, end: usize, is_mutable: bool) -> u8 {
+            let free = self.occupied.trailing_ones() as usize;
+            if free >= MAX_BORROWS {
+                panic!("DisjointMut: too many concurrent borrows (max {MAX_BORROWS})");
+            }
+            self.starts[free] = start;
+            self.ends[free] = end;
+            self.mutable[free] = is_mutable;
+            self.occupied |= 1 << free;
+            free as u8
         }
-    }
 
-    impl Display for BorrowRecord {
-        fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-            let Self {
-                id: _,
-                bounds,
-                mutable,
-                location,
-                #[cfg(feature = "std")]
-                thread,
-            } = self;
-            let mutable = if *mutable { "&mut" } else { "   &" };
-            #[cfg(feature = "std")]
-            return write!(f, "{mutable} _[{bounds}] on {thread:?} at {location}");
-            #[cfg(not(feature = "std"))]
-            write!(f, "{mutable} _[{bounds}] at {location}")
+        /// Free a slot by index.
+        #[inline(always)]
+        fn free(&mut self, slot: u8) {
+            debug_assert!(
+                (self.occupied & (1 << slot)) != 0,
+                "BorrowId slot {slot} not occupied"
+            );
+            self.occupied &= !(1u32 << slot);
+        }
+
+        /// Check if the range [start, end) overlaps any active borrow.
+        /// Returns the first overlapping slot, or None.
+        #[inline(always)]
+        fn find_overlap_any(&self, start: usize, end: usize) -> Option<u8> {
+            if start >= end {
+                return None;
+            }
+            let mut mask = self.occupied;
+            while mask != 0 {
+                let i = mask.trailing_zeros() as usize;
+                // Only check non-empty existing ranges
+                if self.starts[i] < self.ends[i] && self.starts[i] < end && start < self.ends[i] {
+                    return Some(i as u8);
+                }
+                mask &= mask - 1; // clear lowest set bit
+            }
+            None
+        }
+
+        /// Check if the range [start, end) overlaps any active MUTABLE borrow.
+        /// Returns the first overlapping mutable slot, or None.
+        #[inline(always)]
+        fn find_overlap_mut(&self, start: usize, end: usize) -> Option<u8> {
+            if start >= end {
+                return None;
+            }
+            let mut mask = self.occupied;
+            while mask != 0 {
+                let i = mask.trailing_zeros() as usize;
+                if self.mutable[i]
+                    && self.starts[i] < self.ends[i]
+                    && self.starts[i] < end
+                    && start < self.ends[i]
+                {
+                    return Some(i as u8);
+                }
+                mask &= mask - 1;
+            }
+            None
         }
     }
 
     /// All active borrows for a single `DisjointMut` instance.
     ///
+    /// Uses a fixed-capacity slot array with bitmask for O(1) allocation
+    /// and deallocation. Overlap checking scans only occupied slots.
+    ///
     /// Like `std::sync::Mutex`, the tracker poisons the data structure when a
     /// thread panics while holding a mutable borrow guard. This prevents
     /// subsequent access to potentially corrupted data.
     pub(super) struct BorrowTracker {
-        borrows: Mutex<Vec<BorrowRecord>>,
+        lock: TinyLock,
+        slots: UnsafeCell<BorrowSlots>,
         poisoned: AtomicBool,
     }
+
+    // SAFETY: BorrowSlots is only accessed while TinyLock is held.
+    unsafe impl Send for BorrowTracker {}
+    unsafe impl Sync for BorrowTracker {}
 
     impl Default for BorrowTracker {
         fn default() -> Self {
@@ -955,7 +1052,8 @@ mod checked {
     impl BorrowTracker {
         pub const fn new() -> Self {
             Self {
-                borrows: Mutex::new(Vec::new()),
+                lock: TinyLock::new(),
+                slots: UnsafeCell::new(BorrowSlots::new()),
                 poisoned: AtomicBool::new(false),
             }
         }
@@ -966,71 +1064,99 @@ mod checked {
         }
 
         /// Panic if the tracker has been poisoned.
+        #[inline(always)]
         fn check_poisoned(&self) {
             if self.poisoned.load(Ordering::Acquire) {
-                panic!("DisjointMut poisoned: a thread panicked while holding a mutable borrow");
+                Self::poisoned_panic();
             }
         }
 
-        /// Register a mutable borrow. Must be called while holding the lock
-        /// (i.e., before creating the `&mut` reference).
-        ///
-        /// Returns the BorrowId for later removal.
+        #[cold]
+        #[inline(never)]
+        fn poisoned_panic() -> ! {
+            panic!("DisjointMut poisoned: a thread panicked while holding a mutable borrow");
+        }
+
+        /// Report an overlap violation with diagnostic info.
+        #[cold]
+        #[inline(never)]
+        #[track_caller]
+        fn overlap_panic(
+            new_start: usize,
+            new_end: usize,
+            new_mutable: bool,
+            existing_start: usize,
+            existing_end: usize,
+            existing_mutable: bool,
+        ) -> ! {
+            let new_mut_str = if new_mutable { "&mut" } else { "   &" };
+            let existing_mut_str = if existing_mutable { "&mut" } else { "   &" };
+            let caller = Location::caller();
+            #[cfg(feature = "std")]
+            {
+                let thread = std::thread::current().id();
+                panic!(
+                    "\toverlapping DisjointMut:\n current: {new_mut_str} _[{new_start}..{new_end}] \
+                     on {thread:?} at {caller}\nexisting: {existing_mut_str} _[{existing_start}..{existing_end}]",
+                );
+            }
+            #[cfg(not(feature = "std"))]
+            panic!(
+                "\toverlapping DisjointMut:\n current: {new_mut_str} _[{new_start}..{new_end}] \
+                 at {caller}\nexisting: {existing_mut_str} _[{existing_start}..{existing_end}]",
+            );
+        }
+
+        /// Register a mutable borrow. Checks against ALL existing borrows.
         #[track_caller]
         pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
             self.check_poisoned();
-            let id = BorrowId::next();
-            let record = BorrowRecord {
-                id,
-                bounds: bounds.clone(),
-                mutable: true,
-                location: Location::caller(),
-                #[cfg(feature = "std")]
-                thread: std::thread::current().id(),
-            };
-            let mut borrows = self.borrows.lock();
-            // Check against ALL existing borrows (both mut and immut)
-            for existing in borrows.iter() {
-                if bounds.overlaps(&existing.bounds) {
-                    panic!("\toverlapping DisjointMut:\n current: {record}\nexisting: {existing}");
-                }
+            let start = bounds.range.start;
+            let end = bounds.range.end;
+            let _guard = self.lock.lock();
+            // SAFETY: TinyLock is held, so we have exclusive access to slots.
+            let slots = unsafe { &mut *self.slots.get() };
+            if let Some(i) = slots.find_overlap_any(start, end) {
+                Self::overlap_panic(
+                    start,
+                    end,
+                    true,
+                    slots.starts[i as usize],
+                    slots.ends[i as usize],
+                    slots.mutable[i as usize],
+                );
             }
-            borrows.push(record);
-            id
+            BorrowId(slots.alloc(start, end, true))
         }
 
-        /// Register an immutable borrow.
+        /// Register an immutable borrow. Only checks against mutable borrows.
         #[track_caller]
         pub fn add_immut(&self, bounds: &Bounds) -> BorrowId {
             self.check_poisoned();
-            let id = BorrowId::next();
-            let record = BorrowRecord {
-                id,
-                bounds: bounds.clone(),
-                mutable: false,
-                location: Location::caller(),
-                #[cfg(feature = "std")]
-                thread: std::thread::current().id(),
-            };
-            let mut borrows = self.borrows.lock();
-            // Only check against mutable borrows
-            for existing in borrows.iter() {
-                if existing.mutable && bounds.overlaps(&existing.bounds) {
-                    panic!("\toverlapping DisjointMut:\n current: {record}\nexisting: {existing}");
-                }
+            let start = bounds.range.start;
+            let end = bounds.range.end;
+            let _guard = self.lock.lock();
+            // SAFETY: TinyLock is held, so we have exclusive access to slots.
+            let slots = unsafe { &mut *self.slots.get() };
+            if let Some(i) = slots.find_overlap_mut(start, end) {
+                Self::overlap_panic(
+                    start,
+                    end,
+                    false,
+                    slots.starts[i as usize],
+                    slots.ends[i as usize],
+                    slots.mutable[i as usize],
+                );
             }
-            borrows.push(record);
-            id
+            BorrowId(slots.alloc(start, end, false))
         }
 
-        /// Remove a borrow by its unique ID.
+        /// Remove a borrow by slot index. O(1).
         pub fn remove(&self, id: BorrowId) {
-            let mut borrows = self.borrows.lock();
-            let idx = borrows
-                .iter()
-                .position(|r| r.id == id)
-                .expect("BorrowId not found in active borrows");
-            borrows.remove(idx);
+            let _guard = self.lock.lock();
+            // SAFETY: TinyLock is held, so we have exclusive access to slots.
+            let slots = unsafe { &mut *self.slots.get() };
+            slots.free(id.0);
         }
     }
 }

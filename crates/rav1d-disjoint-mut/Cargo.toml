@@ -13,7 +13,7 @@ exclude = ["justfile"]
 
 [features]
 default = ["std"]
-std = ["dep:parking_lot"]
+std = []
 # Skip runtime overlap checking. The caller must ensure all borrows are disjoint.
 unchecked = []
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
@@ -26,6 +26,4 @@ zerocopy = ["dep:zerocopy"]
 [dependencies]
 aligned = { version = "0.4", default-features = false, optional = true }
 aligned-vec = { version = "0.6", default-features = false, optional = true }
-parking_lot = { version = "0.12.2", optional = true }
-spin = { version = "0.10", default-features = false, features = ["mutex", "spin_mutex"] }
 zerocopy = { version = "0.7.32", default-features = false, optional = true }
