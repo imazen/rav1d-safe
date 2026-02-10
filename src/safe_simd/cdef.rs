@@ -139,7 +139,9 @@ fn cdef_filter_block_simd_8bpc(
                     sum = _mm_add_epi16(sum, _mm_mullo_epi16(tap_v, _mm_add_epi16(c0, c1)));
                     pri_tap_k = pri_tap_k & 3 | 2;
 
-                    min_v = _mm_min_epi16(min_v, _mm_min_epi16(p0, p1));
+                    // Use unsigned min to ignore boundary fill (0x8001 = large unsigned)
+                    min_v = _mm_min_epu16(min_v, _mm_min_epu16(p0, p1));
+                    // Use signed max to ignore boundary fill (0x8001 = -32767 signed)
                     max_v = _mm_max_epi16(max_v, _mm_max_epi16(p0, p1));
 
                     let off2 = dav1d_cdef_directions[dir + 4][k] as isize;
@@ -163,9 +165,9 @@ fn cdef_filter_block_simd_8bpc(
                     let sec_sum = _mm_add_epi16(_mm_add_epi16(ds0, ds1), _mm_add_epi16(ds2, ds3));
                     sum = _mm_add_epi16(sum, _mm_mullo_epi16(sec_tap_v, sec_sum));
 
-                    min_v = _mm_min_epi16(
+                    min_v = _mm_min_epu16(
                         min_v,
-                        _mm_min_epi16(_mm_min_epi16(s0, s1), _mm_min_epi16(s2, s3)),
+                        _mm_min_epu16(_mm_min_epu16(s0, s1), _mm_min_epu16(s2, s3)),
                     );
                     max_v = _mm_max_epi16(
                         max_v,
@@ -638,23 +640,26 @@ fn cdef_filter_block_scalar_8bpc(
                     let mut pri_tap_k = pri_tap;
                     for k in 0..2 {
                         let off1 = dav1d_cdef_directions[dir + 2][k] as isize;
-                        let p0 = tmp[(base + off1) as usize] as i32;
-                        let p1 = tmp[(base - off1) as usize] as i32;
+                        // Sign-extend: fill 0xC000u16 → -16384i16 → -16384i32
+                        let p0 = tmp[(base + off1) as usize] as i16 as i32;
+                        let p1 = tmp[(base - off1) as usize] as i16 as i32;
 
                         sum += pri_tap_k * constrain_scalar(p0 - px, pri_strength, pri_shift);
                         sum += pri_tap_k * constrain_scalar(p1 - px, pri_strength, pri_shift);
 
                         pri_tap_k = pri_tap_k & 3 | 2;
 
-                        min = cmp::min(cmp::min(p0, p1), min);
+                        // Unsigned min: fill (-16384 as u32 = very large) not selected
+                        min = cmp::min(cmp::min(p0 as u32, p1 as u32), min as u32) as i32;
+                        // Signed max: fill (-16384) not selected
                         max = cmp::max(cmp::max(p0, p1), max);
 
                         let off2 = dav1d_cdef_directions[dir + 4][k] as isize;
                         let off3 = dav1d_cdef_directions[dir + 0][k] as isize;
-                        let s0 = tmp[(base + off2) as usize] as i32;
-                        let s1 = tmp[(base - off2) as usize] as i32;
-                        let s2 = tmp[(base + off3) as usize] as i32;
-                        let s3 = tmp[(base - off3) as usize] as i32;
+                        let s0 = tmp[(base + off2) as usize] as i16 as i32;
+                        let s1 = tmp[(base - off2) as usize] as i16 as i32;
+                        let s2 = tmp[(base + off3) as usize] as i16 as i32;
+                        let s3 = tmp[(base - off3) as usize] as i16 as i32;
 
                         let sec_tap = 2 - k as i32;
                         sum += sec_tap * constrain_scalar(s0 - px, sec_strength, sec_shift);
@@ -662,7 +667,7 @@ fn cdef_filter_block_scalar_8bpc(
                         sum += sec_tap * constrain_scalar(s2 - px, sec_strength, sec_shift);
                         sum += sec_tap * constrain_scalar(s3 - px, sec_strength, sec_shift);
 
-                        min = cmp::min(cmp::min(cmp::min(cmp::min(s0, s1), s2), s3), min);
+                        min = cmp::min(cmp::min(cmp::min(s0 as u32, s1 as u32), cmp::min(s2 as u32, s3 as u32)), min as u32) as i32;
                         max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);
                     }
 
@@ -744,8 +749,14 @@ fn padding_8bpc(
 
     let stride = dst.pixel_stride::<BitDepth8>();
 
-    // Fill temporary buffer with CDEF_VERY_LARGE (8191 for 8bpc)
-    let very_large = 8191u16;
+    // Fill with CDEF_VERY_LARGE: 0xC000 (49152 unsigned, -16384 signed).
+    // This value is chosen so that:
+    //   - _mm_min_epu16 (unsigned) won't select it as min (49152 > any pixel)
+    //   - _mm_max_epi16 (signed) won't select it as max (-16384 < any pixel)
+    //   - constrain() returns 0 for it (|diff| > threshold for all pixels)
+    //   - |fill - pixel| never equals i16::MIN for any valid pixel (avoids abs overflow)
+    //     Worst case: |0xC000 - 0| = 16384, which fits in i16.
+    let very_large = 0xC000u16;
     tmp.fill(very_large);
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
@@ -1095,8 +1106,9 @@ fn padding_16bpc(
     use crate::include::common::bitdepth::BitDepth16;
 
     let _bd = BitDepth16::new(bitdepth_max as u16);
-    // Fill temporary buffer with CDEF_VERY_LARGE
-    let very_large = (bitdepth_max as u16) * 4; // ~4x max value
+    // Fill with CDEF_VERY_LARGE: 0xC000 (49152 unsigned, -16384 signed).
+    // Same value as 8bpc — works for all bit depths up to 14-bit.
+    let very_large = 0xC000u16;
     tmp.fill(very_large);
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
@@ -1248,7 +1260,9 @@ fn cdef_filter_block_simd_16bpc(
                     sum = _mm_add_epi16(sum, _mm_mullo_epi16(tap_v, _mm_add_epi16(c0, c1)));
                     pri_tap_k = pri_tap_k & 3 | 2;
 
-                    min_v = _mm_min_epi16(min_v, _mm_min_epi16(p0, p1));
+                    // Use unsigned min to ignore boundary fill (0x8001 = large unsigned)
+                    min_v = _mm_min_epu16(min_v, _mm_min_epu16(p0, p1));
+                    // Use signed max to ignore boundary fill (0x8001 = -32767 signed)
                     max_v = _mm_max_epi16(max_v, _mm_max_epi16(p0, p1));
 
                     let off2 = dav1d_cdef_directions[dir + 4][k] as isize;
@@ -1272,9 +1286,9 @@ fn cdef_filter_block_simd_16bpc(
                     let sec_sum = _mm_add_epi16(_mm_add_epi16(ds0, ds1), _mm_add_epi16(ds2, ds3));
                     sum = _mm_add_epi16(sum, _mm_mullo_epi16(sec_tap_v, sec_sum));
 
-                    min_v = _mm_min_epi16(
+                    min_v = _mm_min_epu16(
                         min_v,
-                        _mm_min_epi16(_mm_min_epi16(s0, s1), _mm_min_epi16(s2, s3)),
+                        _mm_min_epu16(_mm_min_epu16(s0, s1), _mm_min_epu16(s2, s3)),
                     );
                     max_v = _mm_max_epi16(
                         max_v,
@@ -1422,23 +1436,26 @@ fn cdef_filter_block_scalar_16bpc(
                     let mut pri_tap_k = pri_tap;
                     for k in 0..2 {
                         let off1 = dav1d_cdef_directions[dir + 2][k] as isize;
-                        let p0 = tmp[(base + off1) as usize] as i32;
-                        let p1 = tmp[(base - off1) as usize] as i32;
+                        // Sign-extend: fill 0xC000u16 → -16384i16 → -16384i32
+                        let p0 = tmp[(base + off1) as usize] as i16 as i32;
+                        let p1 = tmp[(base - off1) as usize] as i16 as i32;
 
                         sum += pri_tap_k * constrain_scalar(p0 - px, pri_strength, pri_shift);
                         sum += pri_tap_k * constrain_scalar(p1 - px, pri_strength, pri_shift);
 
                         pri_tap_k = pri_tap_k & 3 | 2;
 
-                        min = cmp::min(cmp::min(p0, p1), min);
+                        // Unsigned min: fill (-16384 as u32 = very large) not selected
+                        min = cmp::min(cmp::min(p0 as u32, p1 as u32), min as u32) as i32;
+                        // Signed max: fill (-16384) not selected
                         max = cmp::max(cmp::max(p0, p1), max);
 
                         let off2 = dav1d_cdef_directions[dir + 4][k] as isize;
                         let off3 = dav1d_cdef_directions[dir + 0][k] as isize;
-                        let s0 = tmp[(base + off2) as usize] as i32;
-                        let s1 = tmp[(base - off2) as usize] as i32;
-                        let s2 = tmp[(base + off3) as usize] as i32;
-                        let s3 = tmp[(base - off3) as usize] as i32;
+                        let s0 = tmp[(base + off2) as usize] as i16 as i32;
+                        let s1 = tmp[(base - off2) as usize] as i16 as i32;
+                        let s2 = tmp[(base + off3) as usize] as i16 as i32;
+                        let s3 = tmp[(base - off3) as usize] as i16 as i32;
 
                         let sec_tap = 2 - k as i32;
                         sum += sec_tap * constrain_scalar(s0 - px, sec_strength, sec_shift);
@@ -1446,7 +1463,7 @@ fn cdef_filter_block_scalar_16bpc(
                         sum += sec_tap * constrain_scalar(s2 - px, sec_strength, sec_shift);
                         sum += sec_tap * constrain_scalar(s3 - px, sec_strength, sec_shift);
 
-                        min = cmp::min(cmp::min(cmp::min(cmp::min(s0, s1), s2), s3), min);
+                        min = cmp::min(cmp::min(cmp::min(s0 as u32, s1 as u32), cmp::min(s2 as u32, s3 as u32)), min as u32) as i32;
                         max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);
                     }
 

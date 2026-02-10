@@ -90,6 +90,21 @@ fn cdef_direct<BD: BitDepth>(
     edges: CdefEdgeFlags,
     bd: BD,
 ) {
+    let (w, h) = match variant {
+        0 => (8, 8),
+        1 => (4, 8),
+        _ => (4, 4),
+    };
+
+    // Save pre-SIMD state for comparison testing
+    #[cfg(feature = "simd_test")]
+    let pre_state = {
+        let (guard, _) = dst.strided_slice::<BD>(w, h);
+        guard.to_vec()
+    };
+
+    let mut simd_handled = false;
+
     #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
     if crate::src::safe_simd::cdef::cdef_filter_dispatch::<BD>(
         variant,
@@ -104,34 +119,97 @@ fn cdef_direct<BD: BitDepth>(
         edges,
         bd,
     ) {
-        return;
+        simd_handled = true;
     }
 
     #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::cdef_arm::cdef_filter_dispatch::<BD>(
-        variant,
-        dst,
-        left,
-        top,
-        bottom,
-        pri_strength,
-        sec_strength,
-        dir,
-        damping,
-        edges,
-        bd,
-    ) {
+    if !simd_handled {
+        if crate::src::safe_simd::cdef_arm::cdef_filter_dispatch::<BD>(
+            variant,
+            dst,
+            left,
+            top,
+            bottom,
+            pri_strength,
+            sec_strength,
+            dir,
+            damping,
+            edges,
+            bd,
+        ) {
+            simd_handled = true;
+        }
+    }
+
+    if simd_handled {
+        #[cfg(feature = "simd_test")]
+        {
+            use crate::include::common::bitdepth::AsPrimitive;
+            let pre_pixels = pre_state;
+            let pxstride = dst.pixel_stride::<BD>().unsigned_abs();
+
+            // Save SIMD output
+            let (guard, _) = dst.strided_slice::<BD>(w, h);
+            let simd_pixels = guard.to_vec();
+            drop(guard);
+
+            // Restore pre-SIMD state
+            {
+                let (mut guard, _) = dst.strided_slice_mut::<BD>(w, h);
+                guard.copy_from_slice(&pre_pixels);
+            }
+
+            // Run scalar
+            cdef_filter_block_rust(
+                dst, left, top, bottom,
+                pri_strength, sec_strength, dir, damping,
+                w, h, edges, bd,
+            );
+
+            // Compare
+            let (guard, _) = dst.strided_slice::<BD>(w, h);
+            let scalar_pixels = guard.to_vec();
+            drop(guard);
+
+            let mut diffs = 0u32;
+            let mut first_diff = None;
+            for y in 0..h {
+                for x in 0..w {
+                    let idx = y * pxstride + x;
+                    let sv = simd_pixels[idx].as_::<i32>();
+                    let rv = scalar_pixels[idx].as_::<i32>();
+                    if sv != rv {
+                        diffs += 1;
+                        if first_diff.is_none() {
+                            first_diff = Some((x, y, idx, sv, rv));
+                        }
+                    }
+                }
+            }
+            if let Some((x, y, idx, sv, rv)) = first_diff {
+                // Restore SIMD output before panicking
+                {
+                    let (mut guard, _) = dst.strided_slice_mut::<BD>(w, h);
+                    guard.copy_from_slice(&simd_pixels);
+                }
+                panic!(
+                    "CDEF SIMD/scalar: {} pixel diffs, first at ({},{}) idx={}: simd={} scalar={} variant={} pri={} sec={} dir={} damping={}",
+                    diffs, x, y, idx, sv, rv, variant, pri_strength, sec_strength, dir, damping
+                );
+            }
+
+            // Restore SIMD output
+            {
+                let (mut guard, _) = dst.strided_slice_mut::<BD>(w, h);
+                guard.copy_from_slice(&simd_pixels);
+            }
+        }
         return;
     }
 
     // Scalar fallback
     #[allow(unreachable_code)]
     {
-        let (w, h) = match variant {
-            0 => (8, 8),
-            1 => (4, 8),
-            _ => (4, 4),
-        };
         cdef_filter_block_rust(
             dst,
             left,
