@@ -371,6 +371,7 @@ const _: () = assert!(EC_MIN_PROB <= (1 << EC_PROB_SHIFT) / 16);
 const EC_WIN_SIZE: usize = mem::size_of::<EcWin>() << 3;
 
 #[inline]
+#[cold]
 fn ctx_refill(s: &mut MsacContext) {
     let mut c = (EC_WIN_SIZE as c_int) - 24 - s.cnt;
     let mut dif = s.dif;
@@ -394,7 +395,7 @@ fn ctx_refill(s: &mut MsacContext) {
     s.cnt = (EC_WIN_SIZE as c_int) - 24 - c;
 }
 
-#[inline]
+#[inline(always)]
 fn ctx_norm(s: &mut MsacContext, dif: EcWin, rng: c_uint) {
     let d = 15 ^ (31 ^ clz(rng));
     let cnt = s.cnt;
