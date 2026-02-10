@@ -4737,18 +4737,17 @@ fn inv_txfm_add_dct_dct_4x16_8bpc_avx2_inner(
     let col_clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 4 * 16];
 
-    // rect4 scaling (sqrt(2))
-    let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
-
-    // Row transform (4 elements each, 16 rows)
+    // Row transform (4 elements each, 16 rows), shift=1 for 4x16
+    let rnd = 1;
+    let shift = 1;
     for y in 0..16 {
         let mut scratch = [0i32; 4];
         for x in 0..4 {
-            scratch[x] = rect4_scale(coeff[y + x * 16] as i32);
+            scratch[x] = coeff[y + x * 16] as i32;
         }
         dct4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         for x in 0..4 {
-            tmp[y * 4 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
+            tmp[y * 4 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -4826,17 +4825,17 @@ fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
     let mut tmp = [0i32; 16 * 4];
 
     // rect4 scaling
-    let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
-
-    // Row transform (16 elements each, 4 rows)
+    // Row transform (16 elements each, 4 rows), shift=1 for 16x4
+    let rnd = 1;
+    let shift = 1;
     for y in 0..4 {
         let mut scratch = [0i32; 16];
         for x in 0..16 {
-            scratch[x] = rect4_scale(coeff[y + x * 4] as i32);
+            scratch[x] = coeff[y + x * 4] as i32;
         }
         dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -4960,17 +4959,17 @@ macro_rules! impl_4x16_transform {
             let col_clip_max = i16::MAX as i32;
             let mut tmp = [0i32; 4 * 16];
 
-            let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
-
-            // Row transform (4 elements each, 16 rows)
+            // Row transform (4 elements each, 16 rows), shift=1 for 4x16
+            let rnd = 1;
+            let shift = 1;
             for y in 0..16 {
                 let mut scratch = [0i32; 4];
                 for x in 0..4 {
-                    scratch[x] = rect4_scale(coeff[y + x * 16] as i32);
+                    scratch[x] = coeff[y + x * 16] as i32;
                 }
                 $row_fn(&mut scratch[..4], 1, row_clip_min, row_clip_max);
                 for x in 0..4 {
-                    tmp[y * 4 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
+                    tmp[y * 4 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -5020,17 +5019,17 @@ macro_rules! impl_16x4_transform {
             let col_clip_max = i16::MAX as i32;
             let mut tmp = [0i32; 16 * 4];
 
-            let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
-
-            // Row transform (16 elements each, 4 rows)
+            // Row transform (16 elements each, 4 rows), shift=1 for 16x4
+            let rnd = 1;
+            let shift = 1;
             for y in 0..4 {
                 let mut scratch = [0i32; 16];
                 for x in 0..16 {
-                    scratch[x] = rect4_scale(coeff[y + x * 4] as i32);
+                    scratch[x] = coeff[y + x * 4] as i32;
                 }
                 $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
+                    tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -5470,15 +5469,13 @@ fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
     let mut tmp = [0i32; 8 * 32];
 
     // rect4 scaling
-    let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
-
     // Row transform (8 elements each, 32 rows)
     let rnd = 2;
     let shift = 2;
     for y in 0..32 {
         let mut scratch = [0i32; 8];
         for x in 0..8 {
-            scratch[x] = rect4_scale(coeff[y + x * 32] as i32);
+            scratch[x] = coeff[y + x * 32] as i32;
         }
         dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
@@ -5560,15 +5557,13 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
     let mut tmp = [0i32; 32 * 8];
 
     // rect4 scaling
-    let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
-
     // Row transform (32 elements each, 8 rows)
     let rnd = 2;
     let shift = 2;
     for y in 0..8 {
         let mut scratch = [0i32; 32];
         for x in 0..32 {
-            scratch[x] = rect4_scale(coeff[y + x * 8] as i32);
+            scratch[x] = coeff[y + x * 8] as i32;
         }
         dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
@@ -5697,17 +5692,17 @@ fn inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
     let clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 8 * 32];
 
-    let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
-
-    // Row transform (8 elements each, 32 rows)
+    // Row transform (8 elements each, 32 rows), shift=2 for 8x32
+    let rnd = 2;
+    let shift = 2;
     for y in 0..32 {
         let mut scratch = [0i32; 8];
         for x in 0..8 {
-            scratch[x] = rect4_scale(coeff[y + x * 32] as i32);
+            scratch[x] = coeff[y + x * 32] as i32;
         }
         identity8_1d(&mut scratch[..8], 1, clip_min, clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = iclip(scratch[x], clip_min, clip_max);
+            tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, clip_min, clip_max);
         }
     }
 
@@ -5781,17 +5776,17 @@ fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
     let clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 32 * 8];
 
-    let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
-
-    // Row transform (32 elements each, 8 rows)
+    // Row transform (32 elements each, 8 rows), shift=2 for 32x8
+    let rnd = 2;
+    let shift = 2;
     for y in 0..8 {
         let mut scratch = [0i32; 32];
         for x in 0..32 {
-            scratch[x] = rect4_scale(coeff[y + x * 8] as i32);
+            scratch[x] = coeff[y + x * 8] as i32;
         }
         identity32_1d(&mut scratch[..32], 1, clip_min, clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = iclip(scratch[x], clip_min, clip_max);
+            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, clip_min, clip_max);
         }
     }
 
@@ -5873,15 +5868,13 @@ fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
     let mut tmp = [0i32; 16 * 64];
 
     // rect4 scaling
-    let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
-
     // Row transform (16 elements each, 32 rows - only 32 rows have coefficients)
     let rnd = 2;
     let shift = 2;
     for y in 0..32 {
         let mut scratch = [0i32; 16];
         for x in 0..16 {
-            scratch[x] = rect4_scale(coeff[y + x * 32] as i32);
+            scratch[x] = coeff[y + x * 32] as i32;
         }
         dct16_1d_tx64(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
@@ -6009,15 +6002,13 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
     let mut tmp = [0i32; 64 * 16];
 
     // rect4 scaling
-    let rect4_scale = |v: i32| (v * 181 + 128) >> 8;
-
     // Row transform (64 elements each, 16 rows) - only first 32 columns have coefficients
     let rnd = 2;
     let shift = 2;
     for y in 0..16 {
         let mut scratch = [0i32; 64];
         for x in 0..32 {
-            scratch[x] = rect4_scale(coeff[y + x * 16] as i32);
+            scratch[x] = coeff[y + x * 16] as i32;
         }
         for x in 32..64 {
             scratch[x] = 0;
@@ -9058,7 +9049,9 @@ fn inv_txfm_64x64_inner(
     col_clip_min: i32,
     col_clip_max: i32,
 ) {
-    // For 64x64: no intermediate shift (shift in final output only)
+    // For 64x64: shift=2, rnd=2
+    let rnd = 2;
+    let shift = 2;
     // Row transform - only first 32 rows have stored coefficients
     for y in 0..32 {
         // Load row from column-major (stride=32, only first 32 columns stored)
@@ -9072,7 +9065,7 @@ fn inv_txfm_64x64_inner(
         }
         row_transform(&mut scratch[..64], 1, row_clip_min, row_clip_max);
         for x in 0..64 {
-            tmp[y * 64 + x] = scratch[x].clamp(col_clip_min, col_clip_max);
+            tmp[y * 64 + x] = ((scratch[x] + rnd) >> shift).clamp(col_clip_min, col_clip_max);
         }
     }
     // Rows 32..63 have no stored coefficients - zero them
@@ -9882,14 +9875,12 @@ fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
     let col_clip_max = i32::MAX;
     let mut tmp = [0i32; 64];
 
-    // is_rect2 = true for 4x16 (4:1 ratio)
-    let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
-
+    // is_rect2 = false for 4x16 (4:1 ratio), no rect2_scale
     // Row transform (4 elements each, 16 rows)
     for y in 0..16 {
         let mut scratch = [0i32; 4];
         for x in 0..4 {
-            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
+            scratch[x] = coeff[y + x * 16] as i32;
         }
         dct4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         for x in 0..4 {
@@ -9986,14 +9977,12 @@ fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
     let col_clip_max = i32::MAX;
     let mut tmp = [0i32; 64];
 
-    // is_rect2 = true for 16x4 (4:1 ratio)
-    let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
-
+    // is_rect2 = false for 16x4 (4:1 ratio), no rect2_scale
     // Row transform (16 elements each, 4 rows)
     for y in 0..4 {
         let mut scratch = [0i32; 16];
         for x in 0..16 {
-            scratch[x] = rect2_scale(coeff[y + x * 4] as i32);
+            scratch[x] = coeff[y + x * 4] as i32;
         }
         dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
@@ -10375,9 +10364,7 @@ fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
     let col_clip_max = i32::MAX;
     let mut tmp = [0i32; 256];
 
-    // is_rect2 = true for 8x32 (4:1 ratio)
-    let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
-
+    // is_rect2 = false for 8x32 (4:1 ratio), no rect2_scale
     // Row transform with shift=1
     let rnd = 1;
     let shift = 1;
@@ -10385,7 +10372,7 @@ fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
     for y in 0..32 {
         let mut scratch = [0i32; 8];
         for x in 0..8 {
-            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = coeff[y + x * 32] as i32;
         }
         dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
@@ -10492,9 +10479,7 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
     let col_clip_max = i32::MAX;
     let mut tmp = [0i32; 256];
 
-    // is_rect2 = true for 32x8 (4:1 ratio)
-    let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
-
+    // is_rect2 = false for 32x8 (4:1 ratio), no rect2_scale
     // Row transform with shift=1
     let rnd = 1;
     let shift = 1;
@@ -10502,7 +10487,7 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
     for y in 0..8 {
         let mut scratch = [0i32; 32];
         for x in 0..32 {
-            scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
+            scratch[x] = coeff[y + x * 8] as i32;
         }
         dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
@@ -10882,15 +10867,13 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
     let col_clip_max = i32::MAX;
     let mut tmp = [0i32; 1024];
 
-    // is_rect2 = true for 16x64 (4:1 ratio)
-    let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
-
+    // is_rect2 = false for 16x64 (4:1 ratio), no rect2_scale
     // Row transform - only first 32 rows have stored coefficients (high-freq zeroing)
     // Coeff is column-major with stride 32
     for y in 0..32 {
         let mut scratch = [0i32; 16];
         for x in 0..16 {
-            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
+            scratch[x] = coeff[y + x * 32] as i32;
         }
         dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
@@ -11018,15 +11001,13 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
     let col_clip_max = i32::MAX;
     let mut tmp = [0i32; 1024];
 
-    // is_rect2 = true for 64x16 (4:1 ratio)
-    let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
-
+    // is_rect2 = false for 64x16 (4:1 ratio), no rect2_scale
     // Row transform - only first 32 columns have stored coefficients (high-freq zeroing)
     // Coeff is column-major with stride 16
     for y in 0..16 {
         let mut scratch = [0i32; 64];
         for x in 0..32 {
-            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
+            scratch[x] = coeff[y + x * 16] as i32;
         }
         // Zero-extend: columns 32..63 have no stored coefficients
         for x in 32..64 {
