@@ -1226,9 +1226,10 @@ fn cdef_filter_block_simd_16bpc(
 
     let zero = _mm_setzero_si128();
     let bd_max = _mm_set1_epi16(bitdepth_max as i16);
+    let bitdepth_min_8 = ((bitdepth_max + 1) as u32).ilog2() as c_int - 8;
 
     if pri_strength != 0 {
-        let pri_tap = 4 - (pri_strength & 1);
+        let pri_tap = 4 - (pri_strength >> bitdepth_min_8 & 1);
         let pri_shift = cmp::max(0, damping - pri_strength.ilog2() as c_int);
         let pri_thresh = _mm_set1_epi16(pri_strength as i16);
         let pri_shift_v = _mm_cvtsi32_si128(pri_shift);
@@ -1415,8 +1416,10 @@ fn cdef_filter_block_scalar_16bpc(
 ) {
     use crate::include::common::bitdepth::BitDepth16;
 
+    let bitdepth_min_8 = ((bitdepth_max + 1) as u32).ilog2() as c_int - 8;
+
     if pri_strength != 0 {
-        let pri_tap = 4 - (pri_strength & 1);
+        let pri_tap = 4 - (pri_strength >> bitdepth_min_8 & 1);
         let pri_shift = cmp::max(0, damping - pri_strength.ilog2() as c_int);
 
         if sec_strength != 0 {
