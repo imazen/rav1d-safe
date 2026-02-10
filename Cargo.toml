@@ -63,6 +63,9 @@ asm_arm64_sve2 = ["asm"]
 # Force scalar fallback for all SIMD dispatch (testing only)
 force_scalar = []
 
+# Run SIMD and scalar side-by-side, panic on any mismatch (testing only)
+simd_test = []
+
 # Bit depth support
 bitdepth_8 = []
 bitdepth_16 = []

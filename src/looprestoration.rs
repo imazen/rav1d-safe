@@ -125,6 +125,33 @@ wrap_fn_ptr!(pub unsafe extern "C" fn loop_restoration_filter(
     _lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) -> ());
 
+/// Scalar-only loop restoration filter.
+#[cfg(not(feature = "asm"))]
+fn lr_filter_scalar<BD: BitDepth>(
+    variant: usize,
+    dst: PicOffset,
+    left: &[LeftPixelRow<BD::Pixel>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: c_int,
+    h: c_int,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bd: BD,
+) {
+    let left = &left[..h as usize];
+    let w_usize = w as usize;
+    let h_usize = h as usize;
+    match variant {
+        0 | 1 => {
+            wiener_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd)
+        }
+        2 => sgr_5x5_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
+        3 => sgr_3x3_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
+        _ => sgr_mix_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
+    }
+}
+
 /// Direct dispatch for loop restoration filter - bypasses function pointer table.
 /// Selects optimal SIMD implementation at runtime based on CPU features.
 /// `variant`: 0 = wiener7, 1 = wiener5, 2 = sgr_5x5, 3 = sgr_3x3, 4 = sgr_mix
@@ -141,35 +168,96 @@ fn lr_filter_direct<BD: BitDepth>(
     edges: LrEdgeFlags,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
-    if crate::src::safe_simd::looprestoration::lr_filter_dispatch::<BD>(
-        variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
-    ) {
-        return;
-    }
+    // Save pre-SIMD state for comparison testing
+    #[cfg(feature = "simd_test")]
+    let saved_buf = {
+        let (guard, _) = dst.full_guard::<BD>();
+        guard.to_vec()
+    };
 
-    #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::looprestoration_arm::lr_filter_dispatch::<BD>(
-        variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
-    ) {
+    let simd_handled = {
+        #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+        {
+            crate::src::safe_simd::looprestoration::lr_filter_dispatch::<BD>(
+                variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
+            )
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            crate::src::safe_simd::looprestoration_arm::lr_filter_dispatch::<BD>(
+                variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
+            )
+        }
+        #[cfg(not(any(
+            all(target_arch = "x86_64", not(feature = "force_scalar")),
+            target_arch = "aarch64"
+        )))]
+        {
+            let _ = (variant, &dst, left, lpf, lpf_off, w, h, params, edges, &bd);
+            false
+        }
+    };
+
+    if simd_handled {
+        #[cfg(feature = "simd_test")]
+        {
+            let pxstride = dst.pixel_stride::<BD>().unsigned_abs();
+            let h_usize = h as usize;
+            let w_usize = w as usize;
+
+            // Save SIMD output
+            let (guard, offset) = dst.full_guard::<BD>();
+            let simd_buf = guard.to_vec();
+            drop(guard);
+
+            // Restore pre-SIMD state
+            {
+                let (mut guard, _) = dst.full_guard_mut::<BD>();
+                guard.copy_from_slice(&saved_buf);
+            }
+
+            // Run scalar on restored state
+            lr_filter_scalar::<BD>(
+                variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
+            );
+
+            // Compare only the w×h output region
+            let (guard, _) = dst.full_guard::<BD>();
+            let scalar_buf = guard.to_vec();
+            drop(guard);
+
+            let variant_name = match variant {
+                0 => "wiener7",
+                1 => "wiener5",
+                2 => "sgr_5x5",
+                3 => "sgr_3x3",
+                _ => "sgr_mix",
+            };
+            for y in 0..h_usize {
+                for x in 0..w_usize {
+                    let idx = offset + y * pxstride + x;
+                    let sv = simd_buf[idx].as_::<i32>();
+                    let rv = scalar_buf[idx].as_::<i32>();
+                    assert_eq!(
+                        sv, rv,
+                        "LR SIMD/scalar mismatch at ({},{}) idx={}: simd={} scalar={} variant={} w={} h={}",
+                        x, y, idx, sv, rv, variant_name, w, h
+                    );
+                }
+            }
+
+            // Restore SIMD output so decoder proceeds correctly
+            {
+                let (mut guard, _) = dst.full_guard_mut::<BD>();
+                guard.copy_from_slice(&simd_buf);
+            }
+        }
         return;
     }
 
     // Scalar fallback
     #[allow(unreachable_code)]
-    {
-        let left = &left[..h as usize];
-        let w_usize = w as usize;
-        let h_usize = h as usize;
-        match variant {
-            0 | 1 => {
-                wiener_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd)
-            }
-            2 => sgr_5x5_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
-            3 => sgr_3x3_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
-            _ => sgr_mix_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
-        }
-    }
+    lr_filter_scalar::<BD>(variant, dst, left, lpf, lpf_off, w, h, params, edges, bd);
 }
 
 impl loop_restoration_filter::Fn {

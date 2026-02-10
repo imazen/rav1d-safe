@@ -45,6 +45,38 @@ wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
 /// Selects optimal SIMD implementation at runtime based on CPU features.
 /// Used when `feature = "asm"` is disabled for zero-overhead direct calls.
 #[cfg(not(feature = "asm"))]
+fn loopfilter_sb_scalar<BD: BitDepth>(
+    dst: PicOffset,
+    mask: &[u32; 3],
+    lvl: WithOffset<&DisjointMut<Vec<u8>>>,
+    b4_stride: usize,
+    lut: &Align16<Av1FilterLUT>,
+    wh: c_int,
+    bd: BD,
+    is_y: bool,
+    is_v: bool,
+) {
+    match (is_y, is_v) {
+        (true, false) => loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::Y as usize }>(
+            dst, mask, lvl, b4_stride, lut, wh, bd,
+        ),
+        (true, true) => loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::Y as usize }>(
+            dst, mask, lvl, b4_stride, lut, wh, bd,
+        ),
+        (false, false) => {
+            loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::UV as usize }>(
+                dst, mask, lvl, b4_stride, lut, wh, bd,
+            )
+        }
+        (false, true) => {
+            loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::UV as usize }>(
+                dst, mask, lvl, b4_stride, lut, wh, bd,
+            )
+        }
+    }
+}
+
+#[cfg(not(feature = "asm"))]
 fn loopfilter_sb_direct<BD: BitDepth>(
     f: &Rav1dFrameData,
     dst: PicOffset,
@@ -60,17 +92,89 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     let wh = w as c_int;
     let bd_max = f.bitdepth_max;
 
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
-    if crate::src::safe_simd::loopfilter::loopfilter_sb_dispatch::<BD>(
-        dst, stride, mask, lvl, b4_stride, lut, wh, bd_max, is_y, is_v,
-    ) {
-        return;
-    }
+    // Save pre-SIMD state for comparison testing
+    #[cfg(feature = "simd_test")]
+    let saved_buf = {
+        let (guard, _) = dst.full_guard::<BD>();
+        guard.to_vec()
+    };
 
-    #[cfg(target_arch = "aarch64")]
-    if crate::src::safe_simd::loopfilter_arm::loopfilter_sb_dispatch::<BD>(
-        dst, stride, mask, lvl, b4_stride, lut, wh, bd_max, is_y, is_v,
-    ) {
+    let simd_handled = {
+        #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+        {
+            crate::src::safe_simd::loopfilter::loopfilter_sb_dispatch::<BD>(
+                dst, stride, mask, lvl, b4_stride, lut, wh, bd_max, is_y, is_v,
+            )
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            crate::src::safe_simd::loopfilter_arm::loopfilter_sb_dispatch::<BD>(
+                dst, stride, mask, lvl, b4_stride, lut, wh, bd_max, is_y, is_v,
+            )
+        }
+        #[cfg(not(any(
+            all(target_arch = "x86_64", not(feature = "force_scalar")),
+            target_arch = "aarch64"
+        )))]
+        {
+            let _ = (stride, &mask, &lvl, b4_stride, lut, wh, bd_max, is_y, is_v);
+            false
+        }
+    };
+
+    if simd_handled {
+        #[cfg(feature = "simd_test")]
+        {
+            // Save SIMD output
+            let (guard, _) = dst.full_guard::<BD>();
+            let simd_buf = guard.to_vec();
+            drop(guard);
+
+            // Restore pre-SIMD state
+            {
+                let (mut guard, _) = dst.full_guard_mut::<BD>();
+                guard.copy_from_slice(&saved_buf);
+            }
+
+            // Run scalar on restored state
+            let bd = BD::from_c(bd_max);
+            loopfilter_sb_scalar::<BD>(
+                dst, mask, lvl, b4_stride as usize, lut, wh, bd, is_y, is_v,
+            );
+
+            // Compare SIMD vs scalar
+            let (guard, _) = dst.full_guard::<BD>();
+            let scalar_buf = guard.to_vec();
+            drop(guard);
+
+            let pxstride = dst.pixel_stride::<BD>().unsigned_abs();
+            let mut diffs = 0u32;
+            let mut first_diff = None;
+            for (i, (&sv, &rv)) in simd_buf.iter().zip(scalar_buf.iter()).enumerate() {
+                let sv = sv.as_::<i32>();
+                let rv = rv.as_::<i32>();
+                if sv != rv {
+                    diffs += 1;
+                    if first_diff.is_none() {
+                        let y = i / pxstride;
+                        let x = i % pxstride;
+                        first_diff = Some((i, x, y, sv, rv));
+                    }
+                }
+            }
+            if let Some((idx, x, y, sv, rv)) = first_diff {
+                panic!(
+                    "LF SIMD/scalar: {} pixel diffs, first at ({},{}) idx={}: simd={} scalar={} is_y={} is_v={} w={}",
+                    diffs, x, y, idx, sv, rv, is_y, is_v, w
+                );
+            }
+
+            // Restore SIMD output so decoder proceeds correctly
+            {
+                let (mut guard, _) = dst.full_guard_mut::<BD>();
+                guard.copy_from_slice(&simd_buf);
+            }
+        }
         return;
     }
 
@@ -79,24 +183,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     {
         let b4_stride = b4_stride as usize;
         let bd = BD::from_c(bd_max);
-        match (is_y, is_v) {
-            (true, false) => loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::Y as usize }>(
-                dst, mask, lvl, b4_stride, lut, wh, bd,
-            ),
-            (true, true) => loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::Y as usize }>(
-                dst, mask, lvl, b4_stride, lut, wh, bd,
-            ),
-            (false, false) => {
-                loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::UV as usize }>(
-                    dst, mask, lvl, b4_stride, lut, wh, bd,
-                )
-            }
-            (false, true) => {
-                loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::UV as usize }>(
-                    dst, mask, lvl, b4_stride, lut, wh, bd,
-                )
-            }
-        }
+        loopfilter_sb_scalar::<BD>(dst, mask, lvl, b4_stride, lut, wh, bd, is_y, is_v);
     }
 }
 

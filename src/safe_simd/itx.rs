@@ -92,7 +92,13 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     let rows01 = _mm256_set_m128i(row1, row0);
     let rows23 = _mm256_set_m128i(row3, row2);
 
-    let (rows01_out, rows23_out) = dct4_2rows_avx2(_token, rows01, rows23);
+    // 8bpc clip ranges: i16::MIN..i16::MAX for both row and col
+    let row_clip_min = if bitdepth_max == 255 { i16::MIN as i32 } else { (!bitdepth_max) << 7 };
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = if bitdepth_max == 255 { i16::MIN as i32 } else { (!bitdepth_max) << 5 };
+    let col_clip_max = !col_clip_min;
+
+    let (rows01_out, rows23_out) = dct4_2rows_avx2(_token, rows01, rows23, row_clip_min, row_clip_max);
 
     let r0 = _mm256_castsi256_si128(rows01_out);
     let r1 = _mm256_extracti128_si256(rows01_out, 1);
@@ -109,10 +115,18 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     let col2 = _mm_unpacklo_epi64(t01_hi, t23_hi);
     let col3 = _mm_unpackhi_epi64(t01_hi, t23_hi);
 
+    // Intermediate clamp (shift=0 for 4x4, so just clamp to col_clip range)
+    let cmin = _mm_set1_epi32(col_clip_min);
+    let cmax = _mm_set1_epi32(col_clip_max);
+    let col0 = _mm_max_epi32(_mm_min_epi32(col0, cmax), cmin);
+    let col1 = _mm_max_epi32(_mm_min_epi32(col1, cmax), cmin);
+    let col2 = _mm_max_epi32(_mm_min_epi32(col2, cmax), cmin);
+    let col3 = _mm_max_epi32(_mm_min_epi32(col3, cmax), cmin);
+
     let cols01 = _mm256_set_m128i(col1, col0);
     let cols23 = _mm256_set_m128i(col3, col2);
 
-    let (cols01_out, cols23_out) = dct4_2rows_avx2(_token, cols01, cols23);
+    let (cols01_out, cols23_out) = dct4_2rows_avx2(_token, cols01, cols23, col_clip_min, col_clip_max);
 
     let rnd = _mm256_set1_epi32(8);
     let cols01_scaled = _mm256_srai_epi32(_mm256_add_epi32(cols01_out, rnd), 4);
@@ -193,9 +207,16 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
 
 /// DCT4 butterfly on 2 rows packed in __m256i
 /// Each 128-bit lane contains one row: [in0, in1, in2, in3] as i32
+/// Outputs are clipped to [clip_min, clip_max] to match scalar behavior.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct4_2rows_avx2(_token: Desktop64, rows01: __m256i, rows23: __m256i) -> (__m256i, __m256i) {
+fn dct4_2rows_avx2(
+    _token: Desktop64,
+    rows01: __m256i,
+    rows23: __m256i,
+    clip_min: i32,
+    clip_max: i32,
+) -> (__m256i, __m256i) {
     // DCT4: t0 = (in0 + in2) * 181 + 128 >> 8
     //       t1 = (in0 - in2) * 181 + 128 >> 8
     //       t2 = (in1 * 1567 - in3 * (3784-4096) + 2048 >> 12) - in3
@@ -245,11 +266,13 @@ fn dct4_2rows_avx2(_token: Desktop64, rows01: __m256i, rows23: __m256i) -> (__m2
     );
     let t3_01 = _mm256_add_epi32(t3_inner_01, in1_01);
 
-    // Output: out0 = t0+t3, out1 = t1+t2, out2 = t1-t2, out3 = t0-t3
-    let out0_01 = _mm256_add_epi32(t0_01, t3_01);
-    let out1_01 = _mm256_add_epi32(t1_01, t2_01);
-    let out2_01 = _mm256_sub_epi32(t1_01, t2_01);
-    let out3_01 = _mm256_sub_epi32(t0_01, t3_01);
+    // Output: out0 = clip(t0+t3), out1 = clip(t1+t2), out2 = clip(t1-t2), out3 = clip(t0-t3)
+    let vmin = _mm256_set1_epi32(clip_min);
+    let vmax = _mm256_set1_epi32(clip_max);
+    let out0_01 = _mm256_max_epi32(_mm256_min_epi32(_mm256_add_epi32(t0_01, t3_01), vmax), vmin);
+    let out1_01 = _mm256_max_epi32(_mm256_min_epi32(_mm256_add_epi32(t1_01, t2_01), vmax), vmin);
+    let out2_01 = _mm256_max_epi32(_mm256_min_epi32(_mm256_sub_epi32(t1_01, t2_01), vmax), vmin);
+    let out3_01 = _mm256_max_epi32(_mm256_min_epi32(_mm256_sub_epi32(t0_01, t3_01), vmax), vmin);
 
     // Interleave outputs back: [out0, out1, out2, out3] per lane
     let mask0 = _mm256_set_epi32(0, 0, 0, -1i32, 0, 0, 0, -1i32);
@@ -302,10 +325,10 @@ fn dct4_2rows_avx2(_token: Desktop64, rows01: __m256i, rows23: __m256i) -> (__m2
     );
     let t3_23 = _mm256_add_epi32(t3_inner_23, in1_23);
 
-    let out0_23 = _mm256_add_epi32(t0_23, t3_23);
-    let out1_23 = _mm256_add_epi32(t1_23, t2_23);
-    let out2_23 = _mm256_sub_epi32(t1_23, t2_23);
-    let out3_23 = _mm256_sub_epi32(t0_23, t3_23);
+    let out0_23 = _mm256_max_epi32(_mm256_min_epi32(_mm256_add_epi32(t0_23, t3_23), vmax), vmin);
+    let out1_23 = _mm256_max_epi32(_mm256_min_epi32(_mm256_add_epi32(t1_23, t2_23), vmax), vmin);
+    let out2_23 = _mm256_max_epi32(_mm256_min_epi32(_mm256_sub_epi32(t1_23, t2_23), vmax), vmin);
+    let out3_23 = _mm256_max_epi32(_mm256_min_epi32(_mm256_sub_epi32(t0_23, t3_23), vmax), vmin);
 
     let rows23_out = _mm256_or_si256(
         _mm256_or_si256(
@@ -408,8 +431,14 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     let rows01 = _mm256_set_m128i(row1, row0);
     let rows23 = _mm256_set_m128i(row3, row2);
 
+    // 16bpc clip ranges
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
+
     // DCT4 butterfly on rows
-    let (rows01_out, rows23_out) = dct4_2rows_avx2(_token, rows01, rows23);
+    let (rows01_out, rows23_out) = dct4_2rows_avx2(_token, rows01, rows23, row_clip_min, row_clip_max);
 
     // Transpose for column pass
     let r0 = _mm256_castsi256_si128(rows01_out);
@@ -428,10 +457,18 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     let c2 = _mm_unpacklo_epi64(t01_hi, t23_hi);
     let c3 = _mm_unpackhi_epi64(t01_hi, t23_hi);
 
+    // Intermediate clamp (shift=0 for 4x4, so just clamp to col_clip range)
+    let cmin = _mm_set1_epi32(col_clip_min);
+    let cmax = _mm_set1_epi32(col_clip_max);
+    let c0 = _mm_max_epi32(_mm_min_epi32(c0, cmax), cmin);
+    let c1 = _mm_max_epi32(_mm_min_epi32(c1, cmax), cmin);
+    let c2 = _mm_max_epi32(_mm_min_epi32(c2, cmax), cmin);
+    let c3 = _mm_max_epi32(_mm_min_epi32(c3, cmax), cmin);
+
     // DCT4 on columns
     let cols01 = _mm256_set_m128i(c1, c0);
     let cols23 = _mm256_set_m128i(c3, c2);
-    let (cols01_out, cols23_out) = dct4_2rows_avx2(_token, cols01, cols23);
+    let (cols01_out, cols23_out) = dct4_2rows_avx2(_token, cols01, cols23, col_clip_min, col_clip_max);
 
     // Extract final columns
     let col0 = _mm256_castsi256_si128(cols01_out);
@@ -799,8 +836,11 @@ pub fn inv_identity_add_4x4_8bpc_avx2(
         let c2 = coeff[y + 8] as i32;
         let c3 = coeff[y + 12] as i32;
 
-        // Row: identity4, shift=0 (no intermediate shift), Col: identity4, final: (+ 8) >> 4
-        let scale = |v: i32| -> i32 { identity4(identity4(v)) };
+        // Row: identity4, intermediate clamp to col_clip_range, Col: identity4, final: (+ 8) >> 4
+        // For 8bpc: col_clip = i16::MIN..i16::MAX. For 16bpc: col_clip = (!bdmax)<<5..=!((!bdmax)<<5)
+        let col_clip_min = if bitdepth_max == 255 { i16::MIN as i32 } else { (!bitdepth_max) << 5 };
+        let col_clip_max = !col_clip_min;
+        let scale = |v: i32| -> i32 { identity4(identity4(v).clamp(col_clip_min, col_clip_max)) };
 
         let r0 = (scale(c0) + 8) >> 4;
         let r1 = (scale(c1) + 8) >> 4;
@@ -871,6 +911,15 @@ pub fn inv_identity_add_8x8_8bpc_avx2(
     let zero = _mm_setzero_si128();
     let max_val = _mm_set1_epi16(bitdepth_max as i16);
 
+    // Identity8: c * 2 per dimension. For 8x8: shift=1, rnd=1.
+    // Full pipeline per coeff (must use i32 to avoid i16 overflow):
+    //   row = c * 2
+    //   inter = (row + 1) >> 1
+    //   col = inter * 2
+    //   residual = (col + 8) >> 4
+    let one = _mm_set1_epi32(1);
+    let eight = _mm_set1_epi32(8);
+
     for y in 0..8 {
         let dst_off = y * dst_stride;
 
@@ -884,19 +933,27 @@ pub fn inv_identity_add_8x8_8bpc_avx2(
             coeffs[x] = coeff[y + x * 8];
         }
 
-        // Identity8: out = in * 2 per dimension, with intermediate shift between passes.
-        // Row identity8: c * 2. Intermediate: (c*2 + 1) >> 1. Col identity8: * 2. Final: (+ 8) >> 4.
+        // Process in i32 to avoid i16 overflow (identity8 doubles, can exceed i16 range)
         let c_vec = loadu_128!(<&[i16; 8]>::try_from(&coeffs[..]).unwrap());
-        let c_row = _mm_slli_epi16(c_vec, 1); // row identity8: * 2
-        let c_inter = _mm_srai_epi16(_mm_add_epi16(c_row, _mm_set1_epi16(1)), 1); // intermediate (+ 1) >> 1
-        let c_col = _mm_slli_epi16(c_inter, 1); // col identity8: * 2
-        let c_shifted = _mm_srai_epi16(
-            _mm_add_epi16(c_col, _mm_set1_epi16(8)),
-            4,
-        );
+        let c_lo = _mm_cvtepi16_epi32(c_vec);
+        let c_hi = _mm_cvtepi16_epi32(_mm_srli_si128(c_vec, 8));
 
-        // Add to destination
-        let sum = _mm_add_epi16(d16, c_shifted);
+        // row: c * 2
+        let row_lo = _mm_slli_epi32(c_lo, 1);
+        let row_hi = _mm_slli_epi32(c_hi, 1);
+        // intermediate: (row + 1) >> 1
+        let inter_lo = _mm_srai_epi32(_mm_add_epi32(row_lo, one), 1);
+        let inter_hi = _mm_srai_epi32(_mm_add_epi32(row_hi, one), 1);
+        // col: inter * 2
+        let col_lo = _mm_slli_epi32(inter_lo, 1);
+        let col_hi = _mm_slli_epi32(inter_hi, 1);
+        // final: (col + 8) >> 4
+        let res_lo = _mm_srai_epi32(_mm_add_epi32(col_lo, eight), 4);
+        let res_hi = _mm_srai_epi32(_mm_add_epi32(col_hi, eight), 4);
+
+        // Pack back to i16 and add to destination
+        let res16 = _mm_packs_epi32(res_lo, res_hi);
+        let sum = _mm_add_epi16(d16, res16);
         let clamped = _mm_max_epi16(_mm_min_epi16(sum, max_val), zero);
         let packed = _mm_packus_epi16(clamped, clamped);
 
@@ -7258,10 +7315,19 @@ pub fn inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(
         tmp[y][3] = o3;
     }
 
+    // Intermediate clamp (shift=0 for 4x4, clamp to col_clip range)
+    let col_clip_min = i16::MIN as i32;
+    let col_clip_max = i16::MAX as i32;
+    for y in 0..4 {
+        for x in 0..4 {
+            tmp[y][x] = tmp[y][x].clamp(col_clip_min, col_clip_max);
+        }
+    }
+
     // Second pass: ADST on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], col_clip_min, col_clip_max);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7353,9 +7419,18 @@ pub fn inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(
         tmp[y][3] = o3;
     }
 
+    // Intermediate clamp (shift=0 for 4x4, clamp to col_clip range)
+    let col_clip_min = i16::MIN as i32;
+    let col_clip_max = i16::MAX as i32;
+    for y in 0..4 {
+        for x in 0..4 {
+            tmp[y][x] = tmp[y][x].clamp(col_clip_min, col_clip_max);
+        }
+    }
+
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], col_clip_min, col_clip_max);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7645,10 +7720,19 @@ pub fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
         tmp[y][3] = o3;
     }
 
+    // Intermediate clamp (shift=0 for 4x4, just clamp to col_clip range)
+    let col_clip_min = i16::MIN as i32;
+    let col_clip_max = i16::MAX as i32;
+    for y in 0..4 {
+        for x in 0..4 {
+            tmp[y][x] = tmp[y][x].clamp(col_clip_min, col_clip_max);
+        }
+    }
+
     // Second pass: DCT on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], col_clip_min, col_clip_max);
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;

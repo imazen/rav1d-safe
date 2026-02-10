@@ -271,11 +271,12 @@ fn loop_filter_4_8bpc(
 // ============================================================================
 
 /// Read level value from lvl slice at the given offset.
-/// Each entry is [u8; 4], we read the first byte.
+/// Each entry is [u8; 4]; `byte_idx` selects which byte within the entry:
+///   0 = H Y, 1 = V Y, 2 = H/V U, 3 = H/V V
 /// Returns 0 for out-of-bounds access (= no filtering for that block).
 #[inline(always)]
-fn read_lvl(lvl: &[[u8; 4]], offset: usize) -> u8 {
-    lvl.get(offset).map_or(0, |v| v[0])
+fn read_lvl(lvl: &[[u8; 4]], offset: usize, byte_idx: usize) -> u8 {
+    lvl.get(offset).map_or(0, |v| v[byte_idx])
 }
 
 /// Loop filter for Y plane, horizontal edges (8bpc)
@@ -286,6 +287,8 @@ fn lpf_h_sb_y_8bpc_inner(
     stride: isize,
     vmask: &[u32; 3],
     lvl: &[[u8; 4]],
+    lvl_base: usize,
+    lvl_byte_idx: usize,
     b4_stride: isize,
     lut: &Align16<Av1FilterLUT>,
     _w: i32,
@@ -297,17 +300,17 @@ fn lpf_h_sb_y_8bpc_inner(
     let b4_strideb = 1usize;
 
     let vm = vmask[0] | vmask[1] | vmask[2];
-    let mut lvl_offset = 0usize;
+    let mut lvl_offset = lvl_base;
 
     let mut xy = 1u32;
     while vm & !xy.wrapping_sub(1) != 0 {
         if vm & xy != 0 {
-            let lvl_val = read_lvl(lvl, lvl_offset);
+            let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
                 if lvl_offset >= b4_strideb {
-                    read_lvl(lvl, lvl_offset - b4_strideb)
+                    read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
                 } else {
                     0
                 }
@@ -354,6 +357,8 @@ fn lpf_v_sb_y_8bpc_inner(
     stride: isize,
     vmask: &[u32; 3],
     lvl: &[[u8; 4]],
+    lvl_base: usize,
+    lvl_byte_idx: usize,
     b4_stride: isize,
     lut: &Align16<Av1FilterLUT>,
     _w: i32,
@@ -365,17 +370,17 @@ fn lpf_v_sb_y_8bpc_inner(
     let b4_strideb = b4_stride as usize;
 
     let vm = vmask[0] | vmask[1] | vmask[2];
-    let mut lvl_offset = 0usize;
+    let mut lvl_offset = lvl_base;
 
     let mut xy = 1u32;
     while vm & !xy.wrapping_sub(1) != 0 {
         if vm & xy != 0 {
-            let lvl_val = read_lvl(lvl, lvl_offset);
+            let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
                 if lvl_offset >= b4_strideb {
-                    read_lvl(lvl, lvl_offset - b4_strideb)
+                    read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
                 } else {
                     0
                 }
@@ -422,6 +427,8 @@ fn lpf_h_sb_uv_8bpc_inner(
     stride: isize,
     vmask: &[u32; 3],
     lvl: &[[u8; 4]],
+    lvl_base: usize,
+    lvl_byte_idx: usize,
     b4_stride: isize,
     lut: &Align16<Av1FilterLUT>,
     _w: i32,
@@ -433,17 +440,17 @@ fn lpf_h_sb_uv_8bpc_inner(
     let b4_strideb = 1usize;
 
     let vm = vmask[0] | vmask[1];
-    let mut lvl_offset = 0usize;
+    let mut lvl_offset = lvl_base;
 
     let mut xy = 1u32;
     while vm & !xy.wrapping_sub(1) != 0 {
         if vm & xy != 0 {
-            let lvl_val = read_lvl(lvl, lvl_offset);
+            let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
                 if lvl_offset >= b4_strideb {
-                    read_lvl(lvl, lvl_offset - b4_strideb)
+                    read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
                 } else {
                     0
                 }
@@ -484,6 +491,8 @@ fn lpf_v_sb_uv_8bpc_inner(
     stride: isize,
     vmask: &[u32; 3],
     lvl: &[[u8; 4]],
+    lvl_base: usize,
+    lvl_byte_idx: usize,
     b4_stride: isize,
     lut: &Align16<Av1FilterLUT>,
     _w: i32,
@@ -495,17 +504,17 @@ fn lpf_v_sb_uv_8bpc_inner(
     let b4_strideb = b4_stride as usize;
 
     let vm = vmask[0] | vmask[1];
-    let mut lvl_offset = 0usize;
+    let mut lvl_offset = lvl_base;
 
     let mut xy = 1u32;
     while vm & !xy.wrapping_sub(1) != 0 {
         if vm & xy != 0 {
-            let lvl_val = read_lvl(lvl, lvl_offset);
+            let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
                 if lvl_offset >= b4_strideb {
-                    read_lvl(lvl, lvl_offset - b4_strideb)
+                    read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
                 } else {
                     0
                 }
@@ -568,6 +577,8 @@ pub unsafe extern "C" fn lpf_h_sb_y_8bpc_avx2(
         stride as isize,
         mask,
         lvl,
+        0,
+        0,
         b4_stride as isize,
         lut,
         w,
@@ -600,6 +611,8 @@ pub unsafe extern "C" fn lpf_v_sb_y_8bpc_avx2(
         stride as isize,
         mask,
         lvl,
+        0,
+        0,
         b4_stride as isize,
         lut,
         w,
@@ -632,6 +645,8 @@ pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_avx2(
         stride as isize,
         mask,
         lvl,
+        0,
+        0,
         b4_stride as isize,
         lut,
         w,
@@ -664,6 +679,8 @@ pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_avx2(
         stride as isize,
         mask,
         lvl,
+        0,
+        0,
         b4_stride as isize,
         lut,
         w,
@@ -889,6 +906,8 @@ fn lpf_h_sb_y_16bpc_inner(
     stride_u16: isize,
     vmask: &[u32; 3],
     lvl: &[[u8; 4]],
+    lvl_base: usize,
+    lvl_byte_idx: usize,
     b4_stride: isize,
     lut: &Align16<Av1FilterLUT>,
     _w: i32,
@@ -900,17 +919,17 @@ fn lpf_h_sb_y_16bpc_inner(
     let b4_strideb = 1usize;
 
     let vm = vmask[0] | vmask[1] | vmask[2];
-    let mut lvl_offset = 0usize;
+    let mut lvl_offset = lvl_base;
 
     let mut xy = 1u32;
     while vm & !xy.wrapping_sub(1) != 0 {
         if vm & xy != 0 {
-            let lvl_val = read_lvl(lvl, lvl_offset);
+            let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
                 if lvl_offset >= b4_strideb {
-                    read_lvl(lvl, lvl_offset - b4_strideb)
+                    read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
                 } else {
                     0
                 }
@@ -957,6 +976,8 @@ fn lpf_v_sb_y_16bpc_inner(
     stride_u16: isize,
     vmask: &[u32; 3],
     lvl: &[[u8; 4]],
+    lvl_base: usize,
+    lvl_byte_idx: usize,
     b4_stride: isize,
     lut: &Align16<Av1FilterLUT>,
     _w: i32,
@@ -968,18 +989,18 @@ fn lpf_v_sb_y_16bpc_inner(
     let b4_strideb = b4_stride as usize;
 
     let vm = vmask[0] | vmask[1] | vmask[2];
-    let mut lvl_offset = 0usize;
+    let mut lvl_offset = lvl_base;
 
     let mut xy = 1u32;
     while vm & !xy.wrapping_sub(1) != 0 {
         if vm & xy != 0 {
-            let lvl_val = read_lvl(lvl, lvl_offset);
+            let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
                 // Note: original uses b4_strideb (not 4*b4_strideb) for V direction lookback
                 if lvl_offset >= b4_strideb {
-                    read_lvl(lvl, lvl_offset - b4_strideb)
+                    read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
                 } else {
                     0
                 }
@@ -1026,6 +1047,8 @@ fn lpf_h_sb_uv_16bpc_inner(
     stride_u16: isize,
     vmask: &[u32; 3],
     lvl: &[[u8; 4]],
+    lvl_base: usize,
+    lvl_byte_idx: usize,
     b4_stride: isize,
     lut: &Align16<Av1FilterLUT>,
     _w: i32,
@@ -1037,17 +1060,17 @@ fn lpf_h_sb_uv_16bpc_inner(
     let b4_strideb = 1usize;
 
     let vm = vmask[0] | vmask[1];
-    let mut lvl_offset = 0usize;
+    let mut lvl_offset = lvl_base;
 
     let mut xy = 1u32;
     while vm & !xy.wrapping_sub(1) != 0 {
         if vm & xy != 0 {
-            let lvl_val = read_lvl(lvl, lvl_offset);
+            let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
                 if lvl_offset >= b4_strideb {
-                    read_lvl(lvl, lvl_offset - b4_strideb)
+                    read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
                 } else {
                     0
                 }
@@ -1088,6 +1111,8 @@ fn lpf_v_sb_uv_16bpc_inner(
     stride_u16: isize,
     vmask: &[u32; 3],
     lvl: &[[u8; 4]],
+    lvl_base: usize,
+    lvl_byte_idx: usize,
     b4_stride: isize,
     lut: &Align16<Av1FilterLUT>,
     _w: i32,
@@ -1099,18 +1124,18 @@ fn lpf_v_sb_uv_16bpc_inner(
     let b4_strideb = b4_stride as usize;
 
     let vm = vmask[0] | vmask[1];
-    let mut lvl_offset = 0usize;
+    let mut lvl_offset = lvl_base;
 
     let mut xy = 1u32;
     while vm & !xy.wrapping_sub(1) != 0 {
         if vm & xy != 0 {
-            let lvl_val = read_lvl(lvl, lvl_offset);
+            let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
             let l = if lvl_val != 0 {
                 lvl_val
             } else {
                 // Note: original uses b4_strideb (not 4*b4_strideb) for V direction lookback
                 if lvl_offset >= b4_strideb {
-                    read_lvl(lvl, lvl_offset - b4_strideb)
+                    read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
                 } else {
                     0
                 }
@@ -1172,6 +1197,8 @@ pub unsafe extern "C" fn lpf_h_sb_y_16bpc_avx2(
         stride as isize / 2,
         mask,
         lvl,
+        0,
+        0,
         b4_stride as isize,
         lut,
         w,
@@ -1204,6 +1231,8 @@ pub unsafe extern "C" fn lpf_v_sb_y_16bpc_avx2(
         stride as isize / 2,
         mask,
         lvl,
+        0,
+        0,
         b4_stride as isize,
         lut,
         w,
@@ -1236,6 +1265,8 @@ pub unsafe extern "C" fn lpf_h_sb_uv_16bpc_avx2(
         stride as isize / 2,
         mask,
         lvl,
+        0,
+        0,
         b4_stride as isize,
         lut,
         w,
@@ -1268,6 +1299,8 @@ pub unsafe extern "C" fn lpf_v_sb_uv_16bpc_avx2(
         stride as isize / 2,
         mask,
         lvl,
+        0,
+        0,
         b4_stride as isize,
         lut,
         w,
@@ -1346,11 +1379,27 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     // Note: lvl.offset is a BYTE offset (not element offset), so we use .index()
     // with a byte range and then cast via zerocopy, since slice_as() would
     // incorrectly multiply the offset by sizeof([u8; 4]).
-    let lvl_remaining_bytes = lvl.data.len() - lvl.offset;
+    //
+    // Include lookback entries: when the current block's level is 0, the scalar
+    // fallback reads the PREVIOUS block's level (lvl - 4*b4_strideb bytes).
+    // We need to include those entries in the slice so the SIMD path can too.
+    let b4_strideb_entries = if !is_v { 1usize } else { b4_stride.unsigned_abs() as usize };
+    let lvl_lookback_bytes = b4_strideb_entries * 4;
+    let lvl_start = lvl.offset.saturating_sub(lvl_lookback_bytes);
+    // Round down to a 4-byte boundary for zerocopy alignment
+    let lvl_start = lvl_start & !3;
+    let lvl_remaining_bytes = lvl.data.len() - lvl_start;
     let lvl_len = lvl_remaining_bytes / 4;
-    let lvl_byte_end = lvl.offset + lvl_len * 4;
-    let lvl_byte_guard = lvl.data.index(lvl.offset..lvl_byte_end);
+    let lvl_byte_end = lvl_start + lvl_len * 4;
+    let lvl_byte_guard = lvl.data.index(lvl_start..lvl_byte_end);
     let lvl_slice: &[[u8; 4]] = zerocopy::FromBytes::slice_from(&*lvl_byte_guard).unwrap();
+    // Which byte within each [u8;4] entry to read:
+    //   H Y → 0, V Y → 1, H U → 2, H V → 3
+    // This is encoded in lvl.offset % 4 by the caller (lf_apply.rs adds +0/+1/+2/+3).
+    let lvl_byte_idx = lvl.offset % 4;
+    // Base offset: how many [u8;4] entries from the start of lvl_slice to the
+    // original lvl.offset's 4-byte-aligned position
+    let lvl_base = (lvl.offset - lvl_byte_idx - lvl_start) / 4;
 
     // Compute actual iterations from vmask to tighten bounds check.
     // Each bit in vmask represents a 4-pixel edge. The highest set bit
@@ -1406,6 +1455,8 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     stride as isize,
                     mask,
                     lvl_slice,
+                    lvl_base,
+                    lvl_byte_idx,
                     b4_stride,
                     lut,
                     w,
@@ -1417,6 +1468,8 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     stride as isize,
                     mask,
                     lvl_slice,
+                    lvl_base,
+                    lvl_byte_idx,
                     b4_stride,
                     lut,
                     w,
@@ -1428,6 +1481,8 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     stride as isize,
                     mask,
                     lvl_slice,
+                    lvl_base,
+                    lvl_byte_idx,
                     b4_stride,
                     lut,
                     w,
@@ -1439,6 +1494,8 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     stride as isize,
                     mask,
                     lvl_slice,
+                    lvl_base,
+                    lvl_byte_idx,
                     b4_stride,
                     lut,
                     w,
@@ -1482,6 +1539,8 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     stride as isize / 2,
                     mask,
                     lvl_slice,
+                    lvl_base,
+                    lvl_byte_idx,
                     b4_stride,
                     lut,
                     w,
@@ -1493,6 +1552,8 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     stride as isize / 2,
                     mask,
                     lvl_slice,
+                    lvl_base,
+                    lvl_byte_idx,
                     b4_stride,
                     lut,
                     w,
@@ -1504,6 +1565,8 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     stride as isize / 2,
                     mask,
                     lvl_slice,
+                    lvl_base,
+                    lvl_byte_idx,
                     b4_stride,
                     lut,
                     w,
@@ -1515,6 +1578,8 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     stride as isize / 2,
                     mask,
                     lvl_slice,
+                    lvl_base,
+                    lvl_byte_idx,
                     b4_stride,
                     lut,
                     w,

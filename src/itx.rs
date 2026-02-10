@@ -426,6 +426,19 @@ impl itxfm::Fn {
                 unsafe { self.get()(dst_ptr, dst_stride, coeff_ptr, eob, bd_c, coeff_len, dst_ffi) }
             } else {
                 // Direct dispatch: no function pointers, no extern "C" ABI overhead.
+
+                // Save pre-SIMD state for comparison testing
+                #[cfg(feature = "simd_test")]
+                let pre_state = {
+                    let txsz = TxfmSize::from_repr(tx_size).unwrap();
+                    let (w, h) = txsz.to_wh();
+                    let (guard, _) = dst.strided_slice::<BD>(w, h);
+                    let pixels = guard.to_vec();
+                    drop(guard);
+                    let coeffs = coeff.to_vec();
+                    (pixels, coeffs, w, h)
+                };
+
                 let simd_handled = {
                     #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
                     { crate::src::safe_simd::itx::itxfm_add_dispatch::<BD>(tx_size, tx_type, dst, coeff, eob, bd) }
@@ -435,6 +448,54 @@ impl itxfm::Fn {
                     { let _ = (tx_size, tx_type, &dst, &coeff, eob, &bd); false }
                 };
                 if simd_handled {
+                    #[cfg(feature = "simd_test")]
+                    {
+                        let (orig_pixels, orig_coeff, w, h) = pre_state;
+                        let pxstride = dst.pixel_stride::<BD>().unsigned_abs();
+
+                        // Save SIMD output
+                        let (guard, _) = dst.strided_slice::<BD>(w, h);
+                        let simd_pixels = guard.to_vec();
+                        drop(guard);
+
+                        // Restore pre-SIMD state
+                        {
+                            let (mut guard, _) = dst.strided_slice_mut::<BD>(w, h);
+                            guard.copy_from_slice(&orig_pixels);
+                        }
+                        coeff.copy_from_slice(&orig_coeff);
+
+                        // Run scalar on restored state
+                        itxfm_add_scalar_fallback::<BD>(tx_size, tx_type as TxfmType, dst, coeff, eob, bd);
+
+                        // Compare SIMD vs scalar (only actual pixels, skip stride gaps)
+                        let (guard, _) = dst.strided_slice::<BD>(w, h);
+                        let scalar_pixels = guard.to_vec();
+                        drop(guard);
+
+                        for y in 0..h {
+                            for x in 0..w {
+                                let idx = y * pxstride + x;
+                                let sv = simd_pixels[idx].as_::<i32>();
+                                let rv = scalar_pixels[idx].as_::<i32>();
+                                assert_eq!(
+                                    sv, rv,
+                                    "ITX SIMD/scalar mismatch at ({},{}) idx={}: simd={} scalar={} size={}x{} type={} eob={}",
+                                    x, y, idx, sv, rv, w, h, tx_type, eob
+                                );
+                            }
+                        }
+
+                        // Restore SIMD output so decoder proceeds correctly
+                        {
+                            let (mut guard, _) = dst.strided_slice_mut::<BD>(w, h);
+                            guard.copy_from_slice(&simd_pixels);
+                        }
+                        // Re-zero coefficients (both paths should have zeroed them)
+                        for c in coeff.iter_mut() {
+                            *c = 0.as_();
+                        }
+                    }
                     return;
                 }
                 // Scalar fallback
