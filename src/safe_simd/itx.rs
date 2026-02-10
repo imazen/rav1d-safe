@@ -392,7 +392,7 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize, // stride in bytes
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
@@ -703,7 +703,7 @@ fn inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
     dst: &mut [u16],
     dst_base: usize,
     dst_stride_u16: isize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
@@ -1392,7 +1392,7 @@ fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize, // stride in bytes
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
@@ -1402,10 +1402,10 @@ fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
     let stride_u16 = dst_stride / 2;
 
     // For 16bpc: intermediate values have larger range, use i32 throughout
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
 
     // Load coefficients and convert to i32 row-major
     // Input is column-major: coeff[y + x * 8]
@@ -1425,7 +1425,7 @@ fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
         dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         // Apply intermediate shift and store row-major
         for x in 0..8 {
-            tmp[y * 8 + x] = (scratch[x] + rnd) >> shift;
+            tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -2364,7 +2364,7 @@ fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize, // stride in bytes
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
@@ -2374,10 +2374,10 @@ fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
     let stride_u16 = dst_stride / 2;
 
     // For 16bpc: use full i32 range for intermediate calculations
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 256];
 
     // Row transform (shift = 2 for 16x16)
@@ -2393,7 +2393,7 @@ fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
         dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         // Apply intermediate shift and store row-major
         for x in 0..16 {
-            tmp[y * 16 + x] = (scratch[x] + rnd) >> shift;
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -2416,29 +2416,29 @@ fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
         let d_lo = _mm256_unpacklo_epi16(d, _mm256_setzero_si256());
         let d_hi = _mm256_unpackhi_epi16(d, _mm256_setzero_si256());
         // Permute to get correct order after unpack
-        let d_0_4 = _mm256_permute2x128_si256(d_lo, d_hi, 0x20); // pixels 0-3, 8-11
-        let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31); // pixels 4-7, 12-15
+        let d_0_4 = _mm256_permute2x128_si256(d_lo, d_hi, 0x20); // pixels 0-7
+        let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31); // pixels 8-15
 
         // Load and scale coefficients (16 values)
         let c0 = _mm256_set_epi32(
-            tmp[y * 16 + 3],
-            tmp[y * 16 + 2],
-            tmp[y * 16 + 1],
-            tmp[y * 16 + 0],
-            tmp[y * 16 + 11],
-            tmp[y * 16 + 10],
-            tmp[y * 16 + 9],
-            tmp[y * 16 + 8],
-        );
-        let c1 = _mm256_set_epi32(
             tmp[y * 16 + 7],
             tmp[y * 16 + 6],
             tmp[y * 16 + 5],
             tmp[y * 16 + 4],
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+        );
+        let c1 = _mm256_set_epi32(
             tmp[y * 16 + 15],
             tmp[y * 16 + 14],
             tmp[y * 16 + 13],
             tmp[y * 16 + 12],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
         );
 
         // Final scaling: (c + 8) >> 4
@@ -8098,9 +8098,9 @@ fn identity32_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
 
 /// Generic 32x32 transform function
 #[inline]
-fn inv_txfm_32x32_inner(
+fn inv_txfm_32x32_inner<C: Copy + Into<i32>>(
     tmp: &mut [i32; 1024],
-    coeff: &[i16],
+    coeff: &[C],
     row_transform: fn(&mut [i32], usize, i32, i32),
     col_transform: fn(&mut [i32], usize, i32, i32),
     row_clip_min: i32,
@@ -8117,7 +8117,7 @@ fn inv_txfm_32x32_inner(
         // Load row from column-major
         let mut scratch = [0i32; 32];
         for x in 0..32 {
-            scratch[x] = coeff[y + x * 32] as i32;
+            scratch[x] = coeff[y + x * 32].into();
         }
         row_transform(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         // Apply intermediate shift and store row-major
@@ -8365,7 +8365,7 @@ fn add_32x32_to_dst_16bpc(
     dst: &mut [u16],
     dst_stride: usize, // stride in bytes
     tmp: &[i32; 1024],
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
@@ -8439,17 +8439,17 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     // For 16bpc: use full i32 range
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
 
     let mut tmp = [0i32; 1024];
     inv_txfm_32x32_inner(
@@ -9123,9 +9123,9 @@ fn identity64_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
 /// AV1 high-frequency zeroing: only 32x32 coefficients are stored for 64x64
 /// transforms. Coeff is column-major with stride 32, and has 1024 elements.
 #[inline]
-fn inv_txfm_64x64_inner(
+fn inv_txfm_64x64_inner<C: Copy + Into<i32>>(
     tmp: &mut [i32; 4096],
-    coeff: &[i16],
+    coeff: &[C],
     row_transform: fn(&mut [i32], usize, i32, i32),
     col_transform: fn(&mut [i32], usize, i32, i32),
     row_clip_min: i32,
@@ -9141,7 +9141,7 @@ fn inv_txfm_64x64_inner(
         // Load row from column-major (stride=32, only first 32 columns stored)
         let mut scratch = [0i32; 64];
         for x in 0..32 {
-            scratch[x] = coeff[y + x * 32] as i32;
+            scratch[x] = coeff[y + x * 32].into();
         }
         // Zero-extend: columns 32..63 have no stored coefficients
         for x in 32..64 {
@@ -9324,7 +9324,7 @@ fn add_64x64_to_dst_16bpc(
     dst: &mut [u16],
     dst_stride: usize,
     tmp: &[i32; 4096],
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
@@ -9398,17 +9398,17 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     // For 16bpc: use full i32 range
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
 
     let mut tmp = [0i32; 4096];
     inv_txfm_64x64_inner(
@@ -9475,17 +9475,17 @@ fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 32];
 
     // is_rect2 = true for 4x8, so apply sqrt(2) scaling
@@ -9499,7 +9499,7 @@ fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
         }
         dct4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         for x in 0..4 {
-            tmp[y * 4 + x] = scratch[x];
+            tmp[y * 4 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
         }
     }
 
@@ -9581,17 +9581,17 @@ fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 32];
 
     // is_rect2 = true for 8x4
@@ -9605,7 +9605,7 @@ fn inv_txfm_add_dct_dct_8x4_16bpc_avx2_inner(
         }
         dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = scratch[x];
+            tmp[y * 8 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
         }
     }
 
@@ -9696,17 +9696,17 @@ fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 128];
 
     // is_rect2 = true for 8x16
@@ -9723,7 +9723,7 @@ fn inv_txfm_add_dct_dct_8x16_16bpc_avx2_inner(
         }
         dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = (scratch[x] + rnd) >> shift;
+            tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -9813,17 +9813,17 @@ fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 128];
 
     // is_rect2 = true for 16x8
@@ -9840,7 +9840,7 @@ fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
         }
         dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = (scratch[x] + rnd) >> shift;
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -9865,24 +9865,24 @@ fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
         let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
         let c0 = _mm256_set_epi32(
-            tmp[y * 16 + 3],
-            tmp[y * 16 + 2],
-            tmp[y * 16 + 1],
-            tmp[y * 16 + 0],
-            tmp[y * 16 + 11],
-            tmp[y * 16 + 10],
-            tmp[y * 16 + 9],
-            tmp[y * 16 + 8],
-        );
-        let c1 = _mm256_set_epi32(
             tmp[y * 16 + 7],
             tmp[y * 16 + 6],
             tmp[y * 16 + 5],
             tmp[y * 16 + 4],
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+        );
+        let c1 = _mm256_set_epi32(
             tmp[y * 16 + 15],
             tmp[y * 16 + 14],
             tmp[y * 16 + 13],
             tmp[y * 16 + 12],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
         );
 
         let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
@@ -9946,21 +9946,24 @@ fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 64];
 
     // is_rect2 = false for 4x16 (4:1 ratio), no rect2_scale
-    // Row transform (4 elements each, 16 rows)
+    // Row transform with shift=1 (4x16 intermediate shift)
+    let rnd = 1;
+    let shift = 1;
+
     for y in 0..16 {
         let mut scratch = [0i32; 4];
         for x in 0..4 {
@@ -9968,7 +9971,7 @@ fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
         }
         dct4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         for x in 0..4 {
-            tmp[y * 4 + x] = scratch[x];
+            tmp[y * 4 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -10048,21 +10051,24 @@ fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 64];
 
     // is_rect2 = false for 16x4 (4:1 ratio), no rect2_scale
-    // Row transform (16 elements each, 4 rows)
+    // Row transform with shift=1 (16x4 intermediate shift)
+    let rnd = 1;
+    let shift = 1;
+
     for y in 0..4 {
         let mut scratch = [0i32; 16];
         for x in 0..16 {
@@ -10070,7 +10076,7 @@ fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
         }
         dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = scratch[x];
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -10094,24 +10100,24 @@ fn inv_txfm_add_dct_dct_16x4_16bpc_avx2_inner(
         let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
         let c0 = _mm256_set_epi32(
-            tmp[y * 16 + 3],
-            tmp[y * 16 + 2],
-            tmp[y * 16 + 1],
-            tmp[y * 16 + 0],
-            tmp[y * 16 + 11],
-            tmp[y * 16 + 10],
-            tmp[y * 16 + 9],
-            tmp[y * 16 + 8],
-        );
-        let c1 = _mm256_set_epi32(
             tmp[y * 16 + 7],
             tmp[y * 16 + 6],
             tmp[y * 16 + 5],
             tmp[y * 16 + 4],
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+        );
+        let c1 = _mm256_set_epi32(
             tmp[y * 16 + 15],
             tmp[y * 16 + 14],
             tmp[y * 16 + 13],
             tmp[y * 16 + 12],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
         );
 
         let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
@@ -10175,17 +10181,17 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 512];
 
     // is_rect2 = true for 16x32
@@ -10202,7 +10208,7 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
         }
         dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = (scratch[x] + rnd) >> shift;
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -10226,24 +10232,24 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
         let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
         let c0 = _mm256_set_epi32(
-            tmp[y * 16 + 3],
-            tmp[y * 16 + 2],
-            tmp[y * 16 + 1],
-            tmp[y * 16 + 0],
-            tmp[y * 16 + 11],
-            tmp[y * 16 + 10],
-            tmp[y * 16 + 9],
-            tmp[y * 16 + 8],
-        );
-        let c1 = _mm256_set_epi32(
             tmp[y * 16 + 7],
             tmp[y * 16 + 6],
             tmp[y * 16 + 5],
             tmp[y * 16 + 4],
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+        );
+        let c1 = _mm256_set_epi32(
             tmp[y * 16 + 15],
             tmp[y * 16 + 14],
             tmp[y * 16 + 13],
             tmp[y * 16 + 12],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
         );
 
         let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
@@ -10307,17 +10313,17 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 512];
 
     // is_rect2 = true for 32x16
@@ -10334,7 +10340,7 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
         }
         dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = (scratch[x] + rnd) >> shift;
+            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -10435,23 +10441,23 @@ fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 256];
 
     // is_rect2 = false for 8x32 (4:1 ratio), no rect2_scale
-    // Row transform with shift=1
-    let rnd = 1;
-    let shift = 1;
+    // Row transform with shift=2 (8x32 intermediate shift)
+    let rnd = 2;
+    let shift = 2;
 
     for y in 0..32 {
         let mut scratch = [0i32; 8];
@@ -10460,7 +10466,7 @@ fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
         }
         dct8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = (scratch[x] + rnd) >> shift;
+            tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -10480,18 +10486,18 @@ fn inv_txfm_add_dct_dct_8x32_16bpc_avx2_inner(
         let d_lo = _mm_unpacklo_epi16(d, zero);
         let d_hi = _mm_unpackhi_epi16(d, zero);
 
-        // (+ 4) >> 3 for 8x32
+        // (+ 8) >> 4 for 8x32
         let c_lo = _mm_set_epi32(
-            (tmp[y * 8 + 3] + 4) >> 3,
-            (tmp[y * 8 + 2] + 4) >> 3,
-            (tmp[y * 8 + 1] + 4) >> 3,
-            (tmp[y * 8 + 0] + 4) >> 3,
+            (tmp[y * 8 + 3] + 8) >> 4,
+            (tmp[y * 8 + 2] + 8) >> 4,
+            (tmp[y * 8 + 1] + 8) >> 4,
+            (tmp[y * 8 + 0] + 8) >> 4,
         );
         let c_hi = _mm_set_epi32(
-            (tmp[y * 8 + 7] + 4) >> 3,
-            (tmp[y * 8 + 6] + 4) >> 3,
-            (tmp[y * 8 + 5] + 4) >> 3,
-            (tmp[y * 8 + 4] + 4) >> 3,
+            (tmp[y * 8 + 7] + 8) >> 4,
+            (tmp[y * 8 + 6] + 8) >> 4,
+            (tmp[y * 8 + 5] + 8) >> 4,
+            (tmp[y * 8 + 4] + 8) >> 4,
         );
 
         let sum_lo = _mm_add_epi32(d_lo, c_lo);
@@ -10550,23 +10556,23 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 256];
 
     // is_rect2 = false for 32x8 (4:1 ratio), no rect2_scale
-    // Row transform with shift=1
-    let rnd = 1;
-    let shift = 1;
+    // Row transform with shift=2 (32x8 intermediate shift)
+    let rnd = 2;
+    let shift = 2;
 
     for y in 0..8 {
         let mut scratch = [0i32; 32];
@@ -10575,7 +10581,7 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
         }
         dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = (scratch[x] + rnd) >> shift;
+            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -10676,21 +10682,25 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 2048];
 
     // is_rect2 = true for 32x64
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
+
+    // Row transform with shift=1 (32x64 intermediate shift)
+    let rnd = 1;
+    let shift = 1;
 
     // Row transform - only first 32 rows have stored coefficients (high-freq zeroing)
     // Coeff is column-major with stride 32
@@ -10701,7 +10711,7 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
         }
         dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = scratch[x];
+            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
     // Zero-pad rows 32..63
@@ -10808,21 +10818,25 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 2048];
 
     // is_rect2 = true for 64x32
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
+
+    // Row transform with shift=1 (64x32 intermediate shift)
+    let rnd = 1;
+    let shift = 1;
 
     // Row transform - only first 32 columns have stored coefficients (high-freq zeroing)
     // Coeff is column-major with stride 32
@@ -10837,7 +10851,7 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
         }
         dct64_1d(&mut scratch[..64], 1, row_clip_min, row_clip_max);
         for x in 0..64 {
-            tmp[y * 64 + x] = scratch[x];
+            tmp[y * 64 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -10938,20 +10952,24 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 1024];
 
     // is_rect2 = false for 16x64 (4:1 ratio), no rect2_scale
+    // Row transform with shift=2 (16x64 intermediate shift)
+    let rnd = 2;
+    let shift = 2;
+
     // Row transform - only first 32 rows have stored coefficients (high-freq zeroing)
     // Coeff is column-major with stride 32
     for y in 0..32 {
@@ -10961,7 +10979,7 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
         }
         dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = scratch[x];
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
     // Zero-pad rows 32..63
@@ -10991,24 +11009,24 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
         let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
         let c0 = _mm256_set_epi32(
-            tmp[y * 16 + 3],
-            tmp[y * 16 + 2],
-            tmp[y * 16 + 1],
-            tmp[y * 16 + 0],
-            tmp[y * 16 + 11],
-            tmp[y * 16 + 10],
-            tmp[y * 16 + 9],
-            tmp[y * 16 + 8],
-        );
-        let c1 = _mm256_set_epi32(
             tmp[y * 16 + 7],
             tmp[y * 16 + 6],
             tmp[y * 16 + 5],
             tmp[y * 16 + 4],
+            tmp[y * 16 + 3],
+            tmp[y * 16 + 2],
+            tmp[y * 16 + 1],
+            tmp[y * 16 + 0],
+        );
+        let c1 = _mm256_set_epi32(
             tmp[y * 16 + 15],
             tmp[y * 16 + 14],
             tmp[y * 16 + 13],
             tmp[y * 16 + 12],
+            tmp[y * 16 + 11],
+            tmp[y * 16 + 10],
+            tmp[y * 16 + 9],
+            tmp[y * 16 + 8],
         );
 
         let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
@@ -11072,20 +11090,24 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 1024];
 
     // is_rect2 = false for 64x16 (4:1 ratio), no rect2_scale
+    // Row transform with shift=2 (64x16 intermediate shift)
+    let rnd = 2;
+    let shift = 2;
+
     // Row transform - only first 32 columns have stored coefficients (high-freq zeroing)
     // Coeff is column-major with stride 16
     for y in 0..16 {
@@ -11099,7 +11121,7 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
         }
         dct64_1d(&mut scratch[..64], 1, row_clip_min, row_clip_max);
         for x in 0..64 {
-            tmp[y * 64 + x] = scratch[x];
+            tmp[y * 64 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -11771,7 +11793,7 @@ pub fn inv_identity_add_4x4_16bpc_avx2(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
@@ -11853,7 +11875,7 @@ pub fn inv_identity_add_8x8_16bpc_avx2(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
@@ -11943,7 +11965,7 @@ pub fn inv_identity_add_16x16_16bpc_avx2(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
@@ -11997,12 +12019,12 @@ pub fn inv_identity_add_16x16_16bpc_avx2(
         let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
         let c0 = _mm256_set_epi32(
-            tmp[y][3], tmp[y][2], tmp[y][1], tmp[y][0], tmp[y][11], tmp[y][10], tmp[y][9],
-            tmp[y][8],
+            tmp[y][7], tmp[y][6], tmp[y][5], tmp[y][4], tmp[y][3], tmp[y][2], tmp[y][1],
+            tmp[y][0],
         );
         let c1 = _mm256_set_epi32(
-            tmp[y][7], tmp[y][6], tmp[y][5], tmp[y][4], tmp[y][15], tmp[y][14], tmp[y][13],
-            tmp[y][12],
+            tmp[y][15], tmp[y][14], tmp[y][13], tmp[y][12], tmp[y][11], tmp[y][10], tmp[y][9],
+            tmp[y][8],
         );
 
         let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd_final));
@@ -12063,17 +12085,17 @@ fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     // For 16bpc: use full i32 range
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
 
     let mut tmp = [0i32; 1024];
     inv_txfm_32x32_inner(
@@ -12140,17 +12162,17 @@ fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 32];
 
     // is_rect2 = true for 4x8, so apply sqrt(2) scaling
@@ -12164,7 +12186,7 @@ fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
         }
         identity4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         for x in 0..4 {
-            tmp[y * 4 + x] = scratch[x];
+            tmp[y * 4 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
         }
     }
 
@@ -12246,17 +12268,17 @@ fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 32];
 
     // is_rect2 = true for 8x4, so apply sqrt(2) scaling
@@ -12270,7 +12292,7 @@ fn inv_txfm_add_identity_identity_8x4_16bpc_avx2_inner(
         }
         identity8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = scratch[x];
+            tmp[y * 8 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
         }
     }
 
@@ -12361,23 +12383,26 @@ fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 128];
 
     // is_rect2 = true for 8x16, so apply sqrt(2) scaling
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
-    // Row transform (8 elements each, 16 rows)
+    // Row transform with shift=1 (8x16 intermediate shift)
+    let rnd = 1;
+    let shift = 1;
+
     for y in 0..16 {
         let mut scratch = [0i32; 8];
         for x in 0..8 {
@@ -12385,7 +12410,7 @@ fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
         }
         identity8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = scratch[x];
+            tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -12406,7 +12431,6 @@ fn inv_txfm_add_identity_identity_8x16_16bpc_avx2_inner(
         let d_lo = _mm_unpacklo_epi16(d, zero);
         let d_hi = _mm_unpackhi_epi16(d, zero);
 
-        // Load and scale coefficients - 8x16 uses >> 4 for final shift
         let c_lo = _mm_set_epi32(
             (tmp[y * 8 + 3] + 8) >> 4,
             (tmp[y * 8 + 2] + 8) >> 4,
@@ -12476,23 +12500,26 @@ fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 128];
 
     // is_rect2 = true for 16x8, so apply sqrt(2) scaling
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
-    // Row transform (16 elements each, 8 rows)
+    // Row transform with shift=1 (16x8 intermediate shift)
+    let rnd = 1;
+    let shift = 1;
+
     for y in 0..8 {
         let mut scratch = [0i32; 16];
         for x in 0..16 {
@@ -12500,7 +12527,7 @@ fn inv_txfm_add_identity_identity_16x8_16bpc_avx2_inner(
         }
         identity16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = scratch[x];
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -12596,22 +12623,25 @@ fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 64];
 
     // is_rect2 = false for 4x16 (aspect ratio 4:1), no rect2_scale
 
-    // Row transform (4 elements each, 16 rows)
+    // Row transform with shift=1 (4x16 intermediate shift)
+    let rnd = 1;
+    let shift = 1;
+
     for y in 0..16 {
         let mut scratch = [0i32; 4];
         for x in 0..4 {
@@ -12619,7 +12649,7 @@ fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
         }
         identity4_1d(&mut scratch[..4], 1, row_clip_min, row_clip_max);
         for x in 0..4 {
-            tmp[y * 4 + x] = scratch[x];
+            tmp[y * 4 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -12639,7 +12669,6 @@ fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
         let d = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off..dst_off + 4]));
         let d32 = _mm_unpacklo_epi16(d, zero);
 
-        // Load and scale coefficients - 4x16 uses >> 4 for final shift
         let c = _mm_set_epi32(
             (tmp[y * 4 + 3] + 8) >> 4,
             (tmp[y * 4 + 2] + 8) >> 4,
@@ -12701,22 +12730,25 @@ fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 64];
 
     // is_rect2 = false for 16x4 (aspect ratio 4:1), no rect2_scale
 
-    // Row transform (16 elements each, 4 rows)
+    // Row transform with shift=1 (16x4 intermediate shift)
+    let rnd = 1;
+    let shift = 1;
+
     for y in 0..4 {
         let mut scratch = [0i32; 16];
         for x in 0..16 {
@@ -12724,7 +12756,7 @@ fn inv_txfm_add_identity_identity_16x4_16bpc_avx2_inner(
         }
         identity16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = scratch[x];
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -12820,23 +12852,26 @@ fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 512];
 
     // is_rect2 = true for 16x32, so apply sqrt(2) scaling
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
-    // Row transform (16 elements each, 32 rows)
+    // Row transform with shift=1 (16x32 intermediate shift)
+    let rnd = 1;
+    let shift = 1;
+
     for y in 0..32 {
         let mut scratch = [0i32; 16];
         for x in 0..16 {
@@ -12844,7 +12879,7 @@ fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
         }
         identity16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
         for x in 0..16 {
-            tmp[y * 16 + x] = scratch[x];
+            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -12872,16 +12907,16 @@ fn inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner(
 
             // 16x32 uses >> 3 for final shift
             let c_lo = _mm_set_epi32(
-                (tmp[y * 16 + x_base + 3] + 4) >> 3,
-                (tmp[y * 16 + x_base + 2] + 4) >> 3,
-                (tmp[y * 16 + x_base + 1] + 4) >> 3,
-                (tmp[y * 16 + x_base + 0] + 4) >> 3,
+                (tmp[y * 16 + x_base + 3] + 8) >> 4,
+                (tmp[y * 16 + x_base + 2] + 8) >> 4,
+                (tmp[y * 16 + x_base + 1] + 8) >> 4,
+                (tmp[y * 16 + x_base + 0] + 8) >> 4,
             );
             let c_hi = _mm_set_epi32(
-                (tmp[y * 16 + x_base + 7] + 4) >> 3,
-                (tmp[y * 16 + x_base + 6] + 4) >> 3,
-                (tmp[y * 16 + x_base + 5] + 4) >> 3,
-                (tmp[y * 16 + x_base + 4] + 4) >> 3,
+                (tmp[y * 16 + x_base + 7] + 8) >> 4,
+                (tmp[y * 16 + x_base + 6] + 8) >> 4,
+                (tmp[y * 16 + x_base + 5] + 8) >> 4,
+                (tmp[y * 16 + x_base + 4] + 8) >> 4,
             );
 
             let sum_lo = _mm_add_epi32(d_lo, c_lo);
@@ -12941,23 +12976,26 @@ fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 512];
 
     // is_rect2 = true for 32x16, so apply sqrt(2) scaling
     let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
-    // Row transform (32 elements each, 16 rows)
+    // Row transform with shift=1 (32x16 intermediate shift)
+    let rnd = 1;
+    let shift = 1;
+
     for y in 0..16 {
         let mut scratch = [0i32; 32];
         for x in 0..32 {
@@ -12965,7 +13003,7 @@ fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
         }
         identity32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = scratch[x];
+            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -12993,16 +13031,16 @@ fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
 
             // 32x16 uses >> 3 for final shift
             let c_lo = _mm_set_epi32(
-                (tmp[y * 32 + x_base + 3] + 4) >> 3,
-                (tmp[y * 32 + x_base + 2] + 4) >> 3,
-                (tmp[y * 32 + x_base + 1] + 4) >> 3,
-                (tmp[y * 32 + x_base + 0] + 4) >> 3,
+                (tmp[y * 32 + x_base + 3] + 8) >> 4,
+                (tmp[y * 32 + x_base + 2] + 8) >> 4,
+                (tmp[y * 32 + x_base + 1] + 8) >> 4,
+                (tmp[y * 32 + x_base + 0] + 8) >> 4,
             );
             let c_hi = _mm_set_epi32(
-                (tmp[y * 32 + x_base + 7] + 4) >> 3,
-                (tmp[y * 32 + x_base + 6] + 4) >> 3,
-                (tmp[y * 32 + x_base + 5] + 4) >> 3,
-                (tmp[y * 32 + x_base + 4] + 4) >> 3,
+                (tmp[y * 32 + x_base + 7] + 8) >> 4,
+                (tmp[y * 32 + x_base + 6] + 8) >> 4,
+                (tmp[y * 32 + x_base + 5] + 8) >> 4,
+                (tmp[y * 32 + x_base + 4] + 8) >> 4,
             );
 
             let sum_lo = _mm_add_epi32(d_lo, c_lo);
@@ -13062,22 +13100,25 @@ fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 256];
 
     // is_rect2 = false for 8x32 (aspect ratio 4:1), no rect2_scale
 
-    // Row transform (8 elements each, 32 rows)
+    // Row transform with shift=2 (8x32 intermediate shift)
+    let rnd = 2;
+    let shift = 2;
+
     for y in 0..32 {
         let mut scratch = [0i32; 8];
         for x in 0..8 {
@@ -13085,7 +13126,7 @@ fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
         }
         identity8_1d(&mut scratch[..8], 1, row_clip_min, row_clip_max);
         for x in 0..8 {
-            tmp[y * 8 + x] = scratch[x];
+            tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -13108,16 +13149,16 @@ fn inv_txfm_add_identity_identity_8x32_16bpc_avx2_inner(
 
         // 8x32 uses >> 3 for final shift
         let c_lo = _mm_set_epi32(
-            (tmp[y * 8 + 3] + 4) >> 3,
-            (tmp[y * 8 + 2] + 4) >> 3,
-            (tmp[y * 8 + 1] + 4) >> 3,
-            (tmp[y * 8 + 0] + 4) >> 3,
+            (tmp[y * 8 + 3] + 8) >> 4,
+            (tmp[y * 8 + 2] + 8) >> 4,
+            (tmp[y * 8 + 1] + 8) >> 4,
+            (tmp[y * 8 + 0] + 8) >> 4,
         );
         let c_hi = _mm_set_epi32(
-            (tmp[y * 8 + 7] + 4) >> 3,
-            (tmp[y * 8 + 6] + 4) >> 3,
-            (tmp[y * 8 + 5] + 4) >> 3,
-            (tmp[y * 8 + 4] + 4) >> 3,
+            (tmp[y * 8 + 7] + 8) >> 4,
+            (tmp[y * 8 + 6] + 8) >> 4,
+            (tmp[y * 8 + 5] + 8) >> 4,
+            (tmp[y * 8 + 4] + 8) >> 4,
         );
 
         let sum_lo = _mm_add_epi32(d_lo, c_lo);
@@ -13176,22 +13217,25 @@ fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
     _token: Desktop64,
     dst: &mut [u16],
     dst_stride: usize,
-    coeff: &mut [i16],
+    coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     let stride_u16 = dst_stride / 2;
-    let row_clip_min = i32::MIN;
-    let row_clip_max = i32::MAX;
-    let col_clip_min = i32::MIN;
-    let col_clip_max = i32::MAX;
+    let row_clip_min = (!bitdepth_max) << 7;
+    let row_clip_max = !row_clip_min;
+    let col_clip_min = (!bitdepth_max) << 5;
+    let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 256];
 
     // is_rect2 = false for 32x8 (aspect ratio 4:1), no rect2_scale
 
-    // Row transform (32 elements each, 8 rows)
+    // Row transform with shift=2 (32x8 intermediate shift)
+    let rnd = 2;
+    let shift = 2;
+
     for y in 0..8 {
         let mut scratch = [0i32; 32];
         for x in 0..32 {
@@ -13199,7 +13243,7 @@ fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
         }
         identity32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
         for x in 0..32 {
-            tmp[y * 32 + x] = scratch[x];
+            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
         }
     }
 
@@ -13227,16 +13271,16 @@ fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
 
             // 32x8 uses >> 3 for final shift
             let c_lo = _mm_set_epi32(
-                (tmp[y * 32 + x_base + 3] + 4) >> 3,
-                (tmp[y * 32 + x_base + 2] + 4) >> 3,
-                (tmp[y * 32 + x_base + 1] + 4) >> 3,
-                (tmp[y * 32 + x_base + 0] + 4) >> 3,
+                (tmp[y * 32 + x_base + 3] + 8) >> 4,
+                (tmp[y * 32 + x_base + 2] + 8) >> 4,
+                (tmp[y * 32 + x_base + 1] + 8) >> 4,
+                (tmp[y * 32 + x_base + 0] + 8) >> 4,
             );
             let c_hi = _mm_set_epi32(
-                (tmp[y * 32 + x_base + 7] + 4) >> 3,
-                (tmp[y * 32 + x_base + 6] + 4) >> 3,
-                (tmp[y * 32 + x_base + 5] + 4) >> 3,
-                (tmp[y * 32 + x_base + 4] + 4) >> 3,
+                (tmp[y * 32 + x_base + 7] + 8) >> 4,
+                (tmp[y * 32 + x_base + 6] + 8) >> 4,
+                (tmp[y * 32 + x_base + 5] + 8) >> 4,
+                (tmp[y * 32 + x_base + 4] + 8) >> 4,
             );
 
             let sum_lo = _mm_add_epi32(d_lo, c_lo);
@@ -13312,10 +13356,10 @@ macro_rules! impl_4x8_transform_16bpc {
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
-            let row_clip_min = i32::MIN;
-            let row_clip_max = i32::MAX;
-            let col_clip_min = i32::MIN;
-            let col_clip_max = i32::MAX;
+            let row_clip_min = (!bitdepth_max) << 7;
+            let row_clip_max = !row_clip_min;
+            let col_clip_min = (!bitdepth_max) << 5;
+            let col_clip_max = !col_clip_min;
             let mut tmp = [0i32; 32];
 
             // is_rect2 = true for 4x8, so apply sqrt(2) scaling
@@ -13329,7 +13373,7 @@ macro_rules! impl_4x8_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..4], 1, row_clip_min, row_clip_max);
                 for x in 0..4 {
-                    tmp[y * 4 + x] = scratch[x];
+                    tmp[y * 4 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
                 }
             }
 
@@ -13390,10 +13434,10 @@ macro_rules! impl_8x4_transform_16bpc {
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
-            let row_clip_min = i32::MIN;
-            let row_clip_max = i32::MAX;
-            let col_clip_min = i32::MIN;
-            let col_clip_max = i32::MAX;
+            let row_clip_min = (!bitdepth_max) << 7;
+            let row_clip_max = !row_clip_min;
+            let col_clip_min = (!bitdepth_max) << 5;
+            let col_clip_max = !col_clip_min;
             let mut tmp = [0i32; 32];
 
             // is_rect2 = true for 8x4, so apply sqrt(2) scaling
@@ -13407,7 +13451,7 @@ macro_rules! impl_8x4_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..8], 1, row_clip_min, row_clip_max);
                 for x in 0..8 {
-                    tmp[y * 8 + x] = scratch[x];
+                    tmp[y * 8 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
                 }
             }
 
@@ -13657,16 +13701,19 @@ macro_rules! impl_8x16_transform_16bpc {
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
-            let row_clip_min = i32::MIN;
-            let row_clip_max = i32::MAX;
-            let col_clip_min = i32::MIN;
-            let col_clip_max = i32::MAX;
+            let row_clip_min = (!bitdepth_max) << 7;
+            let row_clip_max = !row_clip_min;
+            let col_clip_min = (!bitdepth_max) << 5;
+            let col_clip_max = !col_clip_min;
             let mut tmp = [0i32; 128];
 
             // is_rect2 = true for 8x16
             let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
-            // Row transform (8 elements each, 16 rows)
+            // Row transform with shift=1 (8x16 intermediate shift)
+            let rnd = 1;
+            let shift = 1;
+
             for y in 0..16 {
                 let mut scratch = [0i32; 8];
                 for x in 0..8 {
@@ -13674,7 +13721,7 @@ macro_rules! impl_8x16_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..8], 1, row_clip_min, row_clip_max);
                 for x in 0..8 {
-                    tmp[y * 8 + x] = scratch[x];
+                    tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -13744,16 +13791,19 @@ macro_rules! impl_16x8_transform_16bpc {
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
-            let row_clip_min = i32::MIN;
-            let row_clip_max = i32::MAX;
-            let col_clip_min = i32::MIN;
-            let col_clip_max = i32::MAX;
+            let row_clip_min = (!bitdepth_max) << 7;
+            let row_clip_max = !row_clip_min;
+            let col_clip_min = (!bitdepth_max) << 5;
+            let col_clip_max = !col_clip_min;
             let mut tmp = [0i32; 128];
 
             // is_rect2 = true for 16x8
             let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
 
-            // Row transform (16 elements each, 8 rows)
+            // Row transform with shift=1 (16x8 intermediate shift)
+            let rnd = 1;
+            let shift = 1;
+
             for y in 0..8 {
                 let mut scratch = [0i32; 16];
                 for x in 0..16 {
@@ -13761,7 +13811,7 @@ macro_rules! impl_16x8_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = scratch[x];
+                    tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -13990,15 +14040,18 @@ macro_rules! impl_4x16_transform_16bpc {
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
-            let row_clip_min = i32::MIN;
-            let row_clip_max = i32::MAX;
-            let col_clip_min = i32::MIN;
-            let col_clip_max = i32::MAX;
+            let row_clip_min = (!bitdepth_max) << 7;
+            let row_clip_max = !row_clip_min;
+            let col_clip_min = (!bitdepth_max) << 5;
+            let col_clip_max = !col_clip_min;
             let mut tmp = [0i32; 64];
 
             // is_rect2 = false for 4x16 (aspect ratio 4:1), no rect2_scale
 
-            // Row transform (4 elements each, 16 rows)
+            // Row transform with shift=1 (4x16 intermediate shift)
+            let rnd = 1;
+            let shift = 1;
+
             for y in 0..16 {
                 let mut scratch = [0i32; 4];
                 for x in 0..4 {
@@ -14006,7 +14059,7 @@ macro_rules! impl_4x16_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..4], 1, row_clip_min, row_clip_max);
                 for x in 0..4 {
-                    tmp[y * 4 + x] = scratch[x];
+                    tmp[y * 4 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -14067,15 +14120,18 @@ macro_rules! impl_16x4_transform_16bpc {
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
-            let row_clip_min = i32::MIN;
-            let row_clip_max = i32::MAX;
-            let col_clip_min = i32::MIN;
-            let col_clip_max = i32::MAX;
+            let row_clip_min = (!bitdepth_max) << 7;
+            let row_clip_max = !row_clip_min;
+            let col_clip_min = (!bitdepth_max) << 5;
+            let col_clip_max = !col_clip_min;
             let mut tmp = [0i32; 64];
 
             // is_rect2 = false for 16x4 (aspect ratio 4:1), no rect2_scale
 
-            // Row transform (16 elements each, 4 rows)
+            // Row transform with shift=1 (16x4 intermediate shift)
+            let rnd = 1;
+            let shift = 1;
+
             for y in 0..4 {
                 let mut scratch = [0i32; 16];
                 for x in 0..16 {
@@ -14083,7 +14139,7 @@ macro_rules! impl_16x4_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = scratch[x];
+                    tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -14662,15 +14718,18 @@ macro_rules! impl_8x8_transform_16bpc {
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
-            let row_clip_min = i32::MIN;
-            let row_clip_max = i32::MAX;
-            let col_clip_min = i32::MIN;
-            let col_clip_max = i32::MAX;
+            let row_clip_min = (!bitdepth_max) << 7;
+            let row_clip_max = !row_clip_min;
+            let col_clip_min = (!bitdepth_max) << 5;
+            let col_clip_max = !col_clip_min;
             let mut tmp = [0i32; 64];
 
             // No rect2_scale for square transforms
 
-            // Row transform (8 elements each, 8 rows)
+            // Row transform with shift=1 (8x8 intermediate shift)
+            let rnd = 1;
+            let shift = 1;
+
             for y in 0..8 {
                 let mut scratch = [0i32; 8];
                 for x in 0..8 {
@@ -14678,7 +14737,7 @@ macro_rules! impl_8x8_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..8], 1, row_clip_min, row_clip_max);
                 for x in 0..8 {
-                    tmp[y * 8 + x] = scratch[x];
+                    tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -14805,10 +14864,10 @@ macro_rules! impl_4x4_transform_16bpc {
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
-            let row_clip_min = i32::MIN;
-            let row_clip_max = i32::MAX;
-            let col_clip_min = i32::MIN;
-            let col_clip_max = i32::MAX;
+            let row_clip_min = (!bitdepth_max) << 7;
+            let row_clip_max = !row_clip_min;
+            let col_clip_min = (!bitdepth_max) << 5;
+            let col_clip_max = !col_clip_min;
             let mut tmp = [0i32; 16];
 
             // Row transform (4 elements each, 4 rows)
@@ -14819,7 +14878,7 @@ macro_rules! impl_4x4_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..4], 1, row_clip_min, row_clip_max);
                 for x in 0..4 {
-                    tmp[y * 4 + x] = scratch[x];
+                    tmp[y * 4 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
                 }
             }
 
@@ -14937,13 +14996,16 @@ macro_rules! impl_16x16_transform_16bpc {
             let mut dst = dst.flex_mut();
             let mut coeff = coeff.flex_mut();
             let stride_u16 = dst_stride / 2;
-            let row_clip_min = i32::MIN;
-            let row_clip_max = i32::MAX;
-            let col_clip_min = i32::MIN;
-            let col_clip_max = i32::MAX;
+            let row_clip_min = (!bitdepth_max) << 7;
+            let row_clip_max = !row_clip_min;
+            let col_clip_min = (!bitdepth_max) << 5;
+            let col_clip_max = !col_clip_min;
             let mut tmp = [0i32; 256];
 
-            // Row transform (16 elements each, 16 rows)
+            // Row transform with shift=2 (16x16 intermediate shift)
+            let rnd = 2;
+            let shift = 2;
+
             for y in 0..16 {
                 let mut scratch = [0i32; 16];
                 for x in 0..16 {
@@ -14951,7 +15013,7 @@ macro_rules! impl_16x16_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = scratch[x];
+                    tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -15401,11 +15463,19 @@ fn itxfm_dispatch_16bpc(
     base: usize,
     byte_stride: usize,
     px_stride: isize,
-    coeff: &mut [i16],
+    coeff_i16: &mut [i16],
     eob: i32,
     bdmax: i32,
 ) -> bool {
     use crate::src::levels::TxfmSize;
+
+    // For 16bpc, BD::Coef = i32. The dispatch receives coeff reinterpreted as [i16],
+    // but the actual data is [i32] (each i32 = two consecutive i16s in memory).
+    // Reinterpret back to [i32] so functions can read full 32-bit coefficients.
+    let coeff: &mut [i32] = zerocopy::FromBytes::mut_slice_from(
+        zerocopy::AsBytes::as_bytes_mut(coeff_i16),
+    )
+    .expect("coeff alignment/size mismatch for i32 reinterpretation");
 
     // Arcane 16bpc functions take byte_stride as usize
     macro_rules! arcane {
