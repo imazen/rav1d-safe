@@ -3612,29 +3612,37 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         (BPC::BPC8, 5) => {
             ipred_dc_128_8bpc_inner(token, dst_bytes, dst_base_bytes, byte_stride, w, h)
         }
-        (BPC::BPC8, 6) => if !ipred_z1_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-            angle as i32,
-        ) { return false; },
+        (BPC::BPC8, 6) => {
+            if !ipred_z1_8bpc_inner(
+                token,
+                dst_bytes,
+                dst_base_bytes,
+                byte_stride,
+                tl_bytes,
+                topleft_off,
+                w,
+                h,
+                angle as i32,
+            ) {
+                return false;
+            }
+        }
         (BPC::BPC8, 7) => return false,
-        (BPC::BPC8, 8) => if !ipred_z3_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-            angle as i32,
-        ) { return false; },
+        (BPC::BPC8, 8) => {
+            if !ipred_z3_8bpc_inner(
+                token,
+                dst_bytes,
+                dst_base_bytes,
+                byte_stride,
+                tl_bytes,
+                topleft_off,
+                w,
+                h,
+                angle as i32,
+            ) {
+                return false;
+            }
+        }
         (BPC::BPC8, 9) => ipred_smooth_8bpc_inner(
             token,
             dst_bytes,
@@ -3764,7 +3772,9 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
                 angle as i32,
-            ) { return false; }
+            ) {
+                return false;
+            }
         }
         (BPC::BPC16, 7) => return false,
         (BPC::BPC16, 8) => {
@@ -3779,7 +3789,9 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
                 angle as i32,
-            ) { return false; }
+            ) {
+                return false;
+            }
         }
         (BPC::BPC16, 9) => {
             let tl_off_bytes = topleft_off * 2;

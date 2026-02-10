@@ -93,12 +93,21 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     let rows23 = _mm256_set_m128i(row3, row2);
 
     // 8bpc clip ranges: i16::MIN..i16::MAX for both row and col
-    let row_clip_min = if bitdepth_max == 255 { i16::MIN as i32 } else { (!bitdepth_max) << 7 };
+    let row_clip_min = if bitdepth_max == 255 {
+        i16::MIN as i32
+    } else {
+        (!bitdepth_max) << 7
+    };
     let row_clip_max = !row_clip_min;
-    let col_clip_min = if bitdepth_max == 255 { i16::MIN as i32 } else { (!bitdepth_max) << 5 };
+    let col_clip_min = if bitdepth_max == 255 {
+        i16::MIN as i32
+    } else {
+        (!bitdepth_max) << 5
+    };
     let col_clip_max = !col_clip_min;
 
-    let (rows01_out, rows23_out) = dct4_2rows_avx2(_token, rows01, rows23, row_clip_min, row_clip_max);
+    let (rows01_out, rows23_out) =
+        dct4_2rows_avx2(_token, rows01, rows23, row_clip_min, row_clip_max);
 
     let r0 = _mm256_castsi256_si128(rows01_out);
     let r1 = _mm256_extracti128_si256(rows01_out, 1);
@@ -126,7 +135,8 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     let cols01 = _mm256_set_m128i(col1, col0);
     let cols23 = _mm256_set_m128i(col3, col2);
 
-    let (cols01_out, cols23_out) = dct4_2rows_avx2(_token, cols01, cols23, col_clip_min, col_clip_max);
+    let (cols01_out, cols23_out) =
+        dct4_2rows_avx2(_token, cols01, cols23, col_clip_min, col_clip_max);
 
     let rnd = _mm256_set1_epi32(8);
     let cols01_scaled = _mm256_srai_epi32(_mm256_add_epi32(cols01_out, rnd), 4);
@@ -438,7 +448,8 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     let col_clip_max = !col_clip_min;
 
     // DCT4 butterfly on rows
-    let (rows01_out, rows23_out) = dct4_2rows_avx2(_token, rows01, rows23, row_clip_min, row_clip_max);
+    let (rows01_out, rows23_out) =
+        dct4_2rows_avx2(_token, rows01, rows23, row_clip_min, row_clip_max);
 
     // Transpose for column pass
     let r0 = _mm256_castsi256_si128(rows01_out);
@@ -468,7 +479,8 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     // DCT4 on columns
     let cols01 = _mm256_set_m128i(c1, c0);
     let cols23 = _mm256_set_m128i(c3, c2);
-    let (cols01_out, cols23_out) = dct4_2rows_avx2(_token, cols01, cols23, col_clip_min, col_clip_max);
+    let (cols01_out, cols23_out) =
+        dct4_2rows_avx2(_token, cols01, cols23, col_clip_min, col_clip_max);
 
     // Extract final columns
     let col0 = _mm256_castsi256_si128(cols01_out);
@@ -838,7 +850,11 @@ pub fn inv_identity_add_4x4_8bpc_avx2(
 
         // Row: identity4, intermediate clamp to col_clip_range, Col: identity4, final: (+ 8) >> 4
         // For 8bpc: col_clip = i16::MIN..i16::MAX. For 16bpc: col_clip = (!bdmax)<<5..=!((!bdmax)<<5)
-        let col_clip_min = if bitdepth_max == 255 { i16::MIN as i32 } else { (!bitdepth_max) << 5 };
+        let col_clip_min = if bitdepth_max == 255 {
+            i16::MIN as i32
+        } else {
+            (!bitdepth_max) << 5
+        };
         let col_clip_max = !col_clip_min;
         let scale = |v: i32| -> i32 { identity4(identity4(v).clamp(col_clip_min, col_clip_max)) };
 
@@ -3330,7 +3346,8 @@ macro_rules! impl_16x8_transform {
                 }
                 $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+                    tmp[y * 16 + x] =
+                        iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -5084,7 +5101,8 @@ macro_rules! impl_16x4_transform {
                 }
                 $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+                    tmp[y * 16 + x] =
+                        iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -6216,7 +6234,14 @@ mod tests {
 
 /// ADST4 1D transform applied to a single 4-element vector (returns 4 outputs)
 #[inline(always)]
-fn adst4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32, min: i32, max: i32) -> (i32, i32, i32, i32) {
+fn adst4_1d_scalar(
+    in0: i32,
+    in1: i32,
+    in2: i32,
+    in3: i32,
+    min: i32,
+    max: i32,
+) -> (i32, i32, i32, i32) {
     let clip = |v: i32| v.clamp(min, max);
 
     let out0 =
@@ -6244,7 +6269,14 @@ fn adst4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32, min: i32, max: i32) -
 
 /// DCT4 1D transform (scalar, for combining with ADST)
 #[inline(always)]
-fn dct4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32, min: i32, max: i32) -> (i32, i32, i32, i32) {
+fn dct4_1d_scalar(
+    in0: i32,
+    in1: i32,
+    in2: i32,
+    in3: i32,
+    min: i32,
+    max: i32,
+) -> (i32, i32, i32, i32) {
     let clip = |v: i32| v.clamp(min, max);
     let t0 = (in0 + in2) * 181 + 128 >> 8;
     let t1 = (in0 - in2) * 181 + 128 >> 8;
@@ -6275,7 +6307,14 @@ pub fn inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner(
     // First pass: ADST on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6285,7 +6324,14 @@ pub fn inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner(
     // Second pass: DCT on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6327,7 +6373,14 @@ pub fn inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner(
     // First pass: DCT on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6337,7 +6390,14 @@ pub fn inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner(
     // Second pass: ADST on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6379,7 +6439,14 @@ pub fn inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
     // First pass: ADST on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6389,7 +6456,14 @@ pub fn inv_txfm_add_adst_adst_4x4_8bpc_avx2_inner(
     // Second pass: ADST on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6531,7 +6605,14 @@ pub unsafe extern "C" fn inv_txfm_add_adst_adst_4x4_8bpc_avx2(
 
 /// FlipADST4 1D transform - same as ADST but output in reverse order
 #[inline(always)]
-fn flipadst4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32, min: i32, max: i32) -> (i32, i32, i32, i32) {
+fn flipadst4_1d_scalar(
+    in0: i32,
+    in1: i32,
+    in2: i32,
+    in3: i32,
+    min: i32,
+    max: i32,
+) -> (i32, i32, i32, i32) {
     let (o0, o1, o2, o3) = adst4_1d_scalar(in0, in1, in2, in3, min, max);
     (o3, o2, o1, o0) // Flip the output order
 }
@@ -6556,7 +6637,14 @@ pub fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(
     // First pass: FlipADST on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6566,7 +6654,14 @@ pub fn inv_txfm_add_flipadst_dct_4x4_8bpc_avx2_inner(
     // Second pass: DCT on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6605,7 +6700,14 @@ pub fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(
     // First pass: DCT on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6615,7 +6717,14 @@ pub fn inv_txfm_add_dct_flipadst_4x4_8bpc_avx2_inner(
     // Second pass: FlipADST on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6653,7 +6762,14 @@ pub fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(
 
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6662,7 +6778,14 @@ pub fn inv_txfm_add_adst_flipadst_4x4_8bpc_avx2_inner(
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6699,7 +6822,14 @@ pub fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(
 
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6708,7 +6838,14 @@ pub fn inv_txfm_add_flipadst_adst_4x4_8bpc_avx2_inner(
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -6745,7 +6882,14 @@ pub fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
 
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -6754,7 +6898,14 @@ pub fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_avx2_inner(
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7278,7 +7429,14 @@ impl_8x8_ffi_wrapper!(
 
 /// Identity transform 4x4 - just pass through values (no transform)
 #[inline(always)]
-fn identity4_1d_scalar(in0: i32, in1: i32, in2: i32, in3: i32, _min: i32, _max: i32) -> (i32, i32, i32, i32) {
+fn identity4_1d_scalar(
+    in0: i32,
+    in1: i32,
+    in2: i32,
+    in3: i32,
+    _min: i32,
+    _max: i32,
+) -> (i32, i32, i32, i32) {
     // identity4(x) = x + (x * 1697 + 2048) >> 12 ≈ x * sqrt(2)
     // Matches rav1d_inv_identity4_1d_c in itx_1d.rs (which also ignores min/max)
     let o0 = in0 + ((in0 * 1697 + 2048) >> 12);
@@ -7308,7 +7466,14 @@ pub fn inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(
     // First pass: Identity on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7327,7 +7492,14 @@ pub fn inv_txfm_add_v_adst_4x4_8bpc_avx2_inner(
     // Second pass: ADST on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], col_clip_min, col_clip_max);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            col_clip_min,
+            col_clip_max,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7365,7 +7537,14 @@ pub fn inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
     // First pass: ADST on rows (H_ADST = first=Adst, second=Identity per reference)
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = adst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = adst4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7375,7 +7554,14 @@ pub fn inv_txfm_add_h_adst_4x4_8bpc_avx2_inner(
     // Second pass: Identity on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7412,7 +7598,14 @@ pub fn inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(
 
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7430,7 +7623,14 @@ pub fn inv_txfm_add_v_flipadst_4x4_8bpc_avx2_inner(
 
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], col_clip_min, col_clip_max);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            col_clip_min,
+            col_clip_max,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7468,7 +7668,14 @@ pub fn inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
     // First pass: FlipADST on rows (H_FLIPADST = first=FlipAdst, second=Identity per reference)
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = flipadst4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = flipadst4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7478,7 +7685,14 @@ pub fn inv_txfm_add_h_flipadst_4x4_8bpc_avx2_inner(
     // Second pass: Identity on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7665,7 +7879,14 @@ pub fn inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
     // First pass: DCT on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7675,7 +7896,14 @@ pub fn inv_txfm_add_dct_identity_4x4_8bpc_avx2_inner(
     // Second pass: Identity on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -7713,7 +7941,14 @@ pub fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
     // First pass: Identity on rows
     let mut tmp = [[0i32; 4]; 4];
     for y in 0..4 {
-        let (o0, o1, o2, o3) = identity4_1d_scalar(c[y][0], c[y][1], c[y][2], c[y][3], i16::MIN as i32, i16::MAX as i32);
+        let (o0, o1, o2, o3) = identity4_1d_scalar(
+            c[y][0],
+            c[y][1],
+            c[y][2],
+            c[y][3],
+            i16::MIN as i32,
+            i16::MAX as i32,
+        );
         tmp[y][0] = o0;
         tmp[y][1] = o1;
         tmp[y][2] = o2;
@@ -7732,7 +7967,14 @@ pub fn inv_txfm_add_identity_dct_4x4_8bpc_avx2_inner(
     // Second pass: DCT on columns
     let mut out = [[0i32; 4]; 4];
     for x in 0..4 {
-        let (o0, o1, o2, o3) = dct4_1d_scalar(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], col_clip_min, col_clip_max);
+        let (o0, o1, o2, o3) = dct4_1d_scalar(
+            tmp[0][x],
+            tmp[1][x],
+            tmp[2][x],
+            tmp[3][x],
+            col_clip_min,
+            col_clip_max,
+        );
         out[0][x] = o0;
         out[1][x] = o1;
         out[2][x] = o2;
@@ -11441,7 +11683,14 @@ macro_rules! impl_4x4_transform_16bpc {
             // First pass: transform on rows
             let mut tmp = [[0i32; 4]; 4];
             for y in 0..4 {
-                let (o0, o1, o2, o3) = $row_fn(c[y][0], c[y][1], c[y][2], c[y][3], row_clip_min, row_clip_max);
+                let (o0, o1, o2, o3) = $row_fn(
+                    c[y][0],
+                    c[y][1],
+                    c[y][2],
+                    c[y][3],
+                    row_clip_min,
+                    row_clip_max,
+                );
                 tmp[y][0] = o0;
                 tmp[y][1] = o1;
                 tmp[y][2] = o2;
@@ -11458,7 +11707,14 @@ macro_rules! impl_4x4_transform_16bpc {
             // Second pass: transform on columns
             let mut out = [[0i32; 4]; 4];
             for x in 0..4 {
-                let (o0, o1, o2, o3) = $col_fn(tmp[0][x], tmp[1][x], tmp[2][x], tmp[3][x], col_clip_min, col_clip_max);
+                let (o0, o1, o2, o3) = $col_fn(
+                    tmp[0][x],
+                    tmp[1][x],
+                    tmp[2][x],
+                    tmp[3][x],
+                    col_clip_min,
+                    col_clip_max,
+                );
                 out[0][x] = o0;
                 out[1][x] = o1;
                 out[2][x] = o2;
@@ -12019,8 +12275,7 @@ pub fn inv_identity_add_16x16_16bpc_avx2(
         let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
 
         let c0 = _mm256_set_epi32(
-            tmp[y][7], tmp[y][6], tmp[y][5], tmp[y][4], tmp[y][3], tmp[y][2], tmp[y][1],
-            tmp[y][0],
+            tmp[y][7], tmp[y][6], tmp[y][5], tmp[y][4], tmp[y][3], tmp[y][2], tmp[y][1], tmp[y][0],
         );
         let c1 = _mm256_set_epi32(
             tmp[y][15], tmp[y][14], tmp[y][13], tmp[y][12], tmp[y][11], tmp[y][10], tmp[y][9],
@@ -13811,7 +14066,8 @@ macro_rules! impl_16x8_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+                    tmp[y * 16 + x] =
+                        iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -14139,7 +14395,8 @@ macro_rules! impl_16x4_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+                    tmp[y * 16 + x] =
+                        iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -15013,7 +15270,8 @@ macro_rules! impl_16x16_transform_16bpc {
                 }
                 $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
                 for x in 0..16 {
-                    tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+                    tmp[y * 16 + x] =
+                        iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
                 }
             }
 
@@ -15472,10 +15730,9 @@ fn itxfm_dispatch_16bpc(
     // For 16bpc, BD::Coef = i32. The dispatch receives coeff reinterpreted as [i16],
     // but the actual data is [i32] (each i32 = two consecutive i16s in memory).
     // Reinterpret back to [i32] so functions can read full 32-bit coefficients.
-    let coeff: &mut [i32] = zerocopy::FromBytes::mut_slice_from(
-        zerocopy::AsBytes::as_bytes_mut(coeff_i16),
-    )
-    .expect("coeff alignment/size mismatch for i32 reinterpretation");
+    let coeff: &mut [i32] =
+        zerocopy::FromBytes::mut_slice_from(zerocopy::AsBytes::as_bytes_mut(coeff_i16))
+            .expect("coeff alignment/size mismatch for i32 reinterpretation");
 
     // Arcane 16bpc functions take byte_stride as usize
     macro_rules! arcane {

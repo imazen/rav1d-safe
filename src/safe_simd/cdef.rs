@@ -100,8 +100,8 @@ fn cdef_filter_block_simd_8bpc(
     sec_strength: c_int,
     damping: c_int,
 ) {
+    use super::pixel_access::{loadu_128, storei32, storeu_128};
     use crate::include::common::bitdepth::BitDepth8;
-    use super::pixel_access::{loadu_128, storeu_128, storei32};
 
     let zero = _mm_setzero_si128();
 
@@ -296,23 +296,19 @@ fn cdef_filter_block_simd_8bpc(
 /// values at variable offsets, reducing 8 scalar adds to 1 SIMD add per direction.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn cdef_find_dir_simd_8bpc(
-    _t: Desktop64,
-    img: PicOffset,
-    variance: &mut c_uint,
-) -> c_int {
-    use crate::include::common::bitdepth::BitDepth8;
+fn cdef_find_dir_simd_8bpc(_t: Desktop64, img: PicOffset, variance: &mut c_uint) -> c_int {
     use super::pixel_access::{loadu_128, storeu_128};
+    use crate::include::common::bitdepth::BitDepth8;
 
     let sub128 = _mm_set1_epi16(128);
 
     // Padded to 16 i16 for unaligned SIMD access at variable offsets.
     let mut partial_sum_diag0 = [0i16; 16]; // indices 0..14
     let mut partial_sum_diag1 = [0i16; 16]; // indices 0..14
-    let mut partial_sum_alt0 = [0i16; 16];  // indices 0..10
-    let mut partial_sum_alt1 = [0i16; 16];  // indices 0..10
-    let mut partial_sum_alt2 = [0i16; 16];  // indices 0..10
-    let mut partial_sum_alt3 = [0i16; 16];  // indices 0..10
+    let mut partial_sum_alt0 = [0i16; 16]; // indices 0..10
+    let mut partial_sum_alt1 = [0i16; 16]; // indices 0..10
+    let mut partial_sum_alt2 = [0i16; 16]; // indices 0..10
+    let mut partial_sum_alt3 = [0i16; 16]; // indices 0..10
     let mut hv0 = [0i16; 8];
     let mut hv1_vec = _mm_setzero_si128();
 
@@ -361,13 +357,13 @@ fn cdef_find_dir_simd_8bpc(
         let pair1 = px[2] + px[3];
         let pair2 = px[4] + px[5];
         let pair3 = px[6] + px[7];
-        partial_sum_alt0[y]     += pair0;
+        partial_sum_alt0[y] += pair0;
         partial_sum_alt0[y + 1] += pair1;
         partial_sum_alt0[y + 2] += pair2;
         partial_sum_alt0[y + 3] += pair3;
 
         // alt[1][3 + y - (x >> 1)]: reversed pairwise sums at offset y
-        partial_sum_alt1[y]     += pair3;
+        partial_sum_alt1[y] += pair3;
         partial_sum_alt1[y + 1] += pair2;
         partial_sum_alt1[y + 2] += pair1;
         partial_sum_alt1[y + 3] += pair0;
@@ -415,7 +411,10 @@ fn cdef_find_dir_simd_8bpc(
     cost[4] += (partial_sum_diag1[7] as i32 * partial_sum_diag1[7] as i32 * 105) as u32;
 
     let alt_arrays: [&[i16; 16]; 4] = [
-        &partial_sum_alt0, &partial_sum_alt1, &partial_sum_alt2, &partial_sum_alt3,
+        &partial_sum_alt0,
+        &partial_sum_alt1,
+        &partial_sum_alt2,
+        &partial_sum_alt3,
     ];
     for n in 0..4 {
         let cost_ptr = &mut cost[n * 2 + 1];
@@ -667,7 +666,13 @@ fn cdef_filter_block_scalar_8bpc(
                         sum += sec_tap * constrain_scalar(s2 - px, sec_strength, sec_shift);
                         sum += sec_tap * constrain_scalar(s3 - px, sec_strength, sec_shift);
 
-                        min = cmp::min(cmp::min(cmp::min(s0 as u32, s1 as u32), cmp::min(s2 as u32, s3 as u32)), min as u32) as i32;
+                        min = cmp::min(
+                            cmp::min(
+                                cmp::min(s0 as u32, s1 as u32),
+                                cmp::min(s2 as u32, s3 as u32),
+                            ),
+                            min as u32,
+                        ) as i32;
                         max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);
                     }
 
@@ -874,15 +879,32 @@ fn cdef_filter_8x8_8bpc_avx2_inner(
     #[cfg(target_arch = "x86_64")]
     if let Some(token) = Desktop64::summon() {
         cdef_filter_block_simd_8bpc(
-            token, &tmp, tmp_offset, dst, stride, 8, 8, dir as usize,
-            pri_strength, sec_strength, damping,
+            token,
+            &tmp,
+            tmp_offset,
+            dst,
+            stride,
+            8,
+            8,
+            dir as usize,
+            pri_strength,
+            sec_strength,
+            damping,
         );
         return;
     }
 
     cdef_filter_block_scalar_8bpc(
-        &tmp, tmp_offset, dst, stride, 8, 8, dir as usize,
-        pri_strength, sec_strength, damping,
+        &tmp,
+        tmp_offset,
+        dst,
+        stride,
+        8,
+        8,
+        dir as usize,
+        pri_strength,
+        sec_strength,
+        damping,
     );
 }
 
@@ -947,15 +969,32 @@ fn cdef_filter_4x8_8bpc_avx2_inner(
     #[cfg(target_arch = "x86_64")]
     if let Some(token) = Desktop64::summon() {
         cdef_filter_block_simd_8bpc(
-            token, &tmp, tmp_offset, dst, stride, 4, 8, dir as usize,
-            pri_strength, sec_strength, damping,
+            token,
+            &tmp,
+            tmp_offset,
+            dst,
+            stride,
+            4,
+            8,
+            dir as usize,
+            pri_strength,
+            sec_strength,
+            damping,
         );
         return;
     }
 
     cdef_filter_block_scalar_8bpc(
-        &tmp, tmp_offset, dst, stride, 4, 8, dir as usize,
-        pri_strength, sec_strength, damping,
+        &tmp,
+        tmp_offset,
+        dst,
+        stride,
+        4,
+        8,
+        dir as usize,
+        pri_strength,
+        sec_strength,
+        damping,
     );
 }
 
@@ -1020,15 +1059,32 @@ fn cdef_filter_4x4_8bpc_avx2_inner(
     #[cfg(target_arch = "x86_64")]
     if let Some(token) = Desktop64::summon() {
         cdef_filter_block_simd_8bpc(
-            token, &tmp, tmp_offset, dst, stride, 4, 4, dir as usize,
-            pri_strength, sec_strength, damping,
+            token,
+            &tmp,
+            tmp_offset,
+            dst,
+            stride,
+            4,
+            4,
+            dir as usize,
+            pri_strength,
+            sec_strength,
+            damping,
         );
         return;
     }
 
     cdef_filter_block_scalar_8bpc(
-        &tmp, tmp_offset, dst, stride, 4, 4, dir as usize,
-        pri_strength, sec_strength, damping,
+        &tmp,
+        tmp_offset,
+        dst,
+        stride,
+        4,
+        4,
+        dir as usize,
+        pri_strength,
+        sec_strength,
+        damping,
     );
 }
 
@@ -1221,8 +1277,8 @@ fn cdef_filter_block_simd_16bpc(
     damping: c_int,
     bitdepth_max: c_int,
 ) {
-    use crate::include::common::bitdepth::BitDepth16;
     use super::pixel_access::{loadu_128, storeu_128};
+    use crate::include::common::bitdepth::BitDepth16;
 
     let zero = _mm_setzero_si128();
     let bd_max = _mm_set1_epi16(bitdepth_max as i16);
@@ -1466,7 +1522,13 @@ fn cdef_filter_block_scalar_16bpc(
                         sum += sec_tap * constrain_scalar(s2 - px, sec_strength, sec_shift);
                         sum += sec_tap * constrain_scalar(s3 - px, sec_strength, sec_shift);
 
-                        min = cmp::min(cmp::min(cmp::min(s0 as u32, s1 as u32), cmp::min(s2 as u32, s3 as u32)), min as u32) as i32;
+                        min = cmp::min(
+                            cmp::min(
+                                cmp::min(s0 as u32, s1 as u32),
+                                cmp::min(s2 as u32, s3 as u32),
+                            ),
+                            min as u32,
+                        ) as i32;
                         max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);
                     }
 
@@ -1559,15 +1621,34 @@ fn cdef_filter_8x8_16bpc_avx2_inner(
     #[cfg(target_arch = "x86_64")]
     if let Some(token) = Desktop64::summon() {
         cdef_filter_block_simd_16bpc(
-            token, &tmp, tmp_offset, dst, stride, 8, 8, dir as usize,
-            pri_strength, sec_strength, damping, bitdepth_max,
+            token,
+            &tmp,
+            tmp_offset,
+            dst,
+            stride,
+            8,
+            8,
+            dir as usize,
+            pri_strength,
+            sec_strength,
+            damping,
+            bitdepth_max,
         );
         return;
     }
 
     cdef_filter_block_scalar_16bpc(
-        &tmp, tmp_offset, dst, stride, 8, 8, dir as usize,
-        pri_strength, sec_strength, damping, bitdepth_max,
+        &tmp,
+        tmp_offset,
+        dst,
+        stride,
+        8,
+        8,
+        dir as usize,
+        pri_strength,
+        sec_strength,
+        damping,
+        bitdepth_max,
     );
 }
 
@@ -1596,15 +1677,34 @@ fn cdef_filter_4x8_16bpc_avx2_inner(
     #[cfg(target_arch = "x86_64")]
     if let Some(token) = Desktop64::summon() {
         cdef_filter_block_simd_16bpc(
-            token, &tmp, tmp_offset, dst, stride, 4, 8, dir as usize,
-            pri_strength, sec_strength, damping, bitdepth_max,
+            token,
+            &tmp,
+            tmp_offset,
+            dst,
+            stride,
+            4,
+            8,
+            dir as usize,
+            pri_strength,
+            sec_strength,
+            damping,
+            bitdepth_max,
         );
         return;
     }
 
     cdef_filter_block_scalar_16bpc(
-        &tmp, tmp_offset, dst, stride, 4, 8, dir as usize,
-        pri_strength, sec_strength, damping, bitdepth_max,
+        &tmp,
+        tmp_offset,
+        dst,
+        stride,
+        4,
+        8,
+        dir as usize,
+        pri_strength,
+        sec_strength,
+        damping,
+        bitdepth_max,
     );
 }
 
@@ -1633,15 +1733,34 @@ fn cdef_filter_4x4_16bpc_avx2_inner(
     #[cfg(target_arch = "x86_64")]
     if let Some(token) = Desktop64::summon() {
         cdef_filter_block_simd_16bpc(
-            token, &tmp, tmp_offset, dst, stride, 4, 4, dir as usize,
-            pri_strength, sec_strength, damping, bitdepth_max,
+            token,
+            &tmp,
+            tmp_offset,
+            dst,
+            stride,
+            4,
+            4,
+            dir as usize,
+            pri_strength,
+            sec_strength,
+            damping,
+            bitdepth_max,
         );
         return;
     }
 
     cdef_filter_block_scalar_16bpc(
-        &tmp, tmp_offset, dst, stride, 4, 4, dir as usize,
-        pri_strength, sec_strength, damping, bitdepth_max,
+        &tmp,
+        tmp_offset,
+        dst,
+        stride,
+        4,
+        4,
+        dir as usize,
+        pri_strength,
+        sec_strength,
+        damping,
+        bitdepth_max,
     );
 }
 

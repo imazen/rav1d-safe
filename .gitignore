@@ -3,3 +3,5 @@ Cargo.lock
 *.orig
 *.rlib
 test-vectors/
+perf.data
+perf.data.old

@@ -1390,7 +1390,11 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     // Include lookback entries: when the current block's level is 0, the scalar
     // fallback reads the PREVIOUS block's level (lvl - 4*b4_strideb bytes).
     // We need to include those entries in the slice so the SIMD path can too.
-    let b4_strideb_entries = if !is_v { 1usize } else { b4_stride.unsigned_abs() as usize };
+    let b4_strideb_entries = if !is_v {
+        1usize
+    } else {
+        b4_stride.unsigned_abs() as usize
+    };
     let lvl_lookback_bytes = b4_strideb_entries * 4;
     let lvl_start = lvl.offset.saturating_sub(lvl_lookback_bytes);
     // Round down to a 4-byte boundary for zerocopy alignment

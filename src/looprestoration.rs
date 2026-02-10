@@ -143,9 +143,7 @@ fn lr_filter_scalar<BD: BitDepth>(
     let w_usize = w as usize;
     let h_usize = h as usize;
     match variant {
-        0 | 1 => {
-            wiener_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd)
-        }
+        0 | 1 => wiener_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
         2 => sgr_5x5_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
         3 => sgr_3x3_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
         _ => sgr_mix_rust::<BD>(dst, left, lpf, lpf_off, w_usize, h_usize, params, edges, bd),
@@ -217,9 +215,7 @@ fn lr_filter_direct<BD: BitDepth>(
             }
 
             // Run scalar on restored state
-            lr_filter_scalar::<BD>(
-                variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
-            );
+            lr_filter_scalar::<BD>(variant, dst, left, lpf, lpf_off, w, h, params, edges, bd);
 
             // Compare only the w×h output region
             let (guard, _) = dst.full_guard::<BD>();

@@ -8,7 +8,10 @@
 // All unsafe must live in separate crates (rav1d-disjoint-mut, rav1d-align, etc.)
 // or be gated behind cfg(feature = "asm") / cfg(feature = "c-ffi").
 // forbid cannot be overridden by #[allow] — any unsafe in the default build is a hard error.
-#![cfg_attr(not(any(feature = "asm", feature = "c-ffi", feature = "unchecked")), forbid(unsafe_code))]
+#![cfg_attr(
+    not(any(feature = "asm", feature = "c-ffi", feature = "unchecked")),
+    forbid(unsafe_code)
+)]
 #![cfg_attr(any(feature = "asm", feature = "c-ffi"), deny(unsafe_op_in_unsafe_fn))]
 #![allow(clippy::all)]
 #![cfg_attr(

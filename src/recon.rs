@@ -1910,10 +1910,8 @@ fn obmc<BD: BitDepth>(
             if a_r.r#ref.r#ref[0] > 0 {
                 let ow4 = cmp::min(step4, b_dim[0]);
                 let oh4 = cmp::min(b_dim[1], 16) >> 1;
-                let lap_component = Rav1dPictureDataComponent::wrap_buf::<BD>(
-                    lap,
-                    ow4 as usize * h_mul as usize,
-                );
+                let lap_component =
+                    Rav1dPictureDataComponent::wrap_buf::<BD>(lap, ow4 as usize * h_mul as usize);
                 mc::<BD>(
                     f,
                     &mut scratch.emu_edge,
@@ -1964,10 +1962,8 @@ fn obmc<BD: BitDepth>(
             if l_r.r#ref.r#ref[0] > 0 {
                 let ow4 = cmp::min(b_dim[0], 16) >> 1;
                 let oh4 = cmp::min(step4, b_dim[1]);
-                let lap_component = Rav1dPictureDataComponent::wrap_buf::<BD>(
-                    lap,
-                    ow4 as usize * h_mul as usize,
-                );
+                let lap_component =
+                    Rav1dPictureDataComponent::wrap_buf::<BD>(lap, ow4 as usize * h_mul as usize);
                 mc::<BD>(
                     f,
                     &mut scratch.emu_edge,
@@ -3144,8 +3140,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 bd,
             );
             let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
-            let tmp_component =
-                Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * bw4 as usize);
+            let tmp_component = Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * bw4 as usize);
             f.dsp.ipred.intra_pred[m as usize].call(
                 m as usize,
                 PicOffset {
@@ -3433,10 +3428,8 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             bd,
                         );
                         let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
-                        let tmp_component = Rav1dPictureDataComponent::wrap_buf::<BD>(
-                            tmp,
-                            4 * cbw4 as usize,
-                        );
+                        let tmp_component =
+                            Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * cbw4 as usize);
                         f.dsp.ipred.intra_pred[m as usize].call(
                             m as usize,
                             PicOffset {

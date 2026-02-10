@@ -63,16 +63,12 @@ fn loopfilter_sb_scalar<BD: BitDepth>(
         (true, true) => loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::Y as usize }>(
             dst, mask, lvl, b4_stride, lut, wh, bd,
         ),
-        (false, false) => {
-            loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::UV as usize }>(
-                dst, mask, lvl, b4_stride, lut, wh, bd,
-            )
-        }
-        (false, true) => {
-            loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::UV as usize }>(
-                dst, mask, lvl, b4_stride, lut, wh, bd,
-            )
-        }
+        (false, false) => loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::UV as usize }>(
+            dst, mask, lvl, b4_stride, lut, wh, bd,
+        ),
+        (false, true) => loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::UV as usize }>(
+            dst, mask, lvl, b4_stride, lut, wh, bd,
+        ),
     }
 }
 
@@ -138,9 +134,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
 
             // Run scalar on restored state
             let bd = BD::from_c(bd_max);
-            loopfilter_sb_scalar::<BD>(
-                dst, mask, lvl, b4_stride as usize, lut, wh, bd, is_y, is_v,
-            );
+            loopfilter_sb_scalar::<BD>(dst, mask, lvl, b4_stride as usize, lut, wh, bd, is_y, is_v);
 
             // Compare SIMD vs scalar
             let (guard, _) = dst.full_guard::<BD>();

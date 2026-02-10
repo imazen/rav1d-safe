@@ -161,9 +161,18 @@ fn cdef_direct<BD: BitDepth>(
 
             // Run scalar
             cdef_filter_block_rust(
-                dst, left, top, bottom,
-                pri_strength, sec_strength, dir, damping,
-                w, h, edges, bd,
+                dst,
+                left,
+                top,
+                bottom,
+                pri_strength,
+                sec_strength,
+                dir,
+                damping,
+                w,
+                h,
+                edges,
+                bd,
             );
 
             // Compare
