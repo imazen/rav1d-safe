@@ -715,6 +715,9 @@ fn loop_filter_4_16bpc(
         0
     };
     let f = 1i32 << bitdepth_min_8;
+    let e = e << bitdepth_min_8;
+    let i = i << bitdepth_min_8;
+    let h = h << bitdepth_min_8;
 
     for idx in 0..4isize {
         let edge = signed_idx(base, idx * stridea);
@@ -864,24 +867,28 @@ fn loop_filter_4_16bpc(
             set_px(buf, 1, (p1 + p0 + q0 + 2 * q1 + q2 + q3 + q3 + 4) >> 3);
             set_px(buf, 2, (p0 + q0 + q1 + 2 * q2 + q3 + q3 + q3 + 4) >> 3);
         } else if wd >= 6 && flat8in {
-            set_px(buf, -2, (p2 + 2 * p1 + 2 * p0 + 2 * q0 + q1 + 4) >> 3);
+            set_px(buf, -2, (p2 + 2 * p2 + 2 * p1 + 2 * p0 + q0 + 4) >> 3);
             set_px(buf, -1, (p2 + 2 * p1 + 2 * p0 + 2 * q0 + q1 + 4) >> 3);
             set_px(buf, 0, (p1 + 2 * p0 + 2 * q0 + 2 * q1 + q2 + 4) >> 3);
-            set_px(buf, 1, (p1 + 2 * p0 + 2 * q0 + 2 * q1 + q2 + 4) >> 3);
+            set_px(buf, 1, (p0 + 2 * q0 + 2 * q1 + 2 * q2 + q2 + 4) >> 3);
         } else {
             let hev = (p1 - p0).abs() > h || (q1 - q0).abs() > h;
 
+            let bdm8 = bitdepth_min_8 as u8;
             if hev {
-                let f1 = iclip_diff((p1 - q1) + 3 * (q0 - p0), bitdepth_min_8 as u8);
-                let f2 = (f1 + 4) >> 3;
-                let f1 = (f1 + 3) >> 3;
+                let f = iclip_diff(p1 - q1, bdm8);
+                let f = iclip_diff(3 * (q0 - p0) + f, bdm8);
+
+                let f1 = cmp::min(f + 4, (128 << bdm8) - 1) >> 3;
+                let f2 = cmp::min(f + 3, (128 << bdm8) - 1) >> 3;
 
                 set_px(buf, -1, iclip(p0 + f2, 0, bitdepth_max));
                 set_px(buf, 0, iclip(q0 - f1, 0, bitdepth_max));
             } else {
-                let f1 = iclip_diff(3 * (q0 - p0), bitdepth_min_8 as u8);
-                let f2 = (f1 + 4) >> 3;
-                let f1 = (f1 + 3) >> 3;
+                let f = iclip_diff(3 * (q0 - p0), bdm8);
+
+                let f1 = cmp::min(f + 4, (128 << bdm8) - 1) >> 3;
+                let f2 = cmp::min(f + 3, (128 << bdm8) - 1) >> 3;
 
                 set_px(buf, -1, iclip(p0 + f2, 0, bitdepth_max));
                 set_px(buf, 0, iclip(q0 - f1, 0, bitdepth_max));
