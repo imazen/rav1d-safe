@@ -962,6 +962,7 @@ impl MsacContext {
 ///
 /// `n_symbols` is in the range `0..4`.
 #[inline(always)]
+#[inline(always)]
 pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
     debug_assert!(n_symbols < 4);
     let ret;
@@ -989,6 +990,7 @@ pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_s
 /// Return value is in the range `0..=n_symbols`.
 ///
 /// `n_symbols` is in the range `0..8`.
+#[inline(always)]
 #[inline(always)]
 pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
     debug_assert!(n_symbols < 8);
@@ -1019,6 +1021,7 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
 /// `n_symbols` is in the range `0..16`.
 #[inline(always)]
 #[cfg_attr(feature = "asm", allow(unsafe_code))]
+#[inline(always)]
 pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
     debug_assert!(n_symbols < 16);
     let ret;
@@ -1057,6 +1060,7 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
     ret as u8 % 16
 }
 
+#[inline(always)]
 pub fn rav1d_msac_decode_bool_adapt(s: &mut MsacContext, cdf: &mut [u16; 2]) -> bool {
     cfg_if! {
         if #[cfg(all(feature = "asm", target_feature = "sse2"))] {
@@ -1075,6 +1079,7 @@ pub fn rav1d_msac_decode_bool_adapt(s: &mut MsacContext, cdf: &mut [u16; 2]) -> 
     }
 }
 
+#[inline(always)]
 pub fn rav1d_msac_decode_bool_equi(s: &mut MsacContext) -> bool {
     cfg_if! {
         if #[cfg(all(feature = "asm", target_feature = "sse2"))] {
@@ -1093,6 +1098,7 @@ pub fn rav1d_msac_decode_bool_equi(s: &mut MsacContext) -> bool {
     }
 }
 
+#[inline(always)]
 pub fn rav1d_msac_decode_bool(s: &mut MsacContext, f: c_uint) -> bool {
     cfg_if! {
         if #[cfg(all(feature = "asm", target_feature = "sse2"))] {
