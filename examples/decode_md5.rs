@@ -5,7 +5,7 @@
 //!
 //! Usage:
 //!   cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5
-//!   ./target/release/examples/decode_md5 <input> [expected_md5]
+//!   ./target/release/examples/decode_md5 [--filmgrain] [-q] <input> [expected_md5]
 
 use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
 use std::env;
@@ -124,16 +124,37 @@ fn detect_format(data: &[u8]) -> Format {
     }
 }
 
+fn process_frame(
+    frame: &Frame,
+    hasher: &mut md5::Context,
+    frame_count: &mut u32,
+    verbose: bool,
+    per_frame: bool,
+) {
+    if per_frame {
+        let mut frame_hasher = md5::Context::new();
+        hash_frame(frame, &mut frame_hasher, false);
+        hash_frame(frame, hasher, false);
+        #[allow(deprecated)]
+        let frame_digest = frame_hasher.compute();
+        eprintln!("frame {} md5={:x}", *frame_count, frame_digest);
+    } else {
+        hash_frame(frame, hasher, verbose);
+    }
+    *frame_count += 1;
+}
+
 fn decode_frames(
     decoder: &mut Decoder,
     data: &[u8],
     hasher: &mut md5::Context,
     frame_count: &mut u32,
+    verbose: bool,
+    per_frame: bool,
 ) {
     match decoder.decode(data) {
         Ok(Some(frame)) => {
-            hash_frame(&frame, hasher, true);
-            *frame_count += 1;
+            process_frame(&frame, hasher, frame_count, verbose, per_frame);
         }
         Ok(None) => {}
         Err(e) => {
@@ -145,8 +166,7 @@ fn decode_frames(
     loop {
         match decoder.get_frame() {
             Ok(Some(frame)) => {
-                hash_frame(&frame, hasher, true);
-                *frame_count += 1;
+                process_frame(&frame, hasher, frame_count, verbose, per_frame);
             }
             Ok(None) => break,
             Err(e) => {
@@ -159,18 +179,34 @@ fn decode_frames(
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: {} <input> [expected_md5]", args[0]);
+
+    let mut filmgrain = false;
+    let mut quiet = false;
+    let mut per_frame = false;
+    let mut positional = Vec::new();
+
+    for arg in &args[1..] {
+        match arg.as_str() {
+            "--filmgrain" => filmgrain = true,
+            "-q" | "--quiet" => quiet = true,
+            "--per-frame" => per_frame = true,
+            _ => positional.push(arg.as_str()),
+        }
+    }
+
+    if positional.is_empty() {
+        eprintln!("Usage: {} [--filmgrain] [-q] <input> [expected_md5]", args[0]);
         std::process::exit(1);
     }
 
-    let input_path = &args[1];
-    let expected_md5 = args.get(2).map(|s| s.as_str());
+    let input_path = positional[0];
+    let expected_md5 = positional.get(1).copied();
     let data = fs::read(input_path).expect("Failed to read input");
+    let verbose = !quiet;
 
     let settings = Settings {
         threads: 1,
-        apply_grain: false,
+        apply_grain: filmgrain,
         ..Default::default()
     };
     let mut decoder = Decoder::with_settings(settings).expect("decoder creation failed");
@@ -182,15 +218,17 @@ fn main() {
             let mut cursor = Cursor::new(&data);
             let frames = ivf_parser::parse_all_frames(&mut cursor).expect("IVF parse failed");
             for ivf_frame in &frames {
-                decode_frames(&mut decoder, &ivf_frame.data, &mut hasher, &mut frame_count);
+                decode_frames(&mut decoder, &ivf_frame.data, &mut hasher, &mut frame_count, verbose, per_frame);
             }
         }
         Format::AnnexB => {
             match annexb_parser::parse_annexb(&data) {
                 Ok(units) => {
-                    eprintln!("Annex B: {} temporal units", units.len());
+                    if verbose {
+                        eprintln!("Annex B: {} temporal units", units.len());
+                    }
                     for unit in &units {
-                        decode_frames(&mut decoder, &unit.data, &mut hasher, &mut frame_count);
+                        decode_frames(&mut decoder, &unit.data, &mut hasher, &mut frame_count, verbose, per_frame);
                     }
                 }
                 Err(e) => {
@@ -199,7 +237,7 @@ fn main() {
             }
         }
         Format::RawObu => {
-            decode_frames(&mut decoder, &data, &mut hasher, &mut frame_count);
+            decode_frames(&mut decoder, &data, &mut hasher, &mut frame_count, verbose, per_frame);
         }
     }
 
@@ -207,8 +245,7 @@ fn main() {
     match decoder.flush() {
         Ok(remaining) => {
             for frame in &remaining {
-                hash_frame(frame, &mut hasher, true);
-                frame_count += 1;
+                process_frame(frame, &mut hasher, &mut frame_count, verbose, per_frame);
             }
         }
         Err(e) => {
@@ -221,11 +258,15 @@ fn main() {
     let md5_hex = format!("{:x}", digest);
 
     println!("{}", md5_hex);
-    eprintln!("Frames: {}", frame_count);
+    if verbose {
+        eprintln!("Frames: {}", frame_count);
+    }
 
     if let Some(expected) = expected_md5 {
         if md5_hex == expected {
-            eprintln!("MATCH");
+            if verbose {
+                eprintln!("MATCH");
+            }
         } else {
             eprintln!("MISMATCH: expected {} got {}", expected, md5_hex);
             std::process::exit(1);
