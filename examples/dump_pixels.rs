@@ -8,6 +8,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Cursor, Write};
 
+#[path = "helpers/ivf_parser.rs"]
 mod ivf_parser;
 
 fn dump_frame(frame: &Frame, out: &mut impl Write) -> io::Result<()> {

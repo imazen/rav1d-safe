@@ -5,6 +5,7 @@ use std::env;
 use std::fs;
 use std::io::Cursor;
 
+#[path = "helpers/ivf_parser.rs"]
 mod ivf_parser;
 
 fn hash_frame(frame: &Frame) -> String {

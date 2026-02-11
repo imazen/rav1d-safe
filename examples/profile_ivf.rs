@@ -8,6 +8,7 @@
 //!   perf record -g ./target/release/examples/profile_ivf <input.ivf> 200
 //!   perf report
 
+#[path = "helpers/ivf_parser.rs"]
 mod ivf_parser;
 
 use rav1d_safe::src::managed::{Decoder, Settings};

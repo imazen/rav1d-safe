@@ -12,7 +12,9 @@ use std::env;
 use std::fs;
 use std::io::Cursor;
 
+#[path = "helpers/annexb_parser.rs"]
 mod annexb_parser;
+#[path = "helpers/ivf_parser.rs"]
 mod ivf_parser;
 
 fn hash_frame(frame: &Frame, hasher: &mut md5::Context, verbose: bool) {
