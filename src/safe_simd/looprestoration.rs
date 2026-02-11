@@ -642,20 +642,16 @@ fn selfguided_filter_8bpc(
 
         for i in 0..(w + 2) {
             let idx = aa_base + i;
-            let a_val = sumsq.get(idx).copied().unwrap_or(0);
-            let b_val = sum.get(idx).copied().unwrap_or(0) as i32;
+            let a_val = sumsq[idx];
+            let b_val = sum[idx] as i32;
 
             let p = cmp::max(a_val * n - b_val * b_val, 0) as u32;
             let z = (p * s + (1 << 19)) >> 20;
             let x = dav1d_sgr_x_by_x[cmp::min(z, 255) as usize] as u32;
 
             // Store inverted: a = x * b * sgr_one_by_x, b = x
-            if let Some(aa) = sumsq.get_mut(idx) {
-                *aa = ((x * (b_val as u32) * sgr_one_by_x + (1 << 11)) >> 12) as i32;
-            }
-            if let Some(bb) = sum.get_mut(idx) {
-                *bb = x as i16;
-            }
+            sumsq[idx] = ((x * (b_val as u32) * sgr_one_by_x + (1 << 11)) >> 12) as i32;
+            sum[idx] = x as i16;
         }
     }
 
@@ -672,26 +668,26 @@ fn selfguided_filter_8bpc(
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 // six_neighbors for b (sum array)
                 let b_six = {
-                    let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
-                    let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
+                    let above = sum[idx - REST_UNIT_STRIDE] as i32;
+                    let below = sum[idx + REST_UNIT_STRIDE] as i32;
                     let above_left =
-                        sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                        sum[idx - REST_UNIT_STRIDE - 1] as i32;
                     let above_right =
-                        sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                        sum[idx - REST_UNIT_STRIDE + 1] as i32;
                     let below_left =
-                        sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                        sum[idx + REST_UNIT_STRIDE - 1] as i32;
                     let below_right =
-                        sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                        sum[idx + REST_UNIT_STRIDE + 1] as i32;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 // six_neighbors for a (sumsq array)
                 let a_six = {
-                    let above = sumsq.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0);
-                    let below = sumsq.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0);
-                    let above_left = sumsq.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
-                    let above_right = sumsq.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
-                    let below_left = sumsq.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
-                    let below_right = sumsq.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
+                    let above = sumsq[idx - REST_UNIT_STRIDE];
+                    let below = sumsq[idx + REST_UNIT_STRIDE];
+                    let above_left = sumsq[idx - REST_UNIT_STRIDE - 1];
+                    let above_right = sumsq[idx - REST_UNIT_STRIDE + 1];
+                    let below_left = sumsq[idx + REST_UNIT_STRIDE - 1];
+                    let below_right = sumsq[idx + REST_UNIT_STRIDE + 1];
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
@@ -706,15 +702,15 @@ fn selfguided_filter_8bpc(
                     let idx = base + (j + 1) * REST_UNIT_STRIDE + i;
                     // Simplified: center * 6 + (left + right) * 5
                     let b_horiz = {
-                        let center = sum.get(idx).copied().unwrap_or(0) as i32;
-                        let left = sum.get(idx - 1).copied().unwrap_or(0) as i32;
-                        let right = sum.get(idx + 1).copied().unwrap_or(0) as i32;
+                        let center = sum[idx] as i32;
+                        let left = sum[idx - 1] as i32;
+                        let right = sum[idx + 1] as i32;
                         center * 6 + (left + right) * 5
                     };
                     let a_horiz = {
-                        let center = sumsq.get(idx).copied().unwrap_or(0);
-                        let left = sumsq.get(idx - 1).copied().unwrap_or(0);
-                        let right = sumsq.get(idx + 1).copied().unwrap_or(0);
+                        let center = sumsq[idx];
+                        let left = sumsq[idx - 1];
+                        let right = sumsq[idx + 1];
                         center * 6 + (left + right) * 5
                     };
 
@@ -730,25 +726,25 @@ fn selfguided_filter_8bpc(
             for i in 0..w {
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 let b_six = {
-                    let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
-                    let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
+                    let above = sum[idx - REST_UNIT_STRIDE] as i32;
+                    let below = sum[idx + REST_UNIT_STRIDE] as i32;
                     let above_left =
-                        sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                        sum[idx - REST_UNIT_STRIDE - 1] as i32;
                     let above_right =
-                        sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                        sum[idx - REST_UNIT_STRIDE + 1] as i32;
                     let below_left =
-                        sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                        sum[idx + REST_UNIT_STRIDE - 1] as i32;
                     let below_right =
-                        sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                        sum[idx + REST_UNIT_STRIDE + 1] as i32;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 let a_six = {
-                    let above = sumsq.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0);
-                    let below = sumsq.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0);
-                    let above_left = sumsq.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
-                    let above_right = sumsq.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
-                    let below_left = sumsq.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
-                    let below_right = sumsq.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
+                    let above = sumsq[idx - REST_UNIT_STRIDE];
+                    let below = sumsq[idx + REST_UNIT_STRIDE];
+                    let above_left = sumsq[idx - REST_UNIT_STRIDE - 1];
+                    let above_right = sumsq[idx - REST_UNIT_STRIDE + 1];
+                    let below_left = sumsq[idx + REST_UNIT_STRIDE - 1];
+                    let below_right = sumsq[idx + REST_UNIT_STRIDE + 1];
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
@@ -764,33 +760,33 @@ fn selfguided_filter_8bpc(
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 // eight_neighbors for b
                 let b_eight = {
-                    let center = sum.get(idx).copied().unwrap_or(0) as i32;
-                    let left = sum.get(idx - 1).copied().unwrap_or(0) as i32;
-                    let right = sum.get(idx + 1).copied().unwrap_or(0) as i32;
-                    let above = sum.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
-                    let below = sum.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i32;
+                    let center = sum[idx] as i32;
+                    let left = sum[idx - 1] as i32;
+                    let right = sum[idx + 1] as i32;
+                    let above = sum[idx - REST_UNIT_STRIDE] as i32;
+                    let below = sum[idx + REST_UNIT_STRIDE] as i32;
                     let above_left =
-                        sum.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                        sum[idx - REST_UNIT_STRIDE - 1] as i32;
                     let above_right =
-                        sum.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                        sum[idx - REST_UNIT_STRIDE + 1] as i32;
                     let below_left =
-                        sum.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i32;
+                        sum[idx + REST_UNIT_STRIDE - 1] as i32;
                     let below_right =
-                        sum.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i32;
+                        sum[idx + REST_UNIT_STRIDE + 1] as i32;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
                 // eight_neighbors for a
                 let a_eight = {
-                    let center = sumsq.get(idx).copied().unwrap_or(0);
-                    let left = sumsq.get(idx - 1).copied().unwrap_or(0);
-                    let right = sumsq.get(idx + 1).copied().unwrap_or(0);
-                    let above = sumsq.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0);
-                    let below = sumsq.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0);
-                    let above_left = sumsq.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
-                    let above_right = sumsq.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
-                    let below_left = sumsq.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0);
-                    let below_right = sumsq.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0);
+                    let center = sumsq[idx];
+                    let left = sumsq[idx - 1];
+                    let right = sumsq[idx + 1];
+                    let above = sumsq[idx - REST_UNIT_STRIDE];
+                    let below = sumsq[idx + REST_UNIT_STRIDE];
+                    let above_left = sumsq[idx - REST_UNIT_STRIDE - 1];
+                    let above_right = sumsq[idx - REST_UNIT_STRIDE + 1];
+                    let below_left = sumsq[idx + REST_UNIT_STRIDE - 1];
+                    let below_right = sumsq[idx + REST_UNIT_STRIDE + 1];
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
@@ -1185,8 +1181,8 @@ fn selfguided_filter_16bpc(
         for i in 0..(w + 2) {
             let idx = aa_base + i;
             // Scale down by bitdepth_min_8 for the variance calculation
-            let a_val = sumsq.get(idx).copied().unwrap_or(0);
-            let b_val = sum.get(idx).copied().unwrap_or(0) as i64;
+            let a_val = sumsq[idx];
+            let b_val = sum[idx] as i64;
 
             // Apply bitdepth scaling: a >> (2 * bitdepth_min_8), b >> bitdepth_min_8
             let a_scaled =
@@ -1217,30 +1213,30 @@ fn selfguided_filter_16bpc(
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 // six_neighbors for b (bb array)
                 let b_six = {
-                    let above = bb.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let below = bb.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
+                    let above = bb[idx - REST_UNIT_STRIDE] as i64;
+                    let below = bb[idx + REST_UNIT_STRIDE] as i64;
                     let above_left =
-                        bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        bb[idx - REST_UNIT_STRIDE - 1] as i64;
                     let above_right =
-                        bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        bb[idx - REST_UNIT_STRIDE + 1] as i64;
                     let below_left =
-                        bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        bb[idx + REST_UNIT_STRIDE - 1] as i64;
                     let below_right =
-                        bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        bb[idx + REST_UNIT_STRIDE + 1] as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 // six_neighbors for a (aa array)
                 let a_six = {
-                    let above = aa.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let below = aa.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
+                    let above = aa[idx - REST_UNIT_STRIDE] as i64;
+                    let below = aa[idx + REST_UNIT_STRIDE] as i64;
                     let above_left =
-                        aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        aa[idx - REST_UNIT_STRIDE - 1] as i64;
                     let above_right =
-                        aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        aa[idx - REST_UNIT_STRIDE + 1] as i64;
                     let below_left =
-                        aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        aa[idx + REST_UNIT_STRIDE - 1] as i64;
                     let below_right =
-                        aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        aa[idx + REST_UNIT_STRIDE + 1] as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
@@ -1255,15 +1251,15 @@ fn selfguided_filter_16bpc(
                     let idx = base + (j + 1) * REST_UNIT_STRIDE + i;
                     // Simplified: center * 6 + (left + right) * 5
                     let b_horiz = {
-                        let center = bb.get(idx).copied().unwrap_or(0) as i64;
-                        let left = bb.get(idx - 1).copied().unwrap_or(0) as i64;
-                        let right = bb.get(idx + 1).copied().unwrap_or(0) as i64;
+                        let center = bb[idx] as i64;
+                        let left = bb[idx - 1] as i64;
+                        let right = bb[idx + 1] as i64;
                         center * 6 + (left + right) * 5
                     };
                     let a_horiz = {
-                        let center = aa.get(idx).copied().unwrap_or(0) as i64;
-                        let left = aa.get(idx - 1).copied().unwrap_or(0) as i64;
-                        let right = aa.get(idx + 1).copied().unwrap_or(0) as i64;
+                        let center = aa[idx] as i64;
+                        let left = aa[idx - 1] as i64;
+                        let right = aa[idx + 1] as i64;
                         center * 6 + (left + right) * 5
                     };
 
@@ -1279,29 +1275,29 @@ fn selfguided_filter_16bpc(
             for i in 0..w {
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 let b_six = {
-                    let above = bb.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let below = bb.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
+                    let above = bb[idx - REST_UNIT_STRIDE] as i64;
+                    let below = bb[idx + REST_UNIT_STRIDE] as i64;
                     let above_left =
-                        bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        bb[idx - REST_UNIT_STRIDE - 1] as i64;
                     let above_right =
-                        bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        bb[idx - REST_UNIT_STRIDE + 1] as i64;
                     let below_left =
-                        bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        bb[idx + REST_UNIT_STRIDE - 1] as i64;
                     let below_right =
-                        bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        bb[idx + REST_UNIT_STRIDE + 1] as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 let a_six = {
-                    let above = aa.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let below = aa.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
+                    let above = aa[idx - REST_UNIT_STRIDE] as i64;
+                    let below = aa[idx + REST_UNIT_STRIDE] as i64;
                     let above_left =
-                        aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        aa[idx - REST_UNIT_STRIDE - 1] as i64;
                     let above_right =
-                        aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        aa[idx - REST_UNIT_STRIDE + 1] as i64;
                     let below_left =
-                        aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        aa[idx + REST_UNIT_STRIDE - 1] as i64;
                     let below_right =
-                        aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        aa[idx + REST_UNIT_STRIDE + 1] as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
@@ -1317,37 +1313,37 @@ fn selfguided_filter_16bpc(
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 // eight_neighbors for b
                 let b_eight = {
-                    let center = bb.get(idx).copied().unwrap_or(0) as i64;
-                    let left = bb.get(idx - 1).copied().unwrap_or(0) as i64;
-                    let right = bb.get(idx + 1).copied().unwrap_or(0) as i64;
-                    let above = bb.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let below = bb.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
+                    let center = bb[idx] as i64;
+                    let left = bb[idx - 1] as i64;
+                    let right = bb[idx + 1] as i64;
+                    let above = bb[idx - REST_UNIT_STRIDE] as i64;
+                    let below = bb[idx + REST_UNIT_STRIDE] as i64;
                     let above_left =
-                        bb.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        bb[idx - REST_UNIT_STRIDE - 1] as i64;
                     let above_right =
-                        bb.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        bb[idx - REST_UNIT_STRIDE + 1] as i64;
                     let below_left =
-                        bb.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        bb[idx + REST_UNIT_STRIDE - 1] as i64;
                     let below_right =
-                        bb.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        bb[idx + REST_UNIT_STRIDE + 1] as i64;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
                 // eight_neighbors for a
                 let a_eight = {
-                    let center = aa.get(idx).copied().unwrap_or(0) as i64;
-                    let left = aa.get(idx - 1).copied().unwrap_or(0) as i64;
-                    let right = aa.get(idx + 1).copied().unwrap_or(0) as i64;
-                    let above = aa.get(idx - REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
-                    let below = aa.get(idx + REST_UNIT_STRIDE).copied().unwrap_or(0) as i64;
+                    let center = aa[idx] as i64;
+                    let left = aa[idx - 1] as i64;
+                    let right = aa[idx + 1] as i64;
+                    let above = aa[idx - REST_UNIT_STRIDE] as i64;
+                    let below = aa[idx + REST_UNIT_STRIDE] as i64;
                     let above_left =
-                        aa.get(idx - REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        aa[idx - REST_UNIT_STRIDE - 1] as i64;
                     let above_right =
-                        aa.get(idx - REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        aa[idx - REST_UNIT_STRIDE + 1] as i64;
                     let below_left =
-                        aa.get(idx + REST_UNIT_STRIDE - 1).copied().unwrap_or(0) as i64;
+                        aa[idx + REST_UNIT_STRIDE - 1] as i64;
                     let below_right =
-                        aa.get(idx + REST_UNIT_STRIDE + 1).copied().unwrap_or(0) as i64;
+                        aa[idx + REST_UNIT_STRIDE + 1] as i64;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
