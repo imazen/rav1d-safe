@@ -1,20 +1,18 @@
-//! Decode IVF files and compute MD5 of decoded pixel data.
+//! Decode AV1 bitstreams and compute MD5 of decoded pixel data.
 //!
+//! Supports IVF, raw OBU (Section 5), and Annex B container formats.
 //! Produces MD5 hashes compatible with dav1d's --verify / aomdec --md5 format.
 //!
 //! Usage:
 //!   cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5
-//!   ./target/release/examples/decode_md5 <input.ivf>
-//!
-//! Or with ASM:
-//!   cargo build --release --features "asm,bitdepth_8,bitdepth_16" --example decode_md5
-//!   ./target/release/examples/decode_md5 <input.ivf>
+//!   ./target/release/examples/decode_md5 <input> [expected_md5]
 
 use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
 use std::env;
 use std::fs;
 use std::io::Cursor;
 
+mod annexb_parser;
 mod ivf_parser;
 
 fn hash_frame(frame: &Frame, hasher: &mut md5::Context, verbose: bool) {
@@ -29,7 +27,6 @@ fn hash_frame(frame: &Frame, hasher: &mut md5::Context, verbose: bool) {
     }
     match frame.planes() {
         Planes::Depth8(planes) => {
-            // Y plane
             let y = planes.y();
             if verbose {
                 eprintln!(
@@ -42,7 +39,6 @@ fn hash_frame(frame: &Frame, hasher: &mut md5::Context, verbose: bool) {
             for row in y.rows() {
                 hasher.consume(row);
             }
-            // U plane
             if let Some(u) = planes.u() {
                 if verbose {
                     eprintln!(
@@ -56,7 +52,6 @@ fn hash_frame(frame: &Frame, hasher: &mut md5::Context, verbose: bool) {
                     hasher.consume(row);
                 }
             }
-            // V plane
             if let Some(v) = planes.v() {
                 if verbose {
                     eprintln!(
@@ -72,14 +67,12 @@ fn hash_frame(frame: &Frame, hasher: &mut md5::Context, verbose: bool) {
             }
         }
         Planes::Depth16(planes) => {
-            // Y plane - hash u16 as little-endian bytes
             let y = planes.y();
             for row in y.rows() {
                 for &pixel in row {
                     hasher.consume(pixel.to_le_bytes());
                 }
             }
-            // U plane
             if let Some(u) = planes.u() {
                 for row in u.rows() {
                     for &pixel in row {
@@ -87,7 +80,6 @@ fn hash_frame(frame: &Frame, hasher: &mut md5::Context, verbose: bool) {
                     }
                 }
             }
-            // V plane
             if let Some(v) = planes.v() {
                 for row in v.rows() {
                     for &pixel in row {
@@ -99,19 +91,82 @@ fn hash_frame(frame: &Frame, hasher: &mut md5::Context, verbose: bool) {
     }
 }
 
+/// Detect input format from file contents.
+enum Format {
+    Ivf,
+    AnnexB,
+    RawObu,
+}
+
+fn detect_format(data: &[u8]) -> Format {
+    if data.len() >= 4 && &data[0..4] == b"DKIF" {
+        return Format::Ivf;
+    }
+
+    if data.is_empty() {
+        return Format::RawObu;
+    }
+
+    // Check if first byte is a valid OBU header:
+    // Bit 7: forbidden (must be 0)
+    // Bits 6-3: obu_type (valid: 1-8, 15)
+    // Bit 1: obu_has_size_field
+    let first = data[0];
+    let forbidden = (first >> 7) & 1;
+    let obu_type = (first >> 3) & 0xF;
+    let has_size = (first >> 1) & 1;
+
+    if forbidden == 0 && matches!(obu_type, 1..=8 | 15) && has_size == 1 {
+        Format::RawObu
+    } else {
+        // Not a valid OBU header — assume Annex B (LEB128 temporal unit sizes)
+        Format::AnnexB
+    }
+}
+
+fn decode_frames(
+    decoder: &mut Decoder,
+    data: &[u8],
+    hasher: &mut md5::Context,
+    frame_count: &mut u32,
+) {
+    match decoder.decode(data) {
+        Ok(Some(frame)) => {
+            hash_frame(&frame, hasher, true);
+            *frame_count += 1;
+        }
+        Ok(None) => {}
+        Err(e) => {
+            eprintln!("Decode error: {}", e);
+            return;
+        }
+    }
+    // Drain additional frames from buffered data
+    loop {
+        match decoder.get_frame() {
+            Ok(Some(frame)) => {
+                hash_frame(&frame, hasher, true);
+                *frame_count += 1;
+            }
+            Ok(None) => break,
+            Err(e) => {
+                eprintln!("Decode error draining frames: {}", e);
+                break;
+            }
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <input.ivf> [expected_md5]", args[0]);
+        eprintln!("Usage: {} <input> [expected_md5]", args[0]);
         std::process::exit(1);
     }
 
     let input_path = &args[1];
     let expected_md5 = args.get(2).map(|s| s.as_str());
     let data = fs::read(input_path).expect("Failed to read input");
-
-    // Detect format: IVF starts with "DKIF", OBU doesn't
-    let is_ivf = data.len() >= 4 && &data[0..4] == b"DKIF";
 
     let settings = Settings {
         threads: 1,
@@ -122,33 +177,29 @@ fn main() {
     let mut hasher = md5::Context::new();
     let mut frame_count = 0u32;
 
-    if is_ivf {
-        let mut cursor = Cursor::new(&data);
-        let frames = ivf_parser::parse_all_frames(&mut cursor).expect("IVF parse failed");
-
-        for ivf_frame in &frames {
-            match decoder.decode(&ivf_frame.data) {
-                Ok(Some(frame)) => {
-                    hash_frame(&frame, &mut hasher, true);
-                    frame_count += 1;
+    match detect_format(&data) {
+        Format::Ivf => {
+            let mut cursor = Cursor::new(&data);
+            let frames = ivf_parser::parse_all_frames(&mut cursor).expect("IVF parse failed");
+            for ivf_frame in &frames {
+                decode_frames(&mut decoder, &ivf_frame.data, &mut hasher, &mut frame_count);
+            }
+        }
+        Format::AnnexB => {
+            match annexb_parser::parse_annexb(&data) {
+                Ok(units) => {
+                    eprintln!("Annex B: {} temporal units", units.len());
+                    for unit in &units {
+                        decode_frames(&mut decoder, &unit.data, &mut hasher, &mut frame_count);
+                    }
                 }
-                Ok(None) => {}
                 Err(e) => {
-                    eprintln!("Decode error on frame: {}", e);
+                    eprintln!("Annex B parse error: {}", e);
                 }
             }
         }
-    } else {
-        // Raw OBU
-        match decoder.decode(&data) {
-            Ok(Some(frame)) => {
-                hash_frame(&frame, &mut hasher, true);
-                frame_count += 1;
-            }
-            Ok(None) => {}
-            Err(e) => {
-                eprintln!("Decode error: {}", e);
-            }
+        Format::RawObu => {
+            decode_frames(&mut decoder, &data, &mut hasher, &mut frame_count);
         }
     }
 

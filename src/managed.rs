@@ -346,6 +346,20 @@ impl Decoder {
         }
     }
 
+    /// Try to get a decoded frame without sending new data.
+    ///
+    /// After calling [`decode()`](Self::decode), the decoder may have buffered
+    /// additional frames (e.g. from a raw OBU stream containing multiple temporal
+    /// units). Call this in a loop until it returns `Ok(None)` to drain them.
+    pub fn get_frame(&mut self) -> Result<Option<Frame>> {
+        let mut pic = Rav1dPicture::default();
+        match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
+            Ok(()) => Ok(Some(Frame { inner: pic })),
+            Err(Rav1dError::EAGAIN) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     /// Flush the decoder and return all remaining frames
     ///
     /// This should be called after all input data has been fed to the decoder
