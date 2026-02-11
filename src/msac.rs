@@ -419,7 +419,7 @@ fn ctx_refill(s: &mut MsacContext) {
 fn ctx_norm(s: &mut MsacContext, dif: EcWin, rng: c_uint) {
     let d = 15 ^ (31 ^ clz(rng));
     let cnt = s.cnt;
-    assert!(rng <= 65535);
+    debug_assert!(rng <= 65535);
     s.dif = dif << d;
     s.rng = rng << d;
     s.cnt = cnt - d;
@@ -436,7 +436,7 @@ fn ctx_norm(s: &mut MsacContext, dif: EcWin, rng: c_uint) {
 fn rav1d_msac_decode_bool_equi_rust(s: &mut MsacContext) -> bool {
     let r = s.rng;
     let mut dif = s.dif;
-    assert!(dif >> (EC_WIN_SIZE - 16) < r as EcWin);
+    debug_assert!(dif >> (EC_WIN_SIZE - 16) < r as EcWin);
     let mut v = (r >> 8 << 7) + EC_MIN_PROB;
     let vw = (v as EcWin) << (EC_WIN_SIZE - 16);
     let ret = dif >= vw;
@@ -453,7 +453,7 @@ fn rav1d_msac_decode_bool_equi_rust(s: &mut MsacContext) -> bool {
 fn rav1d_msac_decode_bool_rust(s: &mut MsacContext, f: c_uint) -> bool {
     let r = s.rng;
     let mut dif = s.dif;
-    assert!(dif >> (EC_WIN_SIZE - 16) < r as EcWin);
+    debug_assert!(dif >> (EC_WIN_SIZE - 16) < r as EcWin);
     let mut v = ((r >> 8) * (f >> EC_PROB_SHIFT) >> (7 - EC_PROB_SHIFT)) + EC_MIN_PROB;
     let vw = (v as EcWin) << (EC_WIN_SIZE - 16);
     let ret = dif >= vw;
@@ -489,8 +489,8 @@ fn rav1d_msac_decode_symbol_adapt_rust(s: &mut MsacContext, cdf: &mut [u16], n_s
     let mut u;
     let mut v = s.rng;
     let mut val = 0;
-    assert!(n_symbols < 16);
-    assert!(cdf[n_symbols as usize] <= 32);
+    debug_assert!(n_symbols < 16);
+    debug_assert!(cdf[n_symbols as usize] <= 32);
     loop {
         u = v;
         v = r * ((cdf[val as usize] >> EC_PROB_SHIFT) as c_uint);
@@ -501,7 +501,7 @@ fn rav1d_msac_decode_symbol_adapt_rust(s: &mut MsacContext, cdf: &mut [u16], n_s
         }
         val += 1;
     }
-    assert!(u <= s.rng);
+    debug_assert!(u <= s.rng);
     ctx_norm(
         s,
         s.dif.wrapping_sub((v as EcWin) << (EC_WIN_SIZE - 16)),
