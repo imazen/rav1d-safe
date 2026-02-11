@@ -18,7 +18,7 @@ use crate::src::safe_simd::pixel_access::Flex;
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::{loadi64, loadu_128, loadu_256, storeu_128, storeu_256};
 #[cfg(target_arch = "x86_64")]
-use archmage::{arcane, rite, Desktop64, SimdToken};
+use archmage::{arcane, rite, Desktop64};
 
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::dav1d::headers::Rav1dFilterMode;
@@ -8036,7 +8036,7 @@ pub fn avg_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
     use zerocopy::AsBytes;
@@ -8081,7 +8081,7 @@ pub fn w_avg_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
     use zerocopy::AsBytes;
@@ -8128,7 +8128,7 @@ pub fn mask_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
     use zerocopy::AsBytes;
@@ -8173,7 +8173,7 @@ pub fn blend_dispatch<BD: BitDepth>(
     mask: &[u8],
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
     use zerocopy::AsBytes;
@@ -8215,7 +8215,7 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
     h: i32,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
     use zerocopy::AsBytes;
@@ -8275,7 +8275,7 @@ pub(crate) fn w_mask_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
     use zerocopy::AsBytes;
@@ -8521,7 +8521,7 @@ pub fn mc_put_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
     use zerocopy::AsBytes;
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
 
@@ -8615,7 +8615,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
     use zerocopy::AsBytes;
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
     let src_stride = src.stride();
@@ -8830,7 +8830,7 @@ mod tests {
                 dst_avx2.fill(0);
                 dst_scalar.fill(0);
 
-                let token = Desktop64::summon().unwrap();
+                let token = crate::src::cpu::summon_avx2().unwrap();
                 avg_8bpc_avx2_safe(token, &mut dst_scalar, w as usize, &tmp1, &tmp2, w, h);
 
                 avg_8bpc_avx2_safe(token, &mut dst_avx2, w as usize, &tmp1, &tmp2, w, h);
@@ -8868,7 +8868,7 @@ mod tests {
         let mut dst_a = vec![0u8; (w * h) as usize];
         let mut dst_b = vec![0u8; (w * h) as usize];
 
-        let token = Desktop64::summon().unwrap();
+        let token = crate::src::cpu::summon_avx2().unwrap();
         avg_8bpc_avx2_safe(token, &mut dst_a, w as usize, &tmp1, &tmp2, w, h);
 
         avg_8bpc_avx2_safe(token, &mut dst_b, w as usize, &tmp1, &tmp2, w, h);
@@ -8896,7 +8896,7 @@ mod tests {
         let mut dst_a = vec![0u8; (w * h) as usize];
         let mut dst_b = vec![0u8; (w * h) as usize];
 
-        let token = Desktop64::summon().unwrap();
+        let token = crate::src::cpu::summon_avx2().unwrap();
         for &weight in &test_weights {
             for &v1 in &test_values {
                 for &v2 in &test_values {
@@ -8945,7 +8945,7 @@ mod tests {
         let mut dst_a = vec![0u8; (w * h) as usize];
         let mut dst_b = vec![0u8; (w * h) as usize];
 
-        let token = Desktop64::summon().unwrap();
+        let token = crate::src::cpu::summon_avx2().unwrap();
         for &m in &test_masks {
             for &v1 in &test_values {
                 for &v2 in &test_values {

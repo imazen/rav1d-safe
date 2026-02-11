@@ -3541,7 +3541,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     use crate::include::common::bitdepth::BPC;
     use zerocopy::AsBytes;
 
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
 

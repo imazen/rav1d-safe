@@ -20,7 +20,7 @@ use std::slice;
 
 // x86_64 SIMD intrinsics for safe_simd implementations
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
-use archmage::{arcane, Desktop64, SimdToken};
+use archmage::{arcane, Desktop64};
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
 use core::arch::x86_64::*;
 #[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
@@ -30,7 +30,7 @@ use safe_unaligned_simd::x86_64 as safe_simd;
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
 use crate::src::safe_simd::pixel_access::{neon_ld1q_u16, neon_st1q_u16};
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
-use archmage::{arcane, Arm64, SimdToken};
+use archmage::{arcane, Arm64};
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
 use std::arch::aarch64::*;
 
@@ -1025,7 +1025,7 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
             };
         } else if #[cfg(all(not(feature = "asm"), not(feature = "force_scalar"), target_arch = "x86_64"))] {
             // SIMD AVX2 with runtime check, scalar fallback
-            if let Some(token) = Desktop64::summon() {
+            if let Some(token) = crate::src::cpu::summon_avx2() {
                 ret = rav1d_msac_decode_symbol_adapt16_avx2(token, s, cdf, n_symbols) as c_uint;
             } else {
                 ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;

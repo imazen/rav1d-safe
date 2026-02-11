@@ -108,19 +108,11 @@ impl CpuFlags {
         combined_flags
     }
 
-    #[cfg(not(feature = "asm"))]
-    pub fn run_time_detect() -> Self {
-        Self::empty()
-    }
-
-    #[cfg(feature = "asm")]
     pub fn run_time_detect() -> Self {
         let mut flags = Self::empty();
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
-            use raw_cpuid::CpuId;
-
             if is_x86_feature_detected!("sse2") {
                 flags |= Self::SSE2;
             }
@@ -151,23 +143,28 @@ impl CpuFlags {
                 flags |= Self::AVX512ICL;
             }
 
-            /// Detect Excavator, Zen, Zen+, Zen 2, Zen 3, Zen 3+, Zen 4.
-            fn is_slow_gather() -> Option<()> {
-                let cpu_id = CpuId::new();
+            // Slow gather detection requires raw_cpuid (only available with asm feature)
+            #[cfg(feature = "asm")]
+            {
+                /// Detect Excavator, Zen, Zen+, Zen 2, Zen 3, Zen 3+, Zen 4.
+                fn is_slow_gather() -> Option<()> {
+                    use raw_cpuid::CpuId;
+                    let cpu_id = CpuId::new();
 
-                let vendor = cpu_id.get_vendor_info()?;
-                let is_amd = vendor.as_str() == "AuthenticAMD";
-                if !is_amd {
-                    return None;
+                    let vendor = cpu_id.get_vendor_info()?;
+                    let is_amd = vendor.as_str() == "AuthenticAMD";
+                    if !is_amd {
+                        return None;
+                    }
+
+                    let features = cpu_id.get_feature_info()?;
+                    let family = features.family_id();
+
+                    (family <= 0x19).then_some(())
                 }
-
-                let features = cpu_id.get_feature_info()?;
-                let family = features.family_id();
-
-                (family <= 0x19).then_some(())
-            }
-            if flags.contains(Self::AVX2) && is_slow_gather().is_some() {
-                flags |= Self::SLOW_GATHER;
+                if flags.contains(Self::AVX2) && is_slow_gather().is_some() {
+                    flags |= Self::SLOW_GATHER;
+                }
             }
         }
 
@@ -221,6 +218,7 @@ impl CpuFlags {
 /// It is written once by [`dav1d_init_cpu`] in initialization code,
 /// and then subsequently read in [`dav1d_get_cpu_flags`] by other initialization code.
 static rav1d_cpu_flags: AtomicU32 = AtomicU32::new(0);
+static rav1d_cpu_flags_init: std::sync::Once = std::sync::Once::new();
 
 /// This is atomic, which has interior mutability,
 /// instead of a `static mut`, since the latter is `unsafe` to access.
@@ -233,15 +231,44 @@ static rav1d_cpu_flags_mask: AtomicU32 = AtomicU32::new(!0);
 
 #[inline(always)]
 pub(crate) fn rav1d_get_cpu_flags() -> CpuFlags {
-    let flags =
-        rav1d_cpu_flags.load(Ordering::SeqCst) & rav1d_cpu_flags_mask.load(Ordering::SeqCst);
+    // Lazy init: ensure CPU features are detected on first access
+    rav1d_cpu_flags_init.call_once(|| {
+        rav1d_cpu_flags.store(CpuFlags::run_time_detect().bits(), Ordering::SeqCst);
+    });
+    let flags = rav1d_cpu_flags.load(Ordering::SeqCst) | CpuFlags::compile_time_detect().bits();
+    let mask = rav1d_cpu_flags_mask.load(Ordering::SeqCst);
     // Note that `bitflags!` `struct`s are `#[repr(transparent)]`.
-    CpuFlags::from_bits_truncate(flags) | CpuFlags::compile_time_detect()
+    // The mask applies to both runtime-detected AND compile-time flags,
+    // so rav1d_set_cpu_flags_mask(0) forces scalar even if compiled with -C target-feature=+avx2.
+    CpuFlags::from_bits_truncate(flags & mask)
+}
+
+/// Check if a specific CPU feature is enabled after applying the mask.
+/// Used by safe_simd dispatch functions to respect `rav1d_set_cpu_flags_mask`.
+#[inline(always)]
+pub(crate) fn simd_enabled(flag: CpuFlags) -> bool {
+    rav1d_get_cpu_flags().contains(flag)
+}
+
+/// Try to summon an AVX2 token, gated by the CPU flags mask.
+/// Returns `None` if AVX2 is masked out or unavailable.
+/// This is the primary dispatch gate for safe_simd x86_64 code.
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+pub(crate) fn summon_avx2() -> Option<archmage::prelude::Desktop64> {
+    use archmage::SimdToken as _;
+    if !simd_enabled(CpuFlags::AVX2) {
+        return None;
+    }
+    archmage::prelude::Desktop64::summon()
 }
 
 #[cold]
 pub(crate) fn rav1d_init_cpu() {
-    rav1d_cpu_flags.store(CpuFlags::run_time_detect().bits(), Ordering::SeqCst);
+    // Ensure detection only happens once (consistent with lazy init in rav1d_get_cpu_flags)
+    rav1d_cpu_flags_init.call_once(|| {
+        rav1d_cpu_flags.store(CpuFlags::run_time_detect().bits(), Ordering::SeqCst);
+    });
 }
 
 #[cold]

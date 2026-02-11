@@ -1376,7 +1376,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
 
-    let Some(_token) = Desktop64::summon() else {
+    let Some(_token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
 

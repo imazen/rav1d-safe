@@ -136,6 +136,22 @@ pub struct Settings {
 
     /// Enforce strict standard compliance
     pub strict_std_compliance: bool,
+
+    /// CPU feature flags mask (bitwise AND with detected features).
+    ///
+    /// Use this to disable specific SIMD code paths for testing.
+    /// Default is `u32::MAX` (all features enabled).
+    ///
+    /// # x86_64 flag bits
+    /// - `1 << 0` = SSE2
+    /// - `1 << 1` = SSSE3
+    /// - `1 << 2` = SSE4.1
+    /// - `1 << 3` = AVX2
+    /// - `1 << 4` = AVX-512 ICL
+    ///
+    /// Setting to `0` forces scalar-only decode. Setting to `0b0111` (7) allows
+    /// up to SSE4.1 but disables AVX2 and AVX-512.
+    pub cpu_flags_mask: u32,
 }
 
 impl Default for Settings {
@@ -155,6 +171,7 @@ impl Default for Settings {
             inloop_filters: InloopFilters::all(),
             decode_frame_type: DecodeFrameType::All,
             strict_std_compliance: false,
+            cpu_flags_mask: u32::MAX,
         }
     }
 }
@@ -283,6 +300,9 @@ impl Decoder {
 
     /// Create a decoder with custom settings
     pub fn with_settings(settings: Settings) -> Result<Self> {
+        // Apply CPU flags mask before decoder init (affects SIMD dispatch)
+        crate::src::cpu::rav1d_set_cpu_flags_mask(settings.cpu_flags_mask);
+
         let rav1d_settings: Rav1dSettings = settings.into();
         let (ctx, worker_handles) =
             crate::src::lib::rav1d_open(&rav1d_settings).map_err(|_| Error::InitFailed)?;

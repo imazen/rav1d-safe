@@ -25,7 +25,7 @@ use std::ffi::c_int;
 use std::ffi::c_uint;
 
 #[cfg(target_arch = "x86_64")]
-use archmage::{arcane, Desktop64, SimdToken};
+use archmage::{arcane, Desktop64};
 
 use crate::include::dav1d::headers::Rav1dFilmGrainData;
 use crate::src::filmgrain::{FG_BLOCK_SIZE, GRAIN_HEIGHT, GRAIN_WIDTH};
@@ -2496,7 +2496,7 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
     data: &Rav1dFilmGrainData,
     bd: BD,
 ) -> bool {
-    let Some(_token) = Desktop64::summon() else {
+    let Some(_token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
     use zerocopy::{AsBytes, FromBytes};
@@ -2525,7 +2525,7 @@ pub(crate) fn generate_grain_uv_dispatch<BD: BitDepth>(
     is_uv: bool,
     bd: BD,
 ) -> bool {
-    let Some(_token) = Desktop64::summon() else {
+    let Some(_token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
     let (is_subx, is_suby) = match layout {
@@ -2565,7 +2565,7 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use zerocopy::AsBytes;
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
@@ -2660,7 +2660,7 @@ pub(crate) fn fguv_32x32xn_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use zerocopy::AsBytes;
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
     let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;

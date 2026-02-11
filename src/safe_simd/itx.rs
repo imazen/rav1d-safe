@@ -6321,7 +6321,7 @@ mod tests {
         let mut dst = [128u8; 16];
         let stride = 4usize;
 
-        let token = Desktop64::summon().expect("AVX2 required");
+        let token = crate::src::cpu::summon_avx2().expect("AVX2 required");
         inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(token, &mut dst, stride, &mut coeff, 1, 255);
 
         // Should have added DC to all pixels
@@ -15936,7 +15936,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
 
     #[cfg(target_arch = "x86_64")]
     {
-        let Some(token) = Desktop64::summon() else {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
             return false;
         };
 
@@ -16010,7 +16010,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     use archmage::Desktop64;
     use zerocopy::AsBytes;
 
-    let Some(_token) = Desktop64::summon() else {
+    let Some(_token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
 

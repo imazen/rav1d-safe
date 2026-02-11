@@ -568,7 +568,7 @@ mod tests {
 
         // SAFETY: We checked is_x86_feature_detected!("avx2") above.
         unsafe {
-            let token = Desktop64::summon().expect("AVX2 required for test");
+            let token = crate::src::cpu::summon_avx2().expect("AVX2 required for test");
             let diff_vec = loadu_256!(&diff);
             let thresh_vec = _mm256_set1_epi16(threshold);
             let shift_vec = _mm_cvtsi32_si128(shift);
@@ -883,7 +883,7 @@ fn cdef_filter_8x8_8bpc_avx2_inner(
     let stride = dst.pixel_stride::<BitDepth8>();
 
     #[cfg(target_arch = "x86_64")]
-    if let Some(token) = Desktop64::summon() {
+    if let Some(token) = crate::src::cpu::summon_avx2() {
         cdef_filter_block_simd_8bpc(
             token,
             &tmp,
@@ -973,7 +973,7 @@ fn cdef_filter_4x8_8bpc_avx2_inner(
     let stride = dst.pixel_stride::<BitDepth8>();
 
     #[cfg(target_arch = "x86_64")]
-    if let Some(token) = Desktop64::summon() {
+    if let Some(token) = crate::src::cpu::summon_avx2() {
         cdef_filter_block_simd_8bpc(
             token,
             &tmp,
@@ -1063,7 +1063,7 @@ fn cdef_filter_4x4_8bpc_avx2_inner(
     let stride = dst.pixel_stride::<BitDepth8>();
 
     #[cfg(target_arch = "x86_64")]
-    if let Some(token) = Desktop64::summon() {
+    if let Some(token) = crate::src::cpu::summon_avx2() {
         cdef_filter_block_simd_8bpc(
             token,
             &tmp,
@@ -1144,7 +1144,7 @@ pub unsafe extern "C" fn cdef_find_dir_8bpc_avx2(
     use crate::include::common::bitdepth::BitDepth8;
 
     let dst = unsafe { *FFISafe::get(dst) };
-    let token = Desktop64::summon().expect("AVX2 required");
+    let token = crate::src::cpu::summon_avx2().expect("AVX2 required");
 
     cdef_find_dir_simd_8bpc(token, dst, variance)
 }
@@ -1631,7 +1631,7 @@ fn cdef_filter_8x8_16bpc_avx2_inner(
     let stride = dst.pixel_stride::<BitDepth16>();
 
     #[cfg(target_arch = "x86_64")]
-    if let Some(token) = Desktop64::summon() {
+    if let Some(token) = crate::src::cpu::summon_avx2() {
         cdef_filter_block_simd_16bpc(
             token,
             &tmp,
@@ -1687,7 +1687,7 @@ fn cdef_filter_4x8_16bpc_avx2_inner(
     let stride = dst.pixel_stride::<BitDepth16>();
 
     #[cfg(target_arch = "x86_64")]
-    if let Some(token) = Desktop64::summon() {
+    if let Some(token) = crate::src::cpu::summon_avx2() {
         cdef_filter_block_simd_16bpc(
             token,
             &tmp,
@@ -1743,7 +1743,7 @@ fn cdef_filter_4x4_16bpc_avx2_inner(
     let stride = dst.pixel_stride::<BitDepth16>();
 
     #[cfg(target_arch = "x86_64")]
-    if let Some(token) = Desktop64::summon() {
+    if let Some(token) = crate::src::cpu::summon_avx2() {
         cdef_filter_block_simd_16bpc(
             token,
             &tmp,
@@ -1932,7 +1932,7 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
 
-    let Some(_token) = Desktop64::summon() else {
+    let Some(_token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
 
@@ -2050,7 +2050,7 @@ pub fn cdef_dir_dispatch<BD: BitDepth>(
 ) -> Option<c_int> {
     use crate::include::common::bitdepth::BPC;
 
-    let Some(token) = Desktop64::summon() else {
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return None;
     };
 

@@ -12,7 +12,7 @@ use super::partial_simd;
 use super::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256};
 use crate::src::safe_simd::pixel_access::Flex;
 #[cfg(target_arch = "x86_64")]
-use archmage::{arcane, Desktop64, SimdToken};
+use archmage::{arcane, Desktop64};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 #[cfg(feature = "asm")]
@@ -164,7 +164,7 @@ pub fn pal_idx_finish_dispatch(
     w: usize,
     h: usize,
 ) -> bool {
-    if let Some(token) = Desktop64::summon() {
+    if let Some(token) = crate::src::cpu::summon_avx2() {
         pal_idx_finish_inner(token, dst, src, bw, bh, w, h);
         true
     } else {
