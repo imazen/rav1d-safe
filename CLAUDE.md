@@ -576,27 +576,51 @@ Workflow must include:
 - aarch64 cross-check via `cargo check --target aarch64-unknown-linux-gnu`
 - wasm32 simd128 build check
 
-### Decode Parity Testing
+### Decode Parity Testing (IMPLEMENTED)
 
-Side-by-side decode with reference decoders to ensure exact pixel-level parity:
-1. **dav1d (C)** — primary reference. Decode same bitstream with both dav1d and rav1d-safe, compare output frame-by-frame. Must be bit-exact (no film grain) or statistically identical (with film grain, same seed).
-2. **libaom** — secondary reference. The AV1 reference decoder. Useful for catching bugs that both dav1d and rav1d might share.
+**Comparison harness:** `/home/lilith/work/zenavif/examples/compare_libavif.rs`
 
-### Test Video Suite
+Compares zenavif (rav1d-safe) vs libavif RGB output at multiple CPU feature levels.
 
-Need to find and clone:
-- **AV1 conformance test vectors** — `aomedia.googlesource.com/aom-testing` or the IETF conformance suite
-- **dav1d test suite** — `code.videolan.org/videolan/dav1d-test-data`
-- Coverage should include: all profiles (main/high/professional), all bit depths (8/10/12), all chroma subsampling (420/422/444), film grain, screen content coding, intra-only, inter, SVC, error resilience
+**Reference images:** Pre-generated libavif PNGs at `/mnt/v/output/zenavif/libavif-refs/` (3247 files).
+Generated via avifdec at `/home/lilith/work/libavif/build/avifdec`.
 
-### Parity Test Harness
+**Dataset:** 3261 AVIF files at `/mnt/v/datasets/scraping/avif/` (unsplash, google-native, wikimedia, unsplash-scale).
 
-Build a test binary or integration test that:
-1. Takes an IVF/OBU/webm input
-2. Decodes with rav1d-safe (via Rust API)
-3. Decodes with dav1d (via C FFI or subprocess)
-4. Compares output YUV planes byte-for-byte
-5. Reports any mismatches with frame number, plane, coordinates
+**CPU Feature Level Override:**
+- `rav1d_set_cpu_flags_mask(mask)` — global, applies to all safe_simd dispatch
+- `Settings { cpu_flags_mask: mask, .. }` — per-decoder in managed API
+- `DecoderConfig::new().cpu_flags_mask(mask)` — per-decoder in zenavif
+- All safe_simd dispatch functions check `crate::src::cpu::summon_avx2()` which gates on the mask
+
+| Level | Mask | Description |
+|-------|------|-------------|
+| v3-avx2 | `0xFFFFFFFF` | AVX2 + FMA (default, full SIMD) |
+| v2-sse4 | `0b0111` (7) | SSE4.1 only (no AVX2 dispatch) |
+| scalar | `0` | No SIMD (pure Rust scalar) |
+
+**Running comparisons:**
+```bash
+cd /home/lilith/work/zenavif
+
+# All levels (v3, v2, scalar) on full dataset
+./target/release/examples/compare_libavif
+
+# Specific level
+./target/release/examples/compare_libavif --level v3
+./target/release/examples/compare_libavif --level scalar
+
+# Custom directories
+./target/release/examples/compare_libavif /path/to/avif/dir /path/to/refs --level all
+```
+
+**Reports:** Written to `/mnt/v/output/zenavif/comparison-{level}.txt`
+
+**Note:** Error categories are vs libavif RGB output (YUV→RGB rounding differences expected):
+- Exact: 0 error
+- Close: max error ≤ 2 (rounding)
+- Minor: max error ≤ 10
+- Major: max error > 10 (potential bug)
 
 ## Known Issues
 
