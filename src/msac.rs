@@ -429,6 +429,7 @@ fn ctx_norm(s: &mut MsacContext, dif: EcWin, rng: c_uint) {
     }
 }
 
+#[inline(always)]
 #[cfg_attr(
     all(feature = "asm", any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
@@ -446,6 +447,7 @@ fn rav1d_msac_decode_bool_equi_rust(s: &mut MsacContext) -> bool {
     !ret
 }
 
+#[inline(always)]
 #[cfg_attr(
     all(feature = "asm", any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
