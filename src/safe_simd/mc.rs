@@ -174,7 +174,11 @@ fn avg_16bpc_avx2_safe(
     let h = h as usize;
 
     // intermediate_bits = 14 - bitdepth: 4 for 10-bit, 2 for 12-bit
-    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 {
+        2i32
+    } else {
+        4i32
+    };
     // sh = intermediate_bits + 1, rnd = (1 << intermediate_bits) + PREP_BIAS * 2
     let sh = intermediate_bits + 1;
     let rnd = (1 << intermediate_bits) + 8192 * 2; // PREP_BIAS = 8192 for 16bpc
@@ -461,7 +465,11 @@ fn w_avg_16bpc_avx2_safe(
     let h = h as usize;
 
     // intermediate_bits = 14 - bitdepth: 4 for 10-bit, 2 for 12-bit
-    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 {
+        2i32
+    } else {
+        4i32
+    };
     // sh = intermediate_bits + 4, rnd = (8 << intermediate_bits) + PREP_BIAS * 16
     let sh = intermediate_bits + 4;
     let rnd = (8 << intermediate_bits) + 8192 * 16; // PREP_BIAS = 8192 for 16bpc
@@ -744,7 +752,11 @@ fn mask_16bpc_avx2_safe(
     let max = bitdepth_max as i32;
 
     // intermediate_bits = 14 - bitdepth: 4 for 10-bit, 2 for 12-bit
-    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 {
+        2i32
+    } else {
+        4i32
+    };
     // sh = intermediate_bits + 6, rnd = (32 << intermediate_bits) + PREP_BIAS * 64
     let sh = intermediate_bits + 6;
     let rnd = (32 << intermediate_bits) + 8192 * 64; // PREP_BIAS = 8192 for 16bpc
@@ -2807,14 +2819,7 @@ fn prep_8tap_8bpc_avx2_impl_inner(
             // Prep keeps extra precision for compound prediction consumers
             for y in 0..h {
                 let out_row = y * w;
-                v_filter_8tap_to_i16_avx2_inner(
-                    _token,
-                    &mid[y..],
-                    &mut tmp[out_row..],
-                    w,
-                    fv,
-                    6,
-                );
+                v_filter_8tap_to_i16_avx2_inner(_token, &mid[y..], &mut tmp[out_row..], w, fv, 6);
             }
         }
         (Some(fh), None) => {
@@ -2842,7 +2847,8 @@ fn prep_8tap_8bpc_avx2_impl_inner(
                 // Build intermediate buffer from 8 source rows
                 let mut mid = [[0i16; MID_STRIDE]; 8];
                 for i in 0..8 {
-                    let src_row = &src[(sb + (y as isize + i as isize - 3) * src_stride) as usize..];
+                    let src_row =
+                        &src[(sb + (y as isize + i as isize - 3) * src_stride) as usize..];
                     for x in 0..w {
                         mid[i][x] = (src_row[x] as i16) << intermediate_bits;
                     }
@@ -4088,27 +4094,34 @@ fn v_filter_8tap_16bpc_direct_avx2_inner(
         let p0 = _mm256_cvtepu16_epi32(loadu_128!(
             <&[u16; 8]>::try_from(&src[col..col + 8]).unwrap()
         ));
-        let p1 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[stride_u + col..stride_u + col + 8]).unwrap()
-        ));
-        let p2 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[2 * stride_u + col..2 * stride_u + col + 8]).unwrap()
-        ));
-        let p3 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[3 * stride_u + col..3 * stride_u + col + 8]).unwrap()
-        ));
-        let p4 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[4 * stride_u + col..4 * stride_u + col + 8]).unwrap()
-        ));
-        let p5 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[5 * stride_u + col..5 * stride_u + col + 8]).unwrap()
-        ));
-        let p6 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[6 * stride_u + col..6 * stride_u + col + 8]).unwrap()
-        ));
-        let p7 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[7 * stride_u + col..7 * stride_u + col + 8]).unwrap()
-        ));
+        let p1 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[stride_u + col..stride_u + col + 8]
+        )
+        .unwrap()));
+        let p2 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[2 * stride_u + col..2 * stride_u + col + 8]
+        )
+        .unwrap()));
+        let p3 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[3 * stride_u + col..3 * stride_u + col + 8]
+        )
+        .unwrap()));
+        let p4 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[4 * stride_u + col..4 * stride_u + col + 8]
+        )
+        .unwrap()));
+        let p5 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[5 * stride_u + col..5 * stride_u + col + 8]
+        )
+        .unwrap()));
+        let p6 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[6 * stride_u + col..6 * stride_u + col + 8]
+        )
+        .unwrap()));
+        let p7 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[7 * stride_u + col..7 * stride_u + col + 8]
+        )
+        .unwrap()));
 
         // Multiply and accumulate
         let m0 = _mm256_mullo_epi32(p0, c0);
@@ -4337,27 +4350,34 @@ fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
         let p0 = _mm256_cvtepu16_epi32(loadu_128!(
             <&[u16; 8]>::try_from(&src[col..col + 8]).unwrap()
         ));
-        let p1 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[stride_u + col..stride_u + col + 8]).unwrap()
-        ));
-        let p2 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[2 * stride_u + col..2 * stride_u + col + 8]).unwrap()
-        ));
-        let p3 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[3 * stride_u + col..3 * stride_u + col + 8]).unwrap()
-        ));
-        let p4 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[4 * stride_u + col..4 * stride_u + col + 8]).unwrap()
-        ));
-        let p5 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[5 * stride_u + col..5 * stride_u + col + 8]).unwrap()
-        ));
-        let p6 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[6 * stride_u + col..6 * stride_u + col + 8]).unwrap()
-        ));
-        let p7 = _mm256_cvtepu16_epi32(loadu_128!(
-            <&[u16; 8]>::try_from(&src[7 * stride_u + col..7 * stride_u + col + 8]).unwrap()
-        ));
+        let p1 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[stride_u + col..stride_u + col + 8]
+        )
+        .unwrap()));
+        let p2 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[2 * stride_u + col..2 * stride_u + col + 8]
+        )
+        .unwrap()));
+        let p3 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[3 * stride_u + col..3 * stride_u + col + 8]
+        )
+        .unwrap()));
+        let p4 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[4 * stride_u + col..4 * stride_u + col + 8]
+        )
+        .unwrap()));
+        let p5 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[5 * stride_u + col..5 * stride_u + col + 8]
+        )
+        .unwrap()));
+        let p6 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[6 * stride_u + col..6 * stride_u + col + 8]
+        )
+        .unwrap()));
+        let p7 = _mm256_cvtepu16_epi32(loadu_128!(<&[u16; 8]>::try_from(
+            &src[7 * stride_u + col..7 * stride_u + col + 8]
+        )
+        .unwrap()));
 
         // Multiply and accumulate
         let m0 = _mm256_mullo_epi32(p0, c0);
@@ -4456,7 +4476,11 @@ fn put_8tap_16bpc_avx2_impl_inner(
     let max = bitdepth_max as i32;
 
     // intermediate_bits depends on bitdepth: 4 for 10-bit, 2 for 12-bit
-    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 {
+        2i32
+    } else {
+        4i32
+    };
 
     let fh = get_filter_coeff(mx, w, h_filter_type);
     let fv = get_filter_coeff(my, h, v_filter_type);
@@ -4477,7 +4501,12 @@ fn put_8tap_16bpc_avx2_impl_inner(
                 for y in 0..tmp_h {
                     let src_off = (sb + (y as isize - 3) * src_stride_elems) as usize;
                     h_filter_8tap_16bpc_avx2_inner(
-                        _token, &mut mid[y], &src[src_off - 3..], w, fh, h_sh,
+                        _token,
+                        &mut mid[y],
+                        &src[src_off - 3..],
+                        w,
+                        fh,
+                        h_sh,
                     );
                 }
                 for y in 0..h {
@@ -4521,7 +4550,14 @@ fn put_8tap_16bpc_avx2_impl_inner(
                 for y in 0..h {
                     let src_off = (sb + y as isize * src_stride_elems) as usize;
                     let dst_row = &mut dst[(y as isize * dst_stride_elems) as usize..];
-                    h_filter_8tap_16bpc_put_avx2_inner(_token, dst_row, &src[src_off - 3..], w, fh, max);
+                    h_filter_8tap_16bpc_put_avx2_inner(
+                        _token,
+                        dst_row,
+                        &src[src_off - 3..],
+                        w,
+                        fh,
+                        max,
+                    );
                 }
             } else {
                 // Scalar H-only fallback
@@ -4546,7 +4582,13 @@ fn put_8tap_16bpc_avx2_impl_inner(
                     let src_off = (sb + (y as isize - 3) * src_stride_elems) as usize;
                     let dst_row = &mut dst[(y as isize * dst_stride_elems) as usize..];
                     v_filter_8tap_16bpc_direct_avx2_inner(
-                        _token, dst_row, &src[src_off..], src_stride_elems, w, fv, max,
+                        _token,
+                        dst_row,
+                        &src[src_off..],
+                        src_stride_elems,
+                        w,
+                        fv,
+                        max,
                     );
                 }
             } else {
@@ -4555,7 +4597,8 @@ fn put_8tap_16bpc_avx2_impl_inner(
                     for x in 0..w {
                         let mut sum = 0i32;
                         for k in 0..8 {
-                            let src_off = (sb + (y as isize + k as isize - 3) * src_stride_elems) as usize;
+                            let src_off =
+                                (sb + (y as isize + k as isize - 3) * src_stride_elems) as usize;
                             sum += src[src_off + x] as i32 * fv[k] as i32;
                         }
                         let val = ((sum + 32) >> 6).clamp(0, max);
@@ -4637,7 +4680,11 @@ fn prep_8tap_16bpc_avx2_impl_inner(
     let sb = src_base as isize;
 
     // intermediate_bits depends on bitdepth: 4 for 10-bit, 2 for 12-bit
-    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 {
+        2i32
+    } else {
+        4i32
+    };
     const PREP_BIAS: i32 = 8192;
 
     let fh = get_filter_coeff(mx, w, h_filter_type);
@@ -4818,7 +4865,18 @@ pub unsafe extern "C" fn prep_8tap_16bpc_avx2<const FILTER: usize>(
 
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-        prep_8tap_16bpc_avx2_impl(tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max, h_filter, v_filter);
+        prep_8tap_16bpc_avx2_impl(
+            tmp,
+            src_ptr,
+            src_stride,
+            w,
+            h,
+            mx,
+            my,
+            bitdepth_max,
+            h_filter,
+            v_filter,
+        );
     }
 }
 
@@ -6097,12 +6155,10 @@ fn v_filter_bilin_8bpc_avx2_inner(
     // Process 8 pixels at a time using 32-bit arithmetic
     while x + 8 <= w {
         // Load 8 i16 values from each row and sign-extend to i32
-        let row0 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[0][x..x + 8]).unwrap()
-        ));
-        let row1 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[1][x..x + 8]).unwrap()
-        ));
+        let row0 =
+            _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[0][x..x + 8]).unwrap()));
+        let row1 =
+            _mm256_cvtepi16_epi32(loadu_128!(<&[i16; 8]>::try_from(&mid[1][x..x + 8]).unwrap()));
 
         // result = coeff0 * row0 + coeff1 * row1 (32-bit, no overflow)
         let mul0 = _mm256_mullo_epi32(row0, c0_32);
@@ -6240,8 +6296,6 @@ fn v_bilin_8bpc_direct_avx2_inner(
     let coeff1 = my as u8;
     let coeffs = _mm256_set1_epi16(((coeff1 as i16) << 8) | (coeff0 as i16));
     let rnd = _mm256_set1_epi16(8);
-    let zero = _mm256_setzero_si256();
-    let max = _mm256_set1_epi16(255);
     let sh_reg = _mm_cvtsi32_si128(4);
 
     let mut x = 0;
@@ -6516,7 +6570,11 @@ fn prep_bilin_8bpc_avx2_impl_inner(
                 let mut tmp_buf = [0i16; MID_STRIDE];
                 // sh=0: no shift, keep full precision
                 h_filter_bilin_8bpc_avx2_inner(
-                    _token, &mut tmp_buf, src_row, w, mx,
+                    _token,
+                    &mut tmp_buf,
+                    src_row,
+                    w,
+                    mx,
                     4 - intermediate_bits, // sh = 0 for 8bpc
                 );
 
@@ -8362,7 +8420,18 @@ fn prep_8tap_16bpc_dispatch_inner(
     v_filter: Rav1dFilterMode,
 ) {
     prep_8tap_16bpc_avx2_impl_inner(
-        token, tmp, src, src_base, src_stride, w, h, mx, my, bitdepth_max, h_filter, v_filter,
+        token,
+        tmp,
+        src,
+        src_base,
+        src_stride,
+        w,
+        h,
+        mx,
+        my,
+        bitdepth_max,
+        h_filter,
+        v_filter,
     );
 }
 
@@ -8411,8 +8480,18 @@ pub fn mc_put_dispatch<BD: BitDepth>(
                     let src_bytes = src_guard.as_bytes();
                     let (h_filter, v_filter) = filter.hv();
                     put_8tap_8bpc_dispatch_inner(
-                        token, dst_bytes, dst_stride, src_bytes, src_base * pixel_size,
-                        src_stride, w, h, mx, my, h_filter, v_filter,
+                        token,
+                        dst_bytes,
+                        dst_stride,
+                        src_bytes,
+                        src_base * pixel_size,
+                        src_stride,
+                        w,
+                        h,
+                        mx,
+                        my,
+                        h_filter,
+                        v_filter,
                     );
                 }
             }
@@ -8440,8 +8519,8 @@ pub fn mc_put_dispatch<BD: BitDepth>(
                         .into_slice();
                     let (h_filter, v_filter) = filter.hv();
                     put_8tap_16bpc_dispatch_inner(
-                        token, dst_u16, dst_stride, src_u16, src_base, src_stride, w, h, mx,
-                        my, bd_c, h_filter, v_filter,
+                        token, dst_u16, dst_stride, src_u16, src_base, src_stride, w, h, mx, my,
+                        bd_c, h_filter, v_filter,
                     );
                 }
             }
@@ -8475,17 +8554,24 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                 Filter2d::Bilinear => {
                     // Bilinear only accesses current + next row, no negative offsets
                     let src_bytes = &src_guard.as_bytes()[src_base * pixel_size..];
-                    prep_bilin_8bpc_dispatch_inner(
-                        token, tmp, src_bytes, src_stride, w, h, mx, my,
-                    );
+                    prep_bilin_8bpc_dispatch_inner(token, tmp, src_bytes, src_stride, w, h, mx, my);
                 }
                 _ => {
                     // 8-tap needs rows above the block; pass full buffer + base offset
                     let src_bytes = src_guard.as_bytes();
                     let (h_filter, v_filter) = filter.hv();
                     prep_8tap_8bpc_dispatch_inner(
-                        token, tmp, src_bytes, src_base * pixel_size, src_stride, w, h, mx,
-                        my, h_filter, v_filter,
+                        token,
+                        tmp,
+                        src_bytes,
+                        src_base * pixel_size,
+                        src_stride,
+                        w,
+                        h,
+                        mx,
+                        my,
+                        h_filter,
+                        v_filter,
                     );
                 }
             }
@@ -8506,8 +8592,8 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                         .into_slice();
                     let (h_filter, v_filter) = filter.hv();
                     prep_8tap_16bpc_dispatch_inner(
-                        token, tmp, src_u16, src_base, src_stride, w, h, mx, my, bd_c,
-                        h_filter, v_filter,
+                        token, tmp, src_u16, src_base, src_stride, w, h, mx, my, bd_c, h_filter,
+                        v_filter,
                     );
                 }
             }

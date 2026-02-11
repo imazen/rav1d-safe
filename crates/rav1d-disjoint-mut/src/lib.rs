@@ -944,7 +944,10 @@ mod checked {
 
         #[inline(always)]
         fn lock(&self) -> TinyGuard<'_> {
-            debug_assert!(!self.0.get(), "TinyLock: recursive lock in single-threaded mode");
+            debug_assert!(
+                !self.0.get(),
+                "TinyLock: recursive lock in single-threaded mode"
+            );
             self.0.set(true);
             TinyGuard(&self.0)
         }

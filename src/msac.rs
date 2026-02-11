@@ -616,17 +616,14 @@ fn rav1d_msac_decode_symbol_adapt4_branchless(
 
     // Compute all v values (at most 3 for adapt4)
     // NB: >> has lower precedence than + in Rust, so parens are required
-    let v0 = (r * ((cdf[0] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
-        + EC_MIN_PROB * n;
+    let v0 = (r * ((cdf[0] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT)) + EC_MIN_PROB * n;
     let v1 = if n > 1 {
-        (r * ((cdf[1] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
-            + EC_MIN_PROB * (n - 1)
+        (r * ((cdf[1] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT)) + EC_MIN_PROB * (n - 1)
     } else {
         0
     };
     let v2 = if n > 2 {
-        (r * ((cdf[2] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
-            + EC_MIN_PROB * (n - 2)
+        (r * ((cdf[2] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT)) + EC_MIN_PROB * (n - 2)
     } else {
         0
     };
@@ -638,7 +635,11 @@ fn rav1d_msac_decode_symbol_adapt4_branchless(
 
     // v_arr[0..3] for indexed access, with sentinel for boundary
     let v_arr = [v0, v1, v2, 0];
-    let u = if val == 0 { s.rng } else { v_arr[val as usize - 1] };
+    let u = if val == 0 {
+        s.rng
+    } else {
+        v_arr[val as usize - 1]
+    };
     let v_val = v_arr[val as usize];
 
     ctx_norm(

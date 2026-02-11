@@ -195,7 +195,10 @@ fn main() {
     }
 
     if positional.is_empty() {
-        eprintln!("Usage: {} [--filmgrain] [-q] <input> [expected_md5]", args[0]);
+        eprintln!(
+            "Usage: {} [--filmgrain] [-q] <input> [expected_md5]",
+            args[0]
+        );
         std::process::exit(1);
     }
 
@@ -218,26 +221,45 @@ fn main() {
             let mut cursor = Cursor::new(&data);
             let frames = ivf_parser::parse_all_frames(&mut cursor).expect("IVF parse failed");
             for ivf_frame in &frames {
-                decode_frames(&mut decoder, &ivf_frame.data, &mut hasher, &mut frame_count, verbose, per_frame);
+                decode_frames(
+                    &mut decoder,
+                    &ivf_frame.data,
+                    &mut hasher,
+                    &mut frame_count,
+                    verbose,
+                    per_frame,
+                );
             }
         }
-        Format::AnnexB => {
-            match annexb_parser::parse_annexb(&data) {
-                Ok(units) => {
-                    if verbose {
-                        eprintln!("Annex B: {} temporal units", units.len());
-                    }
-                    for unit in &units {
-                        decode_frames(&mut decoder, &unit.data, &mut hasher, &mut frame_count, verbose, per_frame);
-                    }
+        Format::AnnexB => match annexb_parser::parse_annexb(&data) {
+            Ok(units) => {
+                if verbose {
+                    eprintln!("Annex B: {} temporal units", units.len());
                 }
-                Err(e) => {
-                    eprintln!("Annex B parse error: {}", e);
+                for unit in &units {
+                    decode_frames(
+                        &mut decoder,
+                        &unit.data,
+                        &mut hasher,
+                        &mut frame_count,
+                        verbose,
+                        per_frame,
+                    );
                 }
             }
-        }
+            Err(e) => {
+                eprintln!("Annex B parse error: {}", e);
+            }
+        },
         Format::RawObu => {
-            decode_frames(&mut decoder, &data, &mut hasher, &mut frame_count, verbose, per_frame);
+            decode_frames(
+                &mut decoder,
+                &data,
+                &mut hasher,
+                &mut frame_count,
+                verbose,
+                per_frame,
+            );
         }
     }
 
