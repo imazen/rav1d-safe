@@ -593,83 +593,147 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_avx2(
 // 4x4 WHT (Walsh-Hadamard Transform)
 // ============================================================================
 
-/// WHT4x4 - Walsh-Hadamard Transform
-/// Uses the correct formula from itx_1d.rs
+/// WHT4x4 - Walsh-Hadamard Transform (SSE2 SIMD)
+///
+/// Processes all 4 rows/columns in parallel using SSE2 registers.
+/// WHT butterfly: t0=a+b, t2=c-d, t4=(t0-t2)>>1, t3=t4-d, t1=t4-b,
+///   out0=t0-t3, out1=t3, out2=t1, out3=t2+t1
 #[cfg(target_arch = "x86_64")]
+#[arcane]
 fn inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
+    _token: Desktop64,
     dst: &mut [u8],
-    dst_base: usize,
-    dst_stride: isize,
+    dst_stride: usize,
     coeff: &mut [i16],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    // WHT4 1D from itx_1d.rs:
-    // t0 = in0 + in1
-    // t2 = in2 - in3
-    // t4 = (t0 - t2) >> 1
-    // t3 = t4 - in3
-    // t1 = t4 - in1
-    // out0 = t0 - t3
-    // out1 = t3
-    // out2 = t1
-    // out3 = t2 + t1
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
 
-    let mut tmp = [0i32; 16];
+    // Load 4 columns from column-major i16 coefficients, sign-extend to i32, shift >>2
+    let col0 = _mm_srai_epi32(
+        _mm_set_epi32(
+            coeff[3] as i32,
+            coeff[2] as i32,
+            coeff[1] as i32,
+            coeff[0] as i32,
+        ),
+        2,
+    );
+    let col1 = _mm_srai_epi32(
+        _mm_set_epi32(
+            coeff[7] as i32,
+            coeff[6] as i32,
+            coeff[5] as i32,
+            coeff[4] as i32,
+        ),
+        2,
+    );
+    let col2 = _mm_srai_epi32(
+        _mm_set_epi32(
+            coeff[11] as i32,
+            coeff[10] as i32,
+            coeff[9] as i32,
+            coeff[8] as i32,
+        ),
+        2,
+    );
+    let col3 = _mm_srai_epi32(
+        _mm_set_epi32(
+            coeff[15] as i32,
+            coeff[14] as i32,
+            coeff[13] as i32,
+            coeff[12] as i32,
+        ),
+        2,
+    );
 
-    // Row transform: load from column-major, store row-major
-    // Row y has coeffs at: coeff[y + 0*4], coeff[y + 1*4], coeff[y + 2*4], coeff[y + 3*4]
-    for y in 0..4 {
-        let in0 = coeff[y] as i32 >> 2;
-        let in1 = coeff[y + 4] as i32 >> 2;
-        let in2 = coeff[y + 8] as i32 >> 2;
-        let in3 = coeff[y + 12] as i32 >> 2;
+    // Row pass: WHT butterfly on all 4 rows in parallel
+    let t0 = _mm_add_epi32(col0, col1);
+    let t2 = _mm_sub_epi32(col2, col3);
+    let t4 = _mm_srai_epi32(_mm_sub_epi32(t0, t2), 1);
+    let t3 = _mm_sub_epi32(t4, col3);
+    let t1 = _mm_sub_epi32(t4, col1);
+    let r0 = _mm_sub_epi32(t0, t3);
+    let r1 = t3;
+    let r2 = t1;
+    let r3 = _mm_add_epi32(t2, t1);
 
-        let t0 = in0 + in1;
-        let t2 = in2 - in3;
-        let t4 = (t0 - t2) >> 1;
-        let t3 = t4 - in3;
-        let t1 = t4 - in1;
+    // 4x4 transpose
+    let t01_lo = _mm_unpacklo_epi32(r0, r1);
+    let t01_hi = _mm_unpackhi_epi32(r0, r1);
+    let t23_lo = _mm_unpacklo_epi32(r2, r3);
+    let t23_hi = _mm_unpackhi_epi32(r2, r3);
+    let row0 = _mm_unpacklo_epi64(t01_lo, t23_lo);
+    let row1 = _mm_unpackhi_epi64(t01_lo, t23_lo);
+    let row2 = _mm_unpacklo_epi64(t01_hi, t23_hi);
+    let row3 = _mm_unpackhi_epi64(t01_hi, t23_hi);
 
-        // Store row-major: tmp[y*4 + x]
-        tmp[y * 4 + 0] = t0 - t3;
-        tmp[y * 4 + 1] = t3;
-        tmp[y * 4 + 2] = t1;
-        tmp[y * 4 + 3] = t2 + t1;
-    }
+    // Column pass: WHT butterfly on all 4 columns in parallel
+    let t0 = _mm_add_epi32(row0, row1);
+    let t2 = _mm_sub_epi32(row2, row3);
+    let t4 = _mm_srai_epi32(_mm_sub_epi32(t0, t2), 1);
+    let t3 = _mm_sub_epi32(t4, row3);
+    let t1 = _mm_sub_epi32(t4, row1);
+    let final0 = _mm_sub_epi32(t0, t3);
+    let final1 = t3;
+    let final2 = t1;
+    let final3 = _mm_add_epi32(t2, t1);
 
-    // Column transform: in-place on row-major data with stride 4
-    for x in 0..4 {
-        let in0 = tmp[0 * 4 + x];
-        let in1 = tmp[1 * 4 + x];
-        let in2 = tmp[2 * 4 + x];
-        let in3 = tmp[3 * 4 + x];
+    // Add to destination pixels and clamp to [0, bitdepth_max]
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi16(bitdepth_max as i16);
 
-        let t0 = in0 + in1;
-        let t2 = in2 - in3;
-        let t4 = (t0 - t2) >> 1;
-        let t3 = t4 - in3;
-        let t1 = t4 - in1;
+    let d0 = loadi32!(&dst[..4]);
+    let d0_32 = _mm_cvtepi16_epi32(_mm_unpacklo_epi8(d0, zero));
+    let sum0 = _mm_add_epi32(d0_32, final0);
+    let sum0_8 = _mm_packus_epi16(
+        _mm_max_epi16(_mm_min_epi16(_mm_packs_epi32(sum0, sum0), max_val), zero),
+        zero,
+    );
+    storei32!(&mut dst[..4], sum0_8);
 
-        tmp[0 * 4 + x] = t0 - t3;
-        tmp[1 * 4 + x] = t3;
-        tmp[2 * 4 + x] = t1;
-        tmp[3 * 4 + x] = t2 + t1;
-    }
+    let off1 = dst_stride;
+    let d1 = loadi32!(&dst[off1..off1 + 4]);
+    let d1_32 = _mm_cvtepi16_epi32(_mm_unpacklo_epi8(d1, zero));
+    let sum1 = _mm_add_epi32(d1_32, final1);
+    let sum1_8 = _mm_packus_epi16(
+        _mm_max_epi16(_mm_min_epi16(_mm_packs_epi32(sum1, sum1), max_val), zero),
+        zero,
+    );
+    storei32!(&mut dst[off1..off1 + 4], sum1_8);
 
-    // Add to destination (row-major in tmp)
-    for y in 0..4 {
-        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
-        for x in 0..4 {
-            let d = dst[row_off + x] as i32;
-            let c = tmp[y * 4 + x];
-            let result = iclip(d + c, 0, bitdepth_max);
-            dst[row_off + x] = result as u8;
-        }
-    }
+    let off2 = dst_stride * 2;
+    let d2 = loadi32!(&dst[off2..off2 + 4]);
+    let d2_32 = _mm_cvtepi16_epi32(_mm_unpacklo_epi8(d2, zero));
+    let sum2 = _mm_add_epi32(d2_32, final2);
+    let sum2_8 = _mm_packus_epi16(
+        _mm_max_epi16(_mm_min_epi16(_mm_packs_epi32(sum2, sum2), max_val), zero),
+        zero,
+    );
+    storei32!(&mut dst[off2..off2 + 4], sum2_8);
+
+    let off3 = dst_stride * 3;
+    let d3 = loadi32!(&dst[off3..off3 + 4]);
+    let d3_32 = _mm_cvtepi16_epi32(_mm_unpacklo_epi8(d3, zero));
+    let sum3 = _mm_add_epi32(d3_32, final3);
+    let sum3_8 = _mm_packus_epi16(
+        _mm_max_epi16(_mm_min_epi16(_mm_packs_epi32(sum3, sum3), max_val), zero),
+        zero,
+    );
+    storei32!(&mut dst[off3..off3 + 4], sum3_8);
 
     // Clear coefficients
-    coeff[..16].fill(0);
+    let coeff_bytes = zerocopy::AsBytes::as_bytes_mut(&mut *coeff);
+    storeu_128!(
+        <&mut [u8; 16]>::try_from(&mut coeff_bytes[..16]).unwrap(),
+        _mm_setzero_si128()
+    );
+    storeu_128!(
+        <&mut [u8; 16]>::try_from(&mut coeff_bytes[16..32]).unwrap(),
+        _mm_setzero_si128()
+    );
 }
 
 /// FFI wrapper for 4x4 WHT 8bpc
@@ -688,90 +752,136 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_avx2(
     let _token = unsafe { Desktop64::forge_token_dangerously() };
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
-    let (base, dst_slice) = if dst_stride >= 0 {
-        (0usize, unsafe {
-            std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size)
-        })
+    let dst_slice = if dst_stride >= 0 {
+        unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_size) }
     } else {
         let start = unsafe { (dst_ptr as *mut u8).offset(3 * dst_stride) };
-        (3 * abs_stride, unsafe {
-            std::slice::from_raw_parts_mut(start, buf_size)
-        })
+        let base = 3 * abs_stride;
+        unsafe { std::slice::from_raw_parts_mut(start.add(base), buf_size - base) }
     };
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
     inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
+        _token,
         dst_slice,
-        base,
-        dst_stride,
+        abs_stride,
         coeff_slice,
         eob,
         bitdepth_max,
     );
 }
 
-/// WHT4x4 16bpc - Walsh-Hadamard Transform
+/// WHT4x4 16bpc - Walsh-Hadamard Transform (SSE2 SIMD)
 #[cfg(target_arch = "x86_64")]
+#[arcane]
 fn inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
+    _token: Desktop64,
     dst: &mut [u16],
-    dst_base: usize,
-    dst_stride_u16: isize,
+    byte_stride: usize,
     coeff: &mut [i32],
     _eob: i32,
     bitdepth_max: i32,
 ) {
-    let mut tmp = [0i32; 16];
+    let dst_stride_u16 = byte_stride / 2;
+    let mut dst = dst.flex_mut();
+    let mut coeff = coeff.flex_mut();
 
-    // Row transform: load from column-major, store row-major
-    for y in 0..4 {
-        let in0 = coeff[y] as i32 >> 2;
-        let in1 = coeff[y + 4] as i32 >> 2;
-        let in2 = coeff[y + 8] as i32 >> 2;
-        let in3 = coeff[y + 12] as i32 >> 2;
+    // Load 4 columns from column-major i32 coefficients, shift >>2
+    let col0 = _mm_srai_epi32(loadu_128!(&coeff[0..4], [i32; 4]), 2);
+    let col1 = _mm_srai_epi32(loadu_128!(&coeff[4..8], [i32; 4]), 2);
+    let col2 = _mm_srai_epi32(loadu_128!(&coeff[8..12], [i32; 4]), 2);
+    let col3 = _mm_srai_epi32(loadu_128!(&coeff[12..16], [i32; 4]), 2);
 
-        let t0 = in0 + in1;
-        let t2 = in2 - in3;
-        let t4 = (t0 - t2) >> 1;
-        let t3 = t4 - in3;
-        let t1 = t4 - in1;
+    // Row pass: WHT butterfly on all 4 rows in parallel
+    let t0 = _mm_add_epi32(col0, col1);
+    let t2 = _mm_sub_epi32(col2, col3);
+    let t4 = _mm_srai_epi32(_mm_sub_epi32(t0, t2), 1);
+    let t3 = _mm_sub_epi32(t4, col3);
+    let t1 = _mm_sub_epi32(t4, col1);
+    let r0 = _mm_sub_epi32(t0, t3);
+    let r1 = t3;
+    let r2 = t1;
+    let r3 = _mm_add_epi32(t2, t1);
 
-        tmp[y * 4 + 0] = t0 - t3;
-        tmp[y * 4 + 1] = t3;
-        tmp[y * 4 + 2] = t1;
-        tmp[y * 4 + 3] = t2 + t1;
-    }
+    // 4x4 transpose
+    let t01_lo = _mm_unpacklo_epi32(r0, r1);
+    let t01_hi = _mm_unpackhi_epi32(r0, r1);
+    let t23_lo = _mm_unpacklo_epi32(r2, r3);
+    let t23_hi = _mm_unpackhi_epi32(r2, r3);
+    let row0 = _mm_unpacklo_epi64(t01_lo, t23_lo);
+    let row1 = _mm_unpackhi_epi64(t01_lo, t23_lo);
+    let row2 = _mm_unpacklo_epi64(t01_hi, t23_hi);
+    let row3 = _mm_unpackhi_epi64(t01_hi, t23_hi);
 
-    // Column transform
-    for x in 0..4 {
-        let in0 = tmp[0 * 4 + x];
-        let in1 = tmp[1 * 4 + x];
-        let in2 = tmp[2 * 4 + x];
-        let in3 = tmp[3 * 4 + x];
+    // Column pass: WHT butterfly on all 4 columns in parallel
+    let t0 = _mm_add_epi32(row0, row1);
+    let t2 = _mm_sub_epi32(row2, row3);
+    let t4 = _mm_srai_epi32(_mm_sub_epi32(t0, t2), 1);
+    let t3 = _mm_sub_epi32(t4, row3);
+    let t1 = _mm_sub_epi32(t4, row1);
+    let final0 = _mm_sub_epi32(t0, t3);
+    let final1 = t3;
+    let final2 = t1;
+    let final3 = _mm_add_epi32(t2, t1);
 
-        let t0 = in0 + in1;
-        let t2 = in2 - in3;
-        let t4 = (t0 - t2) >> 1;
-        let t3 = t4 - in3;
-        let t1 = t4 - in1;
+    // Add to destination pixels and clamp to [0, bitdepth_max]
+    let zero = _mm_setzero_si128();
+    let max_val = _mm_set1_epi32(bitdepth_max);
 
-        tmp[0 * 4 + x] = t0 - t3;
-        tmp[1 * 4 + x] = t3;
-        tmp[2 * 4 + x] = t1;
-        tmp[3 * 4 + x] = t2 + t1;
-    }
+    // Row 0: load 4 u16, widen to i32, add, clamp, pack back
+    let d0 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[..4]));
+    let d0_32 = _mm_cvtepu16_epi32(d0);
+    let sum0 = _mm_max_epi32(_mm_min_epi32(_mm_add_epi32(d0_32, final0), max_val), zero);
+    let sum0_16 = _mm_packus_epi32(sum0, sum0);
+    storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[..4]), sum0_16);
 
-    // Add to destination
-    for y in 0..4 {
-        let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride_u16);
-        for x in 0..4 {
-            let d = dst[row_off + x] as i32;
-            let c = tmp[y * 4 + x];
-            let result = iclip(d + c, 0, bitdepth_max);
-            dst[row_off + x] = result as u16;
-        }
-    }
+    let off1 = dst_stride_u16;
+    let d1 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[off1..off1 + 4]));
+    let d1_32 = _mm_cvtepu16_epi32(d1);
+    let sum1 = _mm_max_epi32(_mm_min_epi32(_mm_add_epi32(d1_32, final1), max_val), zero);
+    let sum1_16 = _mm_packus_epi32(sum1, sum1);
+    storei64!(
+        zerocopy::AsBytes::as_bytes_mut(&mut dst[off1..off1 + 4]),
+        sum1_16
+    );
 
-    // Clear coefficients
-    coeff[..16].fill(0);
+    let off2 = dst_stride_u16 * 2;
+    let d2 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[off2..off2 + 4]));
+    let d2_32 = _mm_cvtepu16_epi32(d2);
+    let sum2 = _mm_max_epi32(_mm_min_epi32(_mm_add_epi32(d2_32, final2), max_val), zero);
+    let sum2_16 = _mm_packus_epi32(sum2, sum2);
+    storei64!(
+        zerocopy::AsBytes::as_bytes_mut(&mut dst[off2..off2 + 4]),
+        sum2_16
+    );
+
+    let off3 = dst_stride_u16 * 3;
+    let d3 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[off3..off3 + 4]));
+    let d3_32 = _mm_cvtepu16_epi32(d3);
+    let sum3 = _mm_max_epi32(_mm_min_epi32(_mm_add_epi32(d3_32, final3), max_val), zero);
+    let sum3_16 = _mm_packus_epi32(sum3, sum3);
+    storei64!(
+        zerocopy::AsBytes::as_bytes_mut(&mut dst[off3..off3 + 4]),
+        sum3_16
+    );
+
+    // Clear coefficients (16 i32 = 64 bytes)
+    let coeff_bytes = zerocopy::AsBytes::as_bytes_mut(&mut *coeff);
+    storeu_128!(
+        <&mut [u8; 16]>::try_from(&mut coeff_bytes[..16]).unwrap(),
+        _mm_setzero_si128()
+    );
+    storeu_128!(
+        <&mut [u8; 16]>::try_from(&mut coeff_bytes[16..32]).unwrap(),
+        _mm_setzero_si128()
+    );
+    storeu_128!(
+        <&mut [u8; 16]>::try_from(&mut coeff_bytes[32..48]).unwrap(),
+        _mm_setzero_si128()
+    );
+    storeu_128!(
+        <&mut [u8; 16]>::try_from(&mut coeff_bytes[48..64]).unwrap(),
+        _mm_setzero_si128()
+    );
 }
 
 /// FFI wrapper for 4x4 WHT 16bpc
@@ -788,24 +898,20 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_avx2(
     _dst: *const FFISafe<PicOffset>,
 ) {
     let _token = unsafe { Desktop64::forge_token_dangerously() };
-    let stride_u16 = dst_stride / 2;
-    let abs_stride_u16 = stride_u16;
-    let buf_size = 3 * abs_stride_u16 + 4;
-    let (base, dst_slice) = if stride_u16 >= 0 {
-        (0usize, unsafe {
-            std::slice::from_raw_parts_mut(dst_ptr as *mut u16, buf_size)
-        })
+    let abs_stride = dst_stride.unsigned_abs();
+    let buf_size_u16 = (3 * abs_stride + 8) / 2; // 3 rows + 4 pixels
+    let dst_slice = if dst_stride >= 0 {
+        unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, buf_size_u16) }
     } else {
-        let start = unsafe { (dst_ptr as *mut u16).offset(3 * stride_u16) };
-        (3 * abs_stride_u16, unsafe {
-            std::slice::from_raw_parts_mut(start, buf_size)
-        })
+        let start = unsafe { (dst_ptr as *mut u16).offset(3 * (dst_stride / 2)) };
+        let base_u16 = 3 * (abs_stride / 2);
+        unsafe { std::slice::from_raw_parts_mut(start.add(base_u16), buf_size_u16 - base_u16) }
     };
-    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 16) };
+    let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 16) };
     inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
+        _token,
         dst_slice,
-        base,
-        stride_u16,
+        abs_stride,
         coeff_slice,
         eob,
         bitdepth_max,
@@ -6213,9 +6319,10 @@ mod tests {
         coeff[0] = 64; // DC coefficient
 
         let mut dst = [128u8; 16];
-        let stride = 4isize;
+        let stride = 4usize;
 
-        inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(&mut dst, 0, stride, &mut coeff, 1, 255);
+        let token = Desktop64::summon().expect("AVX2 required");
+        inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(token, &mut dst, stride, &mut coeff, 1, 255);
 
         // Should have added DC to all pixels
         assert!(dst.iter().all(|&p| p >= 128));
@@ -15653,8 +15760,8 @@ fn itxfm_dispatch_8bpc(
     const R64x16: usize = TxfmSize::R64x16 as usize;
 
     match (tx_size, tx_type) {
-        // ===== WHT (scalar, 4x4 only) =====
-        (S4x4, WHT_WHT) => scalar!(inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner),
+        // ===== WHT (SSE2 SIMD, 4x4 only) =====
+        (S4x4, WHT_WHT) => arcane!(inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner),
 
         // ===== DCT_DCT (arcane, all 19 sizes) =====
         (S4x4, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner),
@@ -15720,7 +15827,6 @@ fn itxfm_dispatch_16bpc(
     dst: &mut [u16],
     base: usize,
     byte_stride: usize,
-    px_stride: isize,
     coeff_i16: &mut [i16],
     eob: i32,
     bdmax: i32,
@@ -15741,14 +15847,6 @@ fn itxfm_dispatch_16bpc(
             return true;
         }};
     }
-    // WHT scalar takes pixel stride as isize
-    macro_rules! scalar {
-        ($func:ident) => {{
-            $func(dst, base, px_stride, coeff, eob, bdmax);
-            return true;
-        }};
-    }
-
     const S4x4: usize = TxfmSize::S4x4 as usize;
     const S8x8: usize = TxfmSize::S8x8 as usize;
     const S16x16: usize = TxfmSize::S16x16 as usize;
@@ -15770,8 +15868,8 @@ fn itxfm_dispatch_16bpc(
     const R64x16: usize = TxfmSize::R64x16 as usize;
 
     match (tx_size, tx_type) {
-        // ===== WHT (scalar, 4x4 only) =====
-        (S4x4, WHT_WHT) => scalar!(inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner),
+        // ===== WHT (SSE2 SIMD, 4x4 only) =====
+        (S4x4, WHT_WHT) => arcane!(inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner),
 
         // ===== DCT_DCT (arcane, all 19 sizes) =====
         (S4x4, DCT_DCT) => arcane!(inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner),
@@ -15877,7 +15975,6 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                 let dst_bytes: &mut [u8] = guard.as_bytes_mut();
                 let dst_u16: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_bytes)
                     .expect("dst alignment/size mismatch for u16 reinterpretation");
-                let px_stride_i = dst.pixel_stride::<BD>(); // isize, in pixels
                 itxfm_dispatch_16bpc(
                     token,
                     tx_size,
@@ -15885,7 +15982,6 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                     dst_u16,
                     base,
                     byte_stride_u,
-                    px_stride_i,
                     coeff_i16,
                     eob,
                     bd_c,
