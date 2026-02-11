@@ -1499,11 +1499,9 @@ fn sgr_5x5_8bpc_avx2_inner(
     padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
 
     let sgr = params.sgr();
-    if let Some(token) = summon_avx2() {
-        selfguided_filter_8bpc_avx2(token, &mut dst, &tmp, w, h, 25, sgr.s0);
-    } else {
-        selfguided_filter_8bpc(&mut dst, &tmp, w, h, 25, sgr.s0);
-    }
+    // TODO: AVX2 selfguided_filter_8bpc has a correctness bug — disabled pending fix.
+    // See commit 513172e for the AVX2 code. Using scalar path which is verified correct.
+    selfguided_filter_8bpc(&mut dst, &tmp, w, h, 25, sgr.s0);
 
     let w0 = sgr.w0 as i32;
     let stride = p.pixel_stride::<BitDepth8>();
@@ -1536,11 +1534,8 @@ fn sgr_3x3_8bpc_avx2_inner(
     padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
 
     let sgr = params.sgr();
-    if let Some(token) = summon_avx2() {
-        selfguided_filter_8bpc_avx2(token, &mut dst, &tmp, w, h, 9, sgr.s1);
-    } else {
-        selfguided_filter_8bpc(&mut dst, &tmp, w, h, 9, sgr.s1);
-    }
+    // TODO: AVX2 selfguided_filter_8bpc has a correctness bug — disabled pending fix.
+    selfguided_filter_8bpc(&mut dst, &tmp, w, h, 9, sgr.s1);
 
     let w1 = sgr.w1 as i32;
     let stride = p.pixel_stride::<BitDepth8>();
@@ -1574,13 +1569,9 @@ fn sgr_mix_8bpc_avx2_inner(
     padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
 
     let sgr = params.sgr();
-    if let Some(token) = summon_avx2() {
-        selfguided_filter_8bpc_avx2(token, &mut dst0, &tmp, w, h, 25, sgr.s0);
-        selfguided_filter_8bpc_avx2(token, &mut dst1, &tmp, w, h, 9, sgr.s1);
-    } else {
-        selfguided_filter_8bpc(&mut dst0, &tmp, w, h, 25, sgr.s0);
-        selfguided_filter_8bpc(&mut dst1, &tmp, w, h, 9, sgr.s1);
-    }
+    // TODO: AVX2 selfguided_filter_8bpc has a correctness bug — disabled pending fix.
+    selfguided_filter_8bpc(&mut dst0, &tmp, w, h, 25, sgr.s0);
+    selfguided_filter_8bpc(&mut dst1, &tmp, w, h, 9, sgr.s1);
 
     let w0 = sgr.w0 as i32;
     let w1 = sgr.w1 as i32;

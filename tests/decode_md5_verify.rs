@@ -8,7 +8,7 @@
 //! 16-bit pixels are hashed as little-endian bytes.
 //! The hash accumulates across ALL frames in the file.
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes};
+use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -45,16 +45,46 @@ fn parse_meson_build(meson_path: &Path) -> Vec<TestVector> {
     let dir = meson_path.parent().unwrap();
     let mut vectors = Vec::new();
 
+    // Join multi-line entries: accumulate lines between [ and ] pairs
+    let mut entries = Vec::new();
+    let mut current_entry = String::new();
+    let mut in_entry = false;
+
     for line in content.lines() {
         let trimmed = line.trim();
-        // Match lines like: ['name', files('file.ivf'), 'md5hash'],
-        if !trimmed.starts_with("['") && !trimmed.starts_with("[\"") {
+        if !in_entry {
+            // Look for start of array entry: line beginning with [ (possibly with whitespace)
+            if trimmed.starts_with("[") && trimmed.contains("'") {
+                current_entry = trimmed.to_string();
+                if trimmed.contains("],") || trimmed.ends_with("]") {
+                    // Single-line entry
+                    entries.push(current_entry.clone());
+                    current_entry.clear();
+                } else {
+                    in_entry = true;
+                }
+            }
+        } else {
+            // Continuation line
+            current_entry.push(' ');
+            current_entry.push_str(trimmed);
+            if trimmed.contains("],") || trimmed.ends_with("]") {
+                entries.push(current_entry.clone());
+                current_entry.clear();
+                in_entry = false;
+            }
+        }
+    }
+
+    for entry in &entries {
+        // Must contain files() to be a test vector entry
+        if !entry.contains("files(") {
             continue;
         }
 
-        // Extract all single-quoted strings from the line
+        // Extract all single-quoted strings
         let mut quoted = Vec::new();
-        let mut chars = trimmed.chars().peekable();
+        let mut chars = entry.chars().peekable();
         while let Some(c) = chars.next() {
             if c == '\'' {
                 let s: String = chars.by_ref().take_while(|&c| c != '\'').collect();
@@ -105,6 +135,13 @@ fn parse_meson_build(meson_path: &Path) -> Vec<TestVector> {
 /// into the MD5 hasher. For 8-bit, each row is `width` bytes.
 /// For 16-bit, each row is `width * 2` bytes in little-endian order.
 fn compute_decode_md5(ivf_path: &Path) -> Result<(String, usize), String> {
+    compute_decode_md5_with_grain(ivf_path, true)
+}
+
+fn compute_decode_md5_with_grain(
+    ivf_path: &Path,
+    apply_grain: bool,
+) -> Result<(String, usize), String> {
     let file = File::open(ivf_path)
         .map_err(|e| format!("Failed to open {}: {e}", ivf_path.display()))?;
     let mut reader = BufReader::new(file);
@@ -112,7 +149,12 @@ fn compute_decode_md5(ivf_path: &Path) -> Result<(String, usize), String> {
     let frames = ivf_parser::parse_all_frames(&mut reader)
         .map_err(|e| format!("Failed to parse IVF {}: {e}", ivf_path.display()))?;
 
-    let mut decoder = Decoder::new().map_err(|e| format!("Failed to create decoder: {e}"))?;
+    let settings = Settings {
+        apply_grain,
+        ..Default::default()
+    };
+    let mut decoder =
+        Decoder::with_settings(settings).map_err(|e| format!("Failed to create decoder: {e}"))?;
     let mut ctx = md5::Context::new();
     let mut frame_count = 0usize;
 
@@ -202,7 +244,18 @@ fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
 
 /// Collect all test vectors from a meson.build file and verify MD5s.
 /// Returns (passed, failed_names, skipped).
+///
+/// `apply_grain`: whether to apply film grain during decoding.
+/// dav1d's --verify flag defaults to film grain OFF (md5 muxer behavior),
+/// so most tests should pass `false`. Only film_grain/ tests pass `true`.
 fn verify_meson_vectors(meson_path: &Path) -> (usize, Vec<String>, usize) {
+    verify_meson_vectors_with_grain(meson_path, false)
+}
+
+fn verify_meson_vectors_with_grain(
+    meson_path: &Path,
+    apply_grain: bool,
+) -> (usize, Vec<String>, usize) {
     let vectors = parse_meson_build(meson_path);
     let mut passed = 0;
     let mut failed = Vec::new();
@@ -214,7 +267,14 @@ fn verify_meson_vectors(meson_path: &Path) -> (usize, Vec<String>, usize) {
             continue;
         }
 
-        match compute_decode_md5(&vector.ivf_path) {
+        // Skip non-IVF files (Annex B .obu, Section 5 .obu)
+        let ext = vector.ivf_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext != "ivf" {
+            skipped += 1;
+            continue;
+        }
+
+        match compute_decode_md5_with_grain(&vector.ivf_path, apply_grain) {
             Ok((actual_md5, frame_count)) => {
                 if actual_md5 == vector.expected_md5 {
                     passed += 1;
@@ -442,8 +502,8 @@ fn test_md5_verify_8bit_film_grain() {
         return;
     }
 
-    // Film grain tests use a different variable name (fg_tests) but same format
-    let (passed, failed, skipped) = verify_meson_vectors(&meson);
+    // Film grain tests explicitly use --filmgrain 1, so decode with grain applied
+    let (passed, failed, skipped) = verify_meson_vectors_with_grain(&meson, true);
     eprintln!("8-bit/film_grain: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
     assert!(
@@ -494,6 +554,41 @@ fn test_md5_verify_8bit_vq_suite() {
     );
 }
 
+/// Test a specific vector by name (for debugging).
+#[test]
+fn test_md5_verify_single_00000002() {
+    let meson = dav1d_test_data().join("8-bit/data/meson.build");
+    if !meson.exists() {
+        eprintln!("Skipping: test vectors not found");
+        return;
+    }
+
+    let vectors = parse_meson_build(&meson);
+    let vector = vectors
+        .iter()
+        .find(|v| v.name == "00000002")
+        .expect("Vector 00000002 not found");
+
+    if !vector.ivf_path.exists() {
+        eprintln!("Skipping: {} not found", vector.ivf_path.display());
+        return;
+    }
+
+    let (actual_md5, frame_count) = compute_decode_md5(&vector.ivf_path)
+        .unwrap_or_else(|e| panic!("Failed to decode {}: {e}", vector.name));
+
+    eprintln!(
+        "{}: {} frames, md5={} (expected {})",
+        vector.name, frame_count, actual_md5, vector.expected_md5
+    );
+
+    assert_eq!(
+        actual_md5, vector.expected_md5,
+        "MD5 mismatch for {}",
+        vector.name
+    );
+}
+
 /// Comprehensive: verify ALL meson.build files with reference MD5s.
 #[test]
 fn test_md5_verify_comprehensive() {
@@ -503,38 +598,41 @@ fn test_md5_verify_comprehensive() {
         return;
     }
 
-    let meson_files = [
-        "8-bit/data/meson.build",
-        "8-bit/features/meson.build",
-        "8-bit/issues/meson.build",
-        "8-bit/quantizer/meson.build",
-        "8-bit/size/meson.build",
-        "8-bit/cdfupdate/meson.build",
-        "8-bit/vq_suite/meson.build",
-        "8-bit/intra/meson.build",
-        "8-bit/mfmv/meson.build",
-        "8-bit/mv/meson.build",
-        "8-bit/resize/meson.build",
-        "8-bit/film_grain/meson.build",
-        "10-bit/data/meson.build",
-        "10-bit/features/meson.build",
-        "10-bit/quantizer/meson.build",
-        "10-bit/issues/meson.build",
-        "12-bit/data/meson.build",
-        "12-bit/features/meson.build",
+    // (path, apply_grain): film_grain/ tests need grain ON, all others OFF
+    // dav1d's --verify flag uses the md5 muxer which defaults to grain OFF
+    let meson_files: &[(&str, bool)] = &[
+        ("8-bit/data/meson.build", false),
+        ("8-bit/features/meson.build", false),
+        ("8-bit/issues/meson.build", false),
+        ("8-bit/quantizer/meson.build", false),
+        ("8-bit/size/meson.build", false),
+        ("8-bit/cdfupdate/meson.build", false),
+        ("8-bit/vq_suite/meson.build", false),
+        ("8-bit/intra/meson.build", false),
+        ("8-bit/mfmv/meson.build", false),
+        ("8-bit/mv/meson.build", false),
+        ("8-bit/resize/meson.build", false),
+        ("8-bit/film_grain/meson.build", true),
+        ("10-bit/data/meson.build", false),
+        ("10-bit/features/meson.build", false),
+        ("10-bit/quantizer/meson.build", false),
+        ("10-bit/issues/meson.build", false),
+        ("10-bit/film_grain/meson.build", true),
+        ("12-bit/data/meson.build", false),
+        ("12-bit/features/meson.build", false),
     ];
 
     let mut total_passed = 0;
     let mut total_failed = Vec::new();
     let mut total_skipped = 0;
 
-    for meson_rel in &meson_files {
+    for &(meson_rel, grain) in meson_files {
         let meson_path = base.join(meson_rel);
         if !meson_path.exists() {
             continue;
         }
 
-        let (passed, failed, skipped) = verify_meson_vectors(&meson_path);
+        let (passed, failed, skipped) = verify_meson_vectors_with_grain(&meson_path, grain);
         eprintln!("{meson_rel}: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
         total_passed += passed;
