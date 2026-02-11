@@ -442,15 +442,19 @@ pub(crate) fn padding<BD: BitDepth>(
         }
     }
 
-    // Inner UNIT_WxSTRIPE_H
+    // Inner UNIT_WxSTRIPE_H — single guard for all rows
     let len = unit_w - have_left_3;
-    for j in 0..stripe_h {
-        let p = p + have_left_3 + (j as isize * stride);
-        BD::pixel_copy(
-            &mut dst_tl[j * REST_UNIT_STRIDE + have_left_3..],
-            &p.slice::<BD>(len),
-            len,
-        );
+    if stripe_h > 0 {
+        let p_inner = p + have_left_3;
+        let (src_guard, src_base) = p_inner.strided_slice::<BD>(len, stripe_h);
+        for j in 0..stripe_h {
+            let src_off = src_base.wrapping_add_signed(j as isize * stride);
+            BD::pixel_copy(
+                &mut dst_tl[j * REST_UNIT_STRIDE + have_left_3..],
+                &src_guard[src_off..],
+                len,
+            );
+        }
     }
 
     if !have_right {
