@@ -105,6 +105,9 @@ fn cdef_filter_block_simd_8bpc(
 
     let zero = _mm_setzero_si128();
 
+    // Single guard for entire output region
+    let (mut p_guard, p_base) = dst.strided_slice_mut::<BitDepth8>(w, h);
+
     if pri_strength != 0 {
         let pri_tap = 4 - (pri_strength & 1);
         let pri_shift = cmp::max(0, damping - pri_strength.ilog2() as c_int);
@@ -185,13 +188,13 @@ fn cdef_filter_block_simd_8bpc(
                 let result = _mm_min_epi16(result, max_v);
                 let result_u8 = _mm_packus_epi16(result, zero);
 
-                let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth8>(w);
+                let row_off = p_base.wrapping_add_signed(y as isize * stride);
                 if w == 8 {
                     let mut out = [0u8; 16];
                     storeu_128!(&mut out, result_u8);
-                    dst_row[0..8].copy_from_slice(&out[0..8]);
+                    p_guard[row_off..row_off + 8].copy_from_slice(&out[0..8]);
                 } else {
-                    storei32!(&mut dst_row[0..4], result_u8);
+                    storei32!(&mut p_guard[row_off..row_off + 4], result_u8);
                 }
             }
         } else {
@@ -224,13 +227,13 @@ fn cdef_filter_block_simd_8bpc(
                 let result = _mm_add_epi16(px, adjusted);
                 let result_u8 = _mm_packus_epi16(result, zero);
 
-                let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth8>(w);
+                let row_off = p_base.wrapping_add_signed(y as isize * stride);
                 if w == 8 {
                     let mut out = [0u8; 16];
                     storeu_128!(&mut out, result_u8);
-                    dst_row[0..8].copy_from_slice(&out[0..8]);
+                    p_guard[row_off..row_off + 8].copy_from_slice(&out[0..8]);
                 } else {
-                    storei32!(&mut dst_row[0..4], result_u8);
+                    storei32!(&mut p_guard[row_off..row_off + 4], result_u8);
                 }
             }
         }
@@ -275,13 +278,13 @@ fn cdef_filter_block_simd_8bpc(
             let result = _mm_add_epi16(px, adjusted);
             let result_u8 = _mm_packus_epi16(result, zero);
 
-            let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth8>(w);
+            let row_off = p_base.wrapping_add_signed(y as isize * stride);
             if w == 8 {
                 let mut out = [0u8; 16];
                 storeu_128!(&mut out, result_u8);
-                dst_row[0..8].copy_from_slice(&out[0..8]);
+                p_guard[row_off..row_off + 8].copy_from_slice(&out[0..8]);
             } else {
-                storei32!(&mut dst_row[0..4], result_u8);
+                storei32!(&mut p_guard[row_off..row_off + 4], result_u8);
             }
         }
     }
@@ -618,6 +621,9 @@ fn cdef_filter_block_scalar_8bpc(
 ) {
     use crate::include::common::bitdepth::BitDepth8;
 
+    // Single guard for entire output region
+    let (mut p_guard, p_base) = dst.strided_slice_mut::<BitDepth8>(w, h);
+
     if pri_strength != 0 {
         let pri_tap = 4 - (pri_strength & 1);
         let pri_shift = cmp::max(0, damping - pri_strength.ilog2() as c_int);
@@ -627,10 +633,10 @@ fn cdef_filter_block_scalar_8bpc(
 
             for y in 0..h {
                 let row_base = (tmp_offset + y * TMP_STRIDE) as isize;
-                let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth8>(w);
+                let row_off = p_base.wrapping_add_signed(y as isize * stride);
 
                 for x in 0..w {
-                    let px = dst_row[x] as i32;
+                    let px = p_guard[row_off + x] as i32;
                     let mut sum = 0i32;
                     let mut max = px;
                     let mut min = px;
@@ -676,16 +682,16 @@ fn cdef_filter_block_scalar_8bpc(
                         max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);
                     }
 
-                    dst_row[x] = iclip(px + (sum - (sum < 0) as i32 + 8 >> 4), min, max) as u8;
+                    p_guard[row_off + x] = iclip(px + (sum - (sum < 0) as i32 + 8 >> 4), min, max) as u8;
                 }
             }
         } else {
             for y in 0..h {
                 let row_base = (tmp_offset + y * TMP_STRIDE) as isize;
-                let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth8>(w);
+                let row_off = p_base.wrapping_add_signed(y as isize * stride);
 
                 for x in 0..w {
-                    let px = dst_row[x] as i32;
+                    let px = p_guard[row_off + x] as i32;
                     let mut sum = 0i32;
                     let base = row_base + x as isize;
 
@@ -701,7 +707,7 @@ fn cdef_filter_block_scalar_8bpc(
                         pri_tap_k = pri_tap_k & 3 | 2;
                     }
 
-                    dst_row[x] = (px + (sum - (sum < 0) as i32 + 8 >> 4)) as u8;
+                    p_guard[row_off + x] = (px + (sum - (sum < 0) as i32 + 8 >> 4)) as u8;
                 }
             }
         }
@@ -710,10 +716,10 @@ fn cdef_filter_block_scalar_8bpc(
 
         for y in 0..h {
             let row_base = (tmp_offset + y * TMP_STRIDE) as isize;
-            let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth8>(w);
+            let row_off = p_base.wrapping_add_signed(y as isize * stride);
 
             for x in 0..w {
-                let px = dst_row[x] as i32;
+                let px = p_guard[row_off + x] as i32;
                 let mut sum = 0i32;
                 let base = row_base + x as isize;
 
@@ -732,7 +738,7 @@ fn cdef_filter_block_scalar_8bpc(
                     sum += sec_tap * constrain_scalar(s3 - px, sec_strength, sec_shift);
                 }
 
-                dst_row[x] = (px + (sum - (sum < 0) as i32 + 8 >> 4)) as u8;
+                p_guard[row_off + x] = (px + (sum - (sum < 0) as i32 + 8 >> 4)) as u8;
             }
         }
     }
@@ -1284,6 +1290,9 @@ fn cdef_filter_block_simd_16bpc(
     let bd_max = _mm_set1_epi16(bitdepth_max as i16);
     let bitdepth_min_8 = ((bitdepth_max + 1) as u32).ilog2() as c_int - 8;
 
+    // Single guard for entire output region
+    let (mut p_guard, p_base) = dst.strided_slice_mut::<BitDepth16>(w, h);
+
     if pri_strength != 0 {
         let pri_tap = 4 - (pri_strength >> bitdepth_min_8 & 1);
         let pri_shift = cmp::max(0, damping - pri_strength.ilog2() as c_int);
@@ -1364,8 +1373,8 @@ fn cdef_filter_block_simd_16bpc(
 
                 let mut out = [0u16; 8];
                 storeu_128!(&mut out, result);
-                let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth16>(w);
-                dst_row[..w].copy_from_slice(&out[..w]);
+                let row_off = p_base.wrapping_add_signed(y as isize * stride);
+                p_guard[row_off..row_off + w].copy_from_slice(&out[..w]);
             }
         } else {
             // Primary only
@@ -1401,8 +1410,8 @@ fn cdef_filter_block_simd_16bpc(
 
                 let mut out = [0u16; 8];
                 storeu_128!(&mut out, result);
-                let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth16>(w);
-                dst_row[..w].copy_from_slice(&out[..w]);
+                let row_off = p_base.wrapping_add_signed(y as isize * stride);
+                p_guard[row_off..row_off + w].copy_from_slice(&out[..w]);
             }
         }
     } else {
@@ -1450,8 +1459,8 @@ fn cdef_filter_block_simd_16bpc(
 
             let mut out = [0u16; 8];
             storeu_128!(&mut out, result);
-            let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth16>(w);
-            dst_row[..w].copy_from_slice(&out[..w]);
+            let row_off = p_base.wrapping_add_signed(y as isize * stride);
+            p_guard[row_off..row_off + w].copy_from_slice(&out[..w]);
         }
     }
 }
@@ -1474,6 +1483,9 @@ fn cdef_filter_block_scalar_16bpc(
 
     let bitdepth_min_8 = ((bitdepth_max + 1) as u32).ilog2() as c_int - 8;
 
+    // Single guard for entire output region
+    let (mut p_guard, p_base) = dst.strided_slice_mut::<BitDepth16>(w, h);
+
     if pri_strength != 0 {
         let pri_tap = 4 - (pri_strength >> bitdepth_min_8 & 1);
         let pri_shift = cmp::max(0, damping - pri_strength.ilog2() as c_int);
@@ -1483,10 +1495,10 @@ fn cdef_filter_block_scalar_16bpc(
 
             for y in 0..h {
                 let row_base = (tmp_offset + y * TMP_STRIDE) as isize;
-                let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth16>(w);
+                let row_off = p_base.wrapping_add_signed(y as isize * stride);
 
                 for x in 0..w {
-                    let px = dst_row[x] as i32;
+                    let px = p_guard[row_off + x] as i32;
                     let mut sum = 0i32;
                     let mut max = px;
                     let mut min = px;
@@ -1532,16 +1544,16 @@ fn cdef_filter_block_scalar_16bpc(
                         max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);
                     }
 
-                    dst_row[x] = iclip(px + (sum - (sum < 0) as i32 + 8 >> 4), min, max) as u16;
+                    p_guard[row_off + x] = iclip(px + (sum - (sum < 0) as i32 + 8 >> 4), min, max) as u16;
                 }
             }
         } else {
             for y in 0..h {
                 let row_base = (tmp_offset + y * TMP_STRIDE) as isize;
-                let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth16>(w);
+                let row_off = p_base.wrapping_add_signed(y as isize * stride);
 
                 for x in 0..w {
-                    let px = dst_row[x] as i32;
+                    let px = p_guard[row_off + x] as i32;
                     let mut sum = 0i32;
                     let base = row_base + x as isize;
 
@@ -1558,7 +1570,7 @@ fn cdef_filter_block_scalar_16bpc(
                     }
 
                     let result = px + (sum - (sum < 0) as i32 + 8 >> 4);
-                    dst_row[x] = iclip(result, 0, bitdepth_max) as u16;
+                    p_guard[row_off + x] = iclip(result, 0, bitdepth_max) as u16;
                 }
             }
         }
@@ -1567,10 +1579,10 @@ fn cdef_filter_block_scalar_16bpc(
 
         for y in 0..h {
             let row_base = (tmp_offset + y * TMP_STRIDE) as isize;
-            let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth16>(w);
+            let row_off = p_base.wrapping_add_signed(y as isize * stride);
 
             for x in 0..w {
-                let px = dst_row[x] as i32;
+                let px = p_guard[row_off + x] as i32;
                 let mut sum = 0i32;
                 let base = row_base + x as isize;
 
@@ -1590,7 +1602,7 @@ fn cdef_filter_block_scalar_16bpc(
                 }
 
                 let result = px + (sum - (sum < 0) as i32 + 8 >> 4);
-                dst_row[x] = iclip(result, 0, bitdepth_max) as u16;
+                p_guard[row_off + x] = iclip(result, 0, bitdepth_max) as u16;
             }
         }
     }
