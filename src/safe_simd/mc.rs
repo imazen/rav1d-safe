@@ -6079,56 +6079,59 @@ fn v_filter_bilin_8bpc_avx2_inner(
     bd_max: i16,
 ) {
     let mut dst = dst.flex_mut();
-    let my = my as i16;
+    let my = my as i32;
     let coeff0 = 16 - my;
     let coeff1 = my;
 
-    let c0 = _mm256_set1_epi16(coeff0);
-    let c1 = _mm256_set1_epi16(coeff1);
-    let rnd = if sh > 0 {
-        _mm256_set1_epi16(1 << (sh - 1))
-    } else {
-        _mm256_setzero_si256()
-    };
+    // Use 32-bit arithmetic to avoid i16 overflow.
+    // Intermediate values can be up to 4080 (16*255 for 8bpc), and
+    // coeff * mid can reach 16 * 4080 = 65280, exceeding i16 range.
+    let c0_32 = _mm256_set1_epi32(coeff0);
+    let c1_32 = _mm256_set1_epi32(coeff1);
+    let rnd = _mm256_set1_epi32(if sh > 0 { 1 << (sh - 1) } else { 0 });
     let zero = _mm256_setzero_si256();
-    let max = _mm256_set1_epi16(bd_max);
+    let max_32 = _mm256_set1_epi32(bd_max as i32);
     let sh_reg = _mm_cvtsi32_si128(sh as i32);
 
     let mut x = 0;
-    while x + 16 <= w {
-        // Load 16 i16 values from each row
-        let row0 = loadu_256!(<&[i16; 16]>::try_from(&mid[0][x..x + 16]).unwrap());
-        let row1 = loadu_256!(<&[i16; 16]>::try_from(&mid[1][x..x + 16]).unwrap());
+    // Process 8 pixels at a time using 32-bit arithmetic
+    while x + 8 <= w {
+        // Load 8 i16 values from each row and sign-extend to i32
+        let row0 = _mm256_cvtepi16_epi32(loadu_128!(
+            <&[i16; 8]>::try_from(&mid[0][x..x + 8]).unwrap()
+        ));
+        let row1 = _mm256_cvtepi16_epi32(loadu_128!(
+            <&[i16; 8]>::try_from(&mid[1][x..x + 8]).unwrap()
+        ));
 
-        // result = coeff0 * row0 + coeff1 * row1
-        let mul0 = _mm256_mullo_epi16(row0, c0);
-        let mul1 = _mm256_mullo_epi16(row1, c1);
-        let sum = _mm256_add_epi16(mul0, mul1);
+        // result = coeff0 * row0 + coeff1 * row1 (32-bit, no overflow)
+        let mul0 = _mm256_mullo_epi32(row0, c0_32);
+        let mul1 = _mm256_mullo_epi32(row1, c1_32);
+        let sum = _mm256_add_epi32(mul0, mul1);
 
-        // Add rounding and shift (using variable shift)
-        let result = _mm256_sra_epi16(_mm256_add_epi16(sum, rnd), sh_reg);
+        // Add rounding and shift
+        let result = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), sh_reg);
 
         // Clamp to [0, bd_max]
-        let result = _mm256_max_epi16(result, zero);
-        let result = _mm256_min_epi16(result, max);
+        let result = _mm256_max_epi32(result, zero);
+        let result = _mm256_min_epi32(result, max_32);
 
-        // Pack to 8-bit
-        let packed = _mm256_packus_epi16(result, result);
-        let packed = _mm256_permute4x64_epi64(packed, 0xD8); // Fix lane order
+        // Pack 32-bit to 16-bit, then 16-bit to 8-bit
+        let packed16 = _mm256_packs_epi32(result, result);
+        let packed16 = _mm256_permute4x64_epi64(packed16, 0xD8);
+        let packed8 = _mm256_packus_epi16(packed16, packed16);
 
-        // Store 16 bytes
-        storeu_128!(
-            <&mut [u8; 16]>::try_from(&mut dst[x..x + 16]).unwrap(),
-            _mm256_castsi256_si128(packed)
-        );
-        x += 16;
+        // Store 8 bytes
+        let result_64 = _mm256_extract_epi64(packed8, 0);
+        dst[x..x + 8].copy_from_slice(&result_64.to_ne_bytes());
+        x += 8;
     }
 
     // Scalar fallback
     while x < w {
         let r0 = mid[0][x] as i32;
         let r1 = mid[1][x] as i32;
-        let pixel = coeff0 as i32 * r0 + coeff1 as i32 * r1;
+        let pixel = coeff0 * r0 + coeff1 * r1;
         let result = if sh > 0 {
             ((pixel + (1 << (sh - 1))) >> sh).clamp(0, bd_max as i32)
         } else {
@@ -6187,10 +6190,10 @@ fn h_bilin_8bpc_put_avx2_inner(_token: Desktop64, dst: &mut [u8], src: &[u8], w:
         let result_lo = _mm256_max_epi16(_mm256_min_epi16(result_lo, max), zero);
         let result_hi = _mm256_max_epi16(_mm256_min_epi16(result_hi, max), zero);
 
-        // Fix lane order and pack to u8
-        let lo_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x20);
-        let hi_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x31);
-        let packed = _mm256_packus_epi16(lo_128, hi_128);
+        // Pack to u8: packus_epi16 operates within 128-bit lanes, and
+        // result_lo/result_hi already have matching lane layout from unpack,
+        // so packus(result_lo, result_hi) produces correct sequential order.
+        let packed = _mm256_packus_epi16(result_lo, result_hi);
 
         storeu_256!(
             <&mut [u8; 32]>::try_from(&mut dst[x..x + 32]).unwrap(),
@@ -6255,12 +6258,10 @@ fn v_bilin_8bpc_direct_avx2_inner(
         let result_lo = _mm256_sra_epi16(_mm256_add_epi16(result_lo, rnd), sh_reg);
         let result_hi = _mm256_sra_epi16(_mm256_add_epi16(result_hi, rnd), sh_reg);
 
-        let result_lo = _mm256_max_epi16(_mm256_min_epi16(result_lo, max), zero);
-        let result_hi = _mm256_max_epi16(_mm256_min_epi16(result_hi, max), zero);
-
-        let lo_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x20);
-        let hi_128 = _mm256_permute2x128_si256(result_lo, result_hi, 0x31);
-        let packed = _mm256_packus_epi16(lo_128, hi_128);
+        // packus_epi16 operates within 128-bit lanes, so with result_lo
+        // holding elements [0..7 | 16..23] and result_hi holding [8..15 | 24..31],
+        // packus(result_lo, result_hi) correctly produces [0..31] in order.
+        let packed = _mm256_packus_epi16(result_lo, result_hi);
 
         storeu_256!(
             <&mut [u8; 32]>::try_from(&mut dst[x..x + 32]).unwrap(),
@@ -6489,6 +6490,7 @@ fn prep_bilin_8bpc_avx2_impl_inner(
             }
 
             // Second pass: vertical filter to output i16 buffer
+            // For 8bpc: PREP_BIAS=0, so result = ((pixel + 8) >> 4)
             for y in 0..h {
                 let dst_row = y * w;
                 for x in 0..w {
@@ -6497,26 +6499,30 @@ fn prep_bilin_8bpc_avx2_impl_inner(
                     let coeff0 = 16 - my as i32;
                     let coeff1 = my as i32;
                     let pixel = coeff0 * r0 + coeff1 * r1;
-                    // For prep, we keep intermediate precision
-                    let result =
-                        (pixel + (1 << (3 + intermediate_bits))) >> (4 + intermediate_bits);
-                    tmp[dst_row + x] = ((result - 8192) << 4) as i16; // Apply PREP_BIAS adjustment
+                    let result = (pixel + 8) >> 4;
+                    tmp[dst_row + x] = result as i16; // PREP_BIAS = 0 for 8bpc
                 }
             }
         }
         (true, false) => {
             // Case 2: H-only filtering
+            // For 8bpc: intermediate_bits=4, scalar does rnd(4-4)=rnd(0)=no shift
+            // PREP_BIAS=0, so output = (16-mx)*src[x] + mx*src[x+1] unshifted
             for y in 0..h {
                 let src_row_base = (y as isize * src_stride) as usize;
                 let src_row = &src[src_row_base..];
                 let dst_row = y * w;
 
                 let mut tmp_buf = [0i16; MID_STRIDE];
-                h_filter_bilin_8bpc_avx2_inner(_token, &mut tmp_buf, src_row, w, mx, 4);
+                // sh=0: no shift, keep full precision
+                h_filter_bilin_8bpc_avx2_inner(
+                    _token, &mut tmp_buf, src_row, w, mx,
+                    4 - intermediate_bits, // sh = 0 for 8bpc
+                );
 
-                // Convert to prep format with bias
+                // PREP_BIAS = 0 for 8bpc, output directly
                 for x in 0..w {
-                    tmp[dst_row + x] = (tmp_buf[x] - 8192 / 16) << 4;
+                    tmp[dst_row + x] = tmp_buf[x];
                 }
             }
         }
@@ -6531,20 +6537,23 @@ fn prep_bilin_8bpc_avx2_impl_inner(
                     let coeff0 = 16 - my as i32;
                     let coeff1 = my as i32;
                     let pixel = coeff0 * r0 + coeff1 * r1;
-                    let result = (pixel + 8) >> 4; // sh = 4
-                    tmp[dst_row + x] = ((result - 512) << 4) as i16;
+                    // V-only prep 8bpc: rnd(4-ib)=rnd(0)=no shift, PREP_BIAS=0
+                    // Raw bilinear value [0, 4080] fits in i16
+                    tmp[dst_row + x] = pixel as i16;
                 }
             }
         }
         (false, false) => {
             // Case 4: Simple copy to prep format
+            // For 8bpc: intermediate_bits=4, PREP_BIAS=0
+            // Formula: (pixel << intermediate_bits) - PREP_BIAS = pixel << 4
             for y in 0..h {
                 let src_row_base = (y as isize * src_stride) as usize;
                 let src_row = &src[src_row_base..];
                 let dst_row = y * w;
                 for x in 0..w {
                     let pixel = src_row[x] as i16;
-                    tmp[dst_row + x] = (pixel - 512) << 4; // Center around 0
+                    tmp[dst_row + x] = pixel << intermediate_bits;
                 }
             }
         }
