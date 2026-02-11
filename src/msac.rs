@@ -370,6 +370,26 @@ const _: () = assert!(EC_MIN_PROB <= (1 << EC_PROB_SHIFT) / 16);
 
 const EC_WIN_SIZE: usize = mem::size_of::<EcWin>() << 3;
 
+/// Branchless CDF update after symbol decode.
+///
+/// For i < val: cdf[i] += (32768 - cdf[i]) >> rate (probability increases)
+/// For i >= val: cdf[i] -= cdf[i] >> rate (probability decreases)
+///
+/// Uses mask-select to avoid branches on the val boundary.
+#[inline(always)]
+fn update_cdf(cdf: &mut [u16], n: usize, val: usize, rate: u16, count: u16) {
+    for i in 0..n {
+        let mask = ((i < val) as u16).wrapping_neg(); // 0xFFFF if below val, 0 otherwise
+        let delta_up = (32768u16.wrapping_sub(cdf[i])) >> rate;
+        let delta_dn = cdf[i] >> rate;
+        // Apply increase (delta_up) if below val, decrease (delta_dn) if at/above val
+        cdf[i] = cdf[i]
+            .wrapping_add(delta_up & mask)
+            .wrapping_sub(delta_dn & !mask);
+    }
+    cdf[n] = count + (count < 32) as u16;
+}
+
 #[inline]
 #[cold]
 fn ctx_refill(s: &mut MsacContext) {
@@ -488,16 +508,11 @@ fn rav1d_msac_decode_symbol_adapt_rust(s: &mut MsacContext, cdf: &mut [u16], n_s
         u - v,
     );
     if s.allow_update_cdf() {
-        let count = cdf[n_symbols as usize];
+        let n_usize = n_symbols as usize;
+        let count = cdf[n_usize];
         let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
         let val = val as usize;
-        for cdf in &mut cdf[..val] {
-            *cdf += (1 << 15) - *cdf >> rate;
-        }
-        for cdf in &mut cdf[val..n_symbols as usize] {
-            *cdf -= *cdf >> rate;
-        }
-        cdf[n_symbols as usize] = count + (count < 32) as u16;
+        update_cdf(cdf, n_usize, val, rate, count);
     }
     debug_assert!(val <= n_symbols as _);
     val as u8
@@ -542,12 +557,7 @@ fn rav1d_msac_decode_bool_adapt_rust(s: &mut MsacContext, cdf: &mut [u16; 2]) ->
     if s.allow_update_cdf() {
         let count = cdf[1];
         let rate = 4 + (count >> 4);
-        if bit {
-            cdf[0] += (1 << 15) - cdf[0] >> rate;
-        } else {
-            cdf[0] -= cdf[0] >> rate;
-        }
-        cdf[1] = count + (count < 32) as u16;
+        update_cdf(cdf, 1, bit as usize, rate, count);
     }
     bit
 }
@@ -639,14 +649,7 @@ fn rav1d_msac_decode_symbol_adapt4_branchless(
         let n_usize = n_symbols as usize;
         let count = cdf[n_usize];
         let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
-        let val_usize = val as usize;
-        for i in 0..val_usize {
-            cdf[i] += (1u16 << 15).wrapping_sub(cdf[i]) >> rate;
-        }
-        for i in val_usize..n_usize {
-            cdf[i] -= cdf[i] >> rate;
-        }
-        cdf[n_usize] = count + (count < 32) as u16;
+        update_cdf(cdf, n_usize, val as usize, rate, count);
     }
 
     val as u8
@@ -696,14 +699,7 @@ fn rav1d_msac_decode_symbol_adapt8_branchless(
         let n_usize = n_symbols as usize;
         let count = cdf[n_usize];
         let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
-        let val_usize = val as usize;
-        for i in 0..val_usize {
-            cdf[i] += (1u16 << 15).wrapping_sub(cdf[i]) >> rate;
-        }
-        for i in val_usize..n_usize {
-            cdf[i] -= cdf[i] >> rate;
-        }
-        cdf[n_usize] = count + (count < 32) as u16;
+        update_cdf(cdf, n_usize, val as usize, rate, count);
     }
 
     val as u8
@@ -780,15 +776,7 @@ fn rav1d_msac_decode_symbol_adapt16_avx2(
     if s.allow_update_cdf() {
         let count = cdf[n];
         let rate = 4 + (count >> 4) + 1; // n_symbols > 2 always true for adapt16
-        let val_usize = val as usize;
-
-        for i in 0..val_usize {
-            cdf[i] = cdf[i].wrapping_add(((1u16 << 15).wrapping_sub(cdf[i])) >> rate);
-        }
-        for i in val_usize..n {
-            cdf[i] = cdf[i].wrapping_sub(cdf[i] >> rate);
-        }
-        cdf[n] = count + (count < 32) as u16;
+        update_cdf(cdf, n, val as usize, rate, count);
     }
 
     // Renormalize
@@ -907,15 +895,7 @@ fn rav1d_msac_decode_symbol_adapt16_neon(
     if s.allow_update_cdf() {
         let count = cdf[n];
         let rate = 4 + (count >> 4) + 1;
-        let val_usize = val as usize;
-
-        for i in 0..val_usize {
-            cdf[i] = cdf[i].wrapping_add(((1u16 << 15).wrapping_sub(cdf[i])) >> rate);
-        }
-        for i in val_usize..n {
-            cdf[i] = cdf[i].wrapping_sub(cdf[i] >> rate);
-        }
-        cdf[n] = count + (count < 32) as u16;
+        update_cdf(cdf, n, val as usize, rate, count);
     }
 
     // Renormalize
@@ -962,7 +942,6 @@ impl MsacContext {
 ///
 /// `n_symbols` is in the range `0..4`.
 #[inline(always)]
-#[inline(always)]
 pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
     debug_assert!(n_symbols < 4);
     let ret;
@@ -990,7 +969,6 @@ pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_s
 /// Return value is in the range `0..=n_symbols`.
 ///
 /// `n_symbols` is in the range `0..8`.
-#[inline(always)]
 #[inline(always)]
 pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
     debug_assert!(n_symbols < 8);
@@ -1021,7 +999,6 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
 /// `n_symbols` is in the range `0..16`.
 #[inline(always)]
 #[cfg_attr(feature = "asm", allow(unsafe_code))]
-#[inline(always)]
 pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
     debug_assert!(n_symbols < 16);
     let ret;
