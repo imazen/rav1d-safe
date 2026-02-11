@@ -98,7 +98,7 @@ fn generate_grain_y_inner_8bpc(buf: &mut GrainLut<i8>, data: &Rav1dFilmGrainData
             let mut sum: i32 = 0;
             for dy in (AR_PAD - ar_lag)..=AR_PAD {
                 for dx in (AR_PAD - ar_lag)..=(AR_PAD + ar_lag) {
-                    if dx == ar_lag && dy - (AR_PAD - ar_lag) == ar_lag {
+                    if dx == AR_PAD && dy == AR_PAD {
                         break;
                     }
                     sum += data.ar_coeffs_y[coeff_idx] as i32 * buf[y + dy][x + dx] as i32;
@@ -153,7 +153,7 @@ fn generate_grain_y_inner_16bpc(buf: &mut GrainLut<i16>, data: &Rav1dFilmGrainDa
             let mut sum: i32 = 0;
             for dy in (AR_PAD - ar_lag)..=AR_PAD {
                 for dx in (AR_PAD - ar_lag)..=(AR_PAD + ar_lag) {
-                    if dx == ar_lag && dy - (AR_PAD - ar_lag) == ar_lag {
+                    if dx == AR_PAD && dy == AR_PAD {
                         break;
                     }
                     sum += data.ar_coeffs_y[coeff_idx] as i32 * buf[y + dy][x + dx] as i32;
@@ -206,7 +206,7 @@ fn generate_grain_uv_inner_8bpc(
             let mut sum: i32 = 0;
             for dy in (AR_PAD - ar_lag)..=AR_PAD {
                 for dx in (AR_PAD - ar_lag)..=(AR_PAD + ar_lag) {
-                    if dx == ar_lag && dy - (AR_PAD - ar_lag) == ar_lag {
+                    if dx == AR_PAD && dy == AR_PAD {
                         // Luma contribution
                         let luma_y = (y << is_suby as usize) + AR_PAD;
                         let luma_x = (x << is_subx as usize) + AR_PAD;
@@ -318,7 +318,7 @@ fn generate_grain_uv_inner_16bpc(
             let mut sum: i32 = 0;
             for dy in (AR_PAD - ar_lag)..=AR_PAD {
                 for dx in (AR_PAD - ar_lag)..=(AR_PAD + ar_lag) {
-                    if dx == ar_lag && dy - (AR_PAD - ar_lag) == ar_lag {
+                    if dx == AR_PAD && dy == AR_PAD {
                         let luma_y = (y << is_suby as usize) + AR_PAD;
                         let luma_x = (x << is_subx as usize) + AR_PAD;
                         let mut luma: i32 = 0;
@@ -750,13 +750,18 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
         };
 
         let (offx, offy) = grain_offsets(offsets[0][0], false, false);
-        let (prev_offx, _) = if data.overlap_flag && bx != 0 {
+        let (offx_10, offy_10) = if data.overlap_flag && bx != 0 {
             grain_offsets(offsets[1][0], false, false)
         } else {
             (0, 0)
         };
-        let (_, prev_offy) = if data.overlap_flag && row_num != 0 {
+        let (offx_01, offy_01) = if data.overlap_flag && row_num != 0 {
             grain_offsets(offsets[0][1], false, false)
+        } else {
+            (0, 0)
+        };
+        let (offx_11, offy_11) = if data.overlap_flag && bx != 0 && row_num != 0 {
+            grain_offsets(offsets[1][1], false, false)
         } else {
             (0, 0)
         };
@@ -775,7 +780,7 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
                 unsafe {
                     let sv = *src_ptr.add(x) as usize;
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                    let old = (*grain_lut)[offy_10 + y][offx_10 + x + FG_BLOCK_SIZE] as i32;
                     let blended = round2(old * W[x][0] + grain * W[x][1], 5);
                     let blended = blended.clamp(-128, 127);
                     let sc = *scaling.add(sv) as i32;
@@ -819,7 +824,7 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
                 unsafe {
                     let sv = *src_ptr.add(x) as usize;
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
+                    let old = (*grain_lut)[offy_01 + y + FG_BLOCK_SIZE][offx_01 + x] as i32;
                     let blended = round2(old * W[y][0] + grain * W[y][1], 5);
                     let blended = blended.clamp(-128, 127);
                     let sc = *scaling.add(sv) as i32;
@@ -834,14 +839,14 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
                 unsafe {
                     let sv = *src_ptr.add(x) as usize;
 
-                    let top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
-                    let old_top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE]
-                        [prev_offx + x + FG_BLOCK_SIZE] as i32;
+                    let top = (*grain_lut)[offy_01 + y + FG_BLOCK_SIZE][offx_01 + x] as i32;
+                    let old_top = (*grain_lut)[offy_11 + y + FG_BLOCK_SIZE]
+                        [offx_11 + x + FG_BLOCK_SIZE] as i32;
                     let top = round2(old_top * W[x][0] + top * W[x][1], 5);
                     let top = top.clamp(-128, 127);
 
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                    let old = (*grain_lut)[offy_10 + y][offx_10 + x + FG_BLOCK_SIZE] as i32;
                     let grain = round2(old * W[x][0] + grain * W[x][1], 5);
                     let grain = grain.clamp(-128, 127);
 
@@ -934,13 +939,18 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_avx2(
         };
 
         let (offx, offy) = grain_offsets(offsets[0][0], false, false);
-        let (prev_offx, _) = if data.overlap_flag && bx != 0 {
+        let (offx_10, offy_10) = if data.overlap_flag && bx != 0 {
             grain_offsets(offsets[1][0], false, false)
         } else {
             (0, 0)
         };
-        let (_, prev_offy) = if data.overlap_flag && row_num != 0 {
+        let (offx_01, offy_01) = if data.overlap_flag && row_num != 0 {
             grain_offsets(offsets[0][1], false, false)
+        } else {
+            (0, 0)
+        };
+        let (offx_11, offy_11) = if data.overlap_flag && bx != 0 && row_num != 0 {
+            grain_offsets(offsets[1][1], false, false)
         } else {
             (0, 0)
         };
@@ -957,7 +967,7 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_avx2(
                 unsafe {
                     let sv = *src_ptr.add(x) as usize;
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                    let old = (*grain_lut)[offy_10 + y][offx_10 + x + FG_BLOCK_SIZE] as i32;
                     let blended = round2(old * W[x][0] + grain * W[x][1], 5);
                     let blended = blended.clamp(grain_min, grain_max);
                     let sc = *scaling.add(cmp::min(sv, bitdepth_max as usize)) as i32;
@@ -1020,7 +1030,7 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_avx2(
                 unsafe {
                     let sv = cmp::min(*src_ptr.add(x) as usize, bitdepth_max as usize);
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
+                    let old = (*grain_lut)[offy_01 + y + FG_BLOCK_SIZE][offx_01 + x] as i32;
                     let blended = round2(old * W[y][0] + grain * W[y][1], 5);
                     let blended = blended.clamp(grain_min, grain_max);
                     let sc = *scaling.add(sv) as i32;
@@ -1033,14 +1043,14 @@ pub unsafe extern "C" fn fgy_32x32xn_16bpc_avx2(
             for x in 0..xstart {
                 unsafe {
                     let sv = cmp::min(*src_ptr.add(x) as usize, bitdepth_max as usize);
-                    let top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
-                    let old_top = (*grain_lut)[prev_offy + y + FG_BLOCK_SIZE]
-                        [prev_offx + x + FG_BLOCK_SIZE] as i32;
+                    let top = (*grain_lut)[offy_01 + y + FG_BLOCK_SIZE][offx_01 + x] as i32;
+                    let old_top = (*grain_lut)[offy_11 + y + FG_BLOCK_SIZE]
+                        [offx_11 + x + FG_BLOCK_SIZE] as i32;
                     let top =
                         round2(old_top * W[x][0] + top * W[x][1], 5).clamp(grain_min, grain_max);
 
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                    let old = (*grain_lut)[offy_10 + y][offx_10 + x + FG_BLOCK_SIZE] as i32;
                     let grain =
                         round2(old * W[x][0] + grain * W[x][1], 5).clamp(grain_min, grain_max);
 
@@ -1131,13 +1141,18 @@ fn fguv_inner_8bpc(
         };
 
         let (offx, offy) = grain_offsets(offsets[0][0], is_sx, is_sy);
-        let (prev_offx, _) = if data.overlap_flag && bx != 0 {
+        let (offx_10, offy_10) = if data.overlap_flag && bx != 0 {
             grain_offsets(offsets[1][0], is_sx, is_sy)
         } else {
             (0, 0)
         };
-        let (_, prev_offy) = if data.overlap_flag && row_num != 0 {
+        let (offx_01, offy_01) = if data.overlap_flag && row_num != 0 {
             grain_offsets(offsets[0][1], is_sx, is_sy)
+        } else {
+            (0, 0)
+        };
+        let (offx_11, offy_11) = if data.overlap_flag && bx != 0 && row_num != 0 {
+            grain_offsets(offsets[1][1], is_sx, is_sy)
         } else {
             (0, 0)
         };
@@ -1174,7 +1189,7 @@ fn fguv_inner_8bpc(
             for x in 0..xstart {
                 unsafe {
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                    let old = (*grain_lut)[offy_10 + y][offx_10 + x + (FG_BLOCK_SIZE >> sx)] as i32;
                     let blended = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5);
                     let blended = blended.clamp(grain_min, grain_max);
                     *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
@@ -1289,7 +1304,7 @@ fn fguv_inner_8bpc(
             for x in xstart..bw {
                 unsafe {
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
+                    let old = (*grain_lut)[offy_01 + y + (FG_BLOCK_SIZE >> sy)][offx_01 + x] as i32;
                     let blended = round2(old * W[sy][y][0] + grain * W[sy][y][1], 5);
                     let blended = blended.clamp(grain_min, grain_max);
                     *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
@@ -1298,15 +1313,15 @@ fn fguv_inner_8bpc(
 
             for x in 0..xstart {
                 unsafe {
-                    let top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
-                    let old_top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
-                        [prev_offx + x + (FG_BLOCK_SIZE >> sx)]
+                    let top = (*grain_lut)[offy_01 + y + (FG_BLOCK_SIZE >> sy)][offx_01 + x] as i32;
+                    let old_top = (*grain_lut)[offy_11 + y + (FG_BLOCK_SIZE >> sy)]
+                        [offx_11 + x + (FG_BLOCK_SIZE >> sx)]
                         as i32;
                     let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5)
                         .clamp(grain_min, grain_max);
 
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                    let old = (*grain_lut)[offy_10 + y][offx_10 + x + (FG_BLOCK_SIZE >> sx)] as i32;
                     let grain = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5)
                         .clamp(grain_min, grain_max);
 
@@ -1568,13 +1583,18 @@ fn fguv_inner_16bpc(
         };
 
         let (offx, offy) = grain_offsets(offsets[0][0], is_sx, is_sy);
-        let (prev_offx, _) = if data.overlap_flag && bx != 0 {
+        let (offx_10, offy_10) = if data.overlap_flag && bx != 0 {
             grain_offsets(offsets[1][0], is_sx, is_sy)
         } else {
             (0, 0)
         };
-        let (_, prev_offy) = if data.overlap_flag && row_num != 0 {
+        let (offx_01, offy_01) = if data.overlap_flag && row_num != 0 {
             grain_offsets(offsets[0][1], is_sx, is_sy)
+        } else {
+            (0, 0)
+        };
+        let (offx_11, offy_11) = if data.overlap_flag && bx != 0 && row_num != 0 {
+            grain_offsets(offsets[1][1], is_sx, is_sy)
         } else {
             (0, 0)
         };
@@ -1592,7 +1612,7 @@ fn fguv_inner_16bpc(
             for x in 0..xstart {
                 unsafe {
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                    let old = (*grain_lut)[offy_10 + y][offx_10 + x + (FG_BLOCK_SIZE >> sx)] as i32;
                     let blended = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5)
                         .clamp(grain_min, grain_max);
                     *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
@@ -1620,7 +1640,7 @@ fn fguv_inner_16bpc(
             for x in xstart..bw {
                 unsafe {
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
+                    let old = (*grain_lut)[offy_01 + y + (FG_BLOCK_SIZE >> sy)][offx_01 + x] as i32;
                     let blended = round2(old * W[sy][y][0] + grain * W[sy][y][1], 5)
                         .clamp(grain_min, grain_max);
                     *dst_ptr.add(x) = noise_uv(*src_ptr.add(x), blended, luma_ptr, x << sx);
@@ -1629,15 +1649,15 @@ fn fguv_inner_16bpc(
 
             for x in 0..xstart {
                 unsafe {
-                    let top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
-                    let old_top = (*grain_lut)[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
-                        [prev_offx + x + (FG_BLOCK_SIZE >> sx)]
+                    let top = (*grain_lut)[offy_01 + y + (FG_BLOCK_SIZE >> sy)][offx_01 + x] as i32;
+                    let old_top = (*grain_lut)[offy_11 + y + (FG_BLOCK_SIZE >> sy)]
+                        [offx_11 + x + (FG_BLOCK_SIZE >> sx)]
                         as i32;
                     let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5)
                         .clamp(grain_min, grain_max);
 
                     let grain = (*grain_lut)[offy + y][offx + x] as i32;
-                    let old = (*grain_lut)[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                    let old = (*grain_lut)[offy_10 + y][offx_10 + x + (FG_BLOCK_SIZE >> sx)] as i32;
                     let grain = round2(old * W[sx][x][0] + grain * W[sx][x][1], 5)
                         .clamp(grain_min, grain_max);
 
@@ -1771,14 +1791,21 @@ fn fgy_inner_8bpc(
             0
         };
 
+        // Compute offset pairs for all 4 (bx, by) combinations.
+        // Each combination uses its own randval to compute BOTH offx and offy.
         let (offx, offy) = grain_offsets(offsets[0][0], false, false);
-        let (prev_offx, _) = if data.overlap_flag && bx != 0 {
+        let (offx_10, offy_10) = if data.overlap_flag && bx != 0 {
             grain_offsets(offsets[1][0], false, false)
         } else {
             (0, 0)
         };
-        let (_, prev_offy) = if data.overlap_flag && row_num != 0 {
+        let (offx_01, offy_01) = if data.overlap_flag && row_num != 0 {
             grain_offsets(offsets[0][1], false, false)
+        } else {
+            (0, 0)
+        };
+        let (offx_11, offy_11) = if data.overlap_flag && bx != 0 && row_num != 0 {
+            grain_offsets(offsets[1][1], false, false)
         } else {
             (0, 0)
         };
@@ -1791,7 +1818,7 @@ fn fgy_inner_8bpc(
             for x in 0..xstart {
                 let sv = src[base + x] as usize;
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                let old = grain_lut[offy_10 + y][offx_10 + x + FG_BLOCK_SIZE] as i32;
                 let blended = round2(old * W[x][0] + grain * W[x][1], 5);
                 let blended = blended.clamp(-128, 127);
                 let sc = scaling[sv] as i32;
@@ -1824,7 +1851,7 @@ fn fgy_inner_8bpc(
             for x in xstart..bw {
                 let sv = src[base + x] as usize;
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
+                let old = grain_lut[offy_01 + y + FG_BLOCK_SIZE][offx_01 + x] as i32;
                 let blended = round2(old * W[y][0] + grain * W[y][1], 5);
                 let blended = blended.clamp(-128, 127);
                 let sc = scaling[sv] as i32;
@@ -1836,13 +1863,13 @@ fn fgy_inner_8bpc(
             for x in 0..xstart {
                 let sv = src[base + x] as usize;
 
-                let top = grain_lut[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
+                let top = grain_lut[offy_01 + y + FG_BLOCK_SIZE][offx_01 + x] as i32;
                 let old_top =
-                    grain_lut[prev_offy + y + FG_BLOCK_SIZE][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                    grain_lut[offy_11 + y + FG_BLOCK_SIZE][offx_11 + x + FG_BLOCK_SIZE] as i32;
                 let top = round2(old_top * W[x][0] + top * W[x][1], 5).clamp(-128, 127);
 
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                let old = grain_lut[offy_10 + y][offx_10 + x + FG_BLOCK_SIZE] as i32;
                 let grain = round2(old * W[x][0] + grain * W[x][1], 5).clamp(-128, 127);
 
                 let blended = round2(top * W[y][0] + grain * W[y][1], 5).clamp(-128, 127);
@@ -1921,13 +1948,18 @@ fn fgy_inner_16bpc(
         };
 
         let (offx, offy) = grain_offsets(offsets[0][0], false, false);
-        let (prev_offx, _) = if data.overlap_flag && bx != 0 {
+        let (offx_10, offy_10) = if data.overlap_flag && bx != 0 {
             grain_offsets(offsets[1][0], false, false)
         } else {
             (0, 0)
         };
-        let (_, prev_offy) = if data.overlap_flag && row_num != 0 {
+        let (offx_01, offy_01) = if data.overlap_flag && row_num != 0 {
             grain_offsets(offsets[0][1], false, false)
+        } else {
+            (0, 0)
+        };
+        let (offx_11, offy_11) = if data.overlap_flag && bx != 0 && row_num != 0 {
+            grain_offsets(offsets[1][1], false, false)
         } else {
             (0, 0)
         };
@@ -1939,7 +1971,7 @@ fn fgy_inner_16bpc(
             for x in 0..xstart {
                 let sv = src[base + x] as usize;
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                let old = grain_lut[offy_10 + y][offx_10 + x + FG_BLOCK_SIZE] as i32;
                 let blended =
                     round2(old * W[x][0] + grain * W[x][1], 5).clamp(grain_min, grain_max);
                 let sc = scaling[cmp::min(sv, bitdepth_max as usize)] as i32;
@@ -1986,7 +2018,7 @@ fn fgy_inner_16bpc(
             for x in xstart..bw {
                 let sv = cmp::min(src[base + x] as usize, bitdepth_max as usize);
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
+                let old = grain_lut[offy_01 + y + FG_BLOCK_SIZE][offx_01 + x] as i32;
                 let blended =
                     round2(old * W[y][0] + grain * W[y][1], 5).clamp(grain_min, grain_max);
                 let sc = scaling[sv] as i32;
@@ -1996,13 +2028,13 @@ fn fgy_inner_16bpc(
 
             for x in 0..xstart {
                 let sv = cmp::min(src[base + x] as usize, bitdepth_max as usize);
-                let top = grain_lut[prev_offy + y + FG_BLOCK_SIZE][offx + x] as i32;
+                let top = grain_lut[offy_01 + y + FG_BLOCK_SIZE][offx_01 + x] as i32;
                 let old_top =
-                    grain_lut[prev_offy + y + FG_BLOCK_SIZE][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                    grain_lut[offy_11 + y + FG_BLOCK_SIZE][offx_11 + x + FG_BLOCK_SIZE] as i32;
                 let top = round2(old_top * W[x][0] + top * W[x][1], 5).clamp(grain_min, grain_max);
 
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[offy + y][prev_offx + x + FG_BLOCK_SIZE] as i32;
+                let old = grain_lut[offy_10 + y][offx_10 + x + FG_BLOCK_SIZE] as i32;
                 let grain = round2(old * W[x][0] + grain * W[x][1], 5).clamp(grain_min, grain_max);
 
                 let blended =
@@ -2133,13 +2165,18 @@ fn fguv_inner_safe_8bpc(
         };
 
         let (offx, offy) = grain_offsets(offsets[0][0], is_sx, is_sy);
-        let (prev_offx, _) = if data.overlap_flag && bx != 0 {
+        let (offx_10, offy_10) = if data.overlap_flag && bx != 0 {
             grain_offsets(offsets[1][0], is_sx, is_sy)
         } else {
             (0, 0)
         };
-        let (_, prev_offy) = if data.overlap_flag && row_num != 0 {
+        let (offx_01, offy_01) = if data.overlap_flag && row_num != 0 {
             grain_offsets(offsets[0][1], is_sx, is_sy)
+        } else {
+            (0, 0)
+        };
+        let (offx_11, offy_11) = if data.overlap_flag && bx != 0 && row_num != 0 {
+            grain_offsets(offsets[1][1], is_sx, is_sy)
         } else {
             (0, 0)
         };
@@ -2152,7 +2189,7 @@ fn fguv_inner_safe_8bpc(
             // x-overlap (scalar)
             for x in 0..xstart {
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                let old = grain_lut[offy_10 + y][offx_10 + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let blended =
                     round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
                 dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
@@ -2254,21 +2291,21 @@ fn fguv_inner_safe_8bpc(
 
             for x in xstart..bw {
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
+                let old = grain_lut[offy_01 + y + (FG_BLOCK_SIZE >> sy)][offx_01 + x] as i32;
                 let blended =
                     round2(old * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
                 dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
 
             for x in 0..xstart {
-                let top = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
-                let old_top = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
-                    [prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                let top = grain_lut[offy_01 + y + (FG_BLOCK_SIZE >> sy)][offx_01 + x] as i32;
+                let old_top = grain_lut[offy_11 + y + (FG_BLOCK_SIZE >> sy)]
+                    [offx_11 + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5)
                     .clamp(grain_min, grain_max);
 
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                let old = grain_lut[offy_10 + y][offx_10 + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let grain =
                     round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
 
@@ -2375,13 +2412,18 @@ fn fguv_inner_safe_16bpc(
         };
 
         let (offx, offy) = grain_offsets(offsets[0][0], is_sx, is_sy);
-        let (prev_offx, _) = if data.overlap_flag && bx != 0 {
+        let (offx_10, offy_10) = if data.overlap_flag && bx != 0 {
             grain_offsets(offsets[1][0], is_sx, is_sy)
         } else {
             (0, 0)
         };
-        let (_, prev_offy) = if data.overlap_flag && row_num != 0 {
+        let (offx_01, offy_01) = if data.overlap_flag && row_num != 0 {
             grain_offsets(offsets[0][1], is_sx, is_sy)
+        } else {
+            (0, 0)
+        };
+        let (offx_11, offy_11) = if data.overlap_flag && bx != 0 && row_num != 0 {
+            grain_offsets(offsets[1][1], is_sx, is_sy)
         } else {
             (0, 0)
         };
@@ -2393,7 +2435,7 @@ fn fguv_inner_safe_16bpc(
             // All scalar for 16bpc (no SIMD loop for complex luma dependency)
             for x in 0..xstart {
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                let old = grain_lut[offy_10 + y][offx_10 + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let blended =
                     round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
                 dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
@@ -2411,21 +2453,21 @@ fn fguv_inner_safe_16bpc(
 
             for x in xstart..bw {
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
+                let old = grain_lut[offy_01 + y + (FG_BLOCK_SIZE >> sy)][offx_01 + x] as i32;
                 let blended =
                     round2(old * W[sy][y][0] + grain * W[sy][y][1], 5).clamp(grain_min, grain_max);
                 dst[base + x] = noise_uv(src[base + x], blended, &luma[luma_base..], x << sx);
             }
 
             for x in 0..xstart {
-                let top = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)][offx + x] as i32;
-                let old_top = grain_lut[prev_offy + y + (FG_BLOCK_SIZE >> sy)]
-                    [prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                let top = grain_lut[offy_01 + y + (FG_BLOCK_SIZE >> sy)][offx_01 + x] as i32;
+                let old_top = grain_lut[offy_11 + y + (FG_BLOCK_SIZE >> sy)]
+                    [offx_11 + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let top = round2(old_top * W[sx][x][0] + top * W[sx][x][1], 5)
                     .clamp(grain_min, grain_max);
 
                 let grain = grain_lut[offy + y][offx + x] as i32;
-                let old = grain_lut[offy + y][prev_offx + x + (FG_BLOCK_SIZE >> sx)] as i32;
+                let old = grain_lut[offy_10 + y][offx_10 + x + (FG_BLOCK_SIZE >> sx)] as i32;
                 let grain =
                     round2(old * W[sx][x][0] + grain * W[sx][x][1], 5).clamp(grain_min, grain_max);
 
