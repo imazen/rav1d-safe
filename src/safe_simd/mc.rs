@@ -29,6 +29,70 @@ use crate::src::internal::COMPINTER_LEN;
 use crate::src::levels::Filter2d;
 use crate::src::strided::Strided as _;
 
+use std::cell::Cell;
+
+type Mid16x135 = Box<[[i16; MID_STRIDE]; 135]>;
+type Mid32x135 = Box<[[i32; MID_STRIDE]; 135]>;
+type Mid16x130 = Box<[[i16; MID_STRIDE]; 130]>;
+type Mid32x130 = Box<[[i32; MID_STRIDE]; 130]>;
+
+// Thread-local scratch buffers for MC intermediate data.
+// Allocated once on first use (zeroed by Box::new), then reused across all MC
+// calls. This eliminates ~520M instructions of memset per decode (25% of total).
+// The buffers don't need re-zeroing between calls because every MC function
+// fully writes the region it reads (horizontal filter writes rows 0..h+7,
+// vertical filter reads only from those written rows).
+//
+// Pattern: take() before use, set(Some(...)) after use. If a function panics
+// between take and put, the next call allocates a fresh buffer (no unsoundness).
+thread_local! {
+    static MID_I16_135: Cell<Option<Mid16x135>> = const { Cell::new(None) };
+    static MID_I32_135: Cell<Option<Mid32x135>> = const { Cell::new(None) };
+    static MID_I16_130: Cell<Option<Mid16x130>> = const { Cell::new(None) };
+    static MID_I32_130: Cell<Option<Mid32x130>> = const { Cell::new(None) };
+}
+
+#[inline(always)]
+fn take_mid_i16_135() -> Mid16x135 {
+    MID_I16_135
+        .with(|c| c.take())
+        .unwrap_or_else(|| Box::new([[0; MID_STRIDE]; 135]))
+}
+#[inline(always)]
+fn put_mid_i16_135(mid: Mid16x135) {
+    MID_I16_135.with(|c| c.set(Some(mid)));
+}
+#[inline(always)]
+fn take_mid_i32_135() -> Mid32x135 {
+    MID_I32_135
+        .with(|c| c.take())
+        .unwrap_or_else(|| Box::new([[0; MID_STRIDE]; 135]))
+}
+#[inline(always)]
+fn put_mid_i32_135(mid: Mid32x135) {
+    MID_I32_135.with(|c| c.set(Some(mid)));
+}
+#[inline(always)]
+fn take_mid_i16_130() -> Mid16x130 {
+    MID_I16_130
+        .with(|c| c.take())
+        .unwrap_or_else(|| Box::new([[0; MID_STRIDE]; 130]))
+}
+#[inline(always)]
+fn put_mid_i16_130(mid: Mid16x130) {
+    MID_I16_130.with(|c| c.set(Some(mid)));
+}
+#[inline(always)]
+fn take_mid_i32_130() -> Mid32x130 {
+    MID_I32_130
+        .with(|c| c.take())
+        .unwrap_or_else(|| Box::new([[0; MID_STRIDE]; 130]))
+}
+#[inline(always)]
+fn put_mid_i32_130(mid: Mid32x130) {
+    MID_I32_130.with(|c| c.set(Some(mid)));
+}
+
 /// Rounding constant for pmulhrsw: 1024 = (1 << 10)
 /// pmulhrsw computes: (a * b + 16384) >> 15
 /// With b=1024: (a * 1024 + 16384) >> 15 ≈ (a + 1) >> 1 (with rounding)
@@ -2021,7 +2085,7 @@ fn put_8tap_8bpc_avx2_impl_inner(
             // Case 1: Both H and V filtering
             // First pass: horizontal filter to intermediate buffer
             let tmp_h = h + 7;
-            let mut mid = [[0i16; MID_STRIDE]; 135];
+            let mut mid = take_mid_i16_135();
 
             for y in 0..tmp_h {
                 let src_row_base = (sb + (y as isize - 3) * src_stride) as usize;
@@ -2048,6 +2112,7 @@ fn put_8tap_8bpc_avx2_impl_inner(
                     255,
                 );
             }
+            put_mid_i16_135(mid);
         }
         (Some(fh), None) => {
             // Case 2: H-only filtering (full SIMD)
@@ -2799,7 +2864,7 @@ fn prep_8tap_8bpc_avx2_impl_inner(
         (Some(fh), Some(fv)) => {
             // Case 1: Both H and V filtering
             let tmp_h = h + 7;
-            let mut mid = [[0i16; MID_STRIDE]; 135];
+            let mut mid = take_mid_i16_135();
 
             // Horizontal pass
             for y in 0..tmp_h {
@@ -2821,6 +2886,7 @@ fn prep_8tap_8bpc_avx2_impl_inner(
                 let out_row = y * w;
                 v_filter_8tap_to_i16_avx2_inner(_token, &mid[y..], &mut tmp[out_row..], w, fv, 6);
             }
+            put_mid_i16_135(mid);
         }
         (Some(fh), None) => {
             // Case 2: H-only filtering
@@ -4495,7 +4561,7 @@ fn put_8tap_16bpc_avx2_impl_inner(
             if USE_SIMD_HV {
                 // Case 1: Both H and V filtering - two-pass through intermediate (SIMD)
                 let tmp_h = h + 7;
-                let mut mid = [[0i32; MID_STRIDE]; 135];
+                let mut mid = take_mid_i32_135();
                 let h_sh = 6 - intermediate_bits;
                 let v_sh = 6 + intermediate_bits;
                 for y in 0..tmp_h {
@@ -4511,12 +4577,13 @@ fn put_8tap_16bpc_avx2_impl_inner(
                 }
                 for y in 0..h {
                     let dst_row = &mut dst[(y as isize * dst_stride_elems) as usize..];
-                    v_filter_8tap_16bpc_avx2_inner(_token, dst_row, &mid, w, y, fv, v_sh, max);
+                    v_filter_8tap_16bpc_avx2_inner(_token, dst_row, &*mid, w, y, fv, v_sh, max);
                 }
+                put_mid_i32_135(mid);
             } else {
                 // Scalar H+V fallback
                 let tmp_h = h + 7;
-                let mut mid = [[0i32; MID_STRIDE]; 135];
+                let mut mid = take_mid_i32_135();
                 let h_rnd = (1 << (6 - intermediate_bits)) >> 1;
                 let h_sh = 6 - intermediate_bits;
                 for y in 0..tmp_h {
@@ -4542,6 +4609,7 @@ fn put_8tap_16bpc_avx2_impl_inner(
                         dst[(y as isize * dst_stride_elems) as usize + x] = val as u16;
                     }
                 }
+                put_mid_i32_135(mid);
             }
         }
         (Some(fh), None) => {
@@ -4694,7 +4762,7 @@ fn prep_8tap_16bpc_avx2_impl_inner(
         (Some(fh), Some(fv)) => {
             // Two-pass filtering using SIMD
             let tmp_h = h + 7;
-            let mut mid = [[0i32; MID_STRIDE]; 135];
+            let mut mid = take_mid_i32_135();
             let h_sh = 6 - intermediate_bits; // = 2 for 16bpc
             let v_sh = 6; // prep uses fixed shift of 6 for vertical pass
 
@@ -4717,7 +4785,7 @@ fn prep_8tap_16bpc_avx2_impl_inner(
                 v_filter_8tap_16bpc_prep_avx2_inner(
                     _token,
                     &mut tmp[out_row..],
-                    &mid,
+                    &*mid,
                     w,
                     y,
                     fv,
@@ -4725,6 +4793,7 @@ fn prep_8tap_16bpc_avx2_impl_inner(
                     PREP_BIAS,
                 );
             }
+            put_mid_i32_135(mid);
         }
         (Some(fh), None) => {
             // H-only filtering (SIMD)
@@ -6377,7 +6446,7 @@ fn put_bilin_8bpc_avx2_impl_inner(
             // Case 1: Both H and V filtering
             // First pass: horizontal filter to intermediate buffer
             let tmp_h = h + 1;
-            let mut mid = [[0i16; MID_STRIDE]; 130];
+            let mut mid = take_mid_i16_130();
 
             for y in 0..tmp_h {
                 let src_row_base = (y as isize * src_stride) as usize;
@@ -6406,6 +6475,7 @@ fn put_bilin_8bpc_avx2_impl_inner(
                     255,
                 );
             }
+            put_mid_i16_130(mid);
         }
         (true, false) => {
             // Case 2: H-only filtering (full SIMD)
@@ -6528,7 +6598,7 @@ fn prep_bilin_8bpc_avx2_impl_inner(
         (true, true) => {
             // Case 1: Both H and V filtering
             let tmp_h = h + 1;
-            let mut mid = [[0i16; MID_STRIDE]; 130];
+            let mut mid = take_mid_i16_130();
 
             for y in 0..tmp_h {
                 let src_row_base = (y as isize * src_stride) as usize;
@@ -6557,6 +6627,7 @@ fn prep_bilin_8bpc_avx2_impl_inner(
                     tmp[dst_row + x] = result as i16; // PREP_BIAS = 0 for 8bpc
                 }
             }
+            put_mid_i16_130(mid);
         }
         (true, false) => {
             // Case 2: H-only filtering
@@ -7724,7 +7795,7 @@ unsafe fn put_bilin_16bpc_avx2_inner(
             if my != 0 {
                 // H+V filtering using SIMD
                 let tmp_h = h + 1;
-                let mut mid = [[0i32; MID_STRIDE]; 130];
+                let mut mid = take_mid_i32_130();
 
                 // Horizontal pass using SIMD (output unshifted)
                 for y in 0..tmp_h {
@@ -7736,9 +7807,10 @@ unsafe fn put_bilin_16bpc_avx2_inner(
                 for y in 0..h {
                     let dst_row = dst.offset(y as isize * dst_stride);
                     v_bilin_16bpc_avx2_inner(
-                        _token, dst_row, &mid, w, y, my as i32, v_pass_sh, bd_max,
+                        _token, dst_row, &*mid, w, y, my as i32, v_pass_sh, bd_max,
                     );
                 }
+                put_mid_i32_130(mid);
             } else {
                 // H-only filtering (SIMD)
                 for y in 0..h {
@@ -7867,7 +7939,7 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
             if my != 0 {
                 // H+V filtering using SIMD
                 let tmp_h = h + 1;
-                let mut mid = [[0i32; MID_STRIDE]; 130];
+                let mut mid = take_mid_i32_130();
 
                 // Horizontal pass using SIMD
                 for y in 0..tmp_h {
@@ -7879,9 +7951,10 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
                 for y in 0..h {
                     let dst_row = tmp.add(y * w);
                     v_bilin_16bpc_prep_avx2_inner(
-                        _token, dst_row, &mid, w, y, my as i32, v_pass_sh, prep_bias,
+                        _token, dst_row, &*mid, w, y, my as i32, v_pass_sh, prep_bias,
                     );
                 }
+                put_mid_i32_130(mid);
             } else {
                 // H-only filtering (SIMD)
                 for y in 0..h {
