@@ -1208,7 +1208,11 @@ mod checked {
         }
 
         /// Remove a borrow by slot index. O(1).
+        #[inline]
         pub fn remove(&self, id: BorrowId) {
+            if id.0 == BorrowSlots::EMPTY_SLOT || id == BorrowId::UNCHECKED {
+                return;
+            }
             let _guard = self.lock.lock();
             // SAFETY: TinyLock is held, so we have exclusive access to slots.
             let slots = unsafe { &mut *self.slots.get() };
