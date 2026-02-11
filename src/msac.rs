@@ -548,6 +548,7 @@ unsafe extern "C" fn rav1d_msac_decode_symbol_adapt_c(
     rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols as u8) as c_uint
 }
 
+#[inline(always)]
 #[cfg_attr(
     all(feature = "asm", any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
@@ -563,6 +564,7 @@ fn rav1d_msac_decode_bool_adapt_rust(s: &mut MsacContext, cdf: &mut [u16; 2]) ->
 }
 
 /// Return value is in the range `0..=15`.
+#[inline(always)]
 #[cfg_attr(
     all(feature = "asm", any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
