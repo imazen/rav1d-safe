@@ -6,8 +6,8 @@ use std::path::PathBuf;
 mod ivf_parser;
 
 fn test_vectors_dir() -> PathBuf {
-    let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
-    PathBuf::from(target_dir).join("test-vectors")
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    PathBuf::from(manifest_dir).join("test-vectors")
 }
 
 fn find_test_ivf() -> Option<PathBuf> {

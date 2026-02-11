@@ -27,6 +27,30 @@ Pick the next unfinished module and port it. Priority order:
 
 Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with safe Rust intrinsics.
 
+## NO PERFORMANCE WORK UNTIL 100% DECODE PARITY
+
+**DO NOT do any performance optimization until pixel-perfect decode parity is verified.**
+**DO NOT do any performance optimization until pixel-perfect decode parity is verified.**
+**DO NOT do any performance optimization until pixel-perfect decode parity is verified.**
+
+This means:
+1. All 761 dav1d test vectors (8-bit/10-bit/12-bit) must produce MD5 hashes matching the reference values in `test-vectors/dav1d-test-data/*/data/meson.build`
+2. The MD5 verification tests must run automatically via `cargo test` (not `#[ignore]`)
+3. Any decode mismatch is a **correctness bug** that MUST be fixed before any perf work
+
+**What counts as "performance work":**
+- AVX2/NEON SIMD optimization of existing functions
+- Branchless/lookup table optimizations
+- Memory layout changes for cache efficiency
+- BorrowTracker overhead reduction
+- Any change whose primary goal is speed rather than correctness
+
+**What is still allowed:**
+- Fixing decode correctness bugs (mismatches vs reference MD5)
+- Building/improving test infrastructure
+- Code cleanup and refactoring for correctness
+- Bug fixes discovered by test vectors
+
 ## MANDATORY: Safe intrinsics strategy
 
 **Rust 1.93+ made value-type SIMD intrinsics safe.** Computation intrinsics (`_mm256_add_epi32`, `_mm256_shuffle_epi8`, etc.) are now safe functions — no `unsafe` needed.
