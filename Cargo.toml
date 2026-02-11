@@ -89,6 +89,8 @@ opt-level = 1
 codegen-units = 1
 panic = "abort"
 lto = "fat"
+strip = false
+debug = "line-tables-only"
 
 [profile.release-with-debug]
 inherits = "release"
