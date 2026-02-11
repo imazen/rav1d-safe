@@ -1597,25 +1597,35 @@ fn cfl_ac_rust<BD: BitDepth>(
     let [ss_hor, ss_ver] = [is_ss_hor, is_ss_ver].map(|is_ss| is_ss as u8);
     let y_pxstride = y_src.pixel_stride::<BD>();
 
-    for y in 0..height - h_pad {
-        let y_src = y_src + (y as isize * y_pxstride << ss_ver);
+    // Single guard covering all source rows instead of per-pixel guards.
+    // Source spans (height-h_pad)<<ss_ver rows, (width-w_pad)<<ss_hor cols.
+    let active_h = height - h_pad;
+    let active_w = width - w_pad;
+    let src_rows = active_h << ss_ver as usize;
+    let src_cols = active_w << ss_hor as usize;
+    let (src_guard, src_base) = y_src.strided_slice::<BD>(src_cols, src_rows);
+    let row_stride = y_pxstride << ss_ver;
+
+    for y in 0..active_h {
+        let row_off = y as isize * row_stride;
         let aci = y * width;
-        let y_src = |i: isize| (*(y_src + i).index::<BD>()).as_::<i32>();
-        for x in 0..width - w_pad {
+        for x in 0..active_w {
             let sx = (x << ss_hor) as isize;
-            let mut ac_sum = y_src(sx);
+            let base_idx = src_base.wrapping_add_signed(row_off + sx);
+            let mut ac_sum = src_guard[base_idx].as_::<i32>();
             if is_ss_hor {
-                ac_sum += y_src(sx + 1);
+                ac_sum += src_guard[base_idx + 1].as_::<i32>();
             }
             if is_ss_ver {
-                ac_sum += y_src(sx + y_pxstride);
+                let below = src_base.wrapping_add_signed(row_off + y_pxstride + sx);
+                ac_sum += src_guard[below].as_::<i32>();
                 if is_ss_hor {
-                    ac_sum += y_src(sx + y_pxstride + 1);
+                    ac_sum += src_guard[below + 1].as_::<i32>();
                 }
             }
             ac[aci + x] = (ac_sum << 1 + !is_ss_ver as u8 + !is_ss_hor as u8) as i16;
         }
-        for x in width - w_pad..width {
+        for x in active_w..width {
             ac[aci + x] = ac[aci + x - 1];
         }
     }
