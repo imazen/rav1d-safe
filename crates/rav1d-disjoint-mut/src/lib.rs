@@ -882,8 +882,14 @@ mod checked {
     /// `compare_exchange` on the uncontended fast path because `swap`
     /// is an unconditional store (no branch on old value). For the
     /// single-threaded case (rav1d threads=1), this never spins.
+    ///
+    /// When the `single-threaded` feature is enabled, uses a `Cell<bool>`
+    /// instead of `AtomicBool`, eliminating atomic bus-lock overhead entirely.
+    /// This is safe only when the DisjointMut is never shared across threads.
+    #[cfg(not(feature = "single-threaded"))]
     struct TinyLock(AtomicBool);
 
+    #[cfg(not(feature = "single-threaded"))]
     impl TinyLock {
         const fn new() -> Self {
             Self(AtomicBool::new(false))
@@ -915,12 +921,43 @@ mod checked {
         }
     }
 
+    #[cfg(not(feature = "single-threaded"))]
     struct TinyGuard<'a>(&'a AtomicBool);
 
+    #[cfg(not(feature = "single-threaded"))]
     impl<'a> Drop for TinyGuard<'a> {
         #[inline(always)]
         fn drop(&mut self) {
             self.0.store(false, Ordering::Release);
+        }
+    }
+
+    /// Cell-based lock for single-threaded mode. No atomic operations.
+    #[cfg(feature = "single-threaded")]
+    struct TinyLock(core::cell::Cell<bool>);
+
+    #[cfg(feature = "single-threaded")]
+    impl TinyLock {
+        const fn new() -> Self {
+            Self(core::cell::Cell::new(false))
+        }
+
+        #[inline(always)]
+        fn lock(&self) -> TinyGuard<'_> {
+            debug_assert!(!self.0.get(), "TinyLock: recursive lock in single-threaded mode");
+            self.0.set(true);
+            TinyGuard(&self.0)
+        }
+    }
+
+    #[cfg(feature = "single-threaded")]
+    struct TinyGuard<'a>(&'a core::cell::Cell<bool>);
+
+    #[cfg(feature = "single-threaded")]
+    impl<'a> Drop for TinyGuard<'a> {
+        #[inline(always)]
+        fn drop(&mut self) {
+            self.0.set(false);
         }
     }
 

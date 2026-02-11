@@ -16,6 +16,10 @@ default = ["std"]
 std = []
 # Skip runtime overlap checking. The caller must ensure all borrows are disjoint.
 unchecked = []
+# Use Cell instead of AtomicBool for borrow tracker lock. Only safe when the
+# DisjointMut is never shared across threads (single-threaded decoder).
+# Eliminates atomic xchg overhead (~50% of borrow tracking cost).
+single-threaded = []
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
 aligned = ["dep:aligned", "dep:aligned-vec"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).
