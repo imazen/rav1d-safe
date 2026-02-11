@@ -950,6 +950,9 @@ mod checked {
     }
 
     impl BorrowSlots {
+        /// Sentinel slot index for empty-range borrows (no real slot allocated).
+        const EMPTY_SLOT: u8 = MAX_BORROWS as u8 + 1;
+
         const fn new() -> Self {
             Self {
                 starts: [0; MAX_BORROWS],
@@ -960,8 +963,13 @@ mod checked {
         }
 
         /// Allocate a slot and return its index.
+        /// Empty ranges (start >= end) are stored as slot `EMPTY_SLOT` without
+        /// occupying a real slot, saving both alloc and overlap-scan cost.
         #[inline(always)]
         fn alloc(&mut self, start: usize, end: usize, is_mutable: bool) -> u8 {
+            if start >= end {
+                return Self::EMPTY_SLOT;
+            }
             let free = self.occupied.trailing_ones() as usize;
             if free >= MAX_BORROWS {
                 panic!("DisjointMut: too many concurrent borrows (max {MAX_BORROWS})");
@@ -973,9 +981,12 @@ mod checked {
             free as u8
         }
 
-        /// Free a slot by index.
+        /// Free a slot by index. Empty-range borrows (EMPTY_SLOT) are no-ops.
         #[inline(always)]
         fn free(&mut self, slot: u8) {
+            if slot == Self::EMPTY_SLOT {
+                return;
+            }
             debug_assert!(
                 (self.occupied & (1 << slot)) != 0,
                 "BorrowId slot {slot} not occupied"
@@ -985,6 +996,9 @@ mod checked {
 
         /// Check if the range [start, end) overlaps any active borrow.
         /// Returns the first overlapping slot, or None.
+        ///
+        /// Empty ranges (start >= end) never overlap and never get allocated,
+        /// so all active slots have valid non-empty ranges.
         #[inline(always)]
         fn find_overlap_any(&self, start: usize, end: usize) -> Option<u8> {
             if start >= end {
@@ -993,8 +1007,7 @@ mod checked {
             let mut mask = self.occupied;
             while mask != 0 {
                 let i = mask.trailing_zeros() as usize;
-                // Only check non-empty existing ranges
-                if self.starts[i] < self.ends[i] && self.starts[i] < end && start < self.ends[i] {
+                if self.starts[i] < end && start < self.ends[i] {
                     return Some(i as u8);
                 }
                 mask &= mask - 1; // clear lowest set bit
@@ -1012,11 +1025,7 @@ mod checked {
             let mut mask = self.occupied;
             while mask != 0 {
                 let i = mask.trailing_zeros() as usize;
-                if self.mutable[i]
-                    && self.starts[i] < self.ends[i]
-                    && self.starts[i] < end
-                    && start < self.ends[i]
-                {
+                if self.mutable[i] && self.starts[i] < end && start < self.ends[i] {
                     return Some(i as u8);
                 }
                 mask &= mask - 1;
@@ -1108,11 +1117,16 @@ mod checked {
         }
 
         /// Register a mutable borrow. Checks against ALL existing borrows.
+        #[inline]
         #[track_caller]
         pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
-            self.check_poisoned();
             let start = bounds.range.start;
             let end = bounds.range.end;
+            // Empty ranges can never overlap and don't need a slot.
+            if start >= end {
+                return BorrowId(BorrowSlots::EMPTY_SLOT);
+            }
+            self.check_poisoned();
             let _guard = self.lock.lock();
             // SAFETY: TinyLock is held, so we have exclusive access to slots.
             let slots = unsafe { &mut *self.slots.get() };
@@ -1130,11 +1144,16 @@ mod checked {
         }
 
         /// Register an immutable borrow. Only checks against mutable borrows.
+        #[inline]
         #[track_caller]
         pub fn add_immut(&self, bounds: &Bounds) -> BorrowId {
-            self.check_poisoned();
             let start = bounds.range.start;
             let end = bounds.range.end;
+            // Empty ranges can never overlap and don't need a slot.
+            if start >= end {
+                return BorrowId(BorrowSlots::EMPTY_SLOT);
+            }
+            self.check_poisoned();
             let _guard = self.lock.lock();
             // SAFETY: TinyLock is held, so we have exclusive access to slots.
             let slots = unsafe { &mut *self.slots.get() };
