@@ -584,7 +584,10 @@ fn wiener_rust<BD: BitDepth>(
     let round_bits_v = 11 - (bitdepth == 12) as c_int * 2;
     let rounding_off_v = 1 << round_bits_v - 1;
     let round_offset = 1 << bitdepth + (round_bits_v - 1);
+    let stride = p.pixel_stride::<BD>();
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BD>(w, h);
     for j in 0..h {
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let mut sum = -round_offset;
             let z = &hor[j * REST_UNIT_STRIDE + i..(j + 7) * REST_UNIT_STRIDE];
@@ -593,8 +596,7 @@ fn wiener_rust<BD: BitDepth>(
                 sum += z[k * REST_UNIT_STRIDE] as c_int * filter[1][k] as c_int;
             }
 
-            let p = p + (j as isize * p.pixel_stride::<BD>()) + i;
-            *p.index_mut::<BD>() =
+            p_guard[row_off + i] =
                 iclip(sum + rounding_off_v >> round_bits_v, 0, bd.into_c()).as_();
         }
     }
@@ -972,12 +974,13 @@ fn sgr_5x5_rust<BD: BitDepth>(
     selfguided_filter(&mut dst, &mut tmp, w, h, 25, sgr.s0, bd);
 
     let w0 = sgr.w0 as c_int;
+    let stride = p.pixel_stride::<BD>();
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BD>(w, h);
     for j in 0..h {
-        let p = p + (j as isize * p.pixel_stride::<BD>());
-        let p = &mut *p.slice_mut::<BD>(w);
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v = w0 * dst[j * 384 + i].as_::<c_int>();
-            p[i] = bd.iclip_pixel(p[i].as_::<c_int>() + (v + (1 << 10) >> 11));
+            p_guard[row_off + i] = bd.iclip_pixel(p_guard[row_off + i].as_::<c_int>() + (v + (1 << 10) >> 11));
         }
     }
 }
@@ -1034,12 +1037,13 @@ fn sgr_3x3_rust<BD: BitDepth>(
     selfguided_filter(&mut dst, &mut tmp, w, h, 9, sgr.s1, bd);
 
     let w1 = sgr.w1 as c_int;
+    let stride = p.pixel_stride::<BD>();
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BD>(w, h);
     for j in 0..h {
-        let p = p + (j as isize * p.pixel_stride::<BD>());
-        let p = &mut *p.slice_mut::<BD>(w);
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v = w1 * dst[j * 384 + i].as_::<c_int>();
-            p[i] = bd.iclip_pixel(p[i].as_::<c_int>() + (v + (1 << 10) >> 11));
+            p_guard[row_off + i] = bd.iclip_pixel(p_guard[row_off + i].as_::<c_int>() + (v + (1 << 10) >> 11));
         }
     }
 }
@@ -1099,12 +1103,13 @@ fn sgr_mix_rust<BD: BitDepth>(
 
     let w0 = sgr.w0 as c_int;
     let w1 = sgr.w1 as c_int;
+    let stride = p.pixel_stride::<BD>();
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BD>(w, h);
     for j in 0..h {
-        let p = p + (j as isize * p.pixel_stride::<BD>());
-        let p = &mut *p.slice_mut::<BD>(w);
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v = w0 * dst0[j * 384 + i].as_::<c_int>() + w1 * dst1[j * 384 + i].as_::<c_int>();
-            p[i] = bd.iclip_pixel(p[i].as_::<c_int>() + (v + (1 << 10) >> 11));
+            p_guard[row_off + i] = bd.iclip_pixel(p_guard[row_off + i].as_::<c_int>() + (v + (1 << 10) >> 11));
         }
     }
 }

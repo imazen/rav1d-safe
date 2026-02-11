@@ -121,8 +121,10 @@ fn wiener_filter7_8bpc_avx2_inner(
     let v_round_offset = _mm256_set1_epi32(-round_offset);
     let v_rounding = _mm256_set1_epi32(rounding_off_v);
 
+    // Single guard for entire output region
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth8>(w, h);
     for j in 0..h {
-        let mut dst_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         let mut i = 0usize;
 
         // Process 8 pixels at a time with AVX2
@@ -178,7 +180,7 @@ fn wiener_filter7_8bpc_avx2_inner(
             let sum8 = _mm_packus_epi16(sum16_combined, sum16_combined); // u16 -> u8
 
             // Store 8 bytes via safe partial_simd
-            let dst_arr: &mut [u8; 8] = (&mut dst_row[i..i + 8]).try_into().unwrap();
+            let dst_arr: &mut [u8; 8] = (&mut p_guard[row_off + i..row_off + i + 8]).try_into().unwrap();
             partial_simd::mm_storel_epi64(dst_arr, sum8);
             i += 8;
         }
@@ -189,7 +191,7 @@ fn wiener_filter7_8bpc_avx2_inner(
             for k in 0..7 {
                 sum += hor[(j + k) * REST_UNIT_STRIDE + i] as i32 * filter[1][k] as i32;
             }
-            dst_row[i] = iclip((sum + rounding_off_v) >> round_bits_v, 0, 255) as u8;
+            p_guard[row_off + i] = iclip((sum + rounding_off_v) >> round_bits_v, 0, 255) as u8;
             i += 1;
         }
     }
@@ -282,9 +284,10 @@ fn wiener_filter7_16bpc_avx2_inner(
     let round_offset = 1i32 << (bitdepth + round_bits_v - 1);
     let stride = p.pixel_stride::<BitDepth16>();
 
+    // Single guard for entire output region
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth16>(w, h);
     for j in 0..h {
-        let mut dst_row = (p + (j as isize * stride)).slice_mut::<BitDepth16>(w);
-
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let mut sum = -round_offset;
 
@@ -292,7 +295,7 @@ fn wiener_filter7_16bpc_avx2_inner(
                 sum += hor[(j + k) * REST_UNIT_STRIDE + i] * filter[1][k] as i32;
             }
 
-            dst_row[i] = iclip((sum + rounding_off_v) >> round_bits_v, 0, bitdepth_max) as u16;
+            p_guard[row_off + i] = iclip((sum + rounding_off_v) >> round_bits_v, 0, bitdepth_max) as u16;
         }
     }
 }
@@ -823,11 +826,12 @@ fn sgr_5x5_8bpc_avx2_inner(
     let w0 = sgr.w0 as i32;
     let stride = p.pixel_stride::<BitDepth8>();
 
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth8>(w, h);
     for j in 0..h {
-        let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
-            p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+            p_guard[row_off + i] = iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
         }
     }
 }
@@ -855,11 +859,12 @@ fn sgr_3x3_8bpc_avx2_inner(
     let w1 = sgr.w1 as i32;
     let stride = p.pixel_stride::<BitDepth8>();
 
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth8>(w, h);
     for j in 0..h {
-        let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
-            p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+            p_guard[row_off + i] = iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
         }
     }
 }
@@ -890,12 +895,13 @@ fn sgr_mix_8bpc_avx2_inner(
     let w1 = sgr.w1 as i32;
     let stride = p.pixel_stride::<BitDepth8>();
 
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth8>(w, h);
     for j in 0..h {
-        let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth8>(w);
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v = w0 * dst0[j * MAX_RESTORATION_WIDTH + i] as i32
                 + w1 * dst1[j * MAX_RESTORATION_WIDTH + i] as i32;
-            p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+            p_guard[row_off + i] = iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
         }
     }
 }
@@ -1378,11 +1384,12 @@ fn sgr_5x5_16bpc_avx2_inner(
     let w0 = sgr.w0 as i32;
     let stride = p.pixel_stride::<BitDepth16>();
 
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth16>(w, h);
     for j in 0..h {
-        let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth16>(w);
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i];
-            p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max) as u16;
+            p_guard[row_off + i] = iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max) as u16;
         }
     }
 }
@@ -1411,11 +1418,12 @@ fn sgr_3x3_16bpc_avx2_inner(
     let w1 = sgr.w1 as i32;
     let stride = p.pixel_stride::<BitDepth16>();
 
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth16>(w, h);
     for j in 0..h {
-        let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth16>(w);
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i];
-            p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max) as u16;
+            p_guard[row_off + i] = iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max) as u16;
         }
     }
 }
@@ -1447,12 +1455,13 @@ fn sgr_mix_16bpc_avx2_inner(
     let w1 = sgr.w1 as i32;
     let stride = p.pixel_stride::<BitDepth16>();
 
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth16>(w, h);
     for j in 0..h {
-        let mut p_row = (p + (j as isize * stride)).slice_mut::<BitDepth16>(w);
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v =
                 w0 * dst0[j * MAX_RESTORATION_WIDTH + i] + w1 * dst1[j * MAX_RESTORATION_WIDTH + i];
-            p_row[i] = iclip(p_row[i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max) as u16;
+            p_guard[row_off + i] = iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max) as u16;
         }
     }
 }
