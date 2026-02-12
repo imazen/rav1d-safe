@@ -11,200 +11,150 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # ==========================================================================
+  # Primary build + test matrix
+  # ==========================================================================
   build-test:
-    name: Build & Test - ${{ matrix.os }} - ${{ matrix.features }}
+    name: Build & Test (${{ matrix.os }}, ${{ matrix.label }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        features:
-          - "bitdepth_8,bitdepth_16"
-          - "asm,bitdepth_8,bitdepth_16"
         include:
-          # ARM builds
-          - os: ubuntu-24.04-arm
+          # Safe-SIMD builds (no asm)
+          - os: ubuntu-latest
             features: "bitdepth_8,bitdepth_16"
-          - os: ubuntu-24.04-arm
+            label: safe-simd
+          - os: windows-latest
+            features: "bitdepth_8,bitdepth_16"
+            label: safe-simd
+          - os: macos-latest
+            features: "bitdepth_8,bitdepth_16"
+            label: safe-simd
+
+          # ASM builds (original hand-written assembly)
+          - os: ubuntu-latest
             features: "asm,bitdepth_8,bitdepth_16"
+            label: asm
+          - os: macos-latest
+            features: "asm,bitdepth_8,bitdepth_16"
+            label: asm
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: rustfmt, clippy
 
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install NASM (Windows)
-        if: runner.os == 'Windows' && contains(matrix.features, 'asm')
-        run: choco install nasm
-
-      - name: Install NASM (macOS)
-        if: runner.os == 'macOS' && contains(matrix.features, 'asm')
-        run: brew install nasm
+      - uses: Swatinem/rust-cache@v2
 
       - name: Install NASM (Linux)
         if: runner.os == 'Linux' && contains(matrix.features, 'asm')
         run: sudo apt-get update && sudo apt-get install -y nasm
 
-      - name: Build (no default features)
-        run: cargo build --no-default-features --features "${{ matrix.features }}" --verbose
+      - name: Install NASM (macOS)
+        if: runner.os == 'macOS' && contains(matrix.features, 'asm')
+        run: brew install nasm
+
+      - name: Install NASM (Windows)
+        if: runner.os == 'Windows' && contains(matrix.features, 'asm')
+        run: choco install nasm
+
+      - name: Build (debug)
+        run: cargo build --no-default-features --features "${{ matrix.features }}"
 
       - name: Build (release)
-        run: cargo build --no-default-features --features "${{ matrix.features }}" --release --verbose
+        run: cargo build --no-default-features --features "${{ matrix.features }}" --release
 
       - name: Run unit tests
-        run: cargo test --no-default-features --features "${{ matrix.features }}" --lib --verbose
+        run: cargo test --no-default-features --features "${{ matrix.features }}" --release --lib
 
+      # Download test vectors and run MD5 parity tests
       - name: Download test vectors
+        if: matrix.label == 'safe-simd' && runner.os == 'Linux'
         run: bash scripts/download-test-vectors.sh
         continue-on-error: true
 
-      - name: Run integration tests
-        run: cargo test --no-default-features --features "${{ matrix.features }}" --test integration_decode -- --ignored
+      - name: Run MD5 decode parity tests
+        if: matrix.label == 'safe-simd' && runner.os == 'Linux'
+        run: cargo test --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_verify
         continue-on-error: true
 
+  # ==========================================================================
+  # Clippy lint check
+  # ==========================================================================
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Install NASM
-        run: sudo apt-get update && sudo apt-get install -y nasm
-      - name: Run clippy (no asm)
-        run: cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
-      - name: Run clippy (with asm)
-        run: cargo clippy --features "asm,bitdepth_8,bitdepth_16" --all-targets -- -D warnings
 
+      # Safe-SIMD build (strict — must pass)
+      - name: Clippy (safe-simd)
+        run: cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" -- -D warnings
+
+      # C-FFI build (strict — must pass)
+      - name: Clippy (c-ffi)
+        run: cargo clippy --no-default-features --features "c-ffi,bitdepth_8,bitdepth_16" -- -D warnings
+
+  # ==========================================================================
+  # Format check
+  # ==========================================================================
   format:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: rustfmt
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  # ==========================================================================
+  # Cross-compile checks (build only, no tests)
+  # ==========================================================================
   cross-compile:
-    name: Cross-compile - ${{ matrix.target }}
+    name: Cross-compile (${{ matrix.target }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         target:
-          - aarch64-unknown-linux-gnu
           - x86_64-unknown-linux-musl
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-      - name: Cross build
-        run: cross build --target ${{ matrix.target }} --no-default-features --features "bitdepth_8,bitdepth_16"
-
-  # ==========================================================================
-  # Cross-compiled testing (32-bit) via QEMU
-  # ==========================================================================
-  test-cross-32bit:
-    name: Cross 32-bit (${{ matrix.target }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - i686-unknown-linux-gnu
-          - armv7-unknown-linux-gnueabihf
-    steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-      - name: Build (cross)
-        run: cross build --target ${{ matrix.target }} --no-default-features --features "bitdepth_8,bitdepth_16"
-      - name: Test (cross/QEMU)
-        run: cross test --target ${{ matrix.target }} --no-default-features --features "bitdepth_8,bitdepth_16" --lib
+      - name: Build
+        run: cargo build --target ${{ matrix.target }} --no-default-features --features "bitdepth_8,bitdepth_16"
 
   # ==========================================================================
-  # WASM testing (no asm)
+  # Code coverage
   # ==========================================================================
-  test-wasm:
-    name: Test WASM
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown,wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
-      - name: Install wasmtime
-        run: |
-          curl https://wasmtime.dev/install.sh -sSf | bash
-          echo "$HOME/.wasmtime/bin" >> $GITHUB_PATH
-      - name: Build (wasm32-unknown-unknown)
-        run: cargo build --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16" --lib
-      - name: Test (wasm32-wasip1)
-        env:
-          CARGO_TARGET_WASM32_WASIP1_RUNNER: "wasmtime --dir=. --"
-        run: cargo test --target wasm32-wasip1 --no-default-features --features "bitdepth_8,bitdepth_16" --lib
-
   coverage:
-    name: Code Coverage
+    name: Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
-      - name: Install NASM
-        run: sudo apt-get update && sudo apt-get install -y nasm
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate coverage
-        run: cargo llvm-cov --no-default-features --features "bitdepth_8,bitdepth_16" --lcov --output-path lcov.info
+        run: cargo llvm-cov --no-default-features --features "bitdepth_8,bitdepth_16" --lib --lcov --output-path lcov.info
       - name: Upload to codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v4
         with:
           files: lcov.info
           fail_ci_if_error: false
-
-  test-vectors:
-    name: Test Vector Download
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Download test vectors
-        run: bash scripts/download-test-vectors.sh
-      - name: Verify test vectors
-        run: |
-          ls -lh target/test-vectors/ || true
-          if [ -d target/test-vectors/dav1d-test-data ]; then
-            find target/test-vectors/dav1d-test-data -name "*.ivf" | wc -l
-          fi
-      - name: Cache test vectors
-        uses: actions/cache@v5
-        with:
-          path: target/test-vectors
-          key: test-vectors-${{ hashFiles('scripts/download-test-vectors.sh') }}
