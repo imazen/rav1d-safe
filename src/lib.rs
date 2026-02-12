@@ -167,7 +167,6 @@ pub(crate) fn rav1d_open(
         reset_task_cur: AtomicU32::new(u32::MAX),
         ..Default::default()
     };
-    // TODO fallible allocation
     let task_thread = Arc::new(ttd);
 
     let fc = (0..n_fc)
@@ -195,29 +194,28 @@ pub(crate) fn rav1d_open(
     });
 
     let mut worker_handles = Vec::new();
-    let tc = (0..n_tc)
-        .map(|n| {
-            let task_thread = Arc::clone(&task_thread);
-            let thread_data = Arc::new(Rav1dTaskContextTaskThread::new(task_thread));
-            let thread_data_copy = Arc::clone(&thread_data);
-            let task = if n_tc > 1 {
-                let handle = thread::Builder::new()
-                    // Don't set stack size like `dav1d` does.
-                    // See <https://github.com/memorysafety/rav1d/issues/889>.
-                    .name(format!("rav1d-worker-{n}"))
-                    .spawn(|| rav1d_worker_task(thread_data_copy))
-                    .unwrap();
-                worker_handles.push(handle);
-                Rav1dContextTaskType::Worker
-            } else {
-                Rav1dContextTaskType::Single(Mutex::new(Box::new(Rav1dTaskContext::new(
-                    thread_data_copy,
-                ))))
-            };
-            Rav1dContextTaskThread { task, thread_data }
-        })
-        // TODO fallible allocation
-        .collect();
+    let mut tc_vec = Vec::new();
+    for n in 0..n_tc {
+        let task_thread = Arc::clone(&task_thread);
+        let thread_data = Arc::new(Rav1dTaskContextTaskThread::new(task_thread));
+        let thread_data_copy = Arc::clone(&thread_data);
+        let task = if n_tc > 1 {
+            let handle = thread::Builder::new()
+                // Don't set stack size like `dav1d` does.
+                // See <https://github.com/memorysafety/rav1d/issues/889>.
+                .name(format!("rav1d-worker-{n}"))
+                .spawn(|| rav1d_worker_task(thread_data_copy))
+                .unwrap();
+            worker_handles.push(handle);
+            Rav1dContextTaskType::Worker
+        } else {
+            Rav1dContextTaskType::Single(Mutex::new(Box::new(Rav1dTaskContext::new(
+                thread_data_copy,
+            ))))
+        };
+        tc_vec.push(Rav1dContextTaskThread { task, thread_data });
+    }
+    let tc = tc_vec.into_boxed_slice();
 
     let c = Rav1dContext {
         allocator: s.allocator.clone(),
@@ -239,7 +237,6 @@ pub(crate) fn rav1d_open(
         picture_pool: Default::default(),
     };
 
-    // TODO fallible allocation
     #[cfg_attr(not(feature = "c-ffi"), allow(unused_mut))]
     let mut c = Arc::new(c);
 
