@@ -32,6 +32,8 @@ use crate::src::dequant_tables::dav1d_dq_tbl;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::disjoint_mut::DisjointMutArcSlice;
 use crate::src::disjoint_mut::DisjointMutSlice;
+use crate::src::disjoint_mut::TryResizable;
+use crate::src::disjoint_mut::TryResizableWith;
 use crate::src::enum_map::enum_map;
 use crate::src::enum_map::enum_map_ty;
 use crate::src::enum_map::DefaultValue;
@@ -58,8 +60,6 @@ use crate::src::env::get_partition_ctx;
 use crate::src::env::get_poc_diff;
 use crate::src::env::get_tx_ctx;
 use crate::src::env::BlockContext;
-use crate::src::disjoint_mut::TryResizable;
-use crate::src::disjoint_mut::TryResizableWith;
 use crate::src::error::Rav1dError::EINVAL;
 use crate::src::error::Rav1dError::ENOMEM;
 use crate::src::error::Rav1dError::ENOPROTOOPT;
@@ -5003,7 +5003,10 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     ) {
         fc.task_thread.error.store(1, Ordering::Relaxed);
         let _ = mem::take(&mut *fc.in_cdf.try_write().unwrap());
-        if f.frame_hdr.as_ref().is_some_and(|hdr| hdr.refresh_context != 0) {
+        if f.frame_hdr
+            .as_ref()
+            .is_some_and(|hdr| hdr.refresh_context != 0)
+        {
             let _ = mem::take(&mut f.out_cdf);
         }
         for i in 0..7 {
@@ -5229,10 +5232,7 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     // ref_mvs
     if frame_hdr.frame_type.is_inter_or_switch() || frame_hdr.allow_intrabc {
         let mvs_sz = f.sb128h as usize * 16 * (f.b4_stride >> 1) as usize;
-        f.mvs = Some(
-            DisjointMutArcSlice::try_new(mvs_sz, Default::default())
-                .map_err(|_| ENOMEM)?,
-        );
+        f.mvs = Some(DisjointMutArcSlice::try_new(mvs_sz, Default::default()).map_err(|_| ENOMEM)?);
         if !frame_hdr.allow_intrabc {
             for i in 0..7 {
                 f.refpoc[i] = f.refp[i].p.frame_hdr.as_ref().unwrap().frame_offset as c_uint;

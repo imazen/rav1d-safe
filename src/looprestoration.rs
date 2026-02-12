@@ -984,7 +984,8 @@ fn sgr_5x5_rust<BD: BitDepth>(
         let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v = w0 * dst[j * 384 + i].as_::<c_int>();
-            p_guard[row_off + i] = bd.iclip_pixel(p_guard[row_off + i].as_::<c_int>() + (v + (1 << 10) >> 11));
+            p_guard[row_off + i] =
+                bd.iclip_pixel(p_guard[row_off + i].as_::<c_int>() + (v + (1 << 10) >> 11));
         }
     }
 }
@@ -1047,7 +1048,8 @@ fn sgr_3x3_rust<BD: BitDepth>(
         let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v = w1 * dst[j * 384 + i].as_::<c_int>();
-            p_guard[row_off + i] = bd.iclip_pixel(p_guard[row_off + i].as_::<c_int>() + (v + (1 << 10) >> 11));
+            p_guard[row_off + i] =
+                bd.iclip_pixel(p_guard[row_off + i].as_::<c_int>() + (v + (1 << 10) >> 11));
         }
     }
 }
@@ -1113,7 +1115,8 @@ fn sgr_mix_rust<BD: BitDepth>(
         let row_off = p_base.wrapping_add_signed(j as isize * stride);
         for i in 0..w {
             let v = w0 * dst0[j * 384 + i].as_::<c_int>() + w1 * dst1[j * 384 + i].as_::<c_int>();
-            p_guard[row_off + i] = bd.iclip_pixel(p_guard[row_off + i].as_::<c_int>() + (v + (1 << 10) >> 11));
+            p_guard[row_off + i] =
+                bd.iclip_pixel(p_guard[row_off + i].as_::<c_int>() + (v + (1 << 10) >> 11));
         }
     }
 }

@@ -549,4 +549,3 @@ impl Rav1dContext {
         ttd.cond.notify_all();
     }
 }
-

@@ -281,8 +281,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
                 let (guard, base) =
                     (dst + (sz as isize * stride - 1)).strided_slice::<BD>(1, px_have);
                 for i in 0..px_have {
-                    bottom_left[sz - 1 - i] =
-                        guard[base.wrapping_add_signed(i as isize * stride)];
+                    bottom_left[sz - 1 - i] = guard[base.wrapping_add_signed(i as isize * stride)];
                 }
                 if px_have < sz {
                     BD::pixel_set(bottom_left, bottom_left[sz - px_have], sz - px_have);

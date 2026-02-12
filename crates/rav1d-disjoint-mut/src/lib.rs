@@ -1510,10 +1510,7 @@ impl<T: Copy> DisjointMutArcSlice<T> {
     /// Create a new `DisjointMutArcSlice` with `n` elements, all set to `value`.
     ///
     /// Returns `Err` on allocation failure instead of panicking.
-    pub fn try_new(
-        n: usize,
-        value: T,
-    ) -> Result<Self, alloc::collections::TryReserveError> {
+    pub fn try_new(n: usize, value: T) -> Result<Self, alloc::collections::TryReserveError> {
         let mut v = Vec::new();
         v.try_reserve(n)?;
         v.resize(n, value);

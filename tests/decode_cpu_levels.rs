@@ -85,7 +85,10 @@ fn parse_meson_build(meson_path: &Path) -> Vec<TestVector> {
         }
 
         let name = quoted[0].clone();
-        let filename = match quoted.iter().find(|s| s.ends_with(".ivf") || s.ends_with(".obu")) {
+        let filename = match quoted
+            .iter()
+            .find(|s| s.ends_with(".ivf") || s.ends_with(".obu"))
+        {
             Some(f) => f.as_str(),
             None => continue,
         };
@@ -157,8 +160,7 @@ fn decode_at_level(
     level: CpuLevel,
     apply_grain: bool,
 ) -> Result<(String, usize), String> {
-    let file =
-        File::open(ivf_path).map_err(|e| format!("open {}: {e}", ivf_path.display()))?;
+    let file = File::open(ivf_path).map_err(|e| format!("open {}: {e}", ivf_path.display()))?;
     let mut reader = BufReader::new(file);
     let frames = ivf_parser::parse_all_frames(&mut reader)
         .map_err(|e| format!("parse IVF {}: {e}", ivf_path.display()))?;
@@ -168,8 +170,7 @@ fn decode_at_level(
         apply_grain,
         ..Default::default()
     };
-    let mut decoder =
-        Decoder::with_settings(settings).map_err(|e| format!("init decoder: {e}"))?;
+    let mut decoder = Decoder::with_settings(settings).map_err(|e| format!("init decoder: {e}"))?;
     let mut ctx = md5::Context::new();
     let mut frame_count = 0usize;
 
@@ -348,8 +349,14 @@ fn test_cpu_levels_smoke() {
     let meson = dav1d_test_data().join("8-bit/data/meson.build");
 
     let vectors = parse_meson_build(&meson);
-    let first = vectors.first().expect("no vectors in 8-bit/data/meson.build");
-    assert!(first.ivf_path.exists(), "missing: {}", first.ivf_path.display());
+    let first = vectors
+        .first()
+        .expect("no vectors in 8-bit/data/meson.build");
+    assert!(
+        first.ivf_path.exists(),
+        "missing: {}",
+        first.ivf_path.display()
+    );
 
     let levels = CpuLevel::platform_levels();
     for &level in levels {

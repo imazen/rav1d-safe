@@ -575,10 +575,7 @@ pub struct Pal {
 type PalArray<BD> = [[<BD as BitDepth>::Pixel; 8]; 3];
 
 impl Pal {
-    pub fn try_resize(
-        &mut self,
-        n: usize,
-    ) -> Result<(), std::collections::TryReserveError> {
+    pub fn try_resize(&mut self, n: usize) -> Result<(), std::collections::TryReserveError> {
         self.data.try_resize(n * 8 * 3, Default::default())
     }
 

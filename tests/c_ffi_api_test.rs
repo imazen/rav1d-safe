@@ -95,7 +95,10 @@ fn test_dav1d_default_settings_produces_valid_defaults() {
     unsafe { dav1d_default_settings(NonNull::new(settings.as_mut_ptr()).unwrap()) };
     let settings = unsafe { settings.assume_init() };
     // apply_grain defaults to true (nonzero)
-    assert_ne!(settings.apply_grain, 0, "apply_grain should default to true");
+    assert_ne!(
+        settings.apply_grain, 0,
+        "apply_grain should default to true"
+    );
     // all_layers defaults to true
     assert_ne!(settings.all_layers, 0, "all_layers should default to true");
 }
@@ -249,8 +252,7 @@ fn test_dav1d_get_event_flags_fresh_context() {
 #[test]
 fn test_dav1d_get_decode_error_data_props_null_context() {
     let mut props = Dav1dDataProps::default();
-    let r =
-        unsafe { dav1d_get_decode_error_data_props(None, NonNull::new(&mut props as *mut _)) };
+    let r = unsafe { dav1d_get_decode_error_data_props(None, NonNull::new(&mut props as *mut _)) };
     assert!(r.0 < 0, "null context should fail");
 }
 
@@ -392,9 +394,7 @@ fn test_dav1d_apply_grain_null_context() {
 fn test_dav1d_apply_grain_null_output() {
     let (mut ctx, _) = open_decoder();
     let r#in = Dav1dPicture::default();
-    let r = unsafe {
-        dav1d_apply_grain(ctx, None, NonNull::new(&r#in as *const _ as *mut _))
-    };
+    let r = unsafe { dav1d_apply_grain(ctx, None, NonNull::new(&r#in as *const _ as *mut _)) };
     assert!(r.0 < 0, "null output should fail");
     close_decoder(&mut ctx);
 }
@@ -420,8 +420,7 @@ fn test_full_decode_lifecycle() {
     for frame_data in &frames {
         // Create data buffer
         let mut data = Dav1dData::default();
-        let ptr =
-            unsafe { dav1d_data_create(NonNull::new(&mut data as *mut _), frame_data.len()) };
+        let ptr = unsafe { dav1d_data_create(NonNull::new(&mut data as *mut _), frame_data.len()) };
         assert!(!ptr.is_null(), "dav1d_data_create failed");
 
         // Copy frame data into the buffer
@@ -464,7 +463,10 @@ fn test_full_decode_lifecycle() {
     // Flush to get remaining pictures
     unsafe { dav1d_flush(ctx.unwrap()) };
 
-    assert!(decoded_count > 0, "should have decoded at least one picture");
+    assert!(
+        decoded_count > 0,
+        "should have decoded at least one picture"
+    );
     close_decoder(&mut ctx);
 }
 

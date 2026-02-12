@@ -97,7 +97,10 @@ fn parse_meson_build(meson_path: &Path) -> Vec<TestVector> {
         let name = quoted[0].clone();
 
         // The filename is the quoted string that ends in .ivf or .obu
-        let filename = match quoted.iter().find(|s| s.ends_with(".ivf") || s.ends_with(".obu")) {
+        let filename = match quoted
+            .iter()
+            .find(|s| s.ends_with(".ivf") || s.ends_with(".obu"))
+        {
             Some(f) => f.as_str(),
             None => continue,
         };
@@ -137,8 +140,8 @@ fn compute_decode_md5_with_grain(
     ivf_path: &Path,
     apply_grain: bool,
 ) -> Result<(String, usize), String> {
-    let file = File::open(ivf_path)
-        .map_err(|e| format!("Failed to open {}: {e}", ivf_path.display()))?;
+    let file =
+        File::open(ivf_path).map_err(|e| format!("Failed to open {}: {e}", ivf_path.display()))?;
     let mut reader = BufReader::new(file);
 
     let frames = ivf_parser::parse_all_frames(&mut reader)
@@ -263,7 +266,11 @@ fn verify_meson_vectors_with_grain(
         }
 
         // Skip non-IVF files (Annex B .obu, Section 5 .obu)
-        let ext = vector.ivf_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let ext = vector
+            .ivf_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
         if ext != "ivf" {
             skipped += 1;
             continue;
@@ -303,15 +310,16 @@ fn test_md5_verify_first_8bit() {
     assert!(!vectors.is_empty(), "No test vectors found in meson.build");
 
     let first = &vectors[0];
-    assert!(first.ivf_path.exists(), "missing: {}", first.ivf_path.display());
+    assert!(
+        first.ivf_path.exists(),
+        "missing: {}",
+        first.ivf_path.display()
+    );
 
     let (actual_md5, frame_count) = compute_decode_md5(&first.ivf_path)
         .unwrap_or_else(|e| panic!("Failed to decode {}: {e}", first.name));
 
-    eprintln!(
-        "{}: {} frames, md5={}",
-        first.name, frame_count, actual_md5
-    );
+    eprintln!("{}: {} frames, md5={}", first.name, frame_count, actual_md5);
 
     assert_eq!(
         actual_md5, first.expected_md5,
@@ -325,7 +333,10 @@ fn test_md5_verify_first_8bit() {
 fn test_md5_verify_all_8bit_data() {
     let meson = dav1d_test_data().join("8-bit/data/meson.build");
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
-    eprintln!("8-bit/data: {passed} passed, {} failed, {skipped} skipped", failed.len());
+    eprintln!(
+        "8-bit/data: {passed} passed, {} failed, {skipped} skipped",
+        failed.len()
+    );
 
     assert!(
         failed.is_empty(),
@@ -340,7 +351,10 @@ fn test_md5_verify_all_8bit_data() {
 fn test_md5_verify_all_10bit_data() {
     let meson = dav1d_test_data().join("10-bit/data/meson.build");
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
-    eprintln!("10-bit/data: {passed} passed, {} failed, {skipped} skipped", failed.len());
+    eprintln!(
+        "10-bit/data: {passed} passed, {} failed, {skipped} skipped",
+        failed.len()
+    );
 
     assert!(
         failed.is_empty(),
@@ -355,7 +369,10 @@ fn test_md5_verify_all_10bit_data() {
 fn test_md5_verify_all_12bit_data() {
     let meson = dav1d_test_data().join("12-bit/data/meson.build");
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
-    eprintln!("12-bit/data: {passed} passed, {} failed, {skipped} skipped", failed.len());
+    eprintln!(
+        "12-bit/data: {passed} passed, {} failed, {skipped} skipped",
+        failed.len()
+    );
 
     assert!(
         failed.is_empty(),
@@ -370,7 +387,10 @@ fn test_md5_verify_all_12bit_data() {
 fn test_md5_verify_8bit_features() {
     let meson = dav1d_test_data().join("8-bit/features/meson.build");
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
-    eprintln!("8-bit/features: {passed} passed, {} failed, {skipped} skipped", failed.len());
+    eprintln!(
+        "8-bit/features: {passed} passed, {} failed, {skipped} skipped",
+        failed.len()
+    );
 
     assert!(
         failed.is_empty(),
@@ -385,7 +405,10 @@ fn test_md5_verify_8bit_features() {
 fn test_md5_verify_8bit_quantizer() {
     let meson = dav1d_test_data().join("8-bit/quantizer/meson.build");
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
-    eprintln!("8-bit/quantizer: {passed} passed, {} failed, {skipped} skipped", failed.len());
+    eprintln!(
+        "8-bit/quantizer: {passed} passed, {} failed, {skipped} skipped",
+        failed.len()
+    );
 
     assert!(
         failed.is_empty(),
@@ -400,7 +423,10 @@ fn test_md5_verify_8bit_quantizer() {
 fn test_md5_verify_8bit_size() {
     let meson = dav1d_test_data().join("8-bit/size/meson.build");
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
-    eprintln!("8-bit/size: {passed} passed, {} failed, {skipped} skipped", failed.len());
+    eprintln!(
+        "8-bit/size: {passed} passed, {} failed, {skipped} skipped",
+        failed.len()
+    );
 
     assert!(
         failed.is_empty(),
@@ -415,7 +441,10 @@ fn test_md5_verify_8bit_size() {
 fn test_md5_verify_8bit_issues() {
     let meson = dav1d_test_data().join("8-bit/issues/meson.build");
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
-    eprintln!("8-bit/issues: {passed} passed, {} failed, {skipped} skipped", failed.len());
+    eprintln!(
+        "8-bit/issues: {passed} passed, {} failed, {skipped} skipped",
+        failed.len()
+    );
 
     assert!(
         failed.is_empty(),
@@ -430,7 +459,10 @@ fn test_md5_verify_8bit_issues() {
 fn test_md5_verify_10bit_quantizer() {
     let meson = dav1d_test_data().join("10-bit/quantizer/meson.build");
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
-    eprintln!("10-bit/quantizer: {passed} passed, {} failed, {skipped} skipped", failed.len());
+    eprintln!(
+        "10-bit/quantizer: {passed} passed, {} failed, {skipped} skipped",
+        failed.len()
+    );
 
     assert!(
         failed.is_empty(),
@@ -446,7 +478,10 @@ fn test_md5_verify_8bit_film_grain() {
     let meson = dav1d_test_data().join("8-bit/film_grain/meson.build");
     // Film grain tests explicitly use --filmgrain 1, so decode with grain applied
     let (passed, failed, skipped) = verify_meson_vectors_with_grain(&meson, true);
-    eprintln!("8-bit/film_grain: {passed} passed, {} failed, {skipped} skipped", failed.len());
+    eprintln!(
+        "8-bit/film_grain: {passed} passed, {} failed, {skipped} skipped",
+        failed.len()
+    );
 
     assert!(
         failed.is_empty(),
@@ -461,7 +496,10 @@ fn test_md5_verify_8bit_film_grain() {
 fn test_md5_verify_8bit_cdfupdate() {
     let meson = dav1d_test_data().join("8-bit/cdfupdate/meson.build");
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
-    eprintln!("8-bit/cdfupdate: {passed} passed, {} failed, {skipped} skipped", failed.len());
+    eprintln!(
+        "8-bit/cdfupdate: {passed} passed, {} failed, {skipped} skipped",
+        failed.len()
+    );
 
     assert!(
         failed.is_empty(),
@@ -476,7 +514,10 @@ fn test_md5_verify_8bit_cdfupdate() {
 fn test_md5_verify_8bit_vq_suite() {
     let meson = dav1d_test_data().join("8-bit/vq_suite/meson.build");
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
-    eprintln!("8-bit/vq_suite: {passed} passed, {} failed, {skipped} skipped", failed.len());
+    eprintln!(
+        "8-bit/vq_suite: {passed} passed, {} failed, {skipped} skipped",
+        failed.len()
+    );
 
     assert!(
         failed.is_empty(),
@@ -496,7 +537,11 @@ fn test_md5_verify_single_00000002() {
         .find(|v| v.name == "00000002")
         .expect("Vector 00000002 not found");
 
-    assert!(vector.ivf_path.exists(), "missing: {}", vector.ivf_path.display());
+    assert!(
+        vector.ivf_path.exists(),
+        "missing: {}",
+        vector.ivf_path.display()
+    );
 
     let (actual_md5, frame_count) = compute_decode_md5(&vector.ivf_path)
         .unwrap_or_else(|e| panic!("Failed to decode {}: {e}", vector.name));
@@ -550,7 +595,10 @@ fn test_md5_verify_comprehensive() {
         assert!(meson_path.exists(), "missing: {}", meson_path.display());
 
         let (passed, failed, skipped) = verify_meson_vectors_with_grain(&meson_path, grain);
-        eprintln!("{meson_rel}: {passed} passed, {} failed, {skipped} skipped", failed.len());
+        eprintln!(
+            "{meson_rel}: {passed} passed, {} failed, {skipped} skipped",
+            failed.len()
+        );
 
         total_passed += passed;
         for f in failed {

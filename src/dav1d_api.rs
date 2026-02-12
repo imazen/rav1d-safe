@@ -169,7 +169,10 @@ pub unsafe extern "C" fn dav1d_open(
 /// * `out`, if [`NonNull`], is valid to [`ptr::write`] to.
 /// * `ptr`, if [`NonNull`], is the start of a `&[u8]` slice of length `sz`.
 #[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_parse_sequence_header")]
-#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_parse_sequence_header")]
+#[cfg_attr(
+    not(feature = "dav1d-compat"),
+    export_name = "rav1d_parse_sequence_header"
+)]
 pub unsafe extern "C" fn dav1d_parse_sequence_header(
     out: Option<NonNull<Dav1dSequenceHeader>>,
     ptr: Option<NonNull<u8>>,
@@ -340,8 +343,14 @@ pub unsafe extern "C" fn dav1d_get_event_flags(
 ///
 /// * `c`, if [`NonNull`], must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
 /// * `out`, if [`NonNull`], is valid to [`ptr::write`] to.
-#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_get_decode_error_data_props")]
-#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_get_decode_error_data_props")]
+#[cfg_attr(
+    feature = "dav1d-compat",
+    export_name = "dav1d_get_decode_error_data_props"
+)]
+#[cfg_attr(
+    not(feature = "dav1d-compat"),
+    export_name = "rav1d_get_decode_error_data_props"
+)]
 pub unsafe extern "C" fn dav1d_get_decode_error_data_props(
     c: Option<Dav1dContext>,
     out: Option<NonNull<Dav1dDataProps>>,
@@ -438,7 +447,10 @@ pub unsafe extern "C" fn dav1d_data_wrap(
 /// * `buf`, if [`NonNull`], is valid to [`ptr::read`] from and [`ptr::write`] to.
 /// * `user_data`, if [`NonNull`], is valid to dereference until `free_callback` is called on it, which must deallocate it.
 #[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_data_wrap_user_data")]
-#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_data_wrap_user_data")]
+#[cfg_attr(
+    not(feature = "dav1d-compat"),
+    export_name = "rav1d_data_wrap_user_data"
+)]
 pub unsafe extern "C" fn dav1d_data_wrap_user_data(
     buf: Option<NonNull<Dav1dData>>,
     user_data: Option<NonNull<u8>>,

@@ -682,7 +682,8 @@ fn cdef_filter_block_scalar_8bpc(
                         max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);
                     }
 
-                    p_guard[row_off + x] = iclip(px + (sum - (sum < 0) as i32 + 8 >> 4), min, max) as u8;
+                    p_guard[row_off + x] =
+                        iclip(px + (sum - (sum < 0) as i32 + 8 >> 4), min, max) as u8;
                 }
             }
         } else {
@@ -1544,7 +1545,8 @@ fn cdef_filter_block_scalar_16bpc(
                         max = cmp::max(cmp::max(cmp::max(cmp::max(s0, s1), s2), s3), max);
                     }
 
-                    p_guard[row_off + x] = iclip(px + (sum - (sum < 0) as i32 + 8 >> 4), min, max) as u16;
+                    p_guard[row_off + x] =
+                        iclip(px + (sum - (sum < 0) as i32 + 8 >> 4), min, max) as u16;
                 }
             }
         } else {
