@@ -16,9 +16,11 @@ use core::arch::x86_64::*;
 
 use crate::src::safe_simd::pixel_access::Flex;
 #[cfg(target_arch = "x86_64")]
-use crate::src::safe_simd::pixel_access::{loadi64, loadu_128, loadu_256, storeu_128, storeu_256};
+use crate::src::safe_simd::pixel_access::{
+    loadi64, loadu_128, loadu_256, loadu_512, storeu_128, storeu_256, storeu_512,
+};
 #[cfg(target_arch = "x86_64")]
-use archmage::{arcane, rite, Desktop64};
+use archmage::{arcane, rite, Desktop64, Server64};
 
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::dav1d::headers::Rav1dFilterMode;
@@ -212,6 +214,98 @@ pub unsafe extern "C" fn avg_8bpc_avx2(
         w,
         h,
     )
+}
+
+/// AVG operation for 8-bit pixels using AVX-512
+///
+/// Processes 64 pixels per iteration using 512-bit registers.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn avg_8bpc_avx512_safe(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let w = w as usize;
+    let h = h as usize;
+
+    let round = _mm512_set1_epi16(PW_1024);
+    let zero = _mm512_setzero_si512();
+
+    for row in 0..h {
+        let tmp1_row = &tmp1[row * w..][..w];
+        let tmp2_row = &tmp2[row * w..][..w];
+        let dst_row = &mut dst[row * dst_stride..][..w];
+
+        let mut col = 0;
+
+        // Process 64 pixels at a time (two 512-bit loads of i16 → 64 u8 output)
+        while col + 64 <= w {
+            // First 32 i16 values
+            let t1_lo = loadu_512!(&tmp1_row[col..col + 32], [i16; 32]);
+            let t2_lo = loadu_512!(&tmp2_row[col..col + 32], [i16; 32]);
+            let sum_lo = _mm512_add_epi16(t1_lo, t2_lo);
+            let avg_lo = _mm512_mulhrs_epi16(sum_lo, round);
+            let avg_lo = _mm512_max_epi16(avg_lo, zero); // clamp negatives for unsigned sat
+            let result_lo: __m256i = _mm512_cvtusepi16_epi8(avg_lo);
+
+            // Second 32 i16 values
+            let t1_hi = loadu_512!(&tmp1_row[col + 32..col + 64], [i16; 32]);
+            let t2_hi = loadu_512!(&tmp2_row[col + 32..col + 64], [i16; 32]);
+            let sum_hi = _mm512_add_epi16(t1_hi, t2_hi);
+            let avg_hi = _mm512_mulhrs_epi16(sum_hi, round);
+            let avg_hi = _mm512_max_epi16(avg_hi, zero);
+            let result_hi: __m256i = _mm512_cvtusepi16_epi8(avg_hi);
+
+            // Combine two __m256i into one __m512i and store 64 bytes
+            let combined =
+                _mm512_inserti64x4::<1>(_mm512_castsi256_si512(result_lo), result_hi);
+            storeu_512!(&mut dst_row[col..col + 64], [u8; 64], combined);
+
+            col += 64;
+        }
+
+        // Process 32 pixels at a time
+        while col + 32 <= w {
+            let t1 = loadu_512!(&tmp1_row[col..col + 32], [i16; 32]);
+            let t2 = loadu_512!(&tmp2_row[col..col + 32], [i16; 32]);
+            let sum = _mm512_add_epi16(t1, t2);
+            let avg = _mm512_mulhrs_epi16(sum, round);
+            let avg = _mm512_max_epi16(avg, zero);
+            let result: __m256i = _mm512_cvtusepi16_epi8(avg);
+
+            storeu_256!(&mut dst_row[col..col + 32], [u8; 32], result);
+            col += 32;
+        }
+
+        // AVX2 fallback for 16-pixel chunks
+        let round_256 = _mm256_set1_epi16(PW_1024);
+        while col + 16 <= w {
+            let t1 = loadu_256!(&tmp1_row[col..col + 16], [i16; 16]);
+            let t2 = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
+            let sum = _mm256_add_epi16(t1, t2);
+            let avg = _mm256_mulhrs_epi16(sum, round_256);
+            let packed = _mm256_packus_epi16(avg, avg);
+            let lo = _mm256_castsi256_si128(packed);
+            let hi = _mm256_extracti128_si256(packed, 1);
+            let result = _mm_unpacklo_epi64(lo, hi);
+            storeu_128!(&mut dst_row[col..col + 16], [u8; 16], result);
+            col += 16;
+        }
+
+        // Scalar tail
+        while col < w {
+            let sum = tmp1_row[col].wrapping_add(tmp2_row[col]);
+            let avg = ((sum as i32 * 1024 + 16384) >> 15).clamp(0, 255) as u8;
+            dst_row[col] = avg;
+            col += 1;
+        }
+    }
 }
 
 /// AVG operation for 16-bit pixels using AVX2
@@ -508,6 +602,97 @@ pub unsafe extern "C" fn w_avg_8bpc_avx2(
     )
 }
 
+/// Weighted average for 8-bit pixels using AVX-512
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn w_avg_8bpc_avx512_safe(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    weight: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let w = w as usize;
+    let h = h as usize;
+
+    let (tmp1_ptr, tmp2_ptr, weight_scaled) = if weight > 7 {
+        (tmp1, tmp2, ((weight - 16) << 12) as i16)
+    } else {
+        (tmp2, tmp1, ((-weight) << 12) as i16)
+    };
+
+    let weight_vec = _mm512_set1_epi16(weight_scaled);
+    let round = _mm512_set1_epi16(PW_2048);
+    let zero = _mm512_setzero_si512();
+
+    for row in 0..h {
+        let tmp1_row = &tmp1_ptr[row * w..][..w];
+        let tmp2_row = &tmp2_ptr[row * w..][..w];
+        let dst_row = &mut dst[row * dst_stride..][..w];
+
+        let mut col = 0;
+
+        // Process 64 pixels at a time
+        while col + 64 <= w {
+            // First 32
+            let t1_lo = loadu_512!(&tmp1_row[col..col + 32], [i16; 32]);
+            let t2_lo = loadu_512!(&tmp2_row[col..col + 32], [i16; 32]);
+            let diff_lo = _mm512_sub_epi16(t1_lo, t2_lo);
+            let scaled_lo = _mm512_mulhi_epi16(diff_lo, weight_vec);
+            let sum_lo = _mm512_add_epi16(t1_lo, scaled_lo);
+            let avg_lo = _mm512_mulhrs_epi16(sum_lo, round);
+            let avg_lo = _mm512_max_epi16(avg_lo, zero);
+            let result_lo: __m256i = _mm512_cvtusepi16_epi8(avg_lo);
+
+            // Second 32
+            let t1_hi = loadu_512!(&tmp1_row[col + 32..col + 64], [i16; 32]);
+            let t2_hi = loadu_512!(&tmp2_row[col + 32..col + 64], [i16; 32]);
+            let diff_hi = _mm512_sub_epi16(t1_hi, t2_hi);
+            let scaled_hi = _mm512_mulhi_epi16(diff_hi, weight_vec);
+            let sum_hi = _mm512_add_epi16(t1_hi, scaled_hi);
+            let avg_hi = _mm512_mulhrs_epi16(sum_hi, round);
+            let avg_hi = _mm512_max_epi16(avg_hi, zero);
+            let result_hi: __m256i = _mm512_cvtusepi16_epi8(avg_hi);
+
+            let combined =
+                _mm512_inserti64x4::<1>(_mm512_castsi256_si512(result_lo), result_hi);
+            storeu_512!(&mut dst_row[col..col + 64], [u8; 64], combined);
+            col += 64;
+        }
+
+        // Process 32 pixels at a time
+        while col + 32 <= w {
+            let t1 = loadu_512!(&tmp1_row[col..col + 32], [i16; 32]);
+            let t2 = loadu_512!(&tmp2_row[col..col + 32], [i16; 32]);
+            let diff = _mm512_sub_epi16(t1, t2);
+            let scaled = _mm512_mulhi_epi16(diff, weight_vec);
+            let sum = _mm512_add_epi16(t1, scaled);
+            let avg = _mm512_mulhrs_epi16(sum, round);
+            let avg = _mm512_max_epi16(avg, zero);
+            let result: __m256i = _mm512_cvtusepi16_epi8(avg);
+
+            storeu_256!(&mut dst_row[col..col + 32], [u8; 32], result);
+            col += 32;
+        }
+
+        // Scalar tail
+        while col < w {
+            let a = tmp1_row[col] as i32;
+            let b = tmp2_row[col] as i32;
+            let diff = a - b;
+            let scaled = (diff * (weight_scaled as i32)) >> 16;
+            let sum = a + scaled;
+            let avg = ((sum + 8) >> 4).clamp(0, 255) as u8;
+            dst_row[col] = avg;
+            col += 1;
+        }
+    }
+}
+
 /// Weighted average for 16-bit pixels using AVX2
 ///
 /// Same as w_avg_8bpc_avx2_safe but for 16-bit content.
@@ -793,6 +978,136 @@ pub unsafe extern "C" fn mask_8bpc_avx2(
         h,
         mask,
     )
+}
+
+/// Mask blend for 8-bit pixels using AVX-512
+///
+/// Processes 32 pixels per iteration (needs i32 intermediates for overflow safety).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn mask_8bpc_avx512_safe(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &[u8],
+) {
+    let mut dst = dst.flex_mut();
+    let mask = mask.flex();
+    let w = w as usize;
+    let h = h as usize;
+
+    let rnd = _mm512_set1_epi32(512);
+
+    for row in 0..h {
+        let tmp1_row = &tmp1[row * w..][..w];
+        let tmp2_row = &tmp2[row * w..][..w];
+        let mask_row = &mask[row * w..][..w];
+        let dst_row = &mut dst[row * dst_stride..][..w];
+
+        let mut col = 0usize;
+
+        // Process 32 pixels at a time with AVX-512
+        // Each pixel needs i32 intermediate, so 16 pixels per 512-bit register
+        while col + 32 <= w {
+            // Load 32 i16 values and 32 mask bytes
+            let t1_full = loadu_512!(&tmp1_row[col..col + 32], [i16; 32]);
+            let t2_full = loadu_512!(&tmp2_row[col..col + 32], [i16; 32]);
+            let mask_bytes = loadu_256!(&mask_row[col..col + 32], [u8; 32]);
+            let mask_16 = _mm512_cvtepu8_epi16(mask_bytes);
+            let diff = _mm512_sub_epi16(t1_full, t2_full);
+
+            // Low 16 pixels (expand to i32)
+            let diff_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(diff));
+            let mask_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(mask_16));
+            let t2_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(t2_full));
+
+            let prod_lo = _mm512_mullo_epi32(diff_lo, mask_lo);
+            let t2_64_lo = _mm512_slli_epi32(t2_lo, 6);
+            let sum_lo = _mm512_add_epi32(_mm512_add_epi32(prod_lo, t2_64_lo), rnd);
+            let result_lo = _mm512_srai_epi32::<10>(sum_lo);
+
+            // High 16 pixels
+            let diff_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64::<1>(diff));
+            let mask_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64::<1>(mask_16));
+            let t2_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64::<1>(t2_full));
+
+            let prod_hi = _mm512_mullo_epi32(diff_hi, mask_hi);
+            let t2_64_hi = _mm512_slli_epi32(t2_hi, 6);
+            let sum_hi = _mm512_add_epi32(_mm512_add_epi32(prod_hi, t2_64_hi), rnd);
+            let result_hi = _mm512_srai_epi32::<10>(sum_hi);
+
+            // Pack i32 → i16 → u8
+            // Pack two __m512i of i32 → one __m512i of i16
+            let result_16 = _mm512_packs_epi32(result_lo, result_hi);
+            // Fix lane ordering: packs interleaves within 128-bit lanes
+            let perm_idx = _mm512_set_epi64(7, 5, 3, 1, 6, 4, 2, 0);
+            let result_16 = _mm512_permutexvar_epi64(perm_idx, result_16);
+            // Pack i16 → u8 with unsigned saturation
+            let result_8: __m256i = _mm512_cvtusepi16_epi8(
+                _mm512_max_epi16(result_16, _mm512_setzero_si512()),
+            );
+
+            storeu_256!(&mut dst_row[col..col + 32], [u8; 32], result_8);
+            col += 32;
+        }
+
+        // Process 16 pixels at a time with AVX2 fallback
+        while col + 16 <= w {
+            let t1_lo = loadu_256!(&tmp1_row[col..col + 16], [i16; 16]);
+            let t2_lo = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
+            let mask_bytes = loadu_128!(&mask_row[col..col + 16], [u8; 16]);
+            let mask_lo = _mm256_cvtepu8_epi16(mask_bytes);
+
+            let diff = _mm256_sub_epi16(t1_lo, t2_lo);
+
+            let diff_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(diff));
+            let mask_lo_32 = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(mask_lo));
+            let t2_lo_32 = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t2_lo));
+
+            let prod_lo = _mm256_mullo_epi32(diff_lo, mask_lo_32);
+            let t2_64_lo = _mm256_slli_epi32(t2_lo_32, 6);
+            let sum_lo =
+                _mm256_add_epi32(_mm256_add_epi32(prod_lo, t2_64_lo), _mm256_set1_epi32(512));
+
+            let diff_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(diff, 1));
+            let mask_hi_32 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(mask_lo, 1));
+            let t2_hi_32 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t2_lo, 1));
+
+            let prod_hi = _mm256_mullo_epi32(diff_hi, mask_hi_32);
+            let t2_64_hi = _mm256_slli_epi32(t2_hi_32, 6);
+            let sum_hi =
+                _mm256_add_epi32(_mm256_add_epi32(prod_hi, t2_64_hi), _mm256_set1_epi32(512));
+
+            let result_lo = _mm256_srai_epi32(sum_lo, 10);
+            let result_hi = _mm256_srai_epi32(sum_hi, 10);
+
+            let result_16 = _mm256_packs_epi32(result_lo, result_hi);
+            let result_16 = _mm256_permute4x64_epi64(result_16, 0b11011000);
+            let result_8 = _mm256_packus_epi16(result_16, result_16);
+            let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
+
+            storeu_128!(
+                &mut dst_row[col..col + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(result_8)
+            );
+            col += 16;
+        }
+
+        // Scalar tail
+        while col < w {
+            let a = tmp1_row[col] as i32;
+            let b = tmp2_row[col] as i32;
+            let m = mask_row[col] as i32;
+            let val = (a * m + b * (64 - m) + 512) >> 10;
+            dst_row[col] = val.clamp(0, 255) as u8;
+            col += 1;
+        }
+    }
 }
 
 /// Mask blend for 16-bit pixels
@@ -8036,6 +8351,7 @@ pub fn avg_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
+    let avx512_token = crate::src::cpu::summon_avx512();
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
@@ -8047,15 +8363,29 @@ pub fn avg_dispatch<BD: BitDepth>(
     let dst_stride = dst.stride();
     let bd_c = bd.into_c();
     match BD::BPC {
-        BPC::BPC8 => avg_8bpc_avx2_safe(
-            token,
-            &mut dst_bytes[dst_offset..],
-            dst_stride as usize,
-            tmp1,
-            tmp2,
-            w,
-            h,
-        ),
+        BPC::BPC8 => {
+            if let Some(t512) = avx512_token {
+                avg_8bpc_avx512_safe(
+                    t512,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride as usize,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                );
+            } else {
+                avg_8bpc_avx2_safe(
+                    token,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride as usize,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                );
+            }
+        }
         BPC::BPC16 => avg_16bpc_avx2_safe(
             token,
             &mut dst_bytes[dst_offset..],
@@ -8081,6 +8411,7 @@ pub fn w_avg_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
+    let avx512_token = crate::src::cpu::summon_avx512();
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
@@ -8092,16 +8423,31 @@ pub fn w_avg_dispatch<BD: BitDepth>(
     let dst_stride = dst.stride();
     let bd_c = bd.into_c();
     match BD::BPC {
-        BPC::BPC8 => w_avg_8bpc_avx2_safe(
-            token,
-            &mut dst_bytes[dst_offset..],
-            dst_stride as usize,
-            tmp1,
-            tmp2,
-            w,
-            h,
-            weight,
-        ),
+        BPC::BPC8 => {
+            if let Some(t512) = avx512_token {
+                w_avg_8bpc_avx512_safe(
+                    t512,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride as usize,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                    weight,
+                );
+            } else {
+                w_avg_8bpc_avx2_safe(
+                    token,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride as usize,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                    weight,
+                );
+            }
+        }
         BPC::BPC16 => w_avg_16bpc_avx2_safe(
             token,
             &mut dst_bytes[dst_offset..],
@@ -8128,6 +8474,7 @@ pub fn mask_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
+    let avx512_token = crate::src::cpu::summon_avx512();
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
@@ -8139,16 +8486,31 @@ pub fn mask_dispatch<BD: BitDepth>(
     let dst_stride = dst.stride() as usize;
     let bd_c = bd.into_c();
     match BD::BPC {
-        BPC::BPC8 => mask_8bpc_avx2_safe(
-            token,
-            &mut dst_bytes[dst_offset..],
-            dst_stride,
-            tmp1,
-            tmp2,
-            w,
-            h,
-            mask,
-        ),
+        BPC::BPC8 => {
+            if let Some(t512) = avx512_token {
+                mask_8bpc_avx512_safe(
+                    t512,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                    mask,
+                );
+            } else {
+                mask_8bpc_avx2_safe(
+                    token,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                    mask,
+                );
+            }
+        }
         BPC::BPC16 => mask_16bpc_avx2_safe(
             token,
             &mut dst_bytes[dst_offset..],
