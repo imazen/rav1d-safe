@@ -8394,6 +8394,536 @@ unsafe fn v_bilin_8bpc_direct_avx2(
     unsafe { v_bilin_8bpc_direct_avx2_inner(token, dst, src0, src1, w, my) }
 }
 
+// ============================================================================
+// 8BPC BILINEAR AVX-512
+// ============================================================================
+
+/// Horizontal bilinear filter for 8bpc using AVX-512
+/// Processes 64 pixels at a time, outputs to i16 intermediate buffer
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn h_filter_bilin_8bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [i16],
+    src: &[u8],
+    w: usize,
+    mx: usize,
+    sh: u8,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let mx = mx as i8;
+    let coeff0 = (16 - mx) as u8;
+    let coeff1 = mx as u8;
+    let coeffs = _mm512_set1_epi16(((coeff1 as i16) << 8) | (coeff0 as i16));
+    let rnd = if sh > 0 {
+        _mm512_set1_epi16(1 << (sh - 1))
+    } else {
+        _mm512_setzero_si512()
+    };
+    let sh_reg = _mm_cvtsi32_si128(sh as i32);
+
+    // Lane-fix indices for permutex2var_epi64.
+    // After unpack+maddubs, result_lo has [p0-7|p16-23|p32-39|p48-55] and
+    // result_hi has [p8-15|p24-31|p40-47|p56-63] (each in 128-bit lanes).
+    // We need sequential output: [p0-31] and [p32-63].
+    let idx0 = _mm512_setr_epi64(0, 1, 8, 9, 2, 3, 10, 11);
+    let idx1 = _mm512_setr_epi64(4, 5, 12, 13, 6, 7, 14, 15);
+
+    let mut x = 0;
+    while x + 64 <= w {
+        let src_lo = loadu_512!(&src[x..x + 64], [u8; 64]);
+        let src_hi = loadu_512!(&src[x + 1..x + 65], [u8; 64]);
+
+        let pairs_lo = _mm512_unpacklo_epi8(src_lo, src_hi);
+        let pairs_hi = _mm512_unpackhi_epi8(src_lo, src_hi);
+
+        let result_lo = _mm512_maddubs_epi16(pairs_lo, coeffs);
+        let result_hi = _mm512_maddubs_epi16(pairs_hi, coeffs);
+
+        let result_lo = _mm512_sra_epi16(_mm512_add_epi16(result_lo, rnd), sh_reg);
+        let result_hi = _mm512_sra_epi16(_mm512_add_epi16(result_hi, rnd), sh_reg);
+
+        let out0 = _mm512_permutex2var_epi64(result_lo, idx0, result_hi);
+        let out1 = _mm512_permutex2var_epi64(result_lo, idx1, result_hi);
+
+        storeu_512!(
+            <&mut [i16; 32]>::try_from(&mut dst[x..x + 32]).unwrap(),
+            out0
+        );
+        storeu_512!(
+            <&mut [i16; 32]>::try_from(&mut dst[x + 32..x + 64]).unwrap(),
+            out1
+        );
+        x += 64;
+    }
+
+    while x < w {
+        let x0 = src[x] as i32;
+        let x1 = src[x + 1] as i32;
+        let pixel = (16 - mx as i32) * x0 + mx as i32 * x1;
+        let result = if sh > 0 {
+            (pixel + (1 << (sh - 1))) >> sh
+        } else {
+            pixel
+        };
+        dst[x] = result as i16;
+        x += 1;
+    }
+}
+
+/// Vertical bilinear filter for 8bpc AVX-512 (mid → u8)
+/// 16 pixels/iter using 32-bit arithmetic, cvtusepi32_epi8 for pack
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn v_filter_bilin_8bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    mid: &[&[i16]],
+    w: usize,
+    my: usize,
+    sh: u8,
+    _bd_max: i16,
+) {
+    let mut dst = dst.flex_mut();
+    let my = my as i32;
+    let coeff0 = 16 - my;
+    let coeff1 = my;
+
+    let c0_32 = _mm512_set1_epi32(coeff0);
+    let c1_32 = _mm512_set1_epi32(coeff1);
+    let rnd = _mm512_set1_epi32(if sh > 0 { 1 << (sh - 1) } else { 0 });
+    let zero = _mm512_setzero_si512();
+    let max_32 = _mm512_set1_epi32(255);
+    let sh_reg = _mm_cvtsi32_si128(sh as i32);
+
+    let mut x = 0;
+    while x + 16 <= w {
+        let row0 = _mm512_cvtepi16_epi32(loadu_256!(
+            <&[i16; 16]>::try_from(&mid[0][x..x + 16]).unwrap()
+        ));
+        let row1 = _mm512_cvtepi16_epi32(loadu_256!(
+            <&[i16; 16]>::try_from(&mid[1][x..x + 16]).unwrap()
+        ));
+
+        let mul0 = _mm512_mullo_epi32(row0, c0_32);
+        let mul1 = _mm512_mullo_epi32(row1, c1_32);
+        let sum = _mm512_add_epi32(mul0, mul1);
+
+        let result = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), sh_reg);
+        let result = _mm512_max_epi32(result, zero);
+        let result = _mm512_min_epi32(result, max_32);
+
+        // Pack i32 → u8: 16 i32 → 16 u8 (__m128i)
+        let packed = _mm512_cvtusepi32_epi8(result);
+        storeu_128!(
+            <&mut [u8; 16]>::try_from(&mut dst[x..x + 16]).unwrap(),
+            packed
+        );
+        x += 16;
+    }
+
+    while x < w {
+        let r0 = mid[0][x] as i32;
+        let r1 = mid[1][x] as i32;
+        let pixel = coeff0 * r0 + coeff1 * r1;
+        let result = if sh > 0 {
+            ((pixel + (1 << (sh - 1))) >> sh).clamp(0, 255)
+        } else {
+            pixel.clamp(0, 255)
+        };
+        dst[x] = result as u8;
+        x += 1;
+    }
+}
+
+/// Vertical bilinear filter for 8bpc AVX-512 prep (mid → i16)
+/// 16 pixels/iter using 32-bit arithmetic
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn v_filter_bilin_8bpc_prep_avx512_inner(
+    _token: Server64,
+    dst: &mut [i16],
+    mid: &[&[i16]],
+    w: usize,
+    my: usize,
+    sh: u8,
+) {
+    let mut dst = dst.flex_mut();
+    let my = my as i32;
+    let coeff0 = 16 - my;
+    let coeff1 = my;
+
+    let c0_32 = _mm512_set1_epi32(coeff0);
+    let c1_32 = _mm512_set1_epi32(coeff1);
+    let rnd = _mm512_set1_epi32(if sh > 0 { 1 << (sh - 1) } else { 0 });
+    let sh_reg = _mm_cvtsi32_si128(sh as i32);
+
+    let mut x = 0;
+    while x + 16 <= w {
+        let row0 = _mm512_cvtepi16_epi32(loadu_256!(
+            <&[i16; 16]>::try_from(&mid[0][x..x + 16]).unwrap()
+        ));
+        let row1 = _mm512_cvtepi16_epi32(loadu_256!(
+            <&[i16; 16]>::try_from(&mid[1][x..x + 16]).unwrap()
+        ));
+
+        let mul0 = _mm512_mullo_epi32(row0, c0_32);
+        let mul1 = _mm512_mullo_epi32(row1, c1_32);
+        let sum = _mm512_add_epi32(mul0, mul1);
+
+        let result = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), sh_reg);
+
+        let packed = _mm512_cvtsepi32_epi16(result);
+        storeu_256!(
+            <&mut [i16; 16]>::try_from(&mut dst[x..x + 16]).unwrap(),
+            packed
+        );
+        x += 16;
+    }
+
+    while x < w {
+        let r0 = mid[0][x] as i32;
+        let r1 = mid[1][x] as i32;
+        let pixel = coeff0 * r0 + coeff1 * r1;
+        let result = if sh > 0 {
+            (pixel + (1 << (sh - 1))) >> sh
+        } else {
+            pixel
+        };
+        dst[x] = result as i16;
+        x += 1;
+    }
+}
+
+/// Horizontal bilinear filter for 8bpc AVX-512 put (H-only → u8)
+/// 64 pixels/iter, packus naturally produces sequential output
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn h_bilin_8bpc_put_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    src: &[u8],
+    w: usize,
+    mx: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let mx = mx as i8;
+    let coeff0 = (16 - mx) as u8;
+    let coeff1 = mx as u8;
+    let coeffs = _mm512_set1_epi16(((coeff1 as i16) << 8) | (coeff0 as i16));
+    let rnd = _mm512_set1_epi16(8);
+    let sh_reg = _mm_cvtsi32_si128(4);
+
+    let mut x = 0;
+    while x + 64 <= w {
+        let src_lo = loadu_512!(&src[x..x + 64], [u8; 64]);
+        let src_hi = loadu_512!(&src[x + 1..x + 65], [u8; 64]);
+
+        let pairs_lo = _mm512_unpacklo_epi8(src_lo, src_hi);
+        let pairs_hi = _mm512_unpackhi_epi8(src_lo, src_hi);
+
+        let result_lo = _mm512_maddubs_epi16(pairs_lo, coeffs);
+        let result_hi = _mm512_maddubs_epi16(pairs_hi, coeffs);
+
+        let result_lo = _mm512_sra_epi16(_mm512_add_epi16(result_lo, rnd), sh_reg);
+        let result_hi = _mm512_sra_epi16(_mm512_add_epi16(result_hi, rnd), sh_reg);
+
+        // packus within each 128-bit lane naturally produces sequential u8 output
+        let packed = _mm512_packus_epi16(result_lo, result_hi);
+        storeu_512!(&mut dst[x..x + 64], [u8; 64], packed);
+        x += 64;
+    }
+
+    while x < w {
+        let x0 = src[x] as i32;
+        let x1 = src[x + 1] as i32;
+        let pixel = (16 - mx as i32) * x0 + mx as i32 * x1;
+        let result = ((pixel + 8) >> 4).clamp(0, 255);
+        dst[x] = result as u8;
+        x += 1;
+    }
+}
+
+/// Vertical bilinear filter for 8bpc AVX-512 put (V-only u8 → u8)
+/// 64 pixels/iter using maddubs on interleaved source rows
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn v_bilin_8bpc_direct_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    src0: &[u8],
+    src1: &[u8],
+    w: usize,
+    my: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let src0 = src0.flex();
+    let src1 = src1.flex();
+    let my = my as i8;
+    let coeff0 = (16 - my) as u8;
+    let coeff1 = my as u8;
+    let coeffs = _mm512_set1_epi16(((coeff1 as i16) << 8) | (coeff0 as i16));
+    let rnd = _mm512_set1_epi16(8);
+    let sh_reg = _mm_cvtsi32_si128(4);
+
+    let mut x = 0;
+    while x + 64 <= w {
+        let s0 = loadu_512!(&src0[x..x + 64], [u8; 64]);
+        let s1 = loadu_512!(&src1[x..x + 64], [u8; 64]);
+
+        let pairs_lo = _mm512_unpacklo_epi8(s0, s1);
+        let pairs_hi = _mm512_unpackhi_epi8(s0, s1);
+
+        let result_lo = _mm512_maddubs_epi16(pairs_lo, coeffs);
+        let result_hi = _mm512_maddubs_epi16(pairs_hi, coeffs);
+
+        let result_lo = _mm512_sra_epi16(_mm512_add_epi16(result_lo, rnd), sh_reg);
+        let result_hi = _mm512_sra_epi16(_mm512_add_epi16(result_hi, rnd), sh_reg);
+
+        let packed = _mm512_packus_epi16(result_lo, result_hi);
+        storeu_512!(&mut dst[x..x + 64], [u8; 64], packed);
+        x += 64;
+    }
+
+    while x < w {
+        let x0 = src0[x] as i32;
+        let x1 = src1[x] as i32;
+        let pixel = (16 - my as i32) * x0 + my as i32 * x1;
+        let result = ((pixel + 8) >> 4).clamp(0, 255);
+        dst[x] = result as u8;
+        x += 1;
+    }
+}
+
+/// Vertical bilinear for 8bpc AVX-512 prep (V-only u8 → i16)
+/// 64 pixels/iter using maddubs, lane-fix for i16 output
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn v_bilin_8bpc_prep_direct_avx512_inner(
+    _token: Server64,
+    dst: &mut [i16],
+    src0: &[u8],
+    src1: &[u8],
+    w: usize,
+    my: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let src0 = src0.flex();
+    let src1 = src1.flex();
+    let my = my as i8;
+    let coeff0 = (16 - my) as u8;
+    let coeff1 = my as u8;
+    let coeffs = _mm512_set1_epi16(((coeff1 as i16) << 8) | (coeff0 as i16));
+
+    let idx0 = _mm512_setr_epi64(0, 1, 8, 9, 2, 3, 10, 11);
+    let idx1 = _mm512_setr_epi64(4, 5, 12, 13, 6, 7, 14, 15);
+
+    let mut x = 0;
+    while x + 64 <= w {
+        let s0 = loadu_512!(&src0[x..x + 64], [u8; 64]);
+        let s1 = loadu_512!(&src1[x..x + 64], [u8; 64]);
+
+        let pairs_lo = _mm512_unpacklo_epi8(s0, s1);
+        let pairs_hi = _mm512_unpackhi_epi8(s0, s1);
+
+        // No shift for V-only prep 8bpc: raw bilinear [0, 4080] fits in i16
+        let result_lo = _mm512_maddubs_epi16(pairs_lo, coeffs);
+        let result_hi = _mm512_maddubs_epi16(pairs_hi, coeffs);
+
+        let out0 = _mm512_permutex2var_epi64(result_lo, idx0, result_hi);
+        let out1 = _mm512_permutex2var_epi64(result_lo, idx1, result_hi);
+
+        storeu_512!(
+            <&mut [i16; 32]>::try_from(&mut dst[x..x + 32]).unwrap(),
+            out0
+        );
+        storeu_512!(
+            <&mut [i16; 32]>::try_from(&mut dst[x + 32..x + 64]).unwrap(),
+            out1
+        );
+        x += 64;
+    }
+
+    while x < w {
+        let x0 = src0[x] as i32;
+        let x1 = src1[x] as i32;
+        let pixel = (16 - my as i32) * x0 + my as i32 * x1;
+        dst[x] = pixel as i16;
+        x += 1;
+    }
+}
+
+/// Core bilinear put implementation for 8bpc using AVX-512
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn put_bilin_8bpc_avx512_impl_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_stride: isize,
+    src: &[u8],
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let w = w as usize;
+    let h = h as usize;
+    let mx = mx as usize;
+    let my = my as usize;
+    let intermediate_bits = 4u8;
+
+    match (mx != 0, my != 0) {
+        (true, true) => {
+            let tmp_h = h + 1;
+            let mut mid = take_mid_i16_130();
+            for y in 0..tmp_h {
+                let src_row_base = (y as isize * src_stride) as usize;
+                h_filter_bilin_8bpc_avx512_inner(
+                    _token,
+                    &mut mid[y],
+                    &src[src_row_base..],
+                    w,
+                    mx,
+                    4 - intermediate_bits,
+                );
+            }
+            for y in 0..h {
+                let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+                let mid_refs: [&[i16]; 2] = [&mid[y], &mid[y + 1]];
+                v_filter_bilin_8bpc_avx512_inner(
+                    _token,
+                    dst_row,
+                    &mid_refs,
+                    w,
+                    my,
+                    4 + intermediate_bits,
+                    255,
+                );
+            }
+            put_mid_i16_130(mid);
+        }
+        (true, false) => {
+            for y in 0..h {
+                let src_row_base = (y as isize * src_stride) as usize;
+                let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+                h_bilin_8bpc_put_avx512_inner(_token, dst_row, &src[src_row_base..], w, mx);
+            }
+        }
+        (false, true) => {
+            for y in 0..h {
+                let src_row0 = &src[(y as isize * src_stride) as usize..];
+                let src_row1 = &src[((y + 1) as isize * src_stride) as usize..];
+                let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+                v_bilin_8bpc_direct_avx512_inner(_token, dst_row, src_row0, src_row1, w, my);
+            }
+        }
+        (false, false) => {
+            for y in 0..h {
+                let src_row_base = (y as isize * src_stride) as usize;
+                let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+                dst_row[..w].copy_from_slice(&src[src_row_base..src_row_base + w]);
+            }
+        }
+    }
+}
+
+/// Core bilinear prep implementation for 8bpc using AVX-512
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn prep_bilin_8bpc_avx512_impl_inner(
+    _token: Server64,
+    tmp: &mut [i16],
+    src: &[u8],
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+) {
+    let mut tmp = tmp.flex_mut();
+    let src = src.flex();
+    let w = w as usize;
+    let h = h as usize;
+    let mx = mx as usize;
+    let my = my as usize;
+    let intermediate_bits = 4u8;
+
+    match (mx != 0, my != 0) {
+        (true, true) => {
+            let tmp_h = h + 1;
+            let mut mid = take_mid_i16_130();
+            for y in 0..tmp_h {
+                let src_row_base = (y as isize * src_stride) as usize;
+                h_filter_bilin_8bpc_avx512_inner(
+                    _token,
+                    &mut mid[y],
+                    &src[src_row_base..],
+                    w,
+                    mx,
+                    4 - intermediate_bits,
+                );
+            }
+            for y in 0..h {
+                let dst_row = y * w;
+                let mid_refs: [&[i16]; 2] = [&mid[y], &mid[y + 1]];
+                v_filter_bilin_8bpc_prep_avx512_inner(
+                    _token,
+                    &mut tmp[dst_row..],
+                    &mid_refs,
+                    w,
+                    my,
+                    4,
+                );
+            }
+            put_mid_i16_130(mid);
+        }
+        (true, false) => {
+            for y in 0..h {
+                let src_row_base = (y as isize * src_stride) as usize;
+                let dst_row = y * w;
+                h_filter_bilin_8bpc_avx512_inner(
+                    _token,
+                    &mut tmp[dst_row..],
+                    &src[src_row_base..],
+                    w,
+                    mx,
+                    4 - intermediate_bits,
+                );
+            }
+        }
+        (false, true) => {
+            for y in 0..h {
+                let src_row0 = &src[(y as isize * src_stride) as usize..];
+                let src_row1 = &src[((y + 1) as isize * src_stride) as usize..];
+                let dst_row = y * w;
+                v_bilin_8bpc_prep_direct_avx512_inner(
+                    _token,
+                    &mut tmp[dst_row..],
+                    src_row0,
+                    src_row1,
+                    w,
+                    my,
+                );
+            }
+        }
+        (false, false) => {
+            for y in 0..h {
+                let src_row_base = (y as isize * src_stride) as usize;
+                let dst_row = y * w;
+                for x in 0..w {
+                    let pixel = src[src_row_base + x] as i16;
+                    tmp[dst_row + x] = pixel << intermediate_bits;
+                }
+            }
+        }
+    }
+}
+
 /// Core bilinear filter implementation for 8bpc
 #[cfg(target_arch = "x86_64")]
 #[rite]
@@ -9999,6 +10529,721 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
 }
 
 // ============================================================================
+// 16BPC BILINEAR AVX-512
+// ============================================================================
+
+/// Horizontal bilinear filter for 16bpc AVX-512 (H → i32 mid)
+/// 16 pixels/iter using cvtepu16_epi32 + mullo_epi32
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn h_bilin_16bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [i32],
+    src: &[u16],
+    w: usize,
+    mx: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let w0 = _mm512_set1_epi32(16 - mx);
+    let w1 = _mm512_set1_epi32(mx);
+
+    let mut col = 0usize;
+    while col + 16 <= w {
+        let p0 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
+        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 1..col + 17]).unwrap()
+        ));
+
+        let term0 = _mm512_mullo_epi32(p0, w0);
+        let term1 = _mm512_mullo_epi32(p1, w1);
+        let result = _mm512_add_epi32(term0, term1);
+
+        storeu_512!(&mut dst[col..col + 16], [i32; 16], result);
+        col += 16;
+    }
+
+    while col < w {
+        let x0 = src[col] as i32;
+        let x1 = src[col + 1] as i32;
+        dst[col] = 16 * x0 + mx * (x1 - x0);
+        col += 1;
+    }
+}
+
+/// Vertical bilinear filter for 16bpc AVX-512 (mid → u16)
+/// 16 pixels/iter, cvtusepi32_epi16 for output
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn v_bilin_16bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u16],
+    mid: &[[i32; MID_STRIDE]],
+    w: usize,
+    y: usize,
+    my: i32,
+    sh: i32,
+    max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let w0 = _mm512_set1_epi32(16 - my);
+    let w1 = _mm512_set1_epi32(my);
+    let rnd = _mm512_set1_epi32((1 << sh) >> 1);
+    let shift_count = _mm_cvtsi32_si128(sh);
+    let zero = _mm512_setzero_si512();
+    let max_val = _mm512_set1_epi32(max);
+
+    let mut col = 0usize;
+    while col + 16 <= w {
+        let r0 = loadu_512!(&mid[y][col..col + 16], [i32; 16]);
+        let r1 = loadu_512!(&mid[y + 1][col..col + 16], [i32; 16]);
+
+        let term0 = _mm512_mullo_epi32(r0, w0);
+        let term1 = _mm512_mullo_epi32(r1, w1);
+        let sum = _mm512_add_epi32(term0, term1);
+
+        let shifted = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), shift_count);
+        let clamped = _mm512_min_epi32(_mm512_max_epi32(shifted, zero), max_val);
+
+        let packed = _mm512_cvtusepi32_epi16(clamped);
+        storeu_256!(
+            <&mut [u16; 16]>::try_from(&mut dst[col..col + 16]).unwrap(),
+            packed
+        );
+        col += 16;
+    }
+
+    while col < w {
+        let r0 = mid[y][col];
+        let r1 = mid[y + 1][col];
+        let pixel = 16 * r0 + my * (r1 - r0);
+        let r = (1 << sh) >> 1;
+        let val = ((pixel + r) >> sh).clamp(0, max);
+        dst[col] = val as u16;
+        col += 1;
+    }
+}
+
+/// Vertical bilinear filter for 16bpc AVX-512 prep (mid → i16)
+/// 16 pixels/iter, cvtsepi32_epi16 for signed output
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn v_bilin_16bpc_prep_avx512_inner(
+    _token: Server64,
+    dst: &mut [i16],
+    mid: &[[i32; MID_STRIDE]],
+    w: usize,
+    y: usize,
+    my: i32,
+    sh: i32,
+    prep_bias: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let w0 = _mm512_set1_epi32(16 - my);
+    let w1 = _mm512_set1_epi32(my);
+    let rnd = _mm512_set1_epi32((1 << sh) >> 1);
+    let shift_count = _mm_cvtsi32_si128(sh);
+    let bias = _mm512_set1_epi32(prep_bias);
+
+    let mut col = 0usize;
+    while col + 16 <= w {
+        let r0 = loadu_512!(&mid[y][col..col + 16], [i32; 16]);
+        let r1 = loadu_512!(&mid[y + 1][col..col + 16], [i32; 16]);
+
+        let term0 = _mm512_mullo_epi32(r0, w0);
+        let term1 = _mm512_mullo_epi32(r1, w1);
+        let sum = _mm512_add_epi32(term0, term1);
+
+        let shifted = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), shift_count);
+        let biased = _mm512_sub_epi32(shifted, bias);
+
+        let packed = _mm512_cvtsepi32_epi16(biased);
+        storeu_256!(
+            <&mut [i16; 16]>::try_from(&mut dst[col..col + 16]).unwrap(),
+            packed
+        );
+        col += 16;
+    }
+
+    while col < w {
+        let r0 = mid[y][col];
+        let r1 = mid[y + 1][col];
+        let pixel = 16 * r0 + my * (r1 - r0);
+        let r = (1 << sh) >> 1;
+        let val = ((pixel + r) >> sh) - prep_bias;
+        dst[col] = val as i16;
+        col += 1;
+    }
+}
+
+/// Horizontal bilinear filter for 16bpc AVX-512 put (H-only → u16)
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn h_bilin_16bpc_put_avx512_inner(
+    _token: Server64,
+    dst: &mut [u16],
+    src: &[u16],
+    w: usize,
+    mx: i32,
+    bd_max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let w0 = _mm512_set1_epi32(16 - mx);
+    let w1 = _mm512_set1_epi32(mx);
+    let rnd = _mm512_set1_epi32(8);
+    let shift_count = _mm_cvtsi32_si128(4);
+    let zero = _mm512_setzero_si512();
+    let max_val = _mm512_set1_epi32(bd_max);
+
+    let mut col = 0usize;
+    while col + 16 <= w {
+        let p0 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
+        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 1..col + 17]).unwrap()
+        ));
+
+        let term0 = _mm512_mullo_epi32(p0, w0);
+        let term1 = _mm512_mullo_epi32(p1, w1);
+        let sum = _mm512_add_epi32(term0, term1);
+
+        let shifted = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), shift_count);
+        let clamped = _mm512_min_epi32(_mm512_max_epi32(shifted, zero), max_val);
+
+        let packed = _mm512_cvtusepi32_epi16(clamped);
+        storeu_256!(
+            <&mut [u16; 16]>::try_from(&mut dst[col..col + 16]).unwrap(),
+            packed
+        );
+        col += 16;
+    }
+
+    while col < w {
+        let x0 = src[col] as i32;
+        let x1 = src[col + 1] as i32;
+        let pixel = (16 - mx) * x0 + mx * x1;
+        let result = ((pixel + 8) >> 4).clamp(0, bd_max);
+        dst[col] = result as u16;
+        col += 1;
+    }
+}
+
+/// Vertical bilinear filter for 16bpc AVX-512 put (V-only u16 → u16)
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn v_bilin_16bpc_direct_avx512_inner(
+    _token: Server64,
+    dst: &mut [u16],
+    src: &[u16],
+    src_stride: isize,
+    w: usize,
+    my: i32,
+    bd_max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let w0 = _mm512_set1_epi32(16 - my);
+    let w1 = _mm512_set1_epi32(my);
+    let rnd = _mm512_set1_epi32(8);
+    let shift_count = _mm_cvtsi32_si128(4);
+    let zero = _mm512_setzero_si512();
+    let max_val = _mm512_set1_epi32(bd_max);
+
+    let mut col = 0usize;
+    while col + 16 <= w {
+        let p0 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
+        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(
+                &src[src_stride as usize + col..src_stride as usize + col + 16]
+            )
+            .unwrap()
+        ));
+
+        let term0 = _mm512_mullo_epi32(p0, w0);
+        let term1 = _mm512_mullo_epi32(p1, w1);
+        let sum = _mm512_add_epi32(term0, term1);
+
+        let shifted = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), shift_count);
+        let clamped = _mm512_min_epi32(_mm512_max_epi32(shifted, zero), max_val);
+
+        let packed = _mm512_cvtusepi32_epi16(clamped);
+        storeu_256!(
+            <&mut [u16; 16]>::try_from(&mut dst[col..col + 16]).unwrap(),
+            packed
+        );
+        col += 16;
+    }
+
+    while col < w {
+        let x0 = src[col] as i32;
+        let x1 = src[src_stride as usize + col] as i32;
+        let pixel = (16 - my) * x0 + my * x1;
+        let result = ((pixel + 8) >> 4).clamp(0, bd_max);
+        dst[col] = result as u16;
+        col += 1;
+    }
+}
+
+/// Horizontal bilinear filter for 16bpc AVX-512 prep (H-only → i16)
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn h_bilin_16bpc_prep_direct_avx512_inner(
+    _token: Server64,
+    dst: &mut [i16],
+    src: &[u16],
+    w: usize,
+    mx: i32,
+    prep_bias: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let w0 = _mm512_set1_epi32(16 - mx);
+    let w1 = _mm512_set1_epi32(mx);
+    let rnd = _mm512_set1_epi32(8);
+    let shift_count = _mm_cvtsi32_si128(4);
+    let bias = _mm512_set1_epi32(prep_bias);
+
+    let mut col = 0usize;
+    while col + 16 <= w {
+        let p0 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
+        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 1..col + 17]).unwrap()
+        ));
+
+        let term0 = _mm512_mullo_epi32(p0, w0);
+        let term1 = _mm512_mullo_epi32(p1, w1);
+        let sum = _mm512_add_epi32(term0, term1);
+
+        let shifted = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), shift_count);
+        let biased = _mm512_sub_epi32(shifted, bias);
+
+        let packed = _mm512_cvtsepi32_epi16(biased);
+        storeu_256!(
+            <&mut [i16; 16]>::try_from(&mut dst[col..col + 16]).unwrap(),
+            packed
+        );
+        col += 16;
+    }
+
+    while col < w {
+        let x0 = src[col] as i32;
+        let x1 = src[col + 1] as i32;
+        let pixel = (16 - mx) * x0 + mx * x1;
+        let result = ((pixel + 8) >> 4) - prep_bias;
+        dst[col] = result as i16;
+        col += 1;
+    }
+}
+
+/// Vertical bilinear filter for 16bpc AVX-512 prep (V-only u16 → i16)
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn v_bilin_16bpc_prep_direct_avx512_inner(
+    _token: Server64,
+    dst: &mut [i16],
+    src: &[u16],
+    src_stride: isize,
+    w: usize,
+    my: i32,
+    prep_bias: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let w0 = _mm512_set1_epi32(16 - my);
+    let w1 = _mm512_set1_epi32(my);
+    let rnd = _mm512_set1_epi32(8);
+    let shift_count = _mm_cvtsi32_si128(4);
+    let bias = _mm512_set1_epi32(prep_bias);
+
+    let mut col = 0usize;
+    while col + 16 <= w {
+        let p0 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
+        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(
+                &src[src_stride as usize + col..src_stride as usize + col + 16]
+            )
+            .unwrap()
+        ));
+
+        let term0 = _mm512_mullo_epi32(p0, w0);
+        let term1 = _mm512_mullo_epi32(p1, w1);
+        let sum = _mm512_add_epi32(term0, term1);
+
+        let shifted = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), shift_count);
+        let biased = _mm512_sub_epi32(shifted, bias);
+
+        let packed = _mm512_cvtsepi32_epi16(biased);
+        storeu_256!(
+            <&mut [i16; 16]>::try_from(&mut dst[col..col + 16]).unwrap(),
+            packed
+        );
+        col += 16;
+    }
+
+    while col < w {
+        let x0 = src[col] as i32;
+        let x1 = src[src_stride as usize + col] as i32;
+        let pixel = (16 - my) * x0 + my * x1;
+        let result = ((pixel + 8) >> 4) - prep_bias;
+        dst[col] = result as i16;
+        col += 1;
+    }
+}
+
+/// Bilinear put for 16bpc using AVX-512 (safe slices)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn put_bilin_16bpc_avx512_impl_inner(
+    _token: Server64,
+    dst: &mut [u16],
+    dst_stride: isize,
+    src: &[u16],
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let w = w as usize;
+    let h = h as usize;
+    let bd_max = bitdepth_max;
+    let v_pass_sh = 8; // 4 + intermediate_bits(4)
+
+    match (mx != 0, my != 0) {
+        (true, true) => {
+            let tmp_h = h + 1;
+            let mut mid = take_mid_i32_130();
+            for y in 0..tmp_h {
+                let src_off = (y as isize * src_stride) as usize;
+                h_bilin_16bpc_avx512_inner(_token, &mut mid[y], &src[src_off..], w, mx);
+            }
+            for y in 0..h {
+                let dst_off = (y as isize * dst_stride) as usize;
+                v_bilin_16bpc_avx512_inner(
+                    _token,
+                    &mut dst[dst_off..],
+                    &*mid,
+                    w,
+                    y,
+                    my,
+                    v_pass_sh,
+                    bd_max,
+                );
+            }
+            put_mid_i32_130(mid);
+        }
+        (true, false) => {
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_off = (y as isize * dst_stride) as usize;
+                h_bilin_16bpc_put_avx512_inner(
+                    _token,
+                    &mut dst[dst_off..],
+                    &src[src_off..],
+                    w,
+                    mx,
+                    bd_max,
+                );
+            }
+        }
+        (false, true) => {
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_off = (y as isize * dst_stride) as usize;
+                v_bilin_16bpc_direct_avx512_inner(
+                    _token,
+                    &mut dst[dst_off..],
+                    &src[src_off..],
+                    src_stride,
+                    w,
+                    my,
+                    bd_max,
+                );
+            }
+        }
+        (false, false) => {
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_off = (y as isize * dst_stride) as usize;
+                dst[dst_off..dst_off + w].copy_from_slice(&src[src_off..src_off + w]);
+            }
+        }
+    }
+}
+
+/// Bilinear prep for 16bpc using AVX-512 (safe slices)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn prep_bilin_16bpc_avx512_impl_inner(
+    _token: Server64,
+    tmp: &mut [i16],
+    src: &[u16],
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+) {
+    let mut tmp = tmp.flex_mut();
+    let src = src.flex();
+    let w = w as usize;
+    let h = h as usize;
+    let prep_bias = 8192i32;
+    let v_pass_sh = 8; // 4 + intermediate_bits(4)
+
+    match (mx != 0, my != 0) {
+        (true, true) => {
+            let tmp_h = h + 1;
+            let mut mid = take_mid_i32_130();
+            for y in 0..tmp_h {
+                let src_off = (y as isize * src_stride) as usize;
+                h_bilin_16bpc_avx512_inner(_token, &mut mid[y], &src[src_off..], w, mx);
+            }
+            for y in 0..h {
+                let dst_row = y * w;
+                v_bilin_16bpc_prep_avx512_inner(
+                    _token,
+                    &mut tmp[dst_row..],
+                    &*mid,
+                    w,
+                    y,
+                    my,
+                    v_pass_sh,
+                    prep_bias,
+                );
+            }
+            put_mid_i32_130(mid);
+        }
+        (true, false) => {
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_row = y * w;
+                h_bilin_16bpc_prep_direct_avx512_inner(
+                    _token,
+                    &mut tmp[dst_row..],
+                    &src[src_off..],
+                    w,
+                    mx,
+                    prep_bias,
+                );
+            }
+        }
+        (false, true) => {
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_row = y * w;
+                v_bilin_16bpc_prep_direct_avx512_inner(
+                    _token,
+                    &mut tmp[dst_row..],
+                    &src[src_off..],
+                    src_stride,
+                    w,
+                    my,
+                    prep_bias,
+                );
+            }
+        }
+        (false, false) => {
+            // Simple copy: pixel - prep_bias
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_row = y * w;
+                for x in 0..w {
+                    let pixel = src[src_off + x] as i32;
+                    tmp[dst_row + x] = (pixel - prep_bias) as i16;
+                }
+            }
+        }
+    }
+    let _ = bitdepth_max;
+}
+
+/// Bilinear put for 16bpc using AVX2 (safe slices)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn put_bilin_16bpc_avx2_impl_inner_safe(
+    _token: Desktop64,
+    dst: &mut [u16],
+    dst_stride: isize,
+    src: &[u16],
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let w = w as usize;
+    let h = h as usize;
+    let bd_max = bitdepth_max;
+    let v_pass_sh = 8;
+
+    match (mx != 0, my != 0) {
+        (true, true) => {
+            let tmp_h = h + 1;
+            let mut mid = take_mid_i32_130();
+            for y in 0..tmp_h {
+                let src_off = (y as isize * src_stride) as usize;
+                h_bilin_16bpc_avx2_inner(_token, &mut mid[y], &src[src_off..], w, mx);
+            }
+            for y in 0..h {
+                let dst_off = (y as isize * dst_stride) as usize;
+                v_bilin_16bpc_avx2_inner(
+                    _token,
+                    &mut dst[dst_off..],
+                    &*mid,
+                    w,
+                    y,
+                    my,
+                    v_pass_sh,
+                    bd_max,
+                );
+            }
+            put_mid_i32_130(mid);
+        }
+        (true, false) => {
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_off = (y as isize * dst_stride) as usize;
+                h_bilin_16bpc_put_avx2_inner(
+                    _token,
+                    &mut dst[dst_off..],
+                    &src[src_off..],
+                    w,
+                    mx,
+                    bd_max,
+                );
+            }
+        }
+        (false, true) => {
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_off = (y as isize * dst_stride) as usize;
+                v_bilin_16bpc_direct_avx2_inner(
+                    _token,
+                    &mut dst[dst_off..],
+                    &src[src_off..],
+                    src_stride,
+                    w,
+                    my,
+                    bd_max,
+                );
+            }
+        }
+        (false, false) => {
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_off = (y as isize * dst_stride) as usize;
+                dst[dst_off..dst_off + w].copy_from_slice(&src[src_off..src_off + w]);
+            }
+        }
+    }
+}
+
+/// Bilinear prep for 16bpc using AVX2 (safe slices)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn prep_bilin_16bpc_avx2_impl_inner_safe(
+    _token: Desktop64,
+    tmp: &mut [i16],
+    src: &[u16],
+    src_stride: isize,
+    w: i32,
+    h: i32,
+    mx: i32,
+    my: i32,
+    bitdepth_max: i32,
+) {
+    let mut tmp = tmp.flex_mut();
+    let src = src.flex();
+    let w = w as usize;
+    let h = h as usize;
+    let prep_bias = 8192i32;
+    let v_pass_sh = 8;
+
+    match (mx != 0, my != 0) {
+        (true, true) => {
+            let tmp_h = h + 1;
+            let mut mid = take_mid_i32_130();
+            for y in 0..tmp_h {
+                let src_off = (y as isize * src_stride) as usize;
+                h_bilin_16bpc_avx2_inner(_token, &mut mid[y], &src[src_off..], w, mx);
+            }
+            for y in 0..h {
+                let dst_row = y * w;
+                v_bilin_16bpc_prep_avx2_inner(
+                    _token,
+                    &mut tmp[dst_row..],
+                    &*mid,
+                    w,
+                    y,
+                    my,
+                    v_pass_sh,
+                    prep_bias,
+                );
+            }
+            put_mid_i32_130(mid);
+        }
+        (true, false) => {
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_row = y * w;
+                h_bilin_16bpc_prep_direct_avx2_inner(
+                    _token,
+                    &mut tmp[dst_row..],
+                    &src[src_off..],
+                    w,
+                    mx,
+                    prep_bias,
+                );
+            }
+        }
+        (false, true) => {
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_row = y * w;
+                v_bilin_16bpc_prep_direct_avx2_inner(
+                    _token,
+                    &mut tmp[dst_row..],
+                    &src[src_off..],
+                    src_stride,
+                    w,
+                    my,
+                    prep_bias,
+                );
+            }
+        }
+        (false, false) => {
+            for y in 0..h {
+                let src_off = (y as isize * src_stride) as usize;
+                let dst_row = y * w;
+                for x in 0..w {
+                    let pixel = src[src_off + x] as i32;
+                    tmp[dst_row + x] = (pixel - prep_bias) as i16;
+                }
+            }
+        }
+    }
+    let _ = bitdepth_max;
+}
+
+// ============================================================================
 // Safe dispatch wrappers for x86_64 AVX2
 // Each returns true if SIMD was used (i.e., AVX2 is available).
 // ============================================================================
@@ -10472,6 +11717,12 @@ fn put_bilin_8bpc_dispatch_inner(
     mx: i32,
     my: i32,
 ) {
+    if w >= 64 {
+        if let Some(t512) = crate::src::cpu::summon_avx512() {
+            put_bilin_8bpc_avx512_impl_inner(t512, dst, dst_stride, src, src_stride, w, h, mx, my);
+            return;
+        }
+    }
     put_bilin_8bpc_avx2_impl_inner(token, dst, dst_stride, src, src_stride, w, h, mx, my);
 }
 
@@ -10545,6 +11796,12 @@ fn prep_bilin_8bpc_dispatch_inner(
     mx: i32,
     my: i32,
 ) {
+    if w >= 64 {
+        if let Some(t512) = crate::src::cpu::summon_avx512() {
+            prep_bilin_8bpc_avx512_impl_inner(t512, tmp, src, src_stride, w, h, mx, my);
+            return;
+        }
+    }
     prep_bilin_8bpc_avx2_impl_inner(token, tmp, src, src_stride, w, h, mx, my);
 }
 
@@ -10671,8 +11928,39 @@ pub fn mc_put_dispatch<BD: BitDepth>(
             let bd_c = bd.into_c();
             match filter {
                 Filter2d::Bilinear => {
-                    // 16bpc bilinear not yet converted to safe slices; fall through to scalar
-                    return false;
+                    // Bilinear only accesses current + next row, no negative offsets
+                    let src_bytes = &src_guard.as_bytes()[src_base * pixel_size..];
+                    let src_u16_bilin: &[u16] =
+                        zerocopy::Ref::<_, [u16]>::new_slice(src_bytes)
+                            .expect("u16 alignment")
+                            .into_slice();
+                    if let Some(t512) = crate::src::cpu::summon_avx512() {
+                        put_bilin_16bpc_avx512_impl_inner(
+                            t512,
+                            dst_u16,
+                            dst_stride / 2,
+                            src_u16_bilin,
+                            src_stride / 2,
+                            w,
+                            h,
+                            mx,
+                            my,
+                            bd_c,
+                        );
+                    } else {
+                        put_bilin_16bpc_avx2_impl_inner_safe(
+                            token,
+                            dst_u16,
+                            dst_stride / 2,
+                            src_u16_bilin,
+                            src_stride / 2,
+                            w,
+                            h,
+                            mx,
+                            my,
+                            bd_c,
+                        );
+                    }
                 }
                 _ => {
                     // 8-tap needs rows above the block; pass full buffer + base offset
@@ -10744,8 +12032,37 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
             let bd_c = bd.into_c();
             match filter {
                 Filter2d::Bilinear => {
-                    // 16bpc bilinear not yet converted to safe slices; fall through to scalar
-                    return false;
+                    // Bilinear only accesses current + next row, no negative offsets
+                    let src_bytes = &src_guard.as_bytes()[src_base * pixel_size..];
+                    let src_u16_bilin: &[u16] =
+                        zerocopy::Ref::<_, [u16]>::new_slice(src_bytes)
+                            .expect("u16 alignment")
+                            .into_slice();
+                    if let Some(t512) = crate::src::cpu::summon_avx512() {
+                        prep_bilin_16bpc_avx512_impl_inner(
+                            t512,
+                            tmp,
+                            src_u16_bilin,
+                            src_stride / 2,
+                            w,
+                            h,
+                            mx,
+                            my,
+                            bd_c,
+                        );
+                    } else {
+                        prep_bilin_16bpc_avx2_impl_inner_safe(
+                            token,
+                            tmp,
+                            src_u16_bilin,
+                            src_stride / 2,
+                            w,
+                            h,
+                            mx,
+                            my,
+                            bd_c,
+                        );
+                    }
                 }
                 _ => {
                     // 8-tap needs rows above the block; pass full buffer + base offset
