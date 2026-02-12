@@ -861,6 +861,316 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
 }
 
 // ============================================================================
+// PAETH Prediction AVX-512
+// ============================================================================
+
+/// PAETH prediction 8bpc using AVX-512 — 16 pixels/iter with mask-based blending.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_paeth_8bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let topleft_val = topleft[tl_off] as i32;
+    let topleft_vec = _mm512_set1_epi32(topleft_val);
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let left_val = topleft[tl_off - y - 1] as i32;
+        let left_vec = _mm512_set1_epi32(left_val);
+
+        let mut x = 0;
+        while x + 16 <= width {
+            // Load 16 top pixels → i32
+            let top_bytes = loadu_128!(
+                &topleft[tl_off + 1 + x..tl_off + 1 + x + 16],
+                [u8; 16]
+            );
+            let top = _mm512_cvtepu8_epi32(top_bytes);
+
+            // base = left + top - topleft
+            let base = _mm512_sub_epi32(_mm512_add_epi32(left_vec, top), topleft_vec);
+
+            let ldiff = _mm512_abs_epi32(_mm512_sub_epi32(left_vec, base));
+            let tdiff = _mm512_abs_epi32(_mm512_sub_epi32(top, base));
+            let tldiff = _mm512_abs_epi32(_mm512_sub_epi32(topleft_vec, base));
+
+            // AVX-512 mask comparisons: cmpgt returns __mmask16
+            // ldiff <= tdiff: !(ldiff > tdiff) = ~(cmpgt(ldiff, tdiff))
+            let ld_le_td = !_mm512_cmpgt_epi32_mask(ldiff, tdiff);
+            let ld_le_tld = !_mm512_cmpgt_epi32_mask(ldiff, tldiff);
+            let td_le_tld = !_mm512_cmpgt_epi32_mask(tdiff, tldiff);
+
+            // use_left = ldiff <= tdiff && ldiff <= tldiff
+            let use_left = ld_le_td & ld_le_tld;
+            // use_top = !use_left && tdiff <= tldiff
+            let use_top = !use_left & td_le_tld;
+
+            // Start with topleft, overlay top where use_top, overlay left where use_left
+            let result = _mm512_mask_blend_epi32(
+                use_left,
+                _mm512_mask_blend_epi32(use_top, topleft_vec, top),
+                left_vec,
+            );
+
+            // Pack i32→u8 directly (values are 0..255, clamping is safe)
+            let clamped = _mm512_max_epi32(result, _mm512_setzero_si512());
+            let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
+            storeu_128!(
+                &mut dst[row_off + x..row_off + x + 16],
+                [u8; 16],
+                result_u8
+            );
+
+            x += 16;
+        }
+
+        // Scalar fallback
+        let row = &mut dst[row_off..][..width];
+        while x < width {
+            let top_val = topleft[tl_off + 1 + x] as i32;
+            let base = left_val + top_val - topleft_val;
+            let ldiff = (left_val - base).abs();
+            let tdiff = (top_val - base).abs();
+            let tldiff = (topleft_val - base).abs();
+            let result = if ldiff <= tdiff && ldiff <= tldiff {
+                left_val
+            } else if tdiff <= tldiff {
+                top_val
+            } else {
+                topleft_val
+            };
+            row[x] = result as u8;
+            x += 1;
+        }
+    }
+}
+
+// ============================================================================
+// SMOOTH Prediction AVX-512 (8bpc)
+// ============================================================================
+
+/// Smooth prediction 8bpc using AVX-512 — 16 pixels/iter.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_smooth_8bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let weights_hor = &dav1d_sm_weights[width..][..width];
+    let weights_ver = &dav1d_sm_weights[height..][..height];
+    let right_val = topleft[tl_off + width] as i32;
+    let bottom_val = topleft[tl_off - height] as i32;
+    let right_vec = _mm512_set1_epi32(right_val);
+    let bottom_vec = _mm512_set1_epi32(bottom_val);
+    let rounding = _mm512_set1_epi32(256);
+    let c256 = _mm512_set1_epi32(256);
+    let zero_512 = _mm512_setzero_si512();
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let left_val = topleft[tl_off - y - 1] as i32;
+        let left_vec = _mm512_set1_epi32(left_val);
+        let w_v = weights_ver[y] as i32;
+        let w_v_vec = _mm512_set1_epi32(w_v);
+        let w_v_inv = _mm512_sub_epi32(c256, w_v_vec);
+
+        let mut x = 0;
+        while x + 16 <= width {
+            // Load 16 top pixels → i32
+            let top_bytes = loadu_128!(
+                &topleft[tl_off + 1 + x..tl_off + 1 + x + 16],
+                [u8; 16]
+            );
+            let top = _mm512_cvtepu8_epi32(top_bytes);
+
+            // Load 16 horizontal weights → i32
+            let wh_bytes = loadu_128!(
+                &weights_hor[x..x + 16],
+                [u8; 16]
+            );
+            let w_h = _mm512_cvtepu8_epi32(wh_bytes);
+            let w_h_inv = _mm512_sub_epi32(c256, w_h);
+
+            let vert = _mm512_add_epi32(
+                _mm512_mullo_epi32(w_v_vec, top),
+                _mm512_mullo_epi32(w_v_inv, bottom_vec),
+            );
+            let hor = _mm512_add_epi32(
+                _mm512_mullo_epi32(w_h, left_vec),
+                _mm512_mullo_epi32(w_h_inv, right_vec),
+            );
+
+            let pred = _mm512_add_epi32(vert, hor);
+            let result = _mm512_srai_epi32::<9>(_mm512_add_epi32(pred, rounding));
+
+            let clamped = _mm512_max_epi32(result, zero_512);
+            let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
+            storeu_128!(
+                &mut dst[row_off + x..row_off + x + 16],
+                [u8; 16],
+                result_u8
+            );
+
+            x += 16;
+        }
+
+        // Scalar fallback
+        let row = &mut dst[row_off..][..width];
+        while x < width {
+            let top_val = topleft[tl_off + 1 + x] as i32;
+            let w_h = weights_hor[x] as i32;
+            let pred =
+                w_v * top_val + (256 - w_v) * bottom_val + w_h * left_val + (256 - w_h) * right_val;
+            row[x] = ((pred + 256) >> 9) as u8;
+            x += 1;
+        }
+    }
+}
+
+/// Smooth_V prediction 8bpc using AVX-512 — 16 pixels/iter.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_smooth_v_8bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let weights_ver = &dav1d_sm_weights[height..][..height];
+    let bottom_val = topleft[tl_off - height] as i32;
+    let bottom_vec = _mm512_set1_epi32(bottom_val);
+    let rounding = _mm512_set1_epi32(128);
+    let c256 = _mm512_set1_epi32(256);
+    let zero_512 = _mm512_setzero_si512();
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let w_v = weights_ver[y] as i32;
+        let w_v_vec = _mm512_set1_epi32(w_v);
+        let w_v_inv = _mm512_sub_epi32(c256, w_v_vec);
+
+        let mut x = 0;
+        while x + 16 <= width {
+            let top_bytes = loadu_128!(
+                &topleft[tl_off + 1 + x..tl_off + 1 + x + 16],
+                [u8; 16]
+            );
+            let top = _mm512_cvtepu8_epi32(top_bytes);
+
+            let pred = _mm512_add_epi32(
+                _mm512_mullo_epi32(w_v_vec, top),
+                _mm512_mullo_epi32(w_v_inv, bottom_vec),
+            );
+            let result = _mm512_srai_epi32::<8>(_mm512_add_epi32(pred, rounding));
+
+            let clamped = _mm512_max_epi32(result, zero_512);
+            let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
+            storeu_128!(
+                &mut dst[row_off + x..row_off + x + 16],
+                [u8; 16],
+                result_u8
+            );
+
+            x += 16;
+        }
+
+        let row = &mut dst[row_off..][..width];
+        while x < width {
+            let top_val = topleft[tl_off + 1 + x] as i32;
+            let pred = w_v * top_val + (256 - w_v) * bottom_val;
+            row[x] = ((pred + 128) >> 8) as u8;
+            x += 1;
+        }
+    }
+}
+
+/// Smooth_H prediction 8bpc using AVX-512 — 16 pixels/iter.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_smooth_h_8bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let weights_hor = &dav1d_sm_weights[width..][..width];
+    let right_val = topleft[tl_off + width] as i32;
+    let right_vec = _mm512_set1_epi32(right_val);
+    let rounding = _mm512_set1_epi32(128);
+    let c256 = _mm512_set1_epi32(256);
+    let zero_512 = _mm512_setzero_si512();
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let left_val = topleft[tl_off - y - 1] as i32;
+        let left_vec = _mm512_set1_epi32(left_val);
+
+        let mut x = 0;
+        while x + 16 <= width {
+            let wh_bytes = loadu_128!(
+                &weights_hor[x..x + 16],
+                [u8; 16]
+            );
+            let w_h = _mm512_cvtepu8_epi32(wh_bytes);
+            let w_h_inv = _mm512_sub_epi32(c256, w_h);
+
+            let pred = _mm512_add_epi32(
+                _mm512_mullo_epi32(w_h, left_vec),
+                _mm512_mullo_epi32(w_h_inv, right_vec),
+            );
+            let result = _mm512_srai_epi32::<8>(_mm512_add_epi32(pred, rounding));
+
+            let clamped = _mm512_max_epi32(result, zero_512);
+            let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
+            storeu_128!(
+                &mut dst[row_off + x..row_off + x + 16],
+                [u8; 16],
+                result_u8
+            );
+
+            x += 16;
+        }
+
+        let row = &mut dst[row_off..][..width];
+        while x < width {
+            let w_h = weights_hor[x] as i32;
+            let pred = w_h * left_val + (256 - w_h) * right_val;
+            row[x] = ((pred + 128) >> 8) as u8;
+            x += 1;
+        }
+    }
+}
+
+// ============================================================================
 // PAETH Prediction
 // ============================================================================
 
@@ -4367,46 +4677,50 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 return false;
             }
         }
-        (BPC::BPC8, 9) => ipred_smooth_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-        ),
-        (BPC::BPC8, 10) => ipred_smooth_v_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-        ),
-        (BPC::BPC8, 11) => ipred_smooth_h_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-        ),
-        (BPC::BPC8, 12) => ipred_paeth_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-        ),
+        (BPC::BPC8, 9) => {
+            if let Some(t512) = avx512_token {
+                ipred_smooth_8bpc_avx512_inner(
+                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                )
+            } else {
+                ipred_smooth_8bpc_inner(
+                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                )
+            }
+        }
+        (BPC::BPC8, 10) => {
+            if let Some(t512) = avx512_token {
+                ipred_smooth_v_8bpc_avx512_inner(
+                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                )
+            } else {
+                ipred_smooth_v_8bpc_inner(
+                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                )
+            }
+        }
+        (BPC::BPC8, 11) => {
+            if let Some(t512) = avx512_token {
+                ipred_smooth_h_8bpc_avx512_inner(
+                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                )
+            } else {
+                ipred_smooth_h_8bpc_inner(
+                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                )
+            }
+        }
+        (BPC::BPC8, 12) => {
+            if let Some(t512) = avx512_token {
+                ipred_paeth_8bpc_avx512_inner(
+                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                )
+            } else {
+                ipred_paeth_8bpc_inner(
+                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                )
+            }
+        }
         // Filter intra SIMD has double-offset bug and missing top-pointer update.
         // Fall back to scalar until fixed.
         (BPC::BPC8, 13) => return false,
