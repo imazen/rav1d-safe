@@ -9,6 +9,7 @@ use crate::src::align::Align8;
 use crate::src::align::Aligned;
 use crate::src::align::ArrayDefault;
 use crate::src::error::Rav1dResult;
+use crate::src::mem::try_arc;
 use crate::src::levels::BlockLevel;
 use crate::src::levels::BlockPartition;
 use crate::src::levels::BlockSize;
@@ -5133,10 +5134,9 @@ pub fn rav1d_cdf_thread_copy(src: &CdfThreadContext) -> CdfContext {
 }
 
 pub fn rav1d_cdf_thread_alloc(have_frame_mt: bool) -> Rav1dResult<CdfThreadContext> {
-    // TODO fallible allocation
     // Previously pooled.
-    Ok(CdfThreadContext::Cdf(Arc::new(CdfThreadContextData {
+    Ok(CdfThreadContext::Cdf(try_arc(CdfThreadContextData {
         cdf: Default::default(),
         progress: have_frame_mt.then_some(AtomicU32::new(0)),
-    })))
+    })?))
 }

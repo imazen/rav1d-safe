@@ -62,6 +62,7 @@ use crate::src::error::Rav1dError::ENOENT;
 use crate::src::error::Rav1dError::ERANGE;
 use crate::src::error::Rav1dResult;
 use crate::src::getbits::GetBits;
+use crate::src::mem::try_arc;
 use crate::src::internal::Rav1dContext;
 use crate::src::internal::Rav1dState;
 use crate::src::internal::Rav1dTileGroup;
@@ -78,7 +79,6 @@ use std::ffi::c_uint;
 use std::fmt;
 use std::mem;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 
 struct Debug {
     enabled: bool,
@@ -2307,7 +2307,7 @@ fn parse_obus(
                 }
                 _ => {}
             }
-            state.seq_hdr = Some(Arc::new(DRav1d::from_rav1d(seq_hdr))); // TODO(kkysen) fallible allocation
+            state.seq_hdr = Some(try_arc(DRav1d::from_rav1d(seq_hdr))?);
         }
         Some(Rav1dObuType::RedundantFrameHdr) if state.frame_hdr.is_some() => {}
         Some(Rav1dObuType::RedundantFrameHdr | Rav1dObuType::Frame | Rav1dObuType::FrameHdr) => {
@@ -2352,7 +2352,7 @@ fn parse_obus(
                 }
             }
 
-            state.frame_hdr = Some(Arc::new(DRav1d::from_rav1d(frame_hdr))); // TODO(kkysen) fallible allocation
+            state.frame_hdr = Some(try_arc(DRav1d::from_rav1d(frame_hdr))?);
 
             if r#type == Some(Rav1dObuType::Frame) {
                 // This is the frame header at the start of a frame OBU.
@@ -2392,10 +2392,10 @@ fn parse_obus(
 
                     check_trailing_bits(gb, c.strict_std_compliance)?;
 
-                    state.content_light = Some(Arc::new(Rav1dContentLightLevel {
+                    state.content_light = Some(try_arc(Rav1dContentLightLevel {
                         max_content_light_level,
                         max_frame_average_light_level,
-                    })); // TODO(kkysen) fallible allocation
+                    })?);
                 }
                 Some(ObuMetaType::HdrMdcv) => {
                     let debug = debug.named("MDCVOBU");
@@ -2415,12 +2415,12 @@ fn parse_obus(
                     debug.log(&gb, format_args!("min-luminance: {min_luminance}"));
                     check_trailing_bits(gb, c.strict_std_compliance)?;
 
-                    state.mastering_display = Some(Arc::new(Rav1dMasteringDisplay {
+                    state.mastering_display = Some(try_arc(Rav1dMasteringDisplay {
                         primaries,
                         white_point,
                         max_luminance,
                         min_luminance,
-                    })); // TODO(kkysen) fallible allocation
+                    })?);
                 }
                 Some(ObuMetaType::ItutT35) => 'itut_t35: {
                     let mut payload_size = gb.remaining_len();

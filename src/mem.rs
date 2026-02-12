@@ -1,6 +1,26 @@
 #![forbid(unsafe_code)]
+use crate::src::error::Rav1dError::ENOMEM;
+use crate::src::error::Rav1dResult;
 use parking_lot::Mutex;
 use std::collections::TryReserveError;
+use std::sync::Arc;
+
+/// Fallible `Arc<T>` allocation.
+///
+/// On stable Rust, probes allocation feasibility via `Vec::try_reserve`,
+/// then delegates to `Arc::new`. This is best-effort (TOCTOU between the
+/// probe and the real allocation), but catches genuine OOM for large `T`.
+///
+/// TODO: Replace body with `Arc::try_new(value).map_err(|_| ENOMEM)`
+/// when `allocator_api` stabilizes (rust-lang/rust#32838).
+pub(crate) fn try_arc<T>(value: T) -> Rav1dResult<Arc<T>> {
+    // Arc<T> layout: two atomic usizes (strong + weak counts) + T
+    let needed = std::mem::size_of::<usize>() * 2 + std::mem::size_of::<T>();
+    let mut probe = Vec::<u8>::new();
+    probe.try_reserve(needed).map_err(|_| ENOMEM)?;
+    drop(probe);
+    Ok(Arc::new(value))
+}
 
 pub struct MemPool<T> {
     bufs: Mutex<Vec<Vec<T>>>,

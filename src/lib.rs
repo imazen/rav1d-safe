@@ -36,6 +36,7 @@ use crate::src::internal::Rav1dTaskContextTaskThread;
 use crate::src::internal::TaskThreadData;
 use crate::src::iter::wrapping_iter;
 use crate::src::log::Rav1dLog as _;
+use crate::src::mem::try_arc;
 use crate::src::log::Rav1dLogger;
 use crate::src::obu::rav1d_parse_obus;
 use crate::src::picture::rav1d_picture_alloc_copy;
@@ -167,7 +168,7 @@ pub(crate) fn rav1d_open(
         reset_task_cur: AtomicU32::new(u32::MAX),
         ..Default::default()
     };
-    let task_thread = Arc::new(ttd);
+    let task_thread = try_arc(ttd)?;
 
     let fc = (0..n_fc)
         .map(|i| {
@@ -197,7 +198,7 @@ pub(crate) fn rav1d_open(
     let mut tc_vec = Vec::new();
     for n in 0..n_tc {
         let task_thread = Arc::clone(&task_thread);
-        let thread_data = Arc::new(Rav1dTaskContextTaskThread::new(task_thread));
+        let thread_data = try_arc(Rav1dTaskContextTaskThread::new(task_thread))?;
         let thread_data_copy = Arc::clone(&thread_data);
         let task = if n_tc > 1 {
             let handle = thread::Builder::new()
@@ -238,7 +239,7 @@ pub(crate) fn rav1d_open(
     };
 
     #[cfg_attr(not(feature = "c-ffi"), allow(unused_mut))]
-    let mut c = Arc::new(c);
+    let mut c = try_arc(c)?;
 
     #[cfg(feature = "c-ffi")]
     if c.allocator.is_default() {
