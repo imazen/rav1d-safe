@@ -8421,23 +8421,6 @@ fn put_8tap_16bpc_dispatch_inner(
     );
 }
 
-// TEMPORARY: debug helper to use scalar prep for 16bpc
-fn prep_8tap_16bpc_scalar_fallback(
-    _token: Desktop64,
-    _tmp: &mut [i16],
-    _src: &[u16],
-    _src_base: usize,
-    _src_stride: isize,
-    _w: i32,
-    _h: i32,
-    _mx: i32,
-    _my: i32,
-    _h_filter: Rav1dFilterMode,
-    _v_filter: Rav1dFilterMode,
-) {
-    // This function intentionally does nothing - we return false from dispatch to use scalar
-}
-
 /// Safe arcane entry point for prep_8tap 8bpc dispatch.
 #[cfg(target_arch = "x86_64")]
 #[arcane]

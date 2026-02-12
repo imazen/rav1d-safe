@@ -1283,7 +1283,7 @@ pub trait TryResizable {
         &mut self,
         new_len: usize,
         value: Self::Value,
-    ) -> Result<(), std::collections::TryReserveError>;
+    ) -> Result<(), alloc::collections::TryReserveError>;
 }
 
 impl<V: Clone> TryResizable for Vec<V> {
@@ -1292,7 +1292,7 @@ impl<V: Clone> TryResizable for Vec<V> {
         &mut self,
         new_len: usize,
         value: V,
-    ) -> Result<(), std::collections::TryReserveError> {
+    ) -> Result<(), alloc::collections::TryReserveError> {
         if new_len > self.len() {
             self.try_reserve(new_len - self.len())?;
         }
@@ -1306,7 +1306,7 @@ impl<T: AsMutPtr + TryResizable> DisjointMut<T> {
         &mut self,
         new_len: usize,
         value: T::Value,
-    ) -> Result<(), std::collections::TryReserveError> {
+    ) -> Result<(), alloc::collections::TryReserveError> {
         self.inner.get_mut().try_resize(new_len, value)
     }
 }
@@ -1318,7 +1318,7 @@ pub trait TryResizableWith {
         &mut self,
         new_len: usize,
         f: F,
-    ) -> Result<(), std::collections::TryReserveError>;
+    ) -> Result<(), alloc::collections::TryReserveError>;
 }
 
 impl<V> TryResizableWith for Vec<V> {
@@ -1327,7 +1327,7 @@ impl<V> TryResizableWith for Vec<V> {
         &mut self,
         new_len: usize,
         f: F,
-    ) -> Result<(), std::collections::TryReserveError> {
+    ) -> Result<(), alloc::collections::TryReserveError> {
         if new_len > self.len() {
             self.try_reserve(new_len - self.len())?;
         }
@@ -1341,7 +1341,7 @@ impl<T: AsMutPtr + TryResizableWith> DisjointMut<T> {
         &mut self,
         new_len: usize,
         f: F,
-    ) -> Result<(), std::collections::TryReserveError>
+    ) -> Result<(), alloc::collections::TryReserveError>
     where
         F: FnMut() -> T::Item,
         T: TryResizableWith,
