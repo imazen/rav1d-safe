@@ -2142,9 +2142,10 @@ fn ipred_z2_8bpc_inner(
         return false;
     }
 
-    // No filtering - direct edge access
-    // top = tl + 1, left = tl - 1, -2, -3, ...
-    let top_off = tl_off + 1;
+    // No filtering/upsampling: direct edge access from topleft buffer.
+    // Scalar creates edge[129] with edge[64]=corner, edge[65..]=top, edge[63..]=left.
+    // Maps to: edge[64 + base_x] = topleft[tl_off + base_x]
+    //          edge[63 - base_y] = topleft[tl_off - 1 - base_y]
 
     let rounding = _mm256_set1_epi16(32);
 
@@ -2156,35 +2157,57 @@ fn ipred_z2_8bpc_inner(
 
         let row_off = (dst_base as isize + y as isize * stride) as usize;
 
-        // Find transition point where we switch from top to left
-        let switch_x = if base_x0 < 0 { 0 } else { (-base_x0) as usize };
-        let switch_x = std::cmp::min(switch_x, width as usize);
+        // Pixels with small x have base_x = base_x0 + x which may be < 0 → left edge.
+        // Pixels with large x have base_x >= 0 → top edge.
+        // left_count = number of left-edge pixels (where base_x0 + x < 0).
+        let left_count = if base_x0 >= 0 {
+            0usize
+        } else {
+            ((-base_x0) as usize).min(width as usize)
+        };
 
-        // Process pixels using top edge (base_x >= 0)
+        // First: process pixels using left edge (x < left_count, base_x < 0)
         let mut x = 0usize;
+        while x < left_count {
+            let ypos = (y << 6) - dy * (x as i32 + 1);
+            let base_y = ypos >> 6;
+            let frac_y = ypos & 0x3e;
+            let inv_frac_y = 64 - frac_y;
 
-        // SIMD path for top edge pixels - process 16 at a time
-        while x + 16 <= switch_x {
-            let base = (base_x0 + x as i32) as usize;
-            // Bounds check: need top_off + base + 17 <= topleft.len()
-            if top_off + base + 17 > topleft.len() {
+            // left edge: edge[63 - base_y] = topleft[tl_off - 1 - base_y]
+            let l0_idx = (tl_off as isize - 1 - base_y as isize).max(0) as usize;
+            let l1_idx = (tl_off as isize - 2 - base_y as isize).max(0) as usize;
+            let l0 = topleft[l0_idx] as i32;
+            let l1 = topleft[l1_idx] as i32;
+            let v = l0 * inv_frac_y + l1 * frac_y;
+            dst[row_off + x] = ((v + 32) >> 6) as u8;
+            x += 1;
+        }
+
+        // Then: process pixels using top edge (x >= left_count, base_x >= 0)
+        // top edge: edge[64 + base_x] = topleft[tl_off + base_x]
+
+        // SIMD path - 16 pixels at a time
+        while x + 16 <= width as usize {
+            let base_x = (base_x0 + x as i32) as usize;
+            if tl_off + base_x + 17 > topleft.len() {
                 break;
             }
 
-            let t0 = loadu_128!((&topleft[top_off + base..top_off + base + 16]), [u8; 16]);
+            let t0 = loadu_128!((&topleft[tl_off + base_x..tl_off + base_x + 16]), [u8; 16]);
             let t1 = loadu_128!(
-                (&topleft[top_off + base + 1..top_off + base + 17]),
+                (&topleft[tl_off + base_x + 1..tl_off + base_x + 17]),
                 [u8; 16]
             );
 
-            let t0_lo = _mm256_cvtepu8_epi16(t0);
-            let t1_lo = _mm256_cvtepu8_epi16(t1);
+            let t0_w = _mm256_cvtepu8_epi16(t0);
+            let t1_w = _mm256_cvtepu8_epi16(t1);
 
             let frac_vec = _mm256_set1_epi16(frac_x);
             let inv_frac_vec = _mm256_set1_epi16(inv_frac_x);
 
-            let prod0 = _mm256_mullo_epi16(t0_lo, inv_frac_vec);
-            let prod1 = _mm256_mullo_epi16(t1_lo, frac_vec);
+            let prod0 = _mm256_mullo_epi16(t0_w, inv_frac_vec);
+            let prod1 = _mm256_mullo_epi16(t1_w, frac_vec);
             let sum = _mm256_add_epi16(_mm256_add_epi16(prod0, prod1), rounding);
             let result = _mm256_srai_epi16::<6>(sum);
 
@@ -2201,35 +2224,15 @@ fn ipred_z2_8bpc_inner(
             x += 16;
         }
 
-        // Scalar for remaining top edge pixels
-        while x < switch_x {
-            let base = (base_x0 + x as i32) as usize;
-            // Bounds check: need top_off + base + 2 <= topleft.len()
-            if top_off + base + 2 > topleft.len() {
+        // Scalar remainder for top edge
+        while x < width as usize {
+            let base_x = (base_x0 + x as i32) as usize;
+            if tl_off + base_x + 2 > topleft.len() {
                 break;
             }
-            let t0 = topleft[top_off + base] as i32;
-            let t1 = topleft[top_off + base + 1] as i32;
+            let t0 = topleft[tl_off + base_x] as i32;
+            let t1 = topleft[tl_off + base_x + 1] as i32;
             let v = t0 * inv_frac_x as i32 + t1 * frac_x as i32;
-            dst[row_off + x] = ((v + 32) >> 6) as u8;
-            x += 1;
-        }
-
-        // Now process pixels using left edge (base_x < 0)
-        while x < width as usize {
-            let ypos = (y << 6) - dy * (x as i32 + 1);
-            let base_y = ypos >> 6;
-            let frac_y = ypos & 0x3e;
-            let inv_frac_y = 64 - frac_y;
-
-            // left edge: tl[-1-base_y] and tl[-2-base_y]
-            // Clamp indices to valid range (asm reads padding bytes for OOB)
-            let tl_max = topleft.len() as isize - 1;
-            let l0_idx = (tl_off as isize - 1 - base_y as isize).clamp(0, tl_max) as usize;
-            let l1_idx = (tl_off as isize - 2 - base_y as isize).clamp(0, tl_max) as usize;
-            let l0 = topleft[l0_idx] as i32;
-            let l1 = topleft[l1_idx] as i32;
-            let v = l0 * inv_frac_y + l1 * frac_y;
             dst[row_off + x] = ((v + 32) >> 6) as u8;
             x += 1;
         }
@@ -4270,9 +4273,11 @@ fn ipred_z2_16bpc_inner(
         return false;
     }
 
-    // No filtering - direct edge access
-    // top[0] = tl[1] in pixel units = tl_off + 2 in bytes
-    let top_off = tl_off + 2;
+    // No filtering/upsampling: direct edge access from topleft buffer.
+    // Scalar creates edge[129] with edge[64]=corner, edge[65..]=top, edge[63..]=left.
+    // For 16bpc (2 bytes/pixel):
+    //   edge[64 + base_x] = pixel at byte offset tl_off + base_x * 2
+    //   edge[63 - base_y] = pixel at byte offset tl_off - (1 + base_y) * 2
 
     let rounding = _mm256_set1_epi32(32);
 
@@ -4284,34 +4289,57 @@ fn ipred_z2_16bpc_inner(
 
         let row_off = (dst_base as isize + y as isize * stride) as usize;
 
-        // Find transition point where we switch from top to left
-        let switch_x = if base_x0 < 0 { 0 } else { (-base_x0) as usize };
-        let switch_x = std::cmp::min(switch_x, width as usize);
+        // Pixels with small x have base_x = base_x0 + x which may be < 0 → left edge.
+        // Pixels with large x have base_x >= 0 → top edge.
+        let left_count = if base_x0 >= 0 {
+            0usize
+        } else {
+            ((-base_x0) as usize).min(width as usize)
+        };
 
-        // Process pixels using top edge (base_x >= 0)
+        // First: process pixels using left edge (x < left_count, base_x < 0)
         let mut x = 0usize;
+        while x < left_count {
+            let ypos = (y << 6) - dy * (x as i32 + 1);
+            let base_y = ypos >> 6;
+            let frac_y = ypos & 0x3e;
+            let inv_frac_y = 64 - frac_y;
 
-        // SIMD path for top edge pixels - process 8 at a time
-        while x + 8 <= switch_x {
-            let base = (base_x0 + x as i32) as usize;
+            // left edge pixel at byte offset tl_off - (1 + base_y) * 2
+            let tl_max = topleft.len() as isize - 2;
+            let l0_off = (tl_off as isize - (1 + base_y as isize) * 2).clamp(0, tl_max) as usize;
+            let l1_off = (tl_off as isize - (2 + base_y as isize) * 2).clamp(0, tl_max) as usize;
+            let l0 = u16::from_ne_bytes(topleft[l0_off..l0_off + 2].try_into().unwrap()) as i32;
+            let l1 = u16::from_ne_bytes(topleft[l1_off..l1_off + 2].try_into().unwrap()) as i32;
+            let v = l0 * inv_frac_y + l1 * frac_y;
+            let off = row_off + x * 2;
+            dst[off..off + 2].copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
+            x += 1;
+        }
 
-            let load0 = top_off + base * 2;
-            let load1 = top_off + (base + 1) * 2;
-            // Bounds check: need load1 + 16 <= topleft.len()
+        // Then: process pixels using top edge (x >= left_count, base_x >= 0)
+        // top edge pixel at byte offset tl_off + base_x * 2
+
+        // SIMD path - 8 pixels at a time
+        while x + 8 <= width as usize {
+            let base_x = (base_x0 + x as i32) as usize;
+
+            let load0 = tl_off + base_x * 2;
+            let load1 = tl_off + (base_x + 1) * 2;
             if load1 + 16 > topleft.len() {
                 break;
             }
             let t0 = loadu_128!((&topleft[load0..load0 + 16]), [u8; 16]);
             let t1 = loadu_128!((&topleft[load1..load1 + 16]), [u8; 16]);
 
-            let t0_lo = _mm256_cvtepu16_epi32(t0);
-            let t1_lo = _mm256_cvtepu16_epi32(t1);
+            let t0_w = _mm256_cvtepu16_epi32(t0);
+            let t1_w = _mm256_cvtepu16_epi32(t1);
 
             let frac_vec = _mm256_set1_epi32(frac_x);
             let inv_frac_vec = _mm256_set1_epi32(inv_frac_x);
 
-            let prod0 = _mm256_mullo_epi32(t0_lo, inv_frac_vec);
-            let prod1 = _mm256_mullo_epi32(t1_lo, frac_vec);
+            let prod0 = _mm256_mullo_epi32(t0_w, inv_frac_vec);
+            let prod1 = _mm256_mullo_epi32(t1_w, frac_vec);
             let sum = _mm256_add_epi32(_mm256_add_epi32(prod0, prod1), rounding);
             let result = _mm256_srai_epi32::<6>(sum);
 
@@ -4325,38 +4353,17 @@ fn ipred_z2_16bpc_inner(
             x += 8;
         }
 
-        // Scalar for remaining top edge pixels
-        while x < switch_x {
-            let base = (base_x0 + x as i32) as usize;
-            let t0_off = top_off + base * 2;
-            let t1_off = top_off + (base + 1) * 2;
-            // Bounds check: need t1_off + 2 <= topleft.len()
+        // Scalar remainder for top edge
+        while x < width as usize {
+            let base_x = (base_x0 + x as i32) as usize;
+            let t0_off = tl_off + base_x * 2;
+            let t1_off = tl_off + (base_x + 1) * 2;
             if t1_off + 2 > topleft.len() {
                 break;
             }
             let t0 = u16::from_ne_bytes(topleft[t0_off..t0_off + 2].try_into().unwrap()) as i32;
             let t1 = u16::from_ne_bytes(topleft[t1_off..t1_off + 2].try_into().unwrap()) as i32;
             let v = t0 * inv_frac_x + t1 * frac_x;
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
-            x += 1;
-        }
-
-        // Now process pixels using left edge (base_x < 0)
-        while x < width as usize {
-            let ypos = (y << 6) - dy * (x as i32 + 1);
-            let base_y = ypos >> 6;
-            let frac_y = ypos & 0x3e;
-            let inv_frac_y = 64 - frac_y;
-
-            // left edge: tl[-1-base_y] and tl[-2-base_y] in pixel units
-            // Clamp byte offsets to valid range (asm reads padding bytes for OOB)
-            let tl_max = topleft.len() as isize - 2;
-            let l0_off = (tl_off as isize - (1 + base_y as isize) * 2).clamp(0, tl_max) as usize;
-            let l1_off = (tl_off as isize - (2 + base_y as isize) * 2).clamp(0, tl_max) as usize;
-            let l0 = u16::from_ne_bytes(topleft[l0_off..l0_off + 2].try_into().unwrap()) as i32;
-            let l1 = u16::from_ne_bytes(topleft[l1_off..l1_off + 2].try_into().unwrap()) as i32;
-            let v = l0 * inv_frac_y + l1 * frac_y;
             let off = row_off + x * 2;
             dst[off..off + 2].copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
             x += 1;
@@ -4989,7 +4996,23 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 return false;
             }
         }
-        (BPC::BPC8, 7) => return false, // Z2: SIMD has correctness bugs, needs investigation
+        (BPC::BPC8, 7) => {
+            if !ipred_z2_8bpc_inner(
+                token,
+                dst_bytes,
+                dst_base_bytes,
+                byte_stride,
+                tl_bytes,
+                topleft_off,
+                w,
+                h,
+                angle as i32,
+                max_width,
+                max_height,
+            ) {
+                return false;
+            }
+        }
         (BPC::BPC8, 8) => {
             if !ipred_z3_8bpc_inner(
                 token,
@@ -5232,7 +5255,24 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 return false;
             }
         }
-        (BPC::BPC16, 7) => return false, // Z2: SIMD has correctness bugs, needs investigation
+        (BPC::BPC16, 7) => {
+            let tl_off_bytes = topleft_off * 2;
+            if !ipred_z2_16bpc_inner(
+                token,
+                dst_bytes,
+                dst_base_bytes,
+                byte_stride,
+                tl_bytes,
+                tl_off_bytes,
+                w,
+                h,
+                angle as i32,
+                max_width,
+                max_height,
+            ) {
+                return false;
+            }
+        }
         (BPC::BPC16, 8) => {
             let tl_off_bytes = topleft_off * 2;
             if !ipred_z3_16bpc_inner(
