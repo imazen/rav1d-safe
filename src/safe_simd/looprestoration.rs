@@ -25,7 +25,7 @@ use std::slice;
 use crate::src::safe_simd::partial_simd;
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::{
-    loadi64, loadu_128, loadu_256, loadu_512, storeu_128, storeu_256, storeu_512,
+    loadi64, loadu_128, loadu_256, loadu_512, storeu_128, storeu_256, storeu_512, Flex,
 };
 
 use crate::include::common::bitdepth::AsPrimitive;
@@ -1280,27 +1280,35 @@ fn selfguided_filter_8bpc(
     // So first access is at STRIDE+2. We use aa_base = (row_offset+1)*STRIDE+2
     // with inner loop i from 0..w+2, giving the same index range.
 
-    for row_offset in (0..(h + 2)).step_by(step) {
-        let aa_base = (row_offset + 1) * REST_UNIT_STRIDE + 2;
+    {
+        let mut sq = sumsq.as_mut_slice().flex_mut();
+        let mut sm = sum.as_mut_slice().flex_mut();
+        for row_offset in (0..(h + 2)).step_by(step) {
+            let aa_base = (row_offset + 1) * REST_UNIT_STRIDE + 2;
 
-        for i in 0..(w + 2) {
-            let idx = aa_base + i;
-            let a_val = sumsq[idx];
-            let b_val = sum[idx] as i32;
+            for i in 0..(w + 2) {
+                let idx = aa_base + i;
+                let a_val = sq[idx];
+                let b_val = sm[idx] as i32;
 
-            let p = cmp::max(a_val * n - b_val * b_val, 0) as u32;
-            let z = (p * s + (1 << 19)) >> 20;
-            let x = dav1d_sgr_x_by_x[cmp::min(z, 255) as usize] as u32;
+                let p = cmp::max(a_val * n - b_val * b_val, 0) as u32;
+                let z = (p * s + (1 << 19)) >> 20;
+                let x = dav1d_sgr_x_by_x[cmp::min(z, 255) as usize] as u32;
 
-            // Store inverted: a = x * b * sgr_one_by_x, b = x
-            sumsq[idx] = ((x * (b_val as u32) * sgr_one_by_x + (1 << 11)) >> 12) as i32;
-            sum[idx] = x as i16;
+                // Store inverted: a = x * b * sgr_one_by_x, b = x
+                sq[idx] = ((x * (b_val as u32) * sgr_one_by_x + (1 << 11)) >> 12) as i32;
+                sm[idx] = x as i16;
+            }
         }
     }
 
     // Apply neighbor-weighted filter to produce output
     let base = 2 * REST_UNIT_STRIDE + 3; // matches scalar cursor a/b starting position
     let src_base = 3 * REST_UNIT_STRIDE + 3;
+    let bb = sum.as_slice().flex();
+    let aa = sumsq.as_slice().flex();
+    let src = src.as_slice().flex();
+    let mut dst = dst.as_mut_slice().flex_mut();
 
     if n == 25 {
         // 5x5: use six_neighbors weighting, step by 2 rows
@@ -1311,22 +1319,22 @@ fn selfguided_filter_8bpc(
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 // six_neighbors for b (sum array)
                 let b_six = {
-                    let above = sum[idx - REST_UNIT_STRIDE] as i32;
-                    let below = sum[idx + REST_UNIT_STRIDE] as i32;
-                    let above_left = sum[idx - REST_UNIT_STRIDE - 1] as i32;
-                    let above_right = sum[idx - REST_UNIT_STRIDE + 1] as i32;
-                    let below_left = sum[idx + REST_UNIT_STRIDE - 1] as i32;
-                    let below_right = sum[idx + REST_UNIT_STRIDE + 1] as i32;
+                    let above = bb[idx - REST_UNIT_STRIDE] as i32;
+                    let below = bb[idx + REST_UNIT_STRIDE] as i32;
+                    let above_left = bb[idx - REST_UNIT_STRIDE - 1] as i32;
+                    let above_right = bb[idx - REST_UNIT_STRIDE + 1] as i32;
+                    let below_left = bb[idx + REST_UNIT_STRIDE - 1] as i32;
+                    let below_right = bb[idx + REST_UNIT_STRIDE + 1] as i32;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 // six_neighbors for a (sumsq array)
                 let a_six = {
-                    let above = sumsq[idx - REST_UNIT_STRIDE];
-                    let below = sumsq[idx + REST_UNIT_STRIDE];
-                    let above_left = sumsq[idx - REST_UNIT_STRIDE - 1];
-                    let above_right = sumsq[idx - REST_UNIT_STRIDE + 1];
-                    let below_left = sumsq[idx + REST_UNIT_STRIDE - 1];
-                    let below_right = sumsq[idx + REST_UNIT_STRIDE + 1];
+                    let above = aa[idx - REST_UNIT_STRIDE];
+                    let below = aa[idx + REST_UNIT_STRIDE];
+                    let above_left = aa[idx - REST_UNIT_STRIDE - 1];
+                    let above_right = aa[idx - REST_UNIT_STRIDE + 1];
+                    let below_left = aa[idx + REST_UNIT_STRIDE - 1];
+                    let below_right = aa[idx + REST_UNIT_STRIDE + 1];
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
@@ -1341,15 +1349,15 @@ fn selfguided_filter_8bpc(
                     let idx = base + (j + 1) * REST_UNIT_STRIDE + i;
                     // Simplified: center * 6 + (left + right) * 5
                     let b_horiz = {
-                        let center = sum[idx] as i32;
-                        let left = sum[idx - 1] as i32;
-                        let right = sum[idx + 1] as i32;
+                        let center = bb[idx] as i32;
+                        let left = bb[idx - 1] as i32;
+                        let right = bb[idx + 1] as i32;
                         center * 6 + (left + right) * 5
                     };
                     let a_horiz = {
-                        let center = sumsq[idx];
-                        let left = sumsq[idx - 1];
-                        let right = sumsq[idx + 1];
+                        let center = aa[idx];
+                        let left = aa[idx - 1];
+                        let right = aa[idx + 1];
                         center * 6 + (left + right) * 5
                     };
 
@@ -1365,21 +1373,21 @@ fn selfguided_filter_8bpc(
             for i in 0..w {
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 let b_six = {
-                    let above = sum[idx - REST_UNIT_STRIDE] as i32;
-                    let below = sum[idx + REST_UNIT_STRIDE] as i32;
-                    let above_left = sum[idx - REST_UNIT_STRIDE - 1] as i32;
-                    let above_right = sum[idx - REST_UNIT_STRIDE + 1] as i32;
-                    let below_left = sum[idx + REST_UNIT_STRIDE - 1] as i32;
-                    let below_right = sum[idx + REST_UNIT_STRIDE + 1] as i32;
+                    let above = bb[idx - REST_UNIT_STRIDE] as i32;
+                    let below = bb[idx + REST_UNIT_STRIDE] as i32;
+                    let above_left = bb[idx - REST_UNIT_STRIDE - 1] as i32;
+                    let above_right = bb[idx - REST_UNIT_STRIDE + 1] as i32;
+                    let below_left = bb[idx + REST_UNIT_STRIDE - 1] as i32;
+                    let below_right = bb[idx + REST_UNIT_STRIDE + 1] as i32;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 let a_six = {
-                    let above = sumsq[idx - REST_UNIT_STRIDE];
-                    let below = sumsq[idx + REST_UNIT_STRIDE];
-                    let above_left = sumsq[idx - REST_UNIT_STRIDE - 1];
-                    let above_right = sumsq[idx - REST_UNIT_STRIDE + 1];
-                    let below_left = sumsq[idx + REST_UNIT_STRIDE - 1];
-                    let below_right = sumsq[idx + REST_UNIT_STRIDE + 1];
+                    let above = aa[idx - REST_UNIT_STRIDE];
+                    let below = aa[idx + REST_UNIT_STRIDE];
+                    let above_left = aa[idx - REST_UNIT_STRIDE - 1];
+                    let above_right = aa[idx - REST_UNIT_STRIDE + 1];
+                    let below_left = aa[idx + REST_UNIT_STRIDE - 1];
+                    let below_right = aa[idx + REST_UNIT_STRIDE + 1];
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
@@ -1395,29 +1403,29 @@ fn selfguided_filter_8bpc(
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 // eight_neighbors for b
                 let b_eight = {
-                    let center = sum[idx] as i32;
-                    let left = sum[idx - 1] as i32;
-                    let right = sum[idx + 1] as i32;
-                    let above = sum[idx - REST_UNIT_STRIDE] as i32;
-                    let below = sum[idx + REST_UNIT_STRIDE] as i32;
-                    let above_left = sum[idx - REST_UNIT_STRIDE - 1] as i32;
-                    let above_right = sum[idx - REST_UNIT_STRIDE + 1] as i32;
-                    let below_left = sum[idx + REST_UNIT_STRIDE - 1] as i32;
-                    let below_right = sum[idx + REST_UNIT_STRIDE + 1] as i32;
+                    let center = bb[idx] as i32;
+                    let left = bb[idx - 1] as i32;
+                    let right = bb[idx + 1] as i32;
+                    let above = bb[idx - REST_UNIT_STRIDE] as i32;
+                    let below = bb[idx + REST_UNIT_STRIDE] as i32;
+                    let above_left = bb[idx - REST_UNIT_STRIDE - 1] as i32;
+                    let above_right = bb[idx - REST_UNIT_STRIDE + 1] as i32;
+                    let below_left = bb[idx + REST_UNIT_STRIDE - 1] as i32;
+                    let below_right = bb[idx + REST_UNIT_STRIDE + 1] as i32;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
                 // eight_neighbors for a
                 let a_eight = {
-                    let center = sumsq[idx];
-                    let left = sumsq[idx - 1];
-                    let right = sumsq[idx + 1];
-                    let above = sumsq[idx - REST_UNIT_STRIDE];
-                    let below = sumsq[idx + REST_UNIT_STRIDE];
-                    let above_left = sumsq[idx - REST_UNIT_STRIDE - 1];
-                    let above_right = sumsq[idx - REST_UNIT_STRIDE + 1];
-                    let below_left = sumsq[idx + REST_UNIT_STRIDE - 1];
-                    let below_right = sumsq[idx + REST_UNIT_STRIDE + 1];
+                    let center = aa[idx];
+                    let left = aa[idx - 1];
+                    let right = aa[idx + 1];
+                    let above = aa[idx - REST_UNIT_STRIDE];
+                    let below = aa[idx + REST_UNIT_STRIDE];
+                    let above_left = aa[idx - REST_UNIT_STRIDE - 1];
+                    let above_right = aa[idx - REST_UNIT_STRIDE + 1];
+                    let below_left = aa[idx + REST_UNIT_STRIDE - 1];
+                    let below_right = aa[idx + REST_UNIT_STRIDE + 1];
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
@@ -3241,6 +3249,8 @@ fn sgr_apply_8bpc(
     let rounding_v = _mm256_set1_epi32(1 << 10);
     let zero_256 = _mm256_setzero_si256();
     let max_v = _mm256_set1_epi32(255);
+    let dst = dst.flex();
+    let mut p_guard = p_guard.flex_mut();
 
     for j in 0..h {
         let row_off = p_base.wrapping_add_signed(j as isize * stride);
@@ -3313,6 +3323,9 @@ fn sgr_apply_mix_8bpc(
     let rounding_v = _mm256_set1_epi32(1 << 10);
     let zero_256 = _mm256_setzero_si256();
     let max_v = _mm256_set1_epi32(255);
+    let dst0 = dst0.flex();
+    let dst1 = dst1.flex();
+    let mut p_guard = p_guard.flex_mut();
 
     for j in 0..h {
         let row_off = p_base.wrapping_add_signed(j as isize * stride);
@@ -3403,12 +3416,14 @@ fn sgr_5x5_8bpc_avx2_inner(
     if let Some(token) = summon_avx2() {
         sgr_apply_8bpc(token, &mut p_guard, p_base, stride, &dst, w, h, w0);
     } else {
+        let dst = dst.as_slice().flex();
+        let mut p = p_guard.flex_mut();
         for j in 0..h {
             let row_off = p_base.wrapping_add_signed(j as isize * stride);
             for i in 0..w {
                 let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
-                p_guard[row_off + i] = iclip(
-                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                p[row_off + i] = iclip(
+                    p[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
                     0,
                     255,
                 ) as u8;
@@ -3453,12 +3468,14 @@ fn sgr_3x3_8bpc_avx2_inner(
     if let Some(token) = summon_avx2() {
         sgr_apply_8bpc(token, &mut p_guard, p_base, stride, &dst, w, h, w1);
     } else {
+        let dst = dst.as_slice().flex();
+        let mut p = p_guard.flex_mut();
         for j in 0..h {
             let row_off = p_base.wrapping_add_signed(j as isize * stride);
             for i in 0..w {
                 let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
-                p_guard[row_off + i] = iclip(
-                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                p[row_off + i] = iclip(
+                    p[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
                     0,
                     255,
                 ) as u8;
@@ -3513,13 +3530,16 @@ fn sgr_mix_8bpc_avx2_inner(
             token, &mut p_guard, p_base, stride, &dst0, &dst1, w, h, w0, w1,
         );
     } else {
+        let d0 = dst0.as_slice().flex();
+        let d1 = dst1.as_slice().flex();
+        let mut p = p_guard.flex_mut();
         for j in 0..h {
             let row_off = p_base.wrapping_add_signed(j as isize * stride);
             for i in 0..w {
-                let v = w0 * dst0[j * MAX_RESTORATION_WIDTH + i] as i32
-                    + w1 * dst1[j * MAX_RESTORATION_WIDTH + i] as i32;
-                p_guard[row_off + i] = iclip(
-                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                let v = w0 * d0[j * MAX_RESTORATION_WIDTH + i] as i32
+                    + w1 * d1[j * MAX_RESTORATION_WIDTH + i] as i32;
+                p[row_off + i] = iclip(
+                    p[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
                     0,
                     255,
                 ) as u8;
@@ -4165,34 +4185,44 @@ fn selfguided_filter_16bpc(
     // So first access is at STRIDE+2. We use aa_base = (row_offset+1)*STRIDE+2
     // with inner loop i from 0..w+2, giving the same index range.
 
-    for row_offset in (0..(h + 2)).step_by(step) {
-        let aa_base = (row_offset + 1) * REST_UNIT_STRIDE + 2;
+    {
+        let sq = sumsq.as_slice().flex();
+        let sm = sum.as_slice().flex();
+        let mut aa_m = aa.as_mut_slice().flex_mut();
+        let mut bb_m = bb.as_mut_slice().flex_mut();
+        for row_offset in (0..(h + 2)).step_by(step) {
+            let aa_base = (row_offset + 1) * REST_UNIT_STRIDE + 2;
 
-        for i in 0..(w + 2) {
-            let idx = aa_base + i;
-            // Scale down by bitdepth_min_8 for the variance calculation
-            let a_val = sumsq[idx];
-            let b_val = sum[idx] as i64;
+            for i in 0..(w + 2) {
+                let idx = aa_base + i;
+                // Scale down by bitdepth_min_8 for the variance calculation
+                let a_val = sq[idx];
+                let b_val = sm[idx] as i64;
 
-            // Apply bitdepth scaling: a >> (2 * bitdepth_min_8), b >> bitdepth_min_8
-            let a_scaled =
-                ((a_val + (1 << (2 * bitdepth_min_8 - 1))) >> (2 * bitdepth_min_8)) as i32;
-            let b_scaled = ((b_val + (1 << (bitdepth_min_8 - 1))) >> bitdepth_min_8) as i32;
+                // Apply bitdepth scaling: a >> (2 * bitdepth_min_8), b >> bitdepth_min_8
+                let a_scaled =
+                    ((a_val + (1 << (2 * bitdepth_min_8 - 1))) >> (2 * bitdepth_min_8)) as i32;
+                let b_scaled = ((b_val + (1 << (bitdepth_min_8 - 1))) >> bitdepth_min_8) as i32;
 
-            let p = cmp::max(a_scaled * n - b_scaled * b_scaled, 0) as u32;
-            let z = (p * s + (1 << 19)) >> 20;
-            let x = dav1d_sgr_x_by_x[cmp::min(z, 255) as usize] as u32;
+                let p = cmp::max(a_scaled * n - b_scaled * b_scaled, 0) as u32;
+                let z = (p * s + (1 << 19)) >> 20;
+                let x = dav1d_sgr_x_by_x[cmp::min(z, 255) as usize] as u32;
 
-            // Store: aa = x * b * sgr_one_by_x, bb = x
-            // Use original b_val (not scaled) for the multiplication
-            aa[idx] = ((x * (b_val as u32) * sgr_one_by_x + (1 << 11)) >> 12) as i32;
-            bb[idx] = x as i32;
+                // Store: aa = x * b * sgr_one_by_x, bb = x
+                // Use original b_val (not scaled) for the multiplication
+                aa_m[idx] = ((x * (b_val as u32) * sgr_one_by_x + (1 << 11)) >> 12) as i32;
+                bb_m[idx] = x as i32;
+            }
         }
     }
 
     // Apply neighbor-weighted filter to produce output
     let base = 2 * REST_UNIT_STRIDE + 3; // matches scalar cursor a/b starting position
     let src_base = 3 * REST_UNIT_STRIDE + 3;
+    let bb_f = bb.as_slice().flex();
+    let aa_f = aa.as_slice().flex();
+    let src = src.as_slice().flex();
+    let mut dst = dst.as_mut_slice().flex_mut();
 
     if n == 25 {
         // 5x5: use six_neighbors weighting, step by 2 rows
@@ -4203,22 +4233,22 @@ fn selfguided_filter_16bpc(
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 // six_neighbors for b (bb array)
                 let b_six = {
-                    let above = bb[idx - REST_UNIT_STRIDE] as i64;
-                    let below = bb[idx + REST_UNIT_STRIDE] as i64;
-                    let above_left = bb[idx - REST_UNIT_STRIDE - 1] as i64;
-                    let above_right = bb[idx - REST_UNIT_STRIDE + 1] as i64;
-                    let below_left = bb[idx + REST_UNIT_STRIDE - 1] as i64;
-                    let below_right = bb[idx + REST_UNIT_STRIDE + 1] as i64;
+                    let above = bb_f[idx - REST_UNIT_STRIDE] as i64;
+                    let below = bb_f[idx + REST_UNIT_STRIDE] as i64;
+                    let above_left = bb_f[idx - REST_UNIT_STRIDE - 1] as i64;
+                    let above_right = bb_f[idx - REST_UNIT_STRIDE + 1] as i64;
+                    let below_left = bb_f[idx + REST_UNIT_STRIDE - 1] as i64;
+                    let below_right = bb_f[idx + REST_UNIT_STRIDE + 1] as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 // six_neighbors for a (aa array)
                 let a_six = {
-                    let above = aa[idx - REST_UNIT_STRIDE] as i64;
-                    let below = aa[idx + REST_UNIT_STRIDE] as i64;
-                    let above_left = aa[idx - REST_UNIT_STRIDE - 1] as i64;
-                    let above_right = aa[idx - REST_UNIT_STRIDE + 1] as i64;
-                    let below_left = aa[idx + REST_UNIT_STRIDE - 1] as i64;
-                    let below_right = aa[idx + REST_UNIT_STRIDE + 1] as i64;
+                    let above = aa_f[idx - REST_UNIT_STRIDE] as i64;
+                    let below = aa_f[idx + REST_UNIT_STRIDE] as i64;
+                    let above_left = aa_f[idx - REST_UNIT_STRIDE - 1] as i64;
+                    let above_right = aa_f[idx - REST_UNIT_STRIDE + 1] as i64;
+                    let below_left = aa_f[idx + REST_UNIT_STRIDE - 1] as i64;
+                    let below_right = aa_f[idx + REST_UNIT_STRIDE + 1] as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
@@ -4233,15 +4263,15 @@ fn selfguided_filter_16bpc(
                     let idx = base + (j + 1) * REST_UNIT_STRIDE + i;
                     // Simplified: center * 6 + (left + right) * 5
                     let b_horiz = {
-                        let center = bb[idx] as i64;
-                        let left = bb[idx - 1] as i64;
-                        let right = bb[idx + 1] as i64;
+                        let center = bb_f[idx] as i64;
+                        let left = bb_f[idx - 1] as i64;
+                        let right = bb_f[idx + 1] as i64;
                         center * 6 + (left + right) * 5
                     };
                     let a_horiz = {
-                        let center = aa[idx] as i64;
-                        let left = aa[idx - 1] as i64;
-                        let right = aa[idx + 1] as i64;
+                        let center = aa_f[idx] as i64;
+                        let left = aa_f[idx - 1] as i64;
+                        let right = aa_f[idx + 1] as i64;
                         center * 6 + (left + right) * 5
                     };
 
@@ -4257,21 +4287,21 @@ fn selfguided_filter_16bpc(
             for i in 0..w {
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 let b_six = {
-                    let above = bb[idx - REST_UNIT_STRIDE] as i64;
-                    let below = bb[idx + REST_UNIT_STRIDE] as i64;
-                    let above_left = bb[idx - REST_UNIT_STRIDE - 1] as i64;
-                    let above_right = bb[idx - REST_UNIT_STRIDE + 1] as i64;
-                    let below_left = bb[idx + REST_UNIT_STRIDE - 1] as i64;
-                    let below_right = bb[idx + REST_UNIT_STRIDE + 1] as i64;
+                    let above = bb_f[idx - REST_UNIT_STRIDE] as i64;
+                    let below = bb_f[idx + REST_UNIT_STRIDE] as i64;
+                    let above_left = bb_f[idx - REST_UNIT_STRIDE - 1] as i64;
+                    let above_right = bb_f[idx - REST_UNIT_STRIDE + 1] as i64;
+                    let below_left = bb_f[idx + REST_UNIT_STRIDE - 1] as i64;
+                    let below_right = bb_f[idx + REST_UNIT_STRIDE + 1] as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
                 let a_six = {
-                    let above = aa[idx - REST_UNIT_STRIDE] as i64;
-                    let below = aa[idx + REST_UNIT_STRIDE] as i64;
-                    let above_left = aa[idx - REST_UNIT_STRIDE - 1] as i64;
-                    let above_right = aa[idx - REST_UNIT_STRIDE + 1] as i64;
-                    let below_left = aa[idx + REST_UNIT_STRIDE - 1] as i64;
-                    let below_right = aa[idx + REST_UNIT_STRIDE + 1] as i64;
+                    let above = aa_f[idx - REST_UNIT_STRIDE] as i64;
+                    let below = aa_f[idx + REST_UNIT_STRIDE] as i64;
+                    let above_left = aa_f[idx - REST_UNIT_STRIDE - 1] as i64;
+                    let above_right = aa_f[idx - REST_UNIT_STRIDE + 1] as i64;
+                    let below_left = aa_f[idx + REST_UNIT_STRIDE - 1] as i64;
+                    let below_right = aa_f[idx + REST_UNIT_STRIDE + 1] as i64;
                     (above + below) * 6 + (above_left + above_right + below_left + below_right) * 5
                 };
 
@@ -4287,29 +4317,29 @@ fn selfguided_filter_16bpc(
                 let idx = base + j * REST_UNIT_STRIDE + i;
                 // eight_neighbors for b
                 let b_eight = {
-                    let center = bb[idx] as i64;
-                    let left = bb[idx - 1] as i64;
-                    let right = bb[idx + 1] as i64;
-                    let above = bb[idx - REST_UNIT_STRIDE] as i64;
-                    let below = bb[idx + REST_UNIT_STRIDE] as i64;
-                    let above_left = bb[idx - REST_UNIT_STRIDE - 1] as i64;
-                    let above_right = bb[idx - REST_UNIT_STRIDE + 1] as i64;
-                    let below_left = bb[idx + REST_UNIT_STRIDE - 1] as i64;
-                    let below_right = bb[idx + REST_UNIT_STRIDE + 1] as i64;
+                    let center = bb_f[idx] as i64;
+                    let left = bb_f[idx - 1] as i64;
+                    let right = bb_f[idx + 1] as i64;
+                    let above = bb_f[idx - REST_UNIT_STRIDE] as i64;
+                    let below = bb_f[idx + REST_UNIT_STRIDE] as i64;
+                    let above_left = bb_f[idx - REST_UNIT_STRIDE - 1] as i64;
+                    let above_right = bb_f[idx - REST_UNIT_STRIDE + 1] as i64;
+                    let below_left = bb_f[idx + REST_UNIT_STRIDE - 1] as i64;
+                    let below_right = bb_f[idx + REST_UNIT_STRIDE + 1] as i64;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
                 // eight_neighbors for a
                 let a_eight = {
-                    let center = aa[idx] as i64;
-                    let left = aa[idx - 1] as i64;
-                    let right = aa[idx + 1] as i64;
-                    let above = aa[idx - REST_UNIT_STRIDE] as i64;
-                    let below = aa[idx + REST_UNIT_STRIDE] as i64;
-                    let above_left = aa[idx - REST_UNIT_STRIDE - 1] as i64;
-                    let above_right = aa[idx - REST_UNIT_STRIDE + 1] as i64;
-                    let below_left = aa[idx + REST_UNIT_STRIDE - 1] as i64;
-                    let below_right = aa[idx + REST_UNIT_STRIDE + 1] as i64;
+                    let center = aa_f[idx] as i64;
+                    let left = aa_f[idx - 1] as i64;
+                    let right = aa_f[idx + 1] as i64;
+                    let above = aa_f[idx - REST_UNIT_STRIDE] as i64;
+                    let below = aa_f[idx + REST_UNIT_STRIDE] as i64;
+                    let above_left = aa_f[idx - REST_UNIT_STRIDE - 1] as i64;
+                    let above_right = aa_f[idx - REST_UNIT_STRIDE + 1] as i64;
+                    let below_left = aa_f[idx + REST_UNIT_STRIDE - 1] as i64;
+                    let below_right = aa_f[idx + REST_UNIT_STRIDE + 1] as i64;
                     (center + left + right + above + below) * 4
                         + (above_left + above_right + below_left + below_right) * 3
                 };
@@ -5235,6 +5265,8 @@ fn sgr_apply_16bpc(
     let rounding_v = _mm256_set1_epi32(1 << 10);
     let zero_256 = _mm256_setzero_si256();
     let max_v = _mm256_set1_epi32(bitdepth_max);
+    let dst = dst.flex();
+    let mut p_guard = p_guard.flex_mut();
 
     for j in 0..h {
         let row_off = p_base.wrapping_add_signed(j as isize * stride);
@@ -5306,6 +5338,9 @@ fn sgr_apply_mix_16bpc(
     let rounding_v = _mm256_set1_epi32(1 << 10);
     let zero_256 = _mm256_setzero_si256();
     let max_v = _mm256_set1_epi32(bitdepth_max);
+    let dst0 = dst0.flex();
+    let dst1 = dst1.flex();
+    let mut p_guard = p_guard.flex_mut();
 
     for j in 0..h {
         let row_off = p_base.wrapping_add_signed(j as isize * stride);
@@ -5405,12 +5440,14 @@ fn sgr_5x5_16bpc_avx2_inner(
             bitdepth_max,
         );
     } else {
+        let dst = dst.as_slice().flex();
+        let mut p = p_guard.flex_mut();
         for j in 0..h {
             let row_off = p_base.wrapping_add_signed(j as isize * stride);
             for i in 0..w {
                 let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i];
-                p_guard[row_off + i] = iclip(
-                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                p[row_off + i] = iclip(
+                    p[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
                     0,
                     bitdepth_max,
                 ) as u16;
@@ -5466,12 +5503,14 @@ fn sgr_3x3_16bpc_avx2_inner(
             bitdepth_max,
         );
     } else {
+        let dst = dst.as_slice().flex();
+        let mut p = p_guard.flex_mut();
         for j in 0..h {
             let row_off = p_base.wrapping_add_signed(j as isize * stride);
             for i in 0..w {
                 let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i];
-                p_guard[row_off + i] = iclip(
-                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                p[row_off + i] = iclip(
+                    p[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
                     0,
                     bitdepth_max,
                 ) as u16;
@@ -5537,13 +5576,16 @@ fn sgr_mix_16bpc_avx2_inner(
             bitdepth_max,
         );
     } else {
+        let d0 = dst0.as_slice().flex();
+        let d1 = dst1.as_slice().flex();
+        let mut p = p_guard.flex_mut();
         for j in 0..h {
             let row_off = p_base.wrapping_add_signed(j as isize * stride);
             for i in 0..w {
-                let v = w0 * dst0[j * MAX_RESTORATION_WIDTH + i]
-                    + w1 * dst1[j * MAX_RESTORATION_WIDTH + i];
-                p_guard[row_off + i] = iclip(
-                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                let v = w0 * d0[j * MAX_RESTORATION_WIDTH + i]
+                    + w1 * d1[j * MAX_RESTORATION_WIDTH + i];
+                p[row_off + i] = iclip(
+                    p[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
                     0,
                     bitdepth_max,
                 ) as u16;
