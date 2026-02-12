@@ -3,5 +3,7 @@ Cargo.lock
 *.orig
 *.rlib
 test-vectors/
+fuzz/artifacts/
+fuzz/corpus/
 perf.data
 perf.data.old

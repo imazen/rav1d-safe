@@ -1,5 +1,6 @@
 [workspace]
 members = [".", "crates/rav1d-disjoint-mut"]
+exclude = ["fuzz"]
 
 [package]
 name = "rav1d-safe"

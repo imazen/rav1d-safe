@@ -1,0 +1,32 @@
+[package]
+name = "rav1d-safe-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.rav1d-safe]
+path = ".."
+default-features = false
+features = ["bitdepth_8", "bitdepth_16"]
+
+[[bin]]
+name = "decode_obu"
+path = "fuzz_targets/decode_obu.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_seq_header"
+path = "fuzz_targets/parse_seq_header.rs"
+test = false
+doc = false
+bench = false
