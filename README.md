@@ -53,7 +53,9 @@ The public API lives in `src/managed.rs` and is re-exported at the crate root.
 | `Frame` | Decoded frame with metadata (cloneable, Arc-backed) |
 | `Planes` | Enum dispatching to `Planes8` or `Planes16` by bit depth |
 | `PlaneView8` / `PlaneView16` | Zero-copy 2D view with `row()`, `pixel()`, `rows()` |
-| `Settings` | Thread count, film grain, filters, frame type selection |
+| `Settings` | Thread count, film grain, filters, frame size limit, CPU level |
+| `CpuLevel` | SIMD dispatch level (Scalar, SSE4, AVX2, NEON, Native) |
+| `Error` | Enum: `InvalidData`, `OutOfMemory`, `NeedMoreData`, etc. |
 
 **Metadata types:** `ColorInfo`, `ColorPrimaries`, `TransferCharacteristics`, `MatrixCoefficients`, `ColorRange`, `ContentLightLevel`, `MasteringDisplay`, `PixelLayout`
 
@@ -64,7 +66,7 @@ The decoder expects raw AV1 Open Bitstream Unit (OBU) data. If you have IVF or W
 ### Threading
 
 ```rust
-use rav1d_safe::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings, CpuLevel};
 
 // Single-threaded (default) — synchronous, deterministic
 let decoder = Decoder::new()?;
@@ -72,6 +74,13 @@ let decoder = Decoder::new()?;
 // Multi-threaded — frame threading, better throughput
 let decoder = Decoder::with_settings(Settings {
     threads: 0, // auto-detect core count
+    ..Default::default()
+})?;
+
+// Constrained decoding — limit frame size and CPU features
+let decoder = Decoder::with_settings(Settings {
+    frame_size_limit: 3840 * 2160, // reject frames larger than 4K
+    cpu_level: CpuLevel::Native,   // use best available SIMD
     ..Default::default()
 })?;
 ```
@@ -97,7 +106,7 @@ All fallible operations return `Result<T, rav1d_safe::Error>`. Error variants: `
 
 ## Safety Model
 
-The default build (`deny(unsafe_code)` crate-wide) contains zero `unsafe` in the main crate. The only unsafe code lives in the [disjoint-mut](crates/disjoint-mut/) workspace sub-crate, a provably sound `RefCell`-for-ranges abstraction with always-on bounds checking. The managed API module uses `forbid(unsafe_code)` unconditionally.
+The default build (`forbid(unsafe_code)` crate-wide) contains zero `unsafe` in the main crate. The only unsafe code lives in the [rav1d-disjoint-mut](crates/rav1d-disjoint-mut/) workspace sub-crate, a provably sound `RefCell`-for-ranges abstraction with always-on bounds checking.
 
 The SIMD path uses:
 - [archmage](https://crates.io/crates/archmage) for token-based target-feature dispatch (no manual `#[target_feature]`)
@@ -106,6 +115,42 @@ The SIMD path uses:
 - Slice-based APIs throughout — no pointer arithmetic in SIMD code
 
 Verify at runtime with `rav1d_safe::enabled_features()` — returns a comma-delimited list including the active safety level (e.g. `"bitdepth_8, bitdepth_16, safety:forbid-unsafe"`).
+
+## What's Been Ported
+
+The default build compiles under `forbid(unsafe_code)` in the main crate. All SIMD work lives in `src/safe_simd/` (59k lines of safe Rust replacing 233k lines of hand-written assembly across x86 and ARM).
+
+### Ported: All DSP Kernels (AVX2 + NEON)
+
+Every DSP kernel family has a safe Rust SIMD implementation that compiles under `forbid(unsafe_code)`:
+
+| Module | x86 ASM replaced | ARM ASM replaced | Safe Rust |
+|--------|-------------------|-------------------|-----------|
+| mc (motion compensation) | 3 files (SSE/AVX2/AVX-512) x2 bitdepths | 4 files (32+64-bit) x2 bitdepths + SVE/dotprod | `mc.rs` + `mc_arm.rs` |
+| itx (inverse transforms) | 3 files x2 bitdepths | 2 files x2 bitdepths | `itx.rs` + `itx_arm.rs` |
+| ipred (intra prediction) | 3 files x2 bitdepths | 2 files x2 bitdepths | `ipred.rs` + `ipred_arm.rs` |
+| cdef (directional enhancement) | 3 files x2 bitdepths | 2+tmpl files x2 bitdepths | `cdef.rs` + `cdef_arm.rs` |
+| loopfilter | 3 files x2 bitdepths | 2 files x2 bitdepths | `loopfilter.rs` + `loopfilter_arm.rs` |
+| looprestoration (Wiener + SGR) | 3 files x2 bitdepths | 2+common+tmpl files x2 bitdepths | `looprestoration.rs` + `looprestoration_arm.rs` |
+| filmgrain | 3+common files x2 bitdepths | 2 files x2 bitdepths | `filmgrain.rs` + `filmgrain_arm.rs` |
+| pal (palette) | 1 file | *(none — ARM uses scalar)* | `pal.rs` |
+| refmvs (reference MVs) | 1 file | 2 files (32+64-bit) | `refmvs.rs` + `refmvs_arm.rs` |
+| msac symbol_adapt16 | 1 file (shared) | 1 file (shared) | inline in `msac.rs` |
+| cpuid | 1 file (55 lines) | — | replaced by `std::arch` detection in `cpu.rs` |
+
+### Skipped (With Rationale)
+
+**msac small-symbol functions** (symbol_adapt4, symbol_adapt8, bool_adapt, bool_equi, hi_tok) — The ASM versions exist for SSE2 and NEON (~1,200 lines total across x86+ARM), but profiling shows SIMD overhead exceeds the benefit for these small-n operations. The scalar Rust fallback is used. These functions are hot (msac is 32% of unchecked decode time), but the bottleneck is branch prediction and serial dependency chains, not data parallelism.
+
+**SSE-only paths** — 14 files, ~52k lines. The safe SIMD dispatch jumps straight to AVX2 when available. On pre-AVX2 hardware (pre-Haswell, 2013), the decoder falls back to scalar Rust rather than SSE intrinsics. This is a deliberate tradeoff: SSE-only x86 hardware is rare enough that maintaining a second intrinsics tier isn't worth the code.
+
+**ARM SVE2, dotprod, i8mm extensions** — `mc_dotprod.S` (1,880 lines) and `mc16_sve.S` (1,649 lines) are optional fast paths for newer ARM cores. The safe SIMD covers baseline NEON; these extension paths fall back to the NEON implementation.
+
+**ASM infrastructure files** — `x86inc.asm` (1,983 lines), `asm.S`, `util.S`, `*_tmpl.S`, `*_common.S` are macro libraries and constants that only exist to support the raw assembly. No independent functionality to port.
+
+### TODO
+
+**AVX-512** — 12 files, ~26k lines across all DSP modules. Currently falls back to the AVX2 safe path. Porting these would improve throughput on Zen 4, Ice Lake, and later. The work is straightforward (same algorithms, wider vectors) but substantial.
 
 ## Performance
 
@@ -121,7 +166,7 @@ The `unchecked` feature disables DisjointMut runtime borrow tracking and slice b
 
 ## Building
 
-Requires Rust 1.89+ (stable). Install via [rustup.rs](https://rustup.rs).
+Requires Rust 1.93+ (stable). Install via [rustup.rs](https://rustup.rs).
 
 ```sh
 # Default safe-SIMD build (recommended)
