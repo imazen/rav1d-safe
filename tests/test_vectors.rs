@@ -1,71 +1,52 @@
-//! Test vector management for rav1d-safe
+//! Test vector management — auto-download and cache dav1d-test-data.
 //!
-//! Downloads and caches AV1 conformance test vectors from standard sources.
+//! Call `ensure_dav1d_test_data()` from any test that needs vectors.
+//! It clones the repo on first use and panics if it can't.
 
-use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::Once;
 
-/// Test vector sources
-pub struct TestVectorSource {
-    pub name: &'static str,
-    pub url: &'static str,
-    pub hash: Option<&'static str>, // SHA256 for verification
-}
+static DOWNLOAD: Once = Once::new();
 
-pub const AV1_CONFORMANCE_VECTORS: &[TestVectorSource] = &[
-    TestVectorSource {
-        name: "av1-1-b8-01-size-16x16.ivf",
-        url: "https://storage.googleapis.com/aom-test-data/av1-1-b8-01-size-16x16.ivf",
-        hash: Some("3f2b85ccb27ea4e5c7f7e64a4e0e3e3f8c8d3f1e8f7c5d4e3f2a1b9c8d7e6f5a"),
-    },
-    TestVectorSource {
-        name: "av1-1-b8-02-allintra.ivf",
-        url: "https://storage.googleapis.com/aom-test-data/av1-1-b8-02-allintra.ivf",
-        hash: Some("8f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e"),
-    },
-];
+/// Returns the path to `test-vectors/dav1d-test-data/`, cloning the repo if needed.
+///
+/// Panics if the clone fails (network error, git not installed, etc).
+/// The clone is shallow (`--depth 1`) and cached across test runs.
+pub fn ensure_dav1d_test_data() -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-vectors/dav1d-test-data");
 
-/// Get the test vectors cache directory
-pub fn test_vectors_dir() -> PathBuf {
-    // Use CARGO_TARGET_DIR/test-vectors or fall back to target/test-vectors
-    let target_dir = env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
-    Path::new(&target_dir).join("test-vectors")
-}
+    DOWNLOAD.call_once(|| {
+        if dir.join("8-bit/data/meson.build").exists() {
+            return; // already have it
+        }
 
-/// Download a test vector if not already cached
-pub fn download_test_vector(source: &TestVectorSource) -> std::io::Result<PathBuf> {
-    let cache_dir = test_vectors_dir();
-    fs::create_dir_all(&cache_dir)?;
+        eprintln!("Cloning dav1d-test-data (one-time download, ~109 MB)...");
+        let parent = dir.parent().unwrap();
+        std::fs::create_dir_all(parent).expect("failed to create test-vectors/");
 
-    let local_path = cache_dir.join(source.name);
+        let status = std::process::Command::new("git")
+            .args([
+                "clone",
+                "--depth",
+                "1",
+                "https://code.videolan.org/videolan/dav1d-test-data.git",
+                dir.to_str().unwrap(),
+            ])
+            .status()
+            .expect("failed to run git — is git installed?");
 
-    if local_path.exists() {
-        // TODO: Verify hash if provided
-        return Ok(local_path);
-    }
+        assert!(
+            status.success(),
+            "git clone dav1d-test-data failed (exit {}). Check network connectivity.",
+            status
+        );
+    });
 
-    eprintln!("Downloading test vector: {}", source.name);
-    eprintln!("  from: {}", source.url);
+    assert!(
+        dir.join("8-bit/data/meson.build").exists(),
+        "dav1d-test-data missing after download attempt. \
+         Delete test-vectors/dav1d-test-data/ and re-run to retry."
+    );
 
-    // Download would happen here - for now, just return error
-    Err(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        format!(
-            "Test vector {} not found and download not implemented",
-            source.name
-        ),
-    ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[ignore] // Only run when explicitly requested
-    fn test_download_vectors() {
-        let dir = test_vectors_dir();
-        assert!(dir.to_str().is_some());
-    }
+    dir
 }

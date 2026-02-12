@@ -14,15 +14,10 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 mod ivf_parser;
-
-fn test_vectors_dir() -> PathBuf {
-    // Test vectors live at project_root/test-vectors/ (gitignored)
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    PathBuf::from(manifest_dir).join("test-vectors")
-}
+mod test_vectors;
 
 fn dav1d_test_data() -> PathBuf {
-    test_vectors_dir().join("dav1d-test-data")
+    test_vectors::ensure_dav1d_test_data()
 }
 
 /// A test vector with its expected MD5 hash.
@@ -304,19 +299,11 @@ fn verify_meson_vectors_with_grain(
 #[test]
 fn test_md5_verify_first_8bit() {
     let meson = dav1d_test_data().join("8-bit/data/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found. Run: bash scripts/download-test-vectors.sh");
-        return;
-    }
-
     let vectors = parse_meson_build(&meson);
     assert!(!vectors.is_empty(), "No test vectors found in meson.build");
 
     let first = &vectors[0];
-    if !first.ivf_path.exists() {
-        eprintln!("Skipping: {} not found", first.ivf_path.display());
-        return;
-    }
+    assert!(first.ivf_path.exists(), "missing: {}", first.ivf_path.display());
 
     let (actual_md5, frame_count) = compute_decode_md5(&first.ivf_path)
         .unwrap_or_else(|e| panic!("Failed to decode {}: {e}", first.name));
@@ -337,11 +324,6 @@ fn test_md5_verify_first_8bit() {
 #[test]
 fn test_md5_verify_all_8bit_data() {
     let meson = dav1d_test_data().join("8-bit/data/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
     eprintln!("8-bit/data: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
@@ -357,11 +339,6 @@ fn test_md5_verify_all_8bit_data() {
 #[test]
 fn test_md5_verify_all_10bit_data() {
     let meson = dav1d_test_data().join("10-bit/data/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
     eprintln!("10-bit/data: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
@@ -377,11 +354,6 @@ fn test_md5_verify_all_10bit_data() {
 #[test]
 fn test_md5_verify_all_12bit_data() {
     let meson = dav1d_test_data().join("12-bit/data/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
     eprintln!("12-bit/data: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
@@ -397,11 +369,6 @@ fn test_md5_verify_all_12bit_data() {
 #[test]
 fn test_md5_verify_8bit_features() {
     let meson = dav1d_test_data().join("8-bit/features/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
     eprintln!("8-bit/features: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
@@ -417,11 +384,6 @@ fn test_md5_verify_8bit_features() {
 #[test]
 fn test_md5_verify_8bit_quantizer() {
     let meson = dav1d_test_data().join("8-bit/quantizer/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
     eprintln!("8-bit/quantizer: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
@@ -437,11 +399,6 @@ fn test_md5_verify_8bit_quantizer() {
 #[test]
 fn test_md5_verify_8bit_size() {
     let meson = dav1d_test_data().join("8-bit/size/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
     eprintln!("8-bit/size: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
@@ -457,11 +414,6 @@ fn test_md5_verify_8bit_size() {
 #[test]
 fn test_md5_verify_8bit_issues() {
     let meson = dav1d_test_data().join("8-bit/issues/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
     eprintln!("8-bit/issues: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
@@ -477,11 +429,6 @@ fn test_md5_verify_8bit_issues() {
 #[test]
 fn test_md5_verify_10bit_quantizer() {
     let meson = dav1d_test_data().join("10-bit/quantizer/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
     eprintln!("10-bit/quantizer: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
@@ -497,11 +444,6 @@ fn test_md5_verify_10bit_quantizer() {
 #[test]
 fn test_md5_verify_8bit_film_grain() {
     let meson = dav1d_test_data().join("8-bit/film_grain/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     // Film grain tests explicitly use --filmgrain 1, so decode with grain applied
     let (passed, failed, skipped) = verify_meson_vectors_with_grain(&meson, true);
     eprintln!("8-bit/film_grain: {passed} passed, {} failed, {skipped} skipped", failed.len());
@@ -518,11 +460,6 @@ fn test_md5_verify_8bit_film_grain() {
 #[test]
 fn test_md5_verify_8bit_cdfupdate() {
     let meson = dav1d_test_data().join("8-bit/cdfupdate/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
     eprintln!("8-bit/cdfupdate: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
@@ -538,11 +475,6 @@ fn test_md5_verify_8bit_cdfupdate() {
 #[test]
 fn test_md5_verify_8bit_vq_suite() {
     let meson = dav1d_test_data().join("8-bit/vq_suite/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     let (passed, failed, skipped) = verify_meson_vectors(&meson);
     eprintln!("8-bit/vq_suite: {passed} passed, {} failed, {skipped} skipped", failed.len());
 
@@ -558,21 +490,13 @@ fn test_md5_verify_8bit_vq_suite() {
 #[test]
 fn test_md5_verify_single_00000002() {
     let meson = dav1d_test_data().join("8-bit/data/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
-
     let vectors = parse_meson_build(&meson);
     let vector = vectors
         .iter()
         .find(|v| v.name == "00000002")
         .expect("Vector 00000002 not found");
 
-    if !vector.ivf_path.exists() {
-        eprintln!("Skipping: {} not found", vector.ivf_path.display());
-        return;
-    }
+    assert!(vector.ivf_path.exists(), "missing: {}", vector.ivf_path.display());
 
     let (actual_md5, frame_count) = compute_decode_md5(&vector.ivf_path)
         .unwrap_or_else(|e| panic!("Failed to decode {}: {e}", vector.name));
@@ -593,11 +517,6 @@ fn test_md5_verify_single_00000002() {
 #[test]
 fn test_md5_verify_comprehensive() {
     let base = dav1d_test_data();
-    if !base.exists() {
-        eprintln!("Skipping: dav1d-test-data not found");
-        return;
-    }
-
     // (path, apply_grain): film_grain/ tests need grain ON, all others OFF
     // dav1d's --verify flag uses the md5 muxer which defaults to grain OFF
     let meson_files: &[(&str, bool)] = &[
@@ -628,9 +547,7 @@ fn test_md5_verify_comprehensive() {
 
     for &(meson_rel, grain) in meson_files {
         let meson_path = base.join(meson_rel);
-        if !meson_path.exists() {
-            continue;
-        }
+        assert!(meson_path.exists(), "missing: {}", meson_path.display());
 
         let (passed, failed, skipped) = verify_meson_vectors_with_grain(&meson_path, grain);
         eprintln!("{meson_rel}: {passed} passed, {} failed, {skipped} skipped", failed.len());

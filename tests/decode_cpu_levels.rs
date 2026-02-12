@@ -14,13 +14,10 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 mod ivf_parser;
-
-fn test_vectors_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-vectors")
-}
+mod test_vectors;
 
 fn dav1d_test_data() -> PathBuf {
-    test_vectors_dir().join("dav1d-test-data")
+    test_vectors::ensure_dav1d_test_data()
 }
 
 /// A test vector with expected MD5.
@@ -267,10 +264,6 @@ fn verify_at_level(
 #[test]
 fn test_cpu_levels_8bit_data() {
     let meson = dav1d_test_data().join("8-bit/data/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found. Run: bash scripts/download-test-vectors.sh");
-        return;
-    }
 
     let levels = CpuLevel::platform_levels();
     let mut all_failures = Vec::new();
@@ -298,10 +291,6 @@ fn test_cpu_levels_8bit_data() {
 #[test]
 fn test_cpu_levels_10bit_data() {
     let meson = dav1d_test_data().join("10-bit/data/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
 
     let levels = CpuLevel::platform_levels();
     let mut all_failures = Vec::new();
@@ -329,10 +318,6 @@ fn test_cpu_levels_10bit_data() {
 #[test]
 fn test_cpu_levels_12bit_data() {
     let meson = dav1d_test_data().join("12-bit/data/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
 
     let levels = CpuLevel::platform_levels();
     let mut all_failures = Vec::new();
@@ -361,19 +346,10 @@ fn test_cpu_levels_12bit_data() {
 #[test]
 fn test_cpu_levels_smoke() {
     let meson = dav1d_test_data().join("8-bit/data/meson.build");
-    if !meson.exists() {
-        eprintln!("Skipping: test vectors not found");
-        return;
-    }
 
     let vectors = parse_meson_build(&meson);
-    let first = match vectors.first() {
-        Some(v) if v.ivf_path.exists() => v,
-        _ => {
-            eprintln!("Skipping: first vector not found");
-            return;
-        }
-    };
+    let first = vectors.first().expect("no vectors in 8-bit/data/meson.build");
+    assert!(first.ivf_path.exists(), "missing: {}", first.ivf_path.display());
 
     let levels = CpuLevel::platform_levels();
     for &level in levels {
@@ -396,10 +372,6 @@ fn test_cpu_levels_smoke() {
 #[test]
 fn test_cpu_levels_comprehensive() {
     let base = dav1d_test_data();
-    if !base.exists() {
-        eprintln!("Skipping: dav1d-test-data not found");
-        return;
-    }
 
     let meson_files: &[(&str, bool)] = &[
         ("8-bit/data/meson.build", false),
@@ -433,9 +405,7 @@ fn test_cpu_levels_comprehensive() {
 
         for &(meson_rel, grain) in meson_files {
             let meson_path = base.join(meson_rel);
-            if !meson_path.exists() {
-                continue;
-            }
+            assert!(meson_path.exists(), "missing: {}", meson_path.display());
 
             let (passed, failed, skipped) = verify_at_level(&meson_path, level, grain);
             level_passed += passed;
