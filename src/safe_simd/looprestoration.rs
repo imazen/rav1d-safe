@@ -223,6 +223,226 @@ fn wiener_filter5_8bpc_avx2_inner(
     wiener_filter7_8bpc_avx2_inner(_token, p, left, lpf, lpf_off, w, h, params, edges);
 }
 
+/// Wiener filter 7-tap for 8bpc using AVX-512
+///
+/// Vertical pass processes 16 pixels per iteration (vs 8 with AVX2).
+/// Uses _mm512_cvtusepi32_epi8 for direct i32 → u8 conversion.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn wiener_filter7_8bpc_avx512_inner(
+    _token: Server64,
+    p: PicOffset,
+    left: &[LeftPixelRow<u8>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+) {
+    let mut tmp = [0u8; (64 + 3 + 3) * REST_UNIT_STRIDE];
+    padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+
+    let mut hor = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
+
+    let filter = &params.filter;
+    let round_bits_h = 3i32;
+    let rounding_off_h = 1i32 << (round_bits_h - 1);
+    let clip_limit = 1i32 << (8 + 1 + 7 - round_bits_h); // = 8192
+
+    // Horizontal pass (scalar — same as AVX2 version)
+    for row in 0..(h + 6) {
+        let tmp_row = &tmp[row * REST_UNIT_STRIDE..];
+        let hor_row = &mut hor[row * REST_UNIT_STRIDE..row * REST_UNIT_STRIDE + w];
+
+        for x in 0..w {
+            let mut sum = 1i32 << 14;
+            sum += tmp_row[x + 3] as i32 * 128;
+            for k in 0..7 {
+                sum += tmp_row[x + k] as i32 * filter[0][k] as i32;
+            }
+            hor_row[x] = iclip((sum + rounding_off_h) >> round_bits_h, 0, clip_limit - 1) as u16;
+        }
+    }
+
+    // Vertical pass with AVX-512 (16 pixels at a time)
+    let round_bits_v = 11i32;
+    let rounding_off_v = 1i32 << (round_bits_v - 1);
+    let round_offset = 1i32 << (8 + round_bits_v - 1);
+    let stride = p.pixel_stride::<BitDepth8>();
+
+    let vf0 = _mm512_set1_epi32(filter[1][0] as i32);
+    let vf1 = _mm512_set1_epi32(filter[1][1] as i32);
+    let vf2 = _mm512_set1_epi32(filter[1][2] as i32);
+    let vf3 = _mm512_set1_epi32(filter[1][3] as i32);
+    let vf4 = _mm512_set1_epi32(filter[1][4] as i32);
+    let vf5 = _mm512_set1_epi32(filter[1][5] as i32);
+    let vf6 = _mm512_set1_epi32(filter[1][6] as i32);
+    let v_round_offset = _mm512_set1_epi32(-round_offset);
+    let v_rounding = _mm512_set1_epi32(rounding_off_v);
+    let zero_512 = _mm512_setzero_si512();
+
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth8>(w, h);
+    for j in 0..h {
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
+        let mut i = 0usize;
+
+        // Process 16 pixels at a time with AVX-512
+        while i + 16 <= w {
+            // Load 16 u16 from each of 7 rows, expand to 16 i32
+            let r0 = _mm512_cvtepu16_epi32(loadu_256!(
+                &hor[(j + 0) * REST_UNIT_STRIDE + i..(j + 0) * REST_UNIT_STRIDE + i + 16],
+                [u16; 16]
+            ));
+            let r1 = _mm512_cvtepu16_epi32(loadu_256!(
+                &hor[(j + 1) * REST_UNIT_STRIDE + i..(j + 1) * REST_UNIT_STRIDE + i + 16],
+                [u16; 16]
+            ));
+            let r2 = _mm512_cvtepu16_epi32(loadu_256!(
+                &hor[(j + 2) * REST_UNIT_STRIDE + i..(j + 2) * REST_UNIT_STRIDE + i + 16],
+                [u16; 16]
+            ));
+            let r3 = _mm512_cvtepu16_epi32(loadu_256!(
+                &hor[(j + 3) * REST_UNIT_STRIDE + i..(j + 3) * REST_UNIT_STRIDE + i + 16],
+                [u16; 16]
+            ));
+            let r4 = _mm512_cvtepu16_epi32(loadu_256!(
+                &hor[(j + 4) * REST_UNIT_STRIDE + i..(j + 4) * REST_UNIT_STRIDE + i + 16],
+                [u16; 16]
+            ));
+            let r5 = _mm512_cvtepu16_epi32(loadu_256!(
+                &hor[(j + 5) * REST_UNIT_STRIDE + i..(j + 5) * REST_UNIT_STRIDE + i + 16],
+                [u16; 16]
+            ));
+            let r6 = _mm512_cvtepu16_epi32(loadu_256!(
+                &hor[(j + 6) * REST_UNIT_STRIDE + i..(j + 6) * REST_UNIT_STRIDE + i + 16],
+                [u16; 16]
+            ));
+
+            // sum = -round_offset + sum(row[k] * filter[k])
+            let mut sum = v_round_offset;
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r0, vf0));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r1, vf1));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r2, vf2));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r3, vf3));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r4, vf4));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r5, vf5));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r6, vf6));
+
+            sum = _mm512_add_epi32(sum, v_rounding);
+            sum = _mm512_srai_epi32::<11>(sum);
+
+            // Clamp to 0..255 and convert i32 → u8 directly
+            let clamped = _mm512_max_epi32(sum, zero_512);
+            let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
+
+            storeu_128!(
+                &mut p_guard[row_off + i..row_off + i + 16],
+                [u8; 16],
+                result_u8
+            );
+            i += 16;
+        }
+
+        // AVX2 tail for 8-pixel chunks
+        while i + 8 <= w {
+            let r0 = loadu_128!(
+                &hor[(j + 0) * REST_UNIT_STRIDE + i..(j + 0) * REST_UNIT_STRIDE + i + 8],
+                [u16; 8]
+            );
+            let r1 = loadu_128!(
+                &hor[(j + 1) * REST_UNIT_STRIDE + i..(j + 1) * REST_UNIT_STRIDE + i + 8],
+                [u16; 8]
+            );
+            let r2 = loadu_128!(
+                &hor[(j + 2) * REST_UNIT_STRIDE + i..(j + 2) * REST_UNIT_STRIDE + i + 8],
+                [u16; 8]
+            );
+            let r3 = loadu_128!(
+                &hor[(j + 3) * REST_UNIT_STRIDE + i..(j + 3) * REST_UNIT_STRIDE + i + 8],
+                [u16; 8]
+            );
+            let r4 = loadu_128!(
+                &hor[(j + 4) * REST_UNIT_STRIDE + i..(j + 4) * REST_UNIT_STRIDE + i + 8],
+                [u16; 8]
+            );
+            let r5 = loadu_128!(
+                &hor[(j + 5) * REST_UNIT_STRIDE + i..(j + 5) * REST_UNIT_STRIDE + i + 8],
+                [u16; 8]
+            );
+            let r6 = loadu_128!(
+                &hor[(j + 6) * REST_UNIT_STRIDE + i..(j + 6) * REST_UNIT_STRIDE + i + 8],
+                [u16; 8]
+            );
+
+            let vf0_256 = _mm256_set1_epi32(filter[1][0] as i32);
+            let vf1_256 = _mm256_set1_epi32(filter[1][1] as i32);
+            let vf2_256 = _mm256_set1_epi32(filter[1][2] as i32);
+            let vf3_256 = _mm256_set1_epi32(filter[1][3] as i32);
+            let vf4_256 = _mm256_set1_epi32(filter[1][4] as i32);
+            let vf5_256 = _mm256_set1_epi32(filter[1][5] as i32);
+            let vf6_256 = _mm256_set1_epi32(filter[1][6] as i32);
+
+            let r0_lo = _mm256_cvtepu16_epi32(r0);
+            let r1_lo = _mm256_cvtepu16_epi32(r1);
+            let r2_lo = _mm256_cvtepu16_epi32(r2);
+            let r3_lo = _mm256_cvtepu16_epi32(r3);
+            let r4_lo = _mm256_cvtepu16_epi32(r4);
+            let r5_lo = _mm256_cvtepu16_epi32(r5);
+            let r6_lo = _mm256_cvtepu16_epi32(r6);
+
+            let mut sum = _mm256_set1_epi32(-round_offset);
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r0_lo, vf0_256));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r1_lo, vf1_256));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r2_lo, vf2_256));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r3_lo, vf3_256));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r4_lo, vf4_256));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r5_lo, vf5_256));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r6_lo, vf6_256));
+            sum = _mm256_add_epi32(sum, _mm256_set1_epi32(rounding_off_v));
+            sum = _mm256_srai_epi32::<11>(sum);
+
+            let sum16 = _mm256_packus_epi32(sum, sum);
+            let sum16_lo = _mm256_castsi256_si128(sum16);
+            let sum16_hi = _mm256_extracti128_si256(sum16, 1);
+            let sum16_combined = _mm_unpacklo_epi64(sum16_lo, sum16_hi);
+            let sum8 = _mm_packus_epi16(sum16_combined, sum16_combined);
+
+            let dst_arr: &mut [u8; 8] =
+                (&mut p_guard[row_off + i..row_off + i + 8]).try_into().unwrap();
+            partial_simd::mm_storel_epi64(dst_arr, sum8);
+            i += 8;
+        }
+
+        // Scalar tail
+        while i < w {
+            let mut sum = -round_offset;
+            for k in 0..7 {
+                sum += hor[(j + k) * REST_UNIT_STRIDE + i] as i32 * filter[1][k] as i32;
+            }
+            p_guard[row_off + i] = iclip((sum + rounding_off_v) >> round_bits_v, 0, 255) as u8;
+            i += 1;
+        }
+    }
+}
+
+/// Wiener filter 5-tap for 8bpc using AVX-512 (delegates to 7-tap)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn wiener_filter5_8bpc_avx512_inner(
+    _token: Server64,
+    p: PicOffset,
+    left: &[LeftPixelRow<u8>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+) {
+    wiener_filter7_8bpc_avx512_inner(_token, p, left, lpf, lpf_off, w, h, params, edges);
+}
+
 // ============================================================================
 // WIENER FILTER - 16bpc AVX2 IMPLEMENTATION
 // ============================================================================
@@ -2993,6 +3213,7 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
 
+    let avx512_token = crate::src::cpu::summon_avx512();
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
@@ -3008,10 +3229,42 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
 
     match (BD::BPC, variant) {
         (BPC::BPC8, 0) => {
-            wiener_filter7_8bpc_avx2_inner(token, dst, left_8(), lpf, lpf_off, w, h, params, edges)
+            if let Some(t512) = avx512_token {
+                wiener_filter7_8bpc_avx512_inner(
+                    t512,
+                    dst,
+                    left_8(),
+                    lpf,
+                    lpf_off,
+                    w,
+                    h,
+                    params,
+                    edges,
+                )
+            } else {
+                wiener_filter7_8bpc_avx2_inner(
+                    token, dst, left_8(), lpf, lpf_off, w, h, params, edges,
+                )
+            }
         }
         (BPC::BPC8, 1) => {
-            wiener_filter5_8bpc_avx2_inner(token, dst, left_8(), lpf, lpf_off, w, h, params, edges)
+            if let Some(t512) = avx512_token {
+                wiener_filter5_8bpc_avx512_inner(
+                    t512,
+                    dst,
+                    left_8(),
+                    lpf,
+                    lpf_off,
+                    w,
+                    h,
+                    params,
+                    edges,
+                )
+            } else {
+                wiener_filter5_8bpc_avx2_inner(
+                    token, dst, left_8(), lpf, lpf_off, w, h, params, edges,
+                )
+            }
         }
         (BPC::BPC8, 2) => sgr_5x5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
         (BPC::BPC8, 3) => sgr_3x3_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
