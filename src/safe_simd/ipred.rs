@@ -1836,6 +1836,8 @@ pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
 ///   base = (xpos >> 6) + base_inc * x
 ///   frac = xpos & 0x3e
 ///   out = (top[base] * (64 - frac) + top[base+1] * frac + 32) >> 6
+/// Z1 intra prediction SIMD inner for 8bpc.
+/// Builds preprocessed top edge array internally, handles all cases.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn ipred_z1_8bpc_inner(
@@ -1848,50 +1850,72 @@ fn ipred_z1_8bpc_inner(
     width: usize,
     height: usize,
     angle: i32,
-) -> bool {
+) {
     let mut dst = dst.flex_mut();
-    let topleft = topleft.flex();
-    let height = height as i32;
+    let width_i = width as i32;
+    let height_i = height as i32;
 
     // Extract angle flags
     let is_sm = (angle >> 9) & 1 != 0;
     let enable_intra_edge_filter = (angle >> 10) != 0;
     let angle = angle & 511;
 
-    // Get derivative
-    let dx = dav1d_dr_intra_derivative[(angle >> 1) as usize] as i32;
+    let mut dx = dav1d_dr_intra_derivative[(angle >> 1) as usize] as i32;
 
-    // Determine if we need edge filtering/upsampling
-    // For simplicity, this implementation handles the no-filter case only
-    // Complex cases fall through to scalar
     let upsample_above = enable_intra_edge_filter
         && (90 - angle) < 40
-        && (width + height as usize) <= (16 >> is_sm as usize);
+        && ((width_i + height_i) as usize) <= (16 >> is_sm as usize);
+
+    // Build preprocessed top edge array
+    let mut top_out = [0u8; 64 + 64];
+    let (top, max_base_x, base_inc);
 
     if upsample_above {
-        // Upsampling requires edge preprocessing not implemented in SIMD yet
-        return false;
-    }
-
-    let filter_strength = if enable_intra_edge_filter {
-        get_filter_strength_simple(width as i32 + height, 90 - angle, is_sm)
+        upsample_edge_8bpc(
+            &mut top_out,
+            width_i + height_i,
+            topleft,
+            tl_off + 1,
+            -1,
+            width_i + std::cmp::min(width_i, height_i),
+        );
+        dx <<= 1;
+        top = top_out.as_slice();
+        max_base_x = (2 * (width_i + height_i) - 2) as usize;
+        base_inc = 2usize;
     } else {
-        0
+        let filter_strength = if enable_intra_edge_filter {
+            get_filter_strength_simple(width_i + height_i, 90 - angle, is_sm)
+        } else {
+            0
+        };
+        if filter_strength != 0 {
+            filter_edge_8bpc(
+                &mut top_out,
+                width_i + height_i,
+                0,
+                width_i + height_i,
+                topleft,
+                tl_off + 1,
+                -1,
+                width_i + std::cmp::min(width_i, height_i),
+                filter_strength,
+            );
+            top = top_out.as_slice();
+            max_base_x = (width_i + height_i - 1) as usize;
+        } else {
+            // No preprocessing needed — use topleft directly
+            top = &topleft[tl_off + 1..];
+            max_base_x = width + std::cmp::min(width, height) - 1;
+        }
+        base_inc = 1;
     };
 
-    if filter_strength != 0 {
-        // Edge filtering requires preprocessing not implemented in SIMD yet
-        return false;
-    }
-
-    // No filtering needed - direct access to top pixels
-    let top_off = tl_off + 1;
-    let max_base_x = width + std::cmp::min(width, height as usize) - 1;
-    let base_inc = 1usize;
+    let top = top.flex();
 
     let rounding = _mm256_set1_epi16(32);
 
-    for y in 0..height {
+    for y in 0..height_i {
         let xpos = (y + 1) * dx;
         let frac = (xpos & 0x3e) as i16;
         let inv_frac = (64 - frac) as i16;
@@ -1904,52 +1928,46 @@ fn ipred_z1_8bpc_inner(
 
         let mut x = 0usize;
 
-        // Process 16 pixels at a time
-        while x + 16 <= width && base0 + x + 16 < max_base_x {
-            let base = base0 + base_inc * x;
+        // SIMD path - 16 pixels at a time (non-upsampled consecutive access)
+        if base_inc == 1 {
+            while x + 16 <= width && base0 + x + 16 < max_base_x {
+                let base = base0 + x;
 
-            // Load 16 consecutive top pixels (need pairs for interpolation)
-            let t0 = loadu_128!((&topleft[top_off + base..top_off + base + 16]), [u8; 16]);
-            let t1 = loadu_128!(
-                (&topleft[top_off + base + 1..top_off + base + 17]),
-                [u8; 16]
-            );
+                let t0 = loadu_128!((&top[base..base + 16]), [u8; 16]);
+                let t1 = loadu_128!((&top[base + 1..base + 17]), [u8; 16]);
 
-            // Zero-extend to 16-bit
-            let t0_lo = _mm256_cvtepu8_epi16(t0);
-            let t1_lo = _mm256_cvtepu8_epi16(t1);
+                let t0_w = _mm256_cvtepu8_epi16(t0);
+                let t1_w = _mm256_cvtepu8_epi16(t1);
 
-            // Interpolate: (t0 * inv_frac + t1 * frac + 32) >> 6
-            let prod0 = _mm256_mullo_epi16(t0_lo, inv_frac_vec);
-            let prod1 = _mm256_mullo_epi16(t1_lo, frac_vec);
-            let sum = _mm256_add_epi16(_mm256_add_epi16(prod0, prod1), rounding);
-            let result = _mm256_srai_epi16::<6>(sum);
+                let prod0 = _mm256_mullo_epi16(t0_w, inv_frac_vec);
+                let prod1 = _mm256_mullo_epi16(t1_w, frac_vec);
+                let sum = _mm256_add_epi16(_mm256_add_epi16(prod0, prod1), rounding);
+                let result = _mm256_srai_epi16::<6>(sum);
 
-            // Pack back to 8-bit
-            let packed = _mm256_packus_epi16(result, result);
-            let lo = _mm256_castsi256_si128(packed);
-            let hi = _mm256_extracti128_si256::<1>(packed);
-            let combined = _mm_unpacklo_epi64(lo, hi);
-            storeu_128!(
-                (&mut dst[row_off + x..row_off + x + 16]),
-                [u8; 16],
-                combined
-            );
+                let packed = _mm256_packus_epi16(result, result);
+                let lo = _mm256_castsi256_si128(packed);
+                let hi = _mm256_extracti128_si256::<1>(packed);
+                let combined = _mm_unpacklo_epi64(lo, hi);
+                storeu_128!(
+                    (&mut dst[row_off + x..row_off + x + 16]),
+                    [u8; 16],
+                    combined
+                );
 
-            x += 16;
+                x += 16;
+            }
         }
 
-        // Process remaining pixels with scalar
+        // Scalar remainder (also handles upsampled stride-2 access)
         while x < width {
             let base = base0 + base_inc * x;
             if base < max_base_x {
-                let t0 = topleft[top_off + base] as i32;
-                let t1 = topleft[top_off + base + 1] as i32;
+                let t0 = top[base] as i32;
+                let t1 = top[base + 1] as i32;
                 let v = t0 * inv_frac as i32 + t1 * frac as i32;
                 dst[row_off + x] = ((v + 32) >> 6) as u8;
             } else {
-                // Fill remaining with max value
-                let fill_val = topleft[top_off + max_base_x];
+                let fill_val = top[max_base_x];
                 for xx in x..width {
                     dst[row_off + xx] = fill_val;
                 }
@@ -1958,7 +1976,6 @@ fn ipred_z1_8bpc_inner(
             x += 1;
         }
     }
-    true
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -5196,7 +5213,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             }
         }
         (BPC::BPC8, 6) => {
-            if !ipred_z1_8bpc_inner(
+            ipred_z1_8bpc_inner(
                 token,
                 dst_bytes,
                 dst_base_bytes,
@@ -5206,9 +5223,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
                 angle as i32,
-            ) {
-                return false;
-            }
+            );
         }
         (BPC::BPC8, 7) => {
             ipred_z2_8bpc_inner(
