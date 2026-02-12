@@ -32,6 +32,8 @@ use crate::src::safe_simd::pixel_access::{neon_ld1q_u16, neon_st1q_u16};
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
 use archmage::{arcane, Arm64, SimdToken};
 #[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+use safe_unaligned_simd::aarch64 as safe_neon;
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
 use std::arch::aarch64::*;
 
 #[cfg(all(feature = "asm", target_feature = "sse2"))]
@@ -1160,6 +1162,275 @@ fn rav1d_msac_decode_symbol_adapt16_neon(
     val
 }
 
+/// NEON implementation of symbol_adapt4.
+///
+/// Uses NEON SIMD for parallel CDF probability computation and comparison.
+/// NEON is baseline on aarch64, always available.
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+#[arcane]
+fn rav1d_msac_decode_symbol_adapt4_neon(
+    _t: Arm64,
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
+    debug_assert!(n_symbols > 0 && n_symbols <= 3);
+    let c = (s.dif >> (EC_WIN_SIZE - 16)) as u16;
+    let n = n_symbols as usize;
+
+    // Load CDF (4 values) via 64-bit NEON load
+    let cdf_arr: &[u16; 4] = cdf[..4].try_into().unwrap();
+    let cdf_vec = safe_neon::vld1_u16(cdf_arr);
+
+    // Broadcast rng masked with 0xff00
+    let rng_masked = (s.rng & 0xff00) as u16;
+    let rng_vec = vdup_n_u16(rng_masked);
+
+    // Compute (cdf >> 6) << 7 for pmulhuw equivalent
+    let cdf_shifted = vshl_n_u16(vshr_n_u16(cdf_vec, 6), 7);
+
+    // Unsigned multiply high: vmull_u16 (4x4→4x32) then vshrn (>>16, narrow)
+    let prod = vshrn_n_u32(vmull_u16(cdf_shifted, rng_vec), 16);
+
+    // Load min_prob values
+    let min_prob_offset = 15 - n;
+    let min_prob_arr: &[u16; 4] = MIN_PROB_16_ARM[min_prob_offset..min_prob_offset + 4]
+        .try_into()
+        .unwrap();
+    let min_prob = safe_neon::vld1_u16(min_prob_arr);
+
+    // v = prod + min_prob
+    let v = vadd_u16(prod, min_prob);
+
+    // Store v for indexed access during renorm
+    let mut v_arr = [0u16; 4];
+    safe_neon::vst1_u16(&mut v_arr, v);
+
+    // Compare: c >= v[i] (unsigned compare)
+    let c_vec = vdup_n_u16(c);
+    let cmp = vcge_u16(c_vec, v);
+
+    // Extract symbol via trailing_zeros on the 64-bit comparison mask
+    // cmp lanes are 0x0000 (false) or 0xFFFF (true)
+    // In the 64-bit value, lane 0 is in LSBs
+    // trailing_zeros / 16 gives the index of the first false (c < v[i]) lane
+    let cmp_u64 = vreinterpret_u64_u16(cmp);
+    let mask_val = vget_lane_u64(cmp_u64, 0);
+    let val = std::cmp::min((mask_val.trailing_zeros() / 16) as u8, n_symbols);
+
+    // Get u and v_val for renorm
+    let u = if val == 0 {
+        s.rng
+    } else {
+        v_arr[val as usize - 1] as u32
+    };
+    let v_val = if val >= n_symbols {
+        0u32
+    } else {
+        v_arr[val as usize] as u32
+    };
+
+    // Renormalize
+    ctx_norm(
+        s,
+        s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+        u - v_val,
+    );
+
+    // Update CDF
+    if s.allow_update_cdf() {
+        let count = cdf[n];
+        let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
+        update_cdf(cdf, n, val as usize, rate, count);
+    }
+
+    val
+}
+
+/// NEON implementation of symbol_adapt8.
+///
+/// Uses full 128-bit NEON for parallel CDF comparison of up to 7 symbols.
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+#[arcane]
+fn rav1d_msac_decode_symbol_adapt8_neon(
+    _t: Arm64,
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
+    debug_assert!(n_symbols > 0 && n_symbols <= 7);
+    let c = (s.dif >> (EC_WIN_SIZE - 16)) as u16;
+    let n = n_symbols as usize;
+
+    // Load CDF (8 values) via 128-bit NEON load
+    let cdf_arr: &[u16; 8] = cdf[..8].try_into().unwrap();
+    let cdf_vec = neon_ld1q_u16!(cdf_arr);
+
+    // Broadcast rng masked
+    let rng_masked = (s.rng & 0xff00) as u16;
+    let rng_vec = vdupq_n_u16(rng_masked);
+
+    // Compute (cdf >> 6) << 7
+    let cdf_shifted = vshlq_n_u16(vshrq_n_u16(cdf_vec, 6), 7);
+
+    // Unsigned multiply high: vmull for low and high halves, then narrow
+    let rng_lo = vget_low_u16(rng_vec);
+    let rng_hi = vget_high_u16(rng_vec);
+    let prod_lo = vshrn_n_u32(vmull_u16(vget_low_u16(cdf_shifted), rng_lo), 16);
+    let prod_hi = vshrn_n_u32(vmull_u16(vget_high_u16(cdf_shifted), rng_hi), 16);
+    let prod = vcombine_u16(prod_lo, prod_hi);
+
+    // Load min_prob values
+    let min_prob_offset = 15 - n;
+    let min_prob_arr: &[u16; 8] = MIN_PROB_16_ARM[min_prob_offset..min_prob_offset + 8]
+        .try_into()
+        .unwrap();
+    let min_prob = neon_ld1q_u16!(min_prob_arr);
+
+    // v = prod + min_prob
+    let v = vaddq_u16(prod, min_prob);
+
+    // Store v for indexed access
+    let mut v_arr = [0u16; 8];
+    neon_st1q_u16!(&mut v_arr, v);
+
+    // Compare: c >= v[i]
+    let c_vec = vdupq_n_u16(c);
+    let cmp = vcgeq_u16(c_vec, v);
+
+    // Store comparison result and find symbol via scalar loop
+    // (NEON has no movemask equivalent for 128-bit; the addv trick from the ASM
+    // is complex, so we use scalar which is simpler and correct)
+    let mut mask_arr = [0u16; 8];
+    neon_st1q_u16!(&mut mask_arr, cmp);
+
+    let mut val = 0u8;
+    for i in 0..n {
+        if mask_arr[i] != 0 {
+            val = (i + 1) as u8;
+        } else {
+            break;
+        }
+    }
+
+    // Get u and v_val
+    let u = if val == 0 {
+        s.rng
+    } else {
+        v_arr[val as usize - 1] as u32
+    };
+    let v_val = if val >= n_symbols {
+        0u32
+    } else {
+        v_arr[val as usize] as u32
+    };
+
+    // Renormalize
+    ctx_norm(
+        s,
+        s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+        u - v_val,
+    );
+
+    // Update CDF
+    if s.allow_update_cdf() {
+        let count = cdf[n];
+        let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
+        update_cdf(cdf, n, val as usize, rate, count);
+    }
+
+    val
+}
+
+/// Monolithic NEON hi_tok with SIMD adapt4 + inline renorm + refill.
+///
+/// Eliminates function call overhead by inlining the adapt4 SIMD comparison,
+/// CDF update, renormalization, and refill into a single tight loop.
+#[cfg(all(not(feature = "asm"), target_arch = "aarch64"))]
+#[arcane]
+fn rav1d_msac_decode_hi_tok_neon(_t: Arm64, s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
+    const N: usize = 3;
+
+    // Pre-load min_prob for n=3: [12, 8, 4, 0]
+    let min_prob_arr: &[u16; 4] = MIN_PROB_16_ARM[12..16].try_into().unwrap();
+    let min_prob = safe_neon::vld1_u16(min_prob_arr);
+
+    let update = s.allow_update_cdf();
+    let mut tok_br;
+    let mut tok: u8 = 0;
+
+    for iter in 0..4u8 {
+        // === INLINE ADAPT4 ===
+        let c = (s.dif >> (EC_WIN_SIZE - 16)) as u16;
+
+        // Load CDF
+        let cdf_load: &[u16; 4] = cdf[..4].try_into().unwrap();
+        let cdf_vec = safe_neon::vld1_u16(cdf_load);
+
+        // Broadcast rng masked
+        let rng_masked = (s.rng & 0xff00) as u16;
+        let rng_vec = vdup_n_u16(rng_masked);
+
+        // Compute v = pmulhuw((cdf >> 6) << 7, rng) + min_prob
+        let cdf_shifted = vshl_n_u16(vshr_n_u16(cdf_vec, 6), 7);
+        let prod = vshrn_n_u32(vmull_u16(cdf_shifted, rng_vec), 16);
+        let v = vadd_u16(prod, min_prob);
+
+        // Store v for indexed access
+        let mut v_arr = [0u16; 4];
+        safe_neon::vst1_u16(&mut v_arr, v);
+
+        // Compare c >= v[i]
+        let c_vec = vdup_n_u16(c);
+        let cmp = vcge_u16(c_vec, v);
+
+        // Extract symbol via trailing_zeros
+        let cmp_u64 = vreinterpret_u64_u16(cmp);
+        let mask_val = vget_lane_u64(cmp_u64, 0);
+        tok_br = std::cmp::min((mask_val.trailing_zeros() / 16) as u8, N as u8);
+
+        // Get u and v_val
+        let u = if tok_br == 0 {
+            s.rng
+        } else {
+            v_arr[tok_br as usize - 1] as u32
+        };
+        let v_val = if tok_br >= N as u8 {
+            0u32
+        } else {
+            v_arr[tok_br as usize] as u32
+        };
+
+        // === INLINE CDF UPDATE ===
+        if update {
+            let count = cdf[N];
+            let rate = 4 + (count >> 4) + 1;
+            update_cdf(cdf, N, tok_br as usize, rate, count);
+        }
+
+        // === INLINE RENORM ===
+        let new_rng = u - v_val;
+        let d = 15 ^ (31 ^ clz(new_rng));
+        let new_dif = s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16));
+        let cnt = s.cnt;
+        s.dif = new_dif << d;
+        s.rng = new_rng << d;
+        s.cnt = cnt - d;
+
+        // === INLINE REFILL ===
+        if (cnt as u32) < (d as u32) {
+            ctx_refill(s);
+        }
+
+        tok = iter * 3 + 3 + tok_br;
+        if tok_br < 3 {
+            break;
+        }
+    }
+
+    tok
+}
+
 impl MsacContext {
     pub fn new(data: CArc<[u8]>, disable_cdf_update_flag: bool, dsp: &Rav1dMsacDSPContext) -> Self {
         let buf = {
@@ -1215,6 +1486,10 @@ pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_s
             } else {
                 ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
             }
+        } else if #[cfg(all(not(feature = "asm"), not(feature = "force_scalar"), target_arch = "aarch64"))] {
+            // NEON is baseline on aarch64, always available
+            let token = Arm64::summon().unwrap();
+            ret = rav1d_msac_decode_symbol_adapt4_neon(token, s, cdf, n_symbols);
         } else if #[cfg(not(feature = "asm"))] {
             ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
         } else {
@@ -1249,6 +1524,10 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
             } else {
                 ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
             }
+        } else if #[cfg(all(not(feature = "asm"), not(feature = "force_scalar"), target_arch = "aarch64"))] {
+            // NEON is baseline on aarch64, always available
+            let token = Arm64::summon().unwrap();
+            ret = rav1d_msac_decode_symbol_adapt8_neon(token, s, cdf, n_symbols);
         } else if #[cfg(not(feature = "asm"))] {
             ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
         } else {
@@ -1381,6 +1660,10 @@ pub fn rav1d_msac_decode_hi_tok(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
             } else {
                 ret = rav1d_msac_decode_hi_tok_rust(s, cdf);
             }
+        } else if #[cfg(all(not(feature = "asm"), not(feature = "force_scalar"), target_arch = "aarch64"))] {
+            // Monolithic NEON — inlines adapt4 + renorm + refill in a tight loop
+            let token = Arm64::summon().unwrap();
+            ret = rav1d_msac_decode_hi_tok_neon(token, s, cdf);
         } else {
             ret = rav1d_msac_decode_hi_tok_rust(s, cdf);
         }

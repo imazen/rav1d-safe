@@ -159,7 +159,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | filmgrain | `src/safe_simd/filmgrain.rs` | **Complete** - 8bpc + 16bpc |
 | pal | `src/safe_simd/pal.rs` | **Complete** - pal_idx_finish AVX2 |
 | refmvs | `src/safe_simd/refmvs.rs` | **Complete** - splat_mv AVX2 |
-| msac | `src/msac.rs` (inline) | **Complete** - symbol_adapt16 AVX2 |
+| msac | `src/msac.rs` (inline) | **Complete** - adapt4/adapt8/hi_tok SSE2, adapt16 AVX2 |
 
 ### ARM aarch64 (NEON)
 
@@ -173,7 +173,7 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | itx_arm | `src/safe_simd/itx_arm.rs` | **Complete** - 334 FFI functions, 320 dispatch entries |
 | filmgrain_arm | `src/safe_simd/filmgrain_arm.rs` | **Complete** - 8bpc + 16bpc |
 | refmvs_arm | `src/safe_simd/refmvs_arm.rs` | **Complete** - splat_mv NEON |
-| msac | `src/msac.rs` (inline) | **Complete** - symbol_adapt16 NEON |
+| msac | `src/msac.rs` (inline) | **Complete** - adapt4/adapt8/hi_tok + adapt16 NEON |
 
 ## Performance Status (2026-02-09)
 
@@ -186,8 +186,8 @@ Profiling: 39 frames, 8bpc allintra, release-with-debug, perf stat:
 Fixed: `unchecked` feature now skips tracker entirely (was only unlocking unused constructor).
 
 **Bottleneck #2: msac entropy decoder** — 32% of unchecked decode time.
-`rav1d_msac_decode_symbol_adapt_rust` (scalar) vs `dav1d_msac_decode_symbol_adapt4_sse2` (asm).
-symbol_adapt16 already has AVX2 SIMD; symbol_adapt4/8 use scalar fallback.
+All symbol_adapt functions now have SIMD: adapt4/adapt8/hi_tok use SSE2 (x86) / NEON (ARM),
+adapt16 uses AVX2 (x86) / NEON (ARM). Bool functions remain scalar (optimal as-is).
 
 **SIMD modules are NOT the bottleneck** — looprestoration 6.4%, cdef 5.4%, itx 2.2%, ipred 1.8%.
 
@@ -212,9 +212,10 @@ Previous zenavif benchmark (2026-02-05, full-stack AVIF decode):
 - refmvs x86 (~60 lines) + ARM (~50 lines): Complete (splat_mv)
 
 **msac (inline in src/msac.rs):**
+- symbol_adapt4/adapt8: SSE2 (x86_64) and NEON (aarch64) - parallel CDF comparison via SIMD
 - symbol_adapt16: AVX2 (x86_64) and NEON (aarch64) - parallelized CDF probability calc and comparison
-- symbol_adapt4/8: Use scalar Rust fallback (SIMD overhead not worth it for small n_symbols)
-- bool functions: Use scalar Rust fallback
+- hi_tok: SSE2 (x86_64) and NEON (aarch64) - monolithic loop with inline adapt4 + renorm + refill
+- bool functions: Use scalar Rust fallback (pure GPR, SIMD not beneficial)
 
 **Using Rust fallbacks (SIMD not beneficial):**
 - refmvs save_tmvs/load_tmvs: Complex conditional logic, not SIMD-friendly
