@@ -73,10 +73,15 @@ impl fmt::Display for TestVector {
 }
 
 fn vectors_dir() -> PathBuf {
-    // Check CARGO_TARGET_DIR first, then fall back to target/
+    // Try crate root first, then target/ for backwards compatibility
+    let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let root_path = crate_root.join("test-vectors").join("dav1d-test-data");
+    if root_path.exists() {
+        return root_path;
+    }
     let target = std::env::var("CARGO_TARGET_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target"));
+        .unwrap_or_else(|_| crate_root.join("target"));
     target.join("test-vectors").join("dav1d-test-data")
 }
 

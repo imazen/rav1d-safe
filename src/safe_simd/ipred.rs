@@ -2044,52 +2044,6 @@ fn get_filter_strength_simple(wh: i32, angle: i32, is_sm: bool) -> i32 {
     }
 }
 
-/// Scalar fallback for Z1 with edge filtering
-#[inline(never)]
-fn ipred_z1_scalar(
-    dst: &mut [u8],
-    dst_base: usize,
-    stride: isize,
-    topleft: &[u8],
-    tl_off: usize,
-    width: usize,
-    height: i32,
-    dx: i32,
-    upsample: bool,
-) {
-    // For now, just implement the basic case
-    // A full implementation would need upsample_edge and filter_edge
-    let top_off = tl_off + 1;
-    let max_base_x = width + std::cmp::min(width, height as usize) - 1;
-    let base_inc = if upsample { 2 } else { 1 };
-    let dx = if upsample { dx << 1 } else { dx };
-
-    for y in 0..height {
-        let xpos = (y + 1) * dx;
-        let frac = xpos & 0x3e;
-        let inv_frac = 64 - frac;
-
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let base0 = (xpos >> 6) as usize;
-
-        for x in 0..width {
-            let base = base0 + base_inc * x;
-            if base < max_base_x {
-                let t0 = topleft[top_off + base] as i32;
-                let t1 = topleft[top_off + base + 1] as i32;
-                let v = t0 * inv_frac + t1 * frac;
-                dst[row_off + x] = ((v + 32) >> 6) as u8;
-            } else {
-                let fill_val = topleft[top_off + max_base_x];
-                for xx in x..width {
-                    dst[row_off + xx] = fill_val;
-                }
-                break;
-            }
-        }
-    }
-}
-
 // ============================================================================
 // Z2 Prediction (angular prediction for angles 90-180)
 // ============================================================================
@@ -2392,57 +2346,6 @@ pub unsafe extern "C" fn ipred_z2_8bpc_avx2(
     );
 }
 
-/// Scalar fallback for Z2 with edge filtering/upsampling
-#[inline(never)]
-fn ipred_z2_scalar(
-    dst: &mut [u8],
-    dst_base: usize,
-    stride: isize,
-    topleft: &[u8],
-    tl_off: usize,
-    width: i32,
-    height: i32,
-    dx: i32,
-    dy: i32,
-    _max_width: i32,
-    _max_height: i32,
-    _is_sm: bool,
-    _enable_filter: bool,
-) {
-    // Simplified scalar without edge processing
-    // Full implementation would need filter_edge and upsample_edge
-    let top_off = tl_off + 1;
-
-    for y in 0..height {
-        let xpos = (1 << 6) - dx * (y + 1);
-        let base_x0 = xpos >> 6;
-        let frac_x = xpos & 0x3e;
-        let inv_frac_x = 64 - frac_x;
-
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-
-        for x in 0..width as usize {
-            let base_x = base_x0 + x as i32;
-
-            let v = if base_x >= 0 {
-                let t0 = topleft[top_off + base_x as usize] as i32;
-                let t1 = topleft[top_off + base_x as usize + 1] as i32;
-                t0 * inv_frac_x + t1 * frac_x
-            } else {
-                let ypos = (y << 6) - dy * (x as i32 + 1);
-                let base_y = ypos >> 6;
-                let frac_y = ypos & 0x3e;
-                let inv_frac_y = 64 - frac_y;
-
-                let l0 = topleft[(tl_off as isize - 1 - base_y as isize) as usize] as i32;
-                let l1 = topleft[(tl_off as isize - 2 - base_y as isize) as usize] as i32;
-                l0 * inv_frac_y + l1 * frac_y
-            };
-            dst[row_off + x] = ((v + 32) >> 6) as u8;
-        }
-    }
-}
-
 // ============================================================================
 // Z3 Prediction (angular prediction for angles > 180)
 // ============================================================================
@@ -2589,49 +2492,6 @@ pub unsafe extern "C" fn ipred_z3_8bpc_avx2(
         height as usize,
         angle as i32,
     );
-}
-
-/// Scalar fallback for Z3 with edge filtering/upsampling
-#[inline(never)]
-fn ipred_z3_scalar(
-    dst: &mut [u8],
-    dst_base: usize,
-    stride: isize,
-    topleft: &[u8],
-    tl_off: usize,
-    width: usize,
-    height: i32,
-    dy: usize,
-    upsample: bool,
-) {
-    let base_inc = if upsample { 2 } else { 1 };
-    let dy = if upsample { dy << 1 } else { dy };
-    let max_base_y = height as usize + std::cmp::min(width, height as usize) - 1;
-
-    for x in 0..width {
-        let ypos = dy * (x + 1);
-        let frac = (ypos & 0x3e) as i32;
-        let inv_frac = 64 - frac;
-
-        for y in 0..height {
-            let base = (ypos >> 6) + base_inc * y as usize;
-
-            if base < max_base_y {
-                let l0 = topleft[tl_off - base - 1] as i32;
-                let l1 = topleft[tl_off - base - 2] as i32;
-                let v = l0 * inv_frac + l1 * frac;
-                let pixel_off = (dst_base as isize + y as isize * stride) as usize + x;
-                dst[pixel_off] = ((v + 32) >> 6) as u8;
-            } else {
-                let fill_val = topleft[tl_off - max_base_y - 1];
-                for yy in y..height {
-                    let pixel_off = (dst_base as isize + yy as isize * stride) as usize + x;
-                    dst[pixel_off] = fill_val;
-                }
-                break;
-            }
-        }
-    }
 }
 
 /// Compute a conservative buffer length for ipred dst buffers.
@@ -4361,56 +4221,6 @@ pub unsafe extern "C" fn ipred_z1_16bpc_avx2(
     );
 }
 
-/// Scalar fallback for Z1 16bpc with edge filtering
-#[inline(never)]
-fn ipred_z1_16bpc_scalar(
-    dst: &mut [u8],
-    dst_base: usize,
-    stride: isize,
-    topleft: &[u8],
-    tl_off: usize,
-    width: usize,
-    height: i32,
-    dx: i32,
-    upsample: bool,
-) {
-    let top_off = tl_off + 2; // top[0] = tl[1] in pixel units
-    let max_base_x = width + std::cmp::min(width, height as usize) - 1;
-    let base_inc = if upsample { 2 } else { 1 };
-    let dx = if upsample { dx << 1 } else { dx };
-
-    for y in 0..height {
-        let xpos = (y + 1) * dx;
-        let frac = xpos & 0x3e;
-        let inv_frac = 64 - frac;
-
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let base0 = (xpos >> 6) as usize;
-
-        for x in 0..width {
-            let base = base0 + base_inc * x;
-            if base < max_base_x {
-                let t0_off = top_off + base * 2;
-                let t1_off = top_off + (base + 1) * 2;
-                let t0 = u16::from_ne_bytes(topleft[t0_off..t0_off + 2].try_into().unwrap()) as i32;
-                let t1 = u16::from_ne_bytes(topleft[t1_off..t1_off + 2].try_into().unwrap()) as i32;
-                let v = t0 * inv_frac + t1 * frac;
-                let off = row_off + x * 2;
-                dst[off..off + 2].copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
-            } else {
-                let fill_off = top_off + max_base_x * 2;
-                let fill_val_bytes = topleft[fill_off..fill_off + 2].try_into().unwrap();
-                for xx in x..width {
-                    let off = row_off + xx * 2;
-                    dst[off..off + 2]
-                        .copy_from_slice(&u16::from_ne_bytes(fill_val_bytes).to_ne_bytes());
-                }
-                break;
-            }
-        }
-    }
-}
-
 // ============================================================================
 // Z2 Prediction 16bpc (angular prediction for angles 90-180) { return false; }
 // ============================================================================
@@ -4723,60 +4533,6 @@ pub unsafe extern "C" fn ipred_z2_16bpc_avx2(
     );
 }
 
-/// Scalar fallback for Z2 16bpc with edge filtering/upsampling
-#[inline(never)]
-fn ipred_z2_16bpc_scalar(
-    dst: &mut [u8],
-    dst_base: usize,
-    stride: isize,
-    topleft: &[u8],
-    tl_off: usize,
-    width: i32,
-    height: i32,
-    dx: i32,
-    dy: i32,
-    _max_width: i32,
-    _max_height: i32,
-    _is_sm: bool,
-    _enable_filter: bool,
-) {
-    let top_off = tl_off + 2; // top[0] = tl[1] in pixel units
-
-    for y in 0..height {
-        let xpos = (1 << 6) - dx * (y + 1);
-        let base_x0 = xpos >> 6;
-        let frac_x = xpos & 0x3e;
-        let inv_frac_x = 64 - frac_x;
-
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-
-        for x in 0..width as usize {
-            let base_x = base_x0 + x as i32;
-
-            let v = if base_x >= 0 {
-                let t0_off = top_off + base_x as usize * 2;
-                let t1_off = top_off + (base_x as usize + 1) * 2;
-                let t0 = u16::from_ne_bytes(topleft[t0_off..t0_off + 2].try_into().unwrap()) as i32;
-                let t1 = u16::from_ne_bytes(topleft[t1_off..t1_off + 2].try_into().unwrap()) as i32;
-                t0 * inv_frac_x + t1 * frac_x
-            } else {
-                let ypos = (y << 6) - dy * (x as i32 + 1);
-                let base_y = ypos >> 6;
-                let frac_y = ypos & 0x3e;
-                let inv_frac_y = 64 - frac_y;
-
-                let l0_off = (tl_off as isize - (1 + base_y as isize) * 2) as usize;
-                let l1_off = (tl_off as isize - (2 + base_y as isize) * 2) as usize;
-                let l0 = u16::from_ne_bytes(topleft[l0_off..l0_off + 2].try_into().unwrap()) as i32;
-                let l1 = u16::from_ne_bytes(topleft[l1_off..l1_off + 2].try_into().unwrap()) as i32;
-                l0 * inv_frac_y + l1 * frac_y
-            };
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
-        }
-    }
-}
-
 // ============================================================================
 // Z3 Prediction 16bpc (angular prediction for angles > 180) { return false; }
 // ============================================================================
@@ -4975,54 +4731,6 @@ pub unsafe extern "C" fn ipred_z3_16bpc_avx2(
         angle as i32,
         _bitdepth_max as i32,
     );
-}
-
-/// Scalar fallback for Z3 16bpc with edge filtering/upsampling
-#[inline(never)]
-fn ipred_z3_16bpc_scalar(
-    dst: &mut [u8],
-    dst_base: usize,
-    stride: isize,
-    topleft: &[u8],
-    tl_off: usize,
-    width: usize,
-    height: i32,
-    dy: usize,
-    upsample: bool,
-) {
-    let base_inc = if upsample { 2 } else { 1 };
-    let dy = if upsample { dy << 1 } else { dy };
-    let max_base_y = height as usize + std::cmp::min(width, height as usize) - 1;
-
-    for x in 0..width {
-        let ypos = dy * (x + 1);
-        let frac = (ypos & 0x3e) as i32;
-        let inv_frac = 64 - frac;
-
-        for y in 0..height {
-            let base = (ypos >> 6) + base_inc * y as usize;
-
-            if base < max_base_y {
-                let l0_off = tl_off - (base + 1) * 2;
-                let l1_off = tl_off - (base + 2) * 2;
-                let l0 = u16::from_ne_bytes(topleft[l0_off..l0_off + 2].try_into().unwrap()) as i32;
-                let l1 = u16::from_ne_bytes(topleft[l1_off..l1_off + 2].try_into().unwrap()) as i32;
-                let v = l0 * inv_frac + l1 * frac;
-                let pixel_off = (dst_base as isize + y as isize * stride) as usize + x * 2;
-                dst[pixel_off..pixel_off + 2]
-                    .copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
-            } else {
-                let fill_off = tl_off - (max_base_y + 1) * 2;
-                let fill_val =
-                    u16::from_ne_bytes(topleft[fill_off..fill_off + 2].try_into().unwrap());
-                for yy in y..height {
-                    let pixel_off = (dst_base as isize + yy as isize * stride) as usize + x * 2;
-                    dst[pixel_off..pixel_off + 2].copy_from_slice(&fill_val.to_ne_bytes());
-                }
-                break;
-            }
-        }
-    }
 }
 
 // ============================================================================
