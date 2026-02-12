@@ -7,22 +7,33 @@ name = "rav1d-safe"
 authors = ["Rav1d Developers", "Prossimo", "Imazen"]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.93"
 description = "Safe SIMD fork of rav1d - Rust AV1 decoder with archmage intrinsics"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/imazen/rav1d-safe"
-exclude = ["*.c", "*.h", "*.in", "meson*", "tests/", "doc/", "package/"]
+readme = "README.md"
+keywords = ["av1", "video", "decoder", "simd", "codec"]
+categories = ["multimedia::video", "multimedia::encoding"]
+exclude = [
+    "*.c", "*.h", "*.in", "*.S", "*.orig",
+    "meson*", "tests/", "doc/", "package/", "test-vectors/", "fuzz/", "scripts/",
+    "src/arm/", "src/x86/",
+    ".github/", "justfile", "gcovr.cfg", "retranspile.sh", "rust_out",
+    "CLAUDE.md", "FEEDBACK.md", "STRATEGY.md", "SPEC.md",
+    "CAPI.md", "CONTRIBUTING.md", "THANKS.md", "NEWS.dav1d",
+    "DISJOINT_MUT_ANALYSIS.md", "REAL_UNSAFE_ANALYSIS.md", "TEST-VECTORS-README.md",
+]
 
 [lib]
 path = "lib.rs"
-crate-type = ["staticlib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 assert_matches = "1.5.0"
 atomig = { version = "0.4.0", features = ["derive"] }
 bitflags = "2.4.0"
 cfg-if = "1.0.0"
-rav1d-disjoint-mut = { path = "crates/rav1d-disjoint-mut", default-features = false, features = ["std", "aligned", "pic-buf", "zerocopy", "single-threaded"] }
+rav1d-disjoint-mut = { version = "0.1.1", path = "crates/rav1d-disjoint-mut", default-features = false, features = ["std", "aligned", "pic-buf", "zerocopy", "single-threaded"] }
 libc = "0.2"
 parking_lot = "0.12.2"
 paste = "1.0.14"
@@ -32,7 +43,7 @@ to_method = "1.1.0"
 zerocopy = { version = "0.7.32", features = ["derive"] }
 
 # Safe SIMD dependencies
-archmage = { version = "0.5.0", features = ["macros"] }
+archmage = { version = "0.6.0", features = ["macros", "avx512"] }
 safe_unaligned_simd = "0.2.4"
 
 [dev-dependencies]
