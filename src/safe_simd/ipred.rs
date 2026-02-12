@@ -1725,17 +1725,31 @@ fn ipred_filter_8bpc_inner(
         let cur_tl_off = topleft_off - y;
         let mut tl_pixel = topleft[tl_off.wrapping_add(cur_tl_off)] as i32;
 
+        let row0_off = (dst_base as isize + y as isize * stride) as usize;
+        let row1_off = (dst_base as isize + (y + 1) as isize * stride) as usize;
+
         for x in (0..width).step_by(4) {
             // Get top 4 pixels (p1-p4)
-            let top_base = tl_off.wrapping_add(topleft_off + 1 + x);
-            let p1 = topleft[top_base] as i32;
-            let p2 = topleft[top_base + 1] as i32;
-            let p3 = topleft[top_base + 2] as i32;
-            let p4 = topleft[top_base + 3] as i32;
+            // y=0: from topleft buffer; y>=2: from previously-written output row y-1
+            let (p1, p2, p3, p4) = if y == 0 {
+                let top_base = tl_off.wrapping_add(topleft_off + 1 + x);
+                (
+                    topleft[top_base] as i32,
+                    topleft[top_base + 1] as i32,
+                    topleft[top_base + 2] as i32,
+                    topleft[top_base + 3] as i32,
+                )
+            } else {
+                let top_row = (dst_base as isize + (y as isize - 1) * stride) as usize;
+                (
+                    dst[top_row + x] as i32,
+                    dst[top_row + x + 1] as i32,
+                    dst[top_row + x + 2] as i32,
+                    dst[top_row + x + 3] as i32,
+                )
+            };
 
             // Get left 2 pixels (p5, p6)
-            let row0_off = (dst_base as isize + y as isize * stride) as usize;
-            let row1_off = (dst_base as isize + (y + 1) as isize * stride) as usize;
             let (p5, p6) = if x == 0 {
                 // From original topleft buffer
                 let left_base = tl_off.wrapping_add(cur_tl_off.wrapping_sub(1));
@@ -4658,15 +4672,29 @@ fn ipred_filter_16bpc_inner(
         let row1_off = (dst_base as isize + (y + 1) as isize * stride) as usize;
 
         for x in (0..width).step_by(4) {
-            // Get top 4 pixels (p1-p4) in pixel units from topleft
-            let top_base = tl_off.wrapping_add((topleft_off + 1 + x) * 2);
-            let p1 = u16::from_ne_bytes(topleft[top_base..top_base + 2].try_into().unwrap()) as i32;
-            let p2 =
-                u16::from_ne_bytes(topleft[top_base + 2..top_base + 4].try_into().unwrap()) as i32;
-            let p3 =
-                u16::from_ne_bytes(topleft[top_base + 4..top_base + 6].try_into().unwrap()) as i32;
-            let p4 =
-                u16::from_ne_bytes(topleft[top_base + 6..top_base + 8].try_into().unwrap()) as i32;
+            // Get top 4 pixels (p1-p4)
+            // y=0: from topleft buffer; y>=2: from previously-written output row y-1
+            let (p1, p2, p3, p4) = if y == 0 {
+                let top_base = tl_off.wrapping_add((topleft_off + 1 + x) * 2);
+                (
+                    u16::from_ne_bytes(topleft[top_base..top_base + 2].try_into().unwrap()) as i32,
+                    u16::from_ne_bytes(topleft[top_base + 2..top_base + 4].try_into().unwrap())
+                        as i32,
+                    u16::from_ne_bytes(topleft[top_base + 4..top_base + 6].try_into().unwrap())
+                        as i32,
+                    u16::from_ne_bytes(topleft[top_base + 6..top_base + 8].try_into().unwrap())
+                        as i32,
+                )
+            } else {
+                let top_row = (dst_base as isize + (y as isize - 1) * stride) as usize;
+                let tb = top_row + x * 2;
+                (
+                    u16::from_ne_bytes(dst[tb..tb + 2].try_into().unwrap()) as i32,
+                    u16::from_ne_bytes(dst[tb + 2..tb + 4].try_into().unwrap()) as i32,
+                    u16::from_ne_bytes(dst[tb + 4..tb + 6].try_into().unwrap()) as i32,
+                    u16::from_ne_bytes(dst[tb + 6..tb + 8].try_into().unwrap()) as i32,
+                )
+            };
 
             // Get left 2 pixels (p5, p6)
             let (p5, p6) = if x == 0 {
@@ -5021,9 +5049,20 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 )
             }
         }
-        // Filter intra SIMD has double-offset bug and missing top-pointer update.
-        // Fall back to scalar until fixed.
-        (BPC::BPC8, 13) => return false,
+        (BPC::BPC8, 13) => {
+            ipred_filter_8bpc_inner(
+                token,
+                dst_bytes,
+                dst_base_bytes,
+                byte_stride,
+                tl_bytes,
+                0, // tl_off: full array starts at 0
+                w,
+                h,
+                angle as i32,
+                topleft_off,
+            )
+        }
         (BPC::BPC16, 0) => {
             let tl_off_bytes = topleft_off * 2;
             if let Some(t512) = avx512_token {
@@ -5258,9 +5297,21 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 )
             }
         }
-        // filter_intra 16bpc: disabled due to topleft offset bugs
-        // (same class as 8bpc filter_intra — double-offset and missing top-pointer update)
-        (BPC::BPC16, 13) => return false,
+        (BPC::BPC16, 13) => {
+            ipred_filter_16bpc_inner(
+                token,
+                dst_bytes,
+                dst_base_bytes,
+                byte_stride,
+                tl_bytes,
+                0, // tl_off: full array starts at 0
+                w,
+                h,
+                angle as i32,
+                bd_c as i32,
+                topleft_off,
+            )
+        }
         _ => return false,
     }
     true
