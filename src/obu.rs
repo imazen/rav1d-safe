@@ -2422,28 +2422,41 @@ fn parse_obus(
                         min_luminance,
                     })); // TODO(kkysen) fallible allocation
                 }
-                Some(ObuMetaType::ItutT35) => {
+                Some(ObuMetaType::ItutT35) => 'itut_t35: {
                     let mut payload_size = gb.remaining_len();
                     // Don't take into account all the trailing bits for `payload_size`.
-                    while payload_size > 0 && gb[payload_size as usize - 1] == 0 {
+                    while payload_size > 0 && gb[payload_size - 1] == 0 {
                         payload_size -= 1; // trailing_zero_bit x 8
                     }
-                    payload_size -= 1; // trailing_one_bit + trailing_zero_bit x 7
+                    // trailing_one_bit + trailing_zero_bit x 7
+                    let Some(ps) = payload_size.checked_sub(1) else {
+                        writeln!(c.logger, "Malformed ITU-T T.35 metadata message format");
+                        break 'itut_t35;
+                    };
+                    payload_size = ps;
 
                     let mut country_code_extension_byte = 0;
                     let country_code = gb.get_bits(8) as c_int;
-                    payload_size -= 1;
+                    let Some(ps) = payload_size.checked_sub(1) else {
+                        writeln!(c.logger, "Malformed ITU-T T.35 metadata message format");
+                        break 'itut_t35;
+                    };
+                    payload_size = ps;
                     if country_code == 0xff {
                         country_code_extension_byte = gb.get_bits(8) as c_int;
-                        payload_size -= 1;
+                        let Some(ps) = payload_size.checked_sub(1) else {
+                            writeln!(c.logger, "Malformed ITU-T T.35 metadata message format");
+                            break 'itut_t35;
+                        };
+                        payload_size = ps;
                     }
 
-                    if payload_size <= 0 || gb[payload_size] != 0x80 {
+                    if payload_size == 0 || gb[payload_size] != 0x80 {
                         writeln!(c.logger, "Malformed ITU-T T.35 metadata message format");
                     } else {
                         let country_code = country_code as u8;
                         let country_code_extension_byte = country_code_extension_byte as u8;
-                        let payload = gb.get_bytes(payload_size as usize).into(); // TODO fallible allocation
+                        let payload = gb.get_bytes(payload_size).into(); // TODO fallible allocation
                         let itut_t35 = Rav1dITUTT35 {
                             country_code,
                             country_code_extension_byte,
