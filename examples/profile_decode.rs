@@ -8,7 +8,7 @@
 //!
 //!   ./target/release/examples/profile_decode <input.ivf> [iterations]
 
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::src::managed::{CpuLevel, Decoder, Settings};
 use std::env;
 use std::fs::File;
 use std::hint::black_box;
@@ -50,9 +50,10 @@ fn read_ivf_frames(path: &str) -> Vec<Vec<u8>> {
     frames
 }
 
-fn decode_once(obu_frames: &[Vec<u8>]) -> usize {
+fn decode_once(obu_frames: &[Vec<u8>], cpu_level: CpuLevel) -> usize {
     let settings = Settings {
         threads: 1,
+        cpu_level,
         ..Default::default()
     };
     let mut decoder = Decoder::with_settings(settings).expect("decoder creation failed");
@@ -97,17 +98,28 @@ fn main() {
     let iterations: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(100);
     let total_bytes: usize = obu_frames.iter().map(|f| f.len()).sum();
 
+    // Optional: --no-avx512 flag to disable AVX-512 dispatch
+    let cpu_level = if args.iter().any(|a| a == "--no-avx512") {
+        eprintln!("CPU level: X86V3 (AVX2 max, no AVX-512)");
+        CpuLevel::X86V3
+    } else if args.iter().any(|a| a == "--scalar") {
+        eprintln!("CPU level: Scalar (no SIMD)");
+        CpuLevel::Scalar
+    } else {
+        CpuLevel::Native
+    };
+
     eprintln!("Input: {} ({} frames, {} bytes)", args[1], obu_frames.len(), total_bytes);
     eprintln!("Iterations: {iterations}");
 
     // Warmup
-    let frame_count = decode_once(&obu_frames);
+    let frame_count = decode_once(&obu_frames, cpu_level);
     eprintln!("Decoded frames per iteration: {frame_count}");
 
     // Timed runs
     let start = Instant::now();
     for _ in 0..iterations {
-        let f = decode_once(black_box(&obu_frames));
+        let f = decode_once(black_box(&obu_frames), cpu_level);
         black_box(f);
     }
     let elapsed = start.elapsed();
