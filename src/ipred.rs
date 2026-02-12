@@ -1041,7 +1041,7 @@ unsafe extern "C" fn ipred_smooth_h_c_erased<BD: BitDepth>(
 }
 
 #[inline(never)]
-fn get_filter_strength(wh: c_int, angle: c_int, is_sm: bool) -> c_int {
+pub(crate) fn get_filter_strength(wh: c_int, angle: c_int, is_sm: bool) -> c_int {
     if is_sm {
         match (wh, angle) {
             (..=8, 64..) => 2,
@@ -1073,7 +1073,7 @@ fn get_filter_strength(wh: c_int, angle: c_int, is_sm: bool) -> c_int {
 }
 
 #[inline(never)]
-fn filter_edge<BD: BitDepth>(
+pub(crate) fn filter_edge<BD: BitDepth>(
     out: &mut [BD::Pixel],
     sz: c_int,
     lim_from: c_int,
@@ -1109,12 +1109,12 @@ fn filter_edge<BD: BitDepth>(
 }
 
 #[inline]
-fn get_upsample(wh: c_int, angle: c_int, is_sm: bool) -> bool {
+pub(crate) fn get_upsample(wh: c_int, angle: c_int, is_sm: bool) -> bool {
     angle < 40 && wh <= (16 >> is_sm as u8)
 }
 
 #[inline(never)]
-fn upsample_edge<BD: BitDepth>(
+pub(crate) fn upsample_edge<BD: BitDepth>(
     out: &mut [BD::Pixel],
     hsz: c_int,
     r#in: &[BD::Pixel; SCRATCH_EDGE_LEN],
