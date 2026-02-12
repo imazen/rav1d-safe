@@ -4120,6 +4120,7 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
 // ============================================================================
 
 /// Z1 prediction for 16bpc: directional prediction using top edge only (angles < 90°)
+/// Builds preprocessed top edge array internally, handles all cases.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn ipred_z1_16bpc_inner(
@@ -4132,47 +4133,111 @@ fn ipred_z1_16bpc_inner(
     width: usize,
     height: usize,
     angle: i32,
-) -> bool {
+    bitdepth_max: i32,
+) {
     let mut dst = dst.flex_mut();
-    let topleft = topleft.flex();
-    let height = height as i32;
+    let width_i = width as i32;
+    let height_i = height as i32;
 
     // Extract angle flags
     let is_sm = (angle >> 9) & 1 != 0;
     let enable_intra_edge_filter = (angle >> 10) != 0;
     let angle = angle & 511;
 
-    // Get derivative
-    let dx = dav1d_dr_intra_derivative[(angle >> 1) as usize] as i32;
+    let mut dx = dav1d_dr_intra_derivative[(angle >> 1) as usize] as i32;
 
-    // Determine if we need edge filtering/upsampling
-    let upsample_above = enable_intra_edge_filter
-        && (90 - angle) < 40
-        && (width as i32 + height) <= (16 >> is_sm as usize);
+    // tl_off is in bytes, convert to pixel offset
+    let tl_pix = tl_off / 2;
 
-    if upsample_above {
-        return false;
-    }
-
-    let filter_strength = if enable_intra_edge_filter {
-        get_filter_strength_simple(width as i32 + height, 90 - angle, is_sm)
-    } else {
-        0
+    // Helper: read u16 pixel from byte slice at pixel offset
+    let rd = |off: usize| -> u16 {
+        let b = off * 2;
+        u16::from_ne_bytes(topleft[b..b + 2].try_into().unwrap())
     };
 
-    if filter_strength != 0 {
-        return false;
-    }
+    let upsample_above = enable_intra_edge_filter
+        && (90 - angle) < 40
+        && (width_i + height_i) <= (16 >> is_sm as i32);
 
-    // No filtering needed - direct access to top pixels
-    // top[0] = tl[1] in pixel units = tl_off + 2 in bytes
-    let top_off = tl_off + 2;
-    let max_base_x = width + std::cmp::min(width, height as usize) - 1;
-    let base_inc = 1usize;
+    // Build preprocessed top edge array as u16 pixels
+    let mut top_px = [0u16; 64 + 64];
+    let (max_base_x, base_inc);
+
+    if upsample_above {
+        let kernel: [i8; 4] = [-1, 9, 9, -1];
+        let hsz = width_i + height_i;
+        let in_off = tl_pix + 1;
+        let from = -1i32;
+        let to = width_i + std::cmp::min(width_i, height_i);
+        for i in 0..hsz - 1 {
+            top_px[(i * 2) as usize] =
+                rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+            let mut s = 0i32;
+            for j in 0..4i32 {
+                s += rd(in_off.wrapping_add_signed((i + j - 1).clamp(from, to - 1) as isize))
+                    as i32
+                    * kernel[j as usize] as i32;
+            }
+            top_px[(i * 2 + 1) as usize] = ((s + 8) >> 4).clamp(0, bitdepth_max) as u16;
+        }
+        let i = hsz - 1;
+        top_px[(i * 2) as usize] =
+            rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+        dx <<= 1;
+        max_base_x = (2 * (width_i + height_i) - 2) as usize;
+        base_inc = 2usize;
+    } else {
+        let filter_strength = if enable_intra_edge_filter {
+            get_filter_strength_simple(width_i + height_i, 90 - angle, is_sm)
+        } else {
+            0
+        };
+        if filter_strength != 0 {
+            static KERNEL: [[u8; 5]; 3] = [[0, 4, 8, 4, 0], [0, 5, 6, 5, 0], [2, 4, 4, 4, 2]];
+            let in_off = tl_pix + 1;
+            let from = -1i32;
+            let to = width_i + std::cmp::min(width_i, height_i);
+            let lim_from = 0i32;
+            let lim_to = width_i + height_i;
+            let mut i = 0i32;
+            while i < std::cmp::min(width_i + height_i, lim_from) {
+                top_px[i as usize] =
+                    rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+                i += 1;
+            }
+            while i < std::cmp::min(lim_to, width_i + height_i) {
+                let mut s = 0i32;
+                for j in 0..5i32 {
+                    s += rd(in_off.wrapping_add_signed((i - 2 + j).clamp(from, to - 1) as isize))
+                        as i32
+                        * KERNEL[(filter_strength - 1) as usize][j as usize] as i32;
+                }
+                top_px[i as usize] = ((s + 8) >> 4) as u16;
+                i += 1;
+            }
+            while i < width_i + height_i {
+                top_px[i as usize] =
+                    rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+                i += 1;
+            }
+            max_base_x = (width_i + height_i - 1) as usize;
+        } else {
+            // No preprocessing — copy top pixels directly
+            for i in 0..width + std::cmp::min(width, height) {
+                top_px[i] = rd(tl_pix + 1 + i);
+            }
+            max_base_x = width + std::cmp::min(width, height) - 1;
+        }
+        base_inc = 1;
+    };
+
+    // Convert top_px to bytes for SIMD access
+    let top_bytes: &[u8] = zerocopy::AsBytes::as_bytes(&top_px[..]);
+    let top_bytes = top_bytes.flex();
 
     let rounding = _mm256_set1_epi32(32);
 
-    for y in 0..height {
+    for y in 0..height_i {
         let xpos = (y + 1) * dx;
         let frac = (xpos & 0x3e) as i32;
         let inv_frac = 64 - frac;
@@ -4185,62 +4250,55 @@ fn ipred_z1_16bpc_inner(
 
         let mut x = 0usize;
 
-        // Process 8 pixels at a time (256-bit / 32-bit intermediate = 8 pixels)
-        while x + 8 <= width && base0 + x + 8 < max_base_x {
-            let base = base0 + base_inc * x;
+        // SIMD: 8 pixels at a time (non-upsampled consecutive access)
+        if base_inc == 1 {
+            while x + 8 <= width && base0 + x + 8 < max_base_x {
+                let base = base0 + x;
 
-            // Load 8 consecutive top u16 pixels and 8 shifted by 1
-            let load0 = top_off + base * 2;
-            let load1 = top_off + (base + 1) * 2;
-            let t0 = loadu_128!((&topleft[load0..load0 + 16]), [u8; 16]);
-            let t1 = loadu_128!((&topleft[load1..load1 + 16]), [u8; 16]);
+                let load0 = base * 2;
+                let load1 = (base + 1) * 2;
+                let t0 = loadu_128!((&top_bytes[load0..load0 + 16]), [u8; 16]);
+                let t1 = loadu_128!((&top_bytes[load1..load1 + 16]), [u8; 16]);
 
-            // Zero-extend to 32-bit for precise multiply
-            let t0_lo = _mm256_cvtepu16_epi32(t0);
-            let t1_lo = _mm256_cvtepu16_epi32(t1);
+                let t0_w = _mm256_cvtepu16_epi32(t0);
+                let t1_w = _mm256_cvtepu16_epi32(t1);
 
-            // Interpolate: (t0 * inv_frac + t1 * frac + 32) >> 6
-            let prod0 = _mm256_mullo_epi32(t0_lo, inv_frac_vec);
-            let prod1 = _mm256_mullo_epi32(t1_lo, frac_vec);
-            let sum = _mm256_add_epi32(_mm256_add_epi32(prod0, prod1), rounding);
-            let result = _mm256_srai_epi32::<6>(sum);
+                let prod0 = _mm256_mullo_epi32(t0_w, inv_frac_vec);
+                let prod1 = _mm256_mullo_epi32(t1_w, frac_vec);
+                let sum = _mm256_add_epi32(_mm256_add_epi32(prod0, prod1), rounding);
+                let result = _mm256_srai_epi32::<6>(sum);
 
-            // Pack back to 16-bit
-            let packed = _mm256_packus_epi32(result, result);
-            let lo = _mm256_castsi256_si128(packed);
-            let hi = _mm256_extracti128_si256::<1>(packed);
-            let combined = _mm_unpacklo_epi64(lo, hi);
-            let store_off = row_off + x * 2;
-            storeu_128!((&mut dst[store_off..store_off + 16]), [u8; 16], combined);
+                let packed = _mm256_packus_epi32(result, result);
+                let lo = _mm256_castsi256_si128(packed);
+                let hi = _mm256_extracti128_si256::<1>(packed);
+                let combined = _mm_unpacklo_epi64(lo, hi);
+                let store_off = row_off + x * 2;
+                storeu_128!((&mut dst[store_off..store_off + 16]), [u8; 16], combined);
 
-            x += 8;
+                x += 8;
+            }
         }
 
-        // Process remaining pixels with scalar
+        // Scalar remainder (also handles upsampled stride-2 access)
         while x < width {
             let base = base0 + base_inc * x;
             if base < max_base_x {
-                let t0_off = top_off + base * 2;
-                let t1_off = top_off + (base + 1) * 2;
-                let t0 = u16::from_ne_bytes(topleft[t0_off..t0_off + 2].try_into().unwrap()) as i32;
-                let t1 = u16::from_ne_bytes(topleft[t1_off..t1_off + 2].try_into().unwrap()) as i32;
+                let t0 = top_px[base] as i32;
+                let t1 = top_px[base + 1] as i32;
                 let v = t0 * inv_frac + t1 * frac;
                 let off = row_off + x * 2;
                 dst[off..off + 2].copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
             } else {
-                // Fill remaining with max value
-                let fill_off = top_off + max_base_x * 2;
-                let fill_val_bytes = &topleft[fill_off..fill_off + 2];
+                let fill_val = top_px[max_base_x];
                 for xx in x..width {
                     let off = row_off + xx * 2;
-                    dst[off..off + 2].copy_from_slice(fill_val_bytes);
+                    dst[off..off + 2].copy_from_slice(&fill_val.to_ne_bytes());
                 }
                 break;
             }
             x += 1;
         }
     }
-    true
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -4276,6 +4334,7 @@ pub unsafe extern "C" fn ipred_z1_16bpc_avx2(
         width as usize,
         height as usize,
         angle as i32,
+        _bitdepth_max as i32,
     );
 }
 
@@ -5468,7 +5527,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         }
         (BPC::BPC16, 6) => {
             let tl_off_bytes = topleft_off * 2;
-            if !ipred_z1_16bpc_inner(
+            ipred_z1_16bpc_inner(
                 token,
                 dst_bytes,
                 dst_base_bytes,
@@ -5478,9 +5537,8 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
                 angle as i32,
-            ) {
-                return false;
-            }
+                bd_c,
+            );
         }
         (BPC::BPC16, 7) => {
             let tl_off_bytes = topleft_off * 2;
