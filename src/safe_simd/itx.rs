@@ -6304,7 +6304,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_avx2(
 // TESTS
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, target_arch = "x86_64"))]
 mod tests {
     use super::*;
 
