@@ -8693,31 +8693,261 @@ pub fn mct_scaled_dispatch<BD: BitDepth>(
     false
 }
 
-/// No SIMD for warp on x86_64.
+/// SSE2 horizontal 8-tap dot product for warp affine.
+///
+/// Computes sum(filter[i] * src[off+i] for i in 0..8) using widened i16 multiply.
+/// Avoids pmaddubsw saturation by widening to i16 first, then using pmaddwd.
 #[cfg(target_arch = "x86_64")]
-pub fn warp8x8_dispatch<BD: BitDepth>(
-    _dst: PicOffset,
-    _src: PicOffset,
-    _abcd: &[i16; 4],
-    _mx: i32,
-    _my: i32,
-    _bd: BD,
-) -> bool {
-    false
+#[rite]
+fn warp_h_dot8(_t: Desktop64, src: &[u8], off: usize, filter: &[i8; 8]) -> i32 {
+    // Load 8 source bytes and zero-extend to i16
+    let src_slice = &src[off..off + 8];
+    let mut s_arr = [0u8; 16];
+    s_arr[..8].copy_from_slice(src_slice);
+    let s8 = loadu_128!(&s_arr, [u8; 16]);
+    let s16 = _mm_unpacklo_epi8(s8, _mm_setzero_si128()); // zero-extend u8 → i16
+
+    // Load 8 filter coefficients and sign-extend to i16
+    let mut f_i16 = [0i16; 8];
+    for i in 0..8 {
+        f_i16[i] = filter[i] as i16;
+    }
+    let f16 = loadu_128!(&f_i16, [i16; 8]);
+
+    // pmaddwd: multiply i16*i16 and add adjacent pairs → 4 i32 values (no saturation)
+    let prod = _mm_madd_epi16(s16, f16);
+
+    // Sum 4 i32 values: hadd twice → single i32 in lane 0
+    let sum1 = _mm_hadd_epi32(prod, prod);
+    let sum2 = _mm_hadd_epi32(sum1, sum1);
+    _mm_cvtsi128_si32(sum2)
 }
 
-/// No SIMD for warp on x86_64.
+/// Warp affine horizontal pass: 15 rows × 8 pixels → mid[15][8] as i16.
 #[cfg(target_arch = "x86_64")]
-pub fn warp8x8t_dispatch<BD: BitDepth>(
-    _tmp: &mut [i16],
-    _tmp_stride: usize,
-    _src: PicOffset,
-    _abcd: &[i16; 4],
-    _mx: i32,
-    _my: i32,
+#[rite]
+fn warp_h_pass_8bpc(
+    _t: Desktop64,
+    mid: &mut [[i16; 8]; 15],
+    src: &[u8],
+    src_base: usize,
+    src_stride: isize,
+    alpha: i32,
+    beta: i32,
+    mx: i32,
+) {
+    use crate::src::tables::dav1d_mc_warp_filter;
+
+    // intermediate_bits = 4 for 8bpc, shift = 3, round = 4
+    let round_h = (1i32 << (7 - 4)) >> 1;
+    let shift_h = 7 - 4;
+
+    for y in 0..15usize {
+        // Row start: src_base + (y - 3) * stride - 3
+        // The -3 column offset accounts for the 8-tap filter centering.
+        let row_base = (src_base as isize + (y as isize - 3) * src_stride - 3) as usize;
+        let mut tmx = mx + (y as i32) * beta;
+
+        for x in 0..8usize {
+            let fidx = (64 + ((tmx + 512) >> 10)) as usize;
+            tmx += alpha;
+            let filter = &dav1d_mc_warp_filter[fidx];
+
+            let off = row_base + x;
+            let dot = warp_h_dot8(_t, src, off, filter);
+            mid[y][x] = ((dot + round_h) >> shift_h) as i16;
+        }
+    }
+}
+
+/// Warp affine vertical pass → pixel output (put variant, 8bpc).
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn warp_v_pass_8bpc_put(
+    _t: Desktop64,
+    dst: &mut [u8],
+    dst_stride: isize,
+    mid: &[[i16; 8]; 15],
+    gamma: i32,
+    delta: i32,
+    my: i32,
+) {
+    use crate::src::tables::dav1d_mc_warp_filter;
+
+    // shift = 11, round = 1024
+    let round_v = (1i32 << (7 + 4)) >> 1;
+    let shift_v = 7 + 4;
+
+    for y in 0..8usize {
+        let dst_off = (y as isize * dst_stride) as usize;
+        let mut tmy = my + (y as i32) * delta;
+
+        for x in 0..8usize {
+            let fidx = (64 + ((tmy + 512) >> 10)) as usize;
+            tmy += gamma;
+            let filter = &dav1d_mc_warp_filter[fidx];
+
+            let mut sum = 0i32;
+            for i in 0..8 {
+                sum += filter[i] as i32 * mid[y + i][x] as i32;
+            }
+            dst[dst_off + x] = ((sum + round_v) >> shift_v).clamp(0, 255) as u8;
+        }
+    }
+}
+
+/// Warp affine vertical pass → i16 tmp output (prep variant, 8bpc).
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn warp_v_pass_8bpc_prep(
+    _t: Desktop64,
+    tmp: &mut [i16],
+    tmp_stride: usize,
+    mid: &[[i16; 8]; 15],
+    gamma: i32,
+    delta: i32,
+    my: i32,
+) {
+    use crate::src::tables::dav1d_mc_warp_filter;
+
+    // shift = 7, round = 64
+    let round_v = (1i32 << 7) >> 1;
+    let shift_v = 7;
+
+    for y in 0..8usize {
+        let mut tmy = my + (y as i32) * delta;
+
+        for x in 0..8usize {
+            let fidx = (64 + ((tmy + 512) >> 10)) as usize;
+            tmy += gamma;
+            let filter = &dav1d_mc_warp_filter[fidx];
+
+            let mut sum = 0i32;
+            for i in 0..8 {
+                sum += filter[i] as i32 * mid[y + i][x] as i32;
+            }
+            // PREP_BIAS = 0 for 8bpc
+            tmp[y * tmp_stride + x] = ((sum + round_v) >> shift_v) as i16;
+        }
+    }
+}
+
+/// AVX2/SSSE3 warp affine 8×8 put (8bpc).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn warp_affine_8x8_8bpc_avx2(
+    _t: Desktop64,
+    dst: &mut [u8],
+    dst_stride: isize,
+    src: &[u8],
+    src_base: usize,
+    src_stride: isize,
+    abcd: &[i16; 4],
+    mx: i32,
+    my: i32,
+) {
+    let mut mid = [[0i16; 8]; 15];
+    warp_h_pass_8bpc(
+        _t, &mut mid, src, src_base, src_stride, abcd[0] as i32, abcd[1] as i32, mx,
+    );
+    warp_v_pass_8bpc_put(_t, dst, dst_stride, &mid, abcd[2] as i32, abcd[3] as i32, my);
+}
+
+/// AVX2/SSSE3 warp affine 8×8 prep (8bpc).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn warp_affine_8x8t_8bpc_avx2(
+    _t: Desktop64,
+    tmp: &mut [i16],
+    tmp_stride: usize,
+    src: &[u8],
+    src_base: usize,
+    src_stride: isize,
+    abcd: &[i16; 4],
+    mx: i32,
+    my: i32,
+) {
+    let mut mid = [[0i16; 8]; 15];
+    warp_h_pass_8bpc(
+        _t, &mut mid, src, src_base, src_stride, abcd[0] as i32, abcd[1] as i32, mx,
+    );
+    warp_v_pass_8bpc_prep(_t, tmp, tmp_stride, &mid, abcd[2] as i32, abcd[3] as i32, my);
+}
+
+/// SIMD warp affine 8×8 put dispatch.
+#[cfg(target_arch = "x86_64")]
+pub fn warp8x8_dispatch<BD: BitDepth>(
+    dst: PicOffset,
+    src: PicOffset,
+    abcd: &[i16; 4],
+    mx: i32,
+    my: i32,
     _bd: BD,
 ) -> bool {
-    false
+    use crate::include::common::bitdepth::BPC;
+    use zerocopy::AsBytes;
+
+    let Some(token) = crate::src::cpu::summon_avx2() else {
+        return false;
+    };
+
+    // Only 8bpc for now
+    if !matches!(BD::BPC, BPC::BPC8) {
+        return false;
+    }
+
+    // Can't hold simultaneous guards on the same picture component
+    if dst.data.ref_eq(src.data) {
+        return false;
+    }
+
+    let dst_stride = dst.stride();
+    let src_stride = src.stride();
+    let pixel_size = std::mem::size_of::<BD::Pixel>();
+
+    let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
+    let dst_bytes = &mut dst_guard.as_bytes_mut()[dst_base * pixel_size..];
+    let (src_guard, src_base) = src.full_guard::<BD>();
+    let src_bytes = src_guard.as_bytes();
+
+    warp_affine_8x8_8bpc_avx2(
+        token, dst_bytes, dst_stride, src_bytes, src_base * pixel_size, src_stride, abcd, mx, my,
+    );
+    true
+}
+
+/// SIMD warp affine 8×8 prep dispatch.
+#[cfg(target_arch = "x86_64")]
+pub fn warp8x8t_dispatch<BD: BitDepth>(
+    tmp: &mut [i16],
+    tmp_stride: usize,
+    src: PicOffset,
+    abcd: &[i16; 4],
+    mx: i32,
+    my: i32,
+    _bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+    use zerocopy::AsBytes;
+
+    let Some(token) = crate::src::cpu::summon_avx2() else {
+        return false;
+    };
+
+    if !matches!(BD::BPC, BPC::BPC8) {
+        return false;
+    }
+
+    let src_stride = src.stride();
+    let pixel_size = std::mem::size_of::<BD::Pixel>();
+
+    let (src_guard, src_base) = src.full_guard::<BD>();
+    let src_bytes = src_guard.as_bytes();
+
+    warp_affine_8x8t_8bpc_avx2(
+        token, tmp, tmp_stride, src_bytes, src_base * pixel_size, src_stride, abcd, mx, my,
+    );
+    true
 }
 
 /// No SIMD for emu_edge on x86_64.
