@@ -101,10 +101,15 @@ pub mod src {
     #[cfg(not(feature = "asm"))]
     pub mod safe_simd;
 
-    // C API entry point
+    // Rust core API (rav1d_open, rav1d_send_data, etc.)
     #[cfg_attr(not(feature = "c-ffi"), deny(unsafe_code))]
     #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub mod lib;
+
+    // C FFI wrappers (dav1d_* extern "C" functions)
+    #[cfg(feature = "c-ffi")]
+    #[allow(unsafe_code)]
+    pub mod dav1d_api;
 
     // === Modules WITHOUT unsafe_code (enforced by deny) ===
     mod cdef_apply;
