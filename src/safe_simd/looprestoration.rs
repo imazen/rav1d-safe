@@ -3221,6 +3221,152 @@ fn selfguided_filter_8bpc_avx512(
     }
 }
 
+/// SIMD apply loop for 8bpc SGR single filter (5x5 or 3x3).
+/// Computes: pixel_out = clamp(pixel_in + (w_k * dst[i] + 1024) >> 11, 0, 255)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn sgr_apply_8bpc(
+    _t: Desktop64,
+    p_guard: &mut [u8],
+    p_base: usize,
+    stride: isize,
+    dst: &[i16],
+    w: usize,
+    h: usize,
+    w_k: i32,
+) {
+    use super::pixel_access::{loadu_128, storeu_128};
+
+    let w_k_v = _mm256_set1_epi32(w_k);
+    let rounding_v = _mm256_set1_epi32(1 << 10);
+    let zero_256 = _mm256_setzero_si256();
+    let max_v = _mm256_set1_epi32(255);
+
+    for j in 0..h {
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
+        let dst_row = j * MAX_RESTORATION_WIDTH;
+        let mut i = 0;
+
+        while i + 8 <= w {
+            // Load 8 i16 SGR results, widen to i32
+            let dst_v = loadu_128!(&dst[dst_row + i..dst_row + i + 8], [i16; 8]);
+            let dst_i32 = _mm256_cvtepi16_epi32(dst_v);
+
+            // Compute delta = (w_k * dst[i] + 1024) >> 11
+            let product = _mm256_mullo_epi32(dst_i32, w_k_v);
+            let rounded = _mm256_add_epi32(product, rounding_v);
+            let delta = _mm256_srai_epi32::<11>(rounded);
+
+            // Load 8 u8 pixels, widen to i32
+            let mut px_bytes = [0u8; 16];
+            px_bytes[0..8].copy_from_slice(&p_guard[row_off + i..row_off + i + 8]);
+            let pixel_sse = loadu_128!(&px_bytes);
+            let pixels_i32 = _mm256_cvtepu8_epi32(pixel_sse);
+
+            // Add delta, clamp to [0, 255]
+            let result = _mm256_add_epi32(pixels_i32, delta);
+            let clamped = _mm256_max_epi32(_mm256_min_epi32(result, max_v), zero_256);
+
+            // Pack i32 → u8: extract lanes, pack via SSE
+            let lo = _mm256_castsi256_si128(clamped);
+            let hi = _mm256_extracti128_si256::<1>(clamped);
+            let i16_packed = _mm_packs_epi32(lo, hi);
+            let u8_packed = _mm_packus_epi16(i16_packed, _mm_setzero_si128());
+
+            let mut out = [0u8; 16];
+            storeu_128!(&mut out, u8_packed);
+            p_guard[row_off + i..row_off + i + 8].copy_from_slice(&out[0..8]);
+
+            i += 8;
+        }
+
+        // Scalar tail
+        while i < w {
+            let v = w_k * dst[dst_row + i] as i32;
+            p_guard[row_off + i] =
+                iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+            i += 1;
+        }
+    }
+}
+
+/// SIMD apply loop for 8bpc SGR mix filter (combines 5x5 and 3x3).
+/// Computes: pixel_out = clamp(pixel_in + (w0 * dst0[i] + w1 * dst1[i] + 1024) >> 11, 0, 255)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn sgr_apply_mix_8bpc(
+    _t: Desktop64,
+    p_guard: &mut [u8],
+    p_base: usize,
+    stride: isize,
+    dst0: &[i16],
+    dst1: &[i16],
+    w: usize,
+    h: usize,
+    w0: i32,
+    w1: i32,
+) {
+    use super::pixel_access::{loadu_128, storeu_128};
+
+    let w0_v = _mm256_set1_epi32(w0);
+    let w1_v = _mm256_set1_epi32(w1);
+    let rounding_v = _mm256_set1_epi32(1 << 10);
+    let zero_256 = _mm256_setzero_si256();
+    let max_v = _mm256_set1_epi32(255);
+
+    for j in 0..h {
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
+        let dst_row = j * MAX_RESTORATION_WIDTH;
+        let mut i = 0;
+
+        while i + 8 <= w {
+            // Load 8 i16 from each SGR result, widen to i32
+            let d0_v = loadu_128!(&dst0[dst_row + i..dst_row + i + 8], [i16; 8]);
+            let d1_v = loadu_128!(&dst1[dst_row + i..dst_row + i + 8], [i16; 8]);
+            let d0_i32 = _mm256_cvtepi16_epi32(d0_v);
+            let d1_i32 = _mm256_cvtepi16_epi32(d1_v);
+
+            // Compute delta = (w0 * dst0[i] + w1 * dst1[i] + 1024) >> 11
+            let v = _mm256_add_epi32(
+                _mm256_mullo_epi32(d0_i32, w0_v),
+                _mm256_mullo_epi32(d1_i32, w1_v),
+            );
+            let rounded = _mm256_add_epi32(v, rounding_v);
+            let delta = _mm256_srai_epi32::<11>(rounded);
+
+            // Load 8 u8 pixels, widen to i32
+            let mut px_bytes = [0u8; 16];
+            px_bytes[0..8].copy_from_slice(&p_guard[row_off + i..row_off + i + 8]);
+            let pixel_sse = loadu_128!(&px_bytes);
+            let pixels_i32 = _mm256_cvtepu8_epi32(pixel_sse);
+
+            // Add delta, clamp to [0, 255]
+            let result = _mm256_add_epi32(pixels_i32, delta);
+            let clamped = _mm256_max_epi32(_mm256_min_epi32(result, max_v), zero_256);
+
+            // Pack i32 → u8
+            let lo = _mm256_castsi256_si128(clamped);
+            let hi = _mm256_extracti128_si256::<1>(clamped);
+            let i16_packed = _mm_packs_epi32(lo, hi);
+            let u8_packed = _mm_packus_epi16(i16_packed, _mm_setzero_si128());
+
+            let mut out = [0u8; 16];
+            storeu_128!(&mut out, u8_packed);
+            p_guard[row_off + i..row_off + i + 8].copy_from_slice(&out[0..8]);
+
+            i += 8;
+        }
+
+        // Scalar tail
+        while i < w {
+            let v = w0 * dst0[dst_row + i] as i32 + w1 * dst1[dst_row + i] as i32;
+            p_guard[row_off + i] =
+                iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+            i += 1;
+        }
+    }
+}
+
 /// SGR 5x5 filter for 8bpc using AVX2
 #[cfg(target_arch = "x86_64")]
 fn sgr_5x5_8bpc_avx2_inner(
@@ -3254,15 +3400,19 @@ fn sgr_5x5_8bpc_avx2_inner(
     let stride = p.pixel_stride::<BitDepth8>();
 
     let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth8>(w, h);
-    for j in 0..h {
-        let row_off = p_base.wrapping_add_signed(j as isize * stride);
-        for i in 0..w {
-            let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
-            p_guard[row_off + i] = iclip(
-                p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                0,
-                255,
-            ) as u8;
+    if let Some(token) = summon_avx2() {
+        sgr_apply_8bpc(token, &mut p_guard, p_base, stride, &dst, w, h, w0);
+    } else {
+        for j in 0..h {
+            let row_off = p_base.wrapping_add_signed(j as isize * stride);
+            for i in 0..w {
+                let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
+                p_guard[row_off + i] = iclip(
+                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                    0,
+                    255,
+                ) as u8;
+            }
         }
     }
 }
@@ -3300,15 +3450,19 @@ fn sgr_3x3_8bpc_avx2_inner(
     let stride = p.pixel_stride::<BitDepth8>();
 
     let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth8>(w, h);
-    for j in 0..h {
-        let row_off = p_base.wrapping_add_signed(j as isize * stride);
-        for i in 0..w {
-            let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
-            p_guard[row_off + i] = iclip(
-                p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                0,
-                255,
-            ) as u8;
+    if let Some(token) = summon_avx2() {
+        sgr_apply_8bpc(token, &mut p_guard, p_base, stride, &dst, w, h, w1);
+    } else {
+        for j in 0..h {
+            let row_off = p_base.wrapping_add_signed(j as isize * stride);
+            for i in 0..w {
+                let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
+                p_guard[row_off + i] = iclip(
+                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                    0,
+                    255,
+                ) as u8;
+            }
         }
     }
 }
@@ -3354,16 +3508,22 @@ fn sgr_mix_8bpc_avx2_inner(
     let stride = p.pixel_stride::<BitDepth8>();
 
     let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth8>(w, h);
-    for j in 0..h {
-        let row_off = p_base.wrapping_add_signed(j as isize * stride);
-        for i in 0..w {
-            let v = w0 * dst0[j * MAX_RESTORATION_WIDTH + i] as i32
-                + w1 * dst1[j * MAX_RESTORATION_WIDTH + i] as i32;
-            p_guard[row_off + i] = iclip(
-                p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                0,
-                255,
-            ) as u8;
+    if let Some(token) = summon_avx2() {
+        sgr_apply_mix_8bpc(
+            token, &mut p_guard, p_base, stride, &dst0, &dst1, w, h, w0, w1,
+        );
+    } else {
+        for j in 0..h {
+            let row_off = p_base.wrapping_add_signed(j as isize * stride);
+            for i in 0..w {
+                let v = w0 * dst0[j * MAX_RESTORATION_WIDTH + i] as i32
+                    + w1 * dst1[j * MAX_RESTORATION_WIDTH + i] as i32;
+                p_guard[row_off + i] = iclip(
+                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                    0,
+                    255,
+                ) as u8;
+            }
         }
     }
 }
@@ -5054,6 +5214,150 @@ fn selfguided_filter_16bpc_avx512(
     }
 }
 
+/// SIMD apply loop for 16bpc SGR single filter (5x5 or 3x3).
+/// Computes: pixel_out = clamp(pixel_in + (w_k * dst[i] + 1024) >> 11, 0, bdmax)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn sgr_apply_16bpc(
+    _t: Desktop64,
+    p_guard: &mut [u16],
+    p_base: usize,
+    stride: isize,
+    dst: &[i32],
+    w: usize,
+    h: usize,
+    w_k: i32,
+    bitdepth_max: c_int,
+) {
+    use super::pixel_access::{loadu_128, storeu_128};
+
+    let w_k_v = _mm256_set1_epi32(w_k);
+    let rounding_v = _mm256_set1_epi32(1 << 10);
+    let zero_256 = _mm256_setzero_si256();
+    let max_v = _mm256_set1_epi32(bitdepth_max);
+
+    for j in 0..h {
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
+        let dst_row = j * MAX_RESTORATION_WIDTH;
+        let mut i = 0;
+
+        while i + 8 <= w {
+            // Load 8 i32 SGR results directly
+            let dst_v = loadu_256!(&dst[dst_row + i..dst_row + i + 8], [i32; 8]);
+
+            // Compute delta = (w_k * dst[i] + 1024) >> 11
+            let product = _mm256_mullo_epi32(dst_v, w_k_v);
+            let rounded = _mm256_add_epi32(product, rounding_v);
+            let delta = _mm256_srai_epi32::<11>(rounded);
+
+            // Load 8 u16 pixels, widen to i32
+            let pixel_sse = loadu_128!(&p_guard[row_off + i..row_off + i + 8], [u16; 8]);
+            let pixels_i32 = _mm256_cvtepu16_epi32(pixel_sse);
+
+            // Add delta, clamp to [0, bitdepth_max]
+            let result = _mm256_add_epi32(pixels_i32, delta);
+            let clamped = _mm256_max_epi32(_mm256_min_epi32(result, max_v), zero_256);
+
+            // Pack i32 → u16: extract lanes, pack via SSE
+            let lo = _mm256_castsi256_si128(clamped);
+            let hi = _mm256_extracti128_si256::<1>(clamped);
+            let u16_packed = _mm_packus_epi32(lo, hi);
+
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut p_guard[row_off + i..row_off + i + 8]).unwrap(),
+                u16_packed
+            );
+
+            i += 8;
+        }
+
+        // Scalar tail
+        while i < w {
+            let v = w_k * dst[dst_row + i];
+            p_guard[row_off + i] =
+                iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max)
+                    as u16;
+            i += 1;
+        }
+    }
+}
+
+/// SIMD apply loop for 16bpc SGR mix filter (combines 5x5 and 3x3).
+/// Computes: pixel_out = clamp(pixel_in + (w0 * dst0[i] + w1 * dst1[i] + 1024) >> 11, 0, bdmax)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn sgr_apply_mix_16bpc(
+    _t: Desktop64,
+    p_guard: &mut [u16],
+    p_base: usize,
+    stride: isize,
+    dst0: &[i32],
+    dst1: &[i32],
+    w: usize,
+    h: usize,
+    w0: i32,
+    w1: i32,
+    bitdepth_max: c_int,
+) {
+    use super::pixel_access::{loadu_128, storeu_128};
+
+    let w0_v = _mm256_set1_epi32(w0);
+    let w1_v = _mm256_set1_epi32(w1);
+    let rounding_v = _mm256_set1_epi32(1 << 10);
+    let zero_256 = _mm256_setzero_si256();
+    let max_v = _mm256_set1_epi32(bitdepth_max);
+
+    for j in 0..h {
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
+        let dst_row = j * MAX_RESTORATION_WIDTH;
+        let mut i = 0;
+
+        while i + 8 <= w {
+            // Load 8 i32 from each SGR result
+            let d0_v = loadu_256!(&dst0[dst_row + i..dst_row + i + 8], [i32; 8]);
+            let d1_v = loadu_256!(&dst1[dst_row + i..dst_row + i + 8], [i32; 8]);
+
+            // Compute delta = (w0 * dst0[i] + w1 * dst1[i] + 1024) >> 11
+            let v = _mm256_add_epi32(
+                _mm256_mullo_epi32(d0_v, w0_v),
+                _mm256_mullo_epi32(d1_v, w1_v),
+            );
+            let rounded = _mm256_add_epi32(v, rounding_v);
+            let delta = _mm256_srai_epi32::<11>(rounded);
+
+            // Load 8 u16 pixels, widen to i32
+            let pixel_sse = loadu_128!(&p_guard[row_off + i..row_off + i + 8], [u16; 8]);
+            let pixels_i32 = _mm256_cvtepu16_epi32(pixel_sse);
+
+            // Add delta, clamp to [0, bitdepth_max]
+            let result = _mm256_add_epi32(pixels_i32, delta);
+            let clamped = _mm256_max_epi32(_mm256_min_epi32(result, max_v), zero_256);
+
+            // Pack i32 → u16
+            let lo = _mm256_castsi256_si128(clamped);
+            let hi = _mm256_extracti128_si256::<1>(clamped);
+            let u16_packed = _mm_packus_epi32(lo, hi);
+
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut p_guard[row_off + i..row_off + i + 8]).unwrap(),
+                u16_packed
+            );
+
+            i += 8;
+        }
+
+        // Scalar tail
+        while i < w {
+            let v =
+                w0 * dst0[dst_row + i] + w1 * dst1[dst_row + i];
+            p_guard[row_off + i] =
+                iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max)
+                    as u16;
+            i += 1;
+        }
+    }
+}
+
 /// SGR 5x5 filter for 16bpc using AVX2
 #[cfg(target_arch = "x86_64")]
 fn sgr_5x5_16bpc_avx2_inner(
@@ -5088,15 +5392,29 @@ fn sgr_5x5_16bpc_avx2_inner(
     let stride = p.pixel_stride::<BitDepth16>();
 
     let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth16>(w, h);
-    for j in 0..h {
-        let row_off = p_base.wrapping_add_signed(j as isize * stride);
-        for i in 0..w {
-            let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i];
-            p_guard[row_off + i] = iclip(
-                p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                0,
-                bitdepth_max,
-            ) as u16;
+    if let Some(token) = summon_avx2() {
+        sgr_apply_16bpc(
+            token,
+            &mut p_guard,
+            p_base,
+            stride,
+            &dst,
+            w,
+            h,
+            w0,
+            bitdepth_max,
+        );
+    } else {
+        for j in 0..h {
+            let row_off = p_base.wrapping_add_signed(j as isize * stride);
+            for i in 0..w {
+                let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i];
+                p_guard[row_off + i] = iclip(
+                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                    0,
+                    bitdepth_max,
+                ) as u16;
+            }
         }
     }
 }
@@ -5135,15 +5453,29 @@ fn sgr_3x3_16bpc_avx2_inner(
     let stride = p.pixel_stride::<BitDepth16>();
 
     let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth16>(w, h);
-    for j in 0..h {
-        let row_off = p_base.wrapping_add_signed(j as isize * stride);
-        for i in 0..w {
-            let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i];
-            p_guard[row_off + i] = iclip(
-                p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                0,
-                bitdepth_max,
-            ) as u16;
+    if let Some(token) = summon_avx2() {
+        sgr_apply_16bpc(
+            token,
+            &mut p_guard,
+            p_base,
+            stride,
+            &dst,
+            w,
+            h,
+            w1,
+            bitdepth_max,
+        );
+    } else {
+        for j in 0..h {
+            let row_off = p_base.wrapping_add_signed(j as isize * stride);
+            for i in 0..w {
+                let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i];
+                p_guard[row_off + i] = iclip(
+                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                    0,
+                    bitdepth_max,
+                ) as u16;
+            }
         }
     }
 }
@@ -5190,16 +5522,32 @@ fn sgr_mix_16bpc_avx2_inner(
     let stride = p.pixel_stride::<BitDepth16>();
 
     let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth16>(w, h);
-    for j in 0..h {
-        let row_off = p_base.wrapping_add_signed(j as isize * stride);
-        for i in 0..w {
-            let v =
-                w0 * dst0[j * MAX_RESTORATION_WIDTH + i] + w1 * dst1[j * MAX_RESTORATION_WIDTH + i];
-            p_guard[row_off + i] = iclip(
-                p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                0,
-                bitdepth_max,
-            ) as u16;
+    if let Some(token) = summon_avx2() {
+        sgr_apply_mix_16bpc(
+            token,
+            &mut p_guard,
+            p_base,
+            stride,
+            &dst0,
+            &dst1,
+            w,
+            h,
+            w0,
+            w1,
+            bitdepth_max,
+        );
+    } else {
+        for j in 0..h {
+            let row_off = p_base.wrapping_add_signed(j as isize * stride);
+            for i in 0..w {
+                let v = w0 * dst0[j * MAX_RESTORATION_WIDTH + i]
+                    + w1 * dst1[j * MAX_RESTORATION_WIDTH + i];
+                p_guard[row_off + i] = iclip(
+                    p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                    0,
+                    bitdepth_max,
+                ) as u16;
+            }
         }
     }
 }
