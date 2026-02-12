@@ -13,7 +13,7 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
-use archmage::{arcane, Desktop64, SimdToken};
+use archmage::{arcane, rite, Desktop64, Server64, SimdToken};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
@@ -26,7 +26,8 @@ use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::safe_simd::pixel_access::Flex;
 use crate::src::safe_simd::pixel_access::{
-    loadi32, loadi64, loadu_128, loadu_256, storei32, storei64, storeu_128, storeu_256,
+    loadi32, loadi64, loadu_128, loadu_256, loadu_512, storei32, storei64, storeu_128, storeu_256,
+    storeu_512,
 };
 use std::ffi::c_int;
 use std::num::NonZeroUsize;
@@ -4294,6 +4295,13 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 16, bitdepth_max);
+        coeff[..512].fill(0);
+        return;
+    }
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
     let rnd_final = _mm256_set1_epi32(8);
@@ -4556,6 +4564,13 @@ fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 16, bitdepth_max);
+        coeff[..512].fill(0);
+        return;
+    }
+
     for y in 0..16 {
         let dst_off = y * dst_stride;
         for x in 0..32 {
@@ -4655,6 +4670,13 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 64, bitdepth_max);
+        coeff[..1024].fill(0);
+        return;
+    }
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
     let rnd_final = _mm256_set1_epi32(8);
@@ -4797,6 +4819,13 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 64, 64, 32, bitdepth_max);
+        coeff[..1024].fill(0);
+        return;
+    }
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
     let rnd_final = _mm256_set1_epi32(8);
@@ -5756,6 +5785,13 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 8, bitdepth_max);
+        coeff[..256].fill(0);
+        return;
+    }
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
     let rnd_final = _mm256_set1_epi32(8);
@@ -5975,6 +6011,13 @@ fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 8, bitdepth_max);
+        coeff[..256].fill(0);
+        return;
+    }
+
     for y in 0..8 {
         let dst_off = y * dst_stride;
         for x in 0..32 {
@@ -6206,6 +6249,13 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 64, 64, 16, bitdepth_max);
+        coeff[..512].fill(0);
+        return;
+    }
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi16(bitdepth_max as i16);
     let rnd_final = _mm256_set1_epi32(8);
@@ -8481,6 +8531,184 @@ fn inv_txfm_32x32_inner<C: Copy + Into<i32>>(
     }
 }
 
+/// AVX-512 helper: add transformed i32 coefficients to 8bpc destination.
+/// Processes 32 pixels per chunk using 512-bit registers.
+/// Used for w>=32 transforms (32x32, 64x64, 32x64, 64x32, 64x16).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn add_to_dst_8bpc_avx512(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp: &[i32],
+    tmp_stride: usize,
+    w: usize,
+    h: usize,
+    _bitdepth_max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let zero_512 = _mm512_setzero_si512();
+    let max_val_512 = _mm512_set1_epi16(255);
+    let rnd_final_512 = _mm512_set1_epi32(8);
+
+    for y in 0..h {
+        let dst_off = y * dst_stride;
+        let mut x = 0usize;
+
+        // Process 32 pixels at a time
+        while x + 32 <= w {
+            // Load 32 u8 dest pixels → 32 i16
+            let d = loadu_256!(&dst[dst_off + x..dst_off + x + 32], [u8; 32]);
+            let d16 = _mm512_cvtepu8_epi16(d);
+
+            // Load 32 consecutive i32 coefficients as two __m512i
+            let c0 = loadu_512!(&tmp[y * tmp_stride + x..y * tmp_stride + x + 16], [i32; 16]);
+            let c1 = loadu_512!(
+                &tmp[y * tmp_stride + x + 16..y * tmp_stride + x + 32],
+                [i32; 16]
+            );
+
+            // Scale: (c + 8) >> 4
+            let c0_scaled = _mm512_srai_epi32::<4>(_mm512_add_epi32(c0, rnd_final_512));
+            let c1_scaled = _mm512_srai_epi32::<4>(_mm512_add_epi32(c1, rnd_final_512));
+
+            // Pack i32 → i16 using cvtsepi32_epi16 (no lane-crossing issues!)
+            let c16_lo = _mm512_cvtsepi32_epi16(c0_scaled); // 16 i16 as __m256i
+            let c16_hi = _mm512_cvtsepi32_epi16(c1_scaled); // 16 i16 as __m256i
+
+            // Combine two __m256i → one __m512i of 32 i16
+            let c16 = _mm512_inserti64x4::<1>(_mm512_castsi256_si512(c16_lo), c16_hi);
+
+            // Add dest + coeff
+            let sum = _mm512_add_epi16(d16, c16);
+
+            // Clamp to [0, 255]
+            let clamped = _mm512_max_epi16(_mm512_min_epi16(sum, max_val_512), zero_512);
+
+            // Pack i16 → u8 using unsigned saturation (no lane issues!)
+            let packed = _mm512_cvtusepi16_epi8(clamped); // 32 u8 as __m256i
+
+            // Store 32 bytes
+            storeu_256!(&mut dst[dst_off + x..dst_off + x + 32], [u8; 32], packed);
+
+            x += 32;
+        }
+
+        // AVX2 tail for remaining 16-pixel chunk (when w is not multiple of 32)
+        if x + 16 <= w {
+            let d = loadu_128!(&dst[dst_off + x..dst_off + x + 16], [u8; 16]);
+            let d16 = _mm256_cvtepu8_epi16(d);
+
+            let c0 = loadu_256!(&tmp[y * tmp_stride + x..y * tmp_stride + x + 8], [i32; 8]);
+            let c1 = loadu_256!(
+                &tmp[y * tmp_stride + x + 8..y * tmp_stride + x + 16],
+                [i32; 8]
+            );
+
+            let rnd = _mm256_set1_epi32(8);
+            let c0_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c0, rnd));
+            let c1_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c1, rnd));
+
+            let c16 = _mm256_packs_epi32(c0_scaled, c1_scaled);
+            let c16 = _mm256_permute4x64_epi64::<0b11_01_10_00>(c16);
+
+            let sum = _mm256_add_epi16(d16, c16);
+            let zero = _mm256_setzero_si256();
+            let max_val = _mm256_set1_epi16(255);
+            let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_val), zero);
+
+            let packed = _mm256_packus_epi16(clamped, clamped);
+            let packed = _mm256_permute4x64_epi64::<0b11_01_10_00>(packed);
+
+            storeu_128!(
+                &mut dst[dst_off + x..dst_off + x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(packed)
+            );
+        }
+    }
+}
+
+/// AVX-512 helper: add transformed i32 coefficients to 16bpc destination.
+/// Processes 16 pixels per chunk using 512-bit registers.
+/// Used for w>=16 transforms (32x32, 64x64, 32x64, 64x32, 16x64, 64x16).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn add_to_dst_16bpc_avx512(
+    _token: Server64,
+    dst: &mut [u16],
+    dst_stride_u16: usize,
+    tmp: &[i32],
+    tmp_stride: usize,
+    w: usize,
+    h: usize,
+    bitdepth_max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let zero_512 = _mm512_setzero_si512();
+    let max_val_512 = _mm512_set1_epi32(bitdepth_max);
+    let rnd_final_512 = _mm512_set1_epi32(8);
+
+    for y in 0..h {
+        let dst_off = y * dst_stride_u16;
+        let mut x = 0usize;
+
+        // Process 16 pixels at a time
+        while x + 16 <= w {
+            // Load 16 u16 dest pixels → 16 i32
+            let d = loadu_256!(&dst[dst_off + x..dst_off + x + 16], [u16; 16]);
+            let d32 = _mm512_cvtepu16_epi32(d);
+
+            // Load 16 consecutive i32 coefficients
+            let c = loadu_512!(&tmp[y * tmp_stride + x..y * tmp_stride + x + 16], [i32; 16]);
+
+            // Scale: (c + 8) >> 4
+            let c_scaled = _mm512_srai_epi32::<4>(_mm512_add_epi32(c, rnd_final_512));
+
+            // Add to destination
+            let sum = _mm512_add_epi32(d32, c_scaled);
+
+            // Clamp to [0, bitdepth_max]
+            let clamped = _mm512_max_epi32(_mm512_min_epi32(sum, max_val_512), zero_512);
+
+            // Pack i32 → u16 (no lane-crossing issues!)
+            let packed = _mm512_cvtusepi32_epi16(clamped); // 16 u16 as __m256i
+
+            // Store 16 u16
+            storeu_256!(&mut dst[dst_off + x..dst_off + x + 16], [u16; 16], packed);
+
+            x += 16;
+        }
+
+        // AVX2 tail for remaining 8-pixel chunk
+        if x + 8 <= w {
+            let d =
+                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_off + x..dst_off + x + 8]).unwrap());
+            let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
+            let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
+            let d32 = _mm256_set_m128i(d_hi, d_lo);
+
+            let c = loadu_256!(&tmp[y * tmp_stride + x..y * tmp_stride + x + 8], [i32; 8]);
+
+            let rnd = _mm256_set1_epi32(8);
+            let c_scaled = _mm256_srai_epi32::<4>(_mm256_add_epi32(c, rnd));
+            let sum = _mm256_add_epi32(d32, c_scaled);
+
+            let zero = _mm256_setzero_si256();
+            let max_val = _mm256_set1_epi32(bitdepth_max);
+            let clamped = _mm256_max_epi32(_mm256_min_epi32(sum, max_val), zero);
+
+            let lo = _mm256_castsi256_si128(clamped);
+            let hi = _mm256_extracti128_si256(clamped, 1);
+            let packed = _mm_packus_epi32(lo, hi);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[dst_off + x..dst_off + x + 8]).unwrap(),
+                packed
+            );
+        }
+    }
+}
+
 /// Add transformed coefficients to destination with SIMD (32x32)
 #[cfg(target_arch = "x86_64")]
 #[arcane]
@@ -8587,14 +8815,13 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst(
-        _token,
-        &mut *dst,
-        dst_stride,
-        &tmp,
-        &mut *coeff,
-        bitdepth_max,
-    );
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 32, bitdepth_max);
+    } else {
+        add_32x32_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        return;
+    }
+    coeff[..1024].fill(0);
 }
 
 /// 32x32 IDTX inner function
@@ -8626,14 +8853,14 @@ fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst(
-        _token,
-        &mut *dst,
-        dst_stride,
-        &tmp,
-        &mut *coeff,
-        bitdepth_max,
-    );
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 32, bitdepth_max);
+    } else {
+        add_32x32_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        return;
+    }
+    coeff[..1024].fill(0);
 }
 
 /// FFI wrapper for 32x32 DCT_DCT 8bpc
@@ -8811,14 +9038,14 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst_16bpc(
-        _token,
-        &mut *dst,
-        dst_stride,
-        &tmp,
-        &mut *coeff,
-        bitdepth_max,
-    );
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_16bpc_avx512(t512, &mut *dst, dst_stride / 2, &tmp, 32, 32, 32, bitdepth_max);
+    } else {
+        add_32x32_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        return;
+    }
+    coeff[..1024].fill(0);
 }
 
 /// FFI wrapper for 32x32 DCT_DCT 16bpc
@@ -9618,14 +9845,13 @@ fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_64x64_to_dst(
-        _token,
-        &mut *dst,
-        dst_stride,
-        &tmp,
-        &mut *coeff,
-        bitdepth_max,
-    );
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 64, 64, 64, bitdepth_max);
+    } else {
+        add_64x64_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        return;
+    }
+    coeff[..1024].fill(0);
 }
 
 /// FFI wrapper for 64x64 DCT_DCT 8bpc
@@ -9770,14 +9996,14 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_64x64_to_dst_16bpc(
-        _token,
-        &mut *dst,
-        dst_stride,
-        &tmp,
-        &mut *coeff,
-        bitdepth_max,
-    );
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_16bpc_avx512(t512, &mut *dst, dst_stride / 2, &tmp, 64, 64, 64, bitdepth_max);
+    } else {
+        add_64x64_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        return;
+    }
+    coeff[..1024].fill(0);
 }
 
 /// FFI wrapper for 64x64 DCT_DCT 16bpc
@@ -10699,6 +10925,13 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_16bpc_avx512(t512, &mut *dst, stride_u16, &tmp, 32, 32, 16, bitdepth_max);
+        coeff[..512].fill(0);
+        return;
+    }
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
     let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
@@ -10940,6 +11173,13 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_16bpc_avx512(t512, &mut *dst, stride_u16, &tmp, 32, 32, 8, bitdepth_max);
+        coeff[..256].fill(0);
+        return;
+    }
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
     let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
@@ -11076,6 +11316,13 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_16bpc_avx512(t512, &mut *dst, stride_u16, &tmp, 32, 32, 64, bitdepth_max);
+        coeff[..1024].fill(0);
+        return;
+    }
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
     let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
@@ -11210,6 +11457,13 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_16bpc_avx512(t512, &mut *dst, stride_u16, &tmp, 64, 64, 32, bitdepth_max);
+        coeff[..1024].fill(0);
+        return;
+    }
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
     let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
@@ -11344,6 +11598,13 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_16bpc_avx512(t512, &mut *dst, stride_u16, &tmp, 16, 16, 64, bitdepth_max);
+        coeff[..512].fill(0);
+        return;
+    }
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
     let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
@@ -11480,6 +11741,13 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_16bpc_avx512(t512, &mut *dst, stride_u16, &tmp, 64, 64, 16, bitdepth_max);
+        coeff[..512].fill(0);
+        return;
+    }
+
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bitdepth_max);
     let rnd_final = _mm256_set1_epi32(8); // (+ 8) >> 4
@@ -12470,14 +12738,14 @@ fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
         col_clip_min,
         col_clip_max,
     );
-    add_32x32_to_dst_16bpc(
-        _token,
-        &mut *dst,
-        dst_stride,
-        &tmp,
-        &mut *coeff,
-        bitdepth_max,
-    );
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_16bpc_avx512(t512, &mut *dst, dst_stride / 2, &tmp, 32, 32, 32, bitdepth_max);
+    } else {
+        add_32x32_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        return;
+    }
+    coeff[..1024].fill(0);
 }
 
 /// FFI wrapper for 32x32 IDTX 16bpc
@@ -13375,6 +13643,13 @@ fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_16bpc_avx512(t512, &mut *dst, stride_u16, &tmp, 32, 32, 16, bitdepth_max);
+        coeff[..512].fill(0);
+        return;
+    }
+
     let zero = _mm_setzero_si128();
     let max_val = _mm_set1_epi32(bitdepth_max);
 
@@ -13615,6 +13890,13 @@ fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
     }
 
     // Add to destination
+    #[cfg(target_arch = "x86_64")]
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        add_to_dst_16bpc_avx512(t512, &mut *dst, stride_u16, &tmp, 32, 32, 8, bitdepth_max);
+        coeff[..256].fill(0);
+        return;
+    }
+
     let zero = _mm_setzero_si128();
     let max_val = _mm_set1_epi32(bitdepth_max);
 
