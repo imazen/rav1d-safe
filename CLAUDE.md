@@ -599,7 +599,7 @@ cd /home/lilith/work/zenavif
 
 ## Known Issues
 
-(none currently)
+- **ipred Z2 SIMD (mode 7)**: `ipred_z2_8bpc_inner` and `ipred_z2_16bpc_inner` exist but produce incorrect output. Dispatch is disabled (`return false`). Needs comparison with `ipred_z2_rust` scalar reference — likely edge preprocessing (filter/upsample) or base_x/base_y interpolation is wrong. Falls back to scalar for now.
 
 ## Technical Notes
 

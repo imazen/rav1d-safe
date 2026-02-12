@@ -4989,7 +4989,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 return false;
             }
         }
-        (BPC::BPC8, 7) => return false,
+        (BPC::BPC8, 7) => return false, // Z2: SIMD has correctness bugs, needs investigation
         (BPC::BPC8, 8) => {
             if !ipred_z3_8bpc_inner(
                 token,
@@ -5232,7 +5232,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 return false;
             }
         }
-        (BPC::BPC16, 7) => return false,
+        (BPC::BPC16, 7) => return false, // Z2: SIMD has correctness bugs, needs investigation
         (BPC::BPC16, 8) => {
             let tl_off_bytes = topleft_off * 2;
             if !ipred_z3_16bpc_inner(
