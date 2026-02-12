@@ -422,6 +422,121 @@ pub unsafe extern "C" fn avg_16bpc_avx2(
     )
 }
 
+/// AVG for 16-bit pixels using AVX-512
+///
+/// Processes 32 pixels per iteration (two groups of 16 i32).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn avg_16bpc_avx512_safe(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    bitdepth_max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let w = w as usize;
+    let h = h as usize;
+
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let sh = intermediate_bits + 1;
+    let rnd = (1 << intermediate_bits) + 8192 * 2;
+    let max = bitdepth_max as i32;
+
+    let rnd_vec = _mm512_set1_epi32(rnd);
+    let zero = _mm512_setzero_si512();
+    let max_vec = _mm512_set1_epi32(max);
+
+    for row in 0..h {
+        let tmp1_row = &tmp1[row * w..][..w];
+        let tmp2_row = &tmp2[row * w..][..w];
+        let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+
+        let mut col = 0usize;
+
+        // Process 32 pixels at a time
+        while col + 32 <= w {
+            // Load 32 i16 as two groups of 16
+            let t1_full = loadu_512!(&tmp1_row[col..col + 32], [i16; 32]);
+            let t2_full = loadu_512!(&tmp2_row[col..col + 32], [i16; 32]);
+
+            // Low 16
+            let t1_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(t1_full));
+            let t2_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(t2_full));
+            let sum_lo = _mm512_add_epi32(_mm512_add_epi32(t1_lo, t2_lo), rnd_vec);
+            let result_lo = if sh == 3 {
+                _mm512_srai_epi32::<3>(sum_lo)
+            } else {
+                _mm512_srai_epi32::<5>(sum_lo)
+            };
+            let clamped_lo = _mm512_min_epi32(_mm512_max_epi32(result_lo, zero), max_vec);
+            let packed_lo: __m256i = _mm512_cvtusepi32_epi16(clamped_lo);
+
+            // High 16
+            let t1_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64::<1>(t1_full));
+            let t2_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64::<1>(t2_full));
+            let sum_hi = _mm512_add_epi32(_mm512_add_epi32(t1_hi, t2_hi), rnd_vec);
+            let result_hi = if sh == 3 {
+                _mm512_srai_epi32::<3>(sum_hi)
+            } else {
+                _mm512_srai_epi32::<5>(sum_hi)
+            };
+            let clamped_hi = _mm512_min_epi32(_mm512_max_epi32(result_hi, zero), max_vec);
+            let packed_hi: __m256i = _mm512_cvtusepi32_epi16(clamped_hi);
+
+            // Combine and store 32 u16 = 64 bytes
+            let combined =
+                _mm512_inserti64x4::<1>(_mm512_castsi256_si512(packed_lo), packed_hi);
+            storeu_512!(&mut dst_row[col..col + 32], [u16; 32], combined);
+
+            col += 32;
+        }
+
+        // AVX2 tail for 16-pixel chunks
+        while col + 16 <= w {
+            let t1 = loadu_256!(&tmp1_row[col..col + 16], [i16; 16]);
+            let t2 = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
+            let t1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t1));
+            let t2_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t2));
+            let t1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t1, 1));
+            let t2_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t2, 1));
+
+            let rnd_256 = _mm256_set1_epi32(rnd);
+            let sum_lo = _mm256_add_epi32(_mm256_add_epi32(t1_lo, t2_lo), rnd_256);
+            let sum_hi = _mm256_add_epi32(_mm256_add_epi32(t1_hi, t2_hi), rnd_256);
+
+            let (result_lo, result_hi) = if sh == 3 {
+                (_mm256_srai_epi32(sum_lo, 3), _mm256_srai_epi32(sum_hi, 3))
+            } else {
+                (_mm256_srai_epi32(sum_lo, 5), _mm256_srai_epi32(sum_hi, 5))
+            };
+
+            let zero_256 = _mm256_setzero_si256();
+            let max_256 = _mm256_set1_epi32(max);
+            let clamped_lo = _mm256_min_epi32(_mm256_max_epi32(result_lo, zero_256), max_256);
+            let clamped_hi = _mm256_min_epi32(_mm256_max_epi32(result_hi, zero_256), max_256);
+
+            let packed = _mm256_packus_epi32(clamped_lo, clamped_hi);
+            let packed = _mm256_permute4x64_epi64(packed, 0b11011000);
+
+            storeu_256!(&mut dst_row[col..col + 16], [u16; 16], packed);
+            col += 16;
+        }
+
+        // Scalar tail
+        while col < w {
+            let sum = tmp1_row[col] as i32 + tmp2_row[col] as i32;
+            let val = ((sum + rnd) >> sh).clamp(0, max) as u16;
+            dst_row[col] = val;
+            col += 1;
+        }
+    }
+}
+
 /// SSE4.1 fallback for avg_8bpc
 ///
 /// # Safety
@@ -812,6 +927,79 @@ pub unsafe extern "C" fn w_avg_16bpc_avx2(
         weight,
         bitdepth_max,
     )
+}
+
+/// Weighted average for 16-bit pixels using AVX-512
+///
+/// Processes 16 pixels per iteration (vs 8 with AVX2).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn w_avg_16bpc_avx512_safe(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    weight: i32,
+    bitdepth_max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let w = w as usize;
+    let h = h as usize;
+
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let sh = intermediate_bits + 4;
+    let rnd = (8 << intermediate_bits) + 8192 * 16;
+    let max = bitdepth_max as i32;
+    let inv_weight = 16 - weight;
+
+    let rnd_vec = _mm512_set1_epi32(rnd);
+    let zero = _mm512_setzero_si512();
+    let max_vec = _mm512_set1_epi32(max);
+    let weight_vec = _mm512_set1_epi32(weight);
+    let inv_weight_vec = _mm512_set1_epi32(inv_weight);
+
+    for row in 0..h {
+        let tmp1_row = &tmp1[row * w..][..w];
+        let tmp2_row = &tmp2[row * w..][..w];
+        let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+
+        let mut col = 0usize;
+
+        // Process 16 pixels at a time with AVX-512
+        while col + 16 <= w {
+            let t1 = _mm512_cvtepi16_epi32(loadu_256!(&tmp1_row[col..col + 16], [i16; 16]));
+            let t2 = _mm512_cvtepi16_epi32(loadu_256!(&tmp2_row[col..col + 16], [i16; 16]));
+
+            let term1 = _mm512_mullo_epi32(t1, weight_vec);
+            let term2 = _mm512_mullo_epi32(t2, inv_weight_vec);
+            let sum = _mm512_add_epi32(_mm512_add_epi32(term1, term2), rnd_vec);
+
+            let result = if sh == 6 {
+                _mm512_srai_epi32::<6>(sum)
+            } else {
+                _mm512_srai_epi32::<8>(sum)
+            };
+
+            let clamped = _mm512_min_epi32(_mm512_max_epi32(result, zero), max_vec);
+            let packed: __m256i = _mm512_cvtusepi32_epi16(clamped);
+
+            storeu_256!(&mut dst_row[col..col + 16], [u16; 16], packed);
+            col += 16;
+        }
+
+        // Scalar tail
+        while col < w {
+            let a = tmp1_row[col] as i32;
+            let b = tmp2_row[col] as i32;
+            let val = (a * weight + b * inv_weight + rnd) >> sh;
+            dst_row[col] = val.clamp(0, max) as u16;
+            col += 1;
+        }
+    }
 }
 
 /// Scalar fallback for w_avg
@@ -8386,16 +8574,31 @@ pub fn avg_dispatch<BD: BitDepth>(
                 );
             }
         }
-        BPC::BPC16 => avg_16bpc_avx2_safe(
-            token,
-            &mut dst_bytes[dst_offset..],
-            dst_stride as usize,
-            tmp1,
-            tmp2,
-            w,
-            h,
-            bd_c,
-        ),
+        BPC::BPC16 => {
+            if let Some(t512) = avx512_token {
+                avg_16bpc_avx512_safe(
+                    t512,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride as usize,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                    bd_c,
+                );
+            } else {
+                avg_16bpc_avx2_safe(
+                    token,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride as usize,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                    bd_c,
+                );
+            }
+        }
     }
     true
 }
@@ -8448,17 +8651,33 @@ pub fn w_avg_dispatch<BD: BitDepth>(
                 );
             }
         }
-        BPC::BPC16 => w_avg_16bpc_avx2_safe(
-            token,
-            &mut dst_bytes[dst_offset..],
-            dst_stride as usize,
-            tmp1,
-            tmp2,
-            w,
-            h,
-            weight,
-            bd_c,
-        ),
+        BPC::BPC16 => {
+            if let Some(t512) = avx512_token {
+                w_avg_16bpc_avx512_safe(
+                    t512,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride as usize,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                    weight,
+                    bd_c,
+                );
+            } else {
+                w_avg_16bpc_avx2_safe(
+                    token,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride as usize,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                    weight,
+                    bd_c,
+                );
+            }
+        }
     }
     true
 }
