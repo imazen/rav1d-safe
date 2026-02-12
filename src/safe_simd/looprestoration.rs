@@ -444,6 +444,172 @@ fn wiener_filter5_8bpc_avx512_inner(
 }
 
 // ============================================================================
+// WIENER FILTER - 16bpc AVX-512 IMPLEMENTATION
+// ============================================================================
+
+/// Wiener filter 7-tap for 16bpc using AVX-512
+///
+/// Horizontal pass is scalar (data-dependent 7-tap convolution).
+/// Vertical pass uses AVX-512: 16 i32 pixels/iter with _mm512_mullo_epi32.
+/// Output via _mm512_cvtusepi32_epi16 (unsigned saturating i32→u16),
+/// with negative clamping via _mm512_max_epi32 first.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn wiener_filter7_16bpc_avx512_inner(
+    _token: Server64,
+    p: PicOffset,
+    left: &[LeftPixelRow<u16>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bitdepth_max: c_int,
+) {
+    let bitdepth = if bitdepth_max == 1023 { 10 } else { 12 };
+
+    let mut tmp = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
+    padding::<BitDepth16>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+
+    let mut hor = [0i32; (64 + 3 + 3) * REST_UNIT_STRIDE];
+
+    let filter = &params.filter;
+    let round_bits_h = if bitdepth == 12 { 5 } else { 3 };
+    let rounding_off_h = 1i32 << (round_bits_h - 1);
+    let clip_limit = 1i32 << (bitdepth + 1 + 7 - round_bits_h);
+
+    // Horizontal pass (scalar)
+    for row in 0..(h + 6) {
+        let tmp_row = &tmp[row * REST_UNIT_STRIDE..];
+        let hor_row = &mut hor[row * REST_UNIT_STRIDE..row * REST_UNIT_STRIDE + w];
+
+        for x in 0..w {
+            let mut sum = 1i32 << (bitdepth + 6);
+            for k in 0..7 {
+                sum += tmp_row[x + k] as i32 * filter[0][k] as i32;
+            }
+            hor_row[x] = iclip((sum + rounding_off_h) >> round_bits_h, 0, clip_limit - 1);
+        }
+    }
+
+    // Vertical pass with AVX-512 (16 i32 pixels at a time)
+    let round_bits_v = if bitdepth == 12 { 9 } else { 11 };
+    let rounding_off_v = 1i32 << (round_bits_v - 1);
+    let round_offset = 1i32 << (bitdepth + round_bits_v - 1);
+    let stride = p.pixel_stride::<BitDepth16>();
+
+    let vf0 = _mm512_set1_epi32(filter[1][0] as i32);
+    let vf1 = _mm512_set1_epi32(filter[1][1] as i32);
+    let vf2 = _mm512_set1_epi32(filter[1][2] as i32);
+    let vf3 = _mm512_set1_epi32(filter[1][3] as i32);
+    let vf4 = _mm512_set1_epi32(filter[1][4] as i32);
+    let vf5 = _mm512_set1_epi32(filter[1][5] as i32);
+    let vf6 = _mm512_set1_epi32(filter[1][6] as i32);
+    let v_round_offset = _mm512_set1_epi32(-round_offset);
+    let v_rounding = _mm512_set1_epi32(rounding_off_v);
+    let zero_512 = _mm512_setzero_si512();
+    let max_512 = _mm512_set1_epi32(bitdepth_max);
+
+    let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth16>(w, h);
+    for j in 0..h {
+        let row_off = p_base.wrapping_add_signed(j as isize * stride);
+        let mut i = 0usize;
+
+        // Process 16 pixels at a time with AVX-512
+        while i + 16 <= w {
+            let r0 = loadu_512!(
+                &hor[(j + 0) * REST_UNIT_STRIDE + i..(j + 0) * REST_UNIT_STRIDE + i + 16],
+                [i32; 16]
+            );
+            let r1 = loadu_512!(
+                &hor[(j + 1) * REST_UNIT_STRIDE + i..(j + 1) * REST_UNIT_STRIDE + i + 16],
+                [i32; 16]
+            );
+            let r2 = loadu_512!(
+                &hor[(j + 2) * REST_UNIT_STRIDE + i..(j + 2) * REST_UNIT_STRIDE + i + 16],
+                [i32; 16]
+            );
+            let r3 = loadu_512!(
+                &hor[(j + 3) * REST_UNIT_STRIDE + i..(j + 3) * REST_UNIT_STRIDE + i + 16],
+                [i32; 16]
+            );
+            let r4 = loadu_512!(
+                &hor[(j + 4) * REST_UNIT_STRIDE + i..(j + 4) * REST_UNIT_STRIDE + i + 16],
+                [i32; 16]
+            );
+            let r5 = loadu_512!(
+                &hor[(j + 5) * REST_UNIT_STRIDE + i..(j + 5) * REST_UNIT_STRIDE + i + 16],
+                [i32; 16]
+            );
+            let r6 = loadu_512!(
+                &hor[(j + 6) * REST_UNIT_STRIDE + i..(j + 6) * REST_UNIT_STRIDE + i + 16],
+                [i32; 16]
+            );
+
+            let mut sum = v_round_offset;
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r0, vf0));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r1, vf1));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r2, vf2));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r3, vf3));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r4, vf4));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r5, vf5));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(r6, vf6));
+
+            sum = _mm512_add_epi32(sum, v_rounding);
+            // Shift amount depends on bitdepth
+            let shifted = if bitdepth == 12 {
+                _mm512_srai_epi32::<9>(sum)
+            } else {
+                _mm512_srai_epi32::<11>(sum)
+            };
+
+            // Clamp to [0, bitdepth_max] then pack i32→u16
+            let clamped = _mm512_min_epi32(_mm512_max_epi32(shifted, zero_512), max_512);
+            let result_u16: __m256i = _mm512_cvtusepi32_epi16(clamped);
+
+            storeu_256!(
+                &mut p_guard[row_off + i..row_off + i + 16],
+                [u16; 16],
+                result_u16
+            );
+            i += 16;
+        }
+
+        // Scalar tail
+        while i < w {
+            let mut sum = -round_offset;
+            for k in 0..7 {
+                sum += hor[(j + k) * REST_UNIT_STRIDE + i] * filter[1][k] as i32;
+            }
+            p_guard[row_off + i] =
+                iclip((sum + rounding_off_v) >> round_bits_v, 0, bitdepth_max) as u16;
+            i += 1;
+        }
+    }
+}
+
+/// Wiener filter 5-tap for 16bpc using AVX-512 (delegates to 7-tap)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn wiener_filter5_16bpc_avx512_inner(
+    _token: Server64,
+    p: PicOffset,
+    left: &[LeftPixelRow<u16>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bitdepth_max: c_int,
+) {
+    wiener_filter7_16bpc_avx512_inner(
+        _token, p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max,
+    );
+}
+
+// ============================================================================
 // WIENER FILTER - 16bpc AVX2 IMPLEMENTATION
 // ============================================================================
 
@@ -3269,28 +3435,62 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
         (BPC::BPC8, 2) => sgr_5x5_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
         (BPC::BPC8, 3) => sgr_3x3_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
         (BPC::BPC8, _) => sgr_mix_8bpc_avx2_inner(dst, left_8(), lpf, lpf_off, w, h, params, edges),
-        (BPC::BPC16, 0) => wiener_filter7_16bpc_avx2_inner(
-            dst,
-            left_16(),
-            lpf,
-            lpf_off,
-            w,
-            h,
-            params,
-            edges,
-            bd.into_c(),
-        ),
-        (BPC::BPC16, 1) => wiener_filter5_16bpc_avx2_inner(
-            dst,
-            left_16(),
-            lpf,
-            lpf_off,
-            w,
-            h,
-            params,
-            edges,
-            bd.into_c(),
-        ),
+        (BPC::BPC16, 0) => {
+            if let Some(t512) = avx512_token {
+                wiener_filter7_16bpc_avx512_inner(
+                    t512,
+                    dst,
+                    left_16(),
+                    lpf,
+                    lpf_off,
+                    w,
+                    h,
+                    params,
+                    edges,
+                    bd.into_c(),
+                )
+            } else {
+                wiener_filter7_16bpc_avx2_inner(
+                    dst,
+                    left_16(),
+                    lpf,
+                    lpf_off,
+                    w,
+                    h,
+                    params,
+                    edges,
+                    bd.into_c(),
+                )
+            }
+        }
+        (BPC::BPC16, 1) => {
+            if let Some(t512) = avx512_token {
+                wiener_filter5_16bpc_avx512_inner(
+                    t512,
+                    dst,
+                    left_16(),
+                    lpf,
+                    lpf_off,
+                    w,
+                    h,
+                    params,
+                    edges,
+                    bd.into_c(),
+                )
+            } else {
+                wiener_filter5_16bpc_avx2_inner(
+                    dst,
+                    left_16(),
+                    lpf,
+                    lpf_off,
+                    w,
+                    h,
+                    params,
+                    edges,
+                    bd.into_c(),
+                )
+            }
+        }
         (BPC::BPC16, 2) => sgr_5x5_16bpc_avx2_inner(
             dst,
             left_16(),
