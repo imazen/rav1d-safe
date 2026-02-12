@@ -24,7 +24,7 @@ impl<'a, T> FFISafe<'a, T> {
     /// # Safety
     ///
     /// `this` must have been returned from [`Self::new`].
-    #[cfg(any(feature = "asm", feature = "c-ffi"))]
+    #[cfg(feature = "asm")]
     #[allow(unsafe_code)]
     pub unsafe fn get(this: *const Self) -> &'a T {
         // SAFETY: `this` originally was a `&'a T` in `Self::new`.

@@ -1,4 +1,7 @@
 #![allow(dead_code)]
+// The load/store macros expand to `unsafe {}` blocks with bounds-checked pointer access.
+// These are verified safe by construction (bounds check precedes raw pointer use).
+#![allow(clippy::undocumented_unsafe_blocks)]
 //! Safe pixel access helpers and SIMD load/store macros for SIMD modules.
 //!
 //! When the `unchecked` feature is enabled, these use unchecked indexing

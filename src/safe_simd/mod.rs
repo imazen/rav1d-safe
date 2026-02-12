@@ -6,6 +6,11 @@
 //! Used automatically when built without `--features asm`.
 
 #![deny(unsafe_code)]
+// The load/store macros in pixel_access expand to `unsafe {}` blocks when
+// `unchecked` feature is enabled (which is implied by c-ffi). These are
+// bounds-checked by construction — the macro verifies slice length before
+// performing the raw pointer operation.
+#![allow(clippy::undocumented_unsafe_blocks)]
 
 pub mod partial_simd;
 pub mod pixel_access;

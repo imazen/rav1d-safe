@@ -279,6 +279,8 @@ impl<T> RawArc<T> {
     /// This must not be called after [`Self::into_arc`],
     /// including on [`Clone`]s.
     pub unsafe fn as_ref(&self) -> &T {
+        // SAFETY: Caller guarantees the RawArc is from from_arc and not yet consumed.
+        // The NonNull was created from Arc::into_raw, so the pointer is valid.
         unsafe { self.0.cast().as_ref() }
     }
 
@@ -289,6 +291,8 @@ impl<T> RawArc<T> {
     /// After calling this, the [`RawArc`] and [`Clone`]s of it may not be used anymore.
     pub unsafe fn into_arc(self) -> Arc<T> {
         let raw = self.0.cast().as_ptr();
+        // SAFETY: Caller guarantees this RawArc originated from from_arc (Arc::into_raw),
+        // and has not been consumed yet, so reconstructing the Arc is valid.
         unsafe { Arc::from_raw(raw) }
     }
 }
@@ -308,6 +312,7 @@ impl<T: ?Sized> CArc<T> {
     ///
     /// The [`RawCArc`] must be originally from [`Self::into_raw`].
     pub unsafe fn from_raw(raw: RawCArc<T>) -> Self {
+        // SAFETY: Caller guarantees raw is from into_raw (which called RawArc::from_arc).
         let owner = unsafe { raw.0.into_arc() };
         owner.into()
     }
