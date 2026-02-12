@@ -23,7 +23,7 @@ Pick the next unfinished module and port it. Priority order:
 7. ~~pal~~ **COMPLETE** (x86 AVX2, ARM uses fallback)
 8. ~~refmvs~~ **COMPLETE** (x86 AVX2 + ARM NEON)
 
-**ALL MODULES COMPLETE!** msac symbol_adapt16 now has inline safe_simd (AVX2/NEON).
+**ALL MODULES COMPLETE!** msac now has full SIMD: adapt4/adapt8/hi_tok (SSE2/NEON) + adapt16 (AVX2/NEON).
 
 Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with safe Rust intrinsics.
 
