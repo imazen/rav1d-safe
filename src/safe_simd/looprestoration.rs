@@ -84,24 +84,72 @@ fn wiener_filter7_8bpc_avx2_inner(
     let clip_limit = 1i32 << (8 + 1 + 7 - round_bits_h); // = 8192
 
     // -------------------------------------------------------------------------
-    // Horizontal filter pass
+    // AVX2 horizontal filter pass — 8 pixels per iteration
     // For 8bpc: sum = (1 << 14) + pixel[center] * 128 + sum(pixel[i] * filter[i])
+    // Combine center weight: coeff[3] = filter[0][3] + 128
     // -------------------------------------------------------------------------
+    let hf0 = _mm256_set1_epi32(filter[0][0] as i32);
+    let hf1 = _mm256_set1_epi32(filter[0][1] as i32);
+    let hf2 = _mm256_set1_epi32(filter[0][2] as i32);
+    let hf3 = _mm256_set1_epi32(filter[0][3] as i32 + 128); // center tap + 128
+    let hf4 = _mm256_set1_epi32(filter[0][4] as i32);
+    let hf5 = _mm256_set1_epi32(filter[0][5] as i32);
+    let hf6 = _mm256_set1_epi32(filter[0][6] as i32);
+    let dc_offset = _mm256_set1_epi32(1i32 << 14);
+    let h_rounding = _mm256_set1_epi32(rounding_off_h);
+    let h_clip_max = _mm256_set1_epi32(clip_limit - 1);
+    let h_zero = _mm256_setzero_si256();
 
-    // AVX2 horizontal filter using maddubs
-    // We need to handle the asymmetric 7-tap filter with DC offset
-    // For now, use scalar for correctness
     for row in 0..(h + 6) {
         let tmp_row = &tmp[row * REST_UNIT_STRIDE..];
         let hor_row = &mut hor[row * REST_UNIT_STRIDE..row * REST_UNIT_STRIDE + w];
 
-        for x in 0..w {
+        let mut x = 0;
+        while x + 8 <= w {
+            // Load 8 bytes at each of 7 tap positions, expand u8 → i32
+            // _mm256_cvtepu8_epi32 takes low 8 bytes of __m128i
+            let p0 = _mm256_cvtepu8_epi32(loadu_128!(&tmp_row[x..x + 16], [u8; 16]));
+            let p1 = _mm256_cvtepu8_epi32(loadu_128!(&tmp_row[x + 1..x + 17], [u8; 16]));
+            let p2 = _mm256_cvtepu8_epi32(loadu_128!(&tmp_row[x + 2..x + 18], [u8; 16]));
+            let p3 = _mm256_cvtepu8_epi32(loadu_128!(&tmp_row[x + 3..x + 19], [u8; 16]));
+            let p4 = _mm256_cvtepu8_epi32(loadu_128!(&tmp_row[x + 4..x + 20], [u8; 16]));
+            let p5 = _mm256_cvtepu8_epi32(loadu_128!(&tmp_row[x + 5..x + 21], [u8; 16]));
+            let p6 = _mm256_cvtepu8_epi32(loadu_128!(&tmp_row[x + 6..x + 22], [u8; 16]));
+
+            let mut sum = dc_offset;
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p0, hf0));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p1, hf1));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p2, hf2));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p3, hf3));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p4, hf4));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p5, hf5));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p6, hf6));
+
+            // Round, shift, clamp to [0, clip_limit-1]
+            sum = _mm256_add_epi32(sum, h_rounding);
+            sum = _mm256_srai_epi32::<3>(sum); // round_bits_h = 3 for 8bpc
+            sum = _mm256_max_epi32(sum, h_zero);
+            sum = _mm256_min_epi32(sum, h_clip_max);
+
+            // Pack i32 → u16: packus gives [0-3,0-3][4-7,4-7], need lane fixup
+            let packed = _mm256_packus_epi32(sum, sum); // [0-3,0-3 | 4-7,4-7]
+            let lo = _mm256_castsi256_si128(packed);
+            let hi = _mm256_extracti128_si256(packed, 1);
+            let combined = _mm_unpacklo_epi64(lo, hi); // [0-3, 4-7] as 8 u16
+
+            storeu_128!(&mut hor_row[x..x + 8], [u16; 8], combined);
+            x += 8;
+        }
+
+        // Scalar tail
+        while x < w {
             let mut sum = 1i32 << 14;
             sum += tmp_row[x + 3] as i32 * 128;
             for k in 0..7 {
                 sum += tmp_row[x + k] as i32 * filter[0][k] as i32;
             }
             hor_row[x] = iclip((sum + rounding_off_h) >> round_bits_h, 0, clip_limit - 1) as u16;
+            x += 1;
         }
     }
 
@@ -713,12 +761,13 @@ fn wiener_filter5_16bpc_avx512_inner(
 
 /// Wiener filter 7-tap for 16bpc using AVX2
 ///
-/// Similar to 8bpc but:
-/// - No DC offset in horizontal pass
-/// - Different shift amounts based on 10bpc vs 12bpc
-/// - 16-bit pixel values
+/// Both passes use AVX2: 8 pixels/iter.
+/// Horizontal: u16→i32 via cvtepu16_epi32, 7-tap FIR, store as i32.
+/// Vertical: i32 multiply-accumulate, packus_epi32 for u16 output.
 #[cfg(target_arch = "x86_64")]
+#[arcane]
 fn wiener_filter7_16bpc_avx2_inner(
+    _token: Desktop64,
     p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -738,8 +787,7 @@ fn wiener_filter7_16bpc_avx2_inner(
     // Use the existing padding function
     padding::<BitDepth16>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
 
-    // Intermediate buffer for horizontal filter output (16-bit values, but may exceed u16 range)
-    // Use u32 for intermediate storage to avoid overflow
+    // Intermediate buffer for horizontal filter output
     let mut hor = [0i32; (64 + 3 + 3) * REST_UNIT_STRIDE];
 
     let filter = &params.filter;
@@ -750,50 +798,152 @@ fn wiener_filter7_16bpc_avx2_inner(
     let clip_limit = 1i32 << (bitdepth + 1 + 7 - round_bits_h);
 
     // -------------------------------------------------------------------------
-    // Horizontal filter pass (no DC offset for 16bpc)
+    // AVX2 horizontal filter pass — 8 pixels per iteration
     // -------------------------------------------------------------------------
+    let hf0 = _mm256_set1_epi32(filter[0][0] as i32);
+    let hf1 = _mm256_set1_epi32(filter[0][1] as i32);
+    let hf2 = _mm256_set1_epi32(filter[0][2] as i32);
+    let hf3 = _mm256_set1_epi32(filter[0][3] as i32);
+    let hf4 = _mm256_set1_epi32(filter[0][4] as i32);
+    let hf5 = _mm256_set1_epi32(filter[0][5] as i32);
+    let hf6 = _mm256_set1_epi32(filter[0][6] as i32);
+    let dc_offset_h = _mm256_set1_epi32(1i32 << (bitdepth + 6));
+    let h_rounding = _mm256_set1_epi32(rounding_off_h);
+    let h_clip_max = _mm256_set1_epi32(clip_limit - 1);
+    let h_zero = _mm256_setzero_si256();
+
     for row in 0..(h + 6) {
         let tmp_row = &tmp[row * REST_UNIT_STRIDE..];
         let hor_row = &mut hor[row * REST_UNIT_STRIDE..row * REST_UNIT_STRIDE + w];
 
-        for x in 0..w {
+        let mut x = 0;
+        while x + 8 <= w {
+            // Load 8 u16 at each of 7 tap positions, expand u16 → i32
+            let p0 = _mm256_cvtepu16_epi32(loadu_128!(&tmp_row[x..x + 8], [u16; 8]));
+            let p1 = _mm256_cvtepu16_epi32(loadu_128!(&tmp_row[x + 1..x + 9], [u16; 8]));
+            let p2 = _mm256_cvtepu16_epi32(loadu_128!(&tmp_row[x + 2..x + 10], [u16; 8]));
+            let p3 = _mm256_cvtepu16_epi32(loadu_128!(&tmp_row[x + 3..x + 11], [u16; 8]));
+            let p4 = _mm256_cvtepu16_epi32(loadu_128!(&tmp_row[x + 4..x + 12], [u16; 8]));
+            let p5 = _mm256_cvtepu16_epi32(loadu_128!(&tmp_row[x + 5..x + 13], [u16; 8]));
+            let p6 = _mm256_cvtepu16_epi32(loadu_128!(&tmp_row[x + 6..x + 14], [u16; 8]));
+
+            let mut sum = dc_offset_h;
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p0, hf0));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p1, hf1));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p2, hf2));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p3, hf3));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p4, hf4));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p5, hf5));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p6, hf6));
+
+            // Round, shift, clamp to [0, clip_limit-1]
+            sum = _mm256_add_epi32(sum, h_rounding);
+            let shifted = if bitdepth == 12 {
+                _mm256_srai_epi32::<5>(sum)
+            } else {
+                _mm256_srai_epi32::<3>(sum)
+            };
+            let clamped = _mm256_max_epi32(shifted, h_zero);
+            let clamped = _mm256_min_epi32(clamped, h_clip_max);
+
+            // Store 8 i32 values to hor buffer
+            storeu_256!(&mut hor_row[x..x + 8], [i32; 8], clamped);
+            x += 8;
+        }
+
+        // Scalar tail
+        while x < w {
             let mut sum = 1i32 << (bitdepth + 6);
-            // No DC offset for 16bpc
             for k in 0..7 {
                 sum += tmp_row[x + k] as i32 * filter[0][k] as i32;
             }
             hor_row[x] = iclip((sum + rounding_off_h) >> round_bits_h, 0, clip_limit - 1);
+            x += 1;
         }
     }
 
     // -------------------------------------------------------------------------
-    // Vertical filter pass
+    // AVX2 vertical filter pass — 8 pixels per iteration
     // -------------------------------------------------------------------------
     let round_bits_v = if bitdepth == 12 { 9 } else { 11 };
     let rounding_off_v = 1i32 << (round_bits_v - 1);
     let round_offset = 1i32 << (bitdepth + round_bits_v - 1);
     let stride = p.pixel_stride::<BitDepth16>();
 
-    // Single guard for entire output region
+    let vf0 = _mm256_set1_epi32(filter[1][0] as i32);
+    let vf1 = _mm256_set1_epi32(filter[1][1] as i32);
+    let vf2 = _mm256_set1_epi32(filter[1][2] as i32);
+    let vf3 = _mm256_set1_epi32(filter[1][3] as i32);
+    let vf4 = _mm256_set1_epi32(filter[1][4] as i32);
+    let vf5 = _mm256_set1_epi32(filter[1][5] as i32);
+    let vf6 = _mm256_set1_epi32(filter[1][6] as i32);
+    let v_round_offset = _mm256_set1_epi32(-round_offset);
+    let v_rounding = _mm256_set1_epi32(rounding_off_v);
+    let v_max = _mm256_set1_epi32(bitdepth_max);
+    let v_zero = _mm256_setzero_si256();
+
     let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth16>(w, h);
     for j in 0..h {
         let row_off = p_base.wrapping_add_signed(j as isize * stride);
-        for i in 0..w {
-            let mut sum = -round_offset;
+        let mut i = 0usize;
 
+        // Process 8 pixels at a time with AVX2
+        while i + 8 <= w {
+            // Load 8 i32 values from each of 7 rows (hor buffer stores i32)
+            let r0 = loadu_256!(&hor[(j + 0) * REST_UNIT_STRIDE + i..(j + 0) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
+            let r1 = loadu_256!(&hor[(j + 1) * REST_UNIT_STRIDE + i..(j + 1) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
+            let r2 = loadu_256!(&hor[(j + 2) * REST_UNIT_STRIDE + i..(j + 2) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
+            let r3 = loadu_256!(&hor[(j + 3) * REST_UNIT_STRIDE + i..(j + 3) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
+            let r4 = loadu_256!(&hor[(j + 4) * REST_UNIT_STRIDE + i..(j + 4) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
+            let r5 = loadu_256!(&hor[(j + 5) * REST_UNIT_STRIDE + i..(j + 5) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
+            let r6 = loadu_256!(&hor[(j + 6) * REST_UNIT_STRIDE + i..(j + 6) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
+
+            let mut sum = v_round_offset;
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r0, vf0));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r1, vf1));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r2, vf2));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r3, vf3));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r4, vf4));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r5, vf5));
+            sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r6, vf6));
+
+            sum = _mm256_add_epi32(sum, v_rounding);
+            let shifted = if bitdepth == 12 {
+                _mm256_srai_epi32::<9>(sum)
+            } else {
+                _mm256_srai_epi32::<11>(sum)
+            };
+
+            // Clamp to [0, bitdepth_max] and pack i32→u16
+            let clamped = _mm256_min_epi32(_mm256_max_epi32(shifted, v_zero), v_max);
+            // packus: [0-3,0-3 | 4-7,4-7] → need lane fixup
+            let packed = _mm256_packus_epi32(clamped, clamped);
+            let lo = _mm256_castsi256_si128(packed);
+            let hi = _mm256_extracti128_si256(packed, 1);
+            let combined = _mm_unpacklo_epi64(lo, hi); // [0-3, 4-7] as 8 u16
+
+            storeu_128!(&mut p_guard[row_off + i..row_off + i + 8], [u16; 8], combined);
+            i += 8;
+        }
+
+        // Scalar tail
+        while i < w {
+            let mut sum = -round_offset;
             for k in 0..7 {
                 sum += hor[(j + k) * REST_UNIT_STRIDE + i] * filter[1][k] as i32;
             }
-
             p_guard[row_off + i] =
                 iclip((sum + rounding_off_v) >> round_bits_v, 0, bitdepth_max) as u16;
+            i += 1;
         }
     }
 }
 
-/// Wiener filter 5-tap for 16bpc using AVX2
+/// Wiener filter 5-tap for 16bpc using AVX2 (delegates to 7-tap)
 #[cfg(target_arch = "x86_64")]
+#[arcane]
 fn wiener_filter5_16bpc_avx2_inner(
+    _token: Desktop64,
     p: PicOffset,
     left: &[LeftPixelRow<u16>],
     lpf: &DisjointMut<AlignedVec64<u8>>,
@@ -804,7 +954,7 @@ fn wiener_filter5_16bpc_avx2_inner(
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
 ) {
-    wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
+    wiener_filter7_16bpc_avx2_inner(_token, p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 // ============================================================================
@@ -912,7 +1062,8 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    wiener_filter7_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    wiener_filter7_16bpc_avx2_inner(token, p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 /// FFI wrapper for Wiener filter 5-tap 16bpc
@@ -940,7 +1091,8 @@ pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    wiener_filter5_16bpc_avx2_inner(p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
+    let token = unsafe { Desktop64::forge_token_dangerously() };
+    wiener_filter5_16bpc_avx2_inner(token, p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
 }
 
 // ============================================================================
@@ -4023,6 +4175,7 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
                 )
             } else {
                 wiener_filter7_16bpc_avx2_inner(
+                    token,
                     dst,
                     left_16(),
                     lpf,
@@ -4051,6 +4204,7 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
                 )
             } else {
                 wiener_filter5_16bpc_avx2_inner(
+                    token,
                     dst,
                     left_16(),
                     lpf,
