@@ -10,8 +10,19 @@
 
 use crate::ExternalAsMutPtr;
 use crate::Resizable;
+use crate::TryResizable;
 use aligned_vec::{AVec, ConstAlign};
 use core::ops::{Deref, DerefMut};
+
+/// Create a `TryReserveError` to represent allocation failure from `aligned_vec`.
+///
+/// `std::collections::TryReserveError` has no public constructor, so we trigger
+/// a real one by asking a `Vec` to reserve `usize::MAX`.
+fn alloc_err() -> std::collections::TryReserveError {
+    alloc::vec::Vec::<u8>::new()
+        .try_reserve(usize::MAX)
+        .unwrap_err()
+}
 
 // =============================================================================
 // ArrayDefault — workaround for Default not covering [T; N>32]
@@ -185,6 +196,23 @@ impl<T: Clone> Resizable for AlignedVec64<T> {
     }
 }
 
+impl<T: Clone> TryResizable for AlignedVec64<T> {
+    type Value = T;
+    fn try_resize(
+        &mut self,
+        new_len: usize,
+        value: T,
+    ) -> Result<(), std::collections::TryReserveError> {
+        if new_len > self.0.len() {
+            self.0
+                .try_reserve(new_len - self.0.len())
+                .map_err(|_| alloc_err())?;
+        }
+        self.0.resize(new_len, value);
+        Ok(())
+    }
+}
+
 /// SAFETY: We only create `&AVec` (SharedReadOnly), never `&mut AVec`.
 /// `as_ptr()` takes `&self` and returns `*const T`, which we cast to `*mut T`.
 /// This avoids the Stacked Borrows hazard of creating `&mut AVec` through
@@ -261,6 +289,23 @@ impl<T: Clone> Resizable for AlignedVec32<T> {
     type Value = T;
     fn resize(&mut self, new_len: usize, value: T) {
         self.0.resize(new_len, value);
+    }
+}
+
+impl<T: Clone> TryResizable for AlignedVec32<T> {
+    type Value = T;
+    fn try_resize(
+        &mut self,
+        new_len: usize,
+        value: T,
+    ) -> Result<(), std::collections::TryReserveError> {
+        if new_len > self.0.len() {
+            self.0
+                .try_reserve(new_len - self.0.len())
+                .map_err(|_| alloc_err())?;
+        }
+        self.0.resize(new_len, value);
+        Ok(())
     }
 }
 

@@ -17,6 +17,7 @@ use crate::src::enum_map::DefaultValue;
 use crate::src::env::fix_mv_precision;
 use crate::src::env::get_gmv_2d;
 use crate::src::env::get_poc_diff;
+use crate::src::error::Rav1dError::ENOMEM;
 use crate::src::error::Rav1dResult;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::Bxy;
@@ -1709,9 +1710,11 @@ pub(crate) fn rav1d_refmvs_init_frame(
         // so add `R_PAD` elements to avoid buffer overreads.
         let r_sz = 35 * 2 * n_blocks as usize * (1 + (n_frame_threads > 1) as usize) + R_PAD;
         let rp_proj_sz = 16 * n_blocks as usize;
-        // TODO fallible allocation
-        rf.r.resize(r_sz, FromZeroes::new_zeroed());
-        rf.rp_proj.resize(rp_proj_sz, Default::default());
+        rf.r.try_resize(r_sz, FromZeroes::new_zeroed())
+            .map_err(|_| ENOMEM)?;
+        rf.rp_proj
+            .try_resize(rp_proj_sz, Default::default())
+            .map_err(|_| ENOMEM)?;
         rf.n_blocks = n_blocks;
     }
 

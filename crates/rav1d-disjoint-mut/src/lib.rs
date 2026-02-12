@@ -1276,6 +1276,80 @@ impl<T: AsMutPtr + Resizable> DisjointMut<T> {
     }
 }
 
+/// Fallible version of [`Resizable`]. Returns `Err` on allocation failure.
+pub trait TryResizable {
+    type Value;
+    fn try_resize(
+        &mut self,
+        new_len: usize,
+        value: Self::Value,
+    ) -> Result<(), std::collections::TryReserveError>;
+}
+
+impl<V: Clone> TryResizable for Vec<V> {
+    type Value = V;
+    fn try_resize(
+        &mut self,
+        new_len: usize,
+        value: V,
+    ) -> Result<(), std::collections::TryReserveError> {
+        if new_len > self.len() {
+            self.try_reserve(new_len - self.len())?;
+        }
+        self.resize(new_len, value);
+        Ok(())
+    }
+}
+
+impl<T: AsMutPtr + TryResizable> DisjointMut<T> {
+    pub fn try_resize(
+        &mut self,
+        new_len: usize,
+        value: T::Value,
+    ) -> Result<(), std::collections::TryReserveError> {
+        self.inner.get_mut().try_resize(new_len, value)
+    }
+}
+
+/// Fallible version of [`ResizableWith`]. Returns `Err` on allocation failure.
+pub trait TryResizableWith {
+    type Item;
+    fn try_resize_with<F: FnMut() -> Self::Item>(
+        &mut self,
+        new_len: usize,
+        f: F,
+    ) -> Result<(), std::collections::TryReserveError>;
+}
+
+impl<V> TryResizableWith for Vec<V> {
+    type Item = V;
+    fn try_resize_with<F: FnMut() -> V>(
+        &mut self,
+        new_len: usize,
+        f: F,
+    ) -> Result<(), std::collections::TryReserveError> {
+        if new_len > self.len() {
+            self.try_reserve(new_len - self.len())?;
+        }
+        self.resize_with(new_len, f);
+        Ok(())
+    }
+}
+
+impl<T: AsMutPtr + TryResizableWith> DisjointMut<T> {
+    pub fn try_resize_with<F>(
+        &mut self,
+        new_len: usize,
+        f: F,
+    ) -> Result<(), std::collections::TryReserveError>
+    where
+        F: FnMut() -> T::Item,
+        T: TryResizableWith,
+    {
+        self.inner.get_mut().try_resize_with(new_len, f)
+    }
+}
+
 /// Trait for types that support `clear()`.
 pub trait Clearable {
     fn clear(&mut self);

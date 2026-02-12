@@ -57,7 +57,10 @@ use crate::src::env::get_partition_ctx;
 use crate::src::env::get_poc_diff;
 use crate::src::env::get_tx_ctx;
 use crate::src::env::BlockContext;
+use crate::src::disjoint_mut::TryResizable;
+use crate::src::disjoint_mut::TryResizableWith;
 use crate::src::error::Rav1dError::EINVAL;
+use crate::src::error::Rav1dError::ENOMEM;
 use crate::src::error::Rav1dError::ENOPROTOOPT;
 use crate::src::error::Rav1dResult;
 use crate::src::extensions::OptionError as _;
@@ -4333,8 +4336,9 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     let mut f = fc.data.try_write().unwrap();
     let f = &mut *f;
 
-    // TODO: Fallible allocation
-    f.lf.start_of_tile_row.resize(f.sbh as usize, 0);
+    f.lf.start_of_tile_row
+        .try_resize(f.sbh as usize, 0)
+        .map_err(|_| ENOMEM)?;
 
     let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
     let mut sby = 0;
@@ -4349,17 +4353,19 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
 
     let n_ts = frame_hdr.tiling.cols as c_int * frame_hdr.tiling.rows as c_int;
     if c.fc.len() > 1 {
-        // TODO: Fallible allocation
-        f.frame_thread.tile_start_off.resize(n_ts as usize, 0);
+        f.frame_thread
+            .tile_start_off
+            .try_resize(n_ts as usize, 0)
+            .map_err(|_| ENOMEM)?;
     }
-    // TODO: Fallible allocation
-    f.ts.resize_with(n_ts as usize, Default::default);
+    f.ts.try_resize_with(n_ts as usize, Default::default)
+        .map_err(|_| ENOMEM)?;
 
     let a_sz = f.sb128w
         * frame_hdr.tiling.rows as c_int
         * (1 + (c.fc.len() > 1 && c.tc.len() > 1) as c_int);
-    // TODO: Fallible allocation
-    f.a.resize_with(a_sz as usize, Default::default);
+    f.a.try_resize_with(a_sz as usize, Default::default)
+        .map_err(|_| ENOMEM)?;
 
     let num_sb128 = f.sb128w * f.sb128h;
     let size_mul = &ss_size_mul[f.cur.p.layout];
@@ -4385,9 +4391,9 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
         }
 
         let lowest_pixel_mem_sz = frame_hdr.tiling.cols as usize * f.sbh as usize;
-        // TODO: Fallible allocation
         f.lowest_pixel_mem
-            .resize(lowest_pixel_mem_sz, Default::default());
+            .try_resize(lowest_pixel_mem_sz, Default::default())
+            .map_err(|_| ENOMEM)?;
 
         let mut lowest_pixel_offset = 0;
         for tile_row in 0..frame_hdr.tiling.rows as usize {
@@ -4401,29 +4407,28 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
         }
 
         let cbi_sz = num_sb128 * size_mul[0] as c_int;
-        // TODO: Fallible allocation
         f.frame_thread
             .cbi
-            .resize_with(cbi_sz as usize * 32 * 32 / 4, Default::default);
+            .try_resize_with(cbi_sz as usize * 32 * 32 / 4, Default::default)
+            .map_err(|_| ENOMEM)?;
 
         let cf_sz = (num_sb128 * size_mul[0] as c_int) << hbd;
-        // TODO: Fallible allocation
         f.frame_thread
             .cf
-            .get_mut()
-            .resize(cf_sz as usize * 128 * 128 / 2, 0);
+            .try_resize(cf_sz as usize * 128 * 128 / 2, 0)
+            .map_err(|_| ENOMEM)?;
 
         if frame_hdr.allow_screen_content_tools {
-            // TODO: Fallible allocation
             f.frame_thread
                 .pal
-                .resize(num_sb128 as usize * 16 * 16 << hbd);
+                .try_resize(num_sb128 as usize * 16 * 16 << hbd)
+                .map_err(|_| ENOMEM)?;
 
             let pal_idx_sz = num_sb128 * size_mul[1] as c_int;
-            // TODO: Fallible allocation
             f.frame_thread
                 .pal_idx
-                .resize(pal_idx_sz as usize * 128 * 128 / 8, Default::default());
+                .try_resize(pal_idx_sz as usize * 128 * 128 / 8, Default::default())
+                .map_err(|_| ENOMEM)?;
         } else if !f.frame_thread.pal.is_empty() {
             let _ = mem::take(&mut f.frame_thread.pal);
             let _ = mem::take(&mut f.frame_thread.pal_idx);
@@ -4438,8 +4443,9 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     let mut alloc_sz: usize = 64;
     alloc_sz += (y_stride.unsigned_abs() * 4 * f.sbh as usize) << need_cdef_lpf_copy;
     alloc_sz += (uv_stride.unsigned_abs() * 8 * f.sbh as usize) << need_cdef_lpf_copy;
-    // TODO: Fallible allocation.
-    f.lf.cdef_line_buf.resize(alloc_sz, 0);
+    f.lf.cdef_line_buf
+        .try_resize(alloc_sz, 0)
+        .map_err(|_| ENOMEM)?;
 
     let bpc = BPC::from_bitdepth_max(f.bitdepth_max);
     let y_stride_px = bpc.pxstride(f.cur.stride[0]);
@@ -4505,8 +4511,9 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     let mut alloc_sz: usize = 128;
     alloc_sz += y_stride.unsigned_abs() * num_lines as usize;
     alloc_sz += uv_stride.unsigned_abs() * num_lines as usize * 2;
-    // TODO: Fallible allocation
-    f.lf.lr_line_buf.resize(alloc_sz, 0);
+    f.lf.lr_line_buf
+        .try_resize(alloc_sz, 0)
+        .map_err(|_| ENOMEM)?;
 
     let y_stride_px = bpc.pxstride(y_stride);
     let uv_stride_px = bpc.pxstride(uv_stride);
@@ -4531,24 +4538,26 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     // update allocation for loopfilter masks
 
     f.lf.mask.clear();
-    // TODO: Fallible allocation.
-    f.lf.mask.resize_with(num_sb128 as usize, Default::default);
+    f.lf.mask
+        .try_resize_with(num_sb128 as usize, Default::default)
+        .map_err(|_| ENOMEM)?;
     // over-allocate by 3 bytes since some of the SIMD implementations
     // index this from the level type and can thus over-read by up to 3 bytes.
     f.lf.level
-        .resize_with(4 * num_sb128 as usize * 32 * 32 + 3, Default::default); // TODO: Fallible allocation
+        .try_resize_with(4 * num_sb128 as usize * 32 * 32 + 3, Default::default)
+        .map_err(|_| ENOMEM)?;
     if c.fc.len() > 1 {
-        // TODO: Fallible allocation
         f.frame_thread
             .b
-            .resize_with(num_sb128 as usize * 32 * 32, Default::default);
+            .try_resize_with(num_sb128 as usize * 32 * 32, Default::default)
+            .map_err(|_| ENOMEM)?;
     }
 
     f.sr_sb128w = f.sr_cur.p.p.w + 127 >> 7;
     let lr_mask_sz = f.sr_sb128w * f.sb128h;
-    // TODO: Fallible allocation
     f.lf.lr_mask
-        .resize_with(lr_mask_sz as usize, Default::default);
+        .try_resize_with(lr_mask_sz as usize, Default::default)
+        .map_err(|_| ENOMEM)?;
     f.lf.restore_planes = LrRestorePlanes::from_bits_truncate(
         frame_hdr
             .restoration
@@ -4565,13 +4574,15 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     rav1d_calc_lf_values(&mut f.lf.lvl, &frame_hdr, &[0, 0, 0, 0]);
 
     let ipred_edge_sz = f.sbh * f.sb128w << hbd;
-    // TODO: Fallible allocation
-    f.ipred_edge.resize(ipred_edge_sz as usize * 128 * 3, 0);
+    f.ipred_edge
+        .try_resize(ipred_edge_sz as usize * 128 * 3, 0)
+        .map_err(|_| ENOMEM)?;
     f.ipred_edge_off = bpc.pxstride(ipred_edge_sz as usize * 128);
 
     let re_sz = f.sb128h as usize * frame_hdr.tiling.cols as usize;
-    // TODO: Fallible allocation
-    f.lf.tx_lpf_right_edge.resize(re_sz, 0);
+    f.lf.tx_lpf_right_edge
+        .try_resize(re_sz, 0)
+        .map_err(|_| ENOMEM)?;
 
     // init ref mvs
     if frame_hdr.frame_type.is_inter_or_switch() || frame_hdr.allow_intrabc {

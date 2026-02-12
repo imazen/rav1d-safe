@@ -575,8 +575,11 @@ pub struct Pal {
 type PalArray<BD> = [[<BD as BitDepth>::Pixel; 8]; 3];
 
 impl Pal {
-    pub fn resize(&mut self, n: usize) {
-        self.data.resize(n * 8 * 3, Default::default());
+    pub fn try_resize(
+        &mut self,
+        n: usize,
+    ) -> Result<(), std::collections::TryReserveError> {
+        self.data.try_resize(n * 8 * 3, Default::default())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -650,8 +653,12 @@ impl TxLpfRightEdge {
         }
     }
 
-    pub fn resize(&mut self, right_edge_size: usize, value: u8) {
-        self.inner.resize(right_edge_size * 32 * 2, value)
+    pub fn try_resize(
+        &mut self,
+        right_edge_size: usize,
+        value: u8,
+    ) -> Result<(), std::collections::TryReserveError> {
+        self.inner.try_resize(right_edge_size * 32 * 2, value)
     }
 
     pub fn get<'a>(
