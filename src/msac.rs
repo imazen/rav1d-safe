@@ -600,6 +600,253 @@ static MIN_PROB_16: [u16; 31] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // padding
 ];
 
+/// SSE2 implementation of symbol_adapt4.
+///
+/// Uses SSE2 SIMD for parallel CDF probability computation and comparison.
+/// Dispatched via AVX2 token (SSE2 instructions with VEX encoding).
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+#[arcane]
+fn rav1d_msac_decode_symbol_adapt4_sse2(
+    _t: Desktop64,
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
+    debug_assert!(n_symbols > 0 && n_symbols <= 3);
+    let c = (s.dif >> (EC_WIN_SIZE - 16)) as u16;
+    let n = n_symbols as usize;
+
+    // Load CDF (4 values) via 64-bit load; upper half of __m128i is zeroed
+    let cdf_arr: &[u16; 4] = cdf[..4].try_into().unwrap();
+    let cdf_vec = safe_simd::_mm_loadu_si64(cdf_arr);
+
+    // Broadcast rng masked with 0xff00
+    let rng_masked = (s.rng & 0xff00) as i16;
+    let rng_vec = _mm_set1_epi16(rng_masked);
+
+    // Compute (cdf >> 6) << 7 then pmulhuw: ((cdf >> 6) * (rng & 0xff00)) >> 16
+    let cdf_shifted = _mm_slli_epi16::<7>(_mm_srli_epi16::<6>(cdf_vec));
+    let prod = _mm_mulhi_epu16(cdf_shifted, rng_vec);
+
+    // Load min_prob values offset for this n_symbols
+    let min_prob_offset = 15 - n;
+    let min_prob_arr: &[u16; 4] = MIN_PROB_16[min_prob_offset..min_prob_offset + 4]
+        .try_into()
+        .unwrap();
+    let min_prob = safe_simd::_mm_loadu_si64(min_prob_arr);
+
+    // v = prod + min_prob
+    let v = _mm_add_epi16(prod, min_prob);
+
+    // Store v for indexed access during renorm
+    let mut v_arr = [0u16; 8];
+    safe_simd::_mm_storeu_si128(&mut v_arr, v);
+
+    // Compare: psubusw(v, c) gives 0 where c >= v (saturating subtract)
+    let c_vec = _mm_set1_epi16(c as i16);
+    let sub = _mm_subs_epu16(v, c_vec);
+    let cmp = _mm_cmpeq_epi16(sub, _mm_setzero_si128());
+
+    // pmovmskb + tzcnt to find first lane where c >= v[i]
+    let mask = _mm_movemask_epi8(cmp) as u32;
+    let val = std::cmp::min((mask.trailing_zeros() >> 1) as u8, n_symbols);
+
+    // Get u (previous threshold) and v_val (current threshold) for renorm
+    let u = if val == 0 {
+        s.rng
+    } else {
+        v_arr[val as usize - 1] as u32
+    };
+    let v_val = if val >= n_symbols {
+        0u32
+    } else {
+        v_arr[val as usize] as u32
+    };
+
+    // Renormalize
+    ctx_norm(
+        s,
+        s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+        u - v_val,
+    );
+
+    // Update CDF
+    if s.allow_update_cdf() {
+        let count = cdf[n];
+        let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
+        update_cdf(cdf, n, val as usize, rate, count);
+    }
+
+    val
+}
+
+/// SSE2 implementation of symbol_adapt8.
+///
+/// Uses full 128-bit SSE2 for parallel CDF comparison of up to 7 symbols.
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+#[arcane]
+fn rav1d_msac_decode_symbol_adapt8_sse2(
+    _t: Desktop64,
+    s: &mut MsacContext,
+    cdf: &mut [u16],
+    n_symbols: u8,
+) -> u8 {
+    debug_assert!(n_symbols > 0 && n_symbols <= 7);
+    let c = (s.dif >> (EC_WIN_SIZE - 16)) as u16;
+    let n = n_symbols as usize;
+
+    // Load CDF (8 values) via 128-bit load
+    let cdf_arr: &[u16; 8] = cdf[..8].try_into().unwrap();
+    let cdf_vec = safe_simd::_mm_loadu_si128(cdf_arr);
+
+    // Broadcast rng masked with 0xff00
+    let rng_masked = (s.rng & 0xff00) as i16;
+    let rng_vec = _mm_set1_epi16(rng_masked);
+
+    // Compute (cdf >> 6) << 7 then pmulhuw
+    let cdf_shifted = _mm_slli_epi16::<7>(_mm_srli_epi16::<6>(cdf_vec));
+    let prod = _mm_mulhi_epu16(cdf_shifted, rng_vec);
+
+    // Load min_prob values
+    let min_prob_offset = 15 - n;
+    let min_prob_arr: &[u16; 8] = MIN_PROB_16[min_prob_offset..min_prob_offset + 8]
+        .try_into()
+        .unwrap();
+    let min_prob = safe_simd::_mm_loadu_si128(min_prob_arr);
+
+    // v = prod + min_prob
+    let v = _mm_add_epi16(prod, min_prob);
+
+    // Store v for indexed access
+    let mut v_arr = [0u16; 8];
+    safe_simd::_mm_storeu_si128(&mut v_arr, v);
+
+    // Compare: psubusw(v, c) gives 0 where c >= v
+    let c_vec = _mm_set1_epi16(c as i16);
+    let sub = _mm_subs_epu16(v, c_vec);
+    let cmp = _mm_cmpeq_epi16(sub, _mm_setzero_si128());
+
+    // pmovmskb + tzcnt
+    let mask = _mm_movemask_epi8(cmp) as u32;
+    let val = std::cmp::min((mask.trailing_zeros() >> 1) as u8, n_symbols);
+
+    // Get u and v_val
+    let u = if val == 0 {
+        s.rng
+    } else {
+        v_arr[val as usize - 1] as u32
+    };
+    let v_val = if val >= n_symbols {
+        0u32
+    } else {
+        v_arr[val as usize] as u32
+    };
+
+    // Renormalize
+    ctx_norm(
+        s,
+        s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+        u - v_val,
+    );
+
+    // Update CDF
+    if s.allow_update_cdf() {
+        let count = cdf[n];
+        let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
+        update_cdf(cdf, n, val as usize, rate, count);
+    }
+
+    val
+}
+
+/// Monolithic hi_tok with SIMD adapt4 + inline renorm + refill.
+///
+/// Eliminates 3-12 function calls per hi_tok invocation compared to the scalar
+/// version which calls adapt4 up to 4 times (each with ctx_norm → ctx_refill).
+#[cfg(all(not(feature = "asm"), target_arch = "x86_64"))]
+#[arcane]
+fn rav1d_msac_decode_hi_tok_sse2(_t: Desktop64, s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
+    // n_symbols is always 3 for hi_tok
+    const N: usize = 3;
+
+    // Pre-load min_prob for n=3: [12, 8, 4, 0]
+    let min_prob_arr: &[u16; 4] = MIN_PROB_16[12..16].try_into().unwrap();
+    let min_prob = safe_simd::_mm_loadu_si64(min_prob_arr);
+
+    let update = s.allow_update_cdf();
+    let mut tok_br;
+    let mut tok: u8 = 0;
+
+    for iter in 0..4u8 {
+        // === INLINE ADAPT4 ===
+        let c = (s.dif >> (EC_WIN_SIZE - 16)) as u16;
+
+        // Load CDF (4 values)
+        let cdf_load: &[u16; 4] = cdf[..4].try_into().unwrap();
+        let cdf_vec = safe_simd::_mm_loadu_si64(cdf_load);
+
+        // Broadcast rng masked
+        let rng_masked = (s.rng & 0xff00) as i16;
+        let rng_vec = _mm_set1_epi16(rng_masked);
+
+        // Compute v = pmulhuw((cdf >> 6) << 7, rng) + min_prob
+        let cdf_shifted = _mm_slli_epi16::<7>(_mm_srli_epi16::<6>(cdf_vec));
+        let prod = _mm_mulhi_epu16(cdf_shifted, rng_vec);
+        let v = _mm_add_epi16(prod, min_prob);
+
+        // Store v for indexed access
+        let mut v_arr = [0u16; 8];
+        safe_simd::_mm_storeu_si128(&mut v_arr, v);
+
+        // Compare: psubusw(v, c) gives 0 where c >= v
+        let c_vec = _mm_set1_epi16(c as i16);
+        let sub = _mm_subs_epu16(v, c_vec);
+        let cmp = _mm_cmpeq_epi16(sub, _mm_setzero_si128());
+        let mask = _mm_movemask_epi8(cmp) as u32;
+        tok_br = std::cmp::min((mask.trailing_zeros() >> 1) as u8, N as u8);
+
+        // Get u and v_val
+        let u = if tok_br == 0 {
+            s.rng
+        } else {
+            v_arr[tok_br as usize - 1] as u32
+        };
+        let v_val = if tok_br >= N as u8 {
+            0u32
+        } else {
+            v_arr[tok_br as usize] as u32
+        };
+
+        // === INLINE CDF UPDATE ===
+        if update {
+            let count = cdf[N];
+            let rate = 4 + (count >> 4) + 1; // n_symbols > 2 always true
+            update_cdf(cdf, N, tok_br as usize, rate, count);
+        }
+
+        // === INLINE RENORM ===
+        let new_rng = u - v_val;
+        let d = 15 ^ (31 ^ clz(new_rng));
+        let new_dif = s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16));
+        let cnt = s.cnt;
+        s.dif = new_dif << d;
+        s.rng = new_rng << d;
+        s.cnt = cnt - d;
+
+        // === INLINE REFILL ===
+        if (cnt as u32) < (d as u32) {
+            ctx_refill(s);
+        }
+
+        tok = iter * 3 + 3 + tok_br;
+        if tok_br < 3 {
+            break;
+        }
+    }
+
+    tok
+}
+
 /// Branchless implementation of symbol_adapt for n_symbols <= 3 (adapt4).
 ///
 /// Eliminates branch misprediction from the serial comparison loop by
@@ -961,6 +1208,13 @@ pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_s
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt4_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
+        } else if #[cfg(all(not(feature = "asm"), not(feature = "force_scalar"), target_arch = "x86_64"))] {
+            // SIMD with runtime AVX2 check (VEX-encoded SSE2), scalar fallback
+            if let Some(token) = crate::src::cpu::summon_avx2() {
+                ret = rav1d_msac_decode_symbol_adapt4_sse2(token, s, cdf, n_symbols);
+            } else {
+                ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
+            }
         } else if #[cfg(not(feature = "asm"))] {
             ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
         } else {
@@ -989,6 +1243,12 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt8_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
+        } else if #[cfg(all(not(feature = "asm"), not(feature = "force_scalar"), target_arch = "x86_64"))] {
+            if let Some(token) = crate::src::cpu::summon_avx2() {
+                ret = rav1d_msac_decode_symbol_adapt8_sse2(token, s, cdf, n_symbols);
+            } else {
+                ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
+            }
         } else if #[cfg(not(feature = "asm"))] {
             ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
         } else {
@@ -1114,6 +1374,13 @@ pub fn rav1d_msac_decode_hi_tok(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
             ret = unsafe {
                 dav1d_msac_decode_hi_tok_neon(&mut s.asm, cdf.as_mut_ptr())
             } as u8;
+        } else if #[cfg(all(not(feature = "asm"), not(feature = "force_scalar"), target_arch = "x86_64"))] {
+            // Monolithic SIMD — inlines adapt4 + renorm + refill in a tight loop
+            if let Some(token) = crate::src::cpu::summon_avx2() {
+                ret = rav1d_msac_decode_hi_tok_sse2(token, s, cdf);
+            } else {
+                ret = rav1d_msac_decode_hi_tok_rust(s, cdf);
+            }
         } else {
             ret = rav1d_msac_decode_hi_tok_rust(s, cdf);
         }
