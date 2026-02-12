@@ -3361,6 +3361,306 @@ pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
     );
 }
 
+// ============================================================================
+// PAETH/SMOOTH 16bpc AVX-512
+// ============================================================================
+
+/// PAETH prediction 16bpc using AVX-512 — 16 pixels/iter with mask blending.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_paeth_16bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let topleft_val = u16::from_ne_bytes(topleft[tl_off..tl_off + 2].try_into().unwrap()) as i32;
+    let topleft_vec = _mm512_set1_epi32(topleft_val);
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let left_byte_off = tl_off - (y + 1) * 2;
+        let left_val = u16::from_ne_bytes(
+            topleft[left_byte_off..left_byte_off + 2].try_into().unwrap(),
+        ) as i32;
+        let left_vec = _mm512_set1_epi32(left_val);
+
+        let mut x = 0;
+        while x + 16 <= width {
+            let top_byte_off = tl_off + (x + 1) * 2;
+            let top_u16 = loadu_256!(
+                &topleft[top_byte_off..top_byte_off + 32],
+                [u8; 32]
+            );
+            let top = _mm512_cvtepu16_epi32(top_u16);
+
+            let base = _mm512_sub_epi32(_mm512_add_epi32(left_vec, top), topleft_vec);
+            let ldiff = _mm512_abs_epi32(_mm512_sub_epi32(left_vec, base));
+            let tdiff = _mm512_abs_epi32(_mm512_sub_epi32(top, base));
+            let tldiff = _mm512_abs_epi32(_mm512_sub_epi32(topleft_vec, base));
+
+            let ld_le_td = !_mm512_cmpgt_epi32_mask(ldiff, tdiff);
+            let ld_le_tld = !_mm512_cmpgt_epi32_mask(ldiff, tldiff);
+            let td_le_tld = !_mm512_cmpgt_epi32_mask(tdiff, tldiff);
+
+            let use_left = ld_le_td & ld_le_tld;
+            let use_top = !use_left & td_le_tld;
+
+            let result = _mm512_mask_blend_epi32(
+                use_left,
+                _mm512_mask_blend_epi32(use_top, topleft_vec, top),
+                left_vec,
+            );
+
+            // Pack i32→u16 (values are 0..bitdepth_max, unsigned saturation is fine)
+            let clamped = _mm512_max_epi32(result, _mm512_setzero_si512());
+            let result_u16: __m256i = _mm512_cvtusepi32_epi16(clamped);
+            let off = row_off + x * 2;
+            storeu_256!(&mut dst[off..off + 32], [u8; 32], result_u16);
+
+            x += 16;
+        }
+
+        // Scalar fallback
+        while x < width {
+            let top_byte_off = tl_off + (x + 1) * 2;
+            let top_val =
+                u16::from_ne_bytes(topleft[top_byte_off..top_byte_off + 2].try_into().unwrap())
+                    as i32;
+            let base = left_val + top_val - topleft_val;
+            let l_diff = (left_val - base).abs();
+            let t_diff = (top_val - base).abs();
+            let tl_diff = (topleft_val - base).abs();
+            let pred = if l_diff <= t_diff && l_diff <= tl_diff {
+                left_val
+            } else if t_diff <= tl_diff {
+                top_val
+            } else {
+                topleft_val
+            };
+            let off = row_off + x * 2;
+            dst[off..off + 2].copy_from_slice(&(pred as u16).to_ne_bytes());
+            x += 1;
+        }
+    }
+}
+
+/// SMOOTH prediction 16bpc using AVX-512 — 16 pixels/iter.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_smooth_16bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let weights_hor = &dav1d_sm_weights[width..][..width];
+    let weights_ver = &dav1d_sm_weights[height..][..height];
+    let right_off = tl_off + width * 2;
+    let right_val =
+        u16::from_ne_bytes(topleft[right_off..right_off + 2].try_into().unwrap()) as i32;
+    let bottom_off = tl_off - height * 2;
+    let bottom_val =
+        u16::from_ne_bytes(topleft[bottom_off..bottom_off + 2].try_into().unwrap()) as i32;
+    let right_vec = _mm512_set1_epi32(right_val);
+    let bottom_vec = _mm512_set1_epi32(bottom_val);
+    let rounding = _mm512_set1_epi32(256);
+    let c256 = _mm512_set1_epi32(256);
+    let zero_512 = _mm512_setzero_si512();
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let left_byte_off = tl_off - (y + 1) * 2;
+        let left_val = u16::from_ne_bytes(
+            topleft[left_byte_off..left_byte_off + 2].try_into().unwrap(),
+        ) as i32;
+        let left_vec = _mm512_set1_epi32(left_val);
+        let w_v = weights_ver[y] as i32;
+        let w_v_vec = _mm512_set1_epi32(w_v);
+        let w_v_inv = _mm512_sub_epi32(c256, w_v_vec);
+
+        let mut x = 0;
+        while x + 16 <= width {
+            let top_byte_off = tl_off + (x + 1) * 2;
+            let top_u16 = loadu_256!(&topleft[top_byte_off..top_byte_off + 32], [u8; 32]);
+            let top = _mm512_cvtepu16_epi32(top_u16);
+
+            let wh_bytes = loadu_128!(&weights_hor[x..x + 16], [u8; 16]);
+            let w_h = _mm512_cvtepu8_epi32(wh_bytes);
+            let w_h_inv = _mm512_sub_epi32(c256, w_h);
+
+            let vert = _mm512_add_epi32(
+                _mm512_mullo_epi32(w_v_vec, top),
+                _mm512_mullo_epi32(w_v_inv, bottom_vec),
+            );
+            let hor = _mm512_add_epi32(
+                _mm512_mullo_epi32(w_h, left_vec),
+                _mm512_mullo_epi32(w_h_inv, right_vec),
+            );
+
+            let pred = _mm512_add_epi32(vert, hor);
+            let result = _mm512_srai_epi32::<9>(_mm512_add_epi32(pred, rounding));
+
+            let clamped = _mm512_max_epi32(result, zero_512);
+            let result_u16: __m256i = _mm512_cvtusepi32_epi16(clamped);
+            let off = row_off + x * 2;
+            storeu_256!(&mut dst[off..off + 32], [u8; 32], result_u16);
+
+            x += 16;
+        }
+
+        while x < width {
+            let top_byte_off = tl_off + (1 + x) * 2;
+            let top_val =
+                u16::from_ne_bytes(topleft[top_byte_off..top_byte_off + 2].try_into().unwrap())
+                    as i32;
+            let w_h = weights_hor[x] as i32;
+            let pred =
+                w_v * top_val + (256 - w_v) * bottom_val + w_h * left_val + (256 - w_h) * right_val;
+            let off = row_off + x * 2;
+            dst[off..off + 2].copy_from_slice(&(((pred + 256) >> 9) as u16).to_ne_bytes());
+            x += 1;
+        }
+    }
+}
+
+/// SMOOTH_V prediction 16bpc using AVX-512 — 16 pixels/iter.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_smooth_v_16bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let weights_ver = &dav1d_sm_weights[height..][..height];
+    let bottom_off = tl_off - height * 2;
+    let bottom_val =
+        u16::from_ne_bytes(topleft[bottom_off..bottom_off + 2].try_into().unwrap()) as i32;
+    let bottom_vec = _mm512_set1_epi32(bottom_val);
+    let rounding = _mm512_set1_epi32(128);
+    let c256 = _mm512_set1_epi32(256);
+    let zero_512 = _mm512_setzero_si512();
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let w_v = weights_ver[y] as i32;
+        let w_v_vec = _mm512_set1_epi32(w_v);
+        let w_v_inv = _mm512_sub_epi32(c256, w_v_vec);
+
+        let mut x = 0;
+        while x + 16 <= width {
+            let top_byte_off = tl_off + (x + 1) * 2;
+            let top_u16 = loadu_256!(&topleft[top_byte_off..top_byte_off + 32], [u8; 32]);
+            let top = _mm512_cvtepu16_epi32(top_u16);
+
+            let pred = _mm512_add_epi32(
+                _mm512_mullo_epi32(w_v_vec, top),
+                _mm512_mullo_epi32(w_v_inv, bottom_vec),
+            );
+            let result = _mm512_srai_epi32::<8>(_mm512_add_epi32(pred, rounding));
+
+            let clamped = _mm512_max_epi32(result, zero_512);
+            let result_u16: __m256i = _mm512_cvtusepi32_epi16(clamped);
+            let off = row_off + x * 2;
+            storeu_256!(&mut dst[off..off + 32], [u8; 32], result_u16);
+
+            x += 16;
+        }
+
+        while x < width {
+            let top_byte_off = tl_off + (1 + x) * 2;
+            let top_val =
+                u16::from_ne_bytes(topleft[top_byte_off..top_byte_off + 2].try_into().unwrap())
+                    as i32;
+            let pred = (w_v * top_val + (256 - w_v) * bottom_val + 128) >> 8;
+            let off = row_off + x * 2;
+            dst[off..off + 2].copy_from_slice(&(pred as u16).to_ne_bytes());
+            x += 1;
+        }
+    }
+}
+
+/// SMOOTH_H prediction 16bpc using AVX-512 — 16 pixels/iter.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_smooth_h_16bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let weights_hor = &dav1d_sm_weights[width..][..width];
+    let right_off = tl_off + width * 2;
+    let right_val =
+        u16::from_ne_bytes(topleft[right_off..right_off + 2].try_into().unwrap()) as i32;
+    let right_vec = _mm512_set1_epi32(right_val);
+    let rounding = _mm512_set1_epi32(128);
+    let c256 = _mm512_set1_epi32(256);
+    let zero_512 = _mm512_setzero_si512();
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let left_byte_off = tl_off - (y + 1) * 2;
+        let left_val = u16::from_ne_bytes(
+            topleft[left_byte_off..left_byte_off + 2].try_into().unwrap(),
+        ) as i32;
+        let left_vec = _mm512_set1_epi32(left_val);
+
+        let mut x = 0;
+        while x + 16 <= width {
+            let wh_bytes = loadu_128!(&weights_hor[x..x + 16], [u8; 16]);
+            let w_h = _mm512_cvtepu8_epi32(wh_bytes);
+            let w_h_inv = _mm512_sub_epi32(c256, w_h);
+
+            let pred = _mm512_add_epi32(
+                _mm512_mullo_epi32(w_h, left_vec),
+                _mm512_mullo_epi32(w_h_inv, right_vec),
+            );
+            let result = _mm512_srai_epi32::<8>(_mm512_add_epi32(pred, rounding));
+
+            let clamped = _mm512_max_epi32(result, zero_512);
+            let result_u16: __m256i = _mm512_cvtusepi32_epi16(clamped);
+            let off = row_off + x * 2;
+            storeu_256!(&mut dst[off..off + 32], [u8; 32], result_u16);
+
+            x += 16;
+        }
+
+        while x < width {
+            let w_h = weights_hor[x] as i32;
+            let pred = (w_h * left_val + (256 - w_h) * right_val + 128) >> 8;
+            let off = row_off + x * 2;
+            dst[off..off + 2].copy_from_slice(&(pred as u16).to_ne_bytes());
+            x += 1;
+        }
+    }
+}
+
 /// PAETH prediction for 16bpc
 #[cfg(target_arch = "x86_64")]
 #[arcane]
@@ -4912,55 +5212,51 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         }
         (BPC::BPC16, 9) => {
             let tl_off_bytes = topleft_off * 2;
-            ipred_smooth_16bpc_inner(
-                token,
-                dst_bytes,
-                dst_base_bytes,
-                byte_stride,
-                tl_bytes,
-                tl_off_bytes,
-                w,
-                h,
-            )
+            if let Some(t512) = avx512_token {
+                ipred_smooth_16bpc_avx512_inner(
+                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                )
+            } else {
+                ipred_smooth_16bpc_inner(
+                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                )
+            }
         }
         (BPC::BPC16, 10) => {
             let tl_off_bytes = topleft_off * 2;
-            ipred_smooth_v_16bpc_inner(
-                token,
-                dst_bytes,
-                dst_base_bytes,
-                byte_stride,
-                tl_bytes,
-                tl_off_bytes,
-                w,
-                h,
-            )
+            if let Some(t512) = avx512_token {
+                ipred_smooth_v_16bpc_avx512_inner(
+                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                )
+            } else {
+                ipred_smooth_v_16bpc_inner(
+                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                )
+            }
         }
         (BPC::BPC16, 11) => {
             let tl_off_bytes = topleft_off * 2;
-            ipred_smooth_h_16bpc_inner(
-                token,
-                dst_bytes,
-                dst_base_bytes,
-                byte_stride,
-                tl_bytes,
-                tl_off_bytes,
-                w,
-                h,
-            )
+            if let Some(t512) = avx512_token {
+                ipred_smooth_h_16bpc_avx512_inner(
+                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                )
+            } else {
+                ipred_smooth_h_16bpc_inner(
+                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                )
+            }
         }
         (BPC::BPC16, 12) => {
             let tl_off_bytes = topleft_off * 2;
-            ipred_paeth_16bpc_inner(
-                token,
-                dst_bytes,
-                dst_base_bytes,
-                byte_stride,
-                tl_bytes,
-                tl_off_bytes,
-                w,
-                h,
-            )
+            if let Some(t512) = avx512_token {
+                ipred_paeth_16bpc_avx512_inner(
+                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                )
+            } else {
+                ipred_paeth_16bpc_inner(
+                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                )
+            }
         }
         // filter_intra 16bpc: disabled due to topleft offset bugs
         // (same class as 8bpc filter_intra — double-offset and missing top-pointer update)
