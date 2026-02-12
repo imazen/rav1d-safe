@@ -672,11 +672,34 @@ fn rav1d_msac_decode_symbol_adapt4_sse2(
         u - v_val,
     );
 
-    // Update CDF
+    // SIMD CDF update (replaces scalar update_cdf loop)
+    // ASM pattern: pavgw/psubw/psraw/paddw — 4 SIMD ops instead of a scalar loop
     if s.allow_update_cdf() {
         let count = cdf[n];
-        let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
-        update_cdf(cdf, n, val as usize, rate, count);
+        let rate_val = 4 + (count >> 4) + (n_symbols > 2) as u16;
+
+        // all_ones = 0xFFFF in each lane
+        let all_ones = _mm_cmpeq_epi16(_mm_setzero_si128(), _mm_setzero_si128());
+        // avg(0xFFFF, cmp_mask): 0xFFFF where i >= val, 0x8000 where i < val
+        let avg = _mm_avg_epu16(all_ones, cmp);
+        // delta_before_shift = avg - old_cdf
+        let delta = _mm_sub_epi16(avg, cdf_vec);
+        // base = old_cdf - cmp_mask (adds 1 where i >= val since cmp_mask = 0xFFFF = -1)
+        let base = _mm_sub_epi16(cdf_vec, cmp);
+        // delta >> rate (arithmetic right shift)
+        let rate_vec = _mm_cvtsi32_si128(rate_val as i32);
+        let shifted = _mm_sra_epi16(delta, rate_vec);
+        // result = base + shifted_delta
+        let updated = _mm_add_epi16(base, shifted);
+
+        // Store updated CDF (64-bit store for 4 values)
+        let mut cdf_out = [0u16; 8];
+        safe_simd::_mm_storeu_si128(&mut cdf_out, updated);
+        cdf[0] = cdf_out[0];
+        cdf[1] = cdf_out[1];
+        cdf[2] = cdf_out[2];
+        // Update count
+        cdf[n] = count + (count < 32) as u16;
     }
 
     val
@@ -751,11 +774,26 @@ fn rav1d_msac_decode_symbol_adapt8_sse2(
         u - v_val,
     );
 
-    // Update CDF
+    // SIMD CDF update — 4 SIMD ops instead of scalar loop over n elements
     if s.allow_update_cdf() {
         let count = cdf[n];
-        let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
-        update_cdf(cdf, n, val as usize, rate, count);
+        let rate_val = 4 + (count >> 4) + (n_symbols > 2) as u16;
+
+        let all_ones = _mm_cmpeq_epi16(_mm_setzero_si128(), _mm_setzero_si128());
+        let avg = _mm_avg_epu16(all_ones, cmp);
+        let delta = _mm_sub_epi16(avg, cdf_vec);
+        let base = _mm_sub_epi16(cdf_vec, cmp);
+        let rate_vec = _mm_cvtsi32_si128(rate_val as i32);
+        let shifted = _mm_sra_epi16(delta, rate_vec);
+        let updated = _mm_add_epi16(base, shifted);
+
+        // Store updated CDF (128-bit store for 8 values, only first n matter)
+        let mut cdf_out = [0u16; 8];
+        safe_simd::_mm_storeu_si128(&mut cdf_out, updated);
+        for i in 0..n {
+            cdf[i] = cdf_out[i];
+        }
+        cdf[n] = count + (count < 32) as u16;
     }
 
     val
@@ -819,11 +857,25 @@ fn rav1d_msac_decode_hi_tok_sse2(_t: Desktop64, s: &mut MsacContext, cdf: &mut [
             v_arr[tok_br as usize] as u32
         };
 
-        // === INLINE CDF UPDATE ===
+        // === INLINE SIMD CDF UPDATE ===
         if update {
             let count = cdf[N];
-            let rate = 4 + (count >> 4) + 1; // n_symbols > 2 always true
-            update_cdf(cdf, N, tok_br as usize, rate, count);
+            let rate_val = 4 + (count >> 4) + 1; // n_symbols > 2 always true
+
+            let all_ones = _mm_cmpeq_epi16(_mm_setzero_si128(), _mm_setzero_si128());
+            let avg = _mm_avg_epu16(all_ones, cmp);
+            let delta = _mm_sub_epi16(avg, cdf_vec);
+            let base = _mm_sub_epi16(cdf_vec, cmp);
+            let rate_vec = _mm_cvtsi32_si128(rate_val as i32);
+            let shifted = _mm_sra_epi16(delta, rate_vec);
+            let updated = _mm_add_epi16(base, shifted);
+
+            let mut cdf_out = [0u16; 8];
+            safe_simd::_mm_storeu_si128(&mut cdf_out, updated);
+            cdf[0] = cdf_out[0];
+            cdf[1] = cdf_out[1];
+            cdf[2] = cdf_out[2];
+            cdf[N] = count + (count < 32) as u16;
         }
 
         // === INLINE RENORM ===
@@ -1237,11 +1289,29 @@ fn rav1d_msac_decode_symbol_adapt4_neon(
         u - v_val,
     );
 
-    // Update CDF
+    // NEON SIMD CDF update — 4 SIMD ops instead of scalar loop
     if s.allow_update_cdf() {
         let count = cdf[n];
-        let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
-        update_cdf(cdf, n, val as usize, rate, count);
+        let rate_val = 4 + (count >> 4) + (n_symbols > 2) as u16;
+
+        // base = cdf - cmp_mask (adds 1 where i >= val since cmp = 0xFFFF = -1)
+        let base = vsub_u16(cdf_vec, cmp);
+        // orr with 0x8000: 0xFFFF → 0xFFFF (i >= val), 0x0000 → 0x8000 (i < val)
+        let cmp_or_half = vorr_u16(cmp, vdup_n_u16(0x8000));
+        // delta = (0xFFFF or 0x8000) - old_cdf
+        let delta = vreinterpret_s16_u16(vsub_u16(cmp_or_half, cdf_vec));
+        // Arithmetic right shift via sshl with negative shift amount
+        let neg_rate = vdup_n_s16(-(rate_val as i16));
+        let shifted = vreinterpret_u16_s16(vshl_s16(delta, neg_rate));
+        // result = base + shifted_delta
+        let updated = vadd_u16(base, shifted);
+
+        let mut cdf_out = [0u16; 4];
+        safe_neon::vst1_u16(&mut cdf_out, updated);
+        cdf[0] = cdf_out[0];
+        cdf[1] = cdf_out[1];
+        cdf[2] = cdf_out[2];
+        cdf[n] = count + (count < 32) as u16;
     }
 
     val
@@ -1332,11 +1402,29 @@ fn rav1d_msac_decode_symbol_adapt8_neon(
         u - v_val,
     );
 
-    // Update CDF
+    // NEON SIMD CDF update — 128-bit Q-register version
     if s.allow_update_cdf() {
         let count = cdf[n];
-        let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
-        update_cdf(cdf, n, val as usize, rate, count);
+        let rate_val = 4 + (count >> 4) + (n_symbols > 2) as u16;
+
+        // base = cdf - cmp_mask (subtracting 0xFFFF adds 1 where i >= val)
+        let base = vsubq_u16(cdf_vec, cmp);
+        // orr with 0x8000: 0xFFFF → 0xFFFF (i >= val), 0x0000 → 0x8000 (i < val)
+        let cmp_or_half = vorrq_u16(cmp, vdupq_n_u16(0x8000));
+        // delta = (0xFFFF or 0x8000) - old_cdf
+        let delta = vreinterpretq_s16_u16(vsubq_u16(cmp_or_half, cdf_vec));
+        // Arithmetic right shift via sshl with negative shift amount
+        let neg_rate = vdupq_n_s16(-(rate_val as i16));
+        let shifted = vreinterpretq_u16_s16(vshlq_s16(delta, neg_rate));
+        // result = base + shifted_delta
+        let updated = vaddq_u16(base, shifted);
+
+        let mut cdf_out = [0u16; 8];
+        neon_st1q_u16!(&mut cdf_out, updated);
+        for i in 0..n {
+            cdf[i] = cdf_out[i];
+        }
+        cdf[n] = count + (count < 32) as u16;
     }
 
     val
@@ -1401,11 +1489,24 @@ fn rav1d_msac_decode_hi_tok_neon(_t: Arm64, s: &mut MsacContext, cdf: &mut [u16;
             v_arr[tok_br as usize] as u32
         };
 
-        // === INLINE CDF UPDATE ===
+        // === INLINE NEON CDF UPDATE ===
         if update {
             let count = cdf[N];
-            let rate = 4 + (count >> 4) + 1;
-            update_cdf(cdf, N, tok_br as usize, rate, count);
+            let rate_val = 4 + (count >> 4) + 1;
+
+            let base = vsub_u16(cdf_vec, cmp);
+            let cmp_or_half = vorr_u16(cmp, vdup_n_u16(0x8000));
+            let delta = vreinterpret_s16_u16(vsub_u16(cmp_or_half, cdf_vec));
+            let neg_rate = vdup_n_s16(-(rate_val as i16));
+            let shifted = vreinterpret_u16_s16(vshl_s16(delta, neg_rate));
+            let updated = vadd_u16(base, shifted);
+
+            let mut cdf_out = [0u16; 4];
+            safe_neon::vst1_u16(&mut cdf_out, updated);
+            cdf[0] = cdf_out[0];
+            cdf[1] = cdf_out[1];
+            cdf[2] = cdf_out[2];
+            cdf[N] = count + (count < 32) as u16;
         }
 
         // === INLINE RENORM ===
