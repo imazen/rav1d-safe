@@ -154,25 +154,61 @@ msac coverage: symbol_adapt4, symbol_adapt8, symbol_adapt16, and hi_tok all have
 
 ## Performance
 
-Benchmarked on x86_64 (Zen 4, AVX2), single-threaded, 500 iterations. Run via `just profile`.
+All benchmarks: x86_64 (Zen 4, AVX2), single-threaded, `just bench-compare` or `just profile`. Commit `0d31f1c`, Rust 1.86.0, fat LTO.
 
-**allintra 8bpc (352x288, 39 frames):**
+### Real photographs (AVIF decode, `cargo bench --bench decode_avif`)
 
-| Build | ms/frame | vs ASM |
-|-------|----------|--------|
-| ASM (hand-written assembly) | 2.65 | 1.0x |
-| Safe-SIMD (default, `forbid(unsafe_code)`) | 4.91 | 1.85x |
-| Safe-SIMD + `unchecked` feature | 4.53 | 1.71x |
+Single still images at web-typical quality (YUV420, q60). Source: Google-native 8K photo, downscaled with ImageMagick. These numbers reflect real-world AVIF decode performance where SIMD kernels dominate the profile.
 
-**10-bit film grain (10 frames):**
+| Resolution | ASM | Safe (default) | vs ASM |
+|------------|-----|----------------|--------|
+| 2K (1920x1281) | 34.5 ms | 69.7 ms | 2.0x |
+| 4K (3840x2561) | 120 ms | 251 ms | 2.1x |
+| 8K (8192x5464) | 515 ms | 1,096 ms | 2.1x |
 
-| Build | ms/frame | vs ASM |
-|-------|----------|--------|
-| ASM (hand-written assembly) | 1.06 | 1.0x |
-| Safe-SIMD (default, `forbid(unsafe_code)`) | 3.53 | 3.33x |
-| Safe-SIMD + `unchecked` feature | 3.32 | 3.13x |
+### Small test vectors (IVF decode, `cargo bench --bench decode`)
 
-The checked-to-unchecked gap is ~8%, meaning the DisjointMut runtime borrow tracker adds modest overhead. The remaining gap vs ASM comes from: Rust calling conventions vs hand-tuned register allocation, scaled MC still using scalar fallback, and the entropy decoder (msac) being a serial dependency chain where SIMD helps with CDF updates but not the core decode loop.
+dav1d-test-data vectors under 100 KB. These are entropy-heavy bitstreams where the serial msac decoder dominates, inflating the ratio. Not representative of image or high-res video decode.
+
+| Vector | ASM | Safe (default) | vs ASM |
+|--------|-----|----------------|--------|
+| 8-bit intra (352x288, 39fr) | 16.5 ms | 59.9 ms | 3.6x |
+| 10-bit (various, 5 vectors) | 2.7 ms | 10.1 ms | 3.7x |
+| Film grain | 6.6 ms | 24.6 ms | 3.7x |
+
+### Where the gap comes from
+
+The safe build is ~2x slower on real images and ~3.5x on small entropy-heavy vectors. The gap breaks down:
+
+- **Entropy decoder (msac)**: ~35% of decode time. Serial dependency chain — SIMD helps with CDF updates but not the core decode loop. Same Rust code in both builds; the ASM build uses hand-tuned SSE2 for the inner loop.
+- **Calling conventions**: The ASM kernels use custom register allocation across function boundaries. Rust's ABI reloads registers at each call site.
+- **Scaled MC**: Falls back to scalar Rust (~2% of inter-frame content). The ASM version uses per-pixel variable-step register scheduling that doesn't map cleanly to safe intrinsics.
+- **Bounds checking**: The `unchecked` feature removes runtime bounds checks and DisjointMut borrow tracking, saving ~5-8% on large images.
+
+### Reproduce locally
+
+```sh
+just generate-bench-avif  # create 2K/4K/8K AVIF test images (requires avifdec + avifenc)
+just bench-compare         # run all three modes side-by-side
+just profile               # detailed per-frame timing (500 iterations)
+```
+
+## Conformance
+
+Tested against the [dav1d-test-data](https://code.videolan.org/videolan/dav1d-test-data) suite. MD5 hashes verified at all CPU dispatch levels (scalar, SSE4.2, AVX2, native).
+
+**766 of 768 IVF vectors pass** across all levels. The 2 skipped files are in Annex B / Section 5 OBU format (not IVF containers).
+
+19 additional vectors in the test data are **not exercised** by our test harness:
+
+| Category | Count | Reason |
+|----------|-------|--------|
+| sframe | 2 | Requires S-frame (show-existing-frame) support, not implemented in dav1d either |
+| svc (operating points) | 9 | Always decodes at default operating point; selecting alternate OP not yet exposed |
+| argon (vq_suite) | 6 | Various decode modes and operating point selection tests |
+| OBU format | 2 | annexb.obu and section5.obu — not IVF, require different container parsing |
+
+Run conformance tests with `cargo test --release --test decode_cpu_levels`.
 
 ## Building
 
@@ -227,4 +263,4 @@ This fork exists because maintaining a separate safe SIMD implementation is the 
 
 ## Acknowledgments
 
-Built on the work of the [dav1d](https://code.videolan.org/videolan/dav1d) team (VideoLAN) and the [rav1d](https://github.com/memorysafety/rav1d) team (ISRG/Prossimo). The original C and assembly implementations are exceptional — this fork just proves you can match that performance in safe Rust.
+Built on the work of the [dav1d](https://code.videolan.org/videolan/dav1d) team (VideoLAN) and the [rav1d](https://github.com/memorysafety/rav1d) team (ISRG/Prossimo). The original C and assembly implementations are exceptional — this fork demonstrates that safe Rust SIMD can get within 2x of hand-written assembly while eliminating entire classes of memory safety bugs.

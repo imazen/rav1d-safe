@@ -49,6 +49,7 @@ safe_unaligned_simd = { version = "0.2.4", features = ["avx512"] }
 [dev-dependencies]
 divan = "0.1"
 md5 = "0.8.0"
+zenavif-parse = { path = "../zenavif-parse", features = ["eager"] }
 
 [build-dependencies]
 cc = "1.0.79"
@@ -88,6 +89,10 @@ bitdepth_16 = []
 
 [[bench]]
 name = "decode"
+harness = false
+
+[[bench]]
+name = "decode_avif"
 harness = false
 
 [profile.bench]

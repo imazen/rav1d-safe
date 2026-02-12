@@ -144,3 +144,62 @@ profile iters="500":
 # Quick profile (100 iterations)
 profile-quick:
     just profile 100
+
+# Generate AVIF benchmark images (requires avifdec + avifenc from libavif)
+generate-bench-avif avifenc="avifenc" avifdec="avifdec":
+    #!/usr/bin/env bash
+    set -e
+    OUT="test-vectors/bench"
+    mkdir -p "$OUT"
+    SRC="/mnt/v/datasets/scraping/avif/google-native/8d716f849a1c4448.avif"
+    if [ ! -f "$SRC" ]; then
+        echo "Source 8K AVIF not found at $SRC"
+        echo "Provide any 8K+ AVIF and update the SRC path in the justfile"
+        exit 1
+    fi
+    echo "Decoding 8K source to PNG..."
+    {{avifdec}} "$SRC" /tmp/rav1d_bench_8k.png
+    echo "Resizing to 4K and 2K..."
+    convert /tmp/rav1d_bench_8k.png -resize 3840x /tmp/rav1d_bench_4k.png
+    convert /tmp/rav1d_bench_8k.png -resize 1920x /tmp/rav1d_bench_2k.png
+    echo "Encoding as AVIF (YUV420, q60)..."
+    {{avifenc}} -q 60 -s 6 -y 420 /tmp/rav1d_bench_2k.png "$OUT/photo_2k.avif"
+    {{avifenc}} -q 60 -s 6 -y 420 /tmp/rav1d_bench_4k.png "$OUT/photo_4k.avif"
+    {{avifenc}} -q 60 -s 6 -y 420 /tmp/rav1d_bench_8k.png "$OUT/photo_8k.avif"
+    rm -f /tmp/rav1d_bench_*.png
+    echo "Generated:"
+    ls -lh "$OUT"/*.avif
+
+# Benchmark AVIF decode (checked, default safety)
+bench-avif:
+    cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16"
+
+# Benchmark AVIF decode (unchecked)
+bench-avif-unchecked:
+    cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16,unchecked"
+
+# Benchmark AVIF decode (asm)
+bench-avif-asm:
+    cargo bench --bench decode_avif --features "asm,bitdepth_8,bitdepth_16"
+
+# Run all benchmarks across all three modes (checked, unchecked, asm) for comparison
+bench-compare:
+    #!/usr/bin/env bash
+    set -e
+    echo "============================================"
+    echo "=== Safe-SIMD (checked, forbid(unsafe))  ==="
+    echo "============================================"
+    cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16" 2>&1 | grep -E "photo_|Timer"
+    cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16" 2>&1 | grep -E "bit/|film_grain/|Timer"
+    echo ""
+    echo "============================================"
+    echo "=== Safe-SIMD (unchecked bounds)         ==="
+    echo "============================================"
+    cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" 2>&1 | grep -E "photo_|Timer"
+    cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" 2>&1 | grep -E "bit/|film_grain/|Timer"
+    echo ""
+    echo "============================================"
+    echo "=== ASM (hand-written assembly)           ==="
+    echo "============================================"
+    cargo bench --bench decode_avif --features "asm,bitdepth_8,bitdepth_16" 2>&1 | grep -E "photo_|Timer"
+    cargo bench --bench decode --features "asm,bitdepth_8,bitdepth_16" 2>&1 | grep -E "bit/|film_grain/|Timer"
