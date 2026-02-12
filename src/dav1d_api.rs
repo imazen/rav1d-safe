@@ -1,8 +1,16 @@
-//! C FFI wrappers for the dav1d ABI.
+//! C FFI wrappers for the dav1d/rav1d ABI.
 //!
 //! All 19 `dav1d_*` `extern "C"` entry points live here, gated behind
 //! `#[cfg(feature = "c-ffi")]` at the module level (see crate root `lib.rs`).
 //! The Rust core API (`rav1d_*`) stays in `src/lib.rs`.
+//!
+//! ## Symbol naming
+//!
+//! When `dav1d-compat` feature is enabled (default with `c-ffi`), symbols are
+//! exported as `dav1d_*` for drop-in replacement of libdav1d.
+//!
+//! When `dav1d-compat` is disabled, symbols are exported as `rav1d_*`, allowing
+//! side-by-side loading with real libdav1d for benchmarking.
 #![allow(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
@@ -50,7 +58,8 @@ use crate::include::dav1d::data::Rav1dData;
 use crate::include::dav1d::dav1d::Rav1dSettings;
 use crate::src::internal::Rav1dContextTaskType;
 
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_version")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_version")]
 #[cold]
 pub extern "C" fn dav1d_version() -> *const c_char {
     DAV1D_VERSION.as_ptr()
@@ -60,7 +69,8 @@ pub extern "C" fn dav1d_version() -> *const c_char {
 ///
 /// Return a value in the format `0x00XXYYZZ`, where `XX` is the major version,
 /// `YY` the minor version, and `ZZ` the patch version.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_version_api")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_version_api")]
 #[cold]
 pub extern "C" fn dav1d_version_api() -> c_uint {
     u32::from_be_bytes([
@@ -75,7 +85,8 @@ pub extern "C" fn dav1d_version_api() -> c_uint {
 ///
 /// * `s` must be valid to [`ptr::write`] to.
 ///   The former contents of `s` are not [`drop`]ped and it may be uninitialized.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_default_settings")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_default_settings")]
 #[cold]
 pub unsafe extern "C" fn dav1d_default_settings(s: NonNull<Dav1dSettings>) {
     let settings = Rav1dSettings::default().into();
@@ -86,7 +97,8 @@ pub unsafe extern "C" fn dav1d_default_settings(s: NonNull<Dav1dSettings>) {
 /// # Safety
 ///
 /// * `s`, if [`NonNull`], must valid to [`ptr::read`] from.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_get_frame_delay")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_get_frame_delay")]
 #[cold]
 pub unsafe extern "C" fn dav1d_get_frame_delay(s: Option<NonNull<Dav1dSettings>>) -> Dav1dResult {
     (|| {
@@ -103,7 +115,8 @@ pub unsafe extern "C" fn dav1d_get_frame_delay(s: Option<NonNull<Dav1dSettings>>
 ///
 /// * `c_out`, if [`NonNull`], is valid to [`ptr::write`] to.
 /// * `s`, if [`NonNull`], is valid to [`ptr::read`] from.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_open")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_open")]
 #[cold]
 pub unsafe extern "C" fn dav1d_open(
     c_out: Option<NonNull<Option<Dav1dContext>>>,
@@ -155,7 +168,8 @@ pub unsafe extern "C" fn dav1d_open(
 ///
 /// * `out`, if [`NonNull`], is valid to [`ptr::write`] to.
 /// * `ptr`, if [`NonNull`], is the start of a `&[u8]` slice of length `sz`.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_parse_sequence_header")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_parse_sequence_header")]
 pub unsafe extern "C" fn dav1d_parse_sequence_header(
     out: Option<NonNull<Dav1dSequenceHeader>>,
     ptr: Option<NonNull<u8>>,
@@ -179,7 +193,8 @@ pub unsafe extern "C" fn dav1d_parse_sequence_header(
 ///
 /// * `c`, if [`NonNull`], must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
 /// * `r#in`, if [`NonNull`], must be valid to [`ptr::read`] from and [`ptr::write`] to.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_send_data")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_send_data")]
 pub unsafe extern "C" fn dav1d_send_data(
     c: Option<Dav1dContext>,
     r#in: Option<NonNull<Dav1dData>>,
@@ -206,7 +221,8 @@ pub unsafe extern "C" fn dav1d_send_data(
 ///
 /// * `c`, if [`NonNull`], must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
 /// * `out`, if [`NonNull`], must be valid to [`ptr::write`] to.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_get_picture")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_get_picture")]
 pub unsafe extern "C" fn dav1d_get_picture(
     c: Option<Dav1dContext>,
     out: Option<NonNull<Dav1dPicture>>,
@@ -232,7 +248,8 @@ pub unsafe extern "C" fn dav1d_get_picture(
 /// * `c`, if [`NonNull`], must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
 /// * `out`, if [`NonNull`], must be valid to [`ptr::write`] to.
 /// * `r#in`, if [`NonNull`], must be valid to [`ptr::read`] from.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_apply_grain")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_apply_grain")]
 pub unsafe extern "C" fn dav1d_apply_grain(
     c: Option<Dav1dContext>,
     out: Option<NonNull<Dav1dPicture>>,
@@ -264,7 +281,8 @@ pub unsafe extern "C" fn dav1d_apply_grain(
 /// # Safety
 ///
 /// * `c` must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_flush")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_flush")]
 pub unsafe extern "C" fn dav1d_flush(c: Dav1dContext) {
     // SAFETY: `c` is from `dav1d_open` and thus from `RawArc::from_arc`.
     // It has not yet been passed to `dav1d_close` and thus not to `RawArc::into_arc` yet.
@@ -276,7 +294,8 @@ pub unsafe extern "C" fn dav1d_flush(c: Dav1dContext) {
 ///
 /// * `c_out`, if [`NonNull`], must be safe to [`ptr::read`] from and [`ptr::write`] to.
 ///   The `Dav1dContext` pointed to by `c_out` must be from [`dav1d_open`].
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_close")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_close")]
 #[cold]
 pub unsafe extern "C" fn dav1d_close(c_out: Option<NonNull<Option<Dav1dContext>>>) {
     let Ok(mut c_out) = validate_input!(c_out.ok_or(())) else {
@@ -295,7 +314,8 @@ pub unsafe extern "C" fn dav1d_close(c_out: Option<NonNull<Option<Dav1dContext>>
 ///
 /// * `c`, if [`NonNull`], must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
 /// * `flags`, if [`NonNull`], must be valid to [`ptr::write`] to.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_get_event_flags")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_get_event_flags")]
 pub unsafe extern "C" fn dav1d_get_event_flags(
     c: Option<Dav1dContext>,
     flags: Option<NonNull<Dav1dEventFlags>>,
@@ -320,7 +340,8 @@ pub unsafe extern "C" fn dav1d_get_event_flags(
 ///
 /// * `c`, if [`NonNull`], must be from [`dav1d_open`] and not be passed to [`dav1d_close`] yet.
 /// * `out`, if [`NonNull`], is valid to [`ptr::write`] to.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_get_decode_error_data_props")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_get_decode_error_data_props")]
 pub unsafe extern "C" fn dav1d_get_decode_error_data_props(
     c: Option<Dav1dContext>,
     out: Option<NonNull<Dav1dDataProps>>,
@@ -344,7 +365,8 @@ pub unsafe extern "C" fn dav1d_get_decode_error_data_props(
 /// # Safety
 ///
 /// * `p`, if [`NonNull`], must be valid to [`ptr::read`] from and [`ptr::write`] to.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_picture_unref")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_picture_unref")]
 pub unsafe extern "C" fn dav1d_picture_unref(p: Option<NonNull<Dav1dPicture>>) {
     let Ok(p) = validate_input!(p.ok_or(())) else {
         return;
@@ -362,7 +384,8 @@ pub unsafe extern "C" fn dav1d_picture_unref(p: Option<NonNull<Dav1dPicture>>) {
 ///
 /// * `buf`, if [`NonNull`], is valid to [`ptr::write`] to.
 ///   After this call, `buf.data` will be an allocated slice of length `sz`.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_data_create")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_data_create")]
 pub unsafe extern "C" fn dav1d_data_create(buf: Option<NonNull<Dav1dData>>, sz: usize) -> *mut u8 {
     || -> Rav1dResult<*mut u8> {
         let buf = validate_input!(buf.ok_or(EINVAL))?;
@@ -385,7 +408,8 @@ pub unsafe extern "C" fn dav1d_data_create(buf: Option<NonNull<Dav1dData>>, sz: 
 /// * `buf`, if [`NonNull`], is valid to [`ptr::write`] to.
 /// * `ptr`, if [`NonNull`], is the start of a `&[u8]` slice of length `sz`.
 /// * `ptr`'s slice must be valid to dereference until `free_callback` is called on it, which must deallocate it.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_data_wrap")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_data_wrap")]
 pub unsafe extern "C" fn dav1d_data_wrap(
     buf: Option<NonNull<Dav1dData>>,
     ptr: Option<NonNull<u8>>,
@@ -413,7 +437,8 @@ pub unsafe extern "C" fn dav1d_data_wrap(
 ///
 /// * `buf`, if [`NonNull`], is valid to [`ptr::read`] from and [`ptr::write`] to.
 /// * `user_data`, if [`NonNull`], is valid to dereference until `free_callback` is called on it, which must deallocate it.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_data_wrap_user_data")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_data_wrap_user_data")]
 pub unsafe extern "C" fn dav1d_data_wrap_user_data(
     buf: Option<NonNull<Dav1dData>>,
     user_data: Option<NonNull<u8>>,
@@ -440,7 +465,8 @@ pub unsafe extern "C" fn dav1d_data_wrap_user_data(
 /// # Safety
 ///
 /// * `buf`, if [`NonNull`], is safe to [`ptr::read`] from and [`ptr::write`] from.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_data_unref")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_data_unref")]
 pub unsafe extern "C" fn dav1d_data_unref(buf: Option<NonNull<Dav1dData>>) {
     let buf = validate_input!(buf.ok_or(()));
     let Ok(mut buf) = buf else { return };
@@ -452,7 +478,8 @@ pub unsafe extern "C" fn dav1d_data_unref(buf: Option<NonNull<Dav1dData>>) {
 /// # Safety
 ///
 /// * `props`, if [`NonNull`], is safe to [`ptr::read`] from and [`ptr::write`] from.
-#[no_mangle]
+#[cfg_attr(feature = "dav1d-compat", export_name = "dav1d_data_props_unref")]
+#[cfg_attr(not(feature = "dav1d-compat"), export_name = "rav1d_data_props_unref")]
 pub unsafe extern "C" fn dav1d_data_props_unref(props: Option<NonNull<Dav1dDataProps>>) {
     let props = validate_input!(props.ok_or(()));
     let Ok(mut props) = props else { return };

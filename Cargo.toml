@@ -52,7 +52,11 @@ unchecked = ["rav1d-disjoint-mut/unchecked"]
 
 # C FFI API compatibility (unsafe extern "C" functions)
 # Enables: dav1d_* C API, FFISafe, c_arc, c_box
-c-ffi = ["unchecked"]
+c-ffi = ["unchecked", "dav1d-compat"]
+
+# Export C symbols as dav1d_* (drop-in replacement for libdav1d).
+# When disabled, symbols are exported as rav1d_* for side-by-side benchmarking.
+dav1d-compat = []
 
 # Level 4: Hand-written assembly (maximum performance)
 asm = ["c-ffi"]
