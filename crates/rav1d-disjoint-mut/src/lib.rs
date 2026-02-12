@@ -1506,6 +1506,23 @@ pub struct DisjointMutArcSlice<T: Copy> {
     pub inner: Arc<DisjointMutSlice<T>>,
 }
 
+impl<T: Copy> DisjointMutArcSlice<T> {
+    /// Create a new `DisjointMutArcSlice` with `n` elements, all set to `value`.
+    ///
+    /// Returns `Err` on allocation failure instead of panicking.
+    pub fn try_new(
+        n: usize,
+        value: T,
+    ) -> Result<Self, alloc::collections::TryReserveError> {
+        let mut v = Vec::new();
+        v.try_reserve(n)?;
+        v.resize(n, value);
+        Ok(Self {
+            inner: Arc::new(DisjointMut::new(v.into_boxed_slice())),
+        })
+    }
+}
+
 impl<T: Copy> FromIterator<T> for DisjointMutArcSlice<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let box_slice = iter.into_iter().collect::<Box<[_]>>();

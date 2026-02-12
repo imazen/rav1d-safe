@@ -11,6 +11,7 @@ use crate::src::decode::rav1d_decode_frame_exit;
 use crate::src::decode::rav1d_decode_frame_init;
 use crate::src::decode::rav1d_decode_frame_init_cdf;
 use crate::src::decode::rav1d_decode_tile_sbrow;
+use crate::src::disjoint_mut::TryResizableWith;
 use crate::src::error::Rav1dError::EINVAL;
 use crate::src::error::Rav1dError::ENOMEM;
 use crate::src::error::Rav1dResult;
@@ -407,12 +408,16 @@ fn create_filter_sbrow(fc: &Rav1dFrameContext, f: &Rav1dFrameData, pass: c_int) 
         let prog_sz = ((f.sbh + 31 & !(31 as c_int)) >> 5) as usize;
         let mut frame = fc.frame_thread_progress.frame.try_write().unwrap();
         frame.clear();
-        frame.resize_with(prog_sz, Default::default);
+        frame
+            .try_resize_with(prog_sz, Default::default)
+            .map_err(|_| ENOMEM)?;
         // copy_lpf is read during task selection, so we are seeing contention
         // here. This seems rare enough that it is not worth optimizing.
         let mut copy_lpf = fc.frame_thread_progress.copy_lpf.write();
         copy_lpf.clear();
-        copy_lpf.resize_with(prog_sz, Default::default);
+        copy_lpf
+            .try_resize_with(prog_sz, Default::default)
+            .map_err(|_| ENOMEM)?;
         fc.frame_thread_progress.deblock.store(0, Ordering::SeqCst);
     }
     f.frame_thread.next_tile_row[(pass & 1) as usize].set(0);

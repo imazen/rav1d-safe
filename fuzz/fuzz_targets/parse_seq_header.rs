@@ -8,7 +8,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use rav1d_safe::{Decoder, Settings, InloopFilters, DecodeFrameType};
+use rav1d_safe::src::managed::{Decoder, Settings, InloopFilters, DecodeFrameType};
 
 fuzz_target!(|data: &[u8]| {
     if data.is_empty() {
@@ -16,8 +16,10 @@ fuzz_target!(|data: &[u8]| {
     }
 
     // Disable all optional processing to focus fuzzing on the parser.
+    // Tight frame size limit to avoid OOM on adversarial dimensions.
     let settings = Settings {
         threads: 1,
+        frame_size_limit: 256 * 256,
         inloop_filters: InloopFilters::none(),
         decode_frame_type: DecodeFrameType::All,
         ..Settings::default()
