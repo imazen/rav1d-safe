@@ -31,6 +31,7 @@ use crate::src::pic_or_buf::PicOrBuf;
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_cdef_directions;
 use crate::src::with_offset::WithOffset;
+use crate::src::safe_simd::pixel_access::Flex;
 use libc::ptrdiff_t;
 use std::cmp;
 
@@ -784,6 +785,8 @@ fn cdef_filter_block_scalar_8bpc(
 
     // Single guard for entire output region
     let (mut p_guard, p_base) = dst.strided_slice_mut::<BitDepth8>(w, h);
+    let tmp = tmp.flex();
+    let mut p_guard = p_guard.flex_mut();
 
     if pri_strength != 0 {
         let pri_tap = 4 - (pri_strength & 1);
@@ -931,6 +934,7 @@ fn padding_8bpc(
     //     Worst case: |0xC000 - 0| = 16384, which fits in i16.
     let very_large = 0xC000u16;
     tmp.fill(very_large);
+    let mut tmp = tmp.flex_mut();
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
     let need_left = edges.contains(CdefEdgeFlags::HAVE_LEFT);
@@ -1334,6 +1338,7 @@ fn padding_16bpc(
     // Same value as 8bpc — works for all bit depths up to 14-bit.
     let very_large = 0xC000u16;
     tmp.fill(very_large);
+    let mut tmp = tmp.flex_mut();
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
     let pixel_stride = dst.pixel_stride::<BitDepth16>();
@@ -1647,6 +1652,8 @@ fn cdef_filter_block_scalar_16bpc(
 
     // Single guard for entire output region
     let (mut p_guard, p_base) = dst.strided_slice_mut::<BitDepth16>(w, h);
+    let tmp = tmp.flex();
+    let mut p_guard = p_guard.flex_mut();
 
     if pri_strength != 0 {
         let pri_tap = 4 - (pri_strength >> bitdepth_min_8 & 1);
