@@ -843,8 +843,8 @@ fn boxsum5_v_avx2(
                 w4,
             );
 
-            // Store sum (16 i16 values)
-            let sum_offset = (out_row) * REST_UNIT_STRIDE + x;
+            // Store sum (16 i16 values); out_row-1 matches scalar boxsum5_8bpc
+            let sum_offset = (out_row - 1) * REST_UNIT_STRIDE + x;
             storeu_256!(&mut sum[sum_offset..sum_offset + 16], [i16; 16], sum_v);
 
             // Sum of squares: need i32 precision
@@ -924,8 +924,8 @@ fn boxsum5_v_avx2(
             s_idx += REST_UNIT_STRIDE;
             let e = src[s_idx] as i32;
             let e2 = e * e;
-            let sum_v = out_row * REST_UNIT_STRIDE + x;
-            let sumsq_v = out_row * REST_UNIT_STRIDE + x;
+            let sum_v = (out_row - 1) * REST_UNIT_STRIDE + x;
+            let sumsq_v = (out_row - 1) * REST_UNIT_STRIDE + x;
             sum[sum_v] = (a + b + c + d + e) as i16;
             sumsq[sumsq_v] = a2 + b2 + c2 + d2 + e2;
             a = b; a2 = b2;
@@ -952,7 +952,7 @@ fn boxsum5_h_avx2(
     let mut sum_tmp = [0i16; REST_UNIT_STRIDE];
     let mut sumsq_tmp = [0i32; REST_UNIT_STRIDE];
 
-    for row in 2..h - 2 {
+    for row in 1..h - 3 {
         let row_off = row * REST_UNIT_STRIDE;
 
         // Process 16 i16 sums at a time
@@ -1028,7 +1028,7 @@ fn boxsum3_v_avx2(
     let mut x = 1usize;
     while x + 16 <= w - 1 {
         for out_row in 2..h - 2 {
-            let base_row = out_row - 1; // src is already offset by 1 row
+            let base_row = out_row - 2; // src is already offset by 1 row; match scalar window
             let r0 = loadu_128!(&src[base_row * REST_UNIT_STRIDE + x..base_row * REST_UNIT_STRIDE + x + 16], [u8; 16]);
             let r1 = loadu_128!(&src[(base_row + 1) * REST_UNIT_STRIDE + x..(base_row + 1) * REST_UNIT_STRIDE + x + 16], [u8; 16]);
             let r2 = loadu_128!(&src[(base_row + 2) * REST_UNIT_STRIDE + x..(base_row + 2) * REST_UNIT_STRIDE + x + 16], [u8; 16]);
@@ -1039,7 +1039,7 @@ fn boxsum3_v_avx2(
             let w2 = _mm256_cvtepu8_epi16(r2);
             let sum_v = _mm256_add_epi16(_mm256_add_epi16(w0, w1), w2);
 
-            let sum_offset = out_row * REST_UNIT_STRIDE + x;
+            let sum_offset = (out_row - 1) * REST_UNIT_STRIDE + x;
             storeu_256!(&mut sum[sum_offset..sum_offset + 16], [i16; 16], sum_v);
 
             // Sumsq i32 - low 8
@@ -1082,7 +1082,7 @@ fn boxsum3_v_avx2(
             s_idx += REST_UNIT_STRIDE;
             let c = src[s_idx] as i32;
             let c2 = c * c;
-            let sum_v = out_row * REST_UNIT_STRIDE + x;
+            let sum_v = (out_row - 1) * REST_UNIT_STRIDE + x;
             sum[sum_v] = (a + b + c) as i16;
             sumsq[sum_v] = a2 + b2 + c2;
             a = b; a2 = b2;
@@ -1104,7 +1104,7 @@ fn boxsum3_h_avx2(
     let mut sum_tmp = [0i16; REST_UNIT_STRIDE];
     let mut sumsq_tmp = [0i32; REST_UNIT_STRIDE];
 
-    for row in 2..h - 2 {
+    for row in 1..h - 3 {
         let row_off = row * REST_UNIT_STRIDE;
         let mut x = 2usize;
 
@@ -1499,8 +1499,13 @@ fn sgr_5x5_8bpc_avx2_inner(
     padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
 
     let sgr = params.sgr();
-    // TODO: AVX2 selfguided_filter_8bpc has a correctness bug — disabled pending fix.
-    // See commit 513172e for the AVX2 code. Using scalar path which is verified correct.
+    #[cfg(target_arch = "x86_64")]
+    if let Some(token) = summon_avx2() {
+        selfguided_filter_8bpc_avx2(token, &mut dst, &tmp, w, h, 25, sgr.s0);
+    } else {
+        selfguided_filter_8bpc(&mut dst, &tmp, w, h, 25, sgr.s0);
+    }
+    #[cfg(not(target_arch = "x86_64"))]
     selfguided_filter_8bpc(&mut dst, &tmp, w, h, 25, sgr.s0);
 
     let w0 = sgr.w0 as i32;
@@ -1534,7 +1539,13 @@ fn sgr_3x3_8bpc_avx2_inner(
     padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
 
     let sgr = params.sgr();
-    // TODO: AVX2 selfguided_filter_8bpc has a correctness bug — disabled pending fix.
+    #[cfg(target_arch = "x86_64")]
+    if let Some(token) = summon_avx2() {
+        selfguided_filter_8bpc_avx2(token, &mut dst, &tmp, w, h, 9, sgr.s1);
+    } else {
+        selfguided_filter_8bpc(&mut dst, &tmp, w, h, 9, sgr.s1);
+    }
+    #[cfg(not(target_arch = "x86_64"))]
     selfguided_filter_8bpc(&mut dst, &tmp, w, h, 9, sgr.s1);
 
     let w1 = sgr.w1 as i32;
@@ -1569,9 +1580,19 @@ fn sgr_mix_8bpc_avx2_inner(
     padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
 
     let sgr = params.sgr();
-    // TODO: AVX2 selfguided_filter_8bpc has a correctness bug — disabled pending fix.
-    selfguided_filter_8bpc(&mut dst0, &tmp, w, h, 25, sgr.s0);
-    selfguided_filter_8bpc(&mut dst1, &tmp, w, h, 9, sgr.s1);
+    #[cfg(target_arch = "x86_64")]
+    if let Some(token) = summon_avx2() {
+        selfguided_filter_8bpc_avx2(token, &mut dst0, &tmp, w, h, 25, sgr.s0);
+        selfguided_filter_8bpc_avx2(token, &mut dst1, &tmp, w, h, 9, sgr.s1);
+    } else {
+        selfguided_filter_8bpc(&mut dst0, &tmp, w, h, 25, sgr.s0);
+        selfguided_filter_8bpc(&mut dst1, &tmp, w, h, 9, sgr.s1);
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        selfguided_filter_8bpc(&mut dst0, &tmp, w, h, 25, sgr.s0);
+        selfguided_filter_8bpc(&mut dst1, &tmp, w, h, 9, sgr.s1);
+    }
 
     let w0 = sgr.w0 as i32;
     let w1 = sgr.w1 as i32;
