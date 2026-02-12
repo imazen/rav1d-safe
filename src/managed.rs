@@ -137,21 +137,14 @@ pub struct Settings {
     /// Enforce strict standard compliance
     pub strict_std_compliance: bool,
 
-    /// CPU feature flags mask (bitwise AND with detected features).
+    /// CPU feature level for SIMD dispatch.
     ///
-    /// Use this to disable specific SIMD code paths for testing.
-    /// Default is `u32::MAX` (all features enabled).
+    /// Controls which instruction sets the decoder is allowed to use.
+    /// Default is `CpuLevel::Native` (use all detected features).
     ///
-    /// # x86_64 flag bits
-    /// - `1 << 0` = SSE2
-    /// - `1 << 1` = SSSE3
-    /// - `1 << 2` = SSE4.1
-    /// - `1 << 3` = AVX2
-    /// - `1 << 4` = AVX-512 ICL
-    ///
-    /// Setting to `0` forces scalar-only decode. Setting to `0b0111` (7) allows
-    /// up to SSE4.1 but disables AVX2 and AVX-512.
-    pub cpu_flags_mask: u32,
+    /// Set to a lower level to force the decoder through a specific code path,
+    /// e.g. `CpuLevel::Scalar` to test the pure-Rust fallback.
+    pub cpu_level: CpuLevel,
 }
 
 impl Default for Settings {
@@ -171,7 +164,7 @@ impl Default for Settings {
             inloop_filters: InloopFilters::all(),
             decode_frame_type: DecodeFrameType::All,
             strict_std_compliance: false,
-            cpu_flags_mask: u32::MAX,
+            cpu_level: CpuLevel::Native,
         }
     }
 }
@@ -267,6 +260,151 @@ impl From<DecodeFrameType> for Rav1dDecodeFrameType {
     }
 }
 
+/// CPU feature level for SIMD dispatch control.
+///
+/// Controls which instruction sets the decoder is allowed to use at runtime.
+/// Higher levels include all instructions from lower levels. Setting a level
+/// that isn't available on the current hardware is safe — it falls back to
+/// the highest available level below it.
+///
+/// Use [`CpuLevel::platform_levels()`] to discover which levels are testable
+/// on the current hardware.
+///
+/// # Example
+///
+/// ```no_run
+/// use rav1d_safe::src::managed::{Decoder, Settings, CpuLevel};
+///
+/// // Force scalar-only decode (no SIMD)
+/// let mut decoder = Decoder::with_settings(Settings {
+///     cpu_level: CpuLevel::Scalar,
+///     ..Default::default()
+/// }).unwrap();
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum CpuLevel {
+    /// No SIMD — pure scalar Rust. Works on all platforms. Slowest.
+    Scalar,
+
+    /// x86-64-v2: SSE2 + SSSE3 + SSE4.1.
+    /// Baseline for most x86-64 CPUs since ~2008.
+    X86V2,
+
+    /// x86-64-v3: V2 + AVX2 + FMA.
+    /// Haswell (2013) and newer. This is the primary SIMD path for rav1d-safe.
+    X86V3,
+
+    /// x86-64-v4: V3 + AVX-512 (Ice Lake subset).
+    /// Ice Lake (2019) and newer. Only used for a few functions in rav1d.
+    X86V4,
+
+    /// ARM NEON baseline (mandatory on AArch64).
+    Neon,
+
+    /// ARM NEON + dot product instructions (ARMv8.2+).
+    NeonDotprod,
+
+    /// ARM NEON + i8mm instructions (ARMv8.6+).
+    NeonI8mm,
+
+    /// Use all features detected at runtime. Default.
+    Native,
+}
+
+impl CpuLevel {
+    /// Convert to the raw bitmask for [`crate::src::cpu::rav1d_set_cpu_flags_mask`].
+    ///
+    /// On a platform where the level doesn't apply (e.g. `X86V3` on ARM),
+    /// returns `0` (scalar).
+    pub const fn to_mask(self) -> u32 {
+        match self {
+            Self::Scalar => 0,
+
+            // x86_64 flags: SSE2=0, SSSE3=1, SSE41=2, AVX2=3, AVX512ICL=4
+            Self::X86V2 => {
+                (1 << 0) | (1 << 1) | (1 << 2) // SSE2 + SSSE3 + SSE4.1
+            }
+            Self::X86V3 => {
+                (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) // + AVX2
+            }
+            Self::X86V4 => {
+                (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) // + AVX-512 ICL
+            }
+
+            // aarch64 flags: NEON=0, DOTPROD=1, I8MM=2, SVE=3, SVE2=4
+            Self::Neon => 1 << 0,
+            Self::NeonDotprod => (1 << 0) | (1 << 1),
+            Self::NeonI8mm => (1 << 0) | (1 << 1) | (1 << 2),
+
+            Self::Native => u32::MAX,
+        }
+    }
+
+    /// List all CPU levels relevant to the current platform, from most
+    /// restrictive (Scalar) to least restrictive (Native).
+    ///
+    /// Only includes levels that differ in behavior on this platform.
+    /// For example, on x86_64 this returns `[Scalar, X86V2, X86V3, X86V4, Native]`.
+    pub fn platform_levels() -> &'static [CpuLevel] {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            &[
+                CpuLevel::Scalar,
+                CpuLevel::X86V2,
+                CpuLevel::X86V3,
+                CpuLevel::X86V4,
+                CpuLevel::Native,
+            ]
+        }
+        #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
+        {
+            &[
+                CpuLevel::Scalar,
+                CpuLevel::Neon,
+                CpuLevel::NeonDotprod,
+                CpuLevel::NeonI8mm,
+                CpuLevel::Native,
+            ]
+        }
+        #[cfg(not(any(
+            target_arch = "x86",
+            target_arch = "x86_64",
+            target_arch = "arm",
+            target_arch = "aarch64",
+        )))]
+        {
+            &[CpuLevel::Scalar, CpuLevel::Native]
+        }
+    }
+
+    /// Short human-readable name for this level.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Scalar => "scalar",
+            Self::X86V2 => "x86-64-v2",
+            Self::X86V3 => "x86-64-v3",
+            Self::X86V4 => "x86-64-v4",
+            Self::Neon => "neon",
+            Self::NeonDotprod => "neon-dotprod",
+            Self::NeonI8mm => "neon-i8mm",
+            Self::Native => "native",
+        }
+    }
+}
+
+impl Default for CpuLevel {
+    fn default() -> Self {
+        Self::Native
+    }
+}
+
+impl std::fmt::Display for CpuLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 /// Safe AV1 decoder instance
 ///
 /// This is the main entry point for decoding AV1 video. It wraps the internal
@@ -300,8 +438,8 @@ impl Decoder {
 
     /// Create a decoder with custom settings
     pub fn with_settings(settings: Settings) -> Result<Self> {
-        // Apply CPU flags mask before decoder init (affects SIMD dispatch)
-        crate::src::cpu::rav1d_set_cpu_flags_mask(settings.cpu_flags_mask);
+        // Apply CPU feature level mask before decoder init (affects SIMD dispatch)
+        crate::src::cpu::rav1d_set_cpu_flags_mask(settings.cpu_level.to_mask());
 
         let rav1d_settings: Rav1dSettings = settings.into();
         let (ctx, worker_handles) =
