@@ -225,8 +225,9 @@ fn wiener_filter5_8bpc_avx2_inner(
 
 /// Wiener filter 7-tap for 8bpc using AVX-512
 ///
-/// Vertical pass processes 16 pixels per iteration (vs 8 with AVX2).
-/// Uses _mm512_cvtusepi32_epi8 for direct i32 → u8 conversion.
+/// Both passes use AVX-512: 16 pixels/iter.
+/// Horizontal: u8→i32 via cvtepu8_epi32, 7-tap FIR, pack to u16.
+/// Vertical: u16→i32, multiply-accumulate, cvtusepi32_epi8 for output.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn wiener_filter7_8bpc_avx512_inner(
@@ -250,18 +251,66 @@ fn wiener_filter7_8bpc_avx512_inner(
     let rounding_off_h = 1i32 << (round_bits_h - 1);
     let clip_limit = 1i32 << (8 + 1 + 7 - round_bits_h); // = 8192
 
-    // Horizontal pass (scalar — same as AVX2 version)
+    // AVX-512 horizontal filter pass — 16 pixels per iteration
+    // Pre-compute combined center coefficient (center pixel gets +128 for 8bpc)
+    let hf0 = _mm512_set1_epi32(filter[0][0] as i32);
+    let hf1 = _mm512_set1_epi32(filter[0][1] as i32);
+    let hf2 = _mm512_set1_epi32(filter[0][2] as i32);
+    let hf3 = _mm512_set1_epi32(filter[0][3] as i32 + 128); // center tap + 128
+    let hf4 = _mm512_set1_epi32(filter[0][4] as i32);
+    let hf5 = _mm512_set1_epi32(filter[0][5] as i32);
+    let hf6 = _mm512_set1_epi32(filter[0][6] as i32);
+    let dc_offset = _mm512_set1_epi32(1i32 << 14);
+    let h_rounding = _mm512_set1_epi32(rounding_off_h);
+    let h_clip_max = _mm512_set1_epi32(clip_limit - 1);
+    let h_zero = _mm512_setzero_si512();
+
     for row in 0..(h + 6) {
         let tmp_row = &tmp[row * REST_UNIT_STRIDE..];
         let hor_row = &mut hor[row * REST_UNIT_STRIDE..row * REST_UNIT_STRIDE + w];
 
-        for x in 0..w {
+        let mut x = 0;
+        while x + 16 <= w {
+            // Load 16 bytes at each of 7 tap positions, expand u8 → i32
+            let p0 = _mm512_cvtepu8_epi32(loadu_128!(&tmp_row[x..x + 16], [u8; 16]));
+            let p1 = _mm512_cvtepu8_epi32(loadu_128!(&tmp_row[x + 1..x + 17], [u8; 16]));
+            let p2 = _mm512_cvtepu8_epi32(loadu_128!(&tmp_row[x + 2..x + 18], [u8; 16]));
+            let p3 = _mm512_cvtepu8_epi32(loadu_128!(&tmp_row[x + 3..x + 19], [u8; 16]));
+            let p4 = _mm512_cvtepu8_epi32(loadu_128!(&tmp_row[x + 4..x + 20], [u8; 16]));
+            let p5 = _mm512_cvtepu8_epi32(loadu_128!(&tmp_row[x + 5..x + 21], [u8; 16]));
+            let p6 = _mm512_cvtepu8_epi32(loadu_128!(&tmp_row[x + 6..x + 22], [u8; 16]));
+
+            // 7-tap FIR: sum = DC + sum(pixel[x+k] * coeff[k])
+            let mut sum = dc_offset;
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p0, hf0));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p1, hf1));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p2, hf2));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p3, hf3));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p4, hf4));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p5, hf5));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p6, hf6));
+
+            // Round, shift, clamp to [0, clip_limit-1]
+            sum = _mm512_add_epi32(sum, h_rounding);
+            sum = _mm512_srai_epi32::<3>(sum); // round_bits_h = 3 for 8bpc
+            sum = _mm512_max_epi32(sum, h_zero);
+            sum = _mm512_min_epi32(sum, h_clip_max);
+
+            // Pack i32 → u16 (values in [0, 8191], fits u16)
+            let result_u16: __m256i = _mm512_cvtusepi32_epi16(sum);
+            storeu_256!(&mut hor_row[x..x + 16], [u16; 16], result_u16);
+            x += 16;
+        }
+
+        // Scalar tail
+        while x < w {
             let mut sum = 1i32 << 14;
             sum += tmp_row[x + 3] as i32 * 128;
             for k in 0..7 {
                 sum += tmp_row[x + k] as i32 * filter[0][k] as i32;
             }
             hor_row[x] = iclip((sum + rounding_off_h) >> round_bits_h, 0, clip_limit - 1) as u16;
+            x += 1;
         }
     }
 
@@ -449,10 +498,9 @@ fn wiener_filter5_8bpc_avx512_inner(
 
 /// Wiener filter 7-tap for 16bpc using AVX-512
 ///
-/// Horizontal pass is scalar (data-dependent 7-tap convolution).
-/// Vertical pass uses AVX-512: 16 i32 pixels/iter with _mm512_mullo_epi32.
-/// Output via _mm512_cvtusepi32_epi16 (unsigned saturating i32→u16),
-/// with negative clamping via _mm512_max_epi32 first.
+/// Both passes use AVX-512: 16 pixels/iter.
+/// Horizontal: u16→i32 via cvtepu16_epi32, 7-tap FIR, store as i32.
+/// Vertical: i32 multiply-accumulate, cvtusepi32_epi16 for output.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn wiener_filter7_16bpc_avx512_inner(
@@ -479,17 +527,67 @@ fn wiener_filter7_16bpc_avx512_inner(
     let rounding_off_h = 1i32 << (round_bits_h - 1);
     let clip_limit = 1i32 << (bitdepth + 1 + 7 - round_bits_h);
 
-    // Horizontal pass (scalar)
+    // AVX-512 horizontal filter pass — 16 pixels per iteration
+    let hf0 = _mm512_set1_epi32(filter[0][0] as i32);
+    let hf1 = _mm512_set1_epi32(filter[0][1] as i32);
+    let hf2 = _mm512_set1_epi32(filter[0][2] as i32);
+    let hf3 = _mm512_set1_epi32(filter[0][3] as i32);
+    let hf4 = _mm512_set1_epi32(filter[0][4] as i32);
+    let hf5 = _mm512_set1_epi32(filter[0][5] as i32);
+    let hf6 = _mm512_set1_epi32(filter[0][6] as i32);
+    let dc_offset_h = _mm512_set1_epi32(1i32 << (bitdepth + 6));
+    let h_rounding = _mm512_set1_epi32(rounding_off_h);
+    let h_clip_max = _mm512_set1_epi32(clip_limit - 1);
+    let h_zero = _mm512_setzero_si512();
+
     for row in 0..(h + 6) {
         let tmp_row = &tmp[row * REST_UNIT_STRIDE..];
         let hor_row = &mut hor[row * REST_UNIT_STRIDE..row * REST_UNIT_STRIDE + w];
 
-        for x in 0..w {
+        let mut x = 0;
+        while x + 16 <= w {
+            // Load 16 u16 at each of 7 tap positions, expand u16 → i32
+            let p0 = _mm512_cvtepu16_epi32(loadu_256!(&tmp_row[x..x + 16], [u16; 16]));
+            let p1 = _mm512_cvtepu16_epi32(loadu_256!(&tmp_row[x + 1..x + 17], [u16; 16]));
+            let p2 = _mm512_cvtepu16_epi32(loadu_256!(&tmp_row[x + 2..x + 18], [u16; 16]));
+            let p3 = _mm512_cvtepu16_epi32(loadu_256!(&tmp_row[x + 3..x + 19], [u16; 16]));
+            let p4 = _mm512_cvtepu16_epi32(loadu_256!(&tmp_row[x + 4..x + 20], [u16; 16]));
+            let p5 = _mm512_cvtepu16_epi32(loadu_256!(&tmp_row[x + 5..x + 21], [u16; 16]));
+            let p6 = _mm512_cvtepu16_epi32(loadu_256!(&tmp_row[x + 6..x + 22], [u16; 16]));
+
+            // 7-tap FIR: sum = DC + sum(pixel[x+k] * coeff[k])
+            let mut sum = dc_offset_h;
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p0, hf0));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p1, hf1));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p2, hf2));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p3, hf3));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p4, hf4));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p5, hf5));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p6, hf6));
+
+            // Round, shift, clamp to [0, clip_limit-1]
+            sum = _mm512_add_epi32(sum, h_rounding);
+            let shifted = if bitdepth == 12 {
+                _mm512_srai_epi32::<5>(sum)
+            } else {
+                _mm512_srai_epi32::<3>(sum)
+            };
+            let clamped = _mm512_max_epi32(shifted, h_zero);
+            let clamped = _mm512_min_epi32(clamped, h_clip_max);
+
+            // Store 16 i32 values to hor buffer
+            storeu_512!(&mut hor_row[x..x + 16], [i32; 16], clamped);
+            x += 16;
+        }
+
+        // Scalar tail
+        while x < w {
             let mut sum = 1i32 << (bitdepth + 6);
             for k in 0..7 {
                 sum += tmp_row[x + k] as i32 * filter[0][k] as i32;
             }
             hor_row[x] = iclip((sum + rounding_off_h) >> round_bits_h, 0, clip_limit - 1);
+            x += 1;
         }
     }
 
