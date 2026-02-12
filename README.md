@@ -135,34 +135,44 @@ Every DSP kernel family has a safe Rust SIMD implementation that compiles under 
 | filmgrain | 3+common files x2 bitdepths | 2 files x2 bitdepths | `filmgrain.rs` + `filmgrain_arm.rs` |
 | pal (palette) | 1 file | *(none — ARM uses scalar)* | `pal.rs` |
 | refmvs (reference MVs) | 1 file | 2 files (32+64-bit) | `refmvs.rs` + `refmvs_arm.rs` |
-| msac symbol_adapt16 | 1 file (shared) | 1 file (shared) | inline in `msac.rs` |
+| msac (entropy decoder) | 1 file (shared) | 1 file (shared) | inline in `msac.rs` |
 | cpuid | 1 file (55 lines) | — | replaced by `std::arch` detection in `cpu.rs` |
 
-### Skipped (With Rationale)
+msac coverage: symbol_adapt4, symbol_adapt8, symbol_adapt16, and hi_tok all have SSE2 (x86_64) and NEON (aarch64) SIMD for both comparison and CDF update. The bool functions (bool_adapt, bool_equi) remain scalar — they have no data parallelism to exploit.
 
-**msac small-symbol functions** (symbol_adapt4, symbol_adapt8, bool_adapt, bool_equi, hi_tok) — The ASM versions exist for SSE2 and NEON (~1,200 lines total across x86+ARM), but profiling shows SIMD overhead exceeds the benefit for these small-n operations. The scalar Rust fallback is used. These functions are hot (msac is 32% of unchecked decode time), but the bottleneck is branch prediction and serial dependency chains, not data parallelism.
+### Not Ported (With Rationale)
+
+**Scaled MC** (put_8tap_scaled, prep_8tap_scaled, put_bilin_scaled, prep_bilin_scaled) — These functions use per-pixel variable step sizes with per-pixel filter selection, making them fundamentally different from fixed-block MC. The ASM versions are heavily register-scheduled for this pattern. Currently falls back to scalar Rust. ~2% of profile on inter-frame content.
 
 **SSE-only paths** — 14 files, ~52k lines. The safe SIMD dispatch jumps straight to AVX2 when available. On pre-AVX2 hardware (pre-Haswell, 2013), the decoder falls back to scalar Rust rather than SSE intrinsics. This is a deliberate tradeoff: SSE-only x86 hardware is rare enough that maintaining a second intrinsics tier isn't worth the code.
 
 **ARM SVE2, dotprod, i8mm extensions** — `mc_dotprod.S` (1,880 lines) and `mc16_sve.S` (1,649 lines) are optional fast paths for newer ARM cores. The safe SIMD covers baseline NEON; these extension paths fall back to the NEON implementation.
 
+**AVX-512 paths** — 12 files, ~26k lines across all DSP modules. Currently falls back to the AVX2 safe path. Porting these would improve throughput on Zen 4, Ice Lake, and later. The work is straightforward (same algorithms, wider vectors) but substantial.
+
 **ASM infrastructure files** — `x86inc.asm` (1,983 lines), `asm.S`, `util.S`, `*_tmpl.S`, `*_common.S` are macro libraries and constants that only exist to support the raw assembly. No independent functionality to port.
-
-### TODO
-
-**AVX-512** — 12 files, ~26k lines across all DSP modules. Currently falls back to the AVX2 safe path. Porting these would improve throughput on Zen 4, Ice Lake, and later. The work is straightforward (same algorithms, wider vectors) but substantial.
 
 ## Performance
 
-Benchmarked on x86_64 (AVX2), single-threaded, 500 iterations via `examples/profile_decode`:
+Benchmarked on x86_64 (Zen 4, AVX2), single-threaded, 500 iterations. Run via `just profile`.
 
-| Build | kodim03 8bpc (768x512) | colors_hdr 16bpc |
-|-------|------------------------|------------------|
-| ASM (hand-written assembly) | 3.6 ms/frame | 1.0 ms/frame |
-| Safe-SIMD (default, fully checked) | 21.2 ms/frame | 2.4 ms/frame |
-| Safe-SIMD + `unchecked` feature | 15.4 ms/frame | 1.9 ms/frame |
+**allintra 8bpc (352x288, 39 frames):**
 
-The `unchecked` feature disables DisjointMut runtime borrow tracking and slice bounds checks, giving ~27% speedup on 8bpc. The remaining gap vs ASM is function call and inlining differences — the safe SIMD uses the same AVX2 intrinsics but through Rust's calling conventions rather than hand-tuned register allocation.
+| Build | ms/frame | vs ASM |
+|-------|----------|--------|
+| ASM (hand-written assembly) | 2.65 | 1.0x |
+| Safe-SIMD (default, `forbid(unsafe_code)`) | 4.91 | 1.85x |
+| Safe-SIMD + `unchecked` feature | 4.53 | 1.71x |
+
+**10-bit film grain (10 frames):**
+
+| Build | ms/frame | vs ASM |
+|-------|----------|--------|
+| ASM (hand-written assembly) | 1.06 | 1.0x |
+| Safe-SIMD (default, `forbid(unsafe_code)`) | 3.53 | 3.33x |
+| Safe-SIMD + `unchecked` feature | 3.32 | 3.13x |
+
+The checked-to-unchecked gap is ~8%, meaning the DisjointMut runtime borrow tracker adds modest overhead. The remaining gap vs ASM comes from: Rust calling conventions vs hand-tuned register allocation, scaled MC still using scalar fallback, and the entropy decoder (msac) being a serial dependency chain where SIMD helps with CDF updates but not the core decode loop.
 
 ## Building
 

@@ -115,3 +115,32 @@ bench-asm:
 # Run panic safety tests specifically
 test-panic:
     cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --test panic_safety_test --release
+
+# Profile decode: all three modes (asm, safe checked, safe unchecked)
+# Uses allintra 8bpc 352x288 (39 frames) and 10-bit film grain (10 frames)
+profile iters="500":
+    #!/usr/bin/env bash
+    set -e
+    IVF8="test-vectors/dav1d-test-data/8-bit/intra/av1-1-b8-02-allintra.ivf"
+    IVF10="test-vectors/dav1d-test-data/10-bit/film_grain/av1-1-b10-23-film_grain-50.ivf"
+
+    echo "=== ASM (hand-written assembly) ==="
+    cargo build --release --features "asm,bitdepth_8,bitdepth_16" --example profile_decode 2>/dev/null
+    ./target/release/examples/profile_decode "$IVF8" {{iters}} 2>&1
+    ./target/release/examples/profile_decode "$IVF10" {{iters}} 2>&1
+    echo ""
+
+    echo "=== Safe-SIMD (checked, forbid(unsafe_code)) ==="
+    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example profile_decode 2>/dev/null
+    ./target/release/examples/profile_decode "$IVF8" {{iters}} 2>&1
+    ./target/release/examples/profile_decode "$IVF10" {{iters}} 2>&1
+    echo ""
+
+    echo "=== Safe-SIMD (unchecked bounds) ==="
+    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" --example profile_decode 2>/dev/null
+    ./target/release/examples/profile_decode "$IVF8" {{iters}} 2>&1
+    ./target/release/examples/profile_decode "$IVF10" {{iters}} 2>&1
+
+# Quick profile (100 iterations)
+profile-quick:
+    just profile 100

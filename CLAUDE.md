@@ -1,55 +1,56 @@
 # rav1d-safe
 
-## DO NOT STOP - KEEP PORTING ASM TO SAFE RUST
+Safe SIMD fork of rav1d — 160k lines of hand-written assembly replaced by safe Rust intrinsics.
 
-**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
-**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
-**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
-**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
-**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
-**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
-**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
-**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
-**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
-**DO NOT STOP PORTING ASM. JUST KEEP GOING. DO NOT ASK WHICH MODULE TO PORT NEXT.**
+## Porting Status
 
-Pick the next unfinished module and port it. Priority order:
-1. ~~ipred (~26k lines)~~ **COMPLETE** (all 14 modes, 8bpc + 16bpc)
-2. ~~ITX (~11k lines)~~ **COMPLETE** (160 transforms each for 8bpc/16bpc)
-3. ~~loopfilter/CDEF~~ **COMPLETE** (8bpc + 16bpc)
-4. ~~looprestoration~~ **COMPLETE** (Wiener + SGR 8bpc + 16bpc)
-5. ~~ARM NEON mc~~ **COMPLETE** (all 8tap filters, 8bpc + 16bpc)
-6. ~~filmgrain~~ **COMPLETE** (x86 + ARM, 8bpc + 16bpc)
-7. ~~pal~~ **COMPLETE** (x86 AVX2, ARM uses fallback)
-8. ~~refmvs~~ **COMPLETE** (x86 AVX2 + ARM NEON)
+**All major DSP modules ported.** 59k lines of safe Rust SIMD in `src/safe_simd/`.
 
-**ALL MODULES COMPLETE!** msac now has full SIMD: adapt4/adapt8/hi_tok (SSE2/NEON) + adapt16 (AVX2/NEON).
+Completed modules (AVX2 + NEON, 8bpc + 16bpc):
+- mc (motion compensation) — including warp_affine
+- itx (inverse transforms) — 160 transforms each bpc
+- ipred (intra prediction) — all 14 modes
+- cdef (directional enhancement)
+- loopfilter
+- looprestoration (Wiener + SGR)
+- filmgrain
+- pal (palette)
+- refmvs (reference MVs)
+- msac (symbol_adapt4/8/16, hi_tok — SSE2 + NEON)
 
-Safe SIMD fork of rav1d - replacing 160k lines of hand-written assembly with safe Rust intrinsics.
+**Remaining (not ported, scalar fallback):**
+- Scaled MC (put_8tap_scaled, prep_8tap_scaled, bilin_scaled) — complex per-pixel filter selection, ~2% of profile
+- AVX-512 paths (~26k lines) — falls back to AVX2
+- SSE-only paths (~52k lines) — falls back to scalar
+- ARM SVE2, dotprod, i8mm — falls back to NEON
 
-## NO PERFORMANCE WORK UNTIL 100% DECODE PARITY
+## Conformance
 
-**DO NOT do any performance optimization until pixel-perfect decode parity is verified.**
-**DO NOT do any performance optimization until pixel-perfect decode parity is verified.**
-**DO NOT do any performance optimization until pixel-perfect decode parity is verified.**
+784/803 dav1d test vectors pass at all bit depths and all CPU levels (scalar, SSE4, AVX2).
+19 failures are infrastructure (1 sframe, 6 SVC operating points, 12 vq_suite decode modes).
 
-This means:
-1. All 761 dav1d test vectors (8-bit/10-bit/12-bit) must produce MD5 hashes matching the reference values in `test-vectors/dav1d-test-data/*/data/meson.build`
-2. The MD5 verification tests must run automatically via `cargo test` (not `#[ignore]`)
-3. Any decode mismatch is a **correctness bug** that MUST be fixed before any perf work
+## Benchmarks (2026-02-12)
 
-**What counts as "performance work":**
-- AVX2/NEON SIMD optimization of existing functions
-- Branchless/lookup table optimizations
-- Memory layout changes for cache efficiency
-- BorrowTracker overhead reduction
-- Any change whose primary goal is speed rather than correctness
+Run via `just profile`. Test vectors from dav1d-test-data, single-threaded, 500 iterations.
 
-**What is still allowed:**
-- Fixing decode correctness bugs (mismatches vs reference MD5)
-- Building/improving test infrastructure
-- Code cleanup and refactoring for correctness
-- Bug fixes discovered by test vectors
+**allintra 8bpc (352x288, 39 frames):**
+
+| Build | ms/iter | ms/frame | vs ASM |
+|-------|---------|----------|--------|
+| ASM | 103.5 | 2.65 | 1.0x |
+| Safe-SIMD (checked) | 191.6 | 4.91 | 1.85x |
+| Safe-SIMD (unchecked) | 176.5 | 4.53 | 1.71x |
+
+**10-bit film grain (10 frames):**
+
+| Build | ms/iter | ms/frame | vs ASM |
+|-------|---------|----------|--------|
+| ASM | 10.6 | 1.06 | 1.0x |
+| Safe-SIMD (checked) | 35.3 | 3.53 | 3.33x |
+| Safe-SIMD (unchecked) | 33.2 | 3.32 | 3.13x |
+
+Checked→unchecked gap is small (~8%), meaning DisjointMut borrow tracking adds modest overhead.
+The 10-bit gap is larger because these are tiny frames where per-frame overhead dominates.
 
 ## MANDATORY: Safe intrinsics strategy
 
@@ -124,18 +125,11 @@ This means: **every `#[allow(unsafe_code)]` in the codebase MUST be gated behind
 ## Quick Commands
 
 ```bash
-# Build without asm (pure Rust + SIMD intrinsics)
-cargo build --no-default-features --features "bitdepth_8,bitdepth_16" --release
-
-# Build with asm (original rav1d behavior)
-cargo build --features "asm,bitdepth_8,bitdepth_16" --release
-
-# Run tests
-cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release
-
-# Benchmark via zenavif (20 decodes)
-cd /home/lilith/work/zenavif && touch src/lib.rs && cargo build --release --example decode_avif
-time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/work/aom-decode/tests/test.avif /dev/null 2>/dev/null; done
+just build          # Safe-SIMD build
+just build-asm      # ASM build
+just test           # Run tests
+just profile        # Benchmark all 3 modes (asm, checked, unchecked)
+just profile-quick  # Same but 100 iterations
 ```
 
 ## Feature Flags
@@ -175,54 +169,10 @@ time for i in {1..20}; do ./target/release/examples/decode_avif /home/lilith/wor
 | refmvs_arm | `src/safe_simd/refmvs_arm.rs` | **Complete** - splat_mv NEON |
 | msac | `src/msac.rs` (inline) | **Complete** - adapt4/adapt8/hi_tok + adapt16 NEON |
 
-## Performance Status (2026-02-09)
+## Cross-compilation
 
-Profiling: 39 frames, 8bpc allintra, release-with-debug, perf stat:
-- ASM: 156ms (baseline)
-- Safe-SIMD (unchecked): 197ms (1.26x vs asm)
-- Safe-SIMD (checked): 293ms (1.88x vs asm)
-
-**Bottleneck #1: DisjointMut BorrowTracker** — 40% of checked decode time.
-Fixed: `unchecked` feature now skips tracker entirely (was only unlocking unused constructor).
-
-**Bottleneck #2: msac entropy decoder** — 32% of unchecked decode time.
-All symbol_adapt functions now have SIMD: adapt4/adapt8/hi_tok use SSE2 (x86) / NEON (ARM),
-adapt16 uses AVX2 (x86) / NEON (ARM). Bool functions remain scalar (optimal as-is).
-
-**SIMD modules are NOT the bottleneck** — looprestoration 6.4%, cdef 5.4%, itx 2.2%, ipred 1.8%.
-
-Previous zenavif benchmark (2026-02-05, full-stack AVIF decode):
-- ASM: ~1.17s (20 decodes)
-- Safe-SIMD: ~1.11s (20 decodes)
-- Note: zenavif currently broken (API mismatch), numbers may be stale
-
-## Porting Progress (160k lines target)
-
-**SIMD optimized (~32k lines in safe_simd/):**
-- MC x86 module (~5k lines): Complete (8bpc + 16bpc)
-- MC ARM module (~4k lines): Complete (8bpc + 16bpc all filters including 8tap)
-- ITX x86 module (~12k lines): **100% complete** (160 transforms each 8bpc/16bpc)
-- ITX ARM module (~6k lines): **100% complete** (334 FFI functions, 320 dispatch entries)
-- Loopfilter (~9k lines): Complete (8bpc + 16bpc)
-- CDEF (~7k lines): Complete (8bpc + 16bpc)
-- Looprestoration (~17k lines): Complete (Wiener + SGR 8bpc + 16bpc)
-- ipred (~26k lines): Complete (all 14 modes, 8bpc + 16bpc)
-- filmgrain x86 (~1k lines) + ARM (~750 lines): Complete (8bpc + 16bpc)
-- pal x86 (~150 lines): Complete (AVX2 pal_idx_finish)
-- refmvs x86 (~60 lines) + ARM (~50 lines): Complete (splat_mv)
-
-**msac (inline in src/msac.rs):**
-- symbol_adapt4/adapt8: SSE2 (x86_64) and NEON (aarch64) - parallel CDF comparison via SIMD
-- symbol_adapt16: AVX2 (x86_64) and NEON (aarch64) - parallelized CDF probability calc and comparison
-- hi_tok: SSE2 (x86_64) and NEON (aarch64) - monolithic loop with inline adapt4 + renorm + refill
-- bool functions: Use scalar Rust fallback (pure GPR, SIMD not beneficial)
-
-**Using Rust fallbacks (SIMD not beneficial):**
-- refmvs save_tmvs/load_tmvs: Complex conditional logic, not SIMD-friendly
-
-**Cross-compilation:**
-- x86_64: Full support, matches ASM performance
-- aarch64: Full support (cargo check --target aarch64-unknown-linux-gnu passes)
+- x86_64: Full support (AVX2 SIMD + SSE2 msac)
+- aarch64: Full support, NEON (cargo check --target aarch64-unknown-linux-gnu passes)
 
 ## Architecture
 
