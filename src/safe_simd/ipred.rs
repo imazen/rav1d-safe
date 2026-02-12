@@ -454,6 +454,155 @@ fn ipred_h_8bpc_avx512_inner(
 }
 
 // ============================================================================
+// DC Prediction AVX-512 variants (8bpc)
+// ============================================================================
+
+/// DC prediction using AVX-512 (64-byte stores)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_8bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let mut sum: u32 = 0;
+    for x in 0..width {
+        sum += topleft[tl_off + 1 + x] as u32;
+    }
+    for y in 0..height {
+        sum += topleft[tl_off - y - 1] as u32;
+    }
+    let total = width + height;
+    let dc_val = ((sum + (total as u32 >> 1)) / total as u32) as u8;
+
+    let fill_512 = _mm512_set1_epi8(dc_val as i8);
+    let fill_256 = _mm256_set1_epi8(dc_val as i8);
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let row = &mut dst[row_off..][..width];
+        let mut x = 0;
+        while x + 64 <= width {
+            storeu_512!((&mut row[x..x + 64]), [u8; 64], fill_512);
+            x += 64;
+        }
+        while x + 32 <= width {
+            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_256);
+            x += 32;
+        }
+        while x + 16 <= width {
+            storeu_128!(&mut row[x..x + 16], [u8; 16], _mm256_castsi256_si128(fill_256));
+            x += 16;
+        }
+        while x < width {
+            row[x] = dc_val;
+            x += 1;
+        }
+    }
+}
+
+/// DC_TOP prediction using AVX-512 (64-byte stores)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_top_8bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let mut sum: u32 = 0;
+    for x in 0..width {
+        sum += topleft[tl_off + 1 + x] as u32;
+    }
+    let dc_val = ((sum + (width as u32 >> 1)) / width as u32) as u8;
+
+    let fill_512 = _mm512_set1_epi8(dc_val as i8);
+    let fill_256 = _mm256_set1_epi8(dc_val as i8);
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let row = &mut dst[row_off..][..width];
+        let mut x = 0;
+        while x + 64 <= width {
+            storeu_512!((&mut row[x..x + 64]), [u8; 64], fill_512);
+            x += 64;
+        }
+        while x + 32 <= width {
+            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_256);
+            x += 32;
+        }
+        while x + 16 <= width {
+            storeu_128!(&mut row[x..x + 16], [u8; 16], _mm256_castsi256_si128(fill_256));
+            x += 16;
+        }
+        while x < width {
+            row[x] = dc_val;
+            x += 1;
+        }
+    }
+}
+
+/// DC_LEFT prediction using AVX-512 (64-byte stores)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_left_8bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let mut sum: u32 = 0;
+    for y in 0..height {
+        sum += topleft[tl_off - y - 1] as u32;
+    }
+    let dc_val = ((sum + (height as u32 >> 1)) / height as u32) as u8;
+
+    let fill_512 = _mm512_set1_epi8(dc_val as i8);
+    let fill_256 = _mm256_set1_epi8(dc_val as i8);
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let row = &mut dst[row_off..][..width];
+        let mut x = 0;
+        while x + 64 <= width {
+            storeu_512!((&mut row[x..x + 64]), [u8; 64], fill_512);
+            x += 64;
+        }
+        while x + 32 <= width {
+            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_256);
+            x += 32;
+        }
+        while x + 16 <= width {
+            storeu_128!(&mut row[x..x + 16], [u8; 16], _mm256_castsi256_si128(fill_256));
+            x += 16;
+        }
+        while x < width {
+            row[x] = dc_val;
+            x += 1;
+        }
+    }
+}
+
+// ============================================================================
 // DC Prediction (average of top and left)
 // ============================================================================
 
@@ -2465,6 +2614,168 @@ fn ipred_h_16bpc_avx512_inner(
     }
 }
 
+// ============================================================================
+// DC Prediction AVX-512 variants (16bpc)
+// ============================================================================
+
+/// DC prediction for 16bpc using AVX-512
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_16bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let mut sum = 0u32;
+    for i in 1..=width {
+        let off = tl_off + i * 2;
+        sum += u16::from_ne_bytes(topleft[off..off + 2].try_into().unwrap()) as u32;
+    }
+    for i in 1..=height {
+        let off = tl_off - i * 2;
+        sum += u16::from_ne_bytes(topleft[off..off + 2].try_into().unwrap()) as u32;
+    }
+    let count = (width + height) as u32;
+    let avg = ((sum + count / 2) / count) as u16;
+
+    let fill_512 = _mm512_set1_epi16(avg as i16);
+    let fill_256 = _mm256_set1_epi16(avg as i16);
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let mut x = 0usize;
+        while x + 32 <= width {
+            let off = row_off + x * 2;
+            storeu_512!((&mut dst[off..off + 64]), [u8; 64], fill_512);
+            x += 32;
+        }
+        while x + 16 <= width {
+            let off = row_off + x * 2;
+            storeu_256!((&mut dst[off..off + 32]), [u8; 32], fill_256);
+            x += 16;
+        }
+        while x + 8 <= width {
+            let off = row_off + x * 2;
+            storeu_128!((&mut dst[off..off + 16]), [u8; 16], _mm256_castsi256_si128(fill_256));
+            x += 8;
+        }
+        while x < width {
+            let off = row_off + x * 2;
+            dst[off..off + 2].copy_from_slice(&avg.to_ne_bytes());
+            x += 1;
+        }
+    }
+}
+
+/// DC_TOP prediction for 16bpc using AVX-512
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_top_16bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let mut sum = 0u32;
+    for i in 1..=width {
+        let off = tl_off + i * 2;
+        sum += u16::from_ne_bytes(topleft[off..off + 2].try_into().unwrap()) as u32;
+    }
+    let avg = ((sum + width as u32 / 2) / width as u32) as u16;
+
+    let fill_512 = _mm512_set1_epi16(avg as i16);
+    let fill_256 = _mm256_set1_epi16(avg as i16);
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let mut x = 0usize;
+        while x + 32 <= width {
+            let off = row_off + x * 2;
+            storeu_512!((&mut dst[off..off + 64]), [u8; 64], fill_512);
+            x += 32;
+        }
+        while x + 16 <= width {
+            let off = row_off + x * 2;
+            storeu_256!((&mut dst[off..off + 32]), [u8; 32], fill_256);
+            x += 16;
+        }
+        while x + 8 <= width {
+            let off = row_off + x * 2;
+            storeu_128!((&mut dst[off..off + 16]), [u8; 16], _mm256_castsi256_si128(fill_256));
+            x += 8;
+        }
+        while x < width {
+            let off = row_off + x * 2;
+            dst[off..off + 2].copy_from_slice(&avg.to_ne_bytes());
+            x += 1;
+        }
+    }
+}
+
+/// DC_LEFT prediction for 16bpc using AVX-512
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_left_16bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let mut sum = 0u32;
+    for i in 1..=height {
+        let off = tl_off - i * 2;
+        sum += u16::from_ne_bytes(topleft[off..off + 2].try_into().unwrap()) as u32;
+    }
+    let avg = ((sum + height as u32 / 2) / height as u32) as u16;
+
+    let fill_512 = _mm512_set1_epi16(avg as i16);
+    let fill_256 = _mm256_set1_epi16(avg as i16);
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let mut x = 0usize;
+        while x + 32 <= width {
+            let off = row_off + x * 2;
+            storeu_512!((&mut dst[off..off + 64]), [u8; 64], fill_512);
+            x += 32;
+        }
+        while x + 16 <= width {
+            let off = row_off + x * 2;
+            storeu_256!((&mut dst[off..off + 32]), [u8; 32], fill_256);
+            x += 16;
+        }
+        while x + 8 <= width {
+            let off = row_off + x * 2;
+            storeu_128!((&mut dst[off..off + 16]), [u8; 16], _mm256_castsi256_si128(fill_256));
+            x += 8;
+        }
+        while x < width {
+            let off = row_off + x * 2;
+            dst[off..off + 2].copy_from_slice(&avg.to_ne_bytes());
+            x += 1;
+        }
+    }
+}
+
 /// DC prediction for 16bpc: average of top and left edge pixels
 #[cfg(target_arch = "x86_64")]
 #[arcane]
@@ -3886,16 +4197,31 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     let tl_bytes: &[u8] = topleft.as_bytes();
 
     match (BD::BPC, mode) {
-        (BPC::BPC8, 0) => ipred_dc_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-        ),
+        (BPC::BPC8, 0) => {
+            if let Some(t512) = avx512_token {
+                ipred_dc_8bpc_avx512_inner(
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
+                )
+            } else {
+                ipred_dc_8bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
+                )
+            }
+        }
         (BPC::BPC8, 1) => {
             if let Some(t512) = avx512_token {
                 ipred_v_8bpc_avx512_inner(
@@ -3946,26 +4272,56 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 )
             }
         }
-        (BPC::BPC8, 3) => ipred_dc_left_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-        ),
-        (BPC::BPC8, 4) => ipred_dc_top_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-        ),
+        (BPC::BPC8, 3) => {
+            if let Some(t512) = avx512_token {
+                ipred_dc_left_8bpc_avx512_inner(
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
+                )
+            } else {
+                ipred_dc_left_8bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
+                )
+            }
+        }
+        (BPC::BPC8, 4) => {
+            if let Some(t512) = avx512_token {
+                ipred_dc_top_8bpc_avx512_inner(
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
+                )
+            } else {
+                ipred_dc_top_8bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
+                )
+            }
+        }
         (BPC::BPC8, 5) => {
             if let Some(t512) = avx512_token {
                 ipred_dc_128_8bpc_avx512_inner(
@@ -4056,16 +4412,29 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         (BPC::BPC8, 13) => return false,
         (BPC::BPC16, 0) => {
             let tl_off_bytes = topleft_off * 2;
-            ipred_dc_16bpc_inner(
-                token,
-                dst_bytes,
-                dst_base_bytes,
-                byte_stride,
-                tl_bytes,
-                tl_off_bytes,
-                w,
-                h,
-            )
+            if let Some(t512) = avx512_token {
+                ipred_dc_16bpc_avx512_inner(
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
+                )
+            } else {
+                ipred_dc_16bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
+                )
+            }
         }
         (BPC::BPC16, 1) => {
             let tl_off_bytes = topleft_off * 2;
@@ -4121,29 +4490,55 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         }
         (BPC::BPC16, 3) => {
             let tl_off_bytes = topleft_off * 2;
-            ipred_dc_left_16bpc_inner(
-                token,
-                dst_bytes,
-                dst_base_bytes,
-                byte_stride,
-                tl_bytes,
-                tl_off_bytes,
-                w,
-                h,
-            )
+            if let Some(t512) = avx512_token {
+                ipred_dc_left_16bpc_avx512_inner(
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
+                )
+            } else {
+                ipred_dc_left_16bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
+                )
+            }
         }
         (BPC::BPC16, 4) => {
             let tl_off_bytes = topleft_off * 2;
-            ipred_dc_top_16bpc_inner(
-                token,
-                dst_bytes,
-                dst_base_bytes,
-                byte_stride,
-                tl_bytes,
-                tl_off_bytes,
-                w,
-                h,
-            )
+            if let Some(t512) = avx512_token {
+                ipred_dc_top_16bpc_avx512_inner(
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
+                )
+            } else {
+                ipred_dc_top_16bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
+                )
+            }
         }
         (BPC::BPC16, 5) => {
             if let Some(t512) = avx512_token {

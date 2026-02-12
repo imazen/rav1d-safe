@@ -1298,6 +1298,124 @@ fn mask_8bpc_avx512_safe(
     }
 }
 
+/// Mask blend for 16-bit pixels using AVX-512 — 16 pixels/iter with 512-bit i32 arithmetic.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn mask_16bpc_avx512_safe(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    tmp1: &[i16; COMPINTER_LEN],
+    tmp2: &[i16; COMPINTER_LEN],
+    w: i32,
+    h: i32,
+    mask: &[u8],
+    bitdepth_max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let mask = mask.flex();
+    let w = w as usize;
+    let h = h as usize;
+    let max = bitdepth_max as i32;
+
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let sh = intermediate_bits + 6;
+    let rnd = (32 << intermediate_bits) + 8192 * 64;
+
+    let rnd_vec = _mm512_set1_epi32(rnd);
+    let zero = _mm512_setzero_si512();
+    let max_vec = _mm512_set1_epi32(max);
+    let sixty_four = _mm512_set1_epi32(64);
+
+    for row in 0..h {
+        let tmp1_row = &tmp1[row * w..][..w];
+        let tmp2_row = &tmp2[row * w..][..w];
+        let mask_row = &mask[row * w..][..w];
+        let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+
+        let mut col = 0usize;
+
+        // Process 16 pixels at a time with 512-bit i32 arithmetic
+        while col + 16 <= w {
+            let t1_16 = loadu_256!(&tmp1_row[col..col + 16], [i16; 16]);
+            let t2_16 = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
+            let t1 = _mm512_cvtepi16_epi32(t1_16);
+            let t2 = _mm512_cvtepi16_epi32(t2_16);
+
+            // Load 16 mask bytes via zero-extend to i32
+            let mask_128 = loadu_128!(&mask_row[col..col + 16], [u8; 16]);
+            let mask_32 = _mm512_cvtepu8_epi32(mask_128);
+
+            let inv_mask = _mm512_sub_epi32(sixty_four, mask_32);
+
+            let term1 = _mm512_mullo_epi32(t1, mask_32);
+            let term2 = _mm512_mullo_epi32(t2, inv_mask);
+            let sum = _mm512_add_epi32(_mm512_add_epi32(term1, term2), rnd_vec);
+
+            let result = if sh == 8 {
+                _mm512_srai_epi32::<8>(sum)
+            } else {
+                _mm512_srai_epi32::<10>(sum)
+            };
+            let clamped = _mm512_min_epi32(_mm512_max_epi32(result, zero), max_vec);
+
+            // Pack i32 → u16 with unsigned saturation (already clamped to [0, max])
+            let packed = _mm512_cvtusepi32_epi16(clamped);
+            storeu_256!(&mut dst_row[col..col + 16], [u16; 16], packed);
+
+            col += 16;
+        }
+
+        // Process 8 pixels at a time (AVX2 intrinsics available via #[arcane] context)
+        while col + 8 <= w {
+            let t1_16 = loadu_128!(&tmp1_row[col..col + 8], [i16; 8]);
+            let t2_16 = loadu_128!(&tmp2_row[col..col + 8], [i16; 8]);
+            let t1 = _mm256_cvtepi16_epi32(t1_16);
+            let t2 = _mm256_cvtepi16_epi32(t2_16);
+
+            let mut mask_pad = [0u8; 16];
+            mask_pad[..8].copy_from_slice(&mask_row[col..col + 8]);
+            let mask_bytes = loadu_128!(&mask_pad);
+            let mask_32 = _mm256_cvtepu8_epi32(mask_bytes);
+
+            let inv_mask_256 = _mm256_sub_epi32(_mm256_set1_epi32(64), mask_32);
+            let term1_256 = _mm256_mullo_epi32(t1, mask_32);
+            let term2_256 = _mm256_mullo_epi32(t2, inv_mask_256);
+            let sum_256 = _mm256_add_epi32(
+                _mm256_add_epi32(term1_256, term2_256),
+                _mm256_set1_epi32(rnd),
+            );
+            let result_256 = if sh == 8 {
+                _mm256_srai_epi32(sum_256, 8)
+            } else {
+                _mm256_srai_epi32(sum_256, 10)
+            };
+            let clamped_256 = _mm256_min_epi32(
+                _mm256_max_epi32(result_256, _mm256_setzero_si256()),
+                _mm256_set1_epi32(max),
+            );
+
+            let packed = _mm256_packus_epi32(clamped_256, clamped_256);
+            let lo128 = _mm256_castsi256_si128(packed);
+            let hi128 = _mm256_extracti128_si256(packed, 1);
+            let result_128 = _mm_unpacklo_epi64(lo128, hi128);
+            storeu_128!(&mut dst_row[col..col + 8], [u16; 8], result_128);
+
+            col += 8;
+        }
+
+        while col < w {
+            let a = tmp1_row[col] as i32;
+            let b = tmp2_row[col] as i32;
+            let m = mask_row[col] as i32;
+            let val = (a * m + b * (64 - m) + rnd) >> sh;
+            dst_row[col] = val.clamp(0, max) as u16;
+            col += 1;
+        }
+    }
+}
+
 /// Mask blend for 16-bit pixels
 #[cfg(target_arch = "x86_64")]
 #[arcane]
@@ -8730,17 +8848,33 @@ pub fn mask_dispatch<BD: BitDepth>(
                 );
             }
         }
-        BPC::BPC16 => mask_16bpc_avx2_safe(
-            token,
-            &mut dst_bytes[dst_offset..],
-            dst_stride,
-            tmp1,
-            tmp2,
-            w,
-            h,
-            mask,
-            bd_c,
-        ),
+        BPC::BPC16 => {
+            if let Some(t512) = avx512_token {
+                mask_16bpc_avx512_safe(
+                    t512,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                    mask,
+                    bd_c,
+                );
+            } else {
+                mask_16bpc_avx2_safe(
+                    token,
+                    &mut dst_bytes[dst_offset..],
+                    dst_stride,
+                    tmp1,
+                    tmp2,
+                    w,
+                    h,
+                    mask,
+                    bd_c,
+                );
+            }
+        }
     }
     true
 }
