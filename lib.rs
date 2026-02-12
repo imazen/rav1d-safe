@@ -51,14 +51,14 @@ pub mod src {
     // - safe_simd sub-modules set their own forbid/deny (no parent blanket allow)
 
     // Core primitives
-    pub mod align;
+    pub(crate) mod align;
     #[cfg(feature = "c-ffi")]
     pub(crate) mod assume;
     #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod c_arc;
     #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod c_box;
-    pub mod cpu;
+    pub(crate) mod cpu;
     pub(crate) mod disjoint_mut;
     mod ffi_safe;
     mod in_range;
@@ -97,14 +97,14 @@ pub mod src {
     #[cfg_attr(feature = "asm", allow(unsafe_code))]
     mod msac;
 
-    // Safe SIMD implementations
+    // Safe SIMD implementations (internal, not part of the public API)
     #[cfg(not(feature = "asm"))]
-    pub mod safe_simd;
+    pub(crate) mod safe_simd;
 
     // Rust core API (rav1d_open, rav1d_send_data, etc.)
     #[cfg_attr(not(feature = "c-ffi"), deny(unsafe_code))]
     #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
-    pub mod lib;
+    pub(crate) mod lib;
 
     // C FFI wrappers (dav1d_* extern "C" functions)
     #[cfg(feature = "c-ffi")]
@@ -159,7 +159,8 @@ pub use src::error::Dav1dResult;
 // Re-export the managed API at the crate root for convenience.
 // Users can write `rav1d_safe::Decoder` instead of `rav1d_safe::src::managed::Decoder`.
 pub use src::managed::{
-    enabled_features, ColorInfo, ColorPrimaries, ColorRange, ContentLightLevel, DecodeFrameType,
-    Decoder, Error, Frame, InloopFilters, MasteringDisplay, MatrixCoefficients, PixelLayout,
-    PlaneView16, PlaneView8, Planes, Planes16, Planes8, Settings, TransferCharacteristics,
+    enabled_features, ColorInfo, ColorPrimaries, ColorRange, ContentLightLevel, CpuLevel,
+    DecodeFrameType, Decoder, Error, Frame, InloopFilters, MasteringDisplay, MatrixCoefficients,
+    PixelLayout, PlaneView16, PlaneView8, Planes, Planes16, Planes8, Settings,
+    TransferCharacteristics,
 };
