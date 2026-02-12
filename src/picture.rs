@@ -21,7 +21,7 @@ use crate::include::dav1d::picture::Rav1dPictureParameters;
 use crate::include::dav1d::picture::RAV1D_PICTURE_ALIGNMENT;
 #[cfg(feature = "c-ffi")]
 use crate::src::error::Dav1dResult;
-use crate::src::error::Rav1dError::EGeneric;
+use crate::src::error::Rav1dError::{EGeneric, ENOMEM};
 use crate::src::error::Rav1dResult;
 use crate::src::internal::Rav1dFrameContext;
 use crate::src::internal::Rav1dFrameData;
@@ -100,12 +100,18 @@ struct MemPoolBuf<T> {
 }
 
 impl Rav1dPictureParameters {
-    pub fn pic_len(&self, [y_stride, uv_stride]: [isize; 2]) -> [usize; 2] {
+    pub fn pic_len(&self, [y_stride, uv_stride]: [isize; 2]) -> Rav1dResult<[usize; 2]> {
         let ss_ver = (self.layout == Rav1dPixelLayout::I420) as u8;
         let aligned_h = self.h as usize + 127 & !127;
-        let y_sz = y_stride.unsigned_abs() * aligned_h;
-        let uv_sz = uv_stride.unsigned_abs() * (aligned_h >> ss_ver);
-        [y_sz, uv_sz]
+        let y_sz = y_stride
+            .unsigned_abs()
+            .checked_mul(aligned_h)
+            .ok_or(ENOMEM)?;
+        let uv_sz = uv_stride
+            .unsigned_abs()
+            .checked_mul(aligned_h >> ss_ver)
+            .ok_or(ENOMEM)?;
+        Ok([y_sz, uv_sz])
     }
 }
 
@@ -133,7 +139,10 @@ unsafe extern "C" fn dav1d_default_picture_alloc(
         uv_stride += RAV1D_PICTURE_ALIGNMENT as isize;
     }
     let stride = [y_stride, uv_stride];
-    let [y_sz, uv_sz] = p.p.pic_len(stride);
+    let [y_sz, uv_sz] = match p.p.pic_len(stride) {
+        Ok(v) => v,
+        Err(_) => return Dav1dResult(-libc::ENOMEM),
+    };
     let pic_size = y_sz + 2 * uv_sz;
 
     let pool = cookie.unwrap().cast::<Arc<MemPool<u8>>>();

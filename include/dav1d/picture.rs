@@ -1105,7 +1105,7 @@ impl Rav1dPicAllocator {
         let data = pic_c.data;
         let allocator_data = pic_c.allocator_data;
         let mut pic = pic_c.to::<Rav1dPicture>();
-        let len = pic.p.pic_len(pic.stride);
+        let len = pic.p.pic_len(pic.stride)?;
         // TODO fallible allocation
         pic.data = Some(Arc::new(Rav1dPictureData {
             data: array::from_fn(|i| {
@@ -1170,7 +1170,7 @@ impl Rav1dPicAllocator {
             uv_stride += RAV1D_PICTURE_ALIGNMENT as isize;
         }
         let stride = [y_stride, uv_stride];
-        let [y_sz, uv_sz] = p.pic_len(stride);
+        let [y_sz, uv_sz] = p.pic_len(stride)?;
 
         // Round up to RAV1D_PICTURE_MULTIPLE for allocated data.
         let round_up = |sz: usize| -> usize {

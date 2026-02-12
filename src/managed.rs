@@ -116,7 +116,10 @@ pub struct Settings {
     /// Apply film grain synthesis during decoding
     pub apply_grain: bool,
 
-    /// Maximum frame size in pixels (0 = unlimited)
+    /// Maximum frame size in total pixels, i.e. width * height (0 = unlimited)
+    ///
+    /// Default: 35,389,440 (8K UHD: 8192 × 4320). Set to 0 to disable the limit.
+    /// Frames exceeding this limit are rejected during OBU parsing with `Err(InvalidData)`.
     pub frame_size_limit: u32,
 
     /// Decode all layers or just the selected operating point
@@ -157,7 +160,7 @@ impl Default for Settings {
             // handle the asynchronous behavior by calling decode() or flush() multiple times.
             threads: 1,
             apply_grain: true,
-            frame_size_limit: 0,
+            frame_size_limit: 8192 * 4320, // 8K UHD (~35MP)
             all_layers: true,
             operating_point: 0,
             output_invisible_frames: false,
