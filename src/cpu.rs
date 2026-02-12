@@ -263,6 +263,19 @@ pub(crate) fn summon_avx2() -> Option<archmage::prelude::Desktop64> {
     archmage::prelude::Desktop64::summon()
 }
 
+/// Try to summon an AVX-512 token, gated by the CPU flags mask.
+/// Returns `None` if AVX-512 ICL is masked out or unavailable.
+/// This gates safe_simd AVX-512 code paths on x86_64.
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+pub(crate) fn summon_avx512() -> Option<archmage::prelude::Server64> {
+    use archmage::SimdToken as _;
+    if !simd_enabled(CpuFlags::AVX512ICL) {
+        return None;
+    }
+    archmage::prelude::Server64::summon()
+}
+
 #[cold]
 pub(crate) fn rav1d_init_cpu() {
     // Ensure detection only happens once (consistent with lazy init in rav1d_get_cpu_flags)

@@ -662,6 +662,101 @@ macro_rules! storeu_256 {
 #[cfg(target_arch = "x86_64")]
 pub(crate) use storeu_256;
 
+/// Load 512 bits from a typed array reference or a dynamic slice.
+///
+/// **Array ref form:** `$src` must be a reference to a type implementing
+/// `Is512BitsUnaligned` (e.g., `&[u8; 64]`, `&[u16; 32]`, `&[i16; 32]`, `&[i32; 16]`).
+///
+/// **Slice form:** `$slice` is `&[T]` and `$T` is the target array type.
+/// Converts via `try_into().unwrap()` in checked mode; raw pointer in unchecked mode.
+///
+/// ```ignore
+/// let v: __m512i = loadu_512!(&arr);                          // arr: [u8; 64]
+/// let v: __m512i = loadu_512!(&src[off..off+64], [u8; 64]);   // from slice
+/// ```
+#[cfg(target_arch = "x86_64")]
+macro_rules! loadu_512 {
+    ($src:expr) => {{
+        #[cfg(not(feature = "unchecked"))]
+        {
+            safe_unaligned_simd::x86_64::_mm512_loadu_si512($src)
+        }
+        #[cfg(feature = "unchecked")]
+        {
+            #[allow(unsafe_code)]
+            unsafe {
+                core::arch::x86_64::_mm512_loadu_si512(core::ptr::from_ref($src).cast())
+            }
+        }
+    }};
+    ($slice:expr, $T:ty) => {{
+        #[cfg(not(feature = "unchecked"))]
+        {
+            safe_unaligned_simd::x86_64::_mm512_loadu_si512::<$T>(($slice).try_into().unwrap())
+        }
+        #[cfg(feature = "unchecked")]
+        {
+            let __s = $slice;
+            debug_assert!(core::mem::size_of_val(__s) >= 64);
+            #[allow(unsafe_code)]
+            unsafe {
+                core::arch::x86_64::_mm512_loadu_si512(__s.as_ptr() as *const _)
+            }
+        }
+    }};
+}
+#[cfg(target_arch = "x86_64")]
+pub(crate) use loadu_512;
+
+/// Store 512 bits to a typed array reference or a dynamic slice.
+///
+/// **Array ref form:** `$dst` must be a mutable reference to a type implementing
+/// `Is512BitsUnaligned`.
+///
+/// **Slice form:** `$slice` is `&mut [T]`, `$T` is the target array type,
+/// `$val` is the `__m512i` value.
+///
+/// ```ignore
+/// storeu_512!(&mut arr, v);                              // arr: [u8; 64]
+/// storeu_512!(&mut dst[off..off+64], [u8; 64], v);       // from slice
+/// ```
+#[cfg(target_arch = "x86_64")]
+macro_rules! storeu_512 {
+    ($dst:expr, $val:expr) => {{
+        #[cfg(not(feature = "unchecked"))]
+        {
+            safe_unaligned_simd::x86_64::_mm512_storeu_si512($dst, $val)
+        }
+        #[cfg(feature = "unchecked")]
+        {
+            #[allow(unsafe_code)]
+            unsafe {
+                core::arch::x86_64::_mm512_storeu_si512(core::ptr::from_mut($dst).cast(), $val)
+            }
+        }
+    }};
+    ($slice:expr, $T:ty, $val:expr) => {{
+        #[cfg(not(feature = "unchecked"))]
+        {
+            safe_unaligned_simd::x86_64::_mm512_storeu_si512::<$T>(
+                ($slice).try_into().unwrap(),
+                $val,
+            )
+        }
+        #[cfg(feature = "unchecked")]
+        {
+            let __s = $slice;
+            debug_assert!(core::mem::size_of_val(__s) >= 64);
+            #[allow(unsafe_code)]
+            unsafe {
+                core::arch::x86_64::_mm512_storeu_si512(__s.as_mut_ptr() as *mut _, $val)
+            }
+        }
+    }};
+}
+#[cfg(target_arch = "x86_64")]
+pub(crate) use storeu_512;
+
 /// Load 128 bits from a typed array reference or a dynamic slice.
 ///
 /// **Array ref form:** `$src` must be a reference to a type implementing

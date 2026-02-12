@@ -15,13 +15,15 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-use archmage::{arcane, Desktop64, SimdToken};
+use archmage::{arcane, Desktop64, Server64, SimdToken};
 use libc::{c_int, ptrdiff_t};
 
 #[cfg(target_arch = "x86_64")]
 use super::partial_simd;
 #[cfg(target_arch = "x86_64")]
-use crate::src::safe_simd::pixel_access::{loadu_128, loadu_256, storeu_128, storeu_256, Flex};
+use crate::src::safe_simd::pixel_access::{
+    loadu_128, loadu_256, loadu_512, storeu_128, storeu_256, storeu_512, Flex,
+};
 
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::picture::PicOffset;
@@ -98,6 +100,120 @@ pub unsafe extern "C" fn ipred_dc_128_8bpc_avx2(
         width as usize,
         height as usize,
     );
+}
+
+/// DC_128 prediction using AVX-512 (64-byte stores)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_dc_128_8bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let fill_val = _mm512_set1_epi8(128u8 as i8);
+    let fill_256 = _mm256_set1_epi8(128u8 as i8);
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let row = &mut dst[row_off..][..width];
+
+        let mut x = 0;
+        while x + 64 <= width {
+            storeu_512!((&mut row[x..x + 64]), [u8; 64], fill_val);
+            x += 64;
+        }
+        while x + 32 <= width {
+            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_256);
+            x += 32;
+        }
+        while x + 16 <= width {
+            storeu_128!(
+                &mut row[x..x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(fill_256)
+            );
+            x += 16;
+        }
+        while x < width {
+            row[x] = 128;
+            x += 1;
+        }
+    }
+}
+
+/// Vertical prediction using AVX-512 (64-byte loads/stores)
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_v_8bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+) {
+    let mut dst = dst.flex_mut();
+    let topleft = topleft.flex();
+    let top_off = tl_off + 1;
+
+    match width {
+        4 => {
+            let top_val = _mm_cvtsi32_si128(i32::from_ne_bytes(
+                topleft[top_off..top_off + 4].try_into().unwrap(),
+            ));
+            for y in 0..height {
+                let row_off = (dst_base as isize + y as isize * stride) as usize;
+                dst[row_off..row_off + 4]
+                    .copy_from_slice(&_mm_cvtsi128_si32(top_val).to_ne_bytes());
+            }
+        }
+        8 => {
+            let top_val = partial_simd::mm_loadl_epi64::<[u8; 8]>(
+                (&topleft[top_off..top_off + 8]).try_into().unwrap(),
+            );
+            for y in 0..height {
+                let row_off = (dst_base as isize + y as isize * stride) as usize;
+                partial_simd::mm_storel_epi64::<[u8; 8]>(
+                    (&mut dst[row_off..row_off + 8]).try_into().unwrap(),
+                    top_val,
+                );
+            }
+        }
+        16 => {
+            let top_val = loadu_128!((&topleft[top_off..top_off + 16]), [u8; 16]);
+            for y in 0..height {
+                let row_off = (dst_base as isize + y as isize * stride) as usize;
+                storeu_128!((&mut dst[row_off..row_off + 16]), [u8; 16], top_val);
+            }
+        }
+        32 => {
+            let top_val = loadu_256!((&topleft[top_off..top_off + 32]), [u8; 32]);
+            for y in 0..height {
+                let row_off = (dst_base as isize + y as isize * stride) as usize;
+                storeu_256!((&mut dst[row_off..row_off + 32]), [u8; 32], top_val);
+            }
+        }
+        64 => {
+            // Single 512-bit load instead of 2x 256-bit
+            let top_val = loadu_512!((&topleft[top_off..top_off + 64]), [u8; 64]);
+            for y in 0..height {
+                let row_off = (dst_base as isize + y as isize * stride) as usize;
+                storeu_512!((&mut dst[row_off..row_off + 64]), [u8; 64], top_val);
+            }
+        }
+        _ => {
+            for y in 0..height {
+                let row_off = (dst_base as isize + y as isize * stride) as usize;
+                dst[row_off..row_off + width].copy_from_slice(&topleft[top_off..top_off + width]);
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -3545,6 +3661,12 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         return false;
     };
 
+    // Try AVX-512 for modes that benefit from wider registers
+    #[cfg(target_arch = "x86_64")]
+    let avx512_token = crate::src::cpu::summon_avx512();
+    #[cfg(not(target_arch = "x86_64"))]
+    let avx512_token: Option<Server64> = None;
+
     let w = width as usize;
     let h = height as usize;
     let byte_stride = dst.stride();
@@ -3569,16 +3691,31 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             w,
             h,
         ),
-        (BPC::BPC8, 1) => ipred_v_8bpc_inner(
-            token,
-            dst_bytes,
-            dst_base_bytes,
-            byte_stride,
-            tl_bytes,
-            topleft_off,
-            w,
-            h,
-        ),
+        (BPC::BPC8, 1) => {
+            if let Some(t512) = avx512_token {
+                ipred_v_8bpc_avx512_inner(
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
+                )
+            } else {
+                ipred_v_8bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
+                )
+            }
+        }
         (BPC::BPC8, 2) => ipred_h_8bpc_inner(
             token,
             dst_bytes,
@@ -3610,7 +3747,18 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             h,
         ),
         (BPC::BPC8, 5) => {
-            ipred_dc_128_8bpc_inner(token, dst_bytes, dst_base_bytes, byte_stride, w, h)
+            if let Some(t512) = avx512_token {
+                ipred_dc_128_8bpc_avx512_inner(
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    w,
+                    h,
+                )
+            } else {
+                ipred_dc_128_8bpc_inner(token, dst_bytes, dst_base_bytes, byte_stride, w, h)
+            }
         }
         (BPC::BPC8, 6) => {
             if !ipred_z1_8bpc_inner(

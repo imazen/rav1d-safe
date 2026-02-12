@@ -44,7 +44,7 @@ zerocopy = { version = "0.7.32", features = ["derive"] }
 
 # Safe SIMD dependencies
 archmage = { version = "0.6.0", features = ["macros", "avx512"] }
-safe_unaligned_simd = "0.2.4"
+safe_unaligned_simd = { version = "0.2.4", features = ["avx512"] }
 
 [dev-dependencies]
 divan = "0.1"
