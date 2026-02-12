@@ -2450,8 +2450,8 @@ fn ipred_z2_scalar(
 /// Z3 prediction: directional prediction using left edge only (angles > 180°)
 ///
 /// Z3 is the mirror of Z1, using the left edge instead of top.
-/// Loop order is column-major (outer x, inner y) for better cache locality
-/// when accessing the left edge.
+/// Builds preprocessed left edge array internally, handles all cases.
+/// Loop order is column-major (outer x, inner y).
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn ipred_z3_8bpc_inner(
@@ -2464,67 +2464,91 @@ fn ipred_z3_8bpc_inner(
     width: usize,
     height: usize,
     angle: i32,
-) -> bool {
+) {
     let mut dst = dst.flex_mut();
-    let topleft = topleft.flex();
-    let height = height as i32;
+    let width_i = width as i32;
+    let height_i = height as i32;
 
     // Extract angle flags
     let is_sm = (angle >> 9) & 1 != 0;
     let enable_intra_edge_filter = (angle >> 10) != 0;
     let angle = angle & 511;
 
-    // Get derivative for left edge traversal
-    let dy = dav1d_dr_intra_derivative[((270 - angle) >> 1) as usize] as usize;
+    let mut dy = dav1d_dr_intra_derivative[((270 - angle) >> 1) as usize] as usize;
 
-    // Check for upsampling - fall back to scalar
     let upsample_left = enable_intra_edge_filter
         && (angle - 180) < 40
-        && (width as i32 + height) <= (16 >> is_sm as usize);
+        && (width_i + height_i) <= (16 >> is_sm as i32);
+
+    // Build preprocessed left edge array
+    // Scalar uses: left[left_off - base] to index from corner outward
+    let mut left_out = [0u8; 64 + 64];
+    let (left, left_off, max_base_y, base_inc);
 
     if upsample_left {
-        // Upsampling requires edge preprocessing not implemented in SIMD yet
-        return false;
-    }
-
-    // Check for edge filtering
-    let filter_strength = if enable_intra_edge_filter {
-        get_filter_strength_simple(width as i32 + height, angle - 180, is_sm)
+        upsample_edge_8bpc(
+            &mut left_out,
+            width_i + height_i,
+            topleft,
+            tl_off - (width + height),
+            std::cmp::max(width_i - height_i, 0),
+            width_i + height_i + 1,
+        );
+        left_off = (2 * (width_i + height_i) - 2) as usize;
+        max_base_y = left_off;
+        dy <<= 1;
+        base_inc = 2usize;
+        left = left_out.as_slice();
     } else {
-        0
+        let filter_strength = if enable_intra_edge_filter {
+            get_filter_strength_simple(width_i + height_i, angle - 180, is_sm)
+        } else {
+            0
+        };
+        if filter_strength != 0 {
+            filter_edge_8bpc(
+                &mut left_out,
+                width_i + height_i,
+                0,
+                width_i + height_i,
+                topleft,
+                tl_off - (width + height),
+                std::cmp::max(width_i - height_i, 0),
+                width_i + height_i + 1,
+                filter_strength,
+            );
+            left_off = (width_i + height_i - 1) as usize;
+            max_base_y = left_off;
+            left = left_out.as_slice();
+        } else {
+            // No preprocessing — use topleft directly
+            left = topleft;
+            left_off = tl_off - 1;
+            max_base_y = height + std::cmp::min(width, height) - 1;
+        }
+        base_inc = 1;
     };
 
-    if filter_strength != 0 {
-        // Edge filtering requires preprocessing not implemented in SIMD yet
-        return false;
-    }
+    let left = left.flex();
 
-    // No filtering - direct access to left edge
-    // left[0] = tl[-1], left[1] = tl[-2], etc.
-    let max_base_y = height as usize + std::cmp::min(width, height as usize) - 1;
-    let base_inc = 1usize;
-
-    // Z3 has column-major access pattern, so SIMD is tricky
-    // Process columns, each with different dy offset
+    // Column-major access pattern
     for x in 0..width {
         let ypos = dy * (x + 1);
         let frac = (ypos & 0x3e) as i32;
         let inv_frac = 64 - frac;
 
-        for y in 0..height {
+        for y in 0..height_i {
             let base = (ypos >> 6) + base_inc * y as usize;
 
             if base < max_base_y {
-                // left[base] = tl[-(base+1)]
-                let l0 = topleft[tl_off - base - 1] as i32;
-                let l1 = topleft[tl_off - base - 2] as i32;
+                let l0 = left[left_off - base] as i32;
+                let l1 = left[left_off - base - 1] as i32;
                 let v = l0 * inv_frac + l1 * frac;
                 let pixel_off = (dst_base as isize + y as isize * stride) as usize + x;
                 dst[pixel_off] = ((v + 32) >> 6) as u8;
             } else {
-                // Fill rest of column with max value
-                let fill_val = topleft[tl_off - max_base_y - 1];
-                for yy in y..height {
+                let fill_val = left[left_off - max_base_y];
+                for yy in y..height_i {
                     let pixel_off = (dst_base as isize + yy as isize * stride) as usize + x;
                     dst[pixel_off] = fill_val;
                 }
@@ -2532,7 +2556,6 @@ fn ipred_z3_8bpc_inner(
             }
         }
     }
-    true
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -4759,6 +4782,7 @@ fn ipred_z2_16bpc_scalar(
 // ============================================================================
 
 /// Z3 prediction for 16bpc: directional prediction using left edge only (angles > 180°)
+/// Builds preprocessed left edge array internally, handles all cases.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn ipred_z3_16bpc_inner(
@@ -4771,67 +4795,142 @@ fn ipred_z3_16bpc_inner(
     width: usize,
     height: usize,
     angle: i32,
-) -> bool {
+    bitdepth_max: i32,
+) {
     let mut dst = dst.flex_mut();
-    let topleft = topleft.flex();
-    let height = height as i32;
+    let width_i = width as i32;
+    let height_i = height as i32;
 
     // Extract angle flags
     let is_sm = (angle >> 9) & 1 != 0;
     let enable_intra_edge_filter = (angle >> 10) != 0;
     let angle = angle & 511;
 
-    // Get derivative for left edge traversal
-    let dy = dav1d_dr_intra_derivative[((270 - angle) >> 1) as usize] as usize;
+    let mut dy = dav1d_dr_intra_derivative[((270 - angle) >> 1) as usize] as usize;
 
-    // Check for upsampling - fall back to scalar
-    let upsample_left = enable_intra_edge_filter
-        && (angle - 180) < 40
-        && (width as i32 + height) <= (16 >> is_sm as usize);
+    // tl_off is in bytes, convert to pixel offset
+    let tl_pix = tl_off / 2;
 
-    if upsample_left {
-        return false;
-    }
-
-    // Check for edge filtering
-    let filter_strength = if enable_intra_edge_filter {
-        get_filter_strength_simple(width as i32 + height, angle - 180, is_sm)
-    } else {
-        0
+    // Helper: read u16 pixel from byte slice at pixel offset
+    let rd = |off: usize| -> u16 {
+        let b = off * 2;
+        u16::from_ne_bytes(topleft[b..b + 2].try_into().unwrap())
     };
 
-    if filter_strength != 0 {
-        return false;
-    }
+    let upsample_left = enable_intra_edge_filter
+        && (angle - 180) < 40
+        && (width_i + height_i) <= (16 >> is_sm as i32);
 
-    // No filtering - direct access to left edge
-    let max_base_y = height as usize + std::cmp::min(width, height as usize) - 1;
-    let base_inc = 1usize;
+    // Build preprocessed left edge array as u16 pixels
+    // left_px[left_off - base] = pixel at distance `base` from corner
+    let mut left_px = [0u16; 64 + 64];
+    let (left_off, max_base_y, base_inc);
+    let use_left_px; // whether to use left_px or topleft directly
 
-    // Z3 has column-major access pattern
+    if upsample_left {
+        let kernel: [i8; 4] = [-1, 9, 9, -1];
+        let hsz = width_i + height_i;
+        let in_off = tl_pix - (width + height);
+        let from = std::cmp::max(width_i - height_i, 0);
+        let to = width_i + height_i + 1;
+        for i in 0..hsz - 1 {
+            left_px[(i * 2) as usize] =
+                rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+            let mut s = 0i32;
+            for j in 0..4i32 {
+                s += rd(in_off.wrapping_add_signed((i + j - 1).clamp(from, to - 1) as isize))
+                    as i32
+                    * kernel[j as usize] as i32;
+            }
+            left_px[(i * 2 + 1) as usize] = ((s + 8) >> 4).clamp(0, bitdepth_max) as u16;
+        }
+        let i = hsz - 1;
+        left_px[(i * 2) as usize] =
+            rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+        left_off = (2 * (width_i + height_i) - 2) as usize;
+        max_base_y = left_off;
+        dy <<= 1;
+        base_inc = 2usize;
+        use_left_px = true;
+    } else {
+        let filter_strength = if enable_intra_edge_filter {
+            get_filter_strength_simple(width_i + height_i, angle - 180, is_sm)
+        } else {
+            0
+        };
+        if filter_strength != 0 {
+            static KERNEL: [[u8; 5]; 3] = [[0, 4, 8, 4, 0], [0, 5, 6, 5, 0], [2, 4, 4, 4, 2]];
+            let in_off = tl_pix - (width + height);
+            let from = std::cmp::max(width_i - height_i, 0);
+            let to = width_i + height_i + 1;
+            let lim_from = 0i32;
+            let lim_to = width_i + height_i;
+            let mut i = 0i32;
+            while i < std::cmp::min(width_i + height_i, lim_from) {
+                left_px[i as usize] =
+                    rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+                i += 1;
+            }
+            while i < std::cmp::min(lim_to, width_i + height_i) {
+                let mut s = 0i32;
+                for j in 0..5i32 {
+                    s += rd(in_off.wrapping_add_signed((i - 2 + j).clamp(from, to - 1) as isize))
+                        as i32
+                        * KERNEL[(filter_strength - 1) as usize][j as usize] as i32;
+                }
+                left_px[i as usize] = ((s + 8) >> 4) as u16;
+                i += 1;
+            }
+            while i < width_i + height_i {
+                left_px[i as usize] =
+                    rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+                i += 1;
+            }
+            left_off = (width_i + height_i - 1) as usize;
+            max_base_y = left_off;
+            use_left_px = true;
+        } else {
+            // No preprocessing — access topleft directly
+            left_off = 0; // unused for direct topleft access
+            max_base_y = height + std::cmp::min(width, height) - 1;
+            use_left_px = false;
+        }
+        base_inc = 1;
+    };
+
+    // Column-major access pattern
     for x in 0..width {
         let ypos = dy * (x + 1);
         let frac = (ypos & 0x3e) as i32;
         let inv_frac = 64 - frac;
 
-        for y in 0..height {
+        for y in 0..height_i {
             let base = (ypos >> 6) + base_inc * y as usize;
 
             if base < max_base_y {
-                // left[base] = tl[-(base+1)] in pixel units
-                let l0_off = tl_off - (base + 1) * 2;
-                let l1_off = tl_off - (base + 2) * 2;
-                let l0 = u16::from_ne_bytes(topleft[l0_off..l0_off + 2].try_into().unwrap()) as i32;
-                let l1 = u16::from_ne_bytes(topleft[l1_off..l1_off + 2].try_into().unwrap()) as i32;
+                let (l0, l1) = if use_left_px {
+                    (
+                        left_px[left_off - base] as i32,
+                        left_px[left_off - base - 1] as i32,
+                    )
+                } else {
+                    // Direct topleft: left[base] = tl[-(base+1)] in pixel units
+                    (
+                        rd(tl_pix - base - 1) as i32,
+                        rd(tl_pix - base - 2) as i32,
+                    )
+                };
                 let v = l0 * inv_frac + l1 * frac;
                 let pixel_off = (dst_base as isize + y as isize * stride) as usize + x * 2;
                 dst[pixel_off..pixel_off + 2]
                     .copy_from_slice(&(((v + 32) >> 6) as u16).to_ne_bytes());
             } else {
-                let fill_off = tl_off - (max_base_y + 1) * 2;
-                let fill_val_bytes = topleft[fill_off..fill_off + 2].try_into().unwrap();
-                let fill_val = u16::from_ne_bytes(fill_val_bytes);
-                for yy in y..height {
+                let fill_val = if use_left_px {
+                    left_px[left_off - max_base_y]
+                } else {
+                    rd(tl_pix - max_base_y - 1)
+                };
+                for yy in y..height_i {
                     let pixel_off = (dst_base as isize + yy as isize * stride) as usize + x * 2;
                     dst[pixel_off..pixel_off + 2].copy_from_slice(&fill_val.to_ne_bytes());
                 }
@@ -4839,7 +4938,6 @@ fn ipred_z3_16bpc_inner(
             }
         }
     }
-    true
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -4875,6 +4973,7 @@ pub unsafe extern "C" fn ipred_z3_16bpc_avx2(
         width as usize,
         height as usize,
         angle as i32,
+        _bitdepth_max as i32,
     );
 }
 
@@ -5300,7 +5399,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             );
         }
         (BPC::BPC8, 8) => {
-            if !ipred_z3_8bpc_inner(
+            ipred_z3_8bpc_inner(
                 token,
                 dst_bytes,
                 dst_base_bytes,
@@ -5310,9 +5409,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
                 angle as i32,
-            ) {
-                return false;
-            }
+            );
         }
         (BPC::BPC8, 9) => {
             if let Some(t512) = avx512_token {
@@ -5559,7 +5656,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         }
         (BPC::BPC16, 8) => {
             let tl_off_bytes = topleft_off * 2;
-            if !ipred_z3_16bpc_inner(
+            ipred_z3_16bpc_inner(
                 token,
                 dst_bytes,
                 dst_base_bytes,
@@ -5569,9 +5666,8 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                 w,
                 h,
                 angle as i32,
-            ) {
-                return false;
-            }
+                bd_c,
+            );
         }
         (BPC::BPC16, 9) => {
             let tl_off_bytes = topleft_off * 2;
