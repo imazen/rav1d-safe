@@ -50,6 +50,7 @@ use parking_lot::Mutex;
 use std::cmp;
 #[cfg(feature = "c-ffi")]
 use std::ffi::c_void;
+#[cfg(feature = "c-ffi")]
 use std::ffi::CStr;
 use std::mem;
 use std::sync::atomic::AtomicBool;
@@ -65,18 +66,14 @@ fn init_internal() {
     rav1d_init_cpu();
 }
 
+#[cfg(feature = "c-ffi")]
 pub(crate) const DAV1D_VERSION: &CStr = c"966d63c1";
-const RAV1D_VERSION: &str = match DAV1D_VERSION.to_str() {
-    Ok(version) => version,
-    Err(_) => unreachable!(),
-};
 
-pub const fn rav1d_version() -> &'static str {
-    RAV1D_VERSION
-}
-
+#[cfg(feature = "c-ffi")]
 pub const DAV1D_API_VERSION_MAJOR: u8 = 7;
+#[cfg(feature = "c-ffi")]
 pub const DAV1D_API_VERSION_MINOR: u8 = 0;
+#[cfg(feature = "c-ffi")]
 pub const DAV1D_API_VERSION_PATCH: u8 = 0;
 
 impl Default for Rav1dSettings {

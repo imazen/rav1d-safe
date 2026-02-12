@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Safe pixel access helpers and SIMD load/store macros for SIMD modules.
 //!
 //! When the `unchecked` feature is enabled, these use unchecked indexing

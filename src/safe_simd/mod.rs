@@ -59,9 +59,3 @@ pub mod filmgrain_arm;
 #[cfg(target_arch = "aarch64")]
 pub mod refmvs_arm;
 
-// Re-export x86 implementations
-pub use mc::*;
-
-// Re-export ARM implementations
-#[cfg(target_arch = "aarch64")]
-pub use mc_arm::*;
