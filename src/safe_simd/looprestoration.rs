@@ -3600,6 +3600,370 @@ fn boxsum3_16bpc(
     }
 }
 
+/// AVX-512 vertical boxsum for 5x5 window (16bpc).
+/// Processes 16 columns at a time.
+/// Sum: 16 u16 → 16 i32 via `_mm512_cvtepu16_epi32`.
+/// Sumsq: accumulate squared i32 then widen to i64 for storage.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn boxsum5_v_16bpc_avx512(
+    _token: Server64,
+    sumsq: &mut [i64; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    src: &[u16; (64 + 3 + 3) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+) {
+    let mut x = 0usize;
+    while x + 16 <= w {
+        for out_row in 2..h - 2 {
+            let base_row = out_row - 2;
+            // Load 5 rows of 16 u16 pixels
+            let r0 = loadu_256!(
+                &src[base_row * REST_UNIT_STRIDE + x..base_row * REST_UNIT_STRIDE + x + 16],
+                [u16; 16]
+            );
+            let r1 = loadu_256!(
+                &src[(base_row + 1) * REST_UNIT_STRIDE + x
+                    ..(base_row + 1) * REST_UNIT_STRIDE + x + 16],
+                [u16; 16]
+            );
+            let r2 = loadu_256!(
+                &src[(base_row + 2) * REST_UNIT_STRIDE + x
+                    ..(base_row + 2) * REST_UNIT_STRIDE + x + 16],
+                [u16; 16]
+            );
+            let r3 = loadu_256!(
+                &src[(base_row + 3) * REST_UNIT_STRIDE + x
+                    ..(base_row + 3) * REST_UNIT_STRIDE + x + 16],
+                [u16; 16]
+            );
+            let r4 = loadu_256!(
+                &src[(base_row + 4) * REST_UNIT_STRIDE + x
+                    ..(base_row + 4) * REST_UNIT_STRIDE + x + 16],
+                [u16; 16]
+            );
+
+            // Zero-extend u16 to i32: 16 values per __m512i
+            let w0 = _mm512_cvtepu16_epi32(r0);
+            let w1 = _mm512_cvtepu16_epi32(r1);
+            let w2 = _mm512_cvtepu16_epi32(r2);
+            let w3 = _mm512_cvtepu16_epi32(r3);
+            let w4 = _mm512_cvtepu16_epi32(r4);
+
+            // Sum of 5 rows (i32)
+            let sum_v = _mm512_add_epi32(
+                _mm512_add_epi32(_mm512_add_epi32(w0, w1), _mm512_add_epi32(w2, w3)),
+                w4,
+            );
+
+            let sum_offset = (out_row - 1) * REST_UNIT_STRIDE + x;
+            storeu_512!(&mut sum[sum_offset..sum_offset + 16], [i32; 16], sum_v);
+
+            // Sum of squares: square in i32 (max 5*4095²=84M, fits i32), then widen to i64
+            let sumsq_i32 = _mm512_add_epi32(
+                _mm512_add_epi32(
+                    _mm512_add_epi32(
+                        _mm512_mullo_epi32(w0, w0),
+                        _mm512_mullo_epi32(w1, w1),
+                    ),
+                    _mm512_add_epi32(
+                        _mm512_mullo_epi32(w2, w2),
+                        _mm512_mullo_epi32(w3, w3),
+                    ),
+                ),
+                _mm512_mullo_epi32(w4, w4),
+            );
+
+            // Convert lo 8 i32 → 8 i64 and store
+            let lo_256 = _mm512_castsi512_si256(sumsq_i32);
+            let lo_i64 = _mm512_cvtepu32_epi64(lo_256);
+            storeu_512!(
+                &mut sumsq[sum_offset..sum_offset + 8],
+                [i64; 8],
+                lo_i64
+            );
+
+            // Convert hi 8 i32 → 8 i64 and store
+            let hi_256 = _mm512_extracti64x4_epi64::<1>(sumsq_i32);
+            let hi_i64 = _mm512_cvtepu32_epi64(hi_256);
+            storeu_512!(
+                &mut sumsq[sum_offset + 8..sum_offset + 16],
+                [i64; 8],
+                hi_i64
+            );
+        }
+        x += 16;
+    }
+
+    // Scalar tail
+    for x in x..w {
+        let mut a = src[x] as i64;
+        let mut a2 = a * a;
+        let mut b = src[REST_UNIT_STRIDE + x] as i64;
+        let mut b2 = b * b;
+        let mut c = src[2 * REST_UNIT_STRIDE + x] as i64;
+        let mut c2 = c * c;
+        let mut d = src[3 * REST_UNIT_STRIDE + x] as i64;
+        let mut d2 = d * d;
+        let mut s_idx = 3 * REST_UNIT_STRIDE + x;
+        for out_row in 2..h - 2 {
+            s_idx += REST_UNIT_STRIDE;
+            let e = src[s_idx] as i64;
+            let e2 = e * e;
+            let sum_v = (out_row - 1) * REST_UNIT_STRIDE + x;
+            sum[sum_v] = (a + b + c + d + e) as i32;
+            sumsq[sum_v] = a2 + b2 + c2 + d2 + e2;
+            a = b;
+            a2 = b2;
+            b = c;
+            b2 = c2;
+            c = d;
+            c2 = d2;
+            d = e;
+            d2 = e2;
+        }
+    }
+}
+
+/// AVX-512 horizontal boxsum for 5x5 window (16bpc).
+/// sum (i32): 16 values per zmm. sumsq (i64): 8 values per zmm.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn boxsum5_h_16bpc_avx512(
+    _token: Server64,
+    sumsq: &mut [i64; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+) {
+    let mut sum_tmp = [0i32; REST_UNIT_STRIDE];
+    let mut sumsq_tmp = [0i64; REST_UNIT_STRIDE];
+
+    for row in 1..h - 3 {
+        let row_off = row * REST_UNIT_STRIDE;
+
+        let mut x = 2usize;
+        while x + 16 <= w - 2 {
+            // 5 shifted loads for sum (16 i32 per zmm)
+            let s0 = loadu_512!(&sum[row_off + x - 2..row_off + x - 2 + 16], [i32; 16]);
+            let s1 = loadu_512!(&sum[row_off + x - 1..row_off + x - 1 + 16], [i32; 16]);
+            let s2 = loadu_512!(&sum[row_off + x..row_off + x + 16], [i32; 16]);
+            let s3 = loadu_512!(&sum[row_off + x + 1..row_off + x + 1 + 16], [i32; 16]);
+            let s4 = loadu_512!(&sum[row_off + x + 2..row_off + x + 2 + 16], [i32; 16]);
+
+            let hsum = _mm512_add_epi32(
+                _mm512_add_epi32(_mm512_add_epi32(s0, s1), _mm512_add_epi32(s2, s3)),
+                s4,
+            );
+            storeu_512!(&mut sum_tmp[x..x + 16], [i32; 16], hsum);
+
+            // 5 shifted loads for sumsq (8 i64 per zmm, 2 iterations per 16 cols)
+            for off in [0usize, 8] {
+                let q0 = loadu_512!(
+                    &sumsq[row_off + x + off - 2..row_off + x + off - 2 + 8],
+                    [i64; 8]
+                );
+                let q1 = loadu_512!(
+                    &sumsq[row_off + x + off - 1..row_off + x + off - 1 + 8],
+                    [i64; 8]
+                );
+                let q2 = loadu_512!(
+                    &sumsq[row_off + x + off..row_off + x + off + 8],
+                    [i64; 8]
+                );
+                let q3 = loadu_512!(
+                    &sumsq[row_off + x + off + 1..row_off + x + off + 1 + 8],
+                    [i64; 8]
+                );
+                let q4 = loadu_512!(
+                    &sumsq[row_off + x + off + 2..row_off + x + off + 2 + 8],
+                    [i64; 8]
+                );
+
+                let hsumsq = _mm512_add_epi64(
+                    _mm512_add_epi64(_mm512_add_epi64(q0, q1), _mm512_add_epi64(q2, q3)),
+                    q4,
+                );
+                storeu_512!(
+                    &mut sumsq_tmp[x + off..x + off + 8],
+                    [i64; 8],
+                    hsumsq
+                );
+            }
+            x += 16;
+        }
+
+        // Scalar tail
+        while x < w - 2 {
+            sum_tmp[x] = sum[row_off + x - 2]
+                + sum[row_off + x - 1]
+                + sum[row_off + x]
+                + sum[row_off + x + 1]
+                + sum[row_off + x + 2];
+            sumsq_tmp[x] = sumsq[row_off + x - 2]
+                + sumsq[row_off + x - 1]
+                + sumsq[row_off + x]
+                + sumsq[row_off + x + 1]
+                + sumsq[row_off + x + 2];
+            x += 1;
+        }
+
+        sum[row_off + 2..row_off + w - 2].copy_from_slice(&sum_tmp[2..w - 2]);
+        sumsq[row_off + 2..row_off + w - 2].copy_from_slice(&sumsq_tmp[2..w - 2]);
+    }
+}
+
+/// AVX-512 vertical boxsum for 3x3 window (16bpc).
+/// Processes 16 columns at a time.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn boxsum3_v_16bpc_avx512(
+    _token: Server64,
+    sumsq: &mut [i64; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    src: &[u16; (64 + 3 + 3) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+) {
+    let src = &src[REST_UNIT_STRIDE..]; // Skip first row
+
+    let mut x = 1usize;
+    while x + 16 <= w - 1 {
+        for out_row in 2..h - 2 {
+            let base_row = out_row - 2;
+            let r0 = loadu_256!(
+                &src[base_row * REST_UNIT_STRIDE + x..base_row * REST_UNIT_STRIDE + x + 16],
+                [u16; 16]
+            );
+            let r1 = loadu_256!(
+                &src[(base_row + 1) * REST_UNIT_STRIDE + x
+                    ..(base_row + 1) * REST_UNIT_STRIDE + x + 16],
+                [u16; 16]
+            );
+            let r2 = loadu_256!(
+                &src[(base_row + 2) * REST_UNIT_STRIDE + x
+                    ..(base_row + 2) * REST_UNIT_STRIDE + x + 16],
+                [u16; 16]
+            );
+
+            let w0 = _mm512_cvtepu16_epi32(r0);
+            let w1 = _mm512_cvtepu16_epi32(r1);
+            let w2 = _mm512_cvtepu16_epi32(r2);
+
+            let sum_v = _mm512_add_epi32(_mm512_add_epi32(w0, w1), w2);
+            let sum_offset = (out_row - 1) * REST_UNIT_STRIDE + x;
+            storeu_512!(&mut sum[sum_offset..sum_offset + 16], [i32; 16], sum_v);
+
+            // Sumsq: accumulate in i32 (max 3*4095²=50M, fits i32), widen to i64
+            let sumsq_i32 = _mm512_add_epi32(
+                _mm512_add_epi32(
+                    _mm512_mullo_epi32(w0, w0),
+                    _mm512_mullo_epi32(w1, w1),
+                ),
+                _mm512_mullo_epi32(w2, w2),
+            );
+
+            let lo_256 = _mm512_castsi512_si256(sumsq_i32);
+            let lo_i64 = _mm512_cvtepu32_epi64(lo_256);
+            storeu_512!(
+                &mut sumsq[sum_offset..sum_offset + 8],
+                [i64; 8],
+                lo_i64
+            );
+
+            let hi_256 = _mm512_extracti64x4_epi64::<1>(sumsq_i32);
+            let hi_i64 = _mm512_cvtepu32_epi64(hi_256);
+            storeu_512!(
+                &mut sumsq[sum_offset + 8..sum_offset + 16],
+                [i64; 8],
+                hi_i64
+            );
+        }
+        x += 16;
+    }
+
+    // Scalar tail
+    for x in x..w - 1 {
+        let mut a = src[x] as i64;
+        let mut a2 = a * a;
+        let mut b = src[REST_UNIT_STRIDE + x] as i64;
+        let mut b2 = b * b;
+        let mut s_idx = REST_UNIT_STRIDE + x;
+        for out_row in 2..h - 2 {
+            s_idx += REST_UNIT_STRIDE;
+            let c = src[s_idx] as i64;
+            let c2 = c * c;
+            let sum_v = (out_row - 1) * REST_UNIT_STRIDE + x;
+            sum[sum_v] = (a + b + c) as i32;
+            sumsq[sum_v] = a2 + b2 + c2;
+            a = b;
+            a2 = b2;
+            b = c;
+            b2 = c2;
+        }
+    }
+}
+
+/// AVX-512 horizontal boxsum for 3x3 window (16bpc).
+/// sum (i32): 16 per zmm. sumsq (i64): 8 per zmm.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn boxsum3_h_16bpc_avx512(
+    _token: Server64,
+    sumsq: &mut [i64; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+) {
+    let mut sum_tmp = [0i32; REST_UNIT_STRIDE];
+    let mut sumsq_tmp = [0i64; REST_UNIT_STRIDE];
+
+    for row in 1..h - 3 {
+        let row_off = row * REST_UNIT_STRIDE;
+        let mut x = 2usize;
+
+        while x + 16 <= w - 2 {
+            let s0 = loadu_512!(&sum[row_off + x - 1..row_off + x - 1 + 16], [i32; 16]);
+            let s1 = loadu_512!(&sum[row_off + x..row_off + x + 16], [i32; 16]);
+            let s2 = loadu_512!(&sum[row_off + x + 1..row_off + x + 1 + 16], [i32; 16]);
+            let hsum = _mm512_add_epi32(_mm512_add_epi32(s0, s1), s2);
+            storeu_512!(&mut sum_tmp[x..x + 16], [i32; 16], hsum);
+
+            for off in [0usize, 8] {
+                let q0 = loadu_512!(
+                    &sumsq[row_off + x + off - 1..row_off + x + off - 1 + 8],
+                    [i64; 8]
+                );
+                let q1 = loadu_512!(
+                    &sumsq[row_off + x + off..row_off + x + off + 8],
+                    [i64; 8]
+                );
+                let q2 = loadu_512!(
+                    &sumsq[row_off + x + off + 1..row_off + x + off + 1 + 8],
+                    [i64; 8]
+                );
+                let hsumsq = _mm512_add_epi64(_mm512_add_epi64(q0, q1), q2);
+                storeu_512!(
+                    &mut sumsq_tmp[x + off..x + off + 8],
+                    [i64; 8],
+                    hsumsq
+                );
+            }
+            x += 16;
+        }
+
+        while x < w - 2 {
+            sum_tmp[x] = sum[row_off + x - 1] + sum[row_off + x] + sum[row_off + x + 1];
+            sumsq_tmp[x] = sumsq[row_off + x - 1] + sumsq[row_off + x] + sumsq[row_off + x + 1];
+            x += 1;
+        }
+
+        sum[row_off + 2..row_off + w - 2].copy_from_slice(&sum_tmp[2..w - 2]);
+        sumsq[row_off + 2..row_off + w - 2].copy_from_slice(&sumsq_tmp[2..w - 2]);
+    }
+}
+
 /// Self-guided filter computation for 16bpc
 ///
 /// Computes the filter coefficients and applies the guided filter.
@@ -3802,7 +4166,7 @@ fn selfguided_filter_16bpc(
 ///
 /// Processes 16 pixels per iteration in the neighbor-weighted filter stage
 /// using 512-bit registers for i32 accumulation.
-/// Boxsum and coefficient calculation remain scalar (table lookup dominates).
+/// Boxsum uses AVX-512 (16 cols/iter for i32 sum, 8 for i64 sumsq).
 /// All math fits in i32 — verified for 12-bit (worst case):
 ///   aa[i] max ≈ 2.9M, a_six max ≈ 92.8M, b_six*src max ≈ 33.4M → all < 2.1B
 #[cfg(target_arch = "x86_64")]
@@ -3829,11 +4193,13 @@ fn selfguided_filter_16bpc_avx512(
 
     let step = if n == 25 { 2 } else { 1 };
 
-    // Boxsum (scalar — same as AVX2 version)
+    // AVX-512 boxsum (16 cols/iter for sum, 8 for sumsq i64)
     if n == 25 {
-        boxsum5_16bpc(&mut sumsq, &mut sum, src, w + 6, h + 6);
+        boxsum5_v_16bpc_avx512(_token, &mut sumsq, &mut sum, src, w + 6, h + 6);
+        boxsum5_h_16bpc_avx512(_token, &mut sumsq, &mut sum, w + 6, h + 6);
     } else {
-        boxsum3_16bpc(&mut sumsq, &mut sum, src, w + 6, h + 6);
+        boxsum3_v_16bpc_avx512(_token, &mut sumsq, &mut sum, src, w + 6, h + 6);
+        boxsum3_h_16bpc_avx512(_token, &mut sumsq, &mut sum, w + 6, h + 6);
     }
 
     // Coefficient calculation (scalar — table lookup dominates)
