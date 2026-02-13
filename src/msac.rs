@@ -20,7 +20,7 @@ use std::slice;
 
 // x86_64 SIMD intrinsics for safe_simd implementations
 #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
-use archmage::{arcane, Desktop64, SimdToken};
+use archmage::{arcane, rite, Desktop64, SimdToken};
 #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
 use core::arch::x86_64::*;
 #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
@@ -30,7 +30,7 @@ use safe_unaligned_simd::x86_64 as safe_simd;
 #[cfg(all(not(asm_msac), target_arch = "aarch64"))]
 use crate::src::safe_simd::pixel_access::{neon_ld1q_u16, neon_st1q_u16};
 #[cfg(all(not(asm_msac), target_arch = "aarch64"))]
-use archmage::{arcane, Arm64, SimdToken};
+use archmage::{arcane, rite, Arm64, SimdToken};
 #[cfg(all(not(asm_msac), target_arch = "aarch64"))]
 use safe_unaligned_simd::aarch64 as safe_neon;
 #[cfg(all(not(asm_msac), target_arch = "aarch64"))]
@@ -291,12 +291,6 @@ impl MsacAsmContext {
 pub struct MsacContext {
     asm: MsacAsmContext,
     data: Option<CArc<[u8]>>,
-    /// Cached Desktop64 token — summon once in new(), avoid per-call overhead.
-    #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
-    avx2_token: Option<Desktop64>,
-    /// Cached Arm64 token — NEON is baseline on aarch64, always Some.
-    #[cfg(all(not(asm_msac), target_arch = "aarch64"))]
-    neon_token: Option<Arm64>,
 }
 
 impl Deref for MsacContext {
@@ -611,9 +605,9 @@ static MIN_PROB_16: [u16; 31] = [
 /// SSE2 implementation of symbol_adapt4.
 ///
 /// Uses SSE2 SIMD for parallel CDF probability computation and comparison.
-/// Dispatched via AVX2 token (SSE2 instructions with VEX encoding).
+/// `#[rite]` with Desktop64 — inlines into any matching-feature caller.
 #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
-#[arcane]
+#[rite]
 fn rav1d_msac_decode_symbol_adapt4_sse2(
     _t: Desktop64,
     s: &mut MsacContext,
@@ -714,8 +708,9 @@ fn rav1d_msac_decode_symbol_adapt4_sse2(
 /// SSE2 implementation of symbol_adapt8.
 ///
 /// Uses full 128-bit SSE2 for parallel CDF comparison of up to 7 symbols.
+/// `#[rite]` with Desktop64 — inlines into any matching-feature caller.
 #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
-#[arcane]
+#[rite]
 fn rav1d_msac_decode_symbol_adapt8_sse2(
     _t: Desktop64,
     s: &mut MsacContext,
@@ -809,8 +804,9 @@ fn rav1d_msac_decode_symbol_adapt8_sse2(
 ///
 /// Eliminates 3-12 function calls per hi_tok invocation compared to the scalar
 /// version which calls adapt4 up to 4 times (each with ctx_norm → ctx_refill).
+/// `#[rite]` with Desktop64 — inlines into any matching-feature caller.
 #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
-#[arcane]
+#[rite]
 fn rav1d_msac_decode_hi_tok_sse2(_t: Desktop64, s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
     // n_symbols is always 3 for hi_tok
     const N: usize = 3;
@@ -1110,9 +1106,10 @@ static MIN_PROB_16_ARM: [u16; 31] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // padding
 ];
 
-/// NEON implementation of symbol_adapt16
+/// NEON implementation of symbol_adapt16.
+/// `#[rite]` with Arm64 — inlines into any matching-feature caller.
 #[cfg(all(not(asm_msac), target_arch = "aarch64"))]
-#[arcane]
+#[rite]
 fn rav1d_msac_decode_symbol_adapt16_neon(
     _t: Arm64,
     s: &mut MsacContext,
@@ -1223,9 +1220,9 @@ fn rav1d_msac_decode_symbol_adapt16_neon(
 /// NEON implementation of symbol_adapt4.
 ///
 /// Uses NEON SIMD for parallel CDF probability computation and comparison.
-/// NEON is baseline on aarch64, always available.
+/// `#[rite]` with Arm64 — inlines into any matching-feature caller.
 #[cfg(all(not(asm_msac), target_arch = "aarch64"))]
-#[arcane]
+#[rite]
 fn rav1d_msac_decode_symbol_adapt4_neon(
     _t: Arm64,
     s: &mut MsacContext,
@@ -1326,8 +1323,9 @@ fn rav1d_msac_decode_symbol_adapt4_neon(
 /// NEON implementation of symbol_adapt8.
 ///
 /// Uses full 128-bit NEON for parallel CDF comparison of up to 7 symbols.
+/// `#[rite]` with Arm64 — inlines into any matching-feature caller.
 #[cfg(all(not(asm_msac), target_arch = "aarch64"))]
-#[arcane]
+#[rite]
 fn rav1d_msac_decode_symbol_adapt8_neon(
     _t: Arm64,
     s: &mut MsacContext,
@@ -1440,8 +1438,9 @@ fn rav1d_msac_decode_symbol_adapt8_neon(
 ///
 /// Eliminates function call overhead by inlining the adapt4 SIMD comparison,
 /// CDF update, renormalization, and refill into a single tight loop.
+/// `#[rite]` with Arm64 — inlines into any matching-feature caller.
 #[cfg(all(not(asm_msac), target_arch = "aarch64"))]
-#[arcane]
+#[rite]
 fn rav1d_msac_decode_hi_tok_neon(_t: Arm64, s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
     const N: usize = 3;
 
@@ -1561,15 +1560,57 @@ impl MsacContext {
         let mut s = Self {
             asm,
             data: Some(data),
-            #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
-            avx2_token: Desktop64::summon(),
-            #[cfg(all(not(asm_msac), target_arch = "aarch64"))]
-            neon_token: Arm64::summon(),
         };
         let _ = dsp; // Silence unused warnings when asm is off.
         ctx_refill(&mut s);
         s
     }
+}
+
+// --- Arcane trampolines: #[arcane] entry → #[rite] inner (inlines) ---
+// These pay the target_feature boundary once per call. When a higher-level
+// #[arcane] boundary exists, call the #[rite] functions directly instead.
+
+#[cfg(all(not(asm_msac), target_arch = "x86_64"))]
+#[arcane]
+fn msac_adapt4_sse2_entry(t: Desktop64, s: &mut MsacContext, cdf: &mut [u16], n: u8) -> u8 {
+    rav1d_msac_decode_symbol_adapt4_sse2(t, s, cdf, n)
+}
+
+#[cfg(all(not(asm_msac), target_arch = "x86_64"))]
+#[arcane]
+fn msac_adapt8_sse2_entry(t: Desktop64, s: &mut MsacContext, cdf: &mut [u16], n: u8) -> u8 {
+    rav1d_msac_decode_symbol_adapt8_sse2(t, s, cdf, n)
+}
+
+#[cfg(all(not(asm_msac), target_arch = "x86_64"))]
+#[arcane]
+fn msac_hi_tok_sse2_entry(t: Desktop64, s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
+    rav1d_msac_decode_hi_tok_sse2(t, s, cdf)
+}
+
+#[cfg(all(not(asm_msac), target_arch = "aarch64"))]
+#[arcane]
+fn msac_adapt4_neon_entry(t: Arm64, s: &mut MsacContext, cdf: &mut [u16], n: u8) -> u8 {
+    rav1d_msac_decode_symbol_adapt4_neon(t, s, cdf, n)
+}
+
+#[cfg(all(not(asm_msac), target_arch = "aarch64"))]
+#[arcane]
+fn msac_adapt8_neon_entry(t: Arm64, s: &mut MsacContext, cdf: &mut [u16], n: u8) -> u8 {
+    rav1d_msac_decode_symbol_adapt8_neon(t, s, cdf, n)
+}
+
+#[cfg(all(not(asm_msac), target_arch = "aarch64"))]
+#[arcane]
+fn msac_hi_tok_neon_entry(t: Arm64, s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
+    rav1d_msac_decode_hi_tok_neon(t, s, cdf)
+}
+
+#[cfg(all(not(asm_msac), target_arch = "aarch64"))]
+#[arcane]
+fn msac_adapt16_neon_entry(t: Arm64, s: &mut MsacContext, cdf: &mut [u16], n: u8) -> u8 {
+    rav1d_msac_decode_symbol_adapt16_neon(t, s, cdf, n)
 }
 
 /// Return value is in the range `0..=n_symbols`.
@@ -1590,16 +1631,15 @@ pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_s
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt4_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "x86_64"))] {
-            // Token stored in MsacContext — summon() called once, not per-call.
-            if let Some(token) = s.avx2_token {
-                ret = rav1d_msac_decode_symbol_adapt4_sse2(token, s, cdf, n_symbols);
+        } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
+            if let Some(token) = Desktop64::summon() {
+                ret = msac_adapt4_sse2_entry(token, s, cdf, n_symbols);
             } else {
                 ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
             }
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "aarch64"))] {
-            if let Some(token) = s.neon_token {
-                ret = rav1d_msac_decode_symbol_adapt4_neon(token, s, cdf, n_symbols);
+        } else if #[cfg(all(not(asm_msac), target_arch = "aarch64"))] {
+            if let Some(token) = Arm64::summon() {
+                ret = msac_adapt4_neon_entry(token, s, cdf, n_symbols);
             } else {
                 ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
             }
@@ -1631,15 +1671,15 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt8_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "x86_64"))] {
-            if let Some(token) = s.avx2_token {
-                ret = rav1d_msac_decode_symbol_adapt8_sse2(token, s, cdf, n_symbols);
+        } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
+            if let Some(token) = Desktop64::summon() {
+                ret = msac_adapt8_sse2_entry(token, s, cdf, n_symbols);
             } else {
                 ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
             }
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "aarch64"))] {
-            if let Some(token) = s.neon_token {
-                ret = rav1d_msac_decode_symbol_adapt8_neon(token, s, cdf, n_symbols);
+        } else if #[cfg(all(not(asm_msac), target_arch = "aarch64"))] {
+            if let Some(token) = Arm64::summon() {
+                ret = msac_adapt8_neon_entry(token, s, cdf, n_symbols);
             } else {
                 ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
             }
@@ -1677,15 +1717,16 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt16_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "x86_64"))] {
-            if let Some(token) = s.avx2_token {
+        } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
+            // adapt16 uses AVX2 — needs summon check.
+            if let Some(token) = Desktop64::summon() {
                 ret = rav1d_msac_decode_symbol_adapt16_avx2(token, s, cdf, n_symbols) as c_uint;
             } else {
                 ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
             }
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "aarch64"))] {
-            if let Some(token) = s.neon_token {
-                ret = rav1d_msac_decode_symbol_adapt16_neon(token, s, cdf, n_symbols) as c_uint;
+        } else if #[cfg(all(not(asm_msac), target_arch = "aarch64"))] {
+            if let Some(token) = Arm64::summon() {
+                ret = msac_adapt16_neon_entry(token, s, cdf, n_symbols) as c_uint;
             } else {
                 ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
             }
@@ -1769,15 +1810,15 @@ pub fn rav1d_msac_decode_hi_tok(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
             ret = unsafe {
                 dav1d_msac_decode_hi_tok_neon(&mut s.asm, cdf.as_mut_ptr())
             } as u8;
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "x86_64"))] {
-            if let Some(token) = s.avx2_token {
-                ret = rav1d_msac_decode_hi_tok_sse2(token, s, cdf);
+        } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
+            if let Some(token) = Desktop64::summon() {
+                ret = msac_hi_tok_sse2_entry(token, s, cdf);
             } else {
                 ret = rav1d_msac_decode_hi_tok_rust(s, cdf);
             }
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "aarch64"))] {
-            if let Some(token) = s.neon_token {
-                ret = rav1d_msac_decode_hi_tok_neon(token, s, cdf);
+        } else if #[cfg(all(not(asm_msac), target_arch = "aarch64"))] {
+            if let Some(token) = Arm64::summon() {
+                ret = msac_hi_tok_neon_entry(token, s, cdf);
             } else {
                 ret = rav1d_msac_decode_hi_tok_rust(s, cdf);
             }

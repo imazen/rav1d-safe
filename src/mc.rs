@@ -613,7 +613,7 @@ fn avg_direct<BD: BitDepth>(
     h: i32,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, bd) {
         return;
     }
@@ -636,7 +636,7 @@ fn w_avg_direct<BD: BitDepth>(
     weight: i32,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::w_avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, weight, bd) {
         return;
     }
@@ -659,7 +659,7 @@ fn mask_direct<BD: BitDepth>(
     mask: &[u8],
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::mask_dispatch::<BD>(dst, tmp1, tmp2, w, h, mask, bd) {
         return;
     }
@@ -680,7 +680,7 @@ fn blend_direct<BD: BitDepth>(
     h: i32,
     mask: &[u8],
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::blend_dispatch::<BD>(dst, tmp, w, h, mask) {
         return;
     }
@@ -704,7 +704,7 @@ fn mc_put_direct<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
         return;
     }
@@ -737,7 +737,7 @@ fn mct_prep_direct<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
         return;
     }
@@ -773,7 +773,7 @@ fn mc_scaled_direct<BD: BitDepth>(
     dy: i32,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::mc_scaled_dispatch::<BD>(
         filter, dst, src, w, h, mx, my, dx, dy, bd,
     ) {
@@ -814,7 +814,7 @@ fn mct_scaled_direct<BD: BitDepth>(
     dy: i32,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::mct_scaled_dispatch::<BD>(
         filter, tmp, src, w, h, mx, my, dx, dy, bd,
     ) {
@@ -851,7 +851,7 @@ fn blend_dir_direct<BD: BitDepth>(
     w: i32,
     h: i32,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::blend_dir_dispatch::<BD>(is_h, dst, tmp, w, h) {
         return;
     }
@@ -880,7 +880,7 @@ fn w_mask_direct<BD: BitDepth>(
     sign: i32,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::w_mask_dispatch::<BD>(
         layout, dst, tmp1, tmp2, w, h, mask, sign, bd,
     ) {
@@ -917,7 +917,7 @@ fn warp8x8_direct<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::warp8x8_dispatch::<BD>(dst, src, abcd, mx, my, bd) {
         return;
     }
@@ -940,7 +940,7 @@ fn warp8x8t_direct<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::warp8x8t_dispatch::<BD>(tmp, tmp_stride, src, abcd, mx, my, bd) {
         return;
     }
@@ -967,7 +967,7 @@ fn emu_edge_direct<BD: BitDepth>(
     dst_stride: usize,
     src: &Rav1dPictureDataComponent,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::emu_edge_dispatch::<BD>(
         bw, bh, iw, ih, x, y, dst, dst_stride, src,
     ) {
@@ -995,7 +995,7 @@ fn resize_direct<BD: BitDepth>(
     mx: i32,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::mc::resize_dispatch::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd) {
         return;
     }

@@ -440,11 +440,11 @@ impl itxfm::Fn {
                 };
 
                 let simd_handled = {
-                    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+                    #[cfg(target_arch = "x86_64")]
                     { crate::src::safe_simd::itx::itxfm_add_dispatch::<BD>(tx_size, tx_type, dst, coeff, eob, bd) }
                     #[cfg(target_arch = "aarch64")]
                     { crate::src::safe_simd::itx_arm::itxfm_add_dispatch::<BD>(tx_size, tx_type, dst, coeff, eob, bd) }
-                    #[cfg(not(any(all(target_arch = "x86_64", not(feature = "force_scalar")), target_arch = "aarch64")))]
+                    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
                     { let _ = (tx_size, tx_type, &dst, &coeff, eob, &bd); false }
                 };
                 if simd_handled {

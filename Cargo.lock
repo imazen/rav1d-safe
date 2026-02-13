@@ -87,9 +87,9 @@ checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
 
 [[package]]
 name = "archmage"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d0c24830f3f145e6f43100d8df03eded39bce50c5ec74c4524328101561b34d"
+checksum = "afd4ad711cc49af9b537f61f28f25ccdac7c7505c43ac545644e9d18f2840954"
 dependencies = [
  "archmage-macros",
  "safe_unaligned_simd",

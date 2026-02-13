@@ -43,7 +43,7 @@ to_method = "1.1.0"
 zerocopy = { version = "0.7.32", features = ["derive"] }
 
 # Safe SIMD dependencies
-archmage = { version = "0.6.0", features = ["macros", "avx512"] }
+archmage = { version = "0.6.1", features = ["macros", "avx512"] }
 safe_unaligned_simd = { version = "0.2.4", features = ["avx512"] }
 
 [dev-dependencies]
@@ -83,7 +83,6 @@ asm_arm64_i8mm = ["asm"]
 asm_arm64_sve2 = ["asm"]
 
 # Force scalar fallback for all SIMD dispatch (testing only)
-force_scalar = []
 
 # Run SIMD and scalar side-by-side, panic on any mismatch (testing only)
 simd_test = []

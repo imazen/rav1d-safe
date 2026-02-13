@@ -174,7 +174,7 @@ fn lr_filter_direct<BD: BitDepth>(
     };
 
     let simd_handled = {
-        #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+        #[cfg(target_arch = "x86_64")]
         {
             crate::src::safe_simd::looprestoration::lr_filter_dispatch::<BD>(
                 variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
@@ -187,7 +187,7 @@ fn lr_filter_direct<BD: BitDepth>(
             )
         }
         #[cfg(not(any(
-            all(target_arch = "x86_64", not(feature = "force_scalar")),
+            target_arch = "x86_64",
             target_arch = "aarch64"
         )))]
         {

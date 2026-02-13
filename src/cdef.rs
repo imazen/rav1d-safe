@@ -105,7 +105,7 @@ fn cdef_direct<BD: BitDepth>(
 
     let mut simd_handled = false;
 
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::cdef::cdef_filter_dispatch::<BD>(
         variant,
         dst,
@@ -324,7 +324,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cdef_dir(
 /// Selects optimal SIMD implementation at runtime based on CPU features.
 #[cfg(not(feature = "asm"))]
 fn cdef_dir_direct<BD: BitDepth>(dst: PicOffset, variance: &mut c_uint, bd: BD) -> c_int {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if let Some(dir) = crate::src::safe_simd::cdef::cdef_dir_dispatch::<BD>(dst, variance, bd) {
         return dir;
     }

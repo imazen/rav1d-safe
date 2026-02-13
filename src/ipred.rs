@@ -100,7 +100,7 @@ fn intra_pred_direct<BD: BitDepth>(
     max_height: c_int,
     bd: BD,
 ) {
-    #[cfg(all(target_arch = "x86_64", not(feature = "force_scalar")))]
+    #[cfg(target_arch = "x86_64")]
     if crate::src::safe_simd::ipred::intra_pred_dispatch::<BD>(
         mode,
         dst,
