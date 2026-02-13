@@ -7,6 +7,11 @@
 //! hash Y plane rows (width pixels), then U rows, then V rows.
 //! 16-bit pixels are hashed as little-endian bytes.
 //! The hash accumulates across ALL frames in the file.
+//!
+//! **Requires `--release`** — debug mode is 50-100x slower and will time out.
+
+#[cfg(debug_assertions)]
+compile_error!("decode_md5_verify tests require release mode: cargo test --release");
 
 use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
 use std::fs::File;

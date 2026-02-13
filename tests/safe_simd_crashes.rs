@@ -3,7 +3,12 @@
 //! Each test decodes a raw AV1 OBU bitstream extracted from a real AVIF file.
 //! These should NOT panic — panics indicate bounds-check bugs in safe SIMD code.
 //!
-//! Run: cargo test --test safe_simd_crashes
+//! **Requires `--release`** — debug mode is too slow for decode tests.
+//!
+//! Run: cargo test --release --test safe_simd_crashes
+
+#[cfg(debug_assertions)]
+compile_error!("safe_simd_crashes tests require release mode: cargo test --release");
 
 use rav1d_safe::src::managed::Decoder;
 

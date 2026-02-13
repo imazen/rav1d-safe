@@ -7,6 +7,11 @@
 //! Since `rav1d_set_cpu_flags_mask` is global state, all levels are tested
 //! sequentially within each test function. Do NOT split levels into separate
 //! `#[test]` functions — they would race in parallel test execution.
+//!
+//! **Requires `--release`** — debug mode is 50-100x slower and will time out.
+
+#[cfg(debug_assertions)]
+compile_error!("decode_cpu_levels tests require release mode: cargo test --release");
 
 use rav1d_safe::src::managed::{CpuLevel, Decoder, Frame, Planes, Settings};
 use std::fs::File;

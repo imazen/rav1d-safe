@@ -1,3 +1,10 @@
+//! Integration tests that decode real IVF test vectors.
+//!
+//! **Requires `--release`** — debug mode is too slow for decode tests.
+
+#[cfg(debug_assertions)]
+compile_error!("integration_decode tests require release mode: cargo test --release");
+
 use rav1d_safe::src::managed::{Decoder, Planes};
 use std::fs::File;
 use std::io::BufReader;
