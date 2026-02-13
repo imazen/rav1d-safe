@@ -16,7 +16,7 @@ Completed modules (AVX2 + NEON, 8bpc + 16bpc):
 - filmgrain
 - pal (palette)
 - refmvs (reference MVs)
-- msac (symbol_adapt4/8/16, hi_tok — SSE2 + NEON)
+- msac (branchless scalar adapt4/adapt8, serial loop adapt16, scalar hi_tok)
 
 **Remaining (not ported, scalar fallback):**
 - Scaled MC (put_8tap_scaled, prep_8tap_scaled, bilin_scaled) — complex per-pixel filter selection, ~2% of profile
@@ -37,17 +37,19 @@ Run via `just profile`. Test vectors from dav1d-test-data, single-threaded, 500 
 
 | Build | ms/iter | ms/frame | vs ASM |
 |-------|---------|----------|--------|
-| ASM | 103.5 | 2.65 | 1.0x |
-| Safe-SIMD (checked) | 191.6 | 4.91 | 1.85x |
-| Safe-SIMD (unchecked) | 176.5 | 4.53 | 1.71x |
+| ASM | 93.5 | 2.40 | 1.0x |
+| Partial ASM | 131.5 | 3.37 | 1.41x |
+| Safe-SIMD (checked) | 158.0 | 4.05 | 1.69x |
+| Safe-SIMD (unchecked) | 145.2 | 3.72 | 1.55x |
 
 **10-bit film grain (10 frames):**
 
 | Build | ms/iter | ms/frame | vs ASM |
 |-------|---------|----------|--------|
-| ASM | 10.6 | 1.06 | 1.0x |
-| Safe-SIMD (checked) | 35.3 | 3.53 | 3.33x |
-| Safe-SIMD (unchecked) | 33.2 | 3.32 | 3.13x |
+| ASM | 8.8 | 0.88 | 1.0x |
+| Partial ASM | 24.9 | 2.49 | 2.83x |
+| Safe-SIMD (checked) | 31.3 | 3.13 | 3.56x |
+| Safe-SIMD (unchecked) | 28.1 | 2.81 | 3.19x |
 
 Checked→unchecked gap is small (~8%), meaning DisjointMut borrow tracking adds modest overhead.
 The 10-bit gap is larger because these are tiny frames where per-frame overhead dominates.
@@ -153,7 +155,7 @@ just profile-quick  # Same but 100 iterations
 | filmgrain | `src/safe_simd/filmgrain.rs` | **Complete** - 8bpc + 16bpc |
 | pal | `src/safe_simd/pal.rs` | **Complete** - pal_idx_finish AVX2 |
 | refmvs | `src/safe_simd/refmvs.rs` | **Complete** - splat_mv AVX2 |
-| msac | `src/msac.rs` (inline) | **Complete** - adapt4/adapt8/hi_tok SSE2, adapt16 AVX2 |
+| msac | `src/msac.rs` (inline) | **Complete** - branchless scalar (SIMD removed, scalar wins) |
 
 ### ARM aarch64 (NEON)
 
@@ -167,11 +169,11 @@ just profile-quick  # Same but 100 iterations
 | itx_arm | `src/safe_simd/itx_arm.rs` | **Complete** - 334 FFI functions, 320 dispatch entries |
 | filmgrain_arm | `src/safe_simd/filmgrain_arm.rs` | **Complete** - 8bpc + 16bpc |
 | refmvs_arm | `src/safe_simd/refmvs_arm.rs` | **Complete** - splat_mv NEON |
-| msac | `src/msac.rs` (inline) | **Complete** - adapt4/adapt8/hi_tok + adapt16 NEON |
+| msac | `src/msac.rs` (inline) | **Complete** - branchless scalar (SIMD removed, scalar wins) |
 
 ## Cross-compilation
 
-- x86_64: Full support (AVX2 SIMD + SSE2 msac)
+- x86_64: Full support (AVX2 SIMD, branchless scalar msac)
 - aarch64: Full support, NEON (cargo check --target aarch64-unknown-linux-gnu passes)
 
 ## Architecture
@@ -235,7 +237,7 @@ All unsafe is now confined to:
 
 **FFI wrappers gated behind `feature = "asm"`** in: cdef, cdef_arm, loopfilter, loopfilter_arm, looprestoration, looprestoration_arm, filmgrain, filmgrain_arm, pal.
 
-**Archmage conversions complete:** cdef constrain_avx2, msac symbol_adapt16 AVX2.
+**Archmage conversions complete:** cdef constrain_avx2. msac SIMD removed (branchless scalar faster).
 
 **Feature flags:**
 - `unchecked` - Use unchecked slice access in SIMD hot paths (skips bounds checks)
