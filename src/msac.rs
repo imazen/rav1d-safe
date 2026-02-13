@@ -18,6 +18,46 @@ use std::ptr;
 #[cfg(asm_msac)]
 use std::slice;
 
+// SSE2 intrinsics for unchecked-only msac SIMD (not archmage — direct #[target_feature])
+#[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))]
+use core::arch::x86_64::*;
+#[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))]
+use safe_unaligned_simd::x86_64 as safe_simd;
+
+/// Helper macros wrapping SSE2 intrinsic calls in `unsafe {}` blocks.
+/// SSE2 is baseline on x86_64 (always available), so this is sound.
+/// Using `unsafe` instead of `#[target_feature]` allows `#[inline(always)]`
+/// and avoids the non-inlineable function boundary that `#[target_feature]` creates.
+#[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))]
+macro_rules! loadu_si64 {
+    ($arr:expr) => {
+        // SAFETY: SSE2 is baseline x86_64, always available
+        unsafe { safe_simd::_mm_loadu_si64($arr) }
+    };
+}
+#[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))]
+macro_rules! loadu_si128 {
+    ($arr:expr) => {
+        // SAFETY: SSE2 is baseline x86_64, always available
+        unsafe { safe_simd::_mm_loadu_si128($arr) }
+    };
+}
+#[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))]
+macro_rules! storeu_si128 {
+    ($arr:expr, $v:expr) => {
+        // SAFETY: SSE2 is baseline x86_64, always available
+        unsafe { safe_simd::_mm_storeu_si128($arr, $v) }
+    };
+}
+/// Wrap an SSE2 intrinsic call in unsafe. SSE2 is baseline x86_64.
+#[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))]
+macro_rules! sse2 {
+    ($e:expr) => {
+        // SAFETY: SSE2 is baseline x86_64, always available
+        unsafe { $e }
+    };
+}
+
 #[cfg(all(asm_msac, target_feature = "sse2"))]
 extern "C" {
     fn dav1d_msac_decode_hi_tok_sse2(s: *mut MsacAsmContext, cdf: *mut u16) -> c_uint;
@@ -552,7 +592,10 @@ fn rav1d_msac_decode_bool_adapt_rust(s: &mut MsacContext, cdf: &mut [u16; 2]) ->
 /// Return value is in the range `0..=15`.
 #[inline(always)]
 #[cfg_attr(
-    all(asm_msac, any(target_feature = "sse2", target_feature = "neon")),
+    any(
+        all(asm_msac, any(target_feature = "sse2", target_feature = "neon")),
+        all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"),
+    ),
     allow(dead_code)
 )]
 fn rav1d_msac_decode_hi_tok_rust(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
@@ -573,19 +616,286 @@ fn rav1d_msac_decode_hi_tok_rust(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 
 }
 
 // ============================================================================
-// Branchless scalar implementations (used when asm feature is disabled)
+// SSE2 implementations (unchecked-only, x86_64)
 //
-// SSE2/AVX2/NEON SIMD versions existed (commit 5ca6a44) but were removed:
-// the #[arcane] function-call boundary overhead (2-3ns per call) negated
-// the SIMD gains for these small CDF operations. Branchless scalar is
-// competitive with SIMD and has zero dispatch overhead.
+// SSE2 intrinsics called via sse2!() macro wrapping each call in unsafe{}.
+// This avoids #[target_feature] (which prevents #[inline(always)]) and
+// archmage #[arcane]/#[rite] (which created non-inlineable boundaries).
+// SSE2 is baseline x86_64 — always available, so the unsafe is sound.
+//
+// Gated behind `unchecked` feature since intrinsic calls require unsafe.
+// Default build keeps branchless scalar under forbid(unsafe_code).
+// ============================================================================
+
+/// min_prob table: EC_MIN_PROB * (n - i) for symbol_adapt functions.
+/// Padded to 31 entries so any offset in 0..16 can safely load 16 values via SIMD.
+#[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))]
+static MIN_PROB_16: [u16; 31] = [
+    60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16, 12, 8, 4, 0, // valid entries
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // padding
+];
+
+/// SSE2 implementation of symbol_adapt4 (n_symbols <= 3).
+///
+/// Uses SSE2 SIMD for parallel CDF probability computation, comparison,
+/// and CDF update. Fully inlines into callers — no `#[target_feature]` boundary.
+/// SSE2 intrinsics are called via `sse2!()` macro (safe: SSE2 is baseline x86_64).
+#[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))]
+#[allow(unsafe_code)]
+#[inline(always)]
+fn adapt4_sse2(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+    debug_assert!(n_symbols > 0 && n_symbols <= 3);
+    let c = (s.dif >> (EC_WIN_SIZE - 16)) as u16;
+    let n = n_symbols as usize;
+
+    let cdf_arr: &[u16; 4] = cdf[..4].try_into().unwrap();
+    let cdf_vec = loadu_si64!(cdf_arr);
+
+    let rng_masked = (s.rng & 0xff00) as i16;
+    let rng_vec = sse2!(_mm_set1_epi16(rng_masked));
+
+    let cdf_shifted = sse2!(_mm_slli_epi16::<7>(_mm_srli_epi16::<6>(cdf_vec)));
+    let prod = sse2!(_mm_mulhi_epu16(cdf_shifted, rng_vec));
+
+    let min_prob_offset = 15 - n;
+    let min_prob_arr: &[u16; 4] = MIN_PROB_16[min_prob_offset..min_prob_offset + 4]
+        .try_into()
+        .unwrap();
+    let min_prob = loadu_si64!(min_prob_arr);
+
+    let v = sse2!(_mm_add_epi16(prod, min_prob));
+
+    let mut v_arr = [0u16; 8];
+    storeu_si128!(&mut v_arr, v);
+
+    let c_vec = sse2!(_mm_set1_epi16(c as i16));
+    let zero = sse2!(_mm_setzero_si128());
+    let sub = sse2!(_mm_subs_epu16(v, c_vec));
+    let cmp = sse2!(_mm_cmpeq_epi16(sub, zero));
+
+    let mask = sse2!(_mm_movemask_epi8(cmp)) as u32;
+    let val = std::cmp::min((mask.trailing_zeros() >> 1) as u8, n_symbols);
+
+    let u = if val == 0 {
+        s.rng
+    } else {
+        v_arr[val as usize - 1] as u32
+    };
+    let v_val = if val >= n_symbols {
+        0u32
+    } else {
+        v_arr[val as usize] as u32
+    };
+
+    ctx_norm(
+        s,
+        s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+        u - v_val,
+    );
+
+    if s.allow_update_cdf() {
+        let count = cdf[n];
+        let rate_val = 4 + (count >> 4) + (n_symbols > 2) as u16;
+
+        let all_ones = sse2!(_mm_cmpeq_epi16(zero, zero));
+        let avg = sse2!(_mm_avg_epu16(all_ones, cmp));
+        let delta = sse2!(_mm_sub_epi16(avg, cdf_vec));
+        let base = sse2!(_mm_sub_epi16(cdf_vec, cmp));
+        let rate_vec = sse2!(_mm_cvtsi32_si128(rate_val as i32));
+        let shifted = sse2!(_mm_sra_epi16(delta, rate_vec));
+        let updated = sse2!(_mm_add_epi16(base, shifted));
+
+        let mut cdf_out = [0u16; 8];
+        storeu_si128!(&mut cdf_out, updated);
+        cdf[0] = cdf_out[0];
+        cdf[1] = cdf_out[1];
+        cdf[2] = cdf_out[2];
+        cdf[n] = count + (count < 32) as u16;
+    }
+
+    val
+}
+
+/// SSE2 implementation of symbol_adapt8 (n_symbols <= 7).
+///
+/// Same strategy as adapt4 but handles up to 7 symbols with 128-bit loads.
+#[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))]
+#[allow(unsafe_code)]
+#[inline(always)]
+fn adapt8_sse2(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+    debug_assert!(n_symbols > 0 && n_symbols <= 7);
+    let c = (s.dif >> (EC_WIN_SIZE - 16)) as u16;
+    let n = n_symbols as usize;
+
+    let cdf_arr: &[u16; 8] = cdf[..8].try_into().unwrap();
+    let cdf_vec = loadu_si128!(cdf_arr);
+
+    let rng_masked = (s.rng & 0xff00) as i16;
+    let rng_vec = sse2!(_mm_set1_epi16(rng_masked));
+
+    let cdf_shifted = sse2!(_mm_slli_epi16::<7>(_mm_srli_epi16::<6>(cdf_vec)));
+    let prod = sse2!(_mm_mulhi_epu16(cdf_shifted, rng_vec));
+
+    let min_prob_offset = 15 - n;
+    let min_prob_arr: &[u16; 8] = MIN_PROB_16[min_prob_offset..min_prob_offset + 8]
+        .try_into()
+        .unwrap();
+    let min_prob = loadu_si128!(min_prob_arr);
+
+    let v = sse2!(_mm_add_epi16(prod, min_prob));
+
+    let mut v_arr = [0u16; 8];
+    storeu_si128!(&mut v_arr, v);
+
+    let c_vec = sse2!(_mm_set1_epi16(c as i16));
+    let zero = sse2!(_mm_setzero_si128());
+    let sub = sse2!(_mm_subs_epu16(v, c_vec));
+    let cmp = sse2!(_mm_cmpeq_epi16(sub, zero));
+
+    let mask = sse2!(_mm_movemask_epi8(cmp)) as u32;
+    let val = std::cmp::min((mask.trailing_zeros() >> 1) as u8, n_symbols);
+
+    let u = if val == 0 {
+        s.rng
+    } else {
+        v_arr[val as usize - 1] as u32
+    };
+    let v_val = if val >= n_symbols {
+        0u32
+    } else {
+        v_arr[val as usize] as u32
+    };
+
+    ctx_norm(
+        s,
+        s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+        u - v_val,
+    );
+
+    if s.allow_update_cdf() {
+        let count = cdf[n];
+        let rate_val = 4 + (count >> 4) + (n_symbols > 2) as u16;
+
+        let all_ones = sse2!(_mm_cmpeq_epi16(zero, zero));
+        let avg = sse2!(_mm_avg_epu16(all_ones, cmp));
+        let delta = sse2!(_mm_sub_epi16(avg, cdf_vec));
+        let base = sse2!(_mm_sub_epi16(cdf_vec, cmp));
+        let rate_vec = sse2!(_mm_cvtsi32_si128(rate_val as i32));
+        let shifted = sse2!(_mm_sra_epi16(delta, rate_vec));
+        let updated = sse2!(_mm_add_epi16(base, shifted));
+
+        let mut cdf_out = [0u16; 8];
+        storeu_si128!(&mut cdf_out, updated);
+        for i in 0..n {
+            cdf[i] = cdf_out[i];
+        }
+        cdf[n] = count + (count < 32) as u16;
+    }
+
+    val
+}
+
+/// SSE2 implementation of hi_tok.
+///
+/// Inlines adapt4 + CDF update + renorm for all 4 iterations,
+/// avoiding per-call overhead. Fully inlined (no `#[target_feature]` boundary).
+#[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))]
+#[allow(unsafe_code)]
+#[inline(always)]
+fn hi_tok_sse2(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
+    const N: usize = 3;
+
+    let min_prob_arr: &[u16; 4] = MIN_PROB_16[12..16].try_into().unwrap();
+    let min_prob = loadu_si64!(min_prob_arr);
+
+    let update = s.allow_update_cdf();
+    let mut tok_br;
+    let mut tok: u8 = 0;
+
+    for iter in 0..4u8 {
+        let c = (s.dif >> (EC_WIN_SIZE - 16)) as u16;
+
+        let cdf_load: &[u16; 4] = cdf[..4].try_into().unwrap();
+        let cdf_vec = loadu_si64!(cdf_load);
+
+        let rng_masked = (s.rng & 0xff00) as i16;
+        let rng_vec = sse2!(_mm_set1_epi16(rng_masked));
+
+        let cdf_shifted = sse2!(_mm_slli_epi16::<7>(_mm_srli_epi16::<6>(cdf_vec)));
+        let prod = sse2!(_mm_mulhi_epu16(cdf_shifted, rng_vec));
+        let v = sse2!(_mm_add_epi16(prod, min_prob));
+
+        let mut v_arr = [0u16; 8];
+        storeu_si128!(&mut v_arr, v);
+
+        let c_vec = sse2!(_mm_set1_epi16(c as i16));
+        let zero = sse2!(_mm_setzero_si128());
+        let sub = sse2!(_mm_subs_epu16(v, c_vec));
+        let cmp = sse2!(_mm_cmpeq_epi16(sub, zero));
+        let mask = sse2!(_mm_movemask_epi8(cmp)) as u32;
+        tok_br = std::cmp::min((mask.trailing_zeros() >> 1) as u8, N as u8);
+
+        let u = if tok_br == 0 {
+            s.rng
+        } else {
+            v_arr[tok_br as usize - 1] as u32
+        };
+        let v_val = if tok_br >= N as u8 {
+            0u32
+        } else {
+            v_arr[tok_br as usize] as u32
+        };
+
+        if update {
+            let count = cdf[N];
+            let rate_val = 4 + (count >> 4) + 1;
+
+            let all_ones = sse2!(_mm_cmpeq_epi16(zero, zero));
+            let avg = sse2!(_mm_avg_epu16(all_ones, cmp));
+            let delta = sse2!(_mm_sub_epi16(avg, cdf_vec));
+            let base = sse2!(_mm_sub_epi16(cdf_vec, cmp));
+            let rate_vec = sse2!(_mm_cvtsi32_si128(rate_val as i32));
+            let shifted = sse2!(_mm_sra_epi16(delta, rate_vec));
+            let updated = sse2!(_mm_add_epi16(base, shifted));
+
+            let mut cdf_out = [0u16; 8];
+            storeu_si128!(&mut cdf_out, updated);
+            cdf[0] = cdf_out[0];
+            cdf[1] = cdf_out[1];
+            cdf[2] = cdf_out[2];
+            cdf[N] = count + (count < 32) as u16;
+        }
+
+        let new_rng = u - v_val;
+        let d = 15 ^ (31 ^ clz(new_rng));
+        let new_dif = s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16));
+        let cnt = s.cnt;
+        s.dif = new_dif << d;
+        s.rng = new_rng << d;
+        s.cnt = cnt - d;
+
+        if (cnt as u32) < (d as u32) {
+            ctx_refill(s);
+        }
+
+        tok = iter * 3 + 3 + tok_br;
+        if tok_br < 3 {
+            break;
+        }
+    }
+
+    tok
+}
+
+// ============================================================================
+// Branchless scalar implementations (used when asm and SSE2 are both disabled)
 // ============================================================================
 
 /// Branchless implementation of symbol_adapt for n_symbols <= 3 (adapt4).
 ///
 /// Eliminates branch misprediction from the serial comparison loop by
 /// computing all v values and counting matches branchlessly.
-#[cfg(not(asm_msac))]
+#[cfg(all(not(asm_msac), not(all(target_arch = "x86_64", feature = "unchecked"))))]
 #[inline(always)]
 fn rav1d_msac_decode_symbol_adapt4_branchless(
     s: &mut MsacContext,
@@ -644,7 +954,7 @@ fn rav1d_msac_decode_symbol_adapt4_branchless(
 /// Branchless implementation of symbol_adapt for n_symbols <= 7 (adapt8).
 ///
 /// Same strategy as adapt4 but handles up to 7 symbols.
-#[cfg(not(asm_msac))]
+#[cfg(all(not(asm_msac), not(all(target_arch = "x86_64", feature = "unchecked"))))]
 #[inline(always)]
 fn rav1d_msac_decode_symbol_adapt8_branchless(
     s: &mut MsacContext,
@@ -739,6 +1049,8 @@ pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_s
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt4_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
+        } else if #[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))] {
+            ret = adapt4_sse2(s, cdf, n_symbols);
         } else if #[cfg(not(asm_msac))] {
             ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
         } else {
@@ -767,6 +1079,8 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt8_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
+        } else if #[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))] {
+            ret = adapt8_sse2(s, cdf, n_symbols);
         } else if #[cfg(not(asm_msac))] {
             ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
         } else {
@@ -885,6 +1199,8 @@ pub fn rav1d_msac_decode_hi_tok(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
             ret = unsafe {
                 dav1d_msac_decode_hi_tok_neon(&mut s.asm, cdf.as_mut_ptr())
             } as u8;
+        } else if #[cfg(all(not(asm_msac), target_arch = "x86_64", feature = "unchecked"))] {
+            ret = hi_tok_sse2(s, cdf);
         } else if #[cfg(not(asm_msac))] {
             ret = rav1d_msac_decode_hi_tok_rust(s, cdf);
         }
