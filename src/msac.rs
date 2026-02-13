@@ -1580,18 +1580,10 @@ pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_s
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt4_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "x86_64"))] {
-            // SIMD with runtime AVX2 check (VEX-encoded SSE2), scalar fallback
-            if let Some(token) = crate::src::cpu::summon_avx2() {
-                ret = rav1d_msac_decode_symbol_adapt4_sse2(token, s, cdf, n_symbols);
-            } else {
-                ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
-            }
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "aarch64"))] {
-            // NEON is baseline on aarch64, always available
-            let token = Arm64::summon().unwrap();
-            ret = rav1d_msac_decode_symbol_adapt4_neon(token, s, cdf, n_symbols);
         } else if #[cfg(not(asm_msac))] {
+            // Branchless scalar is faster than SSE2 #[arcane] for adapt4 (3 symbols).
+            // The #[arcane] target_feature barrier prevents inlining, and the function
+            // call overhead + dispatch check exceeds the SIMD benefit at this width.
             ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
         } else {
             ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols);
@@ -1619,17 +1611,9 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt8_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "x86_64"))] {
-            if let Some(token) = crate::src::cpu::summon_avx2() {
-                ret = rav1d_msac_decode_symbol_adapt8_sse2(token, s, cdf, n_symbols);
-            } else {
-                ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
-            }
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "aarch64"))] {
-            // NEON is baseline on aarch64, always available
-            let token = Arm64::summon().unwrap();
-            ret = rav1d_msac_decode_symbol_adapt8_neon(token, s, cdf, n_symbols);
         } else if #[cfg(not(asm_msac))] {
+            // Branchless scalar is faster than SSE2 #[arcane] for adapt8 (7 symbols).
+            // Same reason as adapt4: target_feature prevents inlining.
             ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
         } else {
             ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols);
@@ -1754,18 +1738,10 @@ pub fn rav1d_msac_decode_hi_tok(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
             ret = unsafe {
                 dav1d_msac_decode_hi_tok_neon(&mut s.asm, cdf.as_mut_ptr())
             } as u8;
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "x86_64"))] {
-            // Monolithic SIMD — inlines adapt4 + renorm + refill in a tight loop
-            if let Some(token) = crate::src::cpu::summon_avx2() {
-                ret = rav1d_msac_decode_hi_tok_sse2(token, s, cdf);
-            } else {
-                ret = rav1d_msac_decode_hi_tok_rust(s, cdf);
-            }
-        } else if #[cfg(all(not(asm_msac), not(feature = "force_scalar"), target_arch = "aarch64"))] {
-            // Monolithic NEON — inlines adapt4 + renorm + refill in a tight loop
-            let token = Arm64::summon().unwrap();
-            ret = rav1d_msac_decode_hi_tok_neon(token, s, cdf);
-        } else {
+        } else if #[cfg(not(asm_msac))] {
+            // Scalar hi_tok is faster because adapt4 inlines (branchless scalar),
+            // so the 4 calls in the hi_tok loop have zero call overhead.
+            // SSE2 #[arcane] hi_tok can't inline due to target_feature barrier.
             ret = rav1d_msac_decode_hi_tok_rust(s, cdf);
         }
     }
