@@ -337,14 +337,14 @@ impl Rav1dPictureDataComponent {
     #[cfg(feature = "c-ffi")]
     fn from_parts(inner: Rav1dPictureDataComponentInner, _stride: isize) -> Self {
         Self {
-            data: DisjointMut::new(inner),
+            data: crate::src::disjoint_mut::dm_new(inner),
         }
     }
 
     #[cfg(not(feature = "c-ffi"))]
     fn from_parts(inner: Rav1dPictureDataComponentInner, stride: isize) -> Self {
         Self {
-            data: DisjointMut::new(inner),
+            data: crate::src::disjoint_mut::dm_new(inner),
             stride,
         }
     }

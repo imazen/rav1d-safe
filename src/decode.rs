@@ -30,7 +30,6 @@ use crate::src::cdf::CdfThreadContext;
 use crate::src::ctx::CaseSet;
 use crate::src::dequant_tables::dav1d_dq_tbl;
 use crate::src::disjoint_mut::DisjointMut;
-use crate::src::disjoint_mut::DisjointMutArcSlice;
 use crate::src::disjoint_mut::DisjointMutSlice;
 use crate::src::disjoint_mut::TryResizable;
 use crate::src::disjoint_mut::TryResizableWith;
@@ -5232,7 +5231,7 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     // ref_mvs
     if frame_hdr.frame_type.is_inter_or_switch() || frame_hdr.allow_intrabc {
         let mvs_sz = f.sb128h as usize * 16 * (f.b4_stride >> 1) as usize;
-        f.mvs = Some(DisjointMutArcSlice::try_new(mvs_sz, Default::default()).map_err(|_| ENOMEM)?);
+        f.mvs = Some(crate::src::disjoint_mut::dm_arc_try_new(mvs_sz, Default::default()).map_err(|_| ENOMEM)?);
         if !frame_hdr.allow_intrabc {
             for i in 0..7 {
                 f.refpoc[i] = f.refp[i].p.frame_hdr.as_ref().unwrap().frame_offset as c_uint;
@@ -5293,7 +5292,7 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
                     // Otherwise if there's no previous, we need to make a new map.
                     // Allocate one here and zero it out.
                     let segmap_size = f.b4_stride as usize * 32 * f.sb128h as usize;
-                    DisjointMutArcSlice::try_new(segmap_size, Default::default())
+                    crate::src::disjoint_mut::dm_arc_try_new(segmap_size, Default::default())
                         .map_err(|_| ENOMEM)?
                 }
                 (_, Some(prev_segmap)) => {

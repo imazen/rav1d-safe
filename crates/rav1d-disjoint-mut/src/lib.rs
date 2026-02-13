@@ -12,7 +12,10 @@
 //! **sound safe abstraction**: safe code cannot cause undefined behavior.
 //!
 //! For performance-critical code that has been audited for correctness, the
-//! `dangerously_unchecked()` unsafe constructor skips runtime tracking.
+//! [`DisjointMut::dangerously_unchecked()`] `unsafe` constructor skips runtime
+//! tracking. The `unsafe` boundary ensures that opting out of tracking is an
+//! explicit, auditable decision — not something that can happen via feature
+//! unification or accident.
 //!
 //! # Example
 //!
@@ -80,8 +83,8 @@ use zerocopy::FromBytes;
 /// regions are actually disjoint with all other borrows for the lifetime of the
 /// returned guard. This makes `DisjointMut` a provably safe abstraction (like `RefCell`).
 ///
-/// For audited hot paths, enable the `unchecked` feature and use
-/// `DisjointMut::dangerously_unchecked` to skip tracking.
+/// For audited hot paths, use
+/// [`DisjointMut::dangerously_unchecked`] to skip tracking.
 pub struct DisjointMut<T: ?Sized + AsMutPtr> {
     tracker: Option<checked::BorrowTracker>,
 
@@ -147,12 +150,32 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
 }
 
 impl<T: AsMutPtr> DisjointMut<T> {
+    /// Creates a new `DisjointMut` with runtime borrow tracking enabled.
+    ///
+    /// Every `.index()` and `.index_mut()` call will validate that the
+    /// requested range doesn't overlap with any outstanding borrow.
     pub const fn new(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
-            #[cfg(not(feature = "unchecked"))]
             tracker: Some(checked::BorrowTracker::new()),
-            #[cfg(feature = "unchecked")]
+        }
+    }
+
+    /// Creates a new `DisjointMut` **without** runtime borrow tracking.
+    ///
+    /// This skips all overlap checking — `.index_mut()` will create `&mut`
+    /// references without verifying that they don't alias. This is faster
+    /// but the caller must manually ensure that all borrows are disjoint.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that all borrows through this instance
+    /// are non-overlapping. Overlapping mutable borrows cause undefined
+    /// behavior (aliasing `&mut` references). Verify correctness by
+    /// running the full test suite with a tracked (`new()`) instance first.
+    pub const unsafe fn dangerously_unchecked(value: T) -> Self {
+        Self {
+            inner: UnsafeCell::new(value),
             tracker: None,
         }
     }
@@ -660,7 +683,10 @@ impl TranslateRange for RangeFrom<usize> {
 
 impl TranslateRange for RangeInclusive<usize> {
     fn mul(&self, by: usize) -> Self {
-        *self.start() * by..=*self.end() * by
+        // 3..=5 with by=4 means elements 3,4,5 → bytes 12..=23 (not 12..=20).
+        // Each element occupies `by` bytes, so the inclusive end in bytes is
+        // one past the last element's start: (end + 1) * by - 1.
+        *self.start() * by..=(*self.end() + 1) * by - 1
     }
 }
 
@@ -672,7 +698,8 @@ impl TranslateRange for RangeTo<usize> {
 
 impl TranslateRange for RangeToInclusive<usize> {
     fn mul(&self, by: usize) -> Self {
-        ..=self.end * by
+        // ..=5 with by=4 means elements 0..=5 → bytes 0..=23 (not 0..=20).
+        ..=(self.end + 1) * by - 1
     }
 }
 
@@ -881,15 +908,10 @@ mod checked {
     /// Uses a simple `AtomicBool::swap` for the lock — cheaper than
     /// `compare_exchange` on the uncontended fast path because `swap`
     /// is an unconditional store (no branch on old value). For the
-    /// single-threaded case (rav1d threads=1), this never spins.
+    /// single-threaded case (rav1d `threads=1`), this never spins.
     ///
-    /// When the `single-threaded` feature is enabled, uses a `Cell<bool>`
-    /// instead of `AtomicBool`, eliminating atomic bus-lock overhead entirely.
-    /// This is safe only when the DisjointMut is never shared across threads.
-    #[cfg(not(feature = "single-threaded"))]
     struct TinyLock(AtomicBool);
 
-    #[cfg(not(feature = "single-threaded"))]
     impl TinyLock {
         const fn new() -> Self {
             Self(AtomicBool::new(false))
@@ -921,46 +943,12 @@ mod checked {
         }
     }
 
-    #[cfg(not(feature = "single-threaded"))]
     struct TinyGuard<'a>(&'a AtomicBool);
 
-    #[cfg(not(feature = "single-threaded"))]
     impl<'a> Drop for TinyGuard<'a> {
         #[inline(always)]
         fn drop(&mut self) {
             self.0.store(false, Ordering::Release);
-        }
-    }
-
-    /// Cell-based lock for single-threaded mode. No atomic operations.
-    #[cfg(feature = "single-threaded")]
-    struct TinyLock(core::cell::Cell<bool>);
-
-    #[cfg(feature = "single-threaded")]
-    impl TinyLock {
-        const fn new() -> Self {
-            Self(core::cell::Cell::new(false))
-        }
-
-        #[inline(always)]
-        fn lock(&self) -> TinyGuard<'_> {
-            debug_assert!(
-                !self.0.get(),
-                "TinyLock: recursive lock in single-threaded mode"
-            );
-            self.0.set(true);
-            TinyGuard(&self.0)
-        }
-    }
-
-    #[cfg(feature = "single-threaded")]
-    struct TinyGuard<'a>(&'a core::cell::Cell<bool>);
-
-    #[cfg(feature = "single-threaded")]
-    impl<'a> Drop for TinyGuard<'a> {
-        #[inline(always)]
-        fn drop(&mut self) {
-            self.0.set(false);
         }
     }
 
@@ -1518,6 +1506,37 @@ impl<T: Copy> DisjointMutArcSlice<T> {
             inner: Arc::new(DisjointMut::new(v.into_boxed_slice())),
         })
     }
+
+    /// Like [`try_new`](Self::try_new) but without borrow tracking.
+    ///
+    /// # Safety
+    ///
+    /// See [`DisjointMut::dangerously_unchecked()`].
+    pub unsafe fn try_new_unchecked(
+        n: usize,
+        value: T,
+    ) -> Result<Self, alloc::collections::TryReserveError> {
+        let mut v = Vec::new();
+        v.try_reserve(n)?;
+        v.resize(n, value);
+        Ok(Self {
+            inner: Arc::new(unsafe { DisjointMut::dangerously_unchecked(v.into_boxed_slice()) }),
+        })
+    }
+}
+
+impl<T: Copy> DisjointMutArcSlice<T> {
+    /// Like [`FromIterator`] but without borrow tracking.
+    ///
+    /// # Safety
+    ///
+    /// See [`DisjointMut::dangerously_unchecked()`].
+    pub unsafe fn from_iter_unchecked<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let box_slice = iter.into_iter().collect::<Box<[_]>>();
+        Self {
+            inner: Arc::new(unsafe { DisjointMut::dangerously_unchecked(box_slice) }),
+        }
+    }
 }
 
 impl<T: Copy> FromIterator<T> for DisjointMutArcSlice<T> {
@@ -1683,7 +1702,6 @@ fn test_overlapping_immut() {
 
 #[test]
 #[should_panic]
-#[cfg(not(feature = "unchecked"))]
 fn test_overlapping_mut() {
     let mut v: DisjointMut<Vec<u8>> = Default::default();
     v.resize(10, 0u8);
@@ -1742,6 +1760,55 @@ fn test_range_overlap() {
     // RangeToInclusive no overlap.
     assert!(!overlaps(..=7, 8..10));
     assert!(!overlaps(8..10, ..=7));
+}
+
+#[test]
+fn test_dangerously_unchecked_skips_tracking() {
+    use alloc::vec;
+    // dangerously_unchecked creates an instance without borrow tracking.
+    // Overlapping borrows don't panic (but would be UB in real code).
+    let v = unsafe { DisjointMut::dangerously_unchecked(vec![0u8; 100]) };
+    assert!(!v.is_checked());
+
+    // This would panic on a tracked instance, but succeeds here:
+    let _g1 = v.index_mut(0..50);
+    let _g2 = v.index_mut(25..75); // overlaps with g1 — only safe because this is a test
+}
+
+#[test]
+fn test_new_always_tracked() {
+    use alloc::vec;
+    let v = DisjointMut::new(vec![0u8; 100]);
+    assert!(v.is_checked());
+}
+
+#[test]
+fn test_range_inclusive_mul() {
+    // 3..=5 with by=4: elements 3,4,5 → bytes 12,13,...,23
+    let r = (3..=5usize).mul(4);
+    assert_eq!(*r.start(), 12);
+    assert_eq!(*r.end(), 23);
+
+    // 0..=0 with by=4: element 0 → bytes 0,1,2,3
+    let r = (0..=0usize).mul(4);
+    assert_eq!(*r.start(), 0);
+    assert_eq!(*r.end(), 3);
+
+    // 0..=2 with by=1: elements 0,1,2 → bytes 0,1,2
+    let r = (0..=2usize).mul(1);
+    assert_eq!(*r.start(), 0);
+    assert_eq!(*r.end(), 2);
+}
+
+#[test]
+fn test_range_to_inclusive_mul() {
+    // ..=5 with by=4: elements 0..=5 → bytes 0..=23
+    let r = (..=5usize).mul(4);
+    assert_eq!(r.end, 23);
+
+    // ..=0 with by=4: element 0 → bytes 0..=3
+    let r = (..=0usize).mul(4);
+    assert_eq!(r.end, 3);
 }
 
 // NOTE: Tests for aligned/aligned-vec integration are in align.rs
