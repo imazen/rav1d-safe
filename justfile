@@ -200,6 +200,28 @@ bench-avif-asm:
 bench-avif-partial-asm:
     cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16,partial_asm"
 
+# Export tango baseline (run before making changes)
+tango-export features="bitdepth_8,bitdepth_16":
+    cargo export target/tango -- bench --bench=tango_decode --no-default-features --features "{{features}}"
+
+# Compare against tango baseline (run after making changes)
+tango-compare features="bitdepth_8,bitdepth_16":
+    cargo bench --bench=tango_decode --no-default-features --features "{{features}}" -- compare target/tango/tango_decode
+
+# Full tango A/B: export baseline from a git ref, then compare HEAD
+tango-ab ref="HEAD~1" features="bitdepth_8,bitdepth_16":
+    #!/usr/bin/env bash
+    set -e
+    echo "=== Exporting baseline from {{ref}} ==="
+    git stash --include-untracked -q 2>/dev/null || true
+    git checkout "{{ref}}" -q
+    cargo export target/tango -- bench --bench=tango_decode --no-default-features --features "{{features}}" 2>&1
+    git checkout - -q
+    git stash pop -q 2>/dev/null || true
+    echo ""
+    echo "=== Comparing HEAD against {{ref}} ==="
+    cargo bench --bench=tango_decode --no-default-features --features "{{features}}" -- compare target/tango/tango_decode 2>&1
+
 # Run all benchmarks across all four modes for comparison
 bench-compare:
     #!/usr/bin/env bash

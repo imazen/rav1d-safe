@@ -358,6 +358,9 @@ mod asm {
 }
 
 fn main() {
+    // Tango benchmarks need -rdynamic so the exported binary can dlopen itself.
+    println!("cargo:rustc-link-arg-benches=-rdynamic");
+
     // Register custom cfg flags so the compiler doesn't warn about them.
     println!("cargo::rustc-check-cfg=cfg(asm_msac)");
     println!("cargo::rustc-check-cfg=cfg(asm_loopfilter)");

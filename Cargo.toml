@@ -49,6 +49,7 @@ safe_unaligned_simd = { version = "0.2.4", features = ["avx512"] }
 [dev-dependencies]
 divan = "0.1"
 md5 = "0.8.0"
+tango-bench = "0.6"
 zenavif-parse = { path = "../zenavif-parse", features = ["eager"] }
 
 [build-dependencies]
@@ -97,6 +98,10 @@ harness = false
 
 [[bench]]
 name = "decode_avif"
+harness = false
+
+[[bench]]
+name = "tango_decode"
 harness = false
 
 [profile.bench]
