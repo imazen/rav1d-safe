@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
+#![cfg_attr(not(asm_loopfilter), forbid(unsafe_code))]
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::common::bitdepth::DynPixel;
@@ -19,12 +19,12 @@ use std::ffi::c_int;
 use strum::FromRepr;
 
 #[cfg(all(
-    feature = "asm",
+    asm_loopfilter,
     not(any(target_arch = "riscv64", target_arch = "riscv32"))
 ))]
 use crate::include::common::bitdepth::bd_fn;
 
-#[cfg(not(feature = "asm"))]
+#[cfg(not(asm_loopfilter))]
 use crate::src::enum_map::DefaultValue;
 
 wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
@@ -43,8 +43,8 @@ wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
 /// Direct dispatch for loopfilter_sb - bypasses function pointer table.
 ///
 /// Selects optimal SIMD implementation at runtime based on CPU features.
-/// Used when `feature = "asm"` is disabled for zero-overhead direct calls.
-#[cfg(not(feature = "asm"))]
+/// Used when ASM loopfilter is disabled for zero-overhead direct calls.
+#[cfg(not(asm_loopfilter))]
 fn loopfilter_sb_scalar<BD: BitDepth>(
     dst: PicOffset,
     mask: &[u32; 3],
@@ -72,7 +72,7 @@ fn loopfilter_sb_scalar<BD: BitDepth>(
     }
 }
 
-#[cfg(not(feature = "asm"))]
+#[cfg(not(asm_loopfilter))]
 fn loopfilter_sb_direct<BD: BitDepth>(
     f: &Rav1dFrameData,
     dst: PicOffset,
@@ -194,7 +194,7 @@ impl loopfilter_sb::Fn {
         is_v: bool,
     ) {
         cfg_if::cfg_if! {
-            if #[cfg(feature = "asm")] {
+            if #[cfg(asm_loopfilter)] {
                 let _ = (is_y, is_v);
                 let dst_ptr = dst.as_mut_ptr::<BD>().cast();
                 let stride = dst.stride();
@@ -221,7 +221,7 @@ impl loopfilter_sb::Fn {
         }
     }
 
-    #[cfg(feature = "asm")]
+    #[cfg(asm_loopfilter)]
     const fn default<BD: BitDepth, const HV: usize, const YUV: usize>() -> Self {
         Self::new(loop_filter_sb128_c_erased::<BD, { HV }, { YUV }>)
     }
@@ -512,7 +512,7 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
 /// # Safety
 ///
 /// Must be called by [`loopfilter_sb::Fn::call`].
-#[cfg(feature = "asm")]
+#[cfg(asm_loopfilter)]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, const YUV: usize>(
     _dst_ptr: *mut DynPixel,
@@ -538,7 +538,7 @@ unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, c
 impl Rav1dLoopFilterDSPContext {
     pub const fn default<BD: BitDepth>() -> Self {
         cfg_if::cfg_if! {
-            if #[cfg(feature = "asm")] {
+            if #[cfg(asm_loopfilter)] {
                 use HV::*;
                 use YUV::*;
                 Self {
@@ -570,7 +570,7 @@ impl Rav1dLoopFilterDSPContext {
         }
     }
 
-    #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]
+    #[cfg(all(asm_loopfilter, any(target_arch = "x86", target_arch = "x86_64")))]
     #[inline(always)]
     const fn init_x86<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
         if !flags.contains(CpuFlags::SSSE3) {
@@ -610,7 +610,7 @@ impl Rav1dLoopFilterDSPContext {
         self
     }
 
-    #[cfg(all(feature = "asm", any(target_arch = "arm", target_arch = "aarch64")))]
+    #[cfg(all(asm_loopfilter, any(target_arch = "arm", target_arch = "aarch64")))]
     #[inline(always)]
     const fn init_arm<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
         if !flags.contains(CpuFlags::NEON) {
@@ -627,7 +627,7 @@ impl Rav1dLoopFilterDSPContext {
 
     #[inline(always)]
     const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
-        #[cfg(feature = "asm")]
+        #[cfg(asm_loopfilter)]
         {
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             {

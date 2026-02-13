@@ -12,6 +12,10 @@ build:
 build-asm:
     cargo build --features "asm,bitdepth_8,bitdepth_16" --release
 
+# Build with partial ASM (ASM msac + loopfilter, safe SIMD everything else)
+build-partial-asm:
+    cargo build --no-default-features --features "bitdepth_8,bitdepth_16,partial_asm" --release
+
 # Run all tests
 test:
     cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release
@@ -112,6 +116,10 @@ bench-unchecked:
 bench-asm:
     cargo bench --bench decode --features "asm,bitdepth_8,bitdepth_16"
 
+# Benchmark decode (partial asm: ASM msac + loopfilter, safe SIMD rest)
+bench-partial-asm:
+    cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16,partial_asm"
+
 # Run panic safety tests specifically
 test-panic:
     cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --test panic_safety_test --release
@@ -138,6 +146,12 @@ profile iters="500":
 
     echo "=== Safe-SIMD (unchecked bounds) ==="
     cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" --example profile_decode 2>/dev/null
+    ./target/release/examples/profile_decode "$IVF8" {{iters}} 2>&1
+    ./target/release/examples/profile_decode "$IVF10" {{iters}} 2>&1
+    echo ""
+
+    echo "=== Partial ASM (ASM msac + loopfilter, safe SIMD rest) ==="
+    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,partial_asm" --example profile_decode 2>/dev/null
     ./target/release/examples/profile_decode "$IVF8" {{iters}} 2>&1
     ./target/release/examples/profile_decode "$IVF10" {{iters}} 2>&1
 
@@ -182,7 +196,11 @@ bench-avif-unchecked:
 bench-avif-asm:
     cargo bench --bench decode_avif --features "asm,bitdepth_8,bitdepth_16"
 
-# Run all benchmarks across all three modes (checked, unchecked, asm) for comparison
+# Benchmark AVIF decode (partial asm)
+bench-avif-partial-asm:
+    cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16,partial_asm"
+
+# Run all benchmarks across all four modes for comparison
 bench-compare:
     #!/usr/bin/env bash
     set -e
@@ -197,6 +215,12 @@ bench-compare:
     echo "============================================"
     cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" 2>&1 | grep -E "photo_|Timer"
     cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" 2>&1 | grep -E "bit/|film_grain/|Timer"
+    echo ""
+    echo "============================================"
+    echo "=== Partial ASM (ASM msac + loopfilter)  ==="
+    echo "============================================"
+    cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16,partial_asm" 2>&1 | grep -E "photo_|Timer"
+    cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16,partial_asm" 2>&1 | grep -E "bit/|film_grain/|Timer"
     echo ""
     echo "============================================"
     echo "=== ASM (hand-written assembly)           ==="

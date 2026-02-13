@@ -35,7 +35,7 @@ use crate::src::error::Rav1dError::EINVAL;
 use crate::src::error::Rav1dResult;
 #[cfg(not(feature = "c-ffi"))]
 use crate::src::mem::MemPool;
-#[cfg(feature = "asm")]
+#[cfg(asm_fn_ptrs)]
 use crate::src::pixels::Pixels;
 #[cfg(feature = "c-ffi")]
 use crate::src::send_sync_non_null::SendSyncNonNull;
@@ -393,7 +393,7 @@ impl Rav1dPictureDataComponent {
     }
 }
 
-#[cfg(feature = "asm")]
+#[cfg(asm_fn_ptrs)]
 impl Pixels for Rav1dPictureDataComponent {
     fn byte_len(&self) -> usize {
         self.dm().len()

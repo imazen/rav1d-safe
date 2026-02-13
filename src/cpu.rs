@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
+#![cfg_attr(not(any(feature = "asm", feature = "partial_asm")), forbid(unsafe_code))]
 use crate::src::const_fn::const_for;
 use bitflags::bitflags;
 use std::ffi::c_uint;
@@ -143,8 +143,8 @@ impl CpuFlags {
                 flags |= Self::AVX512ICL;
             }
 
-            // Slow gather detection requires raw_cpuid (only available with asm feature)
-            #[cfg(feature = "asm")]
+            // Slow gather detection requires raw_cpuid
+            #[cfg(any(feature = "asm", feature = "partial_asm"))]
             {
                 /// Detect Excavator, Zen, Zen+, Zen 2, Zen 3, Zen 3+, Zen 4.
                 fn is_slow_gather() -> Option<()> {

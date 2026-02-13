@@ -48,15 +48,15 @@ macro_rules! wrap_fn_ptr {
             use super::*;
 
             // When asm is enabled, use real function pointers for C calling convention.
-            #[cfg(feature = "asm")]
+            #[cfg(asm_fn_ptrs)]
             pub type FnPtr = unsafe extern "C" fn($($arg_name: $arg_ty),*) -> $return_ty;
 
-            #[cfg(feature = "asm")]
+            #[cfg(asm_fn_ptrs)]
             #[derive(Clone, Copy, PartialEq, Eq)]
             #[repr(transparent)]
             pub struct Fn(FnPtr);
 
-            #[cfg(feature = "asm")]
+            #[cfg(asm_fn_ptrs)]
             impl Fn {
                 pub(super) const fn new(fn_ptr: FnPtr) -> Self {
                     Self(fn_ptr)
@@ -67,7 +67,7 @@ macro_rules! wrap_fn_ptr {
                 }
             }
 
-            #[cfg(feature = "asm")]
+            #[cfg(asm_fn_ptrs)]
             impl DefaultValue for Fn {
                 const DEFAULT: Self = {
                     extern "C" fn default_unimplemented(
@@ -84,11 +84,11 @@ macro_rules! wrap_fn_ptr {
             // The `call` methods use direct dispatch and never dereference fn ptrs.
             // The c-ffi feature only controls the dav1d_* extern "C" entry points,
             // NOT the internal DSP dispatch mechanism.
-            #[cfg(not(feature = "asm"))]
+            #[cfg(not(asm_fn_ptrs))]
             #[derive(Clone, Copy, PartialEq, Eq)]
             pub struct Fn(());
 
-            #[cfg(not(feature = "asm"))]
+            #[cfg(not(asm_fn_ptrs))]
             impl Fn {
                 /// Accept a function pointer but discard it — direct dispatch
                 /// bypasses function pointers entirely.
@@ -100,12 +100,12 @@ macro_rules! wrap_fn_ptr {
                 }
             }
 
-            #[cfg(not(feature = "asm"))]
+            #[cfg(not(asm_fn_ptrs))]
             impl DefaultValue for Fn {
                 const DEFAULT: Self = Fn(());
             }
 
-            #[cfg(feature = "asm")]
+            #[cfg(asm_fn_ptrs)]
             #[allow(unused_macros)]
             macro_rules! decl_fn {
                 (fn $fn_name:ident) => {{
@@ -117,7 +117,7 @@ macro_rules! wrap_fn_ptr {
                 }};
             }
 
-            #[cfg(feature = "asm")]
+            #[cfg(asm_fn_ptrs)]
             #[allow(unused_imports)]
             pub(crate) use decl_fn;
 
@@ -126,7 +126,7 @@ macro_rules! wrap_fn_ptr {
             /// When asm is disabled, this accepts a function path but
             /// discards it — dispatch goes through direct calls in `call()`.
             /// Kept for backward compatibility with init functions.
-            #[cfg(not(feature = "asm"))]
+            #[cfg(not(asm_fn_ptrs))]
             #[allow(unused_macros)]
             macro_rules! decl_fn_safe {
                 ($fn_path:path) => {{
@@ -134,7 +134,7 @@ macro_rules! wrap_fn_ptr {
                 }};
             }
 
-            #[cfg(not(feature = "asm"))]
+            #[cfg(not(asm_fn_ptrs))]
             #[allow(unused_imports)]
             pub(crate) use decl_fn_safe;
         }

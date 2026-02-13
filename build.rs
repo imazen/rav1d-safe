@@ -1,6 +1,6 @@
 #![deny(clippy::all)]
 
-#[cfg(feature = "asm")]
+#[cfg(any(feature = "asm", feature = "partial_asm"))]
 mod asm {
     use std::collections::HashSet;
     use std::env;
@@ -268,13 +268,39 @@ mod asm {
             Arch::Arm(ArchArm::Arm64) => arm64_all,
         };
 
+        // For partial_asm (without full asm), only compile msac + loopfilter ASM files.
+        let partial_asm_only = cfg!(feature = "partial_asm") && !cfg!(feature = "asm");
+        let partial_asm_allow: HashSet<&str> = if partial_asm_only {
+            [
+                // x86: msac is generic (no bpc suffix), loopfilter has sse/avx2/avx512 variants
+                "msac",
+                "loopfilter_sse",
+                "loopfilter_avx2",
+                "loopfilter_avx512",
+                "loopfilter16_sse",
+                "loopfilter16_avx2",
+                "loopfilter16_avx512",
+                // ARM: msac is generic, loopfilter has bpc variants
+                "loopfilter",
+                "loopfilter16",
+            ]
+            .into_iter()
+            .collect()
+        } else {
+            HashSet::new()
+        };
+
         let asm_file_dir = match arch {
             Arch::X86(..) => ["x86", "."],
             Arch::Arm(..) => ["arm", pointer_width],
         };
         let asm_extension = if use_nasm { "asm" } else { "S" };
 
-        let asm_file_paths = asm_file_names.iter().flat_map(|a| *a).map(|file_name| {
+        let asm_file_paths = asm_file_names
+            .iter()
+            .flat_map(|a| *a)
+            .filter(|name| !partial_asm_only || partial_asm_allow.contains(*name))
+            .map(|file_name| {
             let mut path = [&["src"], &asm_file_dir[..], &[file_name]]
                 .into_iter()
                 .flatten()
@@ -332,7 +358,24 @@ mod asm {
 }
 
 fn main() {
-    #[cfg(feature = "asm")]
+    // Register custom cfg flags so the compiler doesn't warn about them.
+    println!("cargo::rustc-check-cfg=cfg(asm_msac)");
+    println!("cargo::rustc-check-cfg=cfg(asm_loopfilter)");
+    println!("cargo::rustc-check-cfg=cfg(asm_fn_ptrs)");
+
+    // Emit cfg aliases so individual modules can use simple `#[cfg(asm_msac)]` etc.
+    // instead of `#[cfg(any(feature = "asm", feature = "partial_asm"))]` at many sites.
+    //
+    // asm_msac / asm_loopfilter: module-level aliases for msac.rs and loopfilter.rs
+    // asm_fn_ptrs: enables fn-ptr dispatch infrastructure (wrap_fn_ptr, FFISafe, bd_fn,
+    //              Pixels trait, WithOffset methods) — needed by any feature that links ASM
+    if cfg!(feature = "asm") || cfg!(feature = "partial_asm") {
+        println!("cargo:rustc-cfg=asm_msac");
+        println!("cargo:rustc-cfg=asm_loopfilter");
+        println!("cargo:rustc-cfg=asm_fn_ptrs");
+    }
+
+    #[cfg(any(feature = "asm", feature = "partial_asm"))]
     {
         asm::main();
     }
