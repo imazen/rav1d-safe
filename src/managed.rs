@@ -1229,6 +1229,9 @@ pub fn enabled_features() -> String {
     if cfg!(feature = "asm") {
         features.push("asm");
     }
+    if cfg!(feature = "partial_asm") {
+        features.push("partial_asm");
+    }
     if cfg!(feature = "c-ffi") {
         features.push("c-ffi");
     }
@@ -1245,6 +1248,8 @@ pub fn enabled_features() -> String {
     // Safety level summary
     if cfg!(feature = "asm") {
         features.push("safety:asm");
+    } else if cfg!(feature = "partial_asm") {
+        features.push("safety:partial-asm");
     } else if cfg!(feature = "c-ffi") {
         features.push("safety:c-ffi");
     } else if cfg!(feature = "unchecked") {

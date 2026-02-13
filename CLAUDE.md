@@ -16,7 +16,7 @@ Completed modules (AVX2 + NEON, 8bpc + 16bpc):
 - filmgrain
 - pal (palette)
 - refmvs (reference MVs)
-- msac (branchless scalar adapt4/adapt8, serial loop adapt16, scalar hi_tok)
+- msac (SSE2 adapt4/adapt8/hi_tok when unchecked+x86_64, branchless scalar otherwise, serial loop adapt16)
 
 **Remaining (not ported, scalar fallback):**
 - Scaled MC (put_8tap_scaled, prep_8tap_scaled, bilin_scaled) — complex per-pixel filter selection, ~2% of profile
@@ -29,30 +29,39 @@ Completed modules (AVX2 + NEON, 8bpc + 16bpc):
 784/803 dav1d test vectors pass at all bit depths and all CPU levels (scalar, SSE4, AVX2).
 19 failures are infrastructure (1 sframe, 6 SVC operating points, 12 vq_suite decode modes).
 
-## Benchmarks (2026-02-12)
+## Benchmarks (2026-02-13)
 
-Run via `just profile`. Test vectors from dav1d-test-data, single-threaded, 500 iterations.
+Run via `just profile`. Single-threaded, 500 iters (IVF) / 20 iters (AVIF).
 
-**allintra 8bpc (352x288, 39 frames):**
-
-| Build | ms/iter | ms/frame | vs ASM |
-|-------|---------|----------|--------|
-| ASM | 93.5 | 2.40 | 1.0x |
-| Partial ASM | 131.5 | 3.37 | 1.41x |
-| Safe-SIMD (checked) | 158.0 | 4.05 | 1.69x |
-| Safe-SIMD (unchecked) | 145.2 | 3.72 | 1.55x |
-
-**10-bit film grain (10 frames):**
+**allintra 8bpc IVF (352x288, 39 frames):**
 
 | Build | ms/iter | ms/frame | vs ASM |
 |-------|---------|----------|--------|
-| ASM | 8.8 | 0.88 | 1.0x |
-| Partial ASM | 24.9 | 2.49 | 2.83x |
-| Safe-SIMD (checked) | 31.3 | 3.13 | 3.56x |
-| Safe-SIMD (unchecked) | 28.1 | 2.81 | 3.19x |
+| ASM | 92.6 | 2.37 | 1.0x |
+| Partial ASM | 131.3 | 3.37 | 1.42x |
+| Checked | 155.6 | 3.99 | 1.68x |
+| Unchecked | 151.8 | 3.89 | 1.64x |
 
-Checked→unchecked gap is small (~8%), meaning DisjointMut borrow tracking adds modest overhead.
-The 10-bit gap is larger because these are tiny frames where per-frame overhead dominates.
+**4K photo AVIF (3840x2561):**
+
+| Build | ms/iter | vs ASM |
+|-------|---------|--------|
+| ASM | 113.6 | 1.0x |
+| Partial ASM | 175.3 | 1.54x |
+| Checked | 225.2 | 1.98x |
+| Unchecked | 228.6 | 2.01x |
+
+**8K photo AVIF (8192x5464):**
+
+| Build | ms/iter | vs ASM |
+|-------|---------|--------|
+| ASM | 512.0 | 1.0x |
+| Partial ASM | 724.7 | 1.42x |
+| Checked | 999.4 | 1.95x |
+| Unchecked | 976.0 | 1.91x |
+
+Real photos show ~2x vs ASM (SIMD-kernel dominated). Small IVF vectors show 1.64-1.68x (entropy-dominated).
+Checked→unchecked gap is tiny on photos (~2-3%), confirming DisjointMut tracking is negligible on real workloads.
 
 ## MANDATORY: Safe intrinsics strategy
 
@@ -155,7 +164,7 @@ just profile-quick  # Same but 100 iterations
 | filmgrain | `src/safe_simd/filmgrain.rs` | **Complete** - 8bpc + 16bpc |
 | pal | `src/safe_simd/pal.rs` | **Complete** - pal_idx_finish AVX2 |
 | refmvs | `src/safe_simd/refmvs.rs` | **Complete** - splat_mv AVX2 |
-| msac | `src/msac.rs` (inline) | **Complete** - branchless scalar (SIMD removed, scalar wins) |
+| msac | `src/msac.rs` (inline) | **Complete** - SSE2 adapt4/adapt8/hi_tok (unchecked), branchless scalar (default) |
 
 ### ARM aarch64 (NEON)
 
@@ -169,7 +178,7 @@ just profile-quick  # Same but 100 iterations
 | itx_arm | `src/safe_simd/itx_arm.rs` | **Complete** - 334 FFI functions, 320 dispatch entries |
 | filmgrain_arm | `src/safe_simd/filmgrain_arm.rs` | **Complete** - 8bpc + 16bpc |
 | refmvs_arm | `src/safe_simd/refmvs_arm.rs` | **Complete** - splat_mv NEON |
-| msac | `src/msac.rs` (inline) | **Complete** - branchless scalar (SIMD removed, scalar wins) |
+| msac | `src/msac.rs` (inline) | **Complete** - SSE2 adapt4/adapt8/hi_tok (unchecked), branchless scalar (default) |
 
 ## Cross-compilation
 
@@ -237,7 +246,7 @@ All unsafe is now confined to:
 
 **FFI wrappers gated behind `feature = "asm"`** in: cdef, cdef_arm, loopfilter, loopfilter_arm, looprestoration, looprestoration_arm, filmgrain, filmgrain_arm, pal.
 
-**Archmage conversions complete:** cdef constrain_avx2. msac SIMD removed (branchless scalar faster).
+**Archmage conversions complete:** cdef constrain_avx2. msac SSE2 uses sse2!() macro (not archmage).
 
 **Feature flags:**
 - `unchecked` - Use unchecked slice access in SIMD hot paths (skips bounds checks)

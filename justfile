@@ -124,40 +124,45 @@ bench-partial-asm:
 test-panic:
     cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --test panic_safety_test --release
 
-# Profile decode: all three modes (asm, safe checked, safe unchecked)
-# Uses allintra 8bpc 352x288 (39 frames) and 10-bit film grain (10 frames)
-profile iters="500":
+# Profile decode: all four modes (asm, partial asm, safe checked, safe unchecked)
+# Uses allintra 8bpc IVF (39 frames) + real photos (4K + 8K AVIF)
+profile iters="500" avif_iters="20":
     #!/usr/bin/env bash
     set -e
     IVF8="test-vectors/dav1d-test-data/8-bit/intra/av1-1-b8-02-allintra.ivf"
-    IVF10="test-vectors/dav1d-test-data/10-bit/film_grain/av1-1-b10-23-film_grain-50.ivf"
+    AVIF4K="test-vectors/bench/photo_4k.avif"
+    AVIF8K="test-vectors/bench/photo_8k.avif"
 
     echo "=== ASM (hand-written assembly) ==="
-    cargo build --release --features "asm,bitdepth_8,bitdepth_16" --example profile_decode 2>/dev/null
+    cargo build --release --features "asm,bitdepth_8,bitdepth_16" --example profile_decode --example profile_avif 2>/dev/null
     ./target/release/examples/profile_decode "$IVF8" {{iters}} 2>&1
-    ./target/release/examples/profile_decode "$IVF10" {{iters}} 2>&1
+    ./target/release/examples/profile_avif "$AVIF4K" {{avif_iters}} 2>&1
+    ./target/release/examples/profile_avif "$AVIF8K" {{avif_iters}} 2>&1
     echo ""
 
     echo "=== Safe-SIMD (checked, forbid(unsafe_code)) ==="
-    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example profile_decode 2>/dev/null
+    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example profile_decode --example profile_avif 2>/dev/null
     ./target/release/examples/profile_decode "$IVF8" {{iters}} 2>&1
-    ./target/release/examples/profile_decode "$IVF10" {{iters}} 2>&1
+    ./target/release/examples/profile_avif "$AVIF4K" {{avif_iters}} 2>&1
+    ./target/release/examples/profile_avif "$AVIF8K" {{avif_iters}} 2>&1
     echo ""
 
     echo "=== Safe-SIMD (unchecked bounds) ==="
-    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" --example profile_decode 2>/dev/null
+    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" --example profile_decode --example profile_avif 2>/dev/null
     ./target/release/examples/profile_decode "$IVF8" {{iters}} 2>&1
-    ./target/release/examples/profile_decode "$IVF10" {{iters}} 2>&1
+    ./target/release/examples/profile_avif "$AVIF4K" {{avif_iters}} 2>&1
+    ./target/release/examples/profile_avif "$AVIF8K" {{avif_iters}} 2>&1
     echo ""
 
     echo "=== Partial ASM (ASM msac + loopfilter, safe SIMD rest) ==="
-    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,partial_asm" --example profile_decode 2>/dev/null
+    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,partial_asm" --example profile_decode --example profile_avif 2>/dev/null
     ./target/release/examples/profile_decode "$IVF8" {{iters}} 2>&1
-    ./target/release/examples/profile_decode "$IVF10" {{iters}} 2>&1
+    ./target/release/examples/profile_avif "$AVIF4K" {{avif_iters}} 2>&1
+    ./target/release/examples/profile_avif "$AVIF8K" {{avif_iters}} 2>&1
 
-# Quick profile (100 iterations)
+# Quick profile (100 iterations IVF, 5 iterations AVIF)
 profile-quick:
-    just profile 100
+    just profile 100 5
 
 # Generate AVIF benchmark images (requires avifdec + avifenc from libavif)
 generate-bench-avif avifenc="avifenc" avifdec="avifdec":
