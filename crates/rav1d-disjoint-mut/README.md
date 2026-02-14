@@ -183,4 +183,6 @@ MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p rav1d-disjoint-mut -
 
 ## License
 
-BSD-2-Clause
+Triple-licensed: [BSD-2-Clause](../../COPYING) OR [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE).
+
+Started from `disjoint_mut.rs` in [rav1d](https://github.com/memorysafety/rav1d) (BSD-2-Clause, copyright VideoLAN, dav1d authors, and ISRG). The borrow tracker, poisoning, slot allocator, `no_std` support, and aligned storage are new; roughly 12% of the current code traces back to upstream type definitions and trait plumbing. BSD-2-Clause is included to honor that origin.

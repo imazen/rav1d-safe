@@ -1,10 +1,10 @@
 [package]
 name = "rav1d-disjoint-mut"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.85"
 description = "A provably safe abstraction for concurrent disjoint mutable access to contiguous storage"
-license = "BSD-2-Clause"
+license = "BSD-2-Clause OR MIT OR Apache-2.0"
 repository = "https://github.com/imazen/rav1d-safe"
 documentation = "https://docs.rs/rav1d-disjoint-mut"
 keywords = ["concurrency", "mutex", "slice", "disjoint", "borrow"]
