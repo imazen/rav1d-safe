@@ -26,9 +26,9 @@ use std::ops::Add;
 #[cfg(feature = "asm")]
 use std::slice;
 use to_method::To;
-use zerocopy::IntoBytes;
 use zerocopy::FromBytes;
 use zerocopy::Immutable;
+use zerocopy::IntoBytes;
 use zerocopy::KnownLayout;
 
 #[cfg(all(
@@ -97,7 +97,9 @@ impl LooprestorationParams {
         let _: () = assert!(
             mem::align_of::<LooprestorationParams>() >= mem::align_of::<LooprestorationParamsSgr>()
         );
-        FromBytes::ref_from_prefix(IntoBytes::as_bytes(&self.filter)).unwrap().0
+        FromBytes::ref_from_prefix(IntoBytes::as_bytes(&self.filter))
+            .unwrap()
+            .0
     }
 
     pub fn sgr_mut(&mut self) -> &mut LooprestorationParamsSgr {
@@ -108,7 +110,9 @@ impl LooprestorationParams {
         const _: () = assert!(
             mem::align_of::<LooprestorationParams>() >= mem::align_of::<LooprestorationParamsSgr>()
         );
-        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.filter)).unwrap().0
+        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.filter))
+            .unwrap()
+            .0
     }
 }
 

@@ -14,8 +14,8 @@ use std::ops::Div;
 use std::ops::Mul;
 use std::ops::Rem;
 use std::ops::Shr;
-use zerocopy::IntoBytes;
 use zerocopy::FromBytes;
+use zerocopy::IntoBytes;
 
 pub trait FromPrimitive<T> {
     fn from_prim(t: T) -> Self;

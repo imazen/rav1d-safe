@@ -56,8 +56,8 @@ use std::ffi::c_uint;
 #[cfg(feature = "asm")]
 use std::slice;
 use strum::FromRepr;
-use zerocopy::IntoBytes;
 use zerocopy::FromBytes;
+use zerocopy::IntoBytes;
 
 use crate::src::enum_map::DefaultValue;
 
@@ -494,14 +494,16 @@ fn splat_dc<BD: BitDepth>(dst: PicOffset, width: c_int, height: c_int, dc: c_int
         for y in 0..height {
             let dst = dst + y * dst.pixel_stride::<BD>();
             let dst = &mut *dst.slice_mut::<BD>(width);
-            let dst: &mut [[BD::Pixel; 8]] = FromBytes::mut_from_bytes(IntoBytes::as_mut_bytes(dst)).unwrap();
+            let dst: &mut [[BD::Pixel; 8]] =
+                FromBytes::mut_from_bytes(IntoBytes::as_mut_bytes(dst)).unwrap();
             dst.fill([dc; 8]);
         }
     } else {
         for y in 0..height {
             let dst = dst + y * dst.pixel_stride::<BD>();
             let dst = &mut *dst.slice_mut::<BD>(width);
-            let dst: &mut [[BD::Pixel; 4]] = FromBytes::mut_from_bytes(IntoBytes::as_mut_bytes(dst)).unwrap();
+            let dst: &mut [[BD::Pixel; 4]] =
+                FromBytes::mut_from_bytes(IntoBytes::as_mut_bytes(dst)).unwrap();
             dst.fill([dc; 4]);
         }
     };

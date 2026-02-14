@@ -1405,7 +1405,7 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
     data: &Rav1dFilmGrainData,
     bd: BD,
 ) -> bool {
-    use zerocopy::{IntoBytes, FromBytes};
+    use zerocopy::{FromBytes, IntoBytes};
     match BD::BPC {
         BPC::BPC8 => {
             let buf: &mut GrainLut<i8> = FromBytes::mut_from_bytes(buf.as_mut_bytes()).unwrap();
@@ -1436,7 +1436,7 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
         Rav1dPixelLayoutSubSampled::I422 => (true, false),
         Rav1dPixelLayoutSubSampled::I444 => (false, false),
     };
-    use zerocopy::{IntoBytes, FromBytes};
+    use zerocopy::{FromBytes, IntoBytes};
     match BD::BPC {
         BPC::BPC8 => {
             let buf: &mut GrainLut<i8> = FromBytes::mut_from_bytes(buf.as_mut_bytes()).unwrap();
@@ -1467,7 +1467,7 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     row_num: usize,
     bd: BD,
 ) -> bool {
-    use zerocopy::{IntoBytes, FromBytes};
+    use zerocopy::{FromBytes, IntoBytes};
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
     let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
@@ -1546,7 +1546,7 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     is_id: bool,
     bd: BD,
 ) -> bool {
-    use zerocopy::{IntoBytes, FromBytes};
+    use zerocopy::{FromBytes, IntoBytes};
     let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + (row_strides * dst.pixel_stride::<BD>() >> ss_y);
@@ -1610,7 +1610,8 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
             let (luma_guard, luma_base) = luma_row.full_guard::<BD>();
             let luma_bytes = luma_guard.as_bytes();
             let luma_base_byte = luma_base * std::mem::size_of::<BD::Pixel>();
-            let luma_u16: &[u16] = FromBytes::ref_from_bytes(&luma_bytes[luma_base_byte..]).unwrap();
+            let luma_u16: &[u16] =
+                FromBytes::ref_from_bytes(&luma_bytes[luma_base_byte..]).unwrap();
             fguv_inner_16bpc(
                 dst_u16,
                 src_u16,

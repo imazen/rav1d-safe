@@ -106,11 +106,11 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use strum::FromRepr;
-use zerocopy::IntoBytes;
 use zerocopy::FromBytes;
-use zerocopy::Immutable;
-use zerocopy::KnownLayout;
 use zerocopy::FromZeros;
+use zerocopy::Immutable;
+use zerocopy::IntoBytes;
+use zerocopy::KnownLayout;
 
 #[derive(Default)]
 pub struct Rav1dDSPContext {
@@ -938,11 +938,15 @@ pub struct Cf([i32; CF_LEN]);
 impl Cf {
     #[allow(unused)]
     pub fn select<BD: BitDepth>(&self) -> &[BD::Coef; CF_LEN] {
-        FromBytes::ref_from_prefix(IntoBytes::as_bytes(&self.0)).unwrap().0
+        FromBytes::ref_from_prefix(IntoBytes::as_bytes(&self.0))
+            .unwrap()
+            .0
     }
 
     pub fn select_mut<BD: BitDepth>(&mut self) -> &mut [BD::Coef; CF_LEN] {
-        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.0)).unwrap().0
+        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.0))
+            .unwrap()
+            .0
     }
 }
 
@@ -954,7 +958,9 @@ pub struct AlPal([u16; 8 * 3 * 32 * 2]);
 
 impl AlPal {
     pub fn select_mut<BD: BitDepth>(&mut self) -> &mut [[[[BD::Pixel; 8]; 3]; 32]; 2] {
-        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.0)).unwrap().0
+        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.0))
+            .unwrap()
+            .0
     }
 }
 
@@ -1034,7 +1040,9 @@ pub struct ScratchInterIntraBuf([u16; SCRATCH_INTER_INTRA_BUF_LEN * 2]);
 
 impl ScratchInterIntraBuf {
     pub fn buf_mut<BD: BitDepth>(&mut self) -> &mut [BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN] {
-        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.0)).unwrap().0
+        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.0))
+            .unwrap()
+            .0
     }
 }
 

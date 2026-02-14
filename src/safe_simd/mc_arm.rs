@@ -4428,7 +4428,7 @@ pub fn avg_dispatch<BD: BitDepth>(
                 );
             }
             BPC::BPC16 => {
-                use zerocopy::{IntoBytes, FromBytes};
+                use zerocopy::{FromBytes, IntoBytes};
                 let dst_bytes = dst_guard.as_mut_bytes();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
@@ -4509,7 +4509,7 @@ pub fn w_avg_dispatch<BD: BitDepth>(
                 );
             }
             BPC::BPC16 => {
-                use zerocopy::{IntoBytes, FromBytes};
+                use zerocopy::{FromBytes, IntoBytes};
                 let dst_bytes = dst_guard.as_mut_bytes();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
@@ -4593,7 +4593,7 @@ pub fn mask_dispatch<BD: BitDepth>(
                 );
             }
             BPC::BPC16 => {
-                use zerocopy::{IntoBytes, FromBytes};
+                use zerocopy::{FromBytes, IntoBytes};
                 let dst_bytes = dst_guard.as_mut_bytes();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
@@ -4677,7 +4677,7 @@ pub fn blend_dispatch<BD: BitDepth>(
                 }
             }
             BPC::BPC16 => {
-                use zerocopy::{IntoBytes, FromBytes};
+                use zerocopy::{FromBytes, IntoBytes};
                 let dst_bytes = dst_guard.as_mut_bytes();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
@@ -4686,7 +4686,8 @@ pub fn blend_dispatch<BD: BitDepth>(
                     FromBytes::mut_from_bytes(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::IntoBytes::as_bytes(tmp.as_slice());
                 let tmp_byte_len = w_u * h_u * 2;
-                let tmp_u16: &[u16] = FromBytes::ref_from_bytes(&tmp_bytes[..tmp_byte_len]).unwrap();
+                let tmp_u16: &[u16] =
+                    FromBytes::ref_from_bytes(&tmp_bytes[..tmp_byte_len]).unwrap();
                 for row in 0..h_u {
                     let dst_row = &mut dst_u16[row * stride_u16..][..w_u];
                     let tmp_row = &tmp_u16[row * w_u..][..w_u];
@@ -4788,7 +4789,7 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                 }
             }
             (BPC::BPC16, false) => {
-                use zerocopy::{IntoBytes, FromBytes};
+                use zerocopy::{FromBytes, IntoBytes};
                 let dst_bytes = dst_guard.as_mut_bytes();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
@@ -4797,7 +4798,8 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                     FromBytes::mut_from_bytes(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::IntoBytes::as_bytes(tmp.as_slice());
                 let tmp_byte_len = w_u * h_u * 2;
-                let tmp_u16: &[u16] = FromBytes::ref_from_bytes(&tmp_bytes[..tmp_byte_len]).unwrap();
+                let tmp_u16: &[u16] =
+                    FromBytes::ref_from_bytes(&tmp_bytes[..tmp_byte_len]).unwrap();
                 let mask = &dav1d_obmc_masks[w_u..];
                 let dst_w = w_u * 3 >> 2;
                 for row in 0..h_u {
@@ -4812,7 +4814,7 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                 }
             }
             (BPC::BPC16, true) => {
-                use zerocopy::{IntoBytes, FromBytes};
+                use zerocopy::{FromBytes, IntoBytes};
                 let dst_bytes = dst_guard.as_mut_bytes();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
@@ -4823,7 +4825,8 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
                     FromBytes::mut_from_bytes(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::IntoBytes::as_bytes(tmp.as_slice());
                 let tmp_byte_len = w_u * h_effective * 2;
-                let tmp_u16: &[u16] = FromBytes::ref_from_bytes(&tmp_bytes[..tmp_byte_len]).unwrap();
+                let tmp_u16: &[u16] =
+                    FromBytes::ref_from_bytes(&tmp_bytes[..tmp_byte_len]).unwrap();
                 for row in 0..h_effective {
                     let dst_row = &mut dst_u16[row * stride_u16..][..w_u];
                     let tmp_row = &tmp_u16[row * w_u..][..w_u];
@@ -4944,7 +4947,7 @@ pub fn w_mask_dispatch<BD: BitDepth>(
                 }
             }
             BPC::BPC16 => {
-                use zerocopy::{IntoBytes, FromBytes};
+                use zerocopy::{FromBytes, IntoBytes};
                 let dst_bytes = dst_guard.as_mut_bytes();
                 let start = dst_base * 2;
                 let stride_u16 = dst_stride / 2;
@@ -5170,7 +5173,7 @@ pub fn mc_put_dispatch<BD: BitDepth>(
                 }
             }
             BPC::BPC16 => {
-                use zerocopy::{IntoBytes, FromBytes};
+                use zerocopy::{FromBytes, IntoBytes};
                 let dst_bytes = dst_guard.as_mut_bytes();
                 let src_bytes = src_guard.as_bytes();
                 let dst_stride_u16 = (dst_stride_raw as usize) / 2;
@@ -5370,7 +5373,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                 }
             }
             BPC::BPC16 => {
-                use zerocopy::{IntoBytes, FromBytes};
+                use zerocopy::{FromBytes, IntoBytes};
                 let src_bytes = src_guard.as_bytes();
                 let src_stride_u16 = (src_stride_raw as usize) / 2;
 

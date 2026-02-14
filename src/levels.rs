@@ -13,11 +13,11 @@ use std::mem;
 use std::ops::Neg;
 use strum::EnumCount;
 use strum::FromRepr;
-use zerocopy::IntoBytes;
 use zerocopy::FromBytes;
-use zerocopy::Immutable;
-use zerocopy::KnownLayout;
 use zerocopy::FromZeros;
+use zerocopy::Immutable;
+use zerocopy::IntoBytes;
+use zerocopy::KnownLayout;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromRepr)]
 pub enum ObuMetaType {

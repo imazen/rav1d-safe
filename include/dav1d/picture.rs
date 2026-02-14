@@ -56,9 +56,9 @@ use std::ptr::NonNull;
 use std::sync::Arc;
 #[cfg(feature = "c-ffi")]
 use to_method::To as _;
-use zerocopy::IntoBytes;
 use zerocopy::FromBytes;
 use zerocopy::Immutable;
+use zerocopy::IntoBytes;
 use zerocopy::KnownLayout;
 
 pub(crate) const RAV1D_PICTURE_ALIGNMENT: usize = 64;
@@ -208,7 +208,7 @@ const RAV1D_PICTURE_MULTIPLE: usize = 64 * 64;
 /// Without c-ffi: aliases [`StridedBuf`] from the disjoint-mut crate (all unsafe confined there).
 #[cfg(feature = "c-ffi")]
 pub struct Rav1dPictureDataComponentInner {
-    /// A ptr to the start of this slice of [`BitDepth::Pixel`]s*,
+    /// A ptr to the start of this slice of `BitDepth::Pixel`s*,
     /// even if [`Self::stride`] is negative.
     ///
     /// It is aligned to [`RAV1D_PICTURE_ALIGNMENT`].
@@ -441,7 +441,7 @@ impl Rav1dPictureDataComponent {
         self.dm().as_mut_ptr() == other.dm().as_mut_ptr()
     }
 
-    /// Length in number of [`BitDepth::Pixel`]s.
+    /// Length in number of `BitDepth::Pixel`s.
     pub fn pixel_len<BD: BitDepth>(&self) -> usize {
         self.dm().len() / mem::size_of::<BD::Pixel>()
     }
@@ -480,7 +480,7 @@ impl Rav1dPictureDataComponent {
         }
     }
 
-    /// Strided ptr to [`BitDepth::Pixel`]s.
+    /// Strided ptr to `BitDepth::Pixel`s.
     #[cfg(any(feature = "asm", feature = "c-ffi"))]
     #[allow(unsafe_code)]
     pub fn as_strided_mut_ptr<BD: BitDepth>(&self) -> *mut BD::Pixel {
@@ -488,7 +488,7 @@ impl Rav1dPictureDataComponent {
         self.as_strided_byte_mut_ptr().cast()
     }
 
-    /// Strided ptr to [`BitDepth::Pixel`]s.
+    /// Strided ptr to `BitDepth::Pixel`s.
     #[cfg(feature = "asm")]
     #[allow(unsafe_code)]
     pub fn as_strided_ptr<BD: BitDepth>(&self) -> *const BD::Pixel {

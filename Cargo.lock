@@ -665,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "rav1d-disjoint-mut"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aligned",
  "aligned-vec",
@@ -1205,9 +1205,9 @@ dependencies = [
 
 [[package]]
 name = "zenavif-parse"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2e2b4867309f93101189fed26940a227b38e20bef63569d8ec5fdcc8d252b8a"
+checksum = "1f3a3b9e4e2fd5047e6ed95bd06c3b8ef32aef2ba81226a9f81f971a006503f9"
 dependencies = [
  "arrayvec",
  "bitreader",

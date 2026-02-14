@@ -1,6 +1,6 @@
 //! Aligned newtypes and aligned Vec for SIMD-friendly data layout.
 //!
-//! Thin wrappers around [`aligned::Aligned`] and [`aligned_vec::AVec`] that
+//! Thin wrappers around [`struct@aligned::Aligned`] and [`aligned_vec::AVec`] that
 //! integrate with [`DisjointMut`](crate::DisjointMut) via [`ExternalAsMutPtr`]
 //! and [`Resizable`].
 //!
@@ -70,16 +70,16 @@ impl_ArrayDefault!(u16);
 /// Re-export so downstream can refer to `aligned::Aligned` if needed.
 pub use aligned::Aligned;
 
-/// Const-compatible accessor for the inner value of an [`Aligned`] wrapper.
+/// Const-compatible accessor for the inner value of an [`struct@Aligned`] wrapper.
 ///
-/// [`Aligned`] is `#[repr(C)]` with layout `{ _alignment: [A; 0], value: T }`.
+/// [`struct@Aligned`] is `#[repr(C)]` with layout `{ _alignment: [A; 0], value: T }`.
 /// Since `[A; 0]` is zero-sized, the pointer to the struct equals the pointer
 /// to `value`. This function uses `transmute` to access the inner `T` in
 /// `const` contexts where `Deref` is not available.
 ///
 /// # Safety
 ///
-/// This relies on the documented `#[repr(C)]` layout of [`aligned::Aligned`].
+/// This relies on the documented `#[repr(C)]` layout of [`struct@aligned::Aligned`].
 /// The `[A; 0]` field has zero size and the same alignment as `A`, so
 /// `&Aligned<A, T>` and `&T` share the same address.
 pub const fn aligned_inner<A, T: ?Sized>(aligned: &Aligned<A, T>) -> &T {
@@ -94,7 +94,7 @@ macro_rules! def_align {
         #[doc = concat!(stringify!($align), "-byte")]
         /// alignment.
         ///
-        /// This is a type alias for [`aligned::Aligned`] with the corresponding
+        /// This is a type alias for [`struct@aligned::Aligned`] with the corresponding
         /// alignment marker.
         pub type $name<T> = aligned::Aligned<aligned::$align_ty, T>;
 

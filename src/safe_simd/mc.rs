@@ -1723,7 +1723,8 @@ fn blend_16bpc_avx2_safe(
         let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
         let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
         let tmp_row_bytes = &tmp[row * w * 2..][..w * 2];
-        let tmp_row: &[u16] = <[u16] as zerocopy::FromBytes>::ref_from_bytes(tmp_row_bytes).unwrap();
+        let tmp_row: &[u16] =
+            <[u16] as zerocopy::FromBytes>::ref_from_bytes(tmp_row_bytes).unwrap();
         let mask_row = &mask[row * w..][..w];
 
         let mut col = 0usize;
@@ -2020,7 +2021,8 @@ fn blend_v_16bpc_avx2_safe(
         let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
         // tmp uses full w stride
         let tmp_row_bytes = &tmp[row * w * 2..][..w_eff * 2];
-        let tmp_row: &[u16] = <[u16] as zerocopy::FromBytes>::ref_from_bytes(tmp_row_bytes).unwrap();
+        let tmp_row: &[u16] =
+            <[u16] as zerocopy::FromBytes>::ref_from_bytes(tmp_row_bytes).unwrap();
 
         let mut col = 0usize;
 
@@ -2116,7 +2118,8 @@ fn blend_h_16bpc_avx2_safe(
         let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
         let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
         let tmp_row_bytes = &tmp[row * w * 2..][..w * 2];
-        let tmp_row: &[u16] = <[u16] as zerocopy::FromBytes>::ref_from_bytes(tmp_row_bytes).unwrap();
+        let tmp_row: &[u16] =
+            <[u16] as zerocopy::FromBytes>::ref_from_bytes(tmp_row_bytes).unwrap();
         let m = obmc_mask[row] as u32;
 
         let mask_32 = _mm256_set1_epi32(m as i32);

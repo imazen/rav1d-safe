@@ -316,7 +316,7 @@ pub enum CpuLevel {
 }
 
 impl CpuLevel {
-    /// Convert to the raw bitmask for [`crate::src::cpu::rav1d_set_cpu_flags_mask`].
+    /// Convert to the raw bitmask for `rav1d_set_cpu_flags_mask`.
     ///
     /// On a platform where the level doesn't apply (e.g. `X86V3` on ARM),
     /// returns `0` (scalar).
@@ -1172,7 +1172,7 @@ pub struct ContentLightLevel {
 /// HDR mastering display color volume (SMPTE 2086)
 #[derive(Clone, Copy, Debug)]
 pub struct MasteringDisplay {
-    /// RGB primaries in 0.00002 increments [[R], [G], [B]]
+    /// RGB primaries in 0.00002 increments \[R\], \[G\], \[B\]
     /// Each is [x, y] chromaticity coordinate
     pub primaries: [[u16; 2]; 3],
     /// White point [x, y] in 0.00002 increments

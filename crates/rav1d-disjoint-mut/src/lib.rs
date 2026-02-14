@@ -223,9 +223,7 @@ pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
 #[cfg(feature = "zerocopy")]
 impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
     #[inline] // Inline to see alignment to potentially elide checks.
-    fn cast_slice<V: IntoBytes + FromBytes + KnownLayout>(
-        self,
-    ) -> DisjointMutGuard<'a, T, [V]> {
+    fn cast_slice<V: IntoBytes + FromBytes + KnownLayout>(self) -> DisjointMutGuard<'a, T, [V]> {
         // We don't want to drop the old guard, because we aren't changing or
         // removing the borrow from parent here.
         let mut old_guard = ManuallyDrop::new(self);
@@ -277,9 +275,7 @@ pub struct DisjointImmutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
 #[cfg(feature = "zerocopy")]
 impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
     #[inline]
-    fn cast_slice<V: FromBytes + KnownLayout + Immutable>(
-        self,
-    ) -> DisjointImmutGuard<'a, T, [V]> {
+    fn cast_slice<V: FromBytes + KnownLayout + Immutable>(self) -> DisjointImmutGuard<'a, T, [V]> {
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
         DisjointImmutGuard {
@@ -291,9 +287,7 @@ impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
     }
 
     #[inline]
-    fn cast<V: FromBytes + KnownLayout + Immutable>(
-        self,
-    ) -> DisjointImmutGuard<'a, T, V> {
+    fn cast<V: FromBytes + KnownLayout + Immutable>(self) -> DisjointImmutGuard<'a, T, V> {
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
         DisjointImmutGuard {

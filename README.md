@@ -2,6 +2,8 @@
 
 A safe Rust AV1 decoder. Forked from [rav1d](https://github.com/memorysafety/rav1d), with 160k lines of hand-written x86/ARM assembly replaced by safe Rust SIMD intrinsics.
 
+578 commits since the fork (+90,813 / -6,958 lines across 1,194 files). 68k of those net new lines are safe SIMD in `src/safe_simd/`.
+
 ## Quick Start
 
 Add to your `Cargo.toml`:
