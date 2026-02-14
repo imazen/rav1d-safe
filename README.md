@@ -7,7 +7,7 @@ A safe Rust AV1 decoder. Forked from [rav1d](https://github.com/memorysafety/rav
 Add to your `Cargo.toml`:
 ```toml
 [dependencies]
-rav1d-safe = "0.2"
+rav1d-safe = "0.3"
 ```
 
 Decode an AV1 bitstream:
