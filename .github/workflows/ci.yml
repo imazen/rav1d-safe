@@ -37,6 +37,16 @@ jobs:
             features: "asm,bitdepth_8,bitdepth_16"
             label: asm
 
+          # 32-bit builds (safe-simd, no SIMD dispatch — exercises scalar paths)
+          - os: ubuntu-latest
+            features: "bitdepth_8,bitdepth_16"
+            label: i686
+            target: i686-unknown-linux-gnu
+          - os: windows-latest
+            features: "bitdepth_8,bitdepth_16"
+            label: i686
+            target: i686-pc-windows-msvc
+
     steps:
       - uses: actions/checkout@v4
 
@@ -44,6 +54,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
+      - name: Install target
+        if: matrix.target
+        run: rustup target add ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
 
@@ -59,14 +73,18 @@ jobs:
         if: runner.os == 'Windows' && contains(matrix.features, 'asm')
         run: choco install nasm
 
+      - name: Install 32-bit toolchain (Linux)
+        if: matrix.label == 'i686' && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+
       - name: Build (debug)
-        run: cargo build --no-default-features --features "${{ matrix.features }}"
+        run: cargo build --no-default-features --features "${{ matrix.features }}" ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
       - name: Build (release)
-        run: cargo build --no-default-features --features "${{ matrix.features }}" --release
+        run: cargo build --no-default-features --features "${{ matrix.features }}" --release ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
       - name: Run unit tests
-        run: cargo test --no-default-features --features "${{ matrix.features }}" --release --lib
+        run: cargo test --no-default-features --features "${{ matrix.features }}" --release --lib ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
       # Download test vectors and run MD5 parity tests
       - name: Download test vectors

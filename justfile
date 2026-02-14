@@ -62,6 +62,16 @@ check-wasm:
     cargo check --target wasm32-wasip1 --no-default-features \
         --features "bitdepth_8,bitdepth_16"
 
+# Build and test for 32-bit x86 (Linux)
+test-i686:
+    cargo test --target i686-unknown-linux-gnu --no-default-features \
+        --features "bitdepth_8,bitdepth_16" --release --lib
+
+# Check 32-bit compilation only
+check-i686:
+    cargo check --target i686-unknown-linux-gnu --no-default-features \
+        --features "bitdepth_8,bitdepth_16"
+
 # Run token permutation tests (exercises all CPU tiers, single-threaded)
 test-permutations:
     cargo test --no-default-features --features "bitdepth_8,bitdepth_16" \
