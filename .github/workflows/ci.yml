@@ -126,6 +126,7 @@ jobs:
         target:
           - x86_64-unknown-linux-musl
           - aarch64-unknown-linux-gnu
+          - wasm32-wasip1
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -135,9 +136,25 @@ jobs:
       - name: Check (aarch64)
         if: contains(matrix.target, 'aarch64')
         run: cargo check --target ${{ matrix.target }} --no-default-features --features "bitdepth_8,bitdepth_16"
-      - name: Build (non-aarch64)
-        if: "!contains(matrix.target, 'aarch64')"
+      - name: Check (wasm32 simd128)
+        if: contains(matrix.target, 'wasm32')
+        run: RUSTFLAGS="-Ctarget-feature=+simd128" cargo check --target ${{ matrix.target }} --no-default-features --features "bitdepth_8,bitdepth_16"
+      - name: Build (non-aarch64, non-wasm)
+        if: "!contains(matrix.target, 'aarch64') && !contains(matrix.target, 'wasm32')"
         run: cargo build --target ${{ matrix.target }} --no-default-features --features "bitdepth_8,bitdepth_16"
+
+  # ==========================================================================
+  # Token permutation tests (exercises all SIMD tiers)
+  # ==========================================================================
+  permutation-tests:
+    name: SIMD Permutation Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run unit permutation tests
+        run: cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release --lib -- --test-threads=1 token_permutation
 
   # ==========================================================================
   # Code coverage
