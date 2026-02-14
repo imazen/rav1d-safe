@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 use crate::src::align::aligned_inner;
 use crate::src::align::Align32;
-use crate::src::align::Aligned;
 use crate::src::in_range::InRange;
 use crate::src::levels::TxfmSize;
+use aligned::Aligned;
 use strum::EnumCount;
 
 type Scan = InRange<u16, 0, { 1024 - 1 }>;

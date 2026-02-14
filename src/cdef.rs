@@ -854,7 +854,7 @@ mod neon {
         _bottom: *const FFISafe<CdefBottom>,
     ) {
         use crate::src::align::Align16;
-        use crate::src::align::Aligned;
+        use aligned::Aligned;
 
         let dst = dst.cast();
         let left = left.cast();

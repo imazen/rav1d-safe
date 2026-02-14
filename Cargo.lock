@@ -676,6 +676,7 @@ dependencies = [
 name = "rav1d-safe"
 version = "0.3.0"
 dependencies = [
+ "aligned",
  "archmage",
  "assert_matches",
  "atomig",

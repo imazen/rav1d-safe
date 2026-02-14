@@ -11,6 +11,7 @@
 use crate::ExternalAsMutPtr;
 use crate::Resizable;
 use crate::TryResizable;
+use aligned::Aligned;
 use aligned_vec::{AVec, ConstAlign};
 use core::ops::{Deref, DerefMut};
 
@@ -66,9 +67,6 @@ impl_ArrayDefault!(u16);
 // =============================================================================
 // Align wrappers — use aligned::Aligned for the actual alignment guarantee
 // =============================================================================
-
-/// Re-export so downstream can refer to `aligned::Aligned` if needed.
-pub use aligned::Aligned;
 
 /// Const-compatible accessor for the inner value of an [`struct@Aligned`] wrapper.
 ///

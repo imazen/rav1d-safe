@@ -1130,7 +1130,7 @@ mod neon {
 
     use crate::include::common::bitdepth::bd_fn;
     use crate::src::align::Align16;
-    use crate::src::align::Aligned;
+    use aligned::Aligned;
     use libc::intptr_t;
     use std::ptr;
 
@@ -1745,7 +1745,7 @@ mod neon {
     use super::*;
 
     use crate::src::align::Align16;
-    use crate::src::align::Aligned;
+    use aligned::Aligned;
     use std::array;
     use std::ptr;
 

@@ -6,7 +6,6 @@ use crate::src::align::Align16;
 use crate::src::align::Align4;
 use crate::src::align::Align64;
 use crate::src::align::Align8;
-use crate::src::align::Aligned;
 use crate::src::enum_map::DefaultValue;
 use crate::src::levels::BlockLevel;
 use crate::src::levels::BlockPartition;
@@ -61,6 +60,7 @@ use crate::src::levels::VERT_RIGHT_PRED;
 use crate::src::levels::V_ADST;
 use crate::src::levels::V_DCT;
 use crate::src::levels::V_FLIPADST;
+use aligned::Aligned;
 use std::ffi::c_uint;
 use strum::EnumCount;
 
