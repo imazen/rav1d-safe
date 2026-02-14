@@ -1405,14 +1405,14 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
     data: &Rav1dFilmGrainData,
     bd: BD,
 ) -> bool {
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::{IntoBytes, FromBytes};
     match BD::BPC {
         BPC::BPC8 => {
-            let buf: &mut GrainLut<i8> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let buf: &mut GrainLut<i8> = FromBytes::mut_from_bytes(buf.as_mut_bytes()).unwrap();
             generate_grain_y_inner_8bpc(buf, data);
         }
         BPC::BPC16 => {
-            let buf: &mut GrainLut<i16> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let buf: &mut GrainLut<i16> = FromBytes::mut_from_bytes(buf.as_mut_bytes()).unwrap();
             let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
             generate_grain_y_inner_16bpc(buf, data, bitdepth);
         }
@@ -1436,16 +1436,16 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
         Rav1dPixelLayoutSubSampled::I422 => (true, false),
         Rav1dPixelLayoutSubSampled::I444 => (false, false),
     };
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::{IntoBytes, FromBytes};
     match BD::BPC {
         BPC::BPC8 => {
-            let buf: &mut GrainLut<i8> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
-            let buf_y: &GrainLut<i8> = FromBytes::ref_from(buf_y.as_bytes()).unwrap();
+            let buf: &mut GrainLut<i8> = FromBytes::mut_from_bytes(buf.as_mut_bytes()).unwrap();
+            let buf_y: &GrainLut<i8> = FromBytes::ref_from_bytes(buf_y.as_bytes()).unwrap();
             generate_grain_uv_inner_8bpc(buf, buf_y, data, is_uv, is_subx, is_suby);
         }
         BPC::BPC16 => {
-            let buf: &mut GrainLut<i16> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
-            let buf_y: &GrainLut<i16> = FromBytes::ref_from(buf_y.as_bytes()).unwrap();
+            let buf: &mut GrainLut<i16> = FromBytes::mut_from_bytes(buf.as_mut_bytes()).unwrap();
+            let buf_y: &GrainLut<i16> = FromBytes::ref_from_bytes(buf_y.as_bytes()).unwrap();
             let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
             generate_grain_uv_inner_16bpc(buf, buf_y, data, is_uv, is_subx, is_suby, bitdepth);
         }
@@ -1467,7 +1467,7 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     row_num: usize,
     bd: BD,
 ) -> bool {
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::{IntoBytes, FromBytes};
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
     let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
@@ -1477,14 +1477,14 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     match BD::BPC {
         BPC::BPC8 => {
             let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
-            let dst_bytes = dst_guard.as_bytes_mut();
+            let dst_bytes = dst_guard.as_mut_bytes();
             let dst_slice = &mut dst_bytes[dst_base..];
             let (src_guard, src_base) = src_row.full_guard::<BD>();
             let src_bytes = src_guard.as_bytes();
             let src_slice = &src_bytes[src_base..];
             let scaling_bytes: &[u8] = scaling.as_ref();
             let grain_lut_8: &[[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
-                FromBytes::ref_from(grain_lut.as_bytes()).unwrap();
+                FromBytes::ref_from_bytes(grain_lut.as_bytes()).unwrap();
             fgy_inner_8bpc(
                 dst_slice,
                 src_slice,
@@ -1499,18 +1499,18 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
         }
         BPC::BPC16 => {
             let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
-            let dst_bytes = dst_guard.as_bytes_mut();
+            let dst_bytes = dst_guard.as_mut_bytes();
             let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
             let dst_u16: &mut [u16] =
-                FromBytes::mut_slice_from(&mut dst_bytes[base_byte..]).unwrap();
+                FromBytes::mut_from_bytes(&mut dst_bytes[base_byte..]).unwrap();
             let (src_guard, src_base) = src_row.full_guard::<BD>();
             let src_bytes = src_guard.as_bytes();
             let src_base_byte = src_base * std::mem::size_of::<BD::Pixel>();
-            let src_u16: &[u16] = FromBytes::slice_from(&src_bytes[src_base_byte..]).unwrap();
+            let src_u16: &[u16] = FromBytes::ref_from_bytes(&src_bytes[src_base_byte..]).unwrap();
             let stride_u16 = stride / 2;
             let scaling_bytes: &[u8] = scaling.as_ref();
             let grain_lut_16: &[[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
-                FromBytes::ref_from(grain_lut.as_bytes()).unwrap();
+                FromBytes::ref_from_bytes(grain_lut.as_bytes()).unwrap();
             fgy_inner_16bpc(
                 dst_u16,
                 src_u16,
@@ -1546,7 +1546,7 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     is_id: bool,
     bd: BD,
 ) -> bool {
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::{IntoBytes, FromBytes};
     let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + (row_strides * dst.pixel_stride::<BD>() >> ss_y);
@@ -1565,14 +1565,14 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     match BD::BPC {
         BPC::BPC8 => {
             let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
-            let dst_bytes = dst_guard.as_bytes_mut();
+            let dst_bytes = dst_guard.as_mut_bytes();
             let dst_slice = &mut dst_bytes[dst_base..];
             let (src_guard, src_base) = src_row.full_guard::<BD>();
             let src_bytes = src_guard.as_bytes();
             let src_slice = &src_bytes[src_base..];
             let scaling_bytes: &[u8] = scaling.as_ref();
             let grain_lut_8: &[[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
-                FromBytes::ref_from(grain_lut.as_bytes()).unwrap();
+                FromBytes::ref_from_bytes(grain_lut.as_bytes()).unwrap();
             let (luma_guard, luma_base) = luma_row.full_guard::<BD>();
             let luma_bytes = luma_guard.as_bytes();
             let luma_slice = &luma_bytes[luma_base..];
@@ -1596,21 +1596,21 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
         }
         BPC::BPC16 => {
             let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
-            let dst_bytes = dst_guard.as_bytes_mut();
+            let dst_bytes = dst_guard.as_mut_bytes();
             let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
             let dst_u16: &mut [u16] =
-                FromBytes::mut_slice_from(&mut dst_bytes[base_byte..]).unwrap();
+                FromBytes::mut_from_bytes(&mut dst_bytes[base_byte..]).unwrap();
             let (src_guard, src_base) = src_row.full_guard::<BD>();
             let src_bytes = src_guard.as_bytes();
             let src_base_byte = src_base * std::mem::size_of::<BD::Pixel>();
-            let src_u16: &[u16] = FromBytes::slice_from(&src_bytes[src_base_byte..]).unwrap();
+            let src_u16: &[u16] = FromBytes::ref_from_bytes(&src_bytes[src_base_byte..]).unwrap();
             let scaling_bytes: &[u8] = scaling.as_ref();
             let grain_lut_16: &[[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
-                FromBytes::ref_from(grain_lut.as_bytes()).unwrap();
+                FromBytes::ref_from_bytes(grain_lut.as_bytes()).unwrap();
             let (luma_guard, luma_base) = luma_row.full_guard::<BD>();
             let luma_bytes = luma_guard.as_bytes();
             let luma_base_byte = luma_base * std::mem::size_of::<BD::Pixel>();
-            let luma_u16: &[u16] = FromBytes::slice_from(&luma_bytes[luma_base_byte..]).unwrap();
+            let luma_u16: &[u16] = FromBytes::ref_from_bytes(&luma_bytes[luma_base_byte..]).unwrap();
             fguv_inner_16bpc(
                 dst_u16,
                 src_u16,

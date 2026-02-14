@@ -2499,14 +2499,14 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
     let Some(_token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::{IntoBytes, FromBytes};
     match BD::BPC {
         BPC::BPC8 => {
-            let buf: &mut GrainLut<i8> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let buf: &mut GrainLut<i8> = FromBytes::mut_from_bytes(buf.as_mut_bytes()).unwrap();
             generate_grain_y_inner_8bpc(buf, data);
         }
         BPC::BPC16 => {
-            let buf: &mut GrainLut<i16> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
+            let buf: &mut GrainLut<i16> = FromBytes::mut_from_bytes(buf.as_mut_bytes()).unwrap();
             let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
             generate_grain_y_inner_16bpc(buf, data, bitdepth);
         }
@@ -2533,16 +2533,16 @@ pub(crate) fn generate_grain_uv_dispatch<BD: BitDepth>(
         Rav1dPixelLayoutSubSampled::I422 => (true, false),
         Rav1dPixelLayoutSubSampled::I444 => (false, false),
     };
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::{IntoBytes, FromBytes};
     match BD::BPC {
         BPC::BPC8 => {
-            let buf: &mut GrainLut<i8> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
-            let buf_y: &GrainLut<i8> = FromBytes::ref_from(buf_y.as_bytes()).unwrap();
+            let buf: &mut GrainLut<i8> = FromBytes::mut_from_bytes(buf.as_mut_bytes()).unwrap();
+            let buf_y: &GrainLut<i8> = FromBytes::ref_from_bytes(buf_y.as_bytes()).unwrap();
             generate_grain_uv_inner_8bpc(buf, buf_y, data, is_uv, is_subx, is_suby);
         }
         BPC::BPC16 => {
-            let buf: &mut GrainLut<i16> = FromBytes::mut_from(buf.as_bytes_mut()).unwrap();
-            let buf_y: &GrainLut<i16> = FromBytes::ref_from(buf_y.as_bytes()).unwrap();
+            let buf: &mut GrainLut<i16> = FromBytes::mut_from_bytes(buf.as_mut_bytes()).unwrap();
+            let buf_y: &GrainLut<i16> = FromBytes::ref_from_bytes(buf_y.as_bytes()).unwrap();
             let bitdepth = if bd.into_c() >= 4095 { 12 } else { 10 };
             generate_grain_uv_inner_16bpc(buf, buf_y, data, is_uv, is_subx, is_suby, bitdepth);
         }
@@ -2564,7 +2564,7 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     row_num: usize,
     bd: BD,
 ) -> bool {
-    use zerocopy::AsBytes;
+    use zerocopy::{IntoBytes, FromBytes};
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
@@ -2594,9 +2594,8 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
                 crate::src::safe_simd::pixel_access::reinterpret_slice_mut(&mut *dst_guard)
                     .expect("8bpc pixel reinterpret");
             let grain_lut_8: &[[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
-                zerocopy::Ref::<_, [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1]>::new(grain_lut_bytes)
-                    .expect("grain_lut reinterpret to i8")
-                    .into_ref();
+                FromBytes::ref_from_bytes(grain_lut_bytes)
+                    .expect("grain_lut reinterpret to i8");
             fgy_inner_8bpc(
                 token,
                 dst_slice,
@@ -2620,9 +2619,8 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
                 crate::src::safe_simd::pixel_access::reinterpret_slice_mut(&mut *dst_guard)
                     .expect("16bpc pixel reinterpret");
             let grain_lut_16: &[[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
-                zerocopy::Ref::<_, [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1]>::new(grain_lut_bytes)
-                    .expect("grain_lut reinterpret to i16")
-                    .into_ref();
+                FromBytes::ref_from_bytes(grain_lut_bytes)
+                    .expect("grain_lut reinterpret to i16");
             fgy_inner_16bpc(
                 token,
                 dst_slice,
@@ -2659,7 +2657,7 @@ pub(crate) fn fguv_32x32xn_dispatch<BD: BitDepth>(
     is_id: bool,
     bd: BD,
 ) -> bool {
-    use zerocopy::AsBytes;
+    use zerocopy::{IntoBytes, FromBytes};
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
@@ -2711,9 +2709,8 @@ pub(crate) fn fguv_32x32xn_dispatch<BD: BitDepth>(
                 crate::src::safe_simd::pixel_access::reinterpret_slice(&*luma_guard)
                     .expect("8bpc luma reinterpret");
             let grain_lut_8: &[[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
-                zerocopy::Ref::<_, [[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1]>::new(grain_lut_bytes)
-                    .expect("grain_lut reinterpret to i8")
-                    .into_ref();
+                FromBytes::ref_from_bytes(grain_lut_bytes)
+                    .expect("grain_lut reinterpret to i8");
             fguv_inner_safe_8bpc(
                 token,
                 dst_slice,
@@ -2747,9 +2744,8 @@ pub(crate) fn fguv_32x32xn_dispatch<BD: BitDepth>(
                 crate::src::safe_simd::pixel_access::reinterpret_slice(&*luma_guard)
                     .expect("16bpc luma reinterpret");
             let grain_lut_16: &[[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
-                zerocopy::Ref::<_, [[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1]>::new(grain_lut_bytes)
-                    .expect("grain_lut reinterpret to i16")
-                    .into_ref();
+                FromBytes::ref_from_bytes(grain_lut_bytes)
+                    .expect("grain_lut reinterpret to i16");
             fguv_inner_safe_16bpc(
                 token,
                 dst_slice,

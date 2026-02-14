@@ -14,7 +14,7 @@ use std::ops::Div;
 use std::ops::Mul;
 use std::ops::Rem;
 use std::ops::Shr;
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 use zerocopy::FromBytes;
 
 pub trait FromPrimitive<T> {
@@ -153,7 +153,9 @@ pub trait BitDepth: Clone + Copy {
         + ToPrimitive<c_int>
         + ToPrimitive<c_uint>
         + FromBytes
-        + AsBytes;
+        + IntoBytes
+        + zerocopy::KnownLayout
+        + zerocopy::Immutable;
 
     type AlignPixelX8: Copy;
 
@@ -168,7 +170,9 @@ pub trait BitDepth: Clone + Copy {
         + ToPrimitive<c_uint>
         + Add<Output = Self::Coef>
         + FromBytes
-        + AsBytes
+        + IntoBytes
+        + zerocopy::KnownLayout
+        + zerocopy::Immutable
         + Display;
 
     type Entry: Copy
@@ -177,8 +181,10 @@ pub trait BitDepth: Clone + Copy {
         + FromPrimitive<i16>
         + FromPrimitive<c_int>
         + ToPrimitive<c_int>
-        + AsBytes
-        + FromBytes;
+        + IntoBytes
+        + FromBytes
+        + zerocopy::KnownLayout
+        + zerocopy::Immutable;
 
     type Scaling: AsRef<[u8]> + AsMut<[u8]> + ArrayDefault + Copy;
     const SCALING_BITS: usize;

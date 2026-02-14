@@ -106,9 +106,11 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use strum::FromRepr;
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 use zerocopy::FromBytes;
-use zerocopy::FromZeroes;
+use zerocopy::Immutable;
+use zerocopy::KnownLayout;
+use zerocopy::FromZeros;
 
 #[derive(Default)]
 pub struct Rav1dDSPContext {
@@ -929,37 +931,37 @@ impl Atom for TileStateRef {
 pub const CF_LEN: usize = 32 * 32;
 
 /// Array of 32 * 32 coef elements (either `i16` or `i32`).
-#[derive(FromZeroes)]
+#[derive(FromZeros)]
 #[repr(align(64))]
 pub struct Cf([i32; CF_LEN]);
 
 impl Cf {
     #[allow(unused)]
     pub fn select<BD: BitDepth>(&self) -> &[BD::Coef; CF_LEN] {
-        FromBytes::ref_from_prefix(AsBytes::as_bytes(&self.0)).unwrap()
+        FromBytes::ref_from_prefix(IntoBytes::as_bytes(&self.0)).unwrap().0
     }
 
     pub fn select_mut<BD: BitDepth>(&mut self) -> &mut [BD::Coef; CF_LEN] {
-        FromBytes::mut_from_prefix(AsBytes::as_bytes_mut(&mut self.0)).unwrap()
+        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.0)).unwrap().0
     }
 }
 
 /// 4D array of pixel elements (either `u8` or `u16`).
 ///
 /// Indices are `[2 a/l][32 bx/y4][3 plane][8 palette_idx]`.
-#[derive(FromZeroes)]
+#[derive(FromZeros)]
 pub struct AlPal([u16; 8 * 3 * 32 * 2]);
 
 impl AlPal {
     pub fn select_mut<BD: BitDepth>(&mut self) -> &mut [[[[BD::Pixel; 8]; 3]; 32]; 2] {
-        FromBytes::mut_from_prefix(AsBytes::as_bytes_mut(&mut self.0)).unwrap()
+        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.0)).unwrap().0
     }
 }
 
 pub const COMPINTER_LEN: usize = 128 * 128;
 pub const SEG_MASK_LEN: usize = 128 * 128;
 
-#[derive(FromZeroes, FromBytes, AsBytes)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C, align(64))]
 pub struct ScratchCompinter {
     pub compinter: [[i16; COMPINTER_LEN]; 2],
@@ -970,47 +972,47 @@ pub struct ScratchCompinter {
 const SCRATCH_COMPINTER_SIZE: usize = mem::size_of::<ScratchCompinter>();
 pub const SCRATCH_LAP_LEN: usize = 128 * 32;
 
-#[derive(FromZeroes, FromBytes, AsBytes)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C, align(64))]
 pub struct ScratchLapInter([u8; SCRATCH_COMPINTER_SIZE]);
 
 impl ScratchLapInter {
     pub fn lap_mut<BD: BitDepth>(&mut self) -> &mut [BD::Pixel; SCRATCH_LAP_LEN] {
-        FromBytes::mut_from_prefix(&mut self.0).unwrap()
+        FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
 
     pub fn inter_mut(&mut self) -> &mut ScratchCompinter {
-        FromBytes::mut_from_prefix(&mut self.0).unwrap()
+        FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
 }
 
 pub const EMU_EDGE_LEN: usize = 320 * (256 + 7);
 // stride=192 for non-SVC, or 320 for SVC
-#[derive(FromZeroes, FromBytes, AsBytes)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C, align(64))]
 pub struct ScratchEmuEdge([u8; EMU_EDGE_LEN * 2]);
 
 impl ScratchEmuEdge {
     pub fn buf_mut<BD: BitDepth>(&mut self) -> &mut [BD::Pixel; EMU_EDGE_LEN] {
-        FromBytes::mut_from_prefix(&mut self.0).unwrap()
+        FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
 }
 
-#[derive(FromZeroes, FromBytes, AsBytes)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 pub struct ScratchInter {
     pub lap_inter: ScratchLapInter,
     pub emu_edge: ScratchEmuEdge,
 }
 
-#[derive(FromZeroes, FromBytes, AsBytes)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C, align(64))]
 pub struct ScratchPal {
     pub pal_order: [[u8; 8]; 64],
     pub pal_ctx: [u8; 64],
 }
 
-#[derive(FromZeroes, FromBytes, AsBytes)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C, align(64))]
 pub struct ScratchLevelsPal([u8; 32 * 34]);
 
@@ -1020,80 +1022,80 @@ impl ScratchLevelsPal {
     }
 
     pub fn pal_mut(&mut self) -> &mut ScratchPal {
-        FromBytes::mut_from_prefix(&mut self.0).unwrap()
+        FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
 }
 
 pub const SCRATCH_INTER_INTRA_BUF_LEN: usize = 64 * 64;
 
-#[derive(Clone, Copy, FromZeroes, FromBytes, AsBytes)]
+#[derive(Clone, Copy, FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C, align(64))]
 pub struct ScratchInterIntraBuf([u16; SCRATCH_INTER_INTRA_BUF_LEN * 2]);
 
 impl ScratchInterIntraBuf {
     pub fn buf_mut<BD: BitDepth>(&mut self) -> &mut [BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN] {
-        FromBytes::mut_from_prefix(AsBytes::as_bytes_mut(&mut self.0)).unwrap()
+        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.0)).unwrap().0
     }
 }
 
 pub const SCRATCH_EDGE_LEN: usize = 257;
 
-#[derive(Clone, Copy, FromZeroes, FromBytes, AsBytes)]
+#[derive(Clone, Copy, FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C, align(64))]
 pub struct ScratchEdgeBuf([u8; SCRATCH_EDGE_LEN * 2 + 62]); // 257 Pixel elements + 62 padding bytes
 
 impl ScratchEdgeBuf {
     pub fn buf_mut<BD: BitDepth>(&mut self) -> &mut [BD::Pixel; SCRATCH_EDGE_LEN] {
-        FromBytes::mut_from_prefix(&mut self.0).unwrap()
+        FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
 }
 
-#[derive(Clone, Copy, FromZeroes, FromBytes, AsBytes)]
+#[derive(Clone, Copy, FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C, align(16))] // Over-aligned for 8bpc (needs to be `align(8)` for 8bpc, `align(16)` for 16bpc).
 pub struct ScratchPalBuf([u8; 8 * 3 * 2]); /* [3 plane][8 palette_idx] */
 
 impl ScratchPalBuf {
     pub fn buf<BD: BitDepth>(&self) -> &[[BD::Pixel; 8]; 3] {
-        FromBytes::ref_from_prefix(&self.0).unwrap()
+        FromBytes::ref_from_prefix(&self.0).unwrap().0
     }
 
     pub fn buf_mut<BD: BitDepth>(&mut self) -> &mut [[BD::Pixel; 8]; 3] {
-        FromBytes::mut_from_prefix(&mut self.0).unwrap()
+        FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
 }
 
-#[derive(Clone, Copy, FromZeroes, FromBytes, AsBytes)]
+#[derive(Clone, Copy, FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 pub struct ScratchInterIntraEdgePal {
     pub interintra: ScratchInterIntraBuf,
     pub edge: ScratchEdgeBuf,
     pub pal: ScratchPalBuf,
 
-    /// For `AsBytes`, so there's no implicit padding.
+    /// For `IntoBytes`, so there's no implicit padding.
     _padding: [u8; 16],
 }
 
 pub const SCRATCH_AC_TXTP_LEN: usize = 32 * 32;
 
-#[derive(Clone, Copy, FromZeroes, FromBytes, AsBytes)]
+#[derive(Clone, Copy, FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C, align(64))]
 pub struct ScratchAcTxtpMap([u8; SCRATCH_AC_TXTP_LEN * 2]);
 
 impl ScratchAcTxtpMap {
     pub fn ac_mut(&mut self) -> &mut [i16; SCRATCH_AC_TXTP_LEN] {
-        FromBytes::mut_from_prefix(&mut self.0).unwrap()
+        FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
 
     pub fn txtp_map(&self) -> &[TxfmType; SCRATCH_AC_TXTP_LEN] {
-        FromBytes::ref_from_prefix(&self.0).unwrap()
+        FromBytes::ref_from_prefix(&self.0).unwrap().0
     }
 
     pub fn txtp_map_mut(&mut self) -> &mut [TxfmType; SCRATCH_AC_TXTP_LEN] {
-        FromBytes::mut_from_prefix(&mut self.0).unwrap()
+        FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
 }
 
-#[derive(FromZeroes, FromBytes, AsBytes)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 pub struct ScratchInterIntra {
     pub levels_pal: ScratchLevelsPal,
@@ -1105,21 +1107,21 @@ pub struct ScratchInterIntra {
 
 // Larger of the two between `ScratchInter` and `ScratchInterIntra`.
 const SCRATCH_SIZE: usize = mem::size_of::<ScratchInter>();
-#[derive(FromZeroes)]
+#[derive(FromZeros)]
 #[repr(C)]
 pub struct TaskContextScratch([u8; SCRATCH_SIZE]);
 
 impl TaskContextScratch {
     pub fn inter_mut(&mut self) -> &mut ScratchInter {
-        FromBytes::mut_from_prefix(&mut self.0).unwrap()
+        FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
 
     pub fn inter_intra(&self) -> &ScratchInterIntra {
-        FromBytes::ref_from_prefix(&self.0).unwrap()
+        FromBytes::ref_from_prefix(&self.0).unwrap().0
     }
 
     pub fn inter_intra_mut(&mut self) -> &mut ScratchInterIntra {
-        FromBytes::mut_from_prefix(&mut self.0).unwrap()
+        FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
 }
 
@@ -1189,10 +1191,10 @@ impl Rav1dTaskContext {
             l: Default::default(),
             a: Default::default(),
             rt: Default::default(),
-            cf: FromZeroes::new_zeroed(),
-            al_pal: FromZeroes::new_zeroed(),
+            cf: FromZeros::new_zeroed(),
+            al_pal: FromZeros::new_zeroed(),
             pal_sz_uv: Default::default(),
-            scratch: FromZeroes::new_zeroed(),
+            scratch: FromZeros::new_zeroed(),
             warpmv: Default::default(),
             lf_mask: Default::default(),
             top_pre_cdef_toggle: Default::default(),

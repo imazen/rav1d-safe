@@ -4105,7 +4105,7 @@ fn ipred_z1_16bpc_inner(
     };
 
     // Convert top_px to bytes for SIMD access
-    let top_bytes: &[u8] = zerocopy::AsBytes::as_bytes(&top_px[..]);
+    let top_bytes: &[u8] = zerocopy::IntoBytes::as_bytes(&top_px[..]);
     let top_bytes = top_bytes.flex();
 
     let rounding = _mm256_set1_epi32(32);
@@ -4388,7 +4388,7 @@ fn ipred_z2_16bpc_inner(
     edge_px[edge_tl] = rd(tl_pix);
 
     // Convert to bytes for SIMD access
-    let edge_bytes: &[u8] = zerocopy::AsBytes::as_bytes(edge_px.as_slice());
+    let edge_bytes: &[u8] = zerocopy::IntoBytes::as_bytes(edge_px.as_slice());
     let edge = edge_bytes.flex();
 
     let base_inc_x = 1 + upsample_above as usize;
@@ -4898,7 +4898,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
@@ -4919,8 +4919,8 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     let (mut dst_guard, dst_base) = dst.strided_slice_mut::<BD>(w, h);
     let dst_base_bytes = dst_base * std::mem::size_of::<BD::Pixel>();
 
-    // Get byte-level views (safe via zerocopy AsBytes)
-    let dst_bytes: &mut [u8] = dst_guard.as_bytes_mut();
+    // Get byte-level views (safe via zerocopy IntoBytes)
+    let dst_bytes: &mut [u8] = dst_guard.as_mut_bytes();
     let tl_bytes: &[u8] = topleft.as_bytes();
 
     match (BD::BPC, mode) {

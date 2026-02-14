@@ -56,9 +56,10 @@ use std::ptr::NonNull;
 use std::sync::Arc;
 #[cfg(feature = "c-ffi")]
 use to_method::To as _;
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 use zerocopy::FromBytes;
-use zerocopy::FromZeroes;
+use zerocopy::Immutable;
+use zerocopy::KnownLayout;
 
 pub(crate) const RAV1D_PICTURE_ALIGNMENT: usize = 64;
 pub const DAV1D_PICTURE_ALIGNMENT: usize = RAV1D_PICTURE_ALIGNMENT;
@@ -185,7 +186,7 @@ pub struct Dav1dPicture {
     pub allocator_data: Option<SendSyncNonNull<c_void>>,
 }
 
-#[derive(Clone, FromZeroes, FromBytes, AsBytes)]
+#[derive(Clone, FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C, align(64))]
 pub struct AlignedPixelChunk([u8; RAV1D_PICTURE_ALIGNMENT]);
 
@@ -271,7 +272,7 @@ impl Rav1dPictureDataComponentInner {
     /// As opposed to [`Self::new`], this is safe because `buf` is a `&mut` and thus unique,
     /// so it is sound to further subdivide it into disjoint `&mut`s.
     pub fn wrap_buf<BD: BitDepth>(buf: &mut [BD::Pixel], stride: usize) -> Self {
-        let buf = AsBytes::as_bytes_mut(buf);
+        let buf = IntoBytes::as_mut_bytes(buf);
         let ptr = PicDataPtr::new(buf.as_mut_ptr()).unwrap();
         assert!(ptr.is_chunk_aligned());
         let len = buf.len();
@@ -300,6 +301,15 @@ unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
         unsafe { assume(this.ptr.is_chunk_aligned()) };
 
         this.ptr.as_ptr()
+    }
+
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
+        // SAFETY: Only creates &Self (SharedReadOnly). Data is behind a raw pointer,
+        // not inline, so SharedReadOnly doesn't cover element data.
+        let this = unsafe { &*ptr };
+        unsafe { assume(this.ptr.is_chunk_aligned()) };
+        unsafe { assume(this.len % RAV1D_PICTURE_GUARANTEED_MULTIPLE == 0) };
+        core::ptr::slice_from_raw_parts_mut(this.ptr.as_ptr(), this.len)
     }
 
     #[inline] // Inline so callers can see the assume.
@@ -373,7 +383,7 @@ impl Rav1dPictureDataComponent {
             if #[cfg(feature = "c-ffi")] {
                 Self::from_parts(Rav1dPictureDataComponentInner::wrap_buf::<BD>(buf, stride), stride_bytes)
             } else {
-                let buf_bytes = AsBytes::as_bytes(buf);
+                let buf_bytes = IntoBytes::as_bytes(buf);
                 assert!(buf_bytes.len() % RAV1D_PICTURE_GUARANTEED_MULTIPLE == 0);
                 let inner = PicBuf::from_slice_copy(buf_bytes);
                 Self::from_parts(inner, stride_bytes)

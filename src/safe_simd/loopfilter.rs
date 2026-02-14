@@ -1403,7 +1403,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     let lvl_len = lvl_remaining_bytes / 4;
     let lvl_byte_end = lvl_start + lvl_len * 4;
     let lvl_byte_guard = lvl.data.index(lvl_start..lvl_byte_end);
-    let lvl_slice: &[[u8; 4]] = zerocopy::FromBytes::slice_from(&*lvl_byte_guard).unwrap();
+    let lvl_slice: &[[u8; 4]] = zerocopy::FromBytes::ref_from_bytes(&*lvl_byte_guard).unwrap();
     // Which byte within each [u8;4] entry to read:
     //   H Y → 0, V Y → 1, H U → 2, H V → 3
     // This is encoded in lvl.offset % 4 by the caller (lf_apply.rs adds +0/+1/+2/+3).

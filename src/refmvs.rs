@@ -31,7 +31,7 @@ use std::mem;
 use std::ptr;
 #[cfg(feature = "asm")]
 use std::slice;
-use zerocopy::FromZeroes;
+use zerocopy::FromZeros;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 #[repr(C, packed)]
@@ -41,7 +41,7 @@ pub struct RefMvsTemporalBlock {
 }
 const _: () = assert!(mem::size_of::<RefMvsTemporalBlock>() == 5);
 
-#[derive(Clone, Copy, PartialEq, Eq, FromZeroes)]
+#[derive(Clone, Copy, PartialEq, Eq, FromZeros)]
 // In C, this is packed and is 2 bytes.
 // In Rust, being packed and aligned is tricky
 #[repr(C, align(2))]
@@ -56,14 +56,14 @@ impl From<[i8; 2]> for RefMvsRefPair {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq, FromZeroes)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, FromZeros)]
 #[repr(C)]
 pub struct RefMvsMvPair {
     pub mv: [Mv; 2],
 }
 const _: () = assert!(mem::size_of::<RefMvsMvPair>() == 8);
 
-#[derive(Clone, Copy, FromZeroes)]
+#[derive(Clone, Copy, FromZeros)]
 // In C, this is packed and is 12 bytes.
 // In Rust, being packed and aligned is tricky
 #[repr(C, align(4))]
@@ -1710,7 +1710,7 @@ pub(crate) fn rav1d_refmvs_init_frame(
         // so add `R_PAD` elements to avoid buffer overreads.
         let r_sz = 35 * 2 * n_blocks as usize * (1 + (n_frame_threads > 1) as usize) + R_PAD;
         let rp_proj_sz = 16 * n_blocks as usize;
-        rf.r.try_resize(r_sz, FromZeroes::new_zeroed())
+        rf.r.try_resize(r_sz, FromZeros::new_zeroed())
             .map_err(|_| ENOMEM)?;
         rf.rp_proj
             .try_resize(rp_proj_sz, Default::default())

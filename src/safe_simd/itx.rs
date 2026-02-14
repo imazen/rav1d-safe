@@ -205,7 +205,7 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
     storei32!(&mut dst[off3..off3 + 4], sum3_8);
 
     // Clear coefficients
-    let coeff_bytes = zerocopy::AsBytes::as_bytes_mut(&mut *coeff);
+    let coeff_bytes = zerocopy::IntoBytes::as_mut_bytes(&mut *coeff);
     storeu_128!(
         <&mut [u8; 16]>::try_from(&mut coeff_bytes[..16]).unwrap(),
         _mm_setzero_si128()
@@ -506,50 +506,50 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
     let max_val = _mm_set1_epi32(bitdepth_max);
 
     // Row 0
-    let dst0 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[..4]));
+    let dst0 = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[..4]));
     let dst0_32 = _mm_unpacklo_epi16(dst0, zero);
     let scaled0 = _mm_srai_epi32(_mm_add_epi32(out0, rnd), 4);
     let sum0 = _mm_add_epi32(dst0_32, scaled0);
     let clamped0 = _mm_max_epi32(_mm_min_epi32(sum0, max_val), zero);
     let packed0 = _mm_packus_epi32(clamped0, clamped0);
-    storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[..4]), packed0);
+    storei64!(zerocopy::IntoBytes::as_mut_bytes(&mut dst[..4]), packed0);
 
     // Row 1
     let dst_off1 = stride_u16;
-    let dst1 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off1..dst_off1 + 4]));
+    let dst1 = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[dst_off1..dst_off1 + 4]));
     let dst1_32 = _mm_unpacklo_epi16(dst1, zero);
     let scaled1 = _mm_srai_epi32(_mm_add_epi32(out1, rnd), 4);
     let sum1 = _mm_add_epi32(dst1_32, scaled1);
     let clamped1 = _mm_max_epi32(_mm_min_epi32(sum1, max_val), zero);
     let packed1 = _mm_packus_epi32(clamped1, clamped1);
     storei64!(
-        zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off1..dst_off1 + 4]),
+        zerocopy::IntoBytes::as_mut_bytes(&mut dst[dst_off1..dst_off1 + 4]),
         packed1
     );
 
     // Row 2
     let dst_off2 = stride_u16 * 2;
-    let dst2 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off2..dst_off2 + 4]));
+    let dst2 = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[dst_off2..dst_off2 + 4]));
     let dst2_32 = _mm_unpacklo_epi16(dst2, zero);
     let scaled2 = _mm_srai_epi32(_mm_add_epi32(out2, rnd), 4);
     let sum2 = _mm_add_epi32(dst2_32, scaled2);
     let clamped2 = _mm_max_epi32(_mm_min_epi32(sum2, max_val), zero);
     let packed2 = _mm_packus_epi32(clamped2, clamped2);
     storei64!(
-        zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off2..dst_off2 + 4]),
+        zerocopy::IntoBytes::as_mut_bytes(&mut dst[dst_off2..dst_off2 + 4]),
         packed2
     );
 
     // Row 3
     let dst_off3 = stride_u16 * 3;
-    let dst3 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off3..dst_off3 + 4]));
+    let dst3 = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[dst_off3..dst_off3 + 4]));
     let dst3_32 = _mm_unpacklo_epi16(dst3, zero);
     let scaled3 = _mm_srai_epi32(_mm_add_epi32(out3, rnd), 4);
     let sum3 = _mm_add_epi32(dst3_32, scaled3);
     let clamped3 = _mm_max_epi32(_mm_min_epi32(sum3, max_val), zero);
     let packed3 = _mm_packus_epi32(clamped3, clamped3);
     storei64!(
-        zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off3..dst_off3 + 4]),
+        zerocopy::IntoBytes::as_mut_bytes(&mut dst[dst_off3..dst_off3 + 4]),
         packed3
     );
 
@@ -726,7 +726,7 @@ fn inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
     storei32!(&mut dst[off3..off3 + 4], sum3_8);
 
     // Clear coefficients
-    let coeff_bytes = zerocopy::AsBytes::as_bytes_mut(&mut *coeff);
+    let coeff_bytes = zerocopy::IntoBytes::as_mut_bytes(&mut *coeff);
     storeu_128!(
         <&mut [u8; 16]>::try_from(&mut coeff_bytes[..16]).unwrap(),
         _mm_setzero_si128()
@@ -829,44 +829,44 @@ fn inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
     let max_val = _mm_set1_epi32(bitdepth_max);
 
     // Row 0: load 4 u16, widen to i32, add, clamp, pack back
-    let d0 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[..4]));
+    let d0 = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[..4]));
     let d0_32 = _mm_cvtepu16_epi32(d0);
     let sum0 = _mm_max_epi32(_mm_min_epi32(_mm_add_epi32(d0_32, final0), max_val), zero);
     let sum0_16 = _mm_packus_epi32(sum0, sum0);
-    storei64!(zerocopy::AsBytes::as_bytes_mut(&mut dst[..4]), sum0_16);
+    storei64!(zerocopy::IntoBytes::as_mut_bytes(&mut dst[..4]), sum0_16);
 
     let off1 = dst_stride_u16;
-    let d1 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[off1..off1 + 4]));
+    let d1 = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[off1..off1 + 4]));
     let d1_32 = _mm_cvtepu16_epi32(d1);
     let sum1 = _mm_max_epi32(_mm_min_epi32(_mm_add_epi32(d1_32, final1), max_val), zero);
     let sum1_16 = _mm_packus_epi32(sum1, sum1);
     storei64!(
-        zerocopy::AsBytes::as_bytes_mut(&mut dst[off1..off1 + 4]),
+        zerocopy::IntoBytes::as_mut_bytes(&mut dst[off1..off1 + 4]),
         sum1_16
     );
 
     let off2 = dst_stride_u16 * 2;
-    let d2 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[off2..off2 + 4]));
+    let d2 = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[off2..off2 + 4]));
     let d2_32 = _mm_cvtepu16_epi32(d2);
     let sum2 = _mm_max_epi32(_mm_min_epi32(_mm_add_epi32(d2_32, final2), max_val), zero);
     let sum2_16 = _mm_packus_epi32(sum2, sum2);
     storei64!(
-        zerocopy::AsBytes::as_bytes_mut(&mut dst[off2..off2 + 4]),
+        zerocopy::IntoBytes::as_mut_bytes(&mut dst[off2..off2 + 4]),
         sum2_16
     );
 
     let off3 = dst_stride_u16 * 3;
-    let d3 = loadi64!(zerocopy::AsBytes::as_bytes(&dst[off3..off3 + 4]));
+    let d3 = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[off3..off3 + 4]));
     let d3_32 = _mm_cvtepu16_epi32(d3);
     let sum3 = _mm_max_epi32(_mm_min_epi32(_mm_add_epi32(d3_32, final3), max_val), zero);
     let sum3_16 = _mm_packus_epi32(sum3, sum3);
     storei64!(
-        zerocopy::AsBytes::as_bytes_mut(&mut dst[off3..off3 + 4]),
+        zerocopy::IntoBytes::as_mut_bytes(&mut dst[off3..off3 + 4]),
         sum3_16
     );
 
     // Clear coefficients (16 i32 = 64 bytes)
-    let coeff_bytes = zerocopy::AsBytes::as_bytes_mut(&mut *coeff);
+    let coeff_bytes = zerocopy::IntoBytes::as_mut_bytes(&mut *coeff);
     storeu_128!(
         <&mut [u8; 16]>::try_from(&mut coeff_bytes[..16]).unwrap(),
         _mm_setzero_si128()
@@ -10181,7 +10181,7 @@ fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
         let dst_off = y * stride_u16;
 
         // Load destination (4 u16 = 8 bytes)
-        let d = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off..dst_off + 4]));
+        let d = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[dst_off..dst_off + 4]));
         let d32 = _mm_unpacklo_epi16(d, zero);
 
         // Load and scale coefficients
@@ -10197,7 +10197,7 @@ fn inv_txfm_add_dct_dct_4x8_16bpc_avx2_inner(
         let packed = _mm_packus_epi32(clamped, clamped);
 
         storei64!(
-            zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+            zerocopy::IntoBytes::as_mut_bytes(&mut dst[dst_off..dst_off + 4]),
             packed
         );
     }
@@ -10652,7 +10652,7 @@ fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
     for y in 0..16 {
         let dst_off = y * stride_u16;
 
-        let d = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off..dst_off + 4]));
+        let d = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[dst_off..dst_off + 4]));
         let d32 = _mm_unpacklo_epi16(d, zero);
 
         let c = _mm_set_epi32(
@@ -10667,7 +10667,7 @@ fn inv_txfm_add_dct_dct_4x16_16bpc_avx2_inner(
         let packed = _mm_packus_epi32(clamped, clamped);
 
         storei64!(
-            zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+            zerocopy::IntoBytes::as_mut_bytes(&mut dst[dst_off..dst_off + 4]),
             packed
         );
     }
@@ -12528,7 +12528,7 @@ pub fn inv_identity_add_4x4_16bpc_avx2(
         let dst_off = y * stride_u16;
 
         // Load destination (4 u16)
-        let d = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off..dst_off + 4]));
+        let d = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[dst_off..dst_off + 4]));
         let d32 = _mm_unpacklo_epi16(d, zero);
 
         // Load coeffs (column-major: y, y+4, y+8, y+12)
@@ -12554,7 +12554,7 @@ pub fn inv_identity_add_4x4_16bpc_avx2(
         let packed = _mm_packus_epi32(clamped, clamped);
 
         storei64!(
-            zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+            zerocopy::IntoBytes::as_mut_bytes(&mut dst[dst_off..dst_off + 4]),
             packed
         );
     }
@@ -12939,7 +12939,7 @@ fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
         let dst_off = y * stride_u16;
 
         // Load destination (4 u16 = 8 bytes)
-        let d = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off..dst_off + 4]));
+        let d = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[dst_off..dst_off + 4]));
         let d32 = _mm_unpacklo_epi16(d, zero);
 
         // Load and scale coefficients
@@ -12955,7 +12955,7 @@ fn inv_txfm_add_identity_identity_4x8_16bpc_avx2_inner(
         let packed = _mm_packus_epi32(clamped, clamped);
 
         storei64!(
-            zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+            zerocopy::IntoBytes::as_mut_bytes(&mut dst[dst_off..dst_off + 4]),
             packed
         );
     }
@@ -13402,7 +13402,7 @@ fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
         let dst_off = y * stride_u16;
 
         // Load destination (4 u16 = 8 bytes)
-        let d = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off..dst_off + 4]));
+        let d = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[dst_off..dst_off + 4]));
         let d32 = _mm_unpacklo_epi16(d, zero);
 
         let c = _mm_set_epi32(
@@ -13417,7 +13417,7 @@ fn inv_txfm_add_identity_identity_4x16_16bpc_avx2_inner(
         let packed = _mm_packus_epi32(clamped, clamped);
 
         storei64!(
-            zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+            zerocopy::IntoBytes::as_mut_bytes(&mut dst[dst_off..dst_off + 4]),
             packed
         );
     }
@@ -14139,7 +14139,7 @@ macro_rules! impl_4x8_transform_16bpc {
             for y in 0..8 {
                 let dst_off = y * stride_u16;
 
-                let d = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off..dst_off + 4]));
+                let d = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[dst_off..dst_off + 4]));
                 let d32 = _mm_unpacklo_epi16(d, zero);
 
                 let c = _mm_set_epi32(
@@ -14154,7 +14154,7 @@ macro_rules! impl_4x8_transform_16bpc {
                 let packed = _mm_packus_epi32(clamped, clamped);
 
                 storei64!(
-                    zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+                    zerocopy::IntoBytes::as_mut_bytes(&mut dst[dst_off..dst_off + 4]),
                     packed
                 );
             }
@@ -14826,7 +14826,7 @@ macro_rules! impl_4x16_transform_16bpc {
             for y in 0..16 {
                 let dst_off = y * stride_u16;
 
-                let d = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off..dst_off + 4]));
+                let d = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[dst_off..dst_off + 4]));
                 let d32 = _mm_unpacklo_epi16(d, zero);
 
                 let c = _mm_set_epi32(
@@ -14841,7 +14841,7 @@ macro_rules! impl_4x16_transform_16bpc {
                 let packed = _mm_packus_epi32(clamped, clamped);
 
                 storei64!(
-                    zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+                    zerocopy::IntoBytes::as_mut_bytes(&mut dst[dst_off..dst_off + 4]),
                     packed
                 );
             }
@@ -15646,7 +15646,7 @@ macro_rules! impl_4x4_transform_16bpc {
             for y in 0..4 {
                 let dst_off = y * stride_u16;
 
-                let d = loadi64!(zerocopy::AsBytes::as_bytes(&dst[dst_off..dst_off + 4]));
+                let d = loadi64!(zerocopy::IntoBytes::as_bytes(&dst[dst_off..dst_off + 4]));
                 let d32 = _mm_unpacklo_epi16(d, zero);
 
                 let c = _mm_set_epi32(
@@ -15661,7 +15661,7 @@ macro_rules! impl_4x4_transform_16bpc {
                 let packed = _mm_packus_epi32(clamped, clamped);
 
                 storei64!(
-                    zerocopy::AsBytes::as_bytes_mut(&mut dst[dst_off..dst_off + 4]),
+                    zerocopy::IntoBytes::as_mut_bytes(&mut dst[dst_off..dst_off + 4]),
                     packed
                 );
             }
@@ -16225,7 +16225,7 @@ fn itxfm_dispatch_16bpc(
     // but the actual data is [i32] (each i32 = two consecutive i16s in memory).
     // Reinterpret back to [i32] so functions can read full 32-bit coefficients.
     let coeff: &mut [i32] =
-        zerocopy::FromBytes::mut_slice_from(zerocopy::AsBytes::as_bytes_mut(coeff_i16))
+        zerocopy::FromBytes::mut_from_bytes(zerocopy::IntoBytes::as_mut_bytes(coeff_i16))
             .expect("coeff alignment/size mismatch for i32 reinterpretation");
 
     // Arcane 16bpc functions take byte_stride as usize
@@ -16314,7 +16314,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::src::strided::Strided as _;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     #[cfg(not(target_arch = "x86_64"))]
     {
@@ -16338,13 +16338,13 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
         let bd_c = bd.into_c();
 
         // Reinterpret coeff as &mut [i16] (safe via zerocopy)
-        let coeff_i16: &mut [i16] = zerocopy::FromBytes::mut_slice_from(coeff.as_bytes_mut())
+        let coeff_i16: &mut [i16] = zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
             .expect("coeff alignment/size mismatch for i16 reinterpretation");
 
         match BD::BPC {
             BPC::BPC8 => {
                 let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_bytes_mut();
+                let dst_u8: &mut [u8] = guard.as_mut_bytes();
                 itxfm_dispatch_8bpc(
                     token,
                     tx_size,
@@ -16360,8 +16360,8 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             }
             BPC::BPC16 => {
                 let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_bytes: &mut [u8] = guard.as_bytes_mut();
-                let dst_u16: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_bytes)
+                let dst_bytes: &mut [u8] = guard.as_mut_bytes();
+                let dst_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_bytes)
                     .expect("dst alignment/size mismatch for u16 reinterpretation");
                 itxfm_dispatch_16bpc(
                     token,
@@ -16396,7 +16396,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     use crate::src::levels::TxfmSize;
     use crate::src::safe_simd::pixel_access::Flex;
     use archmage::Desktop64;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     let Some(_token) = crate::src::cpu::summon_avx2() else {
         return false;
@@ -16408,7 +16408,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
 
     // Create tracked guard — ensures borrow tracker knows about this access
     let (mut dst_guard, _dst_base) = dst.strided_slice_mut::<BD>(w, h);
-    let dst_ptr: *mut DynPixel = dst_guard.as_bytes_mut().as_mut_ptr() as *mut DynPixel;
+    let dst_ptr: *mut DynPixel = dst_guard.as_mut_bytes().as_mut_ptr() as *mut DynPixel;
     let dst_stride = dst.stride();
     let coeff_len = coeff.len() as u16;
     let coeff_ptr = coeff.as_mut_ptr().cast();

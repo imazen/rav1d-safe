@@ -357,7 +357,7 @@ fn avg_16bpc_avx2_safe(
         // dst is bytes, but we write u16 pixels — each pixel is 2 bytes
         let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
         // Reinterpret as u16 slice
-        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
 
         let mut col = 0usize;
 
@@ -463,7 +463,7 @@ fn avg_16bpc_avx512_safe(
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
         let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
-        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
 
         let mut col = 0usize;
 
@@ -857,7 +857,7 @@ fn w_avg_16bpc_avx2_safe(
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
         let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
-        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
 
         let mut col = 0usize;
 
@@ -976,7 +976,7 @@ fn w_avg_16bpc_avx512_safe(
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
         let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
-        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
 
         let mut col = 0usize;
 
@@ -1346,7 +1346,7 @@ fn mask_16bpc_avx512_safe(
         let tmp2_row = &tmp2[row * w..][..w];
         let mask_row = &mask[row * w..][..w];
         let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
-        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
 
         let mut col = 0usize;
 
@@ -1470,7 +1470,7 @@ fn mask_16bpc_avx2_safe(
         let tmp2_row = &tmp2[row * w..][..w];
         let mask_row = &mask[row * w..][..w];
         let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
-        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
 
         let mut col = 0usize;
 
@@ -1721,9 +1721,9 @@ fn blend_16bpc_avx2_safe(
 
     for row in 0..h {
         let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
-        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
         let tmp_row_bytes = &tmp[row * w * 2..][..w * 2];
-        let tmp_row: &[u16] = <u16 as zerocopy::FromBytes>::slice_from(tmp_row_bytes).unwrap();
+        let tmp_row: &[u16] = <[u16] as zerocopy::FromBytes>::ref_from_bytes(tmp_row_bytes).unwrap();
         let mask_row = &mask[row * w..][..w];
 
         let mut col = 0usize;
@@ -2017,10 +2017,10 @@ fn blend_v_16bpc_avx2_safe(
 
     for row in 0..h {
         let dst_row_bytes = &mut dst[row * dst_stride..][..w_eff * 2];
-        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
         // tmp uses full w stride
         let tmp_row_bytes = &tmp[row * w * 2..][..w_eff * 2];
-        let tmp_row: &[u16] = <u16 as zerocopy::FromBytes>::slice_from(tmp_row_bytes).unwrap();
+        let tmp_row: &[u16] = <[u16] as zerocopy::FromBytes>::ref_from_bytes(tmp_row_bytes).unwrap();
 
         let mut col = 0usize;
 
@@ -2114,9 +2114,9 @@ fn blend_h_16bpc_avx2_safe(
 
     for row in 0..h_eff {
         let dst_row_bytes = &mut dst[row * dst_stride..][..w * 2];
-        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
         let tmp_row_bytes = &tmp[row * w * 2..][..w * 2];
-        let tmp_row: &[u16] = <u16 as zerocopy::FromBytes>::slice_from(tmp_row_bytes).unwrap();
+        let tmp_row: &[u16] = <[u16] as zerocopy::FromBytes>::ref_from_bytes(tmp_row_bytes).unwrap();
         let m = obmc_mask[row] as u32;
 
         let mask_32 = _mm256_set1_epi32(m as i32);
@@ -9663,7 +9663,7 @@ fn w_mask_16bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
         let tmp2_row = &tmp2[row_offset..][..w];
         // dst is bytes, but we write u16 pixels — each pixel is 2 bytes
         let dst_row_bytes = &mut dst[row_h * dst_stride..][..w * 2];
-        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_slice_from(dst_row_bytes).unwrap();
+        let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
 
         let mut x = 0;
         while x < w {
@@ -11388,9 +11388,9 @@ pub fn avg_dispatch<BD: BitDepth>(
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
     let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
-    let dst_bytes = dst_guard.as_bytes_mut();
+    let dst_bytes = dst_guard.as_mut_bytes();
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     let dst_offset = dst_base * pixel_size;
     let dst_stride = dst.stride();
@@ -11463,9 +11463,9 @@ pub fn w_avg_dispatch<BD: BitDepth>(
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
     let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
-    let dst_bytes = dst_guard.as_bytes_mut();
+    let dst_bytes = dst_guard.as_mut_bytes();
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     let dst_offset = dst_base * pixel_size;
     let dst_stride = dst.stride();
@@ -11542,9 +11542,9 @@ pub fn mask_dispatch<BD: BitDepth>(
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
     let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
-    let dst_bytes = dst_guard.as_bytes_mut();
+    let dst_bytes = dst_guard.as_mut_bytes();
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     let dst_offset = dst_base * pixel_size;
     let dst_stride = dst.stride() as usize;
@@ -11618,9 +11618,9 @@ pub fn blend_dispatch<BD: BitDepth>(
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
     let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
-    let dst_bytes = dst_guard.as_bytes_mut();
+    let dst_bytes = dst_guard.as_mut_bytes();
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     let dst_offset = dst_base * pixel_size;
     let dst_stride = dst.stride() as usize;
@@ -11660,9 +11660,9 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
     let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
-    let dst_bytes = dst_guard.as_bytes_mut();
+    let dst_bytes = dst_guard.as_mut_bytes();
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     let dst_offset = dst_base * pixel_size;
     let dst_stride = dst.stride() as usize;
@@ -11720,9 +11720,9 @@ pub(crate) fn w_mask_dispatch<BD: BitDepth>(
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
     let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
-    let dst_bytes = dst_guard.as_bytes_mut();
+    let dst_bytes = dst_guard.as_mut_bytes();
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     let dst_offset = dst_base * pixel_size;
     let dst_stride = dst.stride() as usize;
@@ -11993,7 +11993,7 @@ pub fn mc_put_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
@@ -12011,7 +12011,7 @@ pub fn mc_put_dispatch<BD: BitDepth>(
     match BD::BPC {
         BPC::BPC8 => {
             let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
-            let dst_bytes = &mut dst_guard.as_bytes_mut()[dst_base * pixel_size..];
+            let dst_bytes = &mut dst_guard.as_mut_bytes()[dst_base * pixel_size..];
             let (src_guard, src_base) = src.full_guard::<BD>();
             match filter {
                 Filter2d::Bilinear => {
@@ -12046,7 +12046,7 @@ pub fn mc_put_dispatch<BD: BitDepth>(
             // TEMPORARY: debug - force scalar for put 16bpc
             // return false;
             let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
-            let dst_bytes = &mut dst_guard.as_bytes_mut()[dst_base * pixel_size..];
+            let dst_bytes = &mut dst_guard.as_mut_bytes()[dst_base * pixel_size..];
             let dst_u16: &mut [u16] = zerocopy::Ref::<_, [u16]>::new_slice(dst_bytes)
                 .expect("u16 alignment")
                 .into_mut_slice();
@@ -12117,7 +12117,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
@@ -12679,7 +12679,7 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::{AsPrimitive, BPC};
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
@@ -12695,7 +12695,7 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
     let pixel_size = std::mem::size_of::<BD::Pixel>();
 
     let (mut dst_guard, dst_base) = dst.full_guard_mut::<BD>();
-    let dst_bytes = &mut dst_guard.as_bytes_mut()[dst_base * pixel_size..];
+    let dst_bytes = &mut dst_guard.as_mut_bytes()[dst_base * pixel_size..];
     let (src_guard, src_base) = src.full_guard::<BD>();
     let src_bytes = src_guard.as_bytes();
 
@@ -12744,7 +12744,7 @@ pub fn warp8x8t_dispatch<BD: BitDepth>(
     bd: BD,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;

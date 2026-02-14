@@ -40,7 +40,7 @@
 #![cfg_attr(not(feature = "unchecked"), deny(unsafe_code))]
 #![cfg_attr(feature = "unchecked", allow(unsafe_code))]
 
-use zerocopy::{AsBytes, FromBytes, Ref};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref};
 
 /// Get an immutable slice from a buffer at a given offset.
 #[inline(always)]
@@ -490,29 +490,35 @@ impl<T> Flex<T> for [T] {
 ///
 /// Returns None if the byte layout doesn't match (wrong element size).
 #[inline(always)]
-pub fn reinterpret_slice<Src: AsBytes, Dst: FromBytes>(src: &[Src]) -> Option<&[Dst]> {
+pub fn reinterpret_slice<Src: IntoBytes + Immutable, Dst: FromBytes + KnownLayout + Immutable>(
+    src: &[Src],
+) -> Option<&[Dst]> {
     let bytes = src.as_bytes();
-    let r: Ref<&[u8], [Dst]> = Ref::new_slice(bytes)?;
-    Some(r.into_slice())
+    let r: Ref<&[u8], [Dst]> = Ref::from_bytes(bytes).ok()?;
+    Some(Ref::into_ref(r))
 }
 
 /// Safely reinterpret a mutable slice using zerocopy.
 #[inline(always)]
-pub fn reinterpret_slice_mut<Src: AsBytes + FromBytes, Dst: AsBytes + FromBytes>(
+pub fn reinterpret_slice_mut<
+    Src: IntoBytes + FromBytes + KnownLayout,
+    Dst: IntoBytes + FromBytes + KnownLayout,
+>(
     src: &mut [Src],
 ) -> Option<&mut [Dst]> {
-    let bytes = src.as_bytes_mut();
-    let r: Ref<&mut [u8], [Dst]> = Ref::new_slice(bytes)?;
-    Some(r.into_mut_slice())
+    let bytes = src.as_mut_bytes();
+    <[Dst]>::mut_from_bytes(bytes).ok()
 }
 
 /// Safely reinterpret a fixed-size array reference using zerocopy.
 /// The source and destination must have the same byte size.
 #[inline(always)]
-pub fn reinterpret_ref<Src: AsBytes, Dst: FromBytes>(src: &Src) -> Option<&Dst> {
+pub fn reinterpret_ref<Src: IntoBytes + Immutable, Dst: FromBytes + KnownLayout + Immutable>(
+    src: &Src,
+) -> Option<&Dst> {
     let bytes = src.as_bytes();
-    let r: Ref<&[u8], Dst> = Ref::new(bytes)?;
-    Some(r.into_ref())
+    let r: Ref<&[u8], Dst> = Ref::from_bytes(bytes).ok()?;
+    Some(Ref::into_ref(r))
 }
 
 /// Convert a raw pixel pointer + stride into a `(&mut [T], base_offset)` pair.

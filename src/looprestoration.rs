@@ -26,9 +26,10 @@ use std::ops::Add;
 #[cfg(feature = "asm")]
 use std::slice;
 use to_method::To;
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 use zerocopy::FromBytes;
-use zerocopy::FromZeroes;
+use zerocopy::Immutable;
+use zerocopy::KnownLayout;
 
 #[cfg(all(
     feature = "asm",
@@ -63,7 +64,7 @@ impl LrEdgeFlags {
     }
 }
 
-#[derive(FromZeroes, FromBytes, AsBytes)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 pub struct LooprestorationParamsSgr {
     pub s0: u32,
@@ -81,7 +82,7 @@ pub struct LooprestorationParamsSgr {
 #[repr(C)]
 #[repr(align(16))]
 pub struct LooprestorationParams {
-    /// [`Align16`] moved to [`Self`] because we can't `#[derive(`[`AsBytes`]`)]` on it due to generics.
+    /// [`Align16`] moved to [`Self`] because we can't `#[derive(`[`IntoBytes`]`)]` on it due to generics.
     ///
     /// [`Align16`]: crate::src::align::Align16
     pub filter: [[i16; 8]; 2],
@@ -96,7 +97,7 @@ impl LooprestorationParams {
         let _: () = assert!(
             mem::align_of::<LooprestorationParams>() >= mem::align_of::<LooprestorationParamsSgr>()
         );
-        FromBytes::ref_from_prefix(AsBytes::as_bytes(&self.filter)).unwrap()
+        FromBytes::ref_from_prefix(IntoBytes::as_bytes(&self.filter)).unwrap().0
     }
 
     pub fn sgr_mut(&mut self) -> &mut LooprestorationParamsSgr {
@@ -107,7 +108,7 @@ impl LooprestorationParams {
         const _: () = assert!(
             mem::align_of::<LooprestorationParams>() >= mem::align_of::<LooprestorationParamsSgr>()
         );
-        FromBytes::mut_from_prefix(AsBytes::as_bytes_mut(&mut self.filter)).unwrap()
+        FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.filter)).unwrap().0
     }
 }
 
