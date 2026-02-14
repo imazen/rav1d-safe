@@ -42,6 +42,10 @@ Every `.index()` and `.index_mut()` call validates that the requested range does
 
 Guards act as locks — the borrow is tracked for the guard's lifetime and released on drop.
 
+### Borrow tracking
+
+Borrows are tracked in a fixed 32-slot array with a bitmask, using a lightweight `AtomicBool` swap lock (no `parking_lot` or `spin` dependencies). This makes borrow/release O(1) in the common case.
+
 ### Poisoning
 
 Like `std::sync::Mutex`, `DisjointMut` poisons the data structure when a thread panics while holding a mutable borrow guard. After poisoning, all future borrow attempts panic. This prevents access to potentially corrupted data.
@@ -50,18 +54,21 @@ Immutable guards do **not** poison on panic (read-only access can't corrupt data
 
 ### Unchecked mode
 
-For audited hot paths, the `unchecked` feature enables `dangerously_unchecked()`, an unsafe constructor that skips all runtime tracking. The caller must guarantee disjointness.
+For audited hot paths, the `unchecked` feature enables `unsafe fn dangerously_unchecked()`, a constructor that skips all runtime tracking. The caller must guarantee disjointness. `new()` always creates a tracked instance regardless of features.
 
 ## Features
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `std` | yes | Uses `parking_lot::Mutex` for tracking. Without this, uses `spin::Mutex`. |
+| `std` | yes | Enables `std::thread::panicking()` for mutable guard poisoning on panic. |
+| `aligned` | no | Aligned newtypes (`Align4`..`Align64`) and `AlignedVec32`/`AlignedVec64` for SIMD-friendly layout. |
+| `pic-buf` | no | `PicBuf`: owned/borrowed byte buffer for `DisjointMut` (used by rav1d picture data). |
+| `zerocopy` | no | Zero-copy typed access via zerocopy's `AsBytes`/`FromBytes` traits. |
 | `unchecked` | no | Enables `dangerously_unchecked()` constructor (unsafe, no tracking). |
 
 ## `no_std` support
 
-This crate is `no_std` compatible (requires `alloc`). Without the `std` feature, it uses a spin-lock for borrow tracking and panic-on-drop poisoning is disabled (requires `std::thread::panicking()`).
+This crate is `no_std` compatible (requires `alloc`). Without the `std` feature, the borrow tracker still works (using `AtomicBool` swap lock), but panic-on-drop poisoning is disabled since `std::thread::panicking()` is unavailable.
 
 ## External types
 
@@ -69,7 +76,7 @@ Implement the `ExternalAsMutPtr` unsafe trait to use your own container with `Di
 
 ## Zerocopy integration
 
-For `DisjointMut<T>` where `T` stores `u8` data, the `mut_slice_as`, `mut_element_as`, `slice_as`, and `element_as` methods provide zero-copy typed access via zerocopy's `AsBytes`/`FromBytes` traits.
+With the `zerocopy` feature, `DisjointMut<T>` where `T` stores `u8` data provides `mut_slice_as`, `mut_element_as`, `slice_as`, and `element_as` methods for zero-copy typed access via zerocopy's `AsBytes`/`FromBytes` traits.
 
 ## Running tests under Miri
 
