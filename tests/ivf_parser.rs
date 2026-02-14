@@ -2,10 +2,11 @@
 //!
 //! IVF format: https://wiki.multimedia.cx/index.php/IVF
 
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read};
 
 /// IVF file header (32 bytes)
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct IvfHeader {
     pub width: u16,
     pub height: u16,
@@ -18,6 +19,7 @@ pub struct IvfHeader {
 #[derive(Debug)]
 pub struct IvfFrame {
     pub data: Vec<u8>,
+    #[allow(dead_code)]
     pub timestamp: u64,
 }
 

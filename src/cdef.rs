@@ -103,6 +103,7 @@ fn cdef_direct<BD: BitDepth>(
         guard.to_vec()
     };
 
+    #[allow(unused_mut)]
     let mut simd_handled = false;
 
     #[cfg(target_arch = "x86_64")]

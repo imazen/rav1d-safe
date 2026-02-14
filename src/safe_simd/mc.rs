@@ -14,6 +14,7 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+#[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::Flex;
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::{
@@ -22,13 +23,18 @@ use crate::src::safe_simd::pixel_access::{
 #[cfg(target_arch = "x86_64")]
 use archmage::{arcane, rite, Desktop64, Server64};
 
+#[cfg(target_arch = "x86_64")]
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::dav1d::headers::Rav1dFilterMode;
 #[cfg(target_arch = "x86_64")]
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
+#[cfg(target_arch = "x86_64")]
 use crate::include::dav1d::picture::PicOffset;
+#[cfg(target_arch = "x86_64")]
 use crate::src::internal::COMPINTER_LEN;
+#[cfg(target_arch = "x86_64")]
 use crate::src::levels::Filter2d;
+#[cfg(target_arch = "x86_64")]
 use crate::src::strided::Strided as _;
 
 use std::cell::Cell;
@@ -1582,6 +1588,7 @@ pub unsafe extern "C" fn mask_scalar(
 // BLEND (Pixel-level blend with mask)
 // =============================================================================
 
+#[cfg(target_arch = "x86_64")]
 use crate::src::internal::{SCRATCH_INTER_INTRA_BUF_LEN, SCRATCH_LAP_LEN};
 
 /// Blend pixels using per-pixel mask
@@ -1788,6 +1795,7 @@ pub unsafe extern "C" fn blend_16bpc_avx2(
 // =============================================================================
 
 use crate::src::tables::dav1d_mc_subpel_filters;
+#[cfg(target_arch = "x86_64")]
 use crate::src::tables::dav1d_obmc_masks;
 
 /// Vertical blend (overlapped block motion compensation)
@@ -9255,6 +9263,7 @@ pub unsafe extern "C" fn prep_bilin_8bpc_avx2(
 // The mask is computed from: m = min(38 + (abs_diff + mask_rnd) >> mask_sh, 64)
 // Blend: dst = (tmp1 * m + tmp2 * (64 - m) + rnd) >> sh
 
+#[cfg(target_arch = "x86_64")]
 use crate::src::internal::SEG_MASK_LEN;
 
 /// Core w_mask implementation (fully safe, slice-based)
@@ -12811,5 +12820,43 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Verify MC avg produces consistent output across all token permutations.
+    #[test]
+    fn test_avg_token_permutations() {
+        use archmage::testing::{for_each_token_permutation, CompileTimePolicy};
+
+        let w = 32i32;
+        let h = 2i32;
+        let size = (w * h) as usize;
+
+        let mut tmp1 = [0i16; COMPINTER_LEN];
+        let mut tmp2 = [0i16; COMPINTER_LEN];
+        for i in 0..size {
+            tmp1[i] = ((i * 37) % 4096) as i16;
+            tmp2[i] = ((i * 73 + 500) % 4096) as i16;
+        }
+
+        // Compute reference with tokens fully enabled
+        let reference = {
+            let Some(token) = crate::src::cpu::summon_avx2() else {
+                eprintln!("Skipping: AVX2 not available");
+                return;
+            };
+            let mut dst = vec![0u8; size];
+            avg_8bpc_avx2_safe(token, &mut dst, w as usize, &tmp1, &tmp2, w, h);
+            dst
+        };
+
+        let report = for_each_token_permutation(CompileTimePolicy::WarnStderr, |perm| {
+            if let Some(token) = crate::src::cpu::summon_avx2() {
+                let mut dst = vec![0u8; size];
+                avg_8bpc_avx2_safe(token, &mut dst, w as usize, &tmp1, &tmp2, w, h);
+                assert_eq!(dst, reference, "avg output mismatch at: {perm}");
+            }
+        });
+        eprintln!("MC avg permutations: {}", report.permutations_run);
+        assert!(report.permutations_run >= 1);
     }
 }

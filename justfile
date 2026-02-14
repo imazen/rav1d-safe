@@ -47,6 +47,37 @@ check: fmt-check clippy test
 cross-aarch64:
     cargo check --target aarch64-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16"
 
+# Cross-compile and test on aarch64 via Docker/QEMU (lib tests only)
+test-aarch64:
+    cross test --target aarch64-unknown-linux-gnu --no-default-features \
+        --features "bitdepth_8,bitdepth_16" --release --lib -- --test-threads=1
+
+# Build and test for WASM with simd128 (lib tests only)
+test-wasm:
+    cargo test --target wasm32-wasip1 --no-default-features \
+        --features "bitdepth_8,bitdepth_16" --lib
+
+# Check WASM compilation only (faster)
+check-wasm:
+    cargo check --target wasm32-wasip1 --no-default-features \
+        --features "bitdepth_8,bitdepth_16"
+
+# Run token permutation tests (exercises all CPU tiers, single-threaded)
+test-permutations:
+    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" \
+        --release -- --test-threads=1
+
+# E2E decode permutations: smoke test (1 vector x all tiers, ~1s)
+test-permutations-smoke:
+    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" \
+        --release --test decode_permutations -- test_permutations_smoke \
+        --test-threads=1 --nocapture
+
+# E2E decode permutations: full corpus x all tiers (~20 min)
+test-permutations-full:
+    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" \
+        --release --test decode_permutations -- --test-threads=1 --nocapture
+
 # Generate documentation
 doc:
     cargo doc --no-default-features --features "bitdepth_8,bitdepth_16" --no-deps --open

@@ -610,7 +610,13 @@ cd /home/lilith/work/zenavif
 
 ## Known Issues
 
-(none currently)
+### ARM loopfilter_arm.rs:69 — index out of bounds on aarch64
+
+Discovered during `just test-aarch64` (QEMU emulation). The scalar loopfilter fallback in
+`loopfilter_arm.rs:69` computes `signed_idx(base, strideb * -2)` which wraps to a huge index
+when `strideb` is negative. The `decode_cpu_levels` integration tests fail on aarch64 with:
+`index out of bounds: the len is 32768 but the index is 18446744073709550596`.
+Lib-only tests pass fine — issue is in the scalar loopfilter path exercised by full decode.
 
 ## Technical Notes
 

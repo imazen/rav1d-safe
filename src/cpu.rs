@@ -109,6 +109,7 @@ impl CpuFlags {
     }
 
     pub fn run_time_detect() -> Self {
+        #[allow(unused_mut)]
         let mut flags = Self::empty();
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -245,6 +246,7 @@ pub(crate) fn rav1d_get_cpu_flags() -> CpuFlags {
 
 /// Check if a specific CPU feature is enabled after applying the mask.
 /// Used by safe_simd dispatch functions to respect `rav1d_set_cpu_flags_mask`.
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 pub(crate) fn simd_enabled(flag: CpuFlags) -> bool {
     rav1d_get_cpu_flags().contains(flag)

@@ -106,6 +106,7 @@ impl TxfmSize {
     }
 
     /// Get the (width, height) dimensions for this transform size.
+    #[allow(dead_code)] // Used by safe_simd itx dispatch on x86_64/aarch64
     pub const fn to_wh(self) -> (usize, usize) {
         use TxfmSize::*;
         match self {

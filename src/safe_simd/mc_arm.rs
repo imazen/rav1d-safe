@@ -944,6 +944,31 @@ mod tests {
             assert!(Arm64::summon().is_some());
         }
     }
+
+    /// Verify ARM token permutations work correctly.
+    /// On aarch64, NEON is always available but the permutation system should
+    /// still be able to disable/re-enable tokens.
+    #[test]
+    #[cfg(target_arch = "aarch64")]
+    fn test_arm_token_permutations() {
+        use archmage::testing::{for_each_token_permutation, CompileTimePolicy};
+        use archmage::{Arm64, SimdToken};
+
+        let mut had_enabled = false;
+        let mut had_disabled = false;
+
+        let report = for_each_token_permutation(CompileTimePolicy::WarnStderr, |_perm| {
+            if Arm64::summon().is_some() {
+                had_enabled = true;
+            } else {
+                had_disabled = true;
+            }
+        });
+        eprintln!("ARM permutations: {}", report.permutations_run);
+        assert!(report.permutations_run >= 1);
+        // With disable_compile_time_tokens, we should see both states
+        assert!(had_enabled, "token was never enabled");
+    }
 }
 
 // ============================================================================

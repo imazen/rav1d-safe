@@ -47,10 +47,14 @@ archmage = { version = "0.6.1", features = ["macros", "avx512"] }
 safe_unaligned_simd = { version = "0.2.4", features = ["avx512"] }
 
 [dev-dependencies]
+archmage = { version = "0.6.1", features = ["macros", "avx512", "disable_compile_time_tokens"] }
 divan = "0.1"
 md5 = "0.8.0"
-tango-bench = "0.6"
 zenavif-parse = { path = "../zenavif-parse", features = ["eager"] }
+
+# tango-bench depends on libloading which doesn't support wasm32
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+tango-bench = "0.6"
 
 [build-dependencies]
 cc = "1.0.79"

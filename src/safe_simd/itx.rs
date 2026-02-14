@@ -6378,6 +6378,45 @@ mod tests {
         assert!(dst.iter().all(|&p| p >= 128));
         assert!(coeff.iter().all(|&c| c == 0));
     }
+
+    /// Verify WHT 4x4 produces consistent output across all token permutations.
+    /// When tokens are disabled, summon_avx2() returns None (dispatch would fall back).
+    /// When enabled, SIMD output must match the known-good reference.
+    #[test]
+    fn test_wht4_token_permutations() {
+        use archmage::testing::{for_each_token_permutation, CompileTimePolicy};
+
+        // Compute reference output once with tokens fully enabled
+        let reference = {
+            let Some(token) = crate::src::cpu::summon_avx2() else {
+                eprintln!("Skipping: AVX2 not available");
+                return;
+            };
+            let mut coeff = [0i16; 16];
+            coeff[0] = 64;
+            let mut dst = [128u8; 16];
+            inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
+                token, &mut dst, 4, &mut coeff, 1, 255,
+            );
+            dst
+        };
+
+        let report = for_each_token_permutation(CompileTimePolicy::WarnStderr, |perm| {
+            if let Some(token) = crate::src::cpu::summon_avx2() {
+                let mut coeff = [0i16; 16];
+                coeff[0] = 64;
+                let mut dst = [128u8; 16];
+                inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
+                    token, &mut dst, 4, &mut coeff, 1, 255,
+                );
+                assert_eq!(dst, reference, "WHT output mismatch at: {perm}");
+                assert!(coeff.iter().all(|&c| c == 0), "coeffs not zeroed at: {perm}");
+            }
+            // When token disabled, summon returns None — dispatch would fall back to scalar
+        });
+        eprintln!("WHT permutations: {}", report.permutations_run);
+        assert!(report.permutations_run >= 1);
+    }
 }
 
 // ============================================================================
