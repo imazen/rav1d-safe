@@ -102,6 +102,10 @@ macro_rules! def_align {
         /// A pointer to the struct has the same address as the first element of the
         /// inner `[V; N]`, so `ptr.cast::<V>()` is valid.
         /// We never create any references — just a direct pointer cast.
+        ///
+        /// `as_mut_slice` is overridden to avoid creating `&Aligned<_, [V; N]>`,
+        /// which would be a SharedReadOnly tag covering the inline data — UB
+        /// under Stacked Borrows when concurrent mutable guards exist.
         unsafe impl<V: Copy, const N: usize> ExternalAsMutPtr
             for aligned::Aligned<aligned::$align_ty, [V; N]>
         {
@@ -109,6 +113,10 @@ macro_rules! def_align {
 
             unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut V {
                 ptr.cast()
+            }
+
+            unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [V] {
+                core::ptr::slice_from_raw_parts_mut(ptr.cast::<V>(), N)
             }
 
             fn len(&self) -> usize {
@@ -226,6 +234,13 @@ unsafe impl<T: Copy> ExternalAsMutPtr for AlignedVec64<T> {
         shared_ref.0.as_ptr().cast_mut()
     }
 
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [T] {
+        // SAFETY: Only creates &Self (SharedReadOnly). Heap data is a
+        // separate allocation, so SharedReadOnly doesn't cover it.
+        let shared_ref = unsafe { &*ptr };
+        core::ptr::slice_from_raw_parts_mut(shared_ref.0.as_ptr().cast_mut(), shared_ref.0.len())
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -316,6 +331,11 @@ unsafe impl<T: Copy> ExternalAsMutPtr for AlignedVec32<T> {
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut T {
         let shared_ref = unsafe { &*ptr };
         shared_ref.0.as_ptr().cast_mut()
+    }
+
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [T] {
+        let shared_ref = unsafe { &*ptr };
+        core::ptr::slice_from_raw_parts_mut(shared_ref.0.as_ptr().cast_mut(), shared_ref.0.len())
     }
 
     fn len(&self) -> usize {

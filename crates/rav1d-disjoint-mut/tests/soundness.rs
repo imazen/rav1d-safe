@@ -330,6 +330,53 @@ fn test_zerocopy_cast_disjoint() {
     assert_eq!(g2[0], [5, 6, 7, 8]);
 }
 
+/// Test: More than 64 concurrent borrows spill to overflow Vec without panicking.
+#[test]
+fn test_overflow_beyond_64_borrows() {
+    let dm = DisjointMut::new(vec![0u8; 200]);
+    // Hold 100 concurrent immutable guards — exceeds 64 inline slots.
+    let guards: Vec<_> = (0..100).map(|i| dm.index(i..i + 1)).collect();
+    assert_eq!(guards.len(), 100);
+    for (i, g) in guards.iter().enumerate() {
+        assert_eq!(g[0], 0, "guard {i} should read 0");
+    }
+    drop(guards);
+    // Can borrow again after all guards dropped.
+    let mut g = dm.index_mut(0..200);
+    g.fill(42);
+    drop(g);
+    assert_eq!(dm.index(0..1)[0], 42);
+}
+
+/// Test: Overflow slot reuse (tombstoning) works correctly.
+#[test]
+fn test_overflow_slot_reuse() {
+    let dm = DisjointMut::new(vec![0u8; 200]);
+    // Fill all 64 inline slots + 10 overflow slots.
+    let mut guards: Vec<_> = (0..74).map(|i| dm.index(i..i + 1)).collect();
+    assert_eq!(guards.len(), 74);
+    // Drop the overflow guards (indices 64..74).
+    guards.truncate(64);
+    // Allocate 10 more — should reuse tombstoned overflow slots.
+    let more: Vec<_> = (100..110).map(|i| dm.index(i..i + 1)).collect();
+    assert_eq!(more.len(), 10);
+    drop(guards);
+    drop(more);
+}
+
+/// Test: Mutable overflow borrows detect overlap correctly.
+#[test]
+#[should_panic(expected = "overlapping")]
+fn test_overflow_overlap_detected() {
+    let dm = DisjointMut::new(vec![0u8; 200]);
+    // Fill all 64 inline slots.
+    let _guards: Vec<_> = (0..64).map(|i| dm.index(i..i + 1)).collect();
+    // 65th borrow goes to overflow — immutable, range 100..110.
+    let _g65 = dm.index(100..110);
+    // 66th borrow overlaps with overflow borrow — should panic.
+    let _g66 = dm.index_mut(105..115);
+}
+
 /// Test: DisjointMutArcSlice concurrent access.
 #[test]
 fn test_arc_slice_concurrent() {

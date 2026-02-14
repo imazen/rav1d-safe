@@ -63,9 +63,13 @@ use core::ops::RangeToInclusive;
 use core::ptr;
 use core::ptr::addr_of_mut;
 #[cfg(feature = "zerocopy")]
-use zerocopy::AsBytes;
-#[cfg(feature = "zerocopy")]
 use zerocopy::FromBytes;
+#[cfg(feature = "zerocopy")]
+use zerocopy::Immutable;
+#[cfg(feature = "zerocopy")]
+use zerocopy::IntoBytes;
+#[cfg(feature = "zerocopy")]
+use zerocopy::KnownLayout;
 
 // =============================================================================
 // Core types
@@ -126,24 +130,18 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         self.tracker.is_some()
     }
 
-    /// Returns a raw pointer to the inner container.
+    /// Returns a raw pointer to the inner container, bypassing the borrow tracker.
     ///
-    /// This bypasses the borrow tracker entirely. The pointer is safe to
-    /// *read through* for accessing container metadata (e.g. stride, length)
-    /// that doesn't alias with element data. Dereferencing as `&mut` or writing
-    /// through it requires the caller to uphold disjointness manually.
-    ///
-    /// # Why this exists
-    ///
-    /// Some containers store metadata alongside the data pointer (e.g.
-    /// `Rav1dPictureDataComponentInner` stores stride). Accessing that metadata
-    /// doesn't conflict with element borrows, so requiring a guard would be
-    /// unnecessarily restrictive.
+    /// **Prefer `as_mut_ptr()` or `as_mut_slice()` for element access.** This
+    /// method exists only for reading container metadata (e.g. stride) that
+    /// lives outside the element data. Writing through this pointer or creating
+    /// `&mut T` from it can violate the tracker's guarantees.
     ///
     /// # Safety
     ///
     /// The returned ptr has the safety requirements of [`UnsafeCell::get`].
     /// In particular, the ptr returned by [`AsMutPtr::as_mut_ptr`] may be in use.
+    #[doc(hidden)]
     pub const fn inner(&self) -> *mut T {
         self.inner.get()
     }
@@ -225,13 +223,15 @@ pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
 #[cfg(feature = "zerocopy")]
 impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
     #[inline] // Inline to see alignment to potentially elide checks.
-    fn cast_slice<V: AsBytes + FromBytes>(self) -> DisjointMutGuard<'a, T, [V]> {
+    fn cast_slice<V: IntoBytes + FromBytes + KnownLayout>(
+        self,
+    ) -> DisjointMutGuard<'a, T, [V]> {
         // We don't want to drop the old guard, because we aren't changing or
         // removing the borrow from parent here.
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
         DisjointMutGuard {
-            slice: V::mut_slice_from(bytes).unwrap(),
+            slice: <[V]>::mut_from_bytes(bytes).unwrap(),
             phantom: old_guard.phantom,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
@@ -239,11 +239,11 @@ impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
     }
 
     #[inline] // Inline to see alignment to potentially elide checks.
-    fn cast<V: AsBytes + FromBytes>(self) -> DisjointMutGuard<'a, T, V> {
+    fn cast<V: IntoBytes + FromBytes + KnownLayout>(self) -> DisjointMutGuard<'a, T, V> {
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
         DisjointMutGuard {
-            slice: V::mut_from(bytes).unwrap(),
+            slice: V::mut_from_bytes(bytes).unwrap(),
             phantom: old_guard.phantom,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
@@ -277,11 +277,13 @@ pub struct DisjointImmutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
 #[cfg(feature = "zerocopy")]
 impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
     #[inline]
-    fn cast_slice<V: FromBytes>(self) -> DisjointImmutGuard<'a, T, [V]> {
+    fn cast_slice<V: FromBytes + KnownLayout + Immutable>(
+        self,
+    ) -> DisjointImmutGuard<'a, T, [V]> {
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
         DisjointImmutGuard {
-            slice: V::slice_from(bytes).unwrap(),
+            slice: <[V]>::ref_from_bytes(bytes).unwrap(),
             phantom: old_guard.phantom,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
@@ -289,11 +291,13 @@ impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
     }
 
     #[inline]
-    fn cast<V: FromBytes>(self) -> DisjointImmutGuard<'a, T, V> {
+    fn cast<V: FromBytes + KnownLayout + Immutable>(
+        self,
+    ) -> DisjointImmutGuard<'a, T, V> {
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
         DisjointImmutGuard {
-            slice: V::ref_from(bytes).unwrap(),
+            slice: V::ref_from_bytes(bytes).unwrap(),
             phantom: old_guard.phantom,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
@@ -409,7 +413,7 @@ pub unsafe trait AsMutPtr: sealed::Sealed {
 ///    conflicts with `&mut [Self::Target]` guards under Stacked Borrows.
 ///    If you need the length, read it from container metadata (which lives
 ///    in a separate allocation from the elements), or override
-///    [`AsMutPtr::as_mut_slice`] and use raw pointer metadata.
+///    [`ExternalAsMutPtr::as_mut_slice`] with raw pointer metadata.
 ///
 /// 3. **Valid pointer.** The returned `*mut Self::Target` must be valid
 ///    for reads and writes over `0..self.len()` elements.
@@ -417,8 +421,16 @@ pub unsafe trait AsMutPtr: sealed::Sealed {
 /// 4. **Stable length.** `len()` must return a consistent value for the
 ///    lifetime of any outstanding borrow guard.
 ///
-/// See the `Vec<V>` and `Box<[V]>` implementations in this crate for
-/// reference patterns.
+/// 5. **Inline data requires `as_mut_slice` override.** The default
+///    `as_mut_slice` calls `(*ptr).len()` which creates `&Self`. For
+///    types where element data is stored inline (e.g. `[V; N]` wrapped
+///    in a newtype), this creates a SharedReadOnly tag covering the
+///    data, which is UB under Stacked Borrows when concurrent mutable
+///    guards exist. **You MUST override `as_mut_slice`** for inline-data
+///    types using `ptr::slice_from_raw_parts_mut(ptr.cast(), N)`.
+///
+/// See the `Vec<V>` and `Aligned<A, [V; N]>` implementations in this
+/// crate for reference patterns.
 pub unsafe trait ExternalAsMutPtr {
     type Target: Copy;
 
@@ -431,6 +443,35 @@ pub unsafe trait ExternalAsMutPtr {
     /// to container metadata or raw pointer operations. See the trait-level
     /// safety docs for full requirements.
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target;
+
+    /// Returns a mutable pointer to the underlying slice.
+    ///
+    /// For types where data lives on the heap (e.g. `Vec`-like), creating
+    /// `&Self` to read `len()` is fine — `&Self` only covers the container
+    /// metadata, not the heap allocation:
+    ///
+    /// ```ignore
+    /// unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
+    ///     let this = unsafe { &*ptr };
+    ///     ptr::slice_from_raw_parts_mut(this.as_ptr().cast_mut(), this.len())
+    /// }
+    /// ```
+    ///
+    /// For types where data is stored **inline** (e.g. `[V; N]` in a newtype),
+    /// you must avoid creating `&Self` because it produces a SharedReadOnly
+    /// tag covering the element data, invalidating concurrent `&mut` guards
+    /// under Stacked Borrows:
+    ///
+    /// ```ignore
+    /// unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
+    ///     ptr::slice_from_raw_parts_mut(ptr.cast(), N) // no reference created
+    /// }
+    /// ```
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be safely dereferenceable.
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target];
 
     fn len(&self) -> usize;
 
@@ -445,6 +486,10 @@ impl<T: ExternalAsMutPtr> sealed::Sealed for T {}
 // Blanket AsMutPtr for external types
 unsafe impl<T: ExternalAsMutPtr> AsMutPtr for T {
     type Target = T::Target;
+
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
+        unsafe { <T as ExternalAsMutPtr>::as_mut_slice(ptr) }
+    }
 
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Target {
         unsafe { <T as ExternalAsMutPtr>::as_mut_ptr(ptr) }
@@ -595,7 +640,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     pub fn mut_slice_as<'a, I, V>(&'a self, index: I) -> DisjointMutGuard<'a, T, [V]>
     where
         I: SliceBounds,
-        V: AsBytes + FromBytes,
+        V: IntoBytes + FromBytes + KnownLayout,
     {
         let slice = self.index_mut(index.mul(mem::size_of::<V>())).cast_slice();
         self.check_cast_slice_len(index, &slice);
@@ -607,7 +652,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     #[track_caller]
     pub fn mut_element_as<'a, V>(&'a self, index: usize) -> DisjointMutGuard<'a, T, V>
     where
-        V: AsBytes + FromBytes,
+        V: IntoBytes + FromBytes + KnownLayout,
     {
         self.index_mut((index..index + 1).mul(mem::size_of::<V>()))
             .cast()
@@ -619,7 +664,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     pub fn slice_as<'a, I, V>(&'a self, index: I) -> DisjointImmutGuard<'a, T, [V]>
     where
         I: SliceBounds,
-        V: FromBytes,
+        V: FromBytes + KnownLayout + Immutable,
     {
         let slice = self.index(index.mul(mem::size_of::<V>())).cast_slice();
         self.check_cast_slice_len(index, &slice);
@@ -631,7 +676,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     #[track_caller]
     pub fn element_as<'a, V>(&'a self, index: usize) -> DisjointImmutGuard<'a, T, V>
     where
-        V: FromBytes,
+        V: FromBytes + KnownLayout + Immutable,
     {
         self.index((index..index + 1).mul(mem::size_of::<V>()))
             .cast()
@@ -952,11 +997,16 @@ mod checked {
         }
     }
 
-    /// Maximum concurrent borrows per `DisjointMut` instance.
-    /// 32 slots allows use of a u32 bitmask for O(1) free-slot finding.
-    const MAX_BORROWS: usize = 32;
+    /// Inline capacity: 64 slots with a u64 bitmask for O(1) free-slot finding.
+    const INLINE_SLOTS: usize = 64;
 
-    /// A unique identifier for a borrow registration, encoding a slot index.
+    /// A unique identifier for a borrow registration.
+    ///
+    /// Encoding:
+    /// - `0..63`: inline slot index
+    /// - `64..254`: overflow Vec index (value - INLINE_SLOTS)
+    /// - `EMPTY_SLOT` (254): empty-range borrow, no real slot
+    /// - `UNCHECKED` (255): unchecked guard, no tracking
     #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
     pub(super) struct BorrowId(u8);
 
@@ -965,88 +1015,142 @@ mod checked {
         pub const UNCHECKED: Self = Self(u8::MAX);
     }
 
-    /// Fixed-capacity borrow record storage.
-    /// Uses a bitmask for O(1) slot allocation and O(1) deallocation.
+    /// Borrow record storage with 64 inline slots and Vec overflow.
+    ///
+    /// The fast path uses a u64 bitmask for O(1) allocation/deallocation.
+    /// If all 64 inline slots are occupied, borrows spill into a Vec that
+    /// is allocated on demand. The Vec is never touched if inline capacity
+    /// suffices.
     struct BorrowSlots {
-        // Parallel arrays — smaller than an array of structs for cache efficiency
-        // during the overlap scan (we only need start/end/mutable, not the slot index).
-        starts: [usize; MAX_BORROWS],
-        ends: [usize; MAX_BORROWS],
-        mutable: [bool; MAX_BORROWS],
-        /// Bitmask of occupied slots. Bit `i` is set iff slot `i` is active.
-        occupied: u32,
+        // Parallel arrays for cache efficiency during overlap scans.
+        starts: [usize; INLINE_SLOTS],
+        ends: [usize; INLINE_SLOTS],
+        mutable: [bool; INLINE_SLOTS],
+        /// Bitmask of occupied inline slots. Bit `i` set iff slot `i` is active.
+        occupied: u64,
+        /// Overflow storage, allocated only when >64 concurrent borrows.
+        overflow: Vec<(usize, usize, bool)>,
     }
 
     impl BorrowSlots {
         /// Sentinel slot index for empty-range borrows (no real slot allocated).
-        const EMPTY_SLOT: u8 = MAX_BORROWS as u8 + 1;
+        const EMPTY_SLOT: u8 = u8::MAX - 1; // 254
 
         const fn new() -> Self {
             Self {
-                starts: [0; MAX_BORROWS],
-                ends: [0; MAX_BORROWS],
-                mutable: [false; MAX_BORROWS],
+                starts: [0; INLINE_SLOTS],
+                ends: [0; INLINE_SLOTS],
+                mutable: [false; INLINE_SLOTS],
                 occupied: 0,
+                overflow: Vec::new(),
             }
         }
 
-        /// Allocate a slot and return its index.
-        /// Empty ranges (start >= end) are stored as slot `EMPTY_SLOT` without
-        /// occupying a real slot, saving both alloc and overlap-scan cost.
+        /// Allocate a slot and return its BorrowId encoding.
         #[inline(always)]
         fn alloc(&mut self, start: usize, end: usize, is_mutable: bool) -> u8 {
             if start >= end {
                 return Self::EMPTY_SLOT;
             }
             let free = self.occupied.trailing_ones() as usize;
-            if free >= MAX_BORROWS {
-                panic!("DisjointMut: too many concurrent borrows (max {MAX_BORROWS})");
+            if free < INLINE_SLOTS {
+                // Fast path: inline slot available.
+                self.starts[free] = start;
+                self.ends[free] = end;
+                self.mutable[free] = is_mutable;
+                self.occupied |= 1u64 << free;
+                free as u8
+            } else {
+                // Slow path: spill to Vec.
+                self.alloc_overflow(start, end, is_mutable)
             }
-            self.starts[free] = start;
-            self.ends[free] = end;
-            self.mutable[free] = is_mutable;
-            self.occupied |= 1 << free;
-            free as u8
         }
 
-        /// Free a slot by index. Empty-range borrows (EMPTY_SLOT) are no-ops.
+        /// Overflow allocation — cold path, never inlined.
+        #[cold]
+        #[inline(never)]
+        fn alloc_overflow(&mut self, start: usize, end: usize, is_mutable: bool) -> u8 {
+            // Find a free slot in the overflow Vec (tombstoned entries have start >= end).
+            for (i, entry) in self.overflow.iter_mut().enumerate() {
+                if entry.0 >= entry.1 {
+                    // Reuse tombstoned slot.
+                    *entry = (start, end, is_mutable);
+                    return (INLINE_SLOTS + i) as u8;
+                }
+            }
+            let idx = self.overflow.len();
+            // BorrowId is u8, with 254/255 reserved. Max overflow index:
+            // INLINE_SLOTS + idx must be < 254, so idx < 254 - 64 = 190.
+            assert!(
+                INLINE_SLOTS + idx < Self::EMPTY_SLOT as usize,
+                "DisjointMut: too many concurrent borrows (max {})",
+                Self::EMPTY_SLOT as usize
+            );
+            self.overflow.push((start, end, is_mutable));
+            (INLINE_SLOTS + idx) as u8
+        }
+
+        /// Free a slot by BorrowId encoding.
         #[inline(always)]
         fn free(&mut self, slot: u8) {
             if slot == Self::EMPTY_SLOT {
                 return;
             }
-            debug_assert!(
-                (self.occupied & (1 << slot)) != 0,
-                "BorrowId slot {slot} not occupied"
-            );
-            self.occupied &= !(1u32 << slot);
+            let idx = slot as usize;
+            if idx < INLINE_SLOTS {
+                debug_assert!(
+                    (self.occupied & (1u64 << idx)) != 0,
+                    "BorrowId slot {slot} not occupied"
+                );
+                self.occupied &= !(1u64 << idx);
+            } else {
+                // Overflow slot — tombstone it (set start >= end).
+                let ov_idx = idx - INLINE_SLOTS;
+                debug_assert!(ov_idx < self.overflow.len(), "overflow index out of range");
+                self.overflow[ov_idx] = (1, 0, false); // tombstone
+            }
         }
 
         /// Check if the range [start, end) overlaps any active borrow.
-        /// Returns the first overlapping slot, or None.
-        ///
-        /// Empty ranges (start >= end) never overlap and never get allocated,
-        /// so all active slots have valid non-empty ranges.
         #[inline(always)]
-        fn find_overlap_any(&self, start: usize, end: usize) -> Option<u8> {
+        fn find_overlap_any(&self, start: usize, end: usize) -> Option<(usize, usize, bool)> {
             if start >= end {
                 return None;
             }
+            // Scan inline slots.
             let mut mask = self.occupied;
             while mask != 0 {
                 let i = mask.trailing_zeros() as usize;
                 if self.starts[i] < end && start < self.ends[i] {
-                    return Some(i as u8);
+                    return Some((self.starts[i], self.ends[i], self.mutable[i]));
                 }
-                mask &= mask - 1; // clear lowest set bit
+                mask &= mask - 1;
+            }
+            // Scan overflow (cold — only reached if overflow is non-empty).
+            if !self.overflow.is_empty() {
+                return self.find_overlap_any_overflow(start, end);
+            }
+            None
+        }
+
+        #[cold]
+        #[inline(never)]
+        fn find_overlap_any_overflow(
+            &self,
+            start: usize,
+            end: usize,
+        ) -> Option<(usize, usize, bool)> {
+            for &(s, e, m) in &self.overflow {
+                if s < e && s < end && start < e {
+                    return Some((s, e, m));
+                }
             }
             None
         }
 
         /// Check if the range [start, end) overlaps any active MUTABLE borrow.
-        /// Returns the first overlapping mutable slot, or None.
         #[inline(always)]
-        fn find_overlap_mut(&self, start: usize, end: usize) -> Option<u8> {
+        fn find_overlap_mut(&self, start: usize, end: usize) -> Option<(usize, usize, bool)> {
             if start >= end {
                 return None;
             }
@@ -1054,9 +1158,27 @@ mod checked {
             while mask != 0 {
                 let i = mask.trailing_zeros() as usize;
                 if self.mutable[i] && self.starts[i] < end && start < self.ends[i] {
-                    return Some(i as u8);
+                    return Some((self.starts[i], self.ends[i], true));
                 }
                 mask &= mask - 1;
+            }
+            if !self.overflow.is_empty() {
+                return self.find_overlap_mut_overflow(start, end);
+            }
+            None
+        }
+
+        #[cold]
+        #[inline(never)]
+        fn find_overlap_mut_overflow(
+            &self,
+            start: usize,
+            end: usize,
+        ) -> Option<(usize, usize, bool)> {
+            for &(s, e, m) in &self.overflow {
+                if m && s < e && s < end && start < e {
+                    return Some((s, e, true));
+                }
             }
             None
         }
@@ -1064,8 +1186,10 @@ mod checked {
 
     /// All active borrows for a single `DisjointMut` instance.
     ///
-    /// Uses a fixed-capacity slot array with bitmask for O(1) allocation
-    /// and deallocation. Overlap checking scans only occupied slots.
+    /// Uses 64 inline slots with a u64 bitmask for O(1) allocation and
+    /// deallocation. If more than 64 concurrent borrows are needed, spills
+    /// to a heap-allocated Vec (up to 254 total). Overlap checking scans
+    /// only occupied slots.
     ///
     /// Like `std::sync::Mutex`, the tracker poisons the data structure when a
     /// thread panics while holding a mutable borrow guard. This prevents
@@ -1150,7 +1274,6 @@ mod checked {
         pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
             let start = bounds.range.start;
             let end = bounds.range.end;
-            // Empty ranges can never overlap and don't need a slot.
             if start >= end {
                 return BorrowId(BorrowSlots::EMPTY_SLOT);
             }
@@ -1158,15 +1281,8 @@ mod checked {
             let _guard = self.lock.lock();
             // SAFETY: TinyLock is held, so we have exclusive access to slots.
             let slots = unsafe { &mut *self.slots.get() };
-            if let Some(i) = slots.find_overlap_any(start, end) {
-                Self::overlap_panic(
-                    start,
-                    end,
-                    true,
-                    slots.starts[i as usize],
-                    slots.ends[i as usize],
-                    slots.mutable[i as usize],
-                );
+            if let Some((es, ee, em)) = slots.find_overlap_any(start, end) {
+                Self::overlap_panic(start, end, true, es, ee, em);
             }
             BorrowId(slots.alloc(start, end, true))
         }
@@ -1177,7 +1293,6 @@ mod checked {
         pub fn add_immut(&self, bounds: &Bounds) -> BorrowId {
             let start = bounds.range.start;
             let end = bounds.range.end;
-            // Empty ranges can never overlap and don't need a slot.
             if start >= end {
                 return BorrowId(BorrowSlots::EMPTY_SLOT);
             }
@@ -1185,15 +1300,8 @@ mod checked {
             let _guard = self.lock.lock();
             // SAFETY: TinyLock is held, so we have exclusive access to slots.
             let slots = unsafe { &mut *self.slots.get() };
-            if let Some(i) = slots.find_overlap_mut(start, end) {
-                Self::overlap_panic(
-                    start,
-                    end,
-                    false,
-                    slots.starts[i as usize],
-                    slots.ends[i as usize],
-                    slots.mutable[i as usize],
-                );
+            if let Some((es, ee, em)) = slots.find_overlap_mut(start, end) {
+                Self::overlap_panic(start, end, false, es, ee, em);
             }
             BorrowId(slots.alloc(start, end, false))
         }
@@ -1491,7 +1599,18 @@ pub type DisjointMutSlice<T> = DisjointMut<Box<[T]>>;
 /// requires boxing since `DisjointMut` has tracking fields.
 #[derive(Clone)]
 pub struct DisjointMutArcSlice<T: Copy> {
+    /// Use `Deref` instead: `arc_slice.index_mut(0..50)` works directly.
+    #[doc(hidden)]
     pub inner: Arc<DisjointMutSlice<T>>,
+}
+
+impl<T: Copy> Deref for DisjointMutArcSlice<T> {
+    type Target = DisjointMutSlice<T>;
+
+    #[inline]
+    fn deref(&self) -> &DisjointMutSlice<T> {
+        &self.inner
+    }
 }
 
 impl<T: Copy> DisjointMutArcSlice<T> {
@@ -1522,20 +1641,6 @@ impl<T: Copy> DisjointMutArcSlice<T> {
         Ok(Self {
             inner: Arc::new(unsafe { DisjointMut::dangerously_unchecked(v.into_boxed_slice()) }),
         })
-    }
-}
-
-impl<T: Copy> DisjointMutArcSlice<T> {
-    /// Like [`FromIterator`] but without borrow tracking.
-    ///
-    /// # Safety
-    ///
-    /// See [`DisjointMut::dangerously_unchecked()`].
-    pub unsafe fn from_iter_unchecked<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let box_slice = iter.into_iter().collect::<Box<[_]>>();
-        Self {
-            inner: Arc::new(unsafe { DisjointMut::dangerously_unchecked(box_slice) }),
-        }
     }
 }
 
@@ -1683,6 +1788,7 @@ mod pic_buf {
 }
 
 #[cfg(feature = "pic-buf")]
+#[doc(hidden)]
 pub use pic_buf::PicBuf;
 
 // =============================================================================
