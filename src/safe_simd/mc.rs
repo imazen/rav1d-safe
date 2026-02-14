@@ -12825,23 +12825,12 @@ pub fn resize_dispatch<BD: BitDepth>(
 mod tests {
     use super::*;
 
-    fn cpu_has_avx2() -> bool {
-        #[cfg(target_arch = "x86_64")]
-        {
-            is_x86_feature_detected!("avx2")
-        }
-        #[cfg(not(target_arch = "x86_64"))]
-        {
-            false
-        }
-    }
-
     #[test]
     fn test_avg_8bpc_avx2_matches_scalar() {
-        if !cpu_has_avx2() {
-            eprintln!("Skipping AVX2 test - CPU doesn't support it");
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping AVX2 test - CPU doesn't support it or tokens disabled");
             return;
-        }
+        };
 
         let test_values: Vec<i16> = vec![
             0,
@@ -12881,7 +12870,6 @@ mod tests {
                 dst_avx2.fill(0);
                 dst_scalar.fill(0);
 
-                let token = crate::src::cpu::summon_avx2().unwrap();
                 avg_8bpc_avx2_safe(token, &mut dst_scalar, w as usize, &tmp1, &tmp2, w, h);
 
                 avg_8bpc_avx2_safe(token, &mut dst_avx2, w as usize, &tmp1, &tmp2, w, h);
@@ -12901,9 +12889,9 @@ mod tests {
 
     #[test]
     fn test_avg_varying_data() {
-        if !cpu_has_avx2() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
             return;
-        }
+        };
 
         let w = 128i32;
         let h = 4i32;
@@ -12919,7 +12907,6 @@ mod tests {
         let mut dst_a = vec![0u8; (w * h) as usize];
         let mut dst_b = vec![0u8; (w * h) as usize];
 
-        let token = crate::src::cpu::summon_avx2().unwrap();
         avg_8bpc_avx2_safe(token, &mut dst_a, w as usize, &tmp1, &tmp2, w, h);
 
         avg_8bpc_avx2_safe(token, &mut dst_b, w as usize, &tmp1, &tmp2, w, h);
@@ -12929,10 +12916,10 @@ mod tests {
 
     #[test]
     fn test_w_avg_8bpc_avx2_matches_scalar() {
-        if !cpu_has_avx2() {
-            eprintln!("Skipping AVX2 test - CPU doesn't support it");
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping AVX2 test - CPU doesn't support it or tokens disabled");
             return;
-        }
+        };
 
         let test_values: Vec<i16> = vec![
             0, 1, 127, 255, 512, 1023, 2047, 4095, 8191, -1, -128, -512, -1024,
@@ -12947,7 +12934,6 @@ mod tests {
         let mut dst_a = vec![0u8; (w * h) as usize];
         let mut dst_b = vec![0u8; (w * h) as usize];
 
-        let token = crate::src::cpu::summon_avx2().unwrap();
         for &weight in &test_weights {
             for &v1 in &test_values {
                 for &v2 in &test_values {
@@ -12979,10 +12965,10 @@ mod tests {
 
     #[test]
     fn test_mask_8bpc_matches_scalar() {
-        if !cpu_has_avx2() {
-            eprintln!("Skipping AVX2 test - CPU doesn't support it");
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping AVX2 test - CPU doesn't support it or tokens disabled");
             return;
-        }
+        };
 
         let test_values: Vec<i16> = vec![0, 127, 255, 512, 1023, 4095, -128, -512];
         let test_masks: Vec<u8> = vec![0, 1, 16, 32, 48, 63, 64];
@@ -12995,8 +12981,6 @@ mod tests {
         let mut mask = vec![0u8; (w * h) as usize];
         let mut dst_a = vec![0u8; (w * h) as usize];
         let mut dst_b = vec![0u8; (w * h) as usize];
-
-        let token = crate::src::cpu::summon_avx2().unwrap();
         for &m in &test_masks {
             for &v1 in &test_values {
                 for &v2 in &test_values {
