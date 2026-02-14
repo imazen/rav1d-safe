@@ -186,10 +186,7 @@ fn lr_filter_direct<BD: BitDepth>(
                 variant, dst, left, lpf, lpf_off, w, h, params, edges, bd,
             )
         }
-        #[cfg(not(any(
-            target_arch = "x86_64",
-            target_arch = "aarch64"
-        )))]
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         {
             let _ = (variant, &dst, left, lpf, lpf_off, w, h, params, edges, &bd);
             false

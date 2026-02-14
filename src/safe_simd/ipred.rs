@@ -498,7 +498,11 @@ fn ipred_dc_8bpc_avx512_inner(
             x += 32;
         }
         while x + 16 <= width {
-            storeu_128!(&mut row[x..x + 16], [u8; 16], _mm256_castsi256_si128(fill_256));
+            storeu_128!(
+                &mut row[x..x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(fill_256)
+            );
             x += 16;
         }
         while x < width {
@@ -545,7 +549,11 @@ fn ipred_dc_top_8bpc_avx512_inner(
             x += 32;
         }
         while x + 16 <= width {
-            storeu_128!(&mut row[x..x + 16], [u8; 16], _mm256_castsi256_si128(fill_256));
+            storeu_128!(
+                &mut row[x..x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(fill_256)
+            );
             x += 16;
         }
         while x < width {
@@ -592,7 +600,11 @@ fn ipred_dc_left_8bpc_avx512_inner(
             x += 32;
         }
         while x + 16 <= width {
-            storeu_128!(&mut row[x..x + 16], [u8; 16], _mm256_castsi256_si128(fill_256));
+            storeu_128!(
+                &mut row[x..x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(fill_256)
+            );
             x += 16;
         }
         while x < width {
@@ -890,10 +902,7 @@ fn ipred_paeth_8bpc_avx512_inner(
         let mut x = 0;
         while x + 16 <= width {
             // Load 16 top pixels → i32
-            let top_bytes = loadu_128!(
-                &topleft[tl_off + 1 + x..tl_off + 1 + x + 16],
-                [u8; 16]
-            );
+            let top_bytes = loadu_128!(&topleft[tl_off + 1 + x..tl_off + 1 + x + 16], [u8; 16]);
             let top = _mm512_cvtepu8_epi32(top_bytes);
 
             // base = left + top - topleft
@@ -924,11 +933,7 @@ fn ipred_paeth_8bpc_avx512_inner(
             // Pack i32→u8 directly (values are 0..255, clamping is safe)
             let clamped = _mm512_max_epi32(result, _mm512_setzero_si512());
             let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
-            storeu_128!(
-                &mut dst[row_off + x..row_off + x + 16],
-                [u8; 16],
-                result_u8
-            );
+            storeu_128!(&mut dst[row_off + x..row_off + x + 16], [u8; 16], result_u8);
 
             x += 16;
         }
@@ -994,17 +999,11 @@ fn ipred_smooth_8bpc_avx512_inner(
         let mut x = 0;
         while x + 16 <= width {
             // Load 16 top pixels → i32
-            let top_bytes = loadu_128!(
-                &topleft[tl_off + 1 + x..tl_off + 1 + x + 16],
-                [u8; 16]
-            );
+            let top_bytes = loadu_128!(&topleft[tl_off + 1 + x..tl_off + 1 + x + 16], [u8; 16]);
             let top = _mm512_cvtepu8_epi32(top_bytes);
 
             // Load 16 horizontal weights → i32
-            let wh_bytes = loadu_128!(
-                &weights_hor[x..x + 16],
-                [u8; 16]
-            );
+            let wh_bytes = loadu_128!(&weights_hor[x..x + 16], [u8; 16]);
             let w_h = _mm512_cvtepu8_epi32(wh_bytes);
             let w_h_inv = _mm512_sub_epi32(c256, w_h);
 
@@ -1022,11 +1021,7 @@ fn ipred_smooth_8bpc_avx512_inner(
 
             let clamped = _mm512_max_epi32(result, zero_512);
             let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
-            storeu_128!(
-                &mut dst[row_off + x..row_off + x + 16],
-                [u8; 16],
-                result_u8
-            );
+            storeu_128!(&mut dst[row_off + x..row_off + x + 16], [u8; 16], result_u8);
 
             x += 16;
         }
@@ -1074,10 +1069,7 @@ fn ipred_smooth_v_8bpc_avx512_inner(
 
         let mut x = 0;
         while x + 16 <= width {
-            let top_bytes = loadu_128!(
-                &topleft[tl_off + 1 + x..tl_off + 1 + x + 16],
-                [u8; 16]
-            );
+            let top_bytes = loadu_128!(&topleft[tl_off + 1 + x..tl_off + 1 + x + 16], [u8; 16]);
             let top = _mm512_cvtepu8_epi32(top_bytes);
 
             let pred = _mm512_add_epi32(
@@ -1088,11 +1080,7 @@ fn ipred_smooth_v_8bpc_avx512_inner(
 
             let clamped = _mm512_max_epi32(result, zero_512);
             let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
-            storeu_128!(
-                &mut dst[row_off + x..row_off + x + 16],
-                [u8; 16],
-                result_u8
-            );
+            storeu_128!(&mut dst[row_off + x..row_off + x + 16], [u8; 16], result_u8);
 
             x += 16;
         }
@@ -1136,10 +1124,7 @@ fn ipred_smooth_h_8bpc_avx512_inner(
 
         let mut x = 0;
         while x + 16 <= width {
-            let wh_bytes = loadu_128!(
-                &weights_hor[x..x + 16],
-                [u8; 16]
-            );
+            let wh_bytes = loadu_128!(&weights_hor[x..x + 16], [u8; 16]);
             let w_h = _mm512_cvtepu8_epi32(wh_bytes);
             let w_h_inv = _mm512_sub_epi32(c256, w_h);
 
@@ -1151,11 +1136,7 @@ fn ipred_smooth_h_8bpc_avx512_inner(
 
             let clamped = _mm512_max_epi32(result, zero_512);
             let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
-            storeu_128!(
-                &mut dst[row_off + x..row_off + x + 16],
-                [u8; 16],
-                result_u8
-            );
+            storeu_128!(&mut dst[row_off + x..row_off + x + 16], [u8; 16], result_u8);
 
             x += 16;
         }
@@ -2173,9 +2154,8 @@ fn ipred_z2_8bpc_inner(
                 filter_strength,
             );
         } else {
-            edge[edge_tl + 1..edge_tl + 1 + width].copy_from_slice(
-                &topleft[tl_off + 1..tl_off + 1 + width],
-            );
+            edge[edge_tl + 1..edge_tl + 1 + width]
+                .copy_from_slice(&topleft[tl_off + 1..tl_off + 1 + width]);
         }
     }
 
@@ -2209,9 +2189,7 @@ fn ipred_z2_8bpc_inner(
                 filter_strength,
             );
         } else {
-            edge[edge_tl - height..edge_tl].copy_from_slice(
-                &topleft[tl_off - height..tl_off],
-            );
+            edge[edge_tl - height..edge_tl].copy_from_slice(&topleft[tl_off - height..tl_off]);
         }
     }
 
@@ -2244,7 +2222,7 @@ fn ipred_z2_8bpc_inner(
         // First: process pixels using left edge (x < left_count)
         let mut x = 0usize;
         while x < left_count {
-            let ypos = ((y << (6 + upsample_left as i32))) - dy * (x as i32 + 1);
+            let ypos = (y << (6 + upsample_left as i32)) - dy * (x as i32 + 1);
             let base_y = ypos >> 6;
             let frac_y = ypos & 0x3e;
             let inv_frac_y = 64 - frac_y;
@@ -2990,7 +2968,11 @@ fn ipred_dc_16bpc_avx512_inner(
         }
         while x + 8 <= width {
             let off = row_off + x * 2;
-            storeu_128!((&mut dst[off..off + 16]), [u8; 16], _mm256_castsi256_si128(fill_256));
+            storeu_128!(
+                (&mut dst[off..off + 16]),
+                [u8; 16],
+                _mm256_castsi256_si128(fill_256)
+            );
             x += 8;
         }
         while x < width {
@@ -3041,7 +3023,11 @@ fn ipred_dc_top_16bpc_avx512_inner(
         }
         while x + 8 <= width {
             let off = row_off + x * 2;
-            storeu_128!((&mut dst[off..off + 16]), [u8; 16], _mm256_castsi256_si128(fill_256));
+            storeu_128!(
+                (&mut dst[off..off + 16]),
+                [u8; 16],
+                _mm256_castsi256_si128(fill_256)
+            );
             x += 8;
         }
         while x < width {
@@ -3092,7 +3078,11 @@ fn ipred_dc_left_16bpc_avx512_inner(
         }
         while x + 8 <= width {
             let off = row_off + x * 2;
-            storeu_128!((&mut dst[off..off + 16]), [u8; 16], _mm256_castsi256_si128(fill_256));
+            storeu_128!(
+                (&mut dst[off..off + 16]),
+                [u8; 16],
+                _mm256_castsi256_si128(fill_256)
+            );
             x += 8;
         }
         while x < width {
@@ -3404,17 +3394,16 @@ fn ipred_paeth_16bpc_avx512_inner(
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let left_byte_off = tl_off - (y + 1) * 2;
         let left_val = u16::from_ne_bytes(
-            topleft[left_byte_off..left_byte_off + 2].try_into().unwrap(),
+            topleft[left_byte_off..left_byte_off + 2]
+                .try_into()
+                .unwrap(),
         ) as i32;
         let left_vec = _mm512_set1_epi32(left_val);
 
         let mut x = 0;
         while x + 16 <= width {
             let top_byte_off = tl_off + (x + 1) * 2;
-            let top_u16 = loadu_256!(
-                &topleft[top_byte_off..top_byte_off + 32],
-                [u8; 32]
-            );
+            let top_u16 = loadu_256!(&topleft[top_byte_off..top_byte_off + 32], [u8; 32]);
             let top = _mm512_cvtepu16_epi32(top_u16);
 
             let base = _mm512_sub_epi32(_mm512_add_epi32(left_vec, top), topleft_vec);
@@ -3501,7 +3490,9 @@ fn ipred_smooth_16bpc_avx512_inner(
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let left_byte_off = tl_off - (y + 1) * 2;
         let left_val = u16::from_ne_bytes(
-            topleft[left_byte_off..left_byte_off + 2].try_into().unwrap(),
+            topleft[left_byte_off..left_byte_off + 2]
+                .try_into()
+                .unwrap(),
         ) as i32;
         let left_vec = _mm512_set1_epi32(left_val);
         let w_v = weights_ver[y] as i32;
@@ -3644,7 +3635,9 @@ fn ipred_smooth_h_16bpc_avx512_inner(
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let left_byte_off = tl_off - (y + 1) * 2;
         let left_val = u16::from_ne_bytes(
-            topleft[left_byte_off..left_byte_off + 2].try_into().unwrap(),
+            topleft[left_byte_off..left_byte_off + 2]
+                .try_into()
+                .unwrap(),
         ) as i32;
         let left_vec = _mm512_set1_epi32(left_val);
 
@@ -4064,8 +4057,7 @@ fn ipred_z1_16bpc_inner(
             top_px[(i * 2 + 1) as usize] = ((s + 8) >> 4).clamp(0, bitdepth_max) as u16;
         }
         let i = hsz - 1;
-        top_px[(i * 2) as usize] =
-            rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+        top_px[(i * 2) as usize] = rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
         dx <<= 1;
         max_base_x = (2 * (width_i + height_i) - 2) as usize;
         base_inc = 2usize;
@@ -4084,8 +4076,7 @@ fn ipred_z1_16bpc_inner(
             let lim_to = width_i + height_i;
             let mut i = 0i32;
             while i < std::cmp::min(width_i + height_i, lim_from) {
-                top_px[i as usize] =
-                    rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+                top_px[i as usize] = rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
                 i += 1;
             }
             while i < std::cmp::min(lim_to, width_i + height_i) {
@@ -4099,8 +4090,7 @@ fn ipred_z1_16bpc_inner(
                 i += 1;
             }
             while i < width_i + height_i {
-                top_px[i as usize] =
-                    rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+                top_px[i as usize] = rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
                 i += 1;
             }
             max_base_x = (width_i + height_i - 1) as usize;
@@ -4398,8 +4388,7 @@ fn ipred_z2_16bpc_inner(
     edge_px[edge_tl] = rd(tl_pix);
 
     // Convert to bytes for SIMD access
-    let edge_bytes: &[u8] =
-        zerocopy::AsBytes::as_bytes(edge_px.as_slice());
+    let edge_bytes: &[u8] = zerocopy::AsBytes::as_bytes(edge_px.as_slice());
     let edge = edge_bytes.flex();
 
     let base_inc_x = 1 + upsample_above as usize;
@@ -4425,7 +4414,7 @@ fn ipred_z2_16bpc_inner(
         // First: process pixels using left edge
         let mut x = 0usize;
         while x < left_count {
-            let ypos = ((y << (6 + upsample_left as i32))) - dy * (x as i32 + 1);
+            let ypos = (y << (6 + upsample_left as i32)) - dy * (x as i32 + 1);
             let base_y = ypos >> 6;
             let frac_y = ypos & 0x3e;
             let inv_frac_y = 64 - frac_y;
@@ -4601,8 +4590,7 @@ fn ipred_z3_16bpc_inner(
             left_px[(i * 2 + 1) as usize] = ((s + 8) >> 4).clamp(0, bitdepth_max) as u16;
         }
         let i = hsz - 1;
-        left_px[(i * 2) as usize] =
-            rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
+        left_px[(i * 2) as usize] = rd(in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize));
         left_off = (2 * (width_i + height_i) - 2) as usize;
         max_base_y = left_off;
         dy <<= 1;
@@ -4671,10 +4659,7 @@ fn ipred_z3_16bpc_inner(
                     )
                 } else {
                     // Direct topleft: left[base] = tl[-(base+1)] in pixel units
-                    (
-                        rd(tl_pix - base - 1) as i32,
-                        rd(tl_pix - base - 2) as i32,
-                    )
+                    (rd(tl_pix - base - 1) as i32, rd(tl_pix - base - 2) as i32)
                 };
                 let v = l0 * inv_frac + l1 * frac;
                 let pixel_off = (dst_base as isize + y as isize * stride) as usize + x * 2;
@@ -5066,14 +5051,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         }
         (BPC::BPC8, 5) => {
             if let Some(t512) = avx512_token {
-                ipred_dc_128_8bpc_avx512_inner(
-                    t512,
-                    dst_bytes,
-                    dst_base_bytes,
-                    byte_stride,
-                    w,
-                    h,
-                )
+                ipred_dc_128_8bpc_avx512_inner(t512, dst_bytes, dst_base_bytes, byte_stride, w, h)
             } else {
                 ipred_dc_128_8bpc_inner(token, dst_bytes, dst_base_bytes, byte_stride, w, h)
             }
@@ -5122,44 +5100,100 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         (BPC::BPC8, 9) => {
             if let Some(t512) = avx512_token {
                 ipred_smooth_8bpc_avx512_inner(
-                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
                 )
             } else {
                 ipred_smooth_8bpc_inner(
-                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
                 )
             }
         }
         (BPC::BPC8, 10) => {
             if let Some(t512) = avx512_token {
                 ipred_smooth_v_8bpc_avx512_inner(
-                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
                 )
             } else {
                 ipred_smooth_v_8bpc_inner(
-                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
                 )
             }
         }
         (BPC::BPC8, 11) => {
             if let Some(t512) = avx512_token {
                 ipred_smooth_h_8bpc_avx512_inner(
-                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
                 )
             } else {
                 ipred_smooth_h_8bpc_inner(
-                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
                 )
             }
         }
         (BPC::BPC8, 12) => {
             if let Some(t512) = avx512_token {
                 ipred_paeth_8bpc_avx512_inner(
-                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
                 )
             } else {
                 ipred_paeth_8bpc_inner(
-                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, topleft_off, w, h,
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    topleft_off,
+                    w,
+                    h,
                 )
             }
         }
@@ -5381,11 +5415,25 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             let tl_off_bytes = topleft_off * 2;
             if let Some(t512) = avx512_token {
                 ipred_smooth_16bpc_avx512_inner(
-                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
                 )
             } else {
                 ipred_smooth_16bpc_inner(
-                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
                 )
             }
         }
@@ -5393,11 +5441,25 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             let tl_off_bytes = topleft_off * 2;
             if let Some(t512) = avx512_token {
                 ipred_smooth_v_16bpc_avx512_inner(
-                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
                 )
             } else {
                 ipred_smooth_v_16bpc_inner(
-                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
                 )
             }
         }
@@ -5405,11 +5467,25 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             let tl_off_bytes = topleft_off * 2;
             if let Some(t512) = avx512_token {
                 ipred_smooth_h_16bpc_avx512_inner(
-                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
                 )
             } else {
                 ipred_smooth_h_16bpc_inner(
-                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
                 )
             }
         }
@@ -5417,11 +5493,25 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             let tl_off_bytes = topleft_off * 2;
             if let Some(t512) = avx512_token {
                 ipred_paeth_16bpc_avx512_inner(
-                    t512, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                    t512,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
                 )
             } else {
                 ipred_paeth_16bpc_inner(
-                    token, dst_bytes, dst_base_bytes, byte_stride, tl_bytes, tl_off_bytes, w, h,
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
                 )
             }
         }

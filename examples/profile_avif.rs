@@ -9,9 +9,9 @@ use std::hint::black_box;
 use std::time::Instant;
 
 fn extract_obu(avif_bytes: &[u8]) -> Vec<u8> {
-    let parser = zenavif_parse::AvifParser::from_bytes(avif_bytes)
-        .expect("Failed to parse AVIF");
-    parser.primary_data()
+    let parser = zenavif_parse::AvifParser::from_bytes(avif_bytes).expect("Failed to parse AVIF");
+    parser
+        .primary_data()
         .expect("Failed to extract primary item")
         .into_owned()
 }
@@ -22,11 +22,15 @@ fn decode_once(obu: &[u8]) -> usize {
         frame_size_limit: 8192 * 8192,
         cpu_level: CpuLevel::Native,
         ..Default::default()
-    }).expect("decoder creation failed");
+    })
+    .expect("decoder creation failed");
 
     let mut count = 0;
     match decoder.decode(obu) {
-        Ok(Some(frame)) => { black_box(&frame); count += 1; }
+        Ok(Some(frame)) => {
+            black_box(&frame);
+            count += 1;
+        }
         Ok(None) => {}
         Err(e) => eprintln!("Decode error: {e}"),
     }
@@ -50,8 +54,12 @@ fn main() {
     let obu = extract_obu(&avif_bytes);
     let iterations: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(10);
 
-    eprintln!("Input: {} ({:.1} KB AVIF, {:.1} KB OBU)", args[1],
-        avif_bytes.len() as f64 / 1024.0, obu.len() as f64 / 1024.0);
+    eprintln!(
+        "Input: {} ({:.1} KB AVIF, {:.1} KB OBU)",
+        args[1],
+        avif_bytes.len() as f64 / 1024.0,
+        obu.len() as f64 / 1024.0
+    );
     eprintln!("Iterations: {iterations}");
 
     // Warmup
@@ -65,7 +73,10 @@ fn main() {
     }
     let elapsed = start.elapsed();
 
-    eprintln!("Total: {:.3}s ({} iters, {:.1}ms/iter)",
-        elapsed.as_secs_f64(), iterations,
-        elapsed.as_secs_f64() * 1000.0 / iterations as f64);
+    eprintln!(
+        "Total: {:.3}s ({} iters, {:.1}ms/iter)",
+        elapsed.as_secs_f64(),
+        iterations,
+        elapsed.as_secs_f64() * 1000.0 / iterations as f64
+    );
 }

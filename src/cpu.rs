@@ -1,4 +1,7 @@
-#![cfg_attr(not(any(feature = "asm", feature = "partial_asm")), forbid(unsafe_code))]
+#![cfg_attr(
+    not(any(feature = "asm", feature = "partial_asm")),
+    forbid(unsafe_code)
+)]
 use crate::src::const_fn::const_for;
 use bitflags::bitflags;
 use std::ffi::c_uint;

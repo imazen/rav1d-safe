@@ -505,8 +505,9 @@ fn wiener_filter7_8bpc_avx512_inner(
             let sum16_combined = _mm_unpacklo_epi64(sum16_lo, sum16_hi);
             let sum8 = _mm_packus_epi16(sum16_combined, sum16_combined);
 
-            let dst_arr: &mut [u8; 8] =
-                (&mut p_guard[row_off + i..row_off + i + 8]).try_into().unwrap();
+            let dst_arr: &mut [u8; 8] = (&mut p_guard[row_off + i..row_off + i + 8])
+                .try_into()
+                .unwrap();
             partial_simd::mm_storel_epi64(dst_arr, sum8);
             i += 8;
         }
@@ -751,7 +752,16 @@ fn wiener_filter5_16bpc_avx512_inner(
     bitdepth_max: c_int,
 ) {
     wiener_filter7_16bpc_avx512_inner(
-        _token, p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max,
+        _token,
+        p,
+        left,
+        lpf,
+        lpf_off,
+        w,
+        h,
+        params,
+        edges,
+        bitdepth_max,
     );
 }
 
@@ -890,13 +900,34 @@ fn wiener_filter7_16bpc_avx2_inner(
         // Process 8 pixels at a time with AVX2
         while i + 8 <= w {
             // Load 8 i32 values from each of 7 rows (hor buffer stores i32)
-            let r0 = loadu_256!(&hor[(j + 0) * REST_UNIT_STRIDE + i..(j + 0) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
-            let r1 = loadu_256!(&hor[(j + 1) * REST_UNIT_STRIDE + i..(j + 1) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
-            let r2 = loadu_256!(&hor[(j + 2) * REST_UNIT_STRIDE + i..(j + 2) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
-            let r3 = loadu_256!(&hor[(j + 3) * REST_UNIT_STRIDE + i..(j + 3) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
-            let r4 = loadu_256!(&hor[(j + 4) * REST_UNIT_STRIDE + i..(j + 4) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
-            let r5 = loadu_256!(&hor[(j + 5) * REST_UNIT_STRIDE + i..(j + 5) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
-            let r6 = loadu_256!(&hor[(j + 6) * REST_UNIT_STRIDE + i..(j + 6) * REST_UNIT_STRIDE + i + 8], [i32; 8]);
+            let r0 = loadu_256!(
+                &hor[(j + 0) * REST_UNIT_STRIDE + i..(j + 0) * REST_UNIT_STRIDE + i + 8],
+                [i32; 8]
+            );
+            let r1 = loadu_256!(
+                &hor[(j + 1) * REST_UNIT_STRIDE + i..(j + 1) * REST_UNIT_STRIDE + i + 8],
+                [i32; 8]
+            );
+            let r2 = loadu_256!(
+                &hor[(j + 2) * REST_UNIT_STRIDE + i..(j + 2) * REST_UNIT_STRIDE + i + 8],
+                [i32; 8]
+            );
+            let r3 = loadu_256!(
+                &hor[(j + 3) * REST_UNIT_STRIDE + i..(j + 3) * REST_UNIT_STRIDE + i + 8],
+                [i32; 8]
+            );
+            let r4 = loadu_256!(
+                &hor[(j + 4) * REST_UNIT_STRIDE + i..(j + 4) * REST_UNIT_STRIDE + i + 8],
+                [i32; 8]
+            );
+            let r5 = loadu_256!(
+                &hor[(j + 5) * REST_UNIT_STRIDE + i..(j + 5) * REST_UNIT_STRIDE + i + 8],
+                [i32; 8]
+            );
+            let r6 = loadu_256!(
+                &hor[(j + 6) * REST_UNIT_STRIDE + i..(j + 6) * REST_UNIT_STRIDE + i + 8],
+                [i32; 8]
+            );
 
             let mut sum = v_round_offset;
             sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(r0, vf0));
@@ -922,7 +953,11 @@ fn wiener_filter7_16bpc_avx2_inner(
             let hi = _mm256_extracti128_si256(packed, 1);
             let combined = _mm_unpacklo_epi64(lo, hi); // [0-3, 4-7] as 8 u16
 
-            storeu_128!(&mut p_guard[row_off + i..row_off + i + 8], [u16; 8], combined);
+            storeu_128!(
+                &mut p_guard[row_off + i..row_off + i + 8],
+                [u16; 8],
+                combined
+            );
             i += 8;
         }
 
@@ -954,7 +989,18 @@ fn wiener_filter5_16bpc_avx2_inner(
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
 ) {
-    wiener_filter7_16bpc_avx2_inner(_token, p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
+    wiener_filter7_16bpc_avx2_inner(
+        _token,
+        p,
+        left,
+        lpf,
+        lpf_off,
+        w,
+        h,
+        params,
+        edges,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -1063,7 +1109,18 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
     let left = unsafe { slice::from_raw_parts(left, h) };
 
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    wiener_filter7_16bpc_avx2_inner(token, p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
+    wiener_filter7_16bpc_avx2_inner(
+        token,
+        p,
+        left,
+        lpf,
+        lpf_off,
+        w,
+        h,
+        params,
+        edges,
+        bitdepth_max,
+    );
 }
 
 /// FFI wrapper for Wiener filter 5-tap 16bpc
@@ -1092,7 +1149,18 @@ pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
     let left = unsafe { slice::from_raw_parts(left, h) };
 
     let token = unsafe { Desktop64::forge_token_dangerously() };
-    wiener_filter5_16bpc_avx2_inner(token, p, left, lpf, lpf_off, w, h, params, edges, bitdepth_max);
+    wiener_filter5_16bpc_avx2_inner(
+        token,
+        p,
+        left,
+        lpf,
+        lpf_off,
+        w,
+        h,
+        params,
+        edges,
+        bitdepth_max,
+    );
 }
 
 // ============================================================================
@@ -1919,11 +1987,7 @@ fn boxsum5_v_avx512(
                 _mm512_mullo_epi32(lo_4, lo_4),
             );
 
-            storeu_512!(
-                &mut sumsq[sum_offset..sum_offset + 16],
-                [i32; 16],
-                sumsq_lo
-            );
+            storeu_512!(&mut sumsq[sum_offset..sum_offset + 16], [i32; 16], sumsq_lo);
 
             // High 16 columns
             let r0_hi = _mm256_extracti128_si256::<1>(r0);
@@ -2033,10 +2097,7 @@ fn boxsum5_h_avx512(
                     &sumsq[row_off + x + off - 1..row_off + x + off - 1 + 16],
                     [i32; 16]
                 );
-                let q2 = loadu_512!(
-                    &sumsq[row_off + x + off..row_off + x + off + 16],
-                    [i32; 16]
-                );
+                let q2 = loadu_512!(&sumsq[row_off + x + off..row_off + x + off + 16], [i32; 16]);
                 let q3 = loadu_512!(
                     &sumsq[row_off + x + off + 1..row_off + x + off + 1 + 16],
                     [i32; 16]
@@ -2050,11 +2111,7 @@ fn boxsum5_h_avx512(
                     _mm512_add_epi32(_mm512_add_epi32(q0, q1), _mm512_add_epi32(q2, q3)),
                     q4,
                 );
-                storeu_512!(
-                    &mut sumsq_tmp[x + off..x + off + 16],
-                    [i32; 16],
-                    hsumsq
-                );
+                storeu_512!(&mut sumsq_tmp[x + off..x + off + 16], [i32; 16], hsumsq);
             }
             x += 32;
         }
@@ -2215,20 +2272,13 @@ fn boxsum3_h_avx512(
                     &sumsq[row_off + x + off - 1..row_off + x + off - 1 + 16],
                     [i32; 16]
                 );
-                let q1 = loadu_512!(
-                    &sumsq[row_off + x + off..row_off + x + off + 16],
-                    [i32; 16]
-                );
+                let q1 = loadu_512!(&sumsq[row_off + x + off..row_off + x + off + 16], [i32; 16]);
                 let q2 = loadu_512!(
                     &sumsq[row_off + x + off + 1..row_off + x + off + 1 + 16],
                     [i32; 16]
                 );
                 let hsumsq = _mm512_add_epi32(_mm512_add_epi32(q0, q1), q2);
-                storeu_512!(
-                    &mut sumsq_tmp[x + off..x + off + 16],
-                    [i32; 16],
-                    hsumsq
-                );
+                storeu_512!(&mut sumsq_tmp[x + off..x + off + 16], [i32; 16], hsumsq);
             }
             x += 32;
         }
@@ -2972,18 +3022,12 @@ fn selfguided_filter_8bpc_avx512(
                 while i + 16 <= w {
                     let idx = base + (j + 1) * REST_UNIT_STRIDE + i;
 
-                    let sum_center = _mm512_cvtepi16_epi32(loadu_256!(
-                        &sum[idx..idx + 16],
-                        [i16; 16]
-                    ));
-                    let sum_left = _mm512_cvtepi16_epi32(loadu_256!(
-                        &sum[idx - 1..idx - 1 + 16],
-                        [i16; 16]
-                    ));
-                    let sum_right = _mm512_cvtepi16_epi32(loadu_256!(
-                        &sum[idx + 1..idx + 1 + 16],
-                        [i16; 16]
-                    ));
+                    let sum_center =
+                        _mm512_cvtepi16_epi32(loadu_256!(&sum[idx..idx + 16], [i16; 16]));
+                    let sum_left =
+                        _mm512_cvtepi16_epi32(loadu_256!(&sum[idx - 1..idx - 1 + 16], [i16; 16]));
+                    let sum_right =
+                        _mm512_cvtepi16_epi32(loadu_256!(&sum[idx + 1..idx + 1 + 16], [i16; 16]));
 
                     let b_horiz = _mm512_add_epi32(
                         _mm512_mullo_epi32(sum_center, six),
@@ -3080,10 +3124,8 @@ fn selfguided_filter_8bpc_avx512(
 
                 // 9 neighbors for sum (i16 → i32)
                 let s_c = _mm512_cvtepi16_epi32(loadu_256!(&sum[idx..idx + 16], [i16; 16]));
-                let s_l =
-                    _mm512_cvtepi16_epi32(loadu_256!(&sum[idx - 1..idx - 1 + 16], [i16; 16]));
-                let s_r =
-                    _mm512_cvtepi16_epi32(loadu_256!(&sum[idx + 1..idx + 1 + 16], [i16; 16]));
+                let s_l = _mm512_cvtepi16_epi32(loadu_256!(&sum[idx - 1..idx - 1 + 16], [i16; 16]));
+                let s_r = _mm512_cvtepi16_epi32(loadu_256!(&sum[idx + 1..idx + 1 + 16], [i16; 16]));
                 let s_a = _mm512_cvtepi16_epi32(loadu_256!(
                     &sum[idx - REST_UNIT_STRIDE..idx - REST_UNIT_STRIDE + 16],
                     [i16; 16]
@@ -3293,8 +3335,11 @@ fn sgr_apply_8bpc(
         // Scalar tail
         while i < w {
             let v = w_k * dst[dst_row + i] as i32;
-            p_guard[row_off + i] =
-                iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+            p_guard[row_off + i] = iclip(
+                p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                0,
+                255,
+            ) as u8;
             i += 1;
         }
     }
@@ -3373,8 +3418,11 @@ fn sgr_apply_mix_8bpc(
         // Scalar tail
         while i < w {
             let v = w0 * dst0[dst_row + i] as i32 + w1 * dst1[dst_row + i] as i32;
-            p_guard[row_off + i] =
-                iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+            p_guard[row_off + i] = iclip(
+                p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                0,
+                255,
+            ) as u8;
             i += 1;
         }
     }
@@ -3422,11 +3470,8 @@ fn sgr_5x5_8bpc_avx2_inner(
             let row_off = p_base.wrapping_add_signed(j as isize * stride);
             for i in 0..w {
                 let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
-                p[row_off + i] = iclip(
-                    p[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                    0,
-                    255,
-                ) as u8;
+                p[row_off + i] =
+                    iclip(p[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
             }
         }
     }
@@ -3474,11 +3519,8 @@ fn sgr_3x3_8bpc_avx2_inner(
             let row_off = p_base.wrapping_add_signed(j as isize * stride);
             for i in 0..w {
                 let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
-                p[row_off + i] = iclip(
-                    p[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                    0,
-                    255,
-                ) as u8;
+                p[row_off + i] =
+                    iclip(p[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
             }
         }
     }
@@ -3527,7 +3569,16 @@ fn sgr_mix_8bpc_avx2_inner(
     let (mut p_guard, p_base) = p.strided_slice_mut::<BitDepth8>(w, h);
     if let Some(token) = summon_avx2() {
         sgr_apply_mix_8bpc(
-            token, &mut p_guard, p_base, stride, &dst0, &dst1, w, h, w0, w1,
+            token,
+            &mut p_guard,
+            p_base,
+            stride,
+            &dst0,
+            &dst1,
+            w,
+            h,
+            w0,
+            w1,
         );
     } else {
         let d0 = dst0.as_slice().flex();
@@ -3538,11 +3589,8 @@ fn sgr_mix_8bpc_avx2_inner(
             for i in 0..w {
                 let v = w0 * d0[j * MAX_RESTORATION_WIDTH + i] as i32
                     + w1 * d1[j * MAX_RESTORATION_WIDTH + i] as i32;
-                p[row_off + i] = iclip(
-                    p[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                    0,
-                    255,
-                ) as u8;
+                p[row_off + i] =
+                    iclip(p[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
             }
         }
     }
@@ -3843,14 +3891,8 @@ fn boxsum5_v_16bpc_avx512(
             // Sum of squares: square in i32 (max 5*4095²=84M, fits i32), then widen to i64
             let sumsq_i32 = _mm512_add_epi32(
                 _mm512_add_epi32(
-                    _mm512_add_epi32(
-                        _mm512_mullo_epi32(w0, w0),
-                        _mm512_mullo_epi32(w1, w1),
-                    ),
-                    _mm512_add_epi32(
-                        _mm512_mullo_epi32(w2, w2),
-                        _mm512_mullo_epi32(w3, w3),
-                    ),
+                    _mm512_add_epi32(_mm512_mullo_epi32(w0, w0), _mm512_mullo_epi32(w1, w1)),
+                    _mm512_add_epi32(_mm512_mullo_epi32(w2, w2), _mm512_mullo_epi32(w3, w3)),
                 ),
                 _mm512_mullo_epi32(w4, w4),
             );
@@ -3858,11 +3900,7 @@ fn boxsum5_v_16bpc_avx512(
             // Convert lo 8 i32 → 8 i64 and store
             let lo_256 = _mm512_castsi512_si256(sumsq_i32);
             let lo_i64 = _mm512_cvtepu32_epi64(lo_256);
-            storeu_512!(
-                &mut sumsq[sum_offset..sum_offset + 8],
-                [i64; 8],
-                lo_i64
-            );
+            storeu_512!(&mut sumsq[sum_offset..sum_offset + 8], [i64; 8], lo_i64);
 
             // Convert hi 8 i32 → 8 i64 and store
             let hi_256 = _mm512_extracti64x4_epi64::<1>(sumsq_i32);
@@ -3948,10 +3986,7 @@ fn boxsum5_h_16bpc_avx512(
                     &sumsq[row_off + x + off - 1..row_off + x + off - 1 + 8],
                     [i64; 8]
                 );
-                let q2 = loadu_512!(
-                    &sumsq[row_off + x + off..row_off + x + off + 8],
-                    [i64; 8]
-                );
+                let q2 = loadu_512!(&sumsq[row_off + x + off..row_off + x + off + 8], [i64; 8]);
                 let q3 = loadu_512!(
                     &sumsq[row_off + x + off + 1..row_off + x + off + 1 + 8],
                     [i64; 8]
@@ -3965,11 +4000,7 @@ fn boxsum5_h_16bpc_avx512(
                     _mm512_add_epi64(_mm512_add_epi64(q0, q1), _mm512_add_epi64(q2, q3)),
                     q4,
                 );
-                storeu_512!(
-                    &mut sumsq_tmp[x + off..x + off + 8],
-                    [i64; 8],
-                    hsumsq
-                );
+                storeu_512!(&mut sumsq_tmp[x + off..x + off + 8], [i64; 8], hsumsq);
             }
             x += 16;
         }
@@ -4037,20 +4068,13 @@ fn boxsum3_v_16bpc_avx512(
 
             // Sumsq: accumulate in i32 (max 3*4095²=50M, fits i32), widen to i64
             let sumsq_i32 = _mm512_add_epi32(
-                _mm512_add_epi32(
-                    _mm512_mullo_epi32(w0, w0),
-                    _mm512_mullo_epi32(w1, w1),
-                ),
+                _mm512_add_epi32(_mm512_mullo_epi32(w0, w0), _mm512_mullo_epi32(w1, w1)),
                 _mm512_mullo_epi32(w2, w2),
             );
 
             let lo_256 = _mm512_castsi512_si256(sumsq_i32);
             let lo_i64 = _mm512_cvtepu32_epi64(lo_256);
-            storeu_512!(
-                &mut sumsq[sum_offset..sum_offset + 8],
-                [i64; 8],
-                lo_i64
-            );
+            storeu_512!(&mut sumsq[sum_offset..sum_offset + 8], [i64; 8], lo_i64);
 
             let hi_256 = _mm512_extracti64x4_epi64::<1>(sumsq_i32);
             let hi_i64 = _mm512_cvtepu32_epi64(hi_256);
@@ -4115,20 +4139,13 @@ fn boxsum3_h_16bpc_avx512(
                     &sumsq[row_off + x + off - 1..row_off + x + off - 1 + 8],
                     [i64; 8]
                 );
-                let q1 = loadu_512!(
-                    &sumsq[row_off + x + off..row_off + x + off + 8],
-                    [i64; 8]
-                );
+                let q1 = loadu_512!(&sumsq[row_off + x + off..row_off + x + off + 8], [i64; 8]);
                 let q2 = loadu_512!(
                     &sumsq[row_off + x + off + 1..row_off + x + off + 1 + 8],
                     [i64; 8]
                 );
                 let hsumsq = _mm512_add_epi64(_mm512_add_epi64(q0, q1), q2);
-                storeu_512!(
-                    &mut sumsq_tmp[x + off..x + off + 8],
-                    [i64; 8],
-                    hsumsq
-                );
+                storeu_512!(&mut sumsq_tmp[x + off..x + off + 8], [i64; 8], hsumsq);
             }
             x += 16;
         }
@@ -5306,9 +5323,11 @@ fn sgr_apply_16bpc(
         // Scalar tail
         while i < w {
             let v = w_k * dst[dst_row + i];
-            p_guard[row_off + i] =
-                iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max)
-                    as u16;
+            p_guard[row_off + i] = iclip(
+                p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                0,
+                bitdepth_max,
+            ) as u16;
             i += 1;
         }
     }
@@ -5383,11 +5402,12 @@ fn sgr_apply_mix_16bpc(
 
         // Scalar tail
         while i < w {
-            let v =
-                w0 * dst0[dst_row + i] + w1 * dst1[dst_row + i];
-            p_guard[row_off + i] =
-                iclip(p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, bitdepth_max)
-                    as u16;
+            let v = w0 * dst0[dst_row + i] + w1 * dst1[dst_row + i];
+            p_guard[row_off + i] = iclip(
+                p_guard[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                0,
+                bitdepth_max,
+            ) as u16;
             i += 1;
         }
     }
@@ -5582,8 +5602,8 @@ fn sgr_mix_16bpc_avx2_inner(
         for j in 0..h {
             let row_off = p_base.wrapping_add_signed(j as isize * stride);
             for i in 0..w {
-                let v = w0 * d0[j * MAX_RESTORATION_WIDTH + i]
-                    + w1 * d1[j * MAX_RESTORATION_WIDTH + i];
+                let v =
+                    w0 * d0[j * MAX_RESTORATION_WIDTH + i] + w1 * d1[j * MAX_RESTORATION_WIDTH + i];
                 p[row_off + i] = iclip(
                     p[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
                     0,
@@ -5749,7 +5769,15 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
                 )
             } else {
                 wiener_filter7_8bpc_avx2_inner(
-                    token, dst, left_8(), lpf, lpf_off, w, h, params, edges,
+                    token,
+                    dst,
+                    left_8(),
+                    lpf,
+                    lpf_off,
+                    w,
+                    h,
+                    params,
+                    edges,
                 )
             }
         }
@@ -5768,7 +5796,15 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
                 )
             } else {
                 wiener_filter5_8bpc_avx2_inner(
-                    token, dst, left_8(), lpf, lpf_off, w, h, params, edges,
+                    token,
+                    dst,
+                    left_8(),
+                    lpf,
+                    lpf_off,
+                    w,
+                    h,
+                    params,
+                    edges,
                 )
             }
         }

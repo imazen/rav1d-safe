@@ -1,7 +1,10 @@
 // This module (C API entry point) uses forbid(unsafe_code) when c-ffi is off.
 // The crate root (lib.rs) uses deny(unsafe_code), which is weaker — modules
 // can override with #[allow] on specific items for sound abstractions.
-#![cfg_attr(not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")), forbid(unsafe_code))]
+#![cfg_attr(
+    not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")),
+    forbid(unsafe_code)
+)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 #[cfg(feature = "bitdepth_16")]

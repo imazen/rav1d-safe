@@ -20,9 +20,14 @@ fn parse_ivf_header<R: Read>(reader: &mut R) -> io::Result<u32> {
     let mut header = [0u8; 32];
     reader.read_exact(&mut header)?;
     if &header[0..4] != b"DKIF" {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Not an IVF file"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Not an IVF file",
+        ));
     }
-    Ok(u32::from_le_bytes([header[24], header[25], header[26], header[27]]))
+    Ok(u32::from_le_bytes([
+        header[24], header[25], header[26], header[27],
+    ]))
 }
 
 /// Parse one IVF frame, return None on EOF.
@@ -109,7 +114,12 @@ fn main() {
         CpuLevel::Native
     };
 
-    eprintln!("Input: {} ({} frames, {} bytes)", args[1], obu_frames.len(), total_bytes);
+    eprintln!(
+        "Input: {} ({} frames, {} bytes)",
+        args[1],
+        obu_frames.len(),
+        total_bytes
+    );
     eprintln!("Iterations: {iterations}");
 
     // Warmup

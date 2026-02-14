@@ -5231,7 +5231,10 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     // ref_mvs
     if frame_hdr.frame_type.is_inter_or_switch() || frame_hdr.allow_intrabc {
         let mvs_sz = f.sb128h as usize * 16 * (f.b4_stride >> 1) as usize;
-        f.mvs = Some(crate::src::disjoint_mut::dm_arc_try_new(mvs_sz, Default::default()).map_err(|_| ENOMEM)?);
+        f.mvs = Some(
+            crate::src::disjoint_mut::dm_arc_try_new(mvs_sz, Default::default())
+                .map_err(|_| ENOMEM)?,
+        );
         if !frame_hdr.allow_intrabc {
             for i in 0..7 {
                 f.refpoc[i] = f.refp[i].p.frame_hdr.as_ref().unwrap().frame_offset as c_uint;

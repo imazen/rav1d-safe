@@ -28,10 +28,10 @@ use crate::src::cdef::CdefTop;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::pic_or_buf::PicOrBuf;
+use crate::src::safe_simd::pixel_access::Flex;
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_cdef_directions;
 use crate::src::with_offset::WithOffset;
-use crate::src::safe_simd::pixel_access::Flex;
 use libc::ptrdiff_t;
 use std::cmp;
 
@@ -2227,6 +2227,11 @@ pub fn cdef_dir_dispatch<BD: BitDepth>(
 
     match BD::BPC {
         BPC::BPC8 => Some(cdef_find_dir_simd_8bpc(token, dst, variance)),
-        BPC::BPC16 => Some(cdef_find_dir_simd_16bpc(token, dst, variance, bd.bitdepth() as u8)),
+        BPC::BPC16 => Some(cdef_find_dir_simd_16bpc(
+            token,
+            dst,
+            variance,
+            bd.bitdepth() as u8,
+        )),
     }
 }

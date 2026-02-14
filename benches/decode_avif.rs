@@ -110,7 +110,9 @@ fn vectors() -> &'static [AvifVector] {
                     );
                     v.push(tv);
                 }
-                None => eprintln!("warning: {f} not found or decode failed. Run: just generate-bench-avif"),
+                None => eprintln!(
+                    "warning: {f} not found or decode failed. Run: just generate-bench-avif"
+                ),
             }
         }
         if v.is_empty() {

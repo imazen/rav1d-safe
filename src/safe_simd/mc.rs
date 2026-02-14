@@ -269,8 +269,7 @@ fn avg_8bpc_avx512_safe(
             let result_hi: __m256i = _mm512_cvtusepi16_epi8(avg_hi);
 
             // Combine two __m256i into one __m512i and store 64 bytes
-            let combined =
-                _mm512_inserti64x4::<1>(_mm512_castsi256_si512(result_lo), result_hi);
+            let combined = _mm512_inserti64x4::<1>(_mm512_castsi256_si512(result_lo), result_hi);
             storeu_512!(&mut dst_row[col..col + 64], [u8; 64], combined);
 
             col += 64;
@@ -447,7 +446,11 @@ fn avg_16bpc_avx512_safe(
     let w = w as usize;
     let h = h as usize;
 
-    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 {
+        2i32
+    } else {
+        4i32
+    };
     let sh = intermediate_bits + 1;
     let rnd = (1 << intermediate_bits) + 8192 * 2;
     let max = bitdepth_max as i32;
@@ -495,8 +498,7 @@ fn avg_16bpc_avx512_safe(
             let packed_hi: __m256i = _mm512_cvtusepi32_epi16(clamped_hi);
 
             // Combine and store 32 u16 = 64 bytes
-            let combined =
-                _mm512_inserti64x4::<1>(_mm512_castsi256_si512(packed_lo), packed_hi);
+            let combined = _mm512_inserti64x4::<1>(_mm512_castsi256_si512(packed_lo), packed_hi);
             storeu_512!(&mut dst_row[col..col + 32], [u16; 32], combined);
 
             col += 32;
@@ -779,8 +781,7 @@ fn w_avg_8bpc_avx512_safe(
             let avg_hi = _mm512_max_epi16(avg_hi, zero);
             let result_hi: __m256i = _mm512_cvtusepi16_epi8(avg_hi);
 
-            let combined =
-                _mm512_inserti64x4::<1>(_mm512_castsi256_si512(result_lo), result_hi);
+            let combined = _mm512_inserti64x4::<1>(_mm512_castsi256_si512(result_lo), result_hi);
             storeu_512!(&mut dst_row[col..col + 64], [u8; 64], combined);
             col += 64;
         }
@@ -955,7 +956,11 @@ fn w_avg_16bpc_avx512_safe(
     let w = w as usize;
     let h = h as usize;
 
-    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 {
+        2i32
+    } else {
+        4i32
+    };
     let sh = intermediate_bits + 4;
     let rnd = (8 << intermediate_bits) + 8192 * 16;
     let max = bitdepth_max as i32;
@@ -1241,9 +1246,8 @@ fn mask_8bpc_avx512_safe(
             let perm_idx = _mm512_set_epi64(7, 5, 3, 1, 6, 4, 2, 0);
             let result_16 = _mm512_permutexvar_epi64(perm_idx, result_16);
             // Pack i16 → u8 with unsigned saturation
-            let result_8: __m256i = _mm512_cvtusepi16_epi8(
-                _mm512_max_epi16(result_16, _mm512_setzero_si512()),
-            );
+            let result_8: __m256i =
+                _mm512_cvtusepi16_epi8(_mm512_max_epi16(result_16, _mm512_setzero_si512()));
 
             storeu_256!(&mut dst_row[col..col + 32], [u8; 32], result_8);
             col += 32;
@@ -1324,7 +1328,11 @@ fn mask_16bpc_avx512_safe(
     let h = h as usize;
     let max = bitdepth_max as i32;
 
-    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 {
+        2i32
+    } else {
+        4i32
+    };
     let sh = intermediate_bits + 6;
     let rnd = (32 << intermediate_bits) + 8192 * 64;
 
@@ -2312,14 +2320,10 @@ fn h_filter_8tap_8bpc_avx512_inner(
     let src = src.flex();
 
     // Broadcast coefficient pairs for maddubs (same encoding as AVX2)
-    let coeff_01 =
-        _mm512_set1_epi16(((filter[1] as u8 as i16) << 8) | (filter[0] as u8 as i16));
-    let coeff_23 =
-        _mm512_set1_epi16(((filter[3] as u8 as i16) << 8) | (filter[2] as u8 as i16));
-    let coeff_45 =
-        _mm512_set1_epi16(((filter[5] as u8 as i16) << 8) | (filter[4] as u8 as i16));
-    let coeff_67 =
-        _mm512_set1_epi16(((filter[7] as u8 as i16) << 8) | (filter[6] as u8 as i16));
+    let coeff_01 = _mm512_set1_epi16(((filter[1] as u8 as i16) << 8) | (filter[0] as u8 as i16));
+    let coeff_23 = _mm512_set1_epi16(((filter[3] as u8 as i16) << 8) | (filter[2] as u8 as i16));
+    let coeff_45 = _mm512_set1_epi16(((filter[5] as u8 as i16) << 8) | (filter[4] as u8 as i16));
+    let coeff_67 = _mm512_set1_epi16(((filter[7] as u8 as i16) << 8) | (filter[6] as u8 as i16));
 
     let rnd = _mm512_set1_epi16((1i16 << sh) >> 1);
 
@@ -2364,10 +2368,7 @@ fn h_filter_8tap_8bpc_avx512_inner(
         let ma67 = _mm512_maddubs_epi16(p67, coeff_67);
 
         // Sum all tap contributions
-        let sum = _mm512_add_epi16(
-            _mm512_add_epi16(ma01, ma23),
-            _mm512_add_epi16(ma45, ma67),
-        );
+        let sum = _mm512_add_epi16(_mm512_add_epi16(ma01, ma23), _mm512_add_epi16(ma45, ma67));
 
         // Add rounding and shift
         let shift_count = _mm_cvtsi32_si128(sh as i32);
@@ -2748,14 +2749,10 @@ fn h_filter_8tap_8bpc_put_avx512_inner(
     let mut dst = dst.flex_mut();
     let src = src.flex();
 
-    let coeff_01 =
-        _mm512_set1_epi16(((filter[1] as u8 as i16) << 8) | (filter[0] as u8 as i16));
-    let coeff_23 =
-        _mm512_set1_epi16(((filter[3] as u8 as i16) << 8) | (filter[2] as u8 as i16));
-    let coeff_45 =
-        _mm512_set1_epi16(((filter[5] as u8 as i16) << 8) | (filter[4] as u8 as i16));
-    let coeff_67 =
-        _mm512_set1_epi16(((filter[7] as u8 as i16) << 8) | (filter[6] as u8 as i16));
+    let coeff_01 = _mm512_set1_epi16(((filter[1] as u8 as i16) << 8) | (filter[0] as u8 as i16));
+    let coeff_23 = _mm512_set1_epi16(((filter[3] as u8 as i16) << 8) | (filter[2] as u8 as i16));
+    let coeff_45 = _mm512_set1_epi16(((filter[5] as u8 as i16) << 8) | (filter[4] as u8 as i16));
+    let coeff_67 = _mm512_set1_epi16(((filter[7] as u8 as i16) << 8) | (filter[6] as u8 as i16));
 
     // rnd=34 matches 8bpc H-only put: 32 + ((1 << (6-4)) >> 1)
     let rnd = _mm512_set1_epi16(34);
@@ -2795,10 +2792,7 @@ fn h_filter_8tap_8bpc_put_avx512_inner(
         let ma45 = _mm512_maddubs_epi16(p45, coeff_45);
         let ma67 = _mm512_maddubs_epi16(p67, coeff_67);
 
-        let sum = _mm512_add_epi16(
-            _mm512_add_epi16(ma01, ma23),
-            _mm512_add_epi16(ma45, ma67),
-        );
+        let sum = _mm512_add_epi16(_mm512_add_epi16(ma01, ma23), _mm512_add_epi16(ma45, ma67));
 
         // Shift by 6, clamp to [0, 255]
         let shift_count = _mm_cvtsi32_si128(6);
@@ -2978,27 +2972,34 @@ fn v_filter_8tap_8bpc_direct_avx512_inner(
         let p0 = _mm512_cvtepu8_epi32(loadu_128!(
             <&[u8; 16]>::try_from(&src[col..col + 16]).unwrap()
         ));
-        let p1 = _mm512_cvtepu8_epi32(loadu_128!(
-            <&[u8; 16]>::try_from(&src[stride + col..stride + col + 16]).unwrap()
-        ));
-        let p2 = _mm512_cvtepu8_epi32(loadu_128!(
-            <&[u8; 16]>::try_from(&src[2 * stride + col..2 * stride + col + 16]).unwrap()
-        ));
-        let p3 = _mm512_cvtepu8_epi32(loadu_128!(
-            <&[u8; 16]>::try_from(&src[3 * stride + col..3 * stride + col + 16]).unwrap()
-        ));
-        let p4 = _mm512_cvtepu8_epi32(loadu_128!(
-            <&[u8; 16]>::try_from(&src[4 * stride + col..4 * stride + col + 16]).unwrap()
-        ));
-        let p5 = _mm512_cvtepu8_epi32(loadu_128!(
-            <&[u8; 16]>::try_from(&src[5 * stride + col..5 * stride + col + 16]).unwrap()
-        ));
-        let p6 = _mm512_cvtepu8_epi32(loadu_128!(
-            <&[u8; 16]>::try_from(&src[6 * stride + col..6 * stride + col + 16]).unwrap()
-        ));
-        let p7 = _mm512_cvtepu8_epi32(loadu_128!(
-            <&[u8; 16]>::try_from(&src[7 * stride + col..7 * stride + col + 16]).unwrap()
-        ));
+        let p1 = _mm512_cvtepu8_epi32(loadu_128!(<&[u8; 16]>::try_from(
+            &src[stride + col..stride + col + 16]
+        )
+        .unwrap()));
+        let p2 = _mm512_cvtepu8_epi32(loadu_128!(<&[u8; 16]>::try_from(
+            &src[2 * stride + col..2 * stride + col + 16]
+        )
+        .unwrap()));
+        let p3 = _mm512_cvtepu8_epi32(loadu_128!(<&[u8; 16]>::try_from(
+            &src[3 * stride + col..3 * stride + col + 16]
+        )
+        .unwrap()));
+        let p4 = _mm512_cvtepu8_epi32(loadu_128!(<&[u8; 16]>::try_from(
+            &src[4 * stride + col..4 * stride + col + 16]
+        )
+        .unwrap()));
+        let p5 = _mm512_cvtepu8_epi32(loadu_128!(<&[u8; 16]>::try_from(
+            &src[5 * stride + col..5 * stride + col + 16]
+        )
+        .unwrap()));
+        let p6 = _mm512_cvtepu8_epi32(loadu_128!(<&[u8; 16]>::try_from(
+            &src[6 * stride + col..6 * stride + col + 16]
+        )
+        .unwrap()));
+        let p7 = _mm512_cvtepu8_epi32(loadu_128!(<&[u8; 16]>::try_from(
+            &src[7 * stride + col..7 * stride + col + 16]
+        )
+        .unwrap()));
 
         // Multiply and accumulate
         let mut sum = _mm512_mullo_epi32(p0, c0);
@@ -3246,9 +3247,7 @@ fn put_8tap_8bpc_avx512_impl_inner(
                 let src_row_base = (sb + (y as isize - 3) * src_stride) as usize;
                 let src_row = &src[src_row_base..];
                 let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
-                v_filter_8tap_8bpc_direct_avx512_inner(
-                    _token, dst_row, src_row, src_stride, w, fv,
-                );
+                v_filter_8tap_8bpc_direct_avx512_inner(_token, dst_row, src_row, src_stride, w, fv);
             }
         }
         (None, None) => {
@@ -4105,14 +4104,7 @@ fn prep_8tap_8bpc_avx512_impl_inner(
 
             for y in 0..h {
                 let out_row = y * w;
-                v_filter_8tap_to_i16_avx512_inner(
-                    _token,
-                    &mid[y..],
-                    &mut tmp[out_row..],
-                    w,
-                    fv,
-                    6,
-                );
+                v_filter_8tap_to_i16_avx512_inner(_token, &mid[y..], &mut tmp[out_row..], w, fv, 6);
             }
             put_mid_i16_135(mid);
         }
@@ -4141,14 +4133,7 @@ fn prep_8tap_8bpc_avx512_impl_inner(
                         mid[i][x] = (src_row[x] as i16) << intermediate_bits;
                     }
                 }
-                v_filter_8tap_to_i16_avx512_inner(
-                    _token,
-                    &mid,
-                    &mut tmp[out_row..],
-                    w,
-                    fv,
-                    6,
-                );
+                v_filter_8tap_to_i16_avx512_inner(_token, &mid, &mut tmp[out_row..], w, fv, 6);
             }
         }
         (None, None) => {
@@ -5859,14 +5844,30 @@ fn h_filter_8tap_16bpc_avx512_inner(
     let mut col = 0usize;
 
     while col + 16 <= w {
-        let p0 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()));
-        let p1 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 1..col + 17]).unwrap()));
-        let p2 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 2..col + 18]).unwrap()));
-        let p3 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 3..col + 19]).unwrap()));
-        let p4 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 4..col + 20]).unwrap()));
-        let p5 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 5..col + 21]).unwrap()));
-        let p6 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 6..col + 22]).unwrap()));
-        let p7 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 7..col + 23]).unwrap()));
+        let p0 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
+        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 1..col + 17]).unwrap()
+        ));
+        let p2 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 2..col + 18]).unwrap()
+        ));
+        let p3 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 3..col + 19]).unwrap()
+        ));
+        let p4 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 4..col + 20]).unwrap()
+        ));
+        let p5 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 5..col + 21]).unwrap()
+        ));
+        let p6 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 6..col + 22]).unwrap()
+        ));
+        let p7 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 7..col + 23]).unwrap()
+        ));
 
         let mut sum = _mm512_mullo_epi32(p0, c0);
         sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p1, c1));
@@ -6070,14 +6071,30 @@ fn h_filter_8tap_16bpc_put_avx512_inner(
     let mut col = 0usize;
 
     while col + 16 <= w {
-        let p0 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()));
-        let p1 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 1..col + 17]).unwrap()));
-        let p2 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 2..col + 18]).unwrap()));
-        let p3 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 3..col + 19]).unwrap()));
-        let p4 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 4..col + 20]).unwrap()));
-        let p5 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 5..col + 21]).unwrap()));
-        let p6 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 6..col + 22]).unwrap()));
-        let p7 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 7..col + 23]).unwrap()));
+        let p0 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
+        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 1..col + 17]).unwrap()
+        ));
+        let p2 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 2..col + 18]).unwrap()
+        ));
+        let p3 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 3..col + 19]).unwrap()
+        ));
+        let p4 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 4..col + 20]).unwrap()
+        ));
+        let p5 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 5..col + 21]).unwrap()
+        ));
+        let p6 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 6..col + 22]).unwrap()
+        ));
+        let p7 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 7..col + 23]).unwrap()
+        ));
 
         let mut sum = _mm512_mullo_epi32(p0, c0);
         sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p1, c1));
@@ -6141,14 +6158,30 @@ fn h_filter_8tap_16bpc_prep_direct_avx512_inner(
     let mut col = 0usize;
 
     while col + 16 <= w {
-        let p0 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()));
-        let p1 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 1..col + 17]).unwrap()));
-        let p2 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 2..col + 18]).unwrap()));
-        let p3 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 3..col + 19]).unwrap()));
-        let p4 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 4..col + 20]).unwrap()));
-        let p5 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 5..col + 21]).unwrap()));
-        let p6 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 6..col + 22]).unwrap()));
-        let p7 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col + 7..col + 23]).unwrap()));
+        let p0 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
+        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 1..col + 17]).unwrap()
+        ));
+        let p2 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 2..col + 18]).unwrap()
+        ));
+        let p3 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 3..col + 19]).unwrap()
+        ));
+        let p4 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 4..col + 20]).unwrap()
+        ));
+        let p5 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 5..col + 21]).unwrap()
+        ));
+        let p6 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 6..col + 22]).unwrap()
+        ));
+        let p7 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col + 7..col + 23]).unwrap()
+        ));
 
         let mut sum = _mm512_mullo_epi32(p0, c0);
         sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p1, c1));
@@ -6214,14 +6247,37 @@ fn v_filter_8tap_16bpc_direct_avx512_inner(
     let mut col = 0usize;
 
     while col + 16 <= w {
-        let p0 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()));
-        let p1 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[stride_u + col..stride_u + col + 16]).unwrap()));
-        let p2 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[2 * stride_u + col..2 * stride_u + col + 16]).unwrap()));
-        let p3 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[3 * stride_u + col..3 * stride_u + col + 16]).unwrap()));
-        let p4 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[4 * stride_u + col..4 * stride_u + col + 16]).unwrap()));
-        let p5 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[5 * stride_u + col..5 * stride_u + col + 16]).unwrap()));
-        let p6 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[6 * stride_u + col..6 * stride_u + col + 16]).unwrap()));
-        let p7 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[7 * stride_u + col..7 * stride_u + col + 16]).unwrap()));
+        let p0 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
+        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[stride_u + col..stride_u + col + 16]
+        )
+        .unwrap()));
+        let p2 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[2 * stride_u + col..2 * stride_u + col + 16]
+        )
+        .unwrap()));
+        let p3 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[3 * stride_u + col..3 * stride_u + col + 16]
+        )
+        .unwrap()));
+        let p4 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[4 * stride_u + col..4 * stride_u + col + 16]
+        )
+        .unwrap()));
+        let p5 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[5 * stride_u + col..5 * stride_u + col + 16]
+        )
+        .unwrap()));
+        let p6 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[6 * stride_u + col..6 * stride_u + col + 16]
+        )
+        .unwrap()));
+        let p7 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[7 * stride_u + col..7 * stride_u + col + 16]
+        )
+        .unwrap()));
 
         let mut sum = _mm512_mullo_epi32(p0, c0);
         sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p1, c1));
@@ -6287,14 +6343,37 @@ fn v_filter_8tap_16bpc_prep_direct_avx512_inner(
     let mut col = 0usize;
 
     while col + 16 <= w {
-        let p0 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()));
-        let p1 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[stride_u + col..stride_u + col + 16]).unwrap()));
-        let p2 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[2 * stride_u + col..2 * stride_u + col + 16]).unwrap()));
-        let p3 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[3 * stride_u + col..3 * stride_u + col + 16]).unwrap()));
-        let p4 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[4 * stride_u + col..4 * stride_u + col + 16]).unwrap()));
-        let p5 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[5 * stride_u + col..5 * stride_u + col + 16]).unwrap()));
-        let p6 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[6 * stride_u + col..6 * stride_u + col + 16]).unwrap()));
-        let p7 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(&src[7 * stride_u + col..7 * stride_u + col + 16]).unwrap()));
+        let p0 = _mm512_cvtepu16_epi32(loadu_256!(
+            <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
+        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[stride_u + col..stride_u + col + 16]
+        )
+        .unwrap()));
+        let p2 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[2 * stride_u + col..2 * stride_u + col + 16]
+        )
+        .unwrap()));
+        let p3 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[3 * stride_u + col..3 * stride_u + col + 16]
+        )
+        .unwrap()));
+        let p4 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[4 * stride_u + col..4 * stride_u + col + 16]
+        )
+        .unwrap()));
+        let p5 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[5 * stride_u + col..5 * stride_u + col + 16]
+        )
+        .unwrap()));
+        let p6 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[6 * stride_u + col..6 * stride_u + col + 16]
+        )
+        .unwrap()));
+        let p7 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[7 * stride_u + col..7 * stride_u + col + 16]
+        )
+        .unwrap()));
 
         let mut sum = _mm512_mullo_epi32(p0, c0);
         sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(p1, c1));
@@ -6357,7 +6436,11 @@ fn put_8tap_16bpc_avx512_impl_inner(
     let sb = src_base as isize;
     let max = bitdepth_max as i32;
 
-    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 {
+        2i32
+    } else {
+        4i32
+    };
 
     let fh = get_filter_coeff(mx, w, h_filter_type);
     let fv = get_filter_coeff(my, h, v_filter_type);
@@ -6371,7 +6454,12 @@ fn put_8tap_16bpc_avx512_impl_inner(
             for y in 0..tmp_h {
                 let src_off = (sb + (y as isize - 3) * src_stride_elems) as usize;
                 h_filter_8tap_16bpc_avx512_inner(
-                    _token, &mut mid[y], &src[src_off - 3..], w, fh, h_sh,
+                    _token,
+                    &mut mid[y],
+                    &src[src_off - 3..],
+                    w,
+                    fh,
+                    h_sh,
                 );
             }
             for y in 0..h {
@@ -6385,7 +6473,12 @@ fn put_8tap_16bpc_avx512_impl_inner(
                 let src_off = (sb + y as isize * src_stride_elems) as usize;
                 let dst_row = &mut dst[(y as isize * dst_stride_elems) as usize..];
                 h_filter_8tap_16bpc_put_avx512_inner(
-                    _token, dst_row, &src[src_off - 3..], w, fh, max,
+                    _token,
+                    dst_row,
+                    &src[src_off - 3..],
+                    w,
+                    fh,
+                    max,
                 );
             }
         }
@@ -6394,7 +6487,13 @@ fn put_8tap_16bpc_avx512_impl_inner(
                 let src_off = (sb + (y as isize - 3) * src_stride_elems) as usize;
                 let dst_row = &mut dst[(y as isize * dst_stride_elems) as usize..];
                 v_filter_8tap_16bpc_direct_avx512_inner(
-                    _token, dst_row, &src[src_off..], src_stride_elems, w, fv, max,
+                    _token,
+                    dst_row,
+                    &src[src_off..],
+                    src_stride_elems,
+                    w,
+                    fv,
+                    max,
                 );
             }
         }
@@ -6434,7 +6533,11 @@ fn prep_8tap_16bpc_avx512_impl_inner(
     let src_stride_elems = src_stride / 2;
     let sb = src_base as isize;
 
-    let intermediate_bits = if (bitdepth_max >> 11) != 0 { 2i32 } else { 4i32 };
+    let intermediate_bits = if (bitdepth_max >> 11) != 0 {
+        2i32
+    } else {
+        4i32
+    };
     const PREP_BIAS: i32 = 8192;
 
     let fh = get_filter_coeff(mx, w, h_filter_type);
@@ -6449,13 +6552,25 @@ fn prep_8tap_16bpc_avx512_impl_inner(
             for y in 0..tmp_h {
                 let src_off = (sb + (y as isize - 3) * src_stride_elems) as usize;
                 h_filter_8tap_16bpc_avx512_inner(
-                    _token, &mut mid[y], &src[src_off - 3..], w, fh, h_sh,
+                    _token,
+                    &mut mid[y],
+                    &src[src_off - 3..],
+                    w,
+                    fh,
+                    h_sh,
                 );
             }
             for y in 0..h {
                 let out_row = y * w;
                 v_filter_8tap_16bpc_prep_avx512_inner(
-                    _token, &mut tmp[out_row..], &*mid, w, y, fv, v_sh, PREP_BIAS,
+                    _token,
+                    &mut tmp[out_row..],
+                    &*mid,
+                    w,
+                    y,
+                    fv,
+                    v_sh,
+                    PREP_BIAS,
                 );
             }
             put_mid_i32_135(mid);
@@ -6466,7 +6581,13 @@ fn prep_8tap_16bpc_avx512_impl_inner(
                 let src_off = (sb + y as isize * src_stride_elems) as usize;
                 let out_row = y * w;
                 h_filter_8tap_16bpc_prep_direct_avx512_inner(
-                    _token, &mut tmp[out_row..], &src[src_off - 3..], w, fh, sh, PREP_BIAS,
+                    _token,
+                    &mut tmp[out_row..],
+                    &src[src_off - 3..],
+                    w,
+                    fh,
+                    sh,
+                    PREP_BIAS,
                 );
             }
         }
@@ -6476,7 +6597,13 @@ fn prep_8tap_16bpc_avx512_impl_inner(
                 let src_off = (sb + (y as isize - 3) * src_stride_elems) as usize;
                 let out_row = y * w;
                 v_filter_8tap_16bpc_prep_direct_avx512_inner(
-                    _token, &mut tmp[out_row..], &src[src_off..], src_stride_elems, w, fv, sh,
+                    _token,
+                    &mut tmp[out_row..],
+                    &src[src_off..],
+                    src_stride_elems,
+                    w,
+                    fv,
+                    sh,
                     PREP_BIAS,
                 );
             }
@@ -10545,13 +10672,7 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
 /// 16 pixels/iter using cvtepu16_epi32 + mullo_epi32
 #[cfg(target_arch = "x86_64")]
 #[rite]
-fn h_bilin_16bpc_avx512_inner(
-    _token: Server64,
-    dst: &mut [i32],
-    src: &[u16],
-    w: usize,
-    mx: i32,
-) {
+fn h_bilin_16bpc_avx512_inner(_token: Server64, dst: &mut [i32], src: &[u16], w: usize, mx: i32) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
     let w0 = _mm512_set1_epi32(16 - mx);
@@ -10767,12 +10888,10 @@ fn v_bilin_16bpc_direct_avx512_inner(
         let p0 = _mm512_cvtepu16_epi32(loadu_256!(
             <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
         ));
-        let p1 = _mm512_cvtepu16_epi32(loadu_256!(
-            <&[u16; 16]>::try_from(
-                &src[src_stride as usize + col..src_stride as usize + col + 16]
-            )
-            .unwrap()
-        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[src_stride as usize + col..src_stride as usize + col + 16]
+        )
+        .unwrap()));
 
         let term0 = _mm512_mullo_epi32(p0, w0);
         let term1 = _mm512_mullo_epi32(p1, w1);
@@ -10877,12 +10996,10 @@ fn v_bilin_16bpc_prep_direct_avx512_inner(
         let p0 = _mm512_cvtepu16_epi32(loadu_256!(
             <&[u16; 16]>::try_from(&src[col..col + 16]).unwrap()
         ));
-        let p1 = _mm512_cvtepu16_epi32(loadu_256!(
-            <&[u16; 16]>::try_from(
-                &src[src_stride as usize + col..src_stride as usize + col + 16]
-            )
-            .unwrap()
-        ));
+        let p1 = _mm512_cvtepu16_epi32(loadu_256!(<&[u16; 16]>::try_from(
+            &src[src_stride as usize + col..src_stride as usize + col + 16]
+        )
+        .unwrap()));
 
         let term0 = _mm512_mullo_epi32(p0, w0);
         let term1 = _mm512_mullo_epi32(p1, w1);
@@ -11939,10 +12056,9 @@ pub fn mc_put_dispatch<BD: BitDepth>(
                 Filter2d::Bilinear => {
                     // Bilinear only accesses current + next row, no negative offsets
                     let src_bytes = &src_guard.as_bytes()[src_base * pixel_size..];
-                    let src_u16_bilin: &[u16] =
-                        zerocopy::Ref::<_, [u16]>::new_slice(src_bytes)
-                            .expect("u16 alignment")
-                            .into_slice();
+                    let src_u16_bilin: &[u16] = zerocopy::Ref::<_, [u16]>::new_slice(src_bytes)
+                        .expect("u16 alignment")
+                        .into_slice();
                     if let Some(t512) = crate::src::cpu::summon_avx512() {
                         put_bilin_16bpc_avx512_impl_inner(
                             t512,
@@ -12043,10 +12159,9 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                 Filter2d::Bilinear => {
                     // Bilinear only accesses current + next row, no negative offsets
                     let src_bytes = &src_guard.as_bytes()[src_base * pixel_size..];
-                    let src_u16_bilin: &[u16] =
-                        zerocopy::Ref::<_, [u16]>::new_slice(src_bytes)
-                            .expect("u16 alignment")
-                            .into_slice();
+                    let src_u16_bilin: &[u16] = zerocopy::Ref::<_, [u16]>::new_slice(src_bytes)
+                        .expect("u16 alignment")
+                        .into_slice();
                     if let Some(t512) = crate::src::cpu::summon_avx512() {
                         prep_bilin_16bpc_avx512_impl_inner(
                             t512,
@@ -12281,9 +12396,24 @@ fn warp_affine_8x8_8bpc_avx2(
 ) {
     let mut mid = [[0i16; 8]; 15];
     warp_h_pass_8bpc(
-        _t, &mut mid, src, src_base, src_stride, abcd[0] as i32, abcd[1] as i32, mx,
+        _t,
+        &mut mid,
+        src,
+        src_base,
+        src_stride,
+        abcd[0] as i32,
+        abcd[1] as i32,
+        mx,
     );
-    warp_v_pass_8bpc_put(_t, dst, dst_stride, &mid, abcd[2] as i32, abcd[3] as i32, my);
+    warp_v_pass_8bpc_put(
+        _t,
+        dst,
+        dst_stride,
+        &mid,
+        abcd[2] as i32,
+        abcd[3] as i32,
+        my,
+    );
 }
 
 /// AVX2/SSSE3 warp affine 8×8 prep (8bpc).
@@ -12302,9 +12432,24 @@ fn warp_affine_8x8t_8bpc_avx2(
 ) {
     let mut mid = [[0i16; 8]; 15];
     warp_h_pass_8bpc(
-        _t, &mut mid, src, src_base, src_stride, abcd[0] as i32, abcd[1] as i32, mx,
+        _t,
+        &mut mid,
+        src,
+        src_base,
+        src_stride,
+        abcd[0] as i32,
+        abcd[1] as i32,
+        mx,
     );
-    warp_v_pass_8bpc_prep(_t, tmp, tmp_stride, &mid, abcd[2] as i32, abcd[3] as i32, my);
+    warp_v_pass_8bpc_prep(
+        _t,
+        tmp,
+        tmp_stride,
+        &mid,
+        abcd[2] as i32,
+        abcd[3] as i32,
+        my,
+    );
 }
 
 /// SSE2 horizontal 8-tap dot product for warp affine (16bpc).
@@ -12462,12 +12607,26 @@ fn warp_affine_8x8_16bpc_avx2(
 ) {
     let mut mid = [[0i16; 8]; 15];
     warp_h_pass_16bpc(
-        _t, &mut mid, src, src_base, src_stride, abcd[0] as i32, abcd[1] as i32, mx,
+        _t,
+        &mut mid,
+        src,
+        src_base,
+        src_stride,
+        abcd[0] as i32,
+        abcd[1] as i32,
+        mx,
         intermediate_bits,
     );
     warp_v_pass_16bpc_put(
-        _t, dst, dst_stride, &mid, abcd[2] as i32, abcd[3] as i32, my,
-        intermediate_bits, bitdepth_max,
+        _t,
+        dst,
+        dst_stride,
+        &mid,
+        abcd[2] as i32,
+        abcd[3] as i32,
+        my,
+        intermediate_bits,
+        bitdepth_max,
     );
 }
 
@@ -12488,10 +12647,25 @@ fn warp_affine_8x8t_16bpc_avx2(
 ) {
     let mut mid = [[0i16; 8]; 15];
     warp_h_pass_16bpc(
-        _t, &mut mid, src, src_base, src_stride, abcd[0] as i32, abcd[1] as i32, mx,
+        _t,
+        &mut mid,
+        src,
+        src_base,
+        src_stride,
+        abcd[0] as i32,
+        abcd[1] as i32,
+        mx,
         intermediate_bits,
     );
-    warp_v_pass_16bpc_prep(_t, tmp, tmp_stride, &mid, abcd[2] as i32, abcd[3] as i32, my);
+    warp_v_pass_16bpc_prep(
+        _t,
+        tmp,
+        tmp_stride,
+        &mid,
+        abcd[2] as i32,
+        abcd[3] as i32,
+        my,
+    );
 }
 
 /// SIMD warp affine 8×8 put dispatch.
@@ -12528,14 +12702,30 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
     match BD::BPC {
         BPC::BPC8 => {
             warp_affine_8x8_8bpc_avx2(
-                token, dst_bytes, dst_stride, src_bytes, src_base * pixel_size, src_stride,
-                abcd, mx, my,
+                token,
+                dst_bytes,
+                dst_stride,
+                src_bytes,
+                src_base * pixel_size,
+                src_stride,
+                abcd,
+                mx,
+                my,
             );
         }
         BPC::BPC16 => {
             warp_affine_8x8_16bpc_avx2(
-                token, dst_bytes, dst_stride, src_bytes, src_base * pixel_size, src_stride,
-                abcd, mx, my, bd.get_intermediate_bits(), bd.bitdepth_max().as_::<i32>(),
+                token,
+                dst_bytes,
+                dst_stride,
+                src_bytes,
+                src_base * pixel_size,
+                src_stride,
+                abcd,
+                mx,
+                my,
+                bd.get_intermediate_bits(),
+                bd.bitdepth_max().as_::<i32>(),
             );
         }
     }
@@ -12569,14 +12759,29 @@ pub fn warp8x8t_dispatch<BD: BitDepth>(
     match BD::BPC {
         BPC::BPC8 => {
             warp_affine_8x8t_8bpc_avx2(
-                token, tmp, tmp_stride, src_bytes, src_base * pixel_size, src_stride,
-                abcd, mx, my,
+                token,
+                tmp,
+                tmp_stride,
+                src_bytes,
+                src_base * pixel_size,
+                src_stride,
+                abcd,
+                mx,
+                my,
             );
         }
         BPC::BPC16 => {
             warp_affine_8x8t_16bpc_avx2(
-                token, tmp, tmp_stride, src_bytes, src_base * pixel_size, src_stride,
-                abcd, mx, my, bd.get_intermediate_bits(),
+                token,
+                tmp,
+                tmp_stride,
+                src_bytes,
+                src_base * pixel_size,
+                src_stride,
+                abcd,
+                mx,
+                my,
+                bd.get_intermediate_bits(),
             );
         }
     }

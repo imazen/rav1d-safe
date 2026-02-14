@@ -301,14 +301,14 @@ mod asm {
             .flat_map(|a| *a)
             .filter(|name| !partial_asm_only || partial_asm_allow.contains(*name))
             .map(|file_name| {
-            let mut path = [&["src"], &asm_file_dir[..], &[file_name]]
-                .into_iter()
-                .flatten()
-                .collect::<PathBuf>();
-            path.set_extension(asm_extension);
-            println!("cargo:rerun-if-changed={}", path.to_str().unwrap());
-            path
-        });
+                let mut path = [&["src"], &asm_file_dir[..], &[file_name]]
+                    .into_iter()
+                    .flatten()
+                    .collect::<PathBuf>();
+                path.set_extension(asm_extension);
+                println!("cargo:rerun-if-changed={}", path.to_str().unwrap());
+                path
+            });
 
         let rav1dasm = "rav1dasm";
 

@@ -6395,9 +6395,7 @@ mod tests {
             let mut coeff = [0i16; 16];
             coeff[0] = 64;
             let mut dst = [128u8; 16];
-            inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
-                token, &mut dst, 4, &mut coeff, 1, 255,
-            );
+            inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(token, &mut dst, 4, &mut coeff, 1, 255);
             dst
         };
 
@@ -6406,11 +6404,12 @@ mod tests {
                 let mut coeff = [0i16; 16];
                 coeff[0] = 64;
                 let mut dst = [128u8; 16];
-                inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
-                    token, &mut dst, 4, &mut coeff, 1, 255,
-                );
+                inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(token, &mut dst, 4, &mut coeff, 1, 255);
                 assert_eq!(dst, reference, "WHT output mismatch at: {perm}");
-                assert!(coeff.iter().all(|&c| c == 0), "coeffs not zeroed at: {perm}");
+                assert!(
+                    coeff.iter().all(|&c| c == 0),
+                    "coeffs not zeroed at: {perm}"
+                );
             }
             // When token disabled, summon returns None — dispatch would fall back to scalar
         });
@@ -8721,8 +8720,7 @@ fn add_to_dst_16bpc_avx512(
 
         // AVX2 tail for remaining 8-pixel chunk
         if x + 8 <= w {
-            let d =
-                loadu_128!(<&[u16; 8]>::try_from(&dst[dst_off + x..dst_off + x + 8]).unwrap());
+            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[dst_off + x..dst_off + x + 8]).unwrap());
             let d_lo = _mm_unpacklo_epi16(d, _mm_setzero_si128());
             let d_hi = _mm_unpackhi_epi16(d, _mm_setzero_si128());
             let d32 = _mm256_set_m128i(d_hi, d_lo);
@@ -8857,7 +8855,14 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
     if let Some(t512) = crate::src::cpu::summon_avx512() {
         add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 32, bitdepth_max);
     } else {
-        add_32x32_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        add_32x32_to_dst(
+            _token,
+            &mut *dst,
+            dst_stride,
+            &tmp,
+            &mut *coeff,
+            bitdepth_max,
+        );
         return;
     }
     coeff[..1024].fill(0);
@@ -8896,7 +8901,14 @@ fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
     if let Some(t512) = crate::src::cpu::summon_avx512() {
         add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 32, bitdepth_max);
     } else {
-        add_32x32_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        add_32x32_to_dst(
+            _token,
+            &mut *dst,
+            dst_stride,
+            &tmp,
+            &mut *coeff,
+            bitdepth_max,
+        );
         return;
     }
     coeff[..1024].fill(0);
@@ -9079,9 +9091,25 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
     );
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_16bpc_avx512(t512, &mut *dst, dst_stride / 2, &tmp, 32, 32, 32, bitdepth_max);
+        add_to_dst_16bpc_avx512(
+            t512,
+            &mut *dst,
+            dst_stride / 2,
+            &tmp,
+            32,
+            32,
+            32,
+            bitdepth_max,
+        );
     } else {
-        add_32x32_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        add_32x32_to_dst_16bpc(
+            _token,
+            &mut *dst,
+            dst_stride,
+            &tmp,
+            &mut *coeff,
+            bitdepth_max,
+        );
         return;
     }
     coeff[..1024].fill(0);
@@ -9887,7 +9915,14 @@ fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
     if let Some(t512) = crate::src::cpu::summon_avx512() {
         add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 64, 64, 64, bitdepth_max);
     } else {
-        add_64x64_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        add_64x64_to_dst(
+            _token,
+            &mut *dst,
+            dst_stride,
+            &tmp,
+            &mut *coeff,
+            bitdepth_max,
+        );
         return;
     }
     coeff[..1024].fill(0);
@@ -10037,9 +10072,25 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
     );
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_16bpc_avx512(t512, &mut *dst, dst_stride / 2, &tmp, 64, 64, 64, bitdepth_max);
+        add_to_dst_16bpc_avx512(
+            t512,
+            &mut *dst,
+            dst_stride / 2,
+            &tmp,
+            64,
+            64,
+            64,
+            bitdepth_max,
+        );
     } else {
-        add_64x64_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        add_64x64_to_dst_16bpc(
+            _token,
+            &mut *dst,
+            dst_stride,
+            &tmp,
+            &mut *coeff,
+            bitdepth_max,
+        );
         return;
     }
     coeff[..1024].fill(0);
@@ -12779,9 +12830,25 @@ fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
     );
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_16bpc_avx512(t512, &mut *dst, dst_stride / 2, &tmp, 32, 32, 32, bitdepth_max);
+        add_to_dst_16bpc_avx512(
+            t512,
+            &mut *dst,
+            dst_stride / 2,
+            &tmp,
+            32,
+            32,
+            32,
+            bitdepth_max,
+        );
     } else {
-        add_32x32_to_dst_16bpc(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        add_32x32_to_dst_16bpc(
+            _token,
+            &mut *dst,
+            dst_stride,
+            &tmp,
+            &mut *coeff,
+            bitdepth_max,
+        );
         return;
     }
     coeff[..1024].fill(0);
