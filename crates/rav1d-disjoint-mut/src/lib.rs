@@ -1692,7 +1692,7 @@ mod pic_buf {
         ///
         /// # Panics
         ///
-        /// Panics if `align_offset + usable_len > vec.len()`.
+        /// Panics if `align_offset + usable_len` overflows or exceeds `vec.len()`.
         pub fn from_vec_aligned(vec: Vec<u8>, alignment: usize, usable_len: usize) -> Self {
             if usable_len == 0 {
                 return Self {
@@ -1702,8 +1702,11 @@ mod pic_buf {
                 };
             }
             let align_offset = vec.as_ptr().align_offset(alignment);
+            let region_end = align_offset.checked_add(usable_len).unwrap_or_else(|| {
+                panic!("PicBuf: aligned region ({align_offset} + {usable_len}) overflows usize")
+            });
             assert!(
-                align_offset + usable_len <= vec.len(),
+                region_end <= vec.len(),
                 "PicBuf: aligned region ({} + {}) exceeds Vec length ({})",
                 align_offset,
                 usable_len,
