@@ -326,6 +326,22 @@ mod sealed {
     impl<V: Copy, const N: usize> Sealed for [V; N] {}
     impl<V: Copy> Sealed for [V] {}
     impl<V: Copy> Sealed for Box<[V]> {}
+
+    /// Sealing trait for index/range traits.
+    ///
+    /// These implementations are part of the soundness boundary because
+    /// `DisjointMut` trusts them to return pointers matching the registered
+    /// [`Bounds`](super::Bounds).
+    pub trait IndexLike {}
+
+    impl IndexLike for usize {}
+    impl IndexLike for core::ops::Range<usize> {}
+    impl IndexLike for core::ops::RangeFrom<usize> {}
+    impl IndexLike for core::ops::RangeInclusive<usize> {}
+    impl IndexLike for core::ops::RangeTo<usize> {}
+    impl IndexLike for core::ops::RangeToInclusive<usize> {}
+    impl IndexLike for core::ops::RangeFull {}
+    impl IndexLike for (core::ops::RangeFrom<usize>, core::ops::RangeTo<usize>) {}
 }
 
 /// Convert from a mutable pointer to a collection to a mutable pointer to the
@@ -683,7 +699,13 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
 
 /// This trait is a stable implementation of [`std::slice::SliceIndex`] to allow
 /// for indexing into mutable slice raw pointers.
-pub trait DisjointMutIndex<T: ?Sized> {
+///
+/// # Sealed
+///
+/// This trait is sealed and cannot be implemented outside of this crate.
+/// `DisjointMut` relies on index implementations returning in-bounds pointers
+/// matching their registered [`Bounds`].
+pub trait DisjointMutIndex<T: ?Sized>: sealed::IndexLike {
     type Output: ?Sized;
 
     /// Returns a mutable pointer to the output at this indexed location.
@@ -698,7 +720,10 @@ pub trait DisjointMutIndex<T: ?Sized> {
 // Range translation traits
 // =============================================================================
 
-pub trait TranslateRange {
+/// Translate an index from element units to byte units.
+///
+/// This trait is sealed and cannot be implemented outside of this crate.
+pub trait TranslateRange: sealed::IndexLike {
     fn mul(&self, by: usize) -> Self;
 }
 
@@ -819,7 +844,10 @@ impl<T: SliceBounds> From<T> for Bounds {
     }
 }
 
-pub trait SliceBounds: TranslateRange + Clone {
+/// Range-like indexes supported by [`DisjointMut`].
+///
+/// This trait is sealed and cannot be implemented outside of this crate.
+pub trait SliceBounds: TranslateRange + Clone + sealed::IndexLike {
     fn to_range(&self, len: usize) -> Range<usize>;
 }
 
