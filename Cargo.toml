@@ -136,7 +136,10 @@ opt-level = 1
 
 [profile.release]
 codegen-units = 1
-panic = "abort"
+# panic = "abort" is intentionally NOT set here: a parser panic on a
+# malformed AV1 bitstream must NOT terminate the host process. Library
+# consumers (image servers, browsers, decoders) need the ability to
+# catch_unwind around decode and recover.
 lto = "fat"
 strip = false
 debug = "line-tables-only"
