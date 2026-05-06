@@ -403,7 +403,11 @@ fn ctx_norm(s: &mut MsacContext, dif: EcWin, rng: c_uint) {
     debug_assert!(rng <= 65535);
     s.dif = dif << d;
     s.rng = rng << d;
-    s.cnt = cnt - d;
+    // At EOB, `cnt - d` legitimately wraps negative; the unsigned compare
+    // below detects this and triggers a refill. With debug overflow checks
+    // (and especially with `panic = abort` in dev), the plain subtraction
+    // panics on every EOB. Use `wrapping_sub` to match dav1d's C semantics.
+    s.cnt = cnt.wrapping_sub(d);
     // unsigned compare avoids redundant refills at eob
     if (cnt as u32) < (d as u32) {
         ctx_refill(s);
