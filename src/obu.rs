@@ -2232,7 +2232,9 @@ fn parse_obus(
         data.slice_in_place(gb.byte_pos()..);
         data.slice_in_place(..gb.remaining_len());
         // Ensure tile groups are in order and sane; see 6.10.1.
-        if hdr.start > hdr.end || hdr.start != state.n_tiles {
+        let frame_hdr = state.frame_hdr.as_ref().ok_or(EINVAL)?;
+        let max_tiles = frame_hdr.tiling.cols as c_int * frame_hdr.tiling.rows as c_int;
+        if hdr.start > hdr.end || hdr.start != state.n_tiles || hdr.end >= max_tiles {
             state.tiles.clear();
             state.n_tiles = 0;
             return Err(EINVAL);
@@ -2240,6 +2242,10 @@ fn parse_obus(
         if state.tiles.try_reserve_exact(1).is_err() {
             return Err(EINVAL);
         }
+        // Bound check above guarantees `1 + hdr.end - hdr.start <= max_tiles`
+        // (with `max_tiles <= 64*64 = 4096`), so this addition cannot overflow
+        // an i32 nor exceed the per-frame tile cap that downstream code
+        // assumes (e.g. the `state.n_tiles == cols*rows` check in caller).
         state.n_tiles += 1 + hdr.end - hdr.start;
         state.tiles.push(Rav1dTileGroup {
             data: Rav1dData {
