@@ -2359,6 +2359,166 @@ fn inv_txfm_16x16_row_pass_only(
     }
 }
 
+/// ADST16 1D transform across 8 columns in parallel.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn adst16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_v: __m256i) {
+    let in0 = c[0]; let in1 = c[1]; let in2 = c[2]; let in3 = c[3];
+    let in4 = c[4]; let in5 = c[5]; let in6 = c[6]; let in7 = c[7];
+    let in8 = c[8]; let in9 = c[9]; let in10 = c[10]; let in11 = c[11];
+    let in12 = c[12]; let in13 = c[13]; let in14 = c[14]; let in15 = c[15];
+
+    // First batch of t[0..16]: each is (a*c1 + b*c2 + 2048) >> 12 ± v
+    let mut t0 = _mm256_add_epi32(mac_madd_shr::<12>(token, in15, 4091 - 4096, in0, 201, 2048), in15);
+    let mut t1 = _mm256_sub_epi32(mac_msub_shr::<12>(token, in15, 201, in0, 4091 - 4096, 2048), in0);
+    let mut t2 = _mm256_add_epi32(mac_madd_shr::<12>(token, in13, 3973 - 4096, in2, 995, 2048), in13);
+    let mut t3 = _mm256_sub_epi32(mac_msub_shr::<12>(token, in13, 995, in2, 3973 - 4096, 2048), in2);
+    let mut t4 = _mm256_add_epi32(mac_madd_shr::<12>(token, in11, 3703 - 4096, in4, 1751, 2048), in11);
+    let mut t5 = _mm256_sub_epi32(mac_msub_shr::<12>(token, in11, 1751, in4, 3703 - 4096, 2048), in4);
+    let mut t6 = mac_madd_shr::<11>(token, in9, 1645, in6, 1220, 1024);
+    let mut t7 = mac_msub_shr::<11>(token, in9, 1220, in6, 1645, 1024);
+    let mut t8 = _mm256_add_epi32(mac_madd_shr::<12>(token, in7, 2751, in8, 3035 - 4096, 2048), in8);
+    let mut t9 = _mm256_add_epi32(mac_msub_shr::<12>(token, in7, 3035 - 4096, in8, 2751, 2048), in7);
+    let mut t10 = _mm256_add_epi32(mac_madd_shr::<12>(token, in5, 2106, in10, 3513 - 4096, 2048), in10);
+    let mut t11 = _mm256_add_epi32(mac_msub_shr::<12>(token, in5, 3513 - 4096, in10, 2106, 2048), in5);
+    let mut t12 = _mm256_add_epi32(mac_madd_shr::<12>(token, in3, 1380, in12, 3857 - 4096, 2048), in12);
+    let mut t13 = _mm256_add_epi32(mac_msub_shr::<12>(token, in3, 3857 - 4096, in12, 1380, 2048), in3);
+    let mut t14 = _mm256_add_epi32(mac_madd_shr::<12>(token, in1, 601, in14, 4052 - 4096, 2048), in14);
+    let mut t15 = _mm256_add_epi32(mac_msub_shr::<12>(token, in1, 4052 - 4096, in14, 601, 2048), in1);
+
+    let t0a = clip8(token, _mm256_add_epi32(t0, t8), min_v, max_v);
+    let t1a = clip8(token, _mm256_add_epi32(t1, t9), min_v, max_v);
+    let mut t2a = clip8(token, _mm256_add_epi32(t2, t10), min_v, max_v);
+    let mut t3a = clip8(token, _mm256_add_epi32(t3, t11), min_v, max_v);
+    let mut t4a = clip8(token, _mm256_add_epi32(t4, t12), min_v, max_v);
+    let mut t5a = clip8(token, _mm256_add_epi32(t5, t13), min_v, max_v);
+    let mut t6a = clip8(token, _mm256_add_epi32(t6, t14), min_v, max_v);
+    let mut t7a = clip8(token, _mm256_add_epi32(t7, t15), min_v, max_v);
+    let mut t8a = clip8(token, _mm256_sub_epi32(t0, t8), min_v, max_v);
+    let mut t9a = clip8(token, _mm256_sub_epi32(t1, t9), min_v, max_v);
+    let mut t10a = clip8(token, _mm256_sub_epi32(t2, t10), min_v, max_v);
+    let mut t11a = clip8(token, _mm256_sub_epi32(t3, t11), min_v, max_v);
+    let mut t12a = clip8(token, _mm256_sub_epi32(t4, t12), min_v, max_v);
+    let mut t13a = clip8(token, _mm256_sub_epi32(t5, t13), min_v, max_v);
+    let mut t14a = clip8(token, _mm256_sub_epi32(t6, t14), min_v, max_v);
+    let mut t15a = clip8(token, _mm256_sub_epi32(t7, t15), min_v, max_v);
+
+    t8 = _mm256_add_epi32(mac_madd_shr::<12>(token, t8a, 4017 - 4096, t9a, 799, 2048), t8a);
+    t9 = _mm256_sub_epi32(mac_msub_shr::<12>(token, t8a, 799, t9a, 4017 - 4096, 2048), t9a);
+    t10 = _mm256_add_epi32(mac_madd_shr::<12>(token, t10a, 2276, t11a, 3406 - 4096, 2048), t11a);
+    t11 = _mm256_add_epi32(mac_msub_shr::<12>(token, t10a, 3406 - 4096, t11a, 2276, 2048), t10a);
+    t12 = _mm256_add_epi32(mac_msub_shr::<12>(token, t13a, 4017 - 4096, t12a, 799, 2048), t13a);
+    t13 = _mm256_add_epi32(mac_madd_shr::<12>(token, t13a, 799, t12a, 4017 - 4096, 2048), t12a);
+    t14 = _mm256_sub_epi32(mac_msub_shr::<12>(token, t15a, 2276, t14a, 3406 - 4096, 2048), t14a);
+    t15 = _mm256_add_epi32(mac_madd_shr::<12>(token, t15a, 3406 - 4096, t14a, 2276, 2048), t15a);
+
+    t0 = clip8(token, _mm256_add_epi32(t0a, t4a), min_v, max_v);
+    t1 = clip8(token, _mm256_add_epi32(t1a, t5a), min_v, max_v);
+    t2 = clip8(token, _mm256_add_epi32(t2a, t6a), min_v, max_v);
+    t3 = clip8(token, _mm256_add_epi32(t3a, t7a), min_v, max_v);
+    t4 = clip8(token, _mm256_sub_epi32(t0a, t4a), min_v, max_v);
+    t5 = clip8(token, _mm256_sub_epi32(t1a, t5a), min_v, max_v);
+    t6 = clip8(token, _mm256_sub_epi32(t2a, t6a), min_v, max_v);
+    t7 = clip8(token, _mm256_sub_epi32(t3a, t7a), min_v, max_v);
+    t8a = clip8(token, _mm256_add_epi32(t8, t12), min_v, max_v);
+    t9a = clip8(token, _mm256_add_epi32(t9, t13), min_v, max_v);
+    t10a = clip8(token, _mm256_add_epi32(t10, t14), min_v, max_v);
+    t11a = clip8(token, _mm256_add_epi32(t11, t15), min_v, max_v);
+    t12a = clip8(token, _mm256_sub_epi32(t8, t12), min_v, max_v);
+    t13a = clip8(token, _mm256_sub_epi32(t9, t13), min_v, max_v);
+    t14a = clip8(token, _mm256_sub_epi32(t10, t14), min_v, max_v);
+    t15a = clip8(token, _mm256_sub_epi32(t11, t15), min_v, max_v);
+
+    t4a = _mm256_add_epi32(mac_madd_shr::<12>(token, t4, 3784 - 4096, t5, 1567, 2048), t4);
+    t5a = _mm256_sub_epi32(mac_msub_shr::<12>(token, t4, 1567, t5, 3784 - 4096, 2048), t5);
+    t6a = _mm256_add_epi32(mac_msub_shr::<12>(token, t7, 3784 - 4096, t6, 1567, 2048), t7);
+    t7a = _mm256_add_epi32(mac_madd_shr::<12>(token, t7, 1567, t6, 3784 - 4096, 2048), t6);
+    t12 = _mm256_add_epi32(mac_madd_shr::<12>(token, t12a, 3784 - 4096, t13a, 1567, 2048), t12a);
+    t13 = _mm256_sub_epi32(mac_msub_shr::<12>(token, t12a, 1567, t13a, 3784 - 4096, 2048), t13a);
+    t14 = _mm256_add_epi32(mac_msub_shr::<12>(token, t15a, 3784 - 4096, t14a, 1567, 2048), t15a);
+    t15 = _mm256_add_epi32(mac_madd_shr::<12>(token, t15a, 1567, t14a, 3784 - 4096, 2048), t14a);
+
+    let zero = _mm256_setzero_si256();
+    // Outputs (some negated)
+    let out0 = clip8(token, _mm256_add_epi32(t0, t2), min_v, max_v);
+    let out15 = _mm256_sub_epi32(zero, clip8(token, _mm256_add_epi32(t1, t3), min_v, max_v));
+    let t2a_new = clip8(token, _mm256_sub_epi32(t0, t2), min_v, max_v);
+    let t3a_new = clip8(token, _mm256_sub_epi32(t1, t3), min_v, max_v);
+    let out3 = _mm256_sub_epi32(zero, clip8(token, _mm256_add_epi32(t4a, t6a), min_v, max_v));
+    let out12 = clip8(token, _mm256_add_epi32(t5a, t7a), min_v, max_v);
+    let t6_new = clip8(token, _mm256_sub_epi32(t4a, t6a), min_v, max_v);
+    let t7_new = clip8(token, _mm256_sub_epi32(t5a, t7a), min_v, max_v);
+    let out1 = _mm256_sub_epi32(zero, clip8(token, _mm256_add_epi32(t8a, t10a), min_v, max_v));
+    let out14 = clip8(token, _mm256_add_epi32(t9a, t11a), min_v, max_v);
+    let t10_new = clip8(token, _mm256_sub_epi32(t8a, t10a), min_v, max_v);
+    let t11_new = clip8(token, _mm256_sub_epi32(t9a, t11a), min_v, max_v);
+    let out2 = clip8(token, _mm256_add_epi32(t12, t14), min_v, max_v);
+    let out13 = _mm256_sub_epi32(zero, clip8(token, _mm256_add_epi32(t13, t15), min_v, max_v));
+    let t14_new = clip8(token, _mm256_sub_epi32(t12, t14), min_v, max_v);
+    let t15_new = clip8(token, _mm256_sub_epi32(t13, t15), min_v, max_v);
+
+    // ((a +/- b) * 181 + 128) >> 8
+    let mul181_sum = |a: __m256i, b: __m256i| {
+        let s = _mm256_add_epi32(a, b);
+        _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(s, _mm256_set1_epi32(181)),
+            _mm256_set1_epi32(128),
+        ))
+    };
+    let mul181_diff = |a: __m256i, b: __m256i| {
+        let s = _mm256_sub_epi32(a, b);
+        _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(s, _mm256_set1_epi32(181)),
+            _mm256_set1_epi32(128),
+        ))
+    };
+
+    let out7 = _mm256_sub_epi32(zero, mul181_sum(t2a_new, t3a_new));
+    let out8 = mul181_diff(t2a_new, t3a_new);
+    let out4 = mul181_sum(t6_new, t7_new);
+    let out11 = _mm256_sub_epi32(zero, mul181_diff(t6_new, t7_new));
+    let out6 = mul181_sum(t10_new, t11_new);
+    let out9 = _mm256_sub_epi32(zero, mul181_diff(t10_new, t11_new));
+    let out5 = _mm256_sub_epi32(zero, mul181_sum(t14_new, t15_new));
+    let out10 = mul181_diff(t14_new, t15_new);
+
+    c[0] = out0;
+    c[1] = out1;
+    c[2] = out2;
+    c[3] = out3;
+    c[4] = out4;
+    c[5] = out5;
+    c[6] = out6;
+    c[7] = out7;
+    c[8] = out8;
+    c[9] = out9;
+    c[10] = out10;
+    c[11] = out11;
+    c[12] = out12;
+    c[13] = out13;
+    c[14] = out14;
+    c[15] = out15;
+}
+
+/// Run adst16 1D column transform over 16x16 row-major buffer.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn adst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i32) {
+    let min_v = _mm256_set1_epi32(min);
+    let max_v = _mm256_set1_epi32(max);
+    for cx_chunk in 0..2 {
+        let cx = cx_chunk * 8;
+        let mut v = [_mm256_setzero_si256(); 16];
+        for i in 0..16 {
+            v[i] = loadu_256!(&tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8]);
+        }
+        adst16_1d_cols8(token, &mut v, min_v, max_v);
+        for i in 0..16 {
+            storeu_256!(&mut tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8], v[i]);
+        }
+    }
+}
+
 /// Run dct16 1D column transform over 16x16 row-major buffer (16 cols, 16 rows).
 /// Processes 8 cols at a time, twice.
 #[cfg(target_arch = "x86_64")]
@@ -2859,15 +3019,15 @@ impl_16x16_transform_simd_col!(
     adst16_1d,
     dct16x16_cols_simd
 );
-impl_16x16_transform!(
+impl_16x16_transform_simd_col!(
     inv_txfm_add_dct_adst_16x16_8bpc_avx2_inner,
     dct16_1d,
-    adst16_1d
+    adst16x16_cols_simd
 );
-impl_16x16_transform!(
+impl_16x16_transform_simd_col!(
     inv_txfm_add_adst_adst_16x16_8bpc_avx2_inner,
     adst16_1d,
-    adst16_1d
+    adst16x16_cols_simd
 );
 impl_16x16_transform_simd_col!(
     inv_txfm_add_flipadst_dct_16x16_8bpc_avx2_inner,
@@ -2889,10 +3049,10 @@ impl_16x16_transform!(
     adst16_1d,
     flipadst16_1d
 );
-impl_16x16_transform!(
+impl_16x16_transform_simd_col!(
     inv_txfm_add_flipadst_adst_16x16_8bpc_avx2_inner,
     flipadst16_1d,
-    adst16_1d
+    adst16x16_cols_simd
 );
 impl_16x16_transform_simd_col!(
     inv_txfm_add_identity_dct_16x16_8bpc_avx2_inner,
@@ -2904,10 +3064,10 @@ impl_16x16_transform!(
     dct16_1d,
     identity16_1d
 );
-impl_16x16_transform!(
+impl_16x16_transform_simd_col!(
     inv_txfm_add_identity_adst_16x16_8bpc_avx2_inner,
     identity16_1d,
-    adst16_1d
+    adst16x16_cols_simd
 );
 impl_16x16_transform!(
     inv_txfm_add_adst_identity_16x16_8bpc_avx2_inner,
