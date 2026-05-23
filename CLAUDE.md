@@ -67,9 +67,11 @@ Progress vs 2026-02-13 baseline (Checked):
 
 Optimizations landed (all in safe checked, `#![forbid(unsafe_code)]`):
 - `cfl_pred` SIMD (8bpc+16bpc)
-- DCT column-pass SIMD wired into 8x8, 16x16, 32x32 dct_dct (square)
-- DCT column-pass SIMD wired into 8x16, 16x8, 16x32, 32x16, 8x32, 32x8, 64x16, 64x32 dct_dct (rectangular)
-- ADST / Identity / FlipADST column SIMD wired into all 14 non-trivial 16x16 transform combinations
+- DCT column-pass SIMD wired into 8x8 (both bpcs), 16x16 (both bpcs), 32x32 dct_dct (square)
+- DCT column-pass SIMD wired into 8x16, 16x8, 16x32, 32x16, 8x32, 32x8, 16x4, 8x4, 64x16, 64x32 dct_dct + 16bpc equivalents (rectangular)
+- ADST / Identity / FlipADST column SIMD wired into all 14 non-trivial 16x16 transform combinations (both bpcs)
+- ADST / FlipADST / Identity column SIMD wired into all 14 non-trivial 8x8 transform combinations (8bpc)
+- Identity column SIMD inlined into identity_identity rectangular 8x32/32x8, 16x32/32x16 (both bpcs) plus 16bpc identity rect variants
 
 Remaining biggest gaps (without unsafe):
 1. **Loopfilter** — `loop_filter_4_8bpc` is fully scalar at 10% of profile vs <1% ASM (biggest single remaining win, ~500-1000 lines of SIMD work)
