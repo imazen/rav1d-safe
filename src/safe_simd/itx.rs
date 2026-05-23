@@ -2500,6 +2500,32 @@ fn adst16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_
     c[15] = out15;
 }
 
+/// Run identity16 1D column transform over 16x16 row-major buffer (8 cols at a time).
+/// identity16: out = 2*in + ((in*1697 + 1024) >> 11). No clipping.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn identity16x16_cols_simd(
+    _token: Desktop64,
+    tmp: &mut [i32; 256],
+    _min: i32,
+    _max: i32,
+) {
+    let c1697 = _mm256_set1_epi32(1697);
+    let c1024 = _mm256_set1_epi32(1024);
+    for cx_chunk in 0..2 {
+        let cx = cx_chunk * 8;
+        for i in 0..16 {
+            let v = loadu_256!(&tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8]);
+            // 2*v + ((v*1697 + 1024) >> 11)
+            let two_v = _mm256_slli_epi32::<1>(v);
+            let mul = _mm256_mullo_epi32(v, c1697);
+            let shifted = _mm256_srai_epi32::<11>(_mm256_add_epi32(mul, c1024));
+            let result = _mm256_add_epi32(two_v, shifted);
+            storeu_256!(&mut tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8], result);
+        }
+    }
+}
+
 /// Run adst16 1D column transform over 16x16 row-major buffer.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
@@ -3059,30 +3085,30 @@ impl_16x16_transform_simd_col!(
     identity16_1d,
     dct16x16_cols_simd
 );
-impl_16x16_transform!(
+impl_16x16_transform_simd_col!(
     inv_txfm_add_dct_identity_16x16_8bpc_avx2_inner,
     dct16_1d,
-    identity16_1d
+    identity16x16_cols_simd
 );
 impl_16x16_transform_simd_col!(
     inv_txfm_add_identity_adst_16x16_8bpc_avx2_inner,
     identity16_1d,
     adst16x16_cols_simd
 );
-impl_16x16_transform!(
+impl_16x16_transform_simd_col!(
     inv_txfm_add_adst_identity_16x16_8bpc_avx2_inner,
     adst16_1d,
-    identity16_1d
+    identity16x16_cols_simd
 );
 impl_16x16_transform!(
     inv_txfm_add_identity_flipadst_16x16_8bpc_avx2_inner,
     identity16_1d,
     flipadst16_1d
 );
-impl_16x16_transform!(
+impl_16x16_transform_simd_col!(
     inv_txfm_add_flipadst_identity_16x16_8bpc_avx2_inner,
     flipadst16_1d,
-    identity16_1d
+    identity16x16_cols_simd
 );
 
 // Generate FFI wrappers
