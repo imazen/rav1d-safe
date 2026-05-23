@@ -4878,6 +4878,170 @@ pub unsafe extern "C" fn ipred_filter_16bpc_avx2(
 }
 
 // ============================================================================
+// CFL Prediction (chroma-from-luma) — SIMD
+// ============================================================================
+
+/// CFL prediction for 8bpc — AVX2.
+///
+/// For each pixel: `dst = clip(dc + apply_sign((|alpha*ac| + 32) >> 6, alpha*ac), 0, 255)`.
+/// Uses i32 SIMD (8 pixels per chunk) since `alpha*ac` can exceed i16 range for HBD.
+/// Here we share the same code shape for both bit depths (caller selects the inner fn).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn cfl_pred_8bpc_inner(
+    _token: Desktop64,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    ac: &[i16],
+    width: usize,
+    height: usize,
+    dc: i32,
+    alpha: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let alpha_v = _mm256_set1_epi32(alpha);
+    let dc_v = _mm256_set1_epi32(dc);
+    let c32 = _mm256_set1_epi32(32);
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let ac_off = y * width;
+
+        if width >= 8 {
+            let mut x = 0;
+            while x + 8 <= width {
+                // Load 8 i16, widen to 8 i32
+                let ac128 = loadu_128!(&ac[ac_off + x..ac_off + x + 8], [i16; 8]);
+                let ac32 = _mm256_cvtepi16_epi32(ac128);
+
+                let diff = _mm256_mullo_epi32(ac32, alpha_v);
+                let abs_diff = _mm256_abs_epi32(diff);
+                let plus32 = _mm256_add_epi32(abs_diff, c32);
+                let shifted = _mm256_srli_epi32::<6>(plus32);
+                let signed = _mm256_sign_epi32(shifted, diff);
+                let result = _mm256_add_epi32(dc_v, signed); // 8 i32
+
+                // Pack 8 i32 -> 8 u8 with saturation [0, 255]
+                // packus_epi32 lane-local: [r[0..3],r[0..3],r[4..7],r[4..7]] in 16 u16
+                let p16 = _mm256_packus_epi32(result, result);
+                // Move qword 2 (r[4..7]) into qword 1: imm = 0b_00_00_10_00
+                let p16_ordered = _mm256_permute4x64_epi64::<0b_00_00_10_00>(p16);
+                let p16_lo = _mm256_castsi256_si128(p16_ordered); // 8 u16 in order
+                let p8 = _mm_packus_epi16(p16_lo, p16_lo); // low 8 bytes = result
+                // Store low 8 bytes
+                let dst_chunk: &mut [u8; 8] = (&mut dst[row_off + x..row_off + x + 8])
+                    .try_into()
+                    .unwrap();
+                safe_unaligned_simd::x86_64::_mm_storeu_si64(dst_chunk, p8);
+                x += 8;
+            }
+        } else if width == 4 {
+            // Load 4 i16 into a padded buffer (zero high lanes)
+            let mut buf = [0i16; 8];
+            buf[..4].copy_from_slice(&ac[ac_off..ac_off + 4]);
+            let ac128 = loadu_128!(&buf);
+            let ac32 = _mm256_cvtepi16_epi32(ac128);
+
+            let diff = _mm256_mullo_epi32(ac32, alpha_v);
+            let abs_diff = _mm256_abs_epi32(diff);
+            let plus32 = _mm256_add_epi32(abs_diff, c32);
+            let shifted = _mm256_srli_epi32::<6>(plus32);
+            let signed = _mm256_sign_epi32(shifted, diff);
+            let result = _mm256_add_epi32(dc_v, signed);
+
+            // Pack and grab low 4 bytes
+            let p16 = _mm256_packus_epi32(result, result);
+            let p16_lo = _mm256_castsi256_si128(p16); // First 4 u16 = r[0..3]
+            let p8 = _mm_packus_epi16(p16_lo, p16_lo); // low 4 bytes = r[0..3]
+            let dst_chunk: &mut [u8; 4] = (&mut dst[row_off..row_off + 4]).try_into().unwrap();
+            safe_unaligned_simd::x86_64::_mm_storeu_si32(dst_chunk, p8);
+        }
+    }
+}
+
+/// CFL prediction for 16bpc — AVX2.
+///
+/// Same algorithm as 8bpc but output is u16; clip to `bitdepth_max`.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn cfl_pred_16bpc_inner(
+    _token: Desktop64,
+    dst: &mut [u8], // raw bytes; pairs interpreted as u16 little-endian
+    dst_base: usize,
+    stride: isize,
+    ac: &[i16],
+    width: usize,
+    height: usize,
+    dc: i32,
+    alpha: i32,
+    bitdepth_max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let alpha_v = _mm256_set1_epi32(alpha);
+    let dc_v = _mm256_set1_epi32(dc);
+    let c32 = _mm256_set1_epi32(32);
+    let max_v = _mm256_set1_epi32(bitdepth_max);
+    let zero_v = _mm256_setzero_si256();
+
+    for y in 0..height {
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let ac_off = y * width;
+
+        if width >= 8 {
+            let mut x = 0;
+            while x + 8 <= width {
+                let ac128 = loadu_128!(&ac[ac_off + x..ac_off + x + 8], [i16; 8]);
+                let ac32 = _mm256_cvtepi16_epi32(ac128);
+
+                let diff = _mm256_mullo_epi32(ac32, alpha_v);
+                let abs_diff = _mm256_abs_epi32(diff);
+                let plus32 = _mm256_add_epi32(abs_diff, c32);
+                let shifted = _mm256_srli_epi32::<6>(plus32);
+                let signed = _mm256_sign_epi32(shifted, diff);
+                let mut result = _mm256_add_epi32(dc_v, signed);
+                // Clip to [0, bitdepth_max]
+                result = _mm256_max_epi32(result, zero_v);
+                result = _mm256_min_epi32(result, max_v);
+
+                // Pack 8 i32 -> 8 u16 (saturating to u16 range, already clipped to bitdepth_max).
+                let p16 = _mm256_packus_epi32(result, result);
+                let p16_ordered = _mm256_permute4x64_epi64::<0b_00_00_10_00>(p16);
+                let p16_lo = _mm256_castsi256_si128(p16_ordered); // 8 u16 in order
+                // Store 16 bytes (8 u16) at dst[row_off + x*2 ..]
+                let byte_x = x * 2;
+                let dst_chunk: &mut [u8; 16] =
+                    (&mut dst[row_off + byte_x..row_off + byte_x + 16])
+                        .try_into()
+                        .unwrap();
+                storeu_128!(dst_chunk, p16_lo);
+                x += 8;
+            }
+        } else if width == 4 {
+            let mut buf = [0i16; 8];
+            buf[..4].copy_from_slice(&ac[ac_off..ac_off + 4]);
+            let ac128 = loadu_128!(&buf);
+            let ac32 = _mm256_cvtepi16_epi32(ac128);
+
+            let diff = _mm256_mullo_epi32(ac32, alpha_v);
+            let abs_diff = _mm256_abs_epi32(diff);
+            let plus32 = _mm256_add_epi32(abs_diff, c32);
+            let shifted = _mm256_srli_epi32::<6>(plus32);
+            let signed = _mm256_sign_epi32(shifted, diff);
+            let mut result = _mm256_add_epi32(dc_v, signed);
+            result = _mm256_max_epi32(result, zero_v);
+            result = _mm256_min_epi32(result, max_v);
+
+            let p16 = _mm256_packus_epi32(result, result);
+            let p16_lo = _mm256_castsi256_si128(p16); // First 4 u16 = r[0..3]
+            // Store 8 bytes (4 u16)
+            let dst_chunk: &mut [u8; 8] = (&mut dst[row_off..row_off + 8]).try_into().unwrap();
+            safe_unaligned_simd::x86_64::_mm_storeu_si64(dst_chunk, p16_lo);
+        }
+    }
+}
+
+// ============================================================================
 // Safe dispatch wrapper for x86_64 AVX2
 // ============================================================================
 
@@ -5542,4 +5706,67 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
             true
         },
     ) // with_pixel_guard_mut
+}
+
+/// Safe dispatch for CFL prediction. Returns true if SIMD was used.
+///
+/// Operates on `width * height` AC coefficients from `ac`, computing
+/// `dst = clip(dc + signed_round((alpha * ac) / 64), 0, bitdepth_max)`.
+#[cfg(target_arch = "x86_64")]
+pub fn cfl_pred_dispatch<BD: BitDepth>(
+    dst: PicOffset,
+    width: c_int,
+    height: c_int,
+    dc: c_int,
+    ac: &[i16],
+    alpha: c_int,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::AsPrimitive;
+    use crate::include::common::bitdepth::BPC;
+
+    let Some(token) = crate::src::cpu::summon_avx2() else {
+        return false;
+    };
+
+    let w = width as usize;
+    let h = height as usize;
+    // Only handle widths we have SIMD paths for (4, 8, 16, 32, 64).
+    if !(w == 4 || w == 8 || w == 16 || w == 32 || w == 64) {
+        return false;
+    }
+
+    let ac_slice = &ac[..w * h];
+
+    crate::include::dav1d::picture::with_pixel_guard_mut::<BD, _>(
+        &dst,
+        w,
+        h,
+        |dst_bytes, dst_base_bytes, byte_stride| match BD::BPC {
+            BPC::BPC8 => cfl_pred_8bpc_inner(
+                token,
+                dst_bytes,
+                dst_base_bytes,
+                byte_stride,
+                ac_slice,
+                w,
+                h,
+                dc,
+                alpha,
+            ),
+            BPC::BPC16 => cfl_pred_16bpc_inner(
+                token,
+                dst_bytes,
+                dst_base_bytes,
+                byte_stride,
+                ac_slice,
+                w,
+                h,
+                dc,
+                alpha,
+                bd.bitdepth_max().as_::<i32>(),
+            ),
+        },
+    );
+    true
 }
