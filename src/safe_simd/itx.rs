@@ -1418,9 +1418,18 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
         }
     }
 
-    // Column transform (in-place, row-major with stride 8)
-    for x in 0..8 {
-        dct8_1d(&mut tmp[x..], 8, col_clip_min, col_clip_max);
+    // Column transform: SIMD across 8 columns (single chunk)
+    {
+        let min_v = _mm256_set1_epi32(col_clip_min);
+        let max_v = _mm256_set1_epi32(col_clip_max);
+        let mut v = [_mm256_setzero_si256(); 8];
+        for i in 0..8 {
+            v[i] = loadu_256!(&tmp[i * 8..i * 8 + 8], [i32; 8]);
+        }
+        dct8_1d_cols8(_token, &mut v, min_v, max_v);
+        for i in 0..8 {
+            storeu_256!(&mut tmp[i * 8..i * 8 + 8], [i32; 8], v[i]);
+        }
     }
 
     // Add to destination with SIMD
@@ -1552,9 +1561,18 @@ fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
         }
     }
 
-    // Column transform (in-place, row-major with stride 8)
-    for x in 0..8 {
-        dct8_1d(&mut tmp[x..], 8, col_clip_min, col_clip_max);
+    // Column transform: SIMD across 8 columns (single chunk)
+    {
+        let min_v = _mm256_set1_epi32(col_clip_min);
+        let max_v = _mm256_set1_epi32(col_clip_max);
+        let mut v = [_mm256_setzero_si256(); 8];
+        for i in 0..8 {
+            v[i] = loadu_256!(&tmp[i * 8..i * 8 + 8], [i32; 8]);
+        }
+        dct8_1d_cols8(_token, &mut v, min_v, max_v);
+        for i in 0..8 {
+            storeu_256!(&mut tmp[i * 8..i * 8 + 8], [i32; 8], v[i]);
+        }
     }
 
     // Add to destination with SIMD (16bpc = u16 pixels)
