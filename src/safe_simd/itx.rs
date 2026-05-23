@@ -13340,46 +13340,97 @@ macro_rules! impl_16x16_transform_16bpc {
     };
 }
 
+/// 16bpc 16x16 transform variant: scalar row + SIMD col pass.
+/// Used for transforms where col_fn has a matching `*16x16_cols_simd` helper.
+macro_rules! impl_16x16_transform_16bpc_simd_col {
+    ($name:ident, $row_fn:ident, $simd_col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[arcane]
+        pub fn $name(
+            _token: Desktop64,
+            dst: &mut [u16],
+            dst_stride: usize,
+            coeff: &mut [i16],
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
+            let stride_u16 = dst_stride / 2;
+            const MIN: i32 = i32::MIN;
+            const MAX: i32 = i32::MAX;
+
+            // Row pass: contiguous stride=1 over 16-element row
+            let mut tmp = [0i32; 256];
+            for y in 0..16 {
+                let mut row = [0i32; 16];
+                for x in 0..16 {
+                    row[x] = coeff[y * 16 + x] as i32;
+                }
+                $row_fn(&mut row, 1, MIN, MAX);
+                for x in 0..16 {
+                    tmp[y * 16 + x] = row[x];
+                }
+            }
+
+            // SIMD column transform (in-place on row-major tmp)
+            $simd_col_fn(_token, &mut tmp, MIN, MAX);
+
+            // Add to destination with (val + 8) >> 4 rounding
+            for y in 0..16 {
+                let dst_off = y * stride_u16;
+                for x in 0..16 {
+                    let pixel = dst[dst_off + x] as i32;
+                    let val = pixel + ((tmp[y * 16 + x] + 8) >> 4);
+                    dst[dst_off + x] = val.clamp(0, bitdepth_max) as u16;
+                }
+            }
+
+            coeff[..256].fill(0);
+        }
+    };
+}
+
 // Generate key 16x16 ADST combinations for 16bpc
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_simd_col!(
     inv_txfm_add_adst_dct_16x16_16bpc_avx2_inner,
     adst16_1d,
-    dct16_1d
+    dct16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_simd_col!(
     inv_txfm_add_dct_adst_16x16_16bpc_avx2_inner,
     dct16_1d,
-    adst16_1d
+    adst16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_simd_col!(
     inv_txfm_add_adst_adst_16x16_16bpc_avx2_inner,
     adst16_1d,
-    adst16_1d
+    adst16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_simd_col!(
     inv_txfm_add_flipadst_dct_16x16_16bpc_avx2_inner,
     flipadst16_1d,
-    dct16_1d
+    dct16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_simd_col!(
     inv_txfm_add_dct_flipadst_16x16_16bpc_avx2_inner,
     dct16_1d,
-    flipadst16_1d
+    flipadst16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_simd_col!(
     inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2_inner,
     flipadst16_1d,
-    flipadst16_1d
+    flipadst16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_simd_col!(
     inv_txfm_add_adst_flipadst_16x16_16bpc_avx2_inner,
     adst16_1d,
-    flipadst16_1d
+    flipadst16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_simd_col!(
     inv_txfm_add_flipadst_adst_16x16_16bpc_avx2_inner,
     flipadst16_1d,
-    adst16_1d
+    adst16x16_cols_simd
 );
 
 // FFI wrappers for 16x16 16bpc transforms
