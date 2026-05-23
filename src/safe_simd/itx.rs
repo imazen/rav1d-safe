@@ -2388,8 +2388,8 @@ fn adst16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_
 
     let t0a = clip8(token, _mm256_add_epi32(t0, t8), min_v, max_v);
     let t1a = clip8(token, _mm256_add_epi32(t1, t9), min_v, max_v);
-    let mut t2a = clip8(token, _mm256_add_epi32(t2, t10), min_v, max_v);
-    let mut t3a = clip8(token, _mm256_add_epi32(t3, t11), min_v, max_v);
+    let t2a = clip8(token, _mm256_add_epi32(t2, t10), min_v, max_v);
+    let t3a = clip8(token, _mm256_add_epi32(t3, t11), min_v, max_v);
     let mut t4a = clip8(token, _mm256_add_epi32(t4, t12), min_v, max_v);
     let mut t5a = clip8(token, _mm256_add_epi32(t5, t13), min_v, max_v);
     let mut t6a = clip8(token, _mm256_add_epi32(t6, t14), min_v, max_v);
@@ -2948,7 +2948,11 @@ fn add_16x16_to_dst(
 // 16x16 ADST TRANSFORM VARIANTS
 // ============================================================================
 
-/// Macro to generate 16x16 transform inner functions
+/// Macro to generate 16x16 transform inner functions (legacy, all-scalar).
+/// Currently unused — every call site now uses `impl_16x16_transform_simd_col!`.
+/// Kept as a reference for the structure and for any future 16bpc or rectangular
+/// transforms that need both row+col scalar.
+#[allow(unused_macros)]
 macro_rules! impl_16x16_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
