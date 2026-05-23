@@ -13253,46 +13253,105 @@ macro_rules! impl_8x8_transform_16bpc {
     };
 }
 
-// Generate all 8x8 ADST/FlipADST combinations for 16bpc
-impl_8x8_transform_16bpc!(
+/// 8x8 16bpc variant with SIMD column pass.
+macro_rules! impl_8x8_transform_16bpc_simd_col {
+    ($name:ident, $row_fn:ident, $simd_col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[arcane]
+        pub fn $name(
+            _token: Desktop64,
+            dst: &mut [u16],
+            dst_stride: usize,
+            coeff: &mut [i16],
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
+            let stride_u16 = dst_stride / 2;
+            const MIN: i32 = i32::MIN;
+            const MAX: i32 = i32::MAX;
+
+            let mut tmp = [0i32; 64];
+            for y in 0..8 {
+                let (o0, o1, o2, o3, o4, o5, o6, o7) = $row_fn(
+                    coeff[y * 8] as i32, coeff[y * 8 + 1] as i32,
+                    coeff[y * 8 + 2] as i32, coeff[y * 8 + 3] as i32,
+                    coeff[y * 8 + 4] as i32, coeff[y * 8 + 5] as i32,
+                    coeff[y * 8 + 6] as i32, coeff[y * 8 + 7] as i32,
+                    MIN, MAX,
+                );
+                tmp[y * 8] = o0; tmp[y * 8 + 1] = o1; tmp[y * 8 + 2] = o2; tmp[y * 8 + 3] = o3;
+                tmp[y * 8 + 4] = o4; tmp[y * 8 + 5] = o5; tmp[y * 8 + 6] = o6; tmp[y * 8 + 7] = o7;
+            }
+
+            {
+                let min_v = _mm256_set1_epi32(MIN);
+                let max_v = _mm256_set1_epi32(MAX);
+                let mut v = [_mm256_setzero_si256(); 8];
+                for i in 0..8 {
+                    v[i] = loadu_256!(&tmp[i * 8..i * 8 + 8], [i32; 8]);
+                }
+                $simd_col_fn(_token, &mut v, min_v, max_v);
+                for i in 0..8 {
+                    storeu_256!(&mut tmp[i * 8..i * 8 + 8], [i32; 8], v[i]);
+                }
+            }
+
+            for y in 0..8 {
+                let dst_off = y * stride_u16;
+                for x in 0..8 {
+                    let pixel = dst[dst_off + x] as i32;
+                    let val = pixel + ((tmp[y * 8 + x] + 8) >> 4);
+                    dst[dst_off + x] = val.clamp(0, bitdepth_max) as u16;
+                }
+            }
+
+            coeff[..64].fill(0);
+        }
+    };
+}
+
+// Generate all 8x8 ADST/FlipADST combinations for 16bpc (SIMD col)
+impl_8x8_transform_16bpc_simd_col!(
     inv_txfm_add_adst_dct_8x8_16bpc_avx2_inner,
     adst8_1d_scalar,
-    dct8_1d_scalar
+    dct8_1d_cols8
 );
-impl_8x8_transform_16bpc!(
+impl_8x8_transform_16bpc_simd_col!(
     inv_txfm_add_dct_adst_8x8_16bpc_avx2_inner,
     dct8_1d_scalar,
-    adst8_1d_scalar
+    adst8_1d_cols8
 );
-impl_8x8_transform_16bpc!(
+impl_8x8_transform_16bpc_simd_col!(
     inv_txfm_add_adst_adst_8x8_16bpc_avx2_inner,
     adst8_1d_scalar,
-    adst8_1d_scalar
+    adst8_1d_cols8
 );
-impl_8x8_transform_16bpc!(
+impl_8x8_transform_16bpc_simd_col!(
     inv_txfm_add_flipadst_dct_8x8_16bpc_avx2_inner,
     flipadst8_1d_scalar,
-    dct8_1d_scalar
+    dct8_1d_cols8
 );
-impl_8x8_transform_16bpc!(
+impl_8x8_transform_16bpc_simd_col!(
     inv_txfm_add_dct_flipadst_8x8_16bpc_avx2_inner,
     dct8_1d_scalar,
-    flipadst8_1d_scalar
+    flipadst8_1d_cols8
 );
-impl_8x8_transform_16bpc!(
+impl_8x8_transform_16bpc_simd_col!(
     inv_txfm_add_flipadst_flipadst_8x8_16bpc_avx2_inner,
     flipadst8_1d_scalar,
-    flipadst8_1d_scalar
+    flipadst8_1d_cols8
 );
-impl_8x8_transform_16bpc!(
+impl_8x8_transform_16bpc_simd_col!(
     inv_txfm_add_adst_flipadst_8x8_16bpc_avx2_inner,
     adst8_1d_scalar,
-    flipadst8_1d_scalar
+    flipadst8_1d_cols8
 );
-impl_8x8_transform_16bpc!(
+impl_8x8_transform_16bpc_simd_col!(
     inv_txfm_add_flipadst_adst_8x8_16bpc_avx2_inner,
     flipadst8_1d_scalar,
-    adst8_1d_scalar
+    adst8_1d_cols8
 );
 
 // FFI wrappers for 8x8 16bpc transforms
