@@ -6588,9 +6588,18 @@ fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
         }
     }
 
-    // Column transform (32 elements each, 8 columns)
-    for x in 0..8 {
-        dct32_1d(&mut tmp[x..], 8, col_clip_min, col_clip_max);
+    // Column transform: SIMD across 8 columns, 32 rows
+    {
+        let min_v = _mm256_set1_epi32(col_clip_min);
+        let max_v = _mm256_set1_epi32(col_clip_max);
+        let mut v = [_mm256_setzero_si256(); 32];
+        for i in 0..32 {
+            v[i] = loadu_256!(&tmp[i * 8..i * 8 + 8], [i32; 8]);
+        }
+        dct32_1d_cols8(_token, &mut v, min_v, max_v);
+        for i in 0..32 {
+            storeu_256!(&mut tmp[i * 8..i * 8 + 8], [i32; 8], v[i]);
+        }
     }
 
     // Add to destination
@@ -6676,9 +6685,21 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
         }
     }
 
-    // Column transform (8 elements each, 32 columns)
-    for x in 0..32 {
-        dct8_1d(&mut tmp[x..], 32, col_clip_min, col_clip_max);
+    // Column transform: SIMD across 32 columns (4 chunks of 8), 8 rows
+    {
+        let min_v = _mm256_set1_epi32(col_clip_min);
+        let max_v = _mm256_set1_epi32(col_clip_max);
+        for cx_chunk in 0..4 {
+            let cx = cx_chunk * 8;
+            let mut v = [_mm256_setzero_si256(); 8];
+            for i in 0..8 {
+                v[i] = loadu_256!(&tmp[i * 32 + cx..i * 32 + cx + 8], [i32; 8]);
+            }
+            dct8_1d_cols8(_token, &mut v, min_v, max_v);
+            for i in 0..8 {
+                storeu_256!(&mut tmp[i * 32 + cx..i * 32 + cx + 8], [i32; 8], v[i]);
+            }
+        }
     }
 
     // Add to destination
