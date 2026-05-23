@@ -2014,6 +2014,332 @@ fn identity16_1d(c: &mut [i32], stride: usize, _min: i32, _max: i32) {
     }
 }
 
+// ============================================================================
+// SIMD column-parallel 1D transforms (AVX2)
+//
+// These functions perform a 1D inverse transform over 8 columns simultaneously,
+// using AVX2 32-bit SIMD. They replace the strided scalar 1D column pass in
+// the 2D dct_dct transforms, where the column transform reads with stride 16
+// (or 32 for 32x32) which prevents auto-vectorization.
+//
+// Layout: input array is row-major; for an NxN block, row y col x is at index
+// `y * stride + x`. The function processes columns [start..start+8] for all N
+// rows in parallel.
+// ============================================================================
+
+/// AVX2 helper: compute `(a * c1 - b * c2 + rnd) >> SHIFT` over 8 lanes.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn mac_msub_shr<const SHIFT: i32>(
+    _token: Desktop64,
+    a: __m256i,
+    c1: i32,
+    b: __m256i,
+    c2: i32,
+    rnd: i32,
+) -> __m256i {
+    let p1 = _mm256_mullo_epi32(a, _mm256_set1_epi32(c1));
+    let p2 = _mm256_mullo_epi32(b, _mm256_set1_epi32(c2));
+    let sum = _mm256_add_epi32(_mm256_sub_epi32(p1, p2), _mm256_set1_epi32(rnd));
+    _mm256_srai_epi32::<SHIFT>(sum)
+}
+
+/// AVX2 helper: compute `(a * c1 + b * c2 + rnd) >> SHIFT` over 8 lanes.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn mac_madd_shr<const SHIFT: i32>(
+    _token: Desktop64,
+    a: __m256i,
+    c1: i32,
+    b: __m256i,
+    c2: i32,
+    rnd: i32,
+) -> __m256i {
+    let p1 = _mm256_mullo_epi32(a, _mm256_set1_epi32(c1));
+    let p2 = _mm256_mullo_epi32(b, _mm256_set1_epi32(c2));
+    let sum = _mm256_add_epi32(_mm256_add_epi32(p1, p2), _mm256_set1_epi32(rnd));
+    _mm256_srai_epi32::<SHIFT>(sum)
+}
+
+/// Clamp 8 i32 lanes to `[min, max]`.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn clip8(_token: Desktop64, v: __m256i, min_v: __m256i, max_v: __m256i) -> __m256i {
+    _mm256_min_epi32(_mm256_max_epi32(v, min_v), max_v)
+}
+
+/// DCT4 1D transform across 8 columns in parallel.
+/// `c[i]` is `__m256i` containing the 8 lanes for row `i`.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn dct4_1d_cols8(token: Desktop64, c: &mut [__m256i; 4], min_v: __m256i, max_v: __m256i) {
+    let in0 = c[0];
+    let in1 = c[1];
+    let in2 = c[2];
+    let in3 = c[3];
+    // t0 = ((in0 + in2) * 181 + 128) >> 8
+    let sum02 = _mm256_add_epi32(in0, in2);
+    let sub02 = _mm256_sub_epi32(in0, in2);
+    let t0 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_mullo_epi32(sum02, _mm256_set1_epi32(181)),
+        _mm256_set1_epi32(128),
+    ));
+    let t1 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_mullo_epi32(sub02, _mm256_set1_epi32(181)),
+        _mm256_set1_epi32(128),
+    ));
+    // t2 = (in1 * 1567 - in3 * (3784 - 4096) + 2048 >> 12) - in3
+    let t2_shifted = mac_msub_shr::<12>(token, in1, 1567, in3, 3784 - 4096, 2048);
+    let t2 = _mm256_sub_epi32(t2_shifted, in3);
+    // t3 = (in1 * (3784 - 4096) + in3 * 1567 + 2048 >> 12) + in1
+    let t3_shifted = mac_madd_shr::<12>(token, in1, 3784 - 4096, in3, 1567, 2048);
+    let t3 = _mm256_add_epi32(t3_shifted, in1);
+
+    c[0] = clip8(token, _mm256_add_epi32(t0, t3), min_v, max_v);
+    c[1] = clip8(token, _mm256_add_epi32(t1, t2), min_v, max_v);
+    c[2] = clip8(token, _mm256_sub_epi32(t1, t2), min_v, max_v);
+    c[3] = clip8(token, _mm256_sub_epi32(t0, t3), min_v, max_v);
+}
+
+/// DCT8 1D transform across 8 columns in parallel.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn dct8_1d_cols8(token: Desktop64, c: &mut [__m256i; 8], min_v: __m256i, max_v: __m256i) {
+    // Apply DCT4 to even positions
+    let mut even = [c[0], c[2], c[4], c[6]];
+    dct4_1d_cols8(token, &mut even, min_v, max_v);
+    c[0] = even[0];
+    c[2] = even[1];
+    c[4] = even[2];
+    c[6] = even[3];
+
+    let in1 = c[1];
+    let in3 = c[3];
+    let in5 = c[5];
+    let in7 = c[7];
+
+    // t4a = (in1 * 799 - in7 * (4017 - 4096) + 2048 >> 12) - in7
+    let t4a = _mm256_sub_epi32(mac_msub_shr::<12>(token, in1, 799, in7, 4017 - 4096, 2048), in7);
+    // t5a = (in5 * 1703 - in3 * 1138 + 1024) >> 11
+    let t5a = mac_msub_shr::<11>(token, in5, 1703, in3, 1138, 1024);
+    // t6a = (in5 * 1138 + in3 * 1703 + 1024) >> 11
+    let t6a = mac_madd_shr::<11>(token, in5, 1138, in3, 1703, 1024);
+    // t7a = (in1 * (4017 - 4096) + in7 * 799 + 2048 >> 12) + in1
+    let t7a = _mm256_add_epi32(mac_madd_shr::<12>(token, in1, 4017 - 4096, in7, 799, 2048), in1);
+
+    let t4 = clip8(token, _mm256_add_epi32(t4a, t5a), min_v, max_v);
+    let t5a_n = clip8(token, _mm256_sub_epi32(t4a, t5a), min_v, max_v);
+    let t7 = clip8(token, _mm256_add_epi32(t7a, t6a), min_v, max_v);
+    let t6a_n = clip8(token, _mm256_sub_epi32(t7a, t6a), min_v, max_v);
+
+    // t5 = ((t6a_n - t5a_n) * 181 + 128) >> 8
+    let d = _mm256_sub_epi32(t6a_n, t5a_n);
+    let t5 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_mullo_epi32(d, _mm256_set1_epi32(181)),
+        _mm256_set1_epi32(128),
+    ));
+    // t6 = ((t6a_n + t5a_n) * 181 + 128) >> 8
+    let s = _mm256_add_epi32(t6a_n, t5a_n);
+    let t6 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_mullo_epi32(s, _mm256_set1_epi32(181)),
+        _mm256_set1_epi32(128),
+    ));
+
+    let t0 = c[0];
+    let t1 = c[2];
+    let t2 = c[4];
+    let t3 = c[6];
+
+    c[0] = clip8(token, _mm256_add_epi32(t0, t7), min_v, max_v);
+    c[1] = clip8(token, _mm256_add_epi32(t1, t6), min_v, max_v);
+    c[2] = clip8(token, _mm256_add_epi32(t2, t5), min_v, max_v);
+    c[3] = clip8(token, _mm256_add_epi32(t3, t4), min_v, max_v);
+    c[4] = clip8(token, _mm256_sub_epi32(t3, t4), min_v, max_v);
+    c[5] = clip8(token, _mm256_sub_epi32(t2, t5), min_v, max_v);
+    c[6] = clip8(token, _mm256_sub_epi32(t1, t6), min_v, max_v);
+    c[7] = clip8(token, _mm256_sub_epi32(t0, t7), min_v, max_v);
+}
+
+/// DCT16 1D transform across 8 columns in parallel.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn dct16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_v: __m256i) {
+    // Apply DCT8 to even positions
+    let mut even = [c[0], c[2], c[4], c[6], c[8], c[10], c[12], c[14]];
+    dct8_1d_cols8(token, &mut even, min_v, max_v);
+    c[0] = even[0];
+    c[2] = even[1];
+    c[4] = even[2];
+    c[6] = even[3];
+    c[8] = even[4];
+    c[10] = even[5];
+    c[12] = even[6];
+    c[14] = even[7];
+
+    let in1 = c[1];
+    let in3 = c[3];
+    let in5 = c[5];
+    let in7 = c[7];
+    let in9 = c[9];
+    let in11 = c[11];
+    let in13 = c[13];
+    let in15 = c[15];
+
+    // t8a  = (in1 * 401 - in15 * (4076 - 4096) + 2048 >> 12) - in15
+    let t8a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, in1, 401, in15, 4076 - 4096, 2048),
+        in15,
+    );
+    // t9a  = (in9 * 1583 - in7 * 1299 + 1024) >> 11
+    let t9a = mac_msub_shr::<11>(token, in9, 1583, in7, 1299, 1024);
+    // t10a = (in5 * 1931 - in11 * (3612 - 4096) + 2048 >> 12) - in11
+    let t10a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, in5, 1931, in11, 3612 - 4096, 2048),
+        in11,
+    );
+    // t11a = (in13 * (3920 - 4096) - in3 * 1189 + 2048 >> 12) + in13
+    let t11a = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, in13, 3920 - 4096, in3, 1189, 2048),
+        in13,
+    );
+    // t12a = (in13 * 1189 + in3 * (3920 - 4096) + 2048 >> 12) + in3
+    let t12a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in13, 1189, in3, 3920 - 4096, 2048),
+        in3,
+    );
+    // t13a = (in5 * (3612 - 4096) + in11 * 1931 + 2048 >> 12) + in5
+    let t13a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in5, 3612 - 4096, in11, 1931, 2048),
+        in5,
+    );
+    // t14a = (in9 * 1299 + in7 * 1583 + 1024) >> 11
+    let t14a = mac_madd_shr::<11>(token, in9, 1299, in7, 1583, 1024);
+    // t15a = (in1 * (4076 - 4096) + in15 * 401 + 2048 >> 12) + in1
+    let t15a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in1, 4076 - 4096, in15, 401, 2048),
+        in1,
+    );
+
+    let t8 = clip8(token, _mm256_add_epi32(t8a, t9a), min_v, max_v);
+    let mut t9 = clip8(token, _mm256_sub_epi32(t8a, t9a), min_v, max_v);
+    let mut t10 = clip8(token, _mm256_sub_epi32(t11a, t10a), min_v, max_v);
+    let mut t11 = clip8(token, _mm256_add_epi32(t11a, t10a), min_v, max_v);
+    let mut t12 = clip8(token, _mm256_add_epi32(t12a, t13a), min_v, max_v);
+    let mut t13 = clip8(token, _mm256_sub_epi32(t12a, t13a), min_v, max_v);
+    let mut t14 = clip8(token, _mm256_sub_epi32(t15a, t14a), min_v, max_v);
+    let t15 = clip8(token, _mm256_add_epi32(t15a, t14a), min_v, max_v);
+
+    // t9a  = (t14 * 1567 - t9 * (3784 - 4096) + 2048 >> 12) - t9
+    let t9a = _mm256_sub_epi32(mac_msub_shr::<12>(token, t14, 1567, t9, 3784 - 4096, 2048), t9);
+    // t14a = (t14 * (3784 - 4096) + t9 * 1567 + 2048 >> 12) + t14
+    let t14a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t14, 3784 - 4096, t9, 1567, 2048),
+        t14,
+    );
+    // t10a = (-(t13 * (3784 - 4096) + t10 * 1567) + 2048 >> 12) - t13
+    let t10a_inner = _mm256_add_epi32(
+        _mm256_mullo_epi32(t13, _mm256_set1_epi32(3784 - 4096)),
+        _mm256_mullo_epi32(t10, _mm256_set1_epi32(1567)),
+    );
+    let t10a = _mm256_sub_epi32(
+        _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(_mm256_setzero_si256(), t10a_inner),
+            _mm256_set1_epi32(2048),
+        )),
+        t13,
+    );
+    // t13a = (t13 * 1567 - t10 * (3784 - 4096) + 2048 >> 12) - t10
+    let t13a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t13, 1567, t10, 3784 - 4096, 2048),
+        t10,
+    );
+
+    let t8a = clip8(token, _mm256_add_epi32(t8, t11), min_v, max_v);
+    t9 = clip8(token, _mm256_add_epi32(t9a, t10a), min_v, max_v);
+    t10 = clip8(token, _mm256_sub_epi32(t9a, t10a), min_v, max_v);
+    let t11a = clip8(token, _mm256_sub_epi32(t8, t11), min_v, max_v);
+    let t12a = clip8(token, _mm256_sub_epi32(t15, t12), min_v, max_v);
+    t13 = clip8(token, _mm256_sub_epi32(t14a, t13a), min_v, max_v);
+    t14 = clip8(token, _mm256_add_epi32(t14a, t13a), min_v, max_v);
+    let t15a = clip8(token, _mm256_add_epi32(t15, t12), min_v, max_v);
+
+    // t10a_new = ((t13 - t10) * 181 + 128) >> 8
+    let d_13_10 = _mm256_sub_epi32(t13, t10);
+    let t10a_new = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_mullo_epi32(d_13_10, _mm256_set1_epi32(181)),
+        _mm256_set1_epi32(128),
+    ));
+    // t13a_new = ((t13 + t10) * 181 + 128) >> 8
+    let s_13_10 = _mm256_add_epi32(t13, t10);
+    let t13a_new = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_mullo_epi32(s_13_10, _mm256_set1_epi32(181)),
+        _mm256_set1_epi32(128),
+    ));
+    // t11 = ((t12a - t11a) * 181 + 128) >> 8
+    let d_12a_11a = _mm256_sub_epi32(t12a, t11a);
+    t11 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_mullo_epi32(d_12a_11a, _mm256_set1_epi32(181)),
+        _mm256_set1_epi32(128),
+    ));
+    // t12 = ((t12a + t11a) * 181 + 128) >> 8
+    let s_12a_11a = _mm256_add_epi32(t12a, t11a);
+    t12 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_mullo_epi32(s_12a_11a, _mm256_set1_epi32(181)),
+        _mm256_set1_epi32(128),
+    ));
+
+    let t0 = c[0];
+    let t1 = c[2];
+    let t2 = c[4];
+    let t3 = c[6];
+    let t4 = c[8];
+    let t5 = c[10];
+    let t6 = c[12];
+    let t7 = c[14];
+
+    c[0] = clip8(token, _mm256_add_epi32(t0, t15a), min_v, max_v);
+    c[1] = clip8(token, _mm256_add_epi32(t1, t14), min_v, max_v);
+    c[2] = clip8(token, _mm256_add_epi32(t2, t13a_new), min_v, max_v);
+    c[3] = clip8(token, _mm256_add_epi32(t3, t12), min_v, max_v);
+    c[4] = clip8(token, _mm256_add_epi32(t4, t11), min_v, max_v);
+    c[5] = clip8(token, _mm256_add_epi32(t5, t10a_new), min_v, max_v);
+    c[6] = clip8(token, _mm256_add_epi32(t6, t9), min_v, max_v);
+    c[7] = clip8(token, _mm256_add_epi32(t7, t8a), min_v, max_v);
+    c[8] = clip8(token, _mm256_sub_epi32(t7, t8a), min_v, max_v);
+    c[9] = clip8(token, _mm256_sub_epi32(t6, t9), min_v, max_v);
+    c[10] = clip8(token, _mm256_sub_epi32(t5, t10a_new), min_v, max_v);
+    c[11] = clip8(token, _mm256_sub_epi32(t4, t11), min_v, max_v);
+    c[12] = clip8(token, _mm256_sub_epi32(t3, t12), min_v, max_v);
+    c[13] = clip8(token, _mm256_sub_epi32(t2, t13a_new), min_v, max_v);
+    c[14] = clip8(token, _mm256_sub_epi32(t1, t14), min_v, max_v);
+    c[15] = clip8(token, _mm256_sub_epi32(t0, t15a), min_v, max_v);
+}
+
+/// Run dct16 1D column transform over 16x16 row-major buffer (16 cols, 16 rows).
+/// Processes 8 cols at a time, twice.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn dct16x16_cols_simd(
+    token: Desktop64,
+    tmp: &mut [i32; 256],
+    min: i32,
+    max: i32,
+) {
+    let min_v = _mm256_set1_epi32(min);
+    let max_v = _mm256_set1_epi32(max);
+    for cx_chunk in 0..2 {
+        let cx = cx_chunk * 8;
+        let mut v = [_mm256_setzero_si256(); 16];
+        for i in 0..16 {
+            v[i] = loadu_256!(&tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8]);
+        }
+        dct16_1d_cols8(token, &mut v, min_v, max_v);
+        for i in 0..16 {
+            storeu_256!(&mut tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8], v[i]);
+        }
+    }
+}
+
 /// Generic 16x16 transform function
 #[inline]
 fn inv_txfm_16x16_inner(
@@ -2374,10 +2700,8 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
         }
     }
 
-    // Column transform (in-place, row-major with stride 16)
-    for x in 0..16 {
-        dct16_1d(&mut tmp[x..], 16, col_clip_min, col_clip_max);
-    }
+    // Column transform: SIMD across 8 columns at a time
+    dct16x16_cols_simd(_token, &mut tmp, col_clip_min, col_clip_max);
 
     // Add to destination with SIMD
     let zero = _mm256_setzero_si256();
