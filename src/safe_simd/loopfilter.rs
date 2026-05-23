@@ -20,7 +20,7 @@
 #![allow(unused_imports)]
 
 #[cfg(target_arch = "x86_64")]
-use archmage::{Desktop64, SimdToken};
+use archmage::{Desktop64, SimdToken, X64V2Token, arcane};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
@@ -80,6 +80,17 @@ fn loop_filter_4_8bpc(
     wd: i32,
     bitdepth_max: i32,
 ) {
+    // Fast path: SIMD narrow (wd=4) v-filter — strideb!=1 means filter direction
+    // is across rows (= "v-filter": horizontal edge, filter applied vertically),
+    // and the 4 filter positions live on 4 adjacent columns (stridea=1). That
+    // gives contiguous 4-byte loads for p1/p0/q0/q1.
+    #[cfg(target_arch = "x86_64")]
+    if wd == 4 && bitdepth_max == 255 && stridea == 1 {
+        if let Some(token) = X64V2Token::summon() {
+            loop_filter_4_8bpc_narrow_simd_v(token, buf, base, e, i, h, strideb);
+            return;
+        }
+    }
     let f = 1i32;
 
     for idx in 0..4isize {
@@ -267,6 +278,131 @@ fn loop_filter_4_8bpc(
             }
         }
     }
+}
+
+// ============================================================================
+// SIMD inner loop filter for the narrow 4-tap V-FILTER case (wd=4, strideb>1)
+// ============================================================================
+
+/// SIMD narrow 4-tap loop filter for 8bpc V-FILTER direction.
+/// In v-filter, 4 filter positions are 4 ADJACENT columns (stridea=1) and
+/// the filter pixels are at row offsets (strideb=stride). This means each
+/// of p1/p0/q0/q1 is a contiguous 4-byte slice that we can load with a
+/// single i32 load + widen — much faster than the h-filter gather pattern.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn loop_filter_4_8bpc_narrow_simd_v(
+    _token: X64V2Token,
+    buf: &mut [u8],
+    base: usize,
+    e: i32,
+    i: i32,
+    h: i32,
+    strideb: isize,
+) {
+    // base + k for k in 0..4 are the 4 filter positions
+    // Pixels at row offsets -2, -1, 0, 1 from each filter position
+    let load4 = |off: isize| -> __m128i {
+        let start = signed_idx(base, strideb * off);
+        let bytes = [
+            buf[start],
+            buf[start + 1],
+            buf[start + 2],
+            buf[start + 3],
+        ];
+        let as_i32 = i32::from_le_bytes(bytes);
+        let v4u8 = _mm_cvtsi32_si128(as_i32);
+        _mm_cvtepu8_epi32(v4u8)
+    };
+
+    let p1_v = load4(-2);
+    let p0_v = load4(-1);
+    let q0_v = load4(0);
+    let q1_v = load4(1);
+
+    let i_v = _mm_set1_epi32(i);
+    let e_v = _mm_set1_epi32(e);
+    let h_v = _mm_set1_epi32(h);
+
+    let abs_p1p0 = _mm_abs_epi32(_mm_sub_epi32(p1_v, p0_v));
+    let abs_q1q0 = _mm_abs_epi32(_mm_sub_epi32(q1_v, q0_v));
+    let abs_p0q0 = _mm_abs_epi32(_mm_sub_epi32(p0_v, q0_v));
+    let abs_p1q1 = _mm_abs_epi32(_mm_sub_epi32(p1_v, q1_v));
+
+    let not_gt = |a: __m128i, b: __m128i| -> __m128i {
+        _mm_andnot_si128(_mm_cmpgt_epi32(a, b), _mm_set1_epi32(-1))
+    };
+    let m_p1p0 = not_gt(abs_p1p0, i_v);
+    let m_q1q0 = not_gt(abs_q1q0, i_v);
+    let val = _mm_add_epi32(
+        _mm_slli_epi32::<1>(abs_p0q0),
+        _mm_srli_epi32::<1>(abs_p1q1),
+    );
+    let m_val = not_gt(val, e_v);
+    let fm_mask = _mm_and_si128(_mm_and_si128(m_p1p0, m_q1q0), m_val);
+
+    let hev_mask = _mm_or_si128(_mm_cmpgt_epi32(abs_p1p0, h_v), _mm_cmpgt_epi32(abs_q1q0, h_v));
+
+    let neg128 = _mm_set1_epi32(-128);
+    let pos127 = _mm_set1_epi32(127);
+    let iclip = |v: __m128i| _mm_min_epi32(_mm_max_epi32(v, neg128), pos127);
+
+    let diff_q0p0 = _mm_sub_epi32(q0_v, p0_v);
+    let three_d = _mm_add_epi32(_mm_slli_epi32::<1>(diff_q0p0), diff_q0p0);
+    let diff_p1q1 = _mm_sub_epi32(p1_v, q1_v);
+
+    let f_hev = iclip(_mm_add_epi32(three_d, iclip(diff_p1q1)));
+    let f_nohev = iclip(three_d);
+
+    let c4 = _mm_set1_epi32(4);
+    let c3 = _mm_set1_epi32(3);
+    let one = _mm_set1_epi32(1);
+
+    let f1_hev = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_hev, c4), pos127));
+    let f2_hev = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_hev, c3), pos127));
+    let f1_no = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_nohev, c4), pos127));
+    let f2_no = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_nohev, c3), pos127));
+    let f_extra = _mm_srai_epi32::<1>(_mm_add_epi32(f1_no, one));
+
+    let p0_hev = _mm_add_epi32(p0_v, f2_hev);
+    let q0_hev = _mm_sub_epi32(q0_v, f1_hev);
+    let p0_no = _mm_add_epi32(p0_v, f2_no);
+    let q0_no = _mm_sub_epi32(q0_v, f1_no);
+    let p1_no = _mm_add_epi32(p1_v, f_extra);
+    let q1_no = _mm_sub_epi32(q1_v, f_extra);
+
+    let blendv = |a: __m128i, b: __m128i, mask: __m128i| -> __m128i {
+        _mm_or_si128(_mm_andnot_si128(mask, a), _mm_and_si128(mask, b))
+    };
+    let p1_filt = blendv(p1_no, p1_v, hev_mask);
+    let p0_filt = blendv(p0_no, p0_hev, hev_mask);
+    let q0_filt = blendv(q0_no, q0_hev, hev_mask);
+    let q1_filt = blendv(q1_no, q1_v, hev_mask);
+
+    let p1_final = blendv(p1_v, p1_filt, fm_mask);
+    let p0_final = blendv(p0_v, p0_filt, fm_mask);
+    let q0_final = blendv(q0_v, q0_filt, fm_mask);
+    let q1_final = blendv(q1_v, q1_filt, fm_mask);
+
+    // Pack 4 i32 lanes back to 4 u8 (each clipped to [0,255]).
+    // Use _mm_packus_epi32 then _mm_packus_epi16.
+    let pack4 = |v: __m128i| -> i32 {
+        let u16x4 = _mm_packus_epi32(v, v);    // low 4 u16
+        let u8x4 = _mm_packus_epi16(u16x4, u16x4); // low 4 u8
+        _mm_cvtsi128_si32(u8x4)
+    };
+    let store4 = |buf: &mut [u8], packed: i32, off: isize| {
+        let start = signed_idx(base, strideb * off);
+        let bytes = packed.to_le_bytes();
+        buf[start] = bytes[0];
+        buf[start + 1] = bytes[1];
+        buf[start + 2] = bytes[2];
+        buf[start + 3] = bytes[3];
+    };
+    store4(buf, pack4(p1_final), -2);
+    store4(buf, pack4(p0_final), -1);
+    store4(buf, pack4(q0_final), 0);
+    store4(buf, pack4(q1_final), 1);
 }
 
 // ============================================================================
