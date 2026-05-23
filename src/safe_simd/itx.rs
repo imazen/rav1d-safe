@@ -9391,36 +9391,36 @@ fn identity8_1d_scalar(
     )
 }
 
-// Use the macro to generate V/H transforms for 8x8
-impl_8x8_transform!(
+// Use the macro to generate V/H transforms for 8x8 (SIMD col)
+impl_8x8_transform_simd_col!(
     inv_txfm_add_identity_adst_8x8_8bpc_avx2_inner,
     identity8_1d_scalar,
-    adst8_1d_scalar
+    adst8_1d_cols8
 );
-impl_8x8_transform!(
+impl_8x8_transform_simd_col!(
     inv_txfm_add_adst_identity_8x8_8bpc_avx2_inner,
     adst8_1d_scalar,
-    identity8_1d_scalar
+    identity8_1d_cols8
 );
-impl_8x8_transform!(
+impl_8x8_transform_simd_col!(
     inv_txfm_add_identity_flipadst_8x8_8bpc_avx2_inner,
     identity8_1d_scalar,
-    flipadst8_1d_scalar
+    flipadst8_1d_cols8
 );
-impl_8x8_transform!(
+impl_8x8_transform_simd_col!(
     inv_txfm_add_flipadst_identity_8x8_8bpc_avx2_inner,
     flipadst8_1d_scalar,
-    identity8_1d_scalar
+    identity8_1d_cols8
 );
-impl_8x8_transform!(
+impl_8x8_transform_simd_col!(
     inv_txfm_add_identity_dct_8x8_8bpc_avx2_inner,
     identity8_1d_scalar,
-    dct8_1d_scalar
+    dct8_1d_cols8
 );
-impl_8x8_transform!(
+impl_8x8_transform_simd_col!(
     inv_txfm_add_dct_identity_8x8_8bpc_avx2_inner,
     dct8_1d_scalar,
-    identity8_1d_scalar
+    identity8_1d_cols8
 );
 
 // FFI wrappers
