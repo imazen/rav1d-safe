@@ -61,20 +61,22 @@ Run via `just profile-quick`. Single-threaded, 100 iters (IVF) / 5 iters (AVIF).
 | Unchecked | 1215.4 | 1.69x |
 
 Progress vs 2026-02-13 baseline (Checked):
-- IVF: 1.68x → 1.62x
-- 4K AVIF: 1.98x → 1.84x
-- 8K AVIF: 1.95x → 1.77x
+- IVF: 1.68x → ~1.61x
+- 4K AVIF: 1.98x → ~1.85x  (high noise; first runs showed 1.76x)
+- 8K AVIF: 1.95x → ~1.72x
 
 Optimizations landed (all in safe checked, `#![forbid(unsafe_code)]`):
-- CFL prediction SIMD (8bpc+16bpc) — saved ~2.4% perf-percentage on 4K AVIF
-- dct8x8 / dct16x16 / dct32x32 dct_dct column-pass SIMD — saved ~6% perf-percentage
+- `cfl_pred` SIMD (8bpc+16bpc)
+- DCT column-pass SIMD for 8x8 / 16x16 / 32x32 dct_dct
+- ADST / Identity / FlipADST column SIMD wired into all 14 non-trivial 16x16 transform combinations
 
 Remaining biggest gaps (without unsafe):
-1. Loopfilter — `loop_filter_4_8bpc` is scalar at 10% of profile vs <1% ASM
-2. msac entropy decoding inside `decode_coefs` (37% of profile, mostly scalar)
-3. DisjointMut BorrowTracker overhead (~9% checked-only, eliminated by `unchecked`)
-4. SIMD column transforms for adst/flipadst variants
-5. Row-transform pass for dct/adst (stride=1, LLVM may already auto-vectorize partly)
+1. **Loopfilter** — `loop_filter_4_8bpc` is fully scalar at 10% of profile vs <1% ASM (biggest single remaining win, ~500-1000 lines of SIMD work)
+2. **msac** entropy decoding inside `decode_coefs` (37% of profile, mostly scalar)
+3. **DisjointMut BorrowTracker** overhead (~9% checked-only; eliminated only by the `unchecked` feature which uses unsafe)
+4. 32x32 ADST/identity column SIMD (32x32 is mostly dct-only in practice)
+5. 8x8 non-dct_dct transforms (no safe SIMD 2D path, falls back to scalar generic `inv_txfm_add`)
+6. Row-transform pass for dct/adst (stride=1, LLVM may already auto-vectorize)
 
 ## MANDATORY: Safe intrinsics strategy
 
