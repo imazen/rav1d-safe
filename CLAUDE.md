@@ -29,7 +29,7 @@ Completed modules (AVX2 + NEON, 8bpc + 16bpc):
 784/803 dav1d test vectors pass at all bit depths and all CPU levels (scalar, SSE4, AVX2).
 19 failures are infrastructure (1 sframe, 6 SVC operating points, 12 vq_suite decode modes).
 
-## Benchmarks (2026-05-23 after CFL+dct_dct SIMD column transforms)
+## Benchmarks (2026-05-23 after rectangular dct_dct SIMD column transforms)
 
 Run via `just profile-quick`. Single-threaded, 100 iters (IVF) / 5 iters (AVIF).
 
@@ -37,37 +37,38 @@ Run via `just profile-quick`. Single-threaded, 100 iters (IVF) / 5 iters (AVIF).
 
 | Build | ms/iter | vs ASM |
 |-------|---------|--------|
-| ASM | 107.8 | 1.0x |
-| Partial ASM | 149.0 | 1.38x |
-| Checked | 174.7 | 1.62x |
-| Unchecked | 162.6 | 1.51x |
+| ASM | 106.1 | 1.0x |
+| Partial ASM | 147.9 | 1.39x |
+| Checked | 170.3 | 1.61x |
+| Unchecked | 163.3 | 1.54x |
 
 **4K photo AVIF (3840x2561):**
 
 | Build | ms/iter | vs ASM |
 |-------|---------|--------|
-| ASM | 124.7 | 1.0x |
-| Partial ASM | 174.1 | 1.40x |
-| Checked | 229.9 | 1.84x |
-| Unchecked | 219.3 | 1.76x |
+| ASM | 123.9 | 1.0x |
+| Partial ASM | 175.9 | 1.42x |
+| Checked | 223.3 | 1.80x |
+| Unchecked | 219.8 | 1.77x |
 
 **8K photo AVIF (8192x5464):**
 
 | Build | ms/iter | vs ASM |
 |-------|---------|--------|
-| ASM | 719.8 | 1.0x |
-| Partial ASM | 895.0 | 1.24x |
-| Checked | 1277.2 | 1.77x |
-| Unchecked | 1215.4 | 1.69x |
+| ASM | 713.9 | 1.0x |
+| Partial ASM | 880.4 | 1.23x |
+| Checked | 1271.8 | 1.78x |
+| Unchecked | 1225.8 | 1.72x |
 
 Progress vs 2026-02-13 baseline (Checked):
-- IVF: 1.68x → ~1.61x
-- 4K AVIF: 1.98x → ~1.85x  (high noise; first runs showed 1.76x)
-- 8K AVIF: 1.95x → ~1.72x
+- IVF: 1.68x → 1.61x
+- 4K AVIF: 1.98x → 1.80x  (~9% improvement)
+- 8K AVIF: 1.95x → 1.78x  (~9% improvement)
 
 Optimizations landed (all in safe checked, `#![forbid(unsafe_code)]`):
 - `cfl_pred` SIMD (8bpc+16bpc)
-- DCT column-pass SIMD for 8x8 / 16x16 / 32x32 dct_dct
+- DCT column-pass SIMD wired into 8x8, 16x16, 32x32 dct_dct (square)
+- DCT column-pass SIMD wired into 8x16, 16x8, 16x32, 32x16, 8x32, 32x8, 64x16, 64x32 dct_dct (rectangular)
 - ADST / Identity / FlipADST column SIMD wired into all 14 non-trivial 16x16 transform combinations
 
 Remaining biggest gaps (without unsafe):
