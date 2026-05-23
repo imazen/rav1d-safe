@@ -95,11 +95,16 @@ fn inv_txfm_add<BD: BitDepth>(
         dc = dc * 181 + 128 >> 8;
         dc = dc + rnd >> shift;
         dc = dc * 181 + 128 + 2048 >> 12;
+        // Single wide guard covering h rows × w pixels (zero-copy in ST, per-row in MT).
+        let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
+        let dst_block: &mut [BD::Pixel] = &mut *guard;
+        let stride = dst.pixel_stride::<BD>();
         for y in 0..h {
-            let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-            let dst = &mut *dst.slice_mut::<BD>(w);
+            let row_off =
+                base.wrapping_add_signed(y as isize * stride);
             for x in 0..w {
-                dst[x] = bd.iclip_pixel(dst[x].as_::<i32>() + dc);
+                let idx = row_off + x;
+                dst_block[idx] = bd.iclip_pixel(dst_block[idx].as_::<i32>() + dc);
             }
         }
         return;
@@ -152,11 +157,15 @@ fn inv_txfm_add<BD: BitDepth>(
         );
     }
 
+    // Single wide guard covering h rows × w pixels.
+    let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
+    let dst_block: &mut [BD::Pixel] = &mut *guard;
+    let stride = dst.pixel_stride::<BD>();
     for y in 0..h {
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-        let dst = &mut *dst.slice_mut::<BD>(w);
+        let row_off = base.wrapping_add_signed(y as isize * stride);
         for x in 0..w {
-            dst[x] = bd.iclip_pixel(dst[x].as_::<i32>() + (tmp[y * w + x] + 8 >> 4));
+            let idx = row_off + x;
+            dst_block[idx] = bd.iclip_pixel(dst_block[idx].as_::<i32>() + (tmp[y * w + x] + 8 >> 4));
         }
     }
 }
@@ -532,11 +541,15 @@ fn inv_txfm_add_wht_wht_4x4_rust<BD: BitDepth>(dst: PicOffset, coeff: &mut [BD::
         rav1d_inv_wht4_1d_c(&mut tmp[x..], H.try_into().unwrap());
     }
 
+    // Single wide guard covering H rows × W pixels.
+    let (mut guard, base) = dst.strided_slice_mut::<BD>(W, H);
+    let dst_block: &mut [BD::Pixel] = &mut *guard;
+    let stride = dst.pixel_stride::<BD>();
     for y in 0..H {
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-        let dst = &mut *dst.slice_mut::<BD>(W);
+        let row_off = base.wrapping_add_signed(y as isize * stride);
         for x in 0..W {
-            dst[x] = bd.iclip_pixel(dst[x].as_::<i32>() + tmp[y * W + x]);
+            let idx = row_off + x;
+            dst_block[idx] = bd.iclip_pixel(dst_block[idx].as_::<i32>() + tmp[y * W + x]);
         }
     }
 }
