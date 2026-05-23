@@ -6068,9 +6068,21 @@ fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
         }
     }
 
-    // Column transform (4 elements each, 16 columns)
-    for x in 0..16 {
-        dct4_1d(&mut tmp[x..], 16, col_clip_min, col_clip_max);
+    // Column transform: SIMD across 16 columns (2 chunks of 8), 4 rows
+    {
+        let min_v = _mm256_set1_epi32(col_clip_min);
+        let max_v = _mm256_set1_epi32(col_clip_max);
+        for cx_chunk in 0..2 {
+            let cx = cx_chunk * 8;
+            let mut v = [_mm256_setzero_si256(); 4];
+            for i in 0..4 {
+                v[i] = loadu_256!(&tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8]);
+            }
+            dct4_1d_cols8(_token, &mut v, min_v, max_v);
+            for i in 0..4 {
+                storeu_256!(&mut tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8], v[i]);
+            }
+        }
     }
 
     // Add to destination
