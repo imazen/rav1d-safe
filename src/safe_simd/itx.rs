@@ -2500,6 +2500,31 @@ fn adst16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_
     c[15] = out15;
 }
 
+/// Run flipadst16 1D column transform: adst16 then swap rows i ↔ 15-i.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn flipadst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i32) {
+    let min_v = _mm256_set1_epi32(min);
+    let max_v = _mm256_set1_epi32(max);
+    for cx_chunk in 0..2 {
+        let cx = cx_chunk * 8;
+        let mut v = [_mm256_setzero_si256(); 16];
+        for i in 0..16 {
+            v[i] = loadu_256!(&tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8]);
+        }
+        adst16_1d_cols8(token, &mut v, min_v, max_v);
+        // Swap rows: i <-> 15-i for i in 0..8
+        for i in 0..8 {
+            let tmp_v = v[i];
+            v[i] = v[15 - i];
+            v[15 - i] = tmp_v;
+        }
+        for i in 0..16 {
+            storeu_256!(&mut tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8], v[i]);
+        }
+    }
+}
+
 /// Run identity16 1D column transform over 16x16 row-major buffer (8 cols at a time).
 /// identity16: out = 2*in + ((in*1697 + 1024) >> 11). No clipping.
 #[cfg(target_arch = "x86_64")]
@@ -3060,20 +3085,20 @@ impl_16x16_transform_simd_col!(
     flipadst16_1d,
     dct16x16_cols_simd
 );
-impl_16x16_transform!(
+impl_16x16_transform_simd_col!(
     inv_txfm_add_dct_flipadst_16x16_8bpc_avx2_inner,
     dct16_1d,
-    flipadst16_1d
+    flipadst16x16_cols_simd
 );
-impl_16x16_transform!(
+impl_16x16_transform_simd_col!(
     inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2_inner,
     flipadst16_1d,
-    flipadst16_1d
+    flipadst16x16_cols_simd
 );
-impl_16x16_transform!(
+impl_16x16_transform_simd_col!(
     inv_txfm_add_adst_flipadst_16x16_8bpc_avx2_inner,
     adst16_1d,
-    flipadst16_1d
+    flipadst16x16_cols_simd
 );
 impl_16x16_transform_simd_col!(
     inv_txfm_add_flipadst_adst_16x16_8bpc_avx2_inner,
@@ -3100,10 +3125,10 @@ impl_16x16_transform_simd_col!(
     adst16_1d,
     identity16x16_cols_simd
 );
-impl_16x16_transform!(
+impl_16x16_transform_simd_col!(
     inv_txfm_add_identity_flipadst_16x16_8bpc_avx2_inner,
     identity16_1d,
-    flipadst16_1d
+    flipadst16x16_cols_simd
 );
 impl_16x16_transform_simd_col!(
     inv_txfm_add_flipadst_identity_16x16_8bpc_avx2_inner,
