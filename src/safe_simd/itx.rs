@@ -3721,9 +3721,18 @@ fn inv_txfm_add_dct_dct_8x4_8bpc_avx2_inner(
         }
     }
 
-    // Column transform (4 elements each, 8 columns)
-    for x in 0..8 {
-        dct4_1d(&mut tmp[x..], 8, col_clip_min, col_clip_max);
+    // Column transform: SIMD across 8 columns, 4 rows (single chunk)
+    {
+        let min_v = _mm256_set1_epi32(col_clip_min);
+        let max_v = _mm256_set1_epi32(col_clip_max);
+        let mut v = [_mm256_setzero_si256(); 4];
+        for i in 0..4 {
+            v[i] = loadu_256!(&tmp[i * 8..i * 8 + 8], [i32; 8]);
+        }
+        dct4_1d_cols8(_token, &mut v, min_v, max_v);
+        for i in 0..4 {
+            storeu_256!(&mut tmp[i * 8..i * 8 + 8], [i32; 8], v[i]);
+        }
     }
 
     // Add to destination
@@ -6975,9 +6984,13 @@ fn inv_txfm_add_identity_identity_8x32_8bpc_avx2_inner(
         }
     }
 
-    // Column transform (32 elements each, 8 columns)
-    for x in 0..8 {
-        identity32_1d(&mut tmp[x..], 8, clip_min, clip_max);
+    // Column transform: SIMD across 8 columns, 32 rows. identity32 = *4
+    {
+        for i in 0..32 {
+            let v = loadu_256!(&tmp[i * 8..i * 8 + 8], [i32; 8]);
+            let result = _mm256_slli_epi32::<2>(v);
+            storeu_256!(&mut tmp[i * 8..i * 8 + 8], [i32; 8], result);
+        }
     }
 
     // Add to destination
@@ -7059,9 +7072,16 @@ fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
         }
     }
 
-    // Column transform (8 elements each, 32 columns)
-    for x in 0..32 {
-        identity8_1d(&mut tmp[x..], 32, clip_min, clip_max);
+    // Column transform: SIMD across 32 columns (4 chunks of 8), 8 rows. identity8 = *2
+    {
+        for cx_chunk in 0..4 {
+            let cx = cx_chunk * 8;
+            for i in 0..8 {
+                let v = loadu_256!(&tmp[i * 32 + cx..i * 32 + cx + 8], [i32; 8]);
+                let result = _mm256_slli_epi32::<1>(v);
+                storeu_256!(&mut tmp[i * 32 + cx..i * 32 + cx + 8], [i32; 8], result);
+            }
+        }
     }
 
     // Add to destination
