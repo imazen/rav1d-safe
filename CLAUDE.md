@@ -29,39 +29,52 @@ Completed modules (AVX2 + NEON, 8bpc + 16bpc):
 784/803 dav1d test vectors pass at all bit depths and all CPU levels (scalar, SSE4, AVX2).
 19 failures are infrastructure (1 sframe, 6 SVC operating points, 12 vq_suite decode modes).
 
-## Benchmarks (2026-02-13)
+## Benchmarks (2026-05-23 after CFL+dct_dct SIMD column transforms)
 
-Run via `just profile`. Single-threaded, 500 iters (IVF) / 20 iters (AVIF).
+Run via `just profile-quick`. Single-threaded, 100 iters (IVF) / 5 iters (AVIF).
 
 **allintra 8bpc IVF (352x288, 39 frames):**
 
-| Build | ms/iter | ms/frame | vs ASM |
-|-------|---------|----------|--------|
-| ASM | 92.6 | 2.37 | 1.0x |
-| Partial ASM | 131.3 | 3.37 | 1.42x |
-| Checked | 155.6 | 3.99 | 1.68x |
-| Unchecked | 151.8 | 3.89 | 1.64x |
+| Build | ms/iter | vs ASM |
+|-------|---------|--------|
+| ASM | 107.8 | 1.0x |
+| Partial ASM | 149.0 | 1.38x |
+| Checked | 174.7 | 1.62x |
+| Unchecked | 162.6 | 1.51x |
 
 **4K photo AVIF (3840x2561):**
 
 | Build | ms/iter | vs ASM |
 |-------|---------|--------|
-| ASM | 113.6 | 1.0x |
-| Partial ASM | 175.3 | 1.54x |
-| Checked | 225.2 | 1.98x |
-| Unchecked | 228.6 | 2.01x |
+| ASM | 124.7 | 1.0x |
+| Partial ASM | 174.1 | 1.40x |
+| Checked | 229.9 | 1.84x |
+| Unchecked | 219.3 | 1.76x |
 
 **8K photo AVIF (8192x5464):**
 
 | Build | ms/iter | vs ASM |
 |-------|---------|--------|
-| ASM | 512.0 | 1.0x |
-| Partial ASM | 724.7 | 1.42x |
-| Checked | 999.4 | 1.95x |
-| Unchecked | 976.0 | 1.91x |
+| ASM | 719.8 | 1.0x |
+| Partial ASM | 895.0 | 1.24x |
+| Checked | 1277.2 | 1.77x |
+| Unchecked | 1215.4 | 1.69x |
 
-Real photos show ~2x vs ASM (SIMD-kernel dominated). Small IVF vectors show 1.64-1.68x (entropy-dominated).
-Checked→unchecked gap is tiny on photos (~2-3%), confirming DisjointMut tracking is negligible on real workloads.
+Progress vs 2026-02-13 baseline (Checked):
+- IVF: 1.68x → 1.62x
+- 4K AVIF: 1.98x → 1.84x
+- 8K AVIF: 1.95x → 1.77x
+
+Optimizations landed (all in safe checked, `#![forbid(unsafe_code)]`):
+- CFL prediction SIMD (8bpc+16bpc) — saved ~2.4% perf-percentage on 4K AVIF
+- dct8x8 / dct16x16 / dct32x32 dct_dct column-pass SIMD — saved ~6% perf-percentage
+
+Remaining biggest gaps (without unsafe):
+1. Loopfilter — `loop_filter_4_8bpc` is scalar at 10% of profile vs <1% ASM
+2. msac entropy decoding inside `decode_coefs` (37% of profile, mostly scalar)
+3. DisjointMut BorrowTracker overhead (~9% checked-only, eliminated by `unchecked`)
+4. SIMD column transforms for adst/flipadst variants
+5. Row-transform pass for dct/adst (stride=1, LLVM may already auto-vectorize partly)
 
 ## MANDATORY: Safe intrinsics strategy
 
