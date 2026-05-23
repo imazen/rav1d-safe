@@ -2323,6 +2323,245 @@ fn dct16_1d_cols16(token: Server64, c: &mut [__m512i; 16], min_v: __m512i, max_v
     c[15] = clip16_i32(token, _mm512_sub_epi32(t0, t15a), min_v, max_v);
 }
 
+/// DCT32 1D transform across 16 columns in parallel (AVX-512).
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn dct32_1d_cols16(token: Server64, c: &mut [__m512i; 32], min_v: __m512i, max_v: __m512i) {
+    // Apply DCT16 to even positions
+    let mut even = [
+        c[0], c[2], c[4], c[6], c[8], c[10], c[12], c[14],
+        c[16], c[18], c[20], c[22], c[24], c[26], c[28], c[30],
+    ];
+    dct16_1d_cols16(token, &mut even, min_v, max_v);
+    c[0] = even[0]; c[2] = even[1]; c[4] = even[2]; c[6] = even[3];
+    c[8] = even[4]; c[10] = even[5]; c[12] = even[6]; c[14] = even[7];
+    c[16] = even[8]; c[18] = even[9]; c[20] = even[10]; c[22] = even[11];
+    c[24] = even[12]; c[26] = even[13]; c[28] = even[14]; c[30] = even[15];
+
+    let in1 = c[1]; let in3 = c[3]; let in5 = c[5]; let in7 = c[7];
+    let in9 = c[9]; let in11 = c[11]; let in13 = c[13]; let in15 = c[15];
+    let in17 = c[17]; let in19 = c[19]; let in21 = c[21]; let in23 = c[23];
+    let in25 = c[25]; let in27 = c[27]; let in29 = c[29]; let in31 = c[31];
+
+    let t16a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, in1, 201, in31, 4091 - 4096, 2048), in31);
+    let t17a = _mm512_add_epi32(mac_msub_shr_v4::<12>(token, in17, 3035 - 4096, in15, 2751, 2048), in17);
+    let t18a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, in9, 1751, in23, 3703 - 4096, 2048), in23);
+    let t19a = _mm512_add_epi32(mac_msub_shr_v4::<12>(token, in25, 3857 - 4096, in7, 1380, 2048), in25);
+    let t20a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, in5, 995, in27, 3973 - 4096, 2048), in27);
+    let t21a = _mm512_add_epi32(mac_msub_shr_v4::<12>(token, in21, 3513 - 4096, in11, 2106, 2048), in21);
+    let t22a = mac_msub_shr_v4::<11>(token, in13, 1220, in19, 1645, 1024);
+    let t23a = _mm512_add_epi32(mac_msub_shr_v4::<12>(token, in29, 4052 - 4096, in3, 601, 2048), in29);
+    let t24a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in29, 601, in3, 4052 - 4096, 2048), in3);
+    let t25a = mac_madd_shr_v4::<11>(token, in13, 1645, in19, 1220, 1024);
+    let t26a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in21, 2106, in11, 3513 - 4096, 2048), in11);
+    let t27a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in5, 3973 - 4096, in27, 995, 2048), in5);
+    let t28a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in25, 1380, in7, 3857 - 4096, 2048), in7);
+    let t29a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in9, 3703 - 4096, in23, 1751, 2048), in9);
+    let t30a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in17, 2751, in15, 3035 - 4096, 2048), in15);
+    let t31a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in1, 4091 - 4096, in31, 201, 2048), in1);
+
+    let mut t16 = clip16_i32(token, _mm512_add_epi32(t16a, t17a), min_v, max_v);
+    let mut t17 = clip16_i32(token, _mm512_sub_epi32(t16a, t17a), min_v, max_v);
+    let mut t18 = clip16_i32(token, _mm512_sub_epi32(t19a, t18a), min_v, max_v);
+    let t19 = clip16_i32(token, _mm512_add_epi32(t19a, t18a), min_v, max_v);
+    let t20 = clip16_i32(token, _mm512_add_epi32(t20a, t21a), min_v, max_v);
+    let mut t21 = clip16_i32(token, _mm512_sub_epi32(t20a, t21a), min_v, max_v);
+    let mut t22 = clip16_i32(token, _mm512_sub_epi32(t23a, t22a), min_v, max_v);
+    let mut t23 = clip16_i32(token, _mm512_add_epi32(t23a, t22a), min_v, max_v);
+    let mut t24 = clip16_i32(token, _mm512_add_epi32(t24a, t25a), min_v, max_v);
+    let mut t25 = clip16_i32(token, _mm512_sub_epi32(t24a, t25a), min_v, max_v);
+    let mut t26 = clip16_i32(token, _mm512_sub_epi32(t27a, t26a), min_v, max_v);
+    let t27 = clip16_i32(token, _mm512_add_epi32(t27a, t26a), min_v, max_v);
+    let t28 = clip16_i32(token, _mm512_add_epi32(t28a, t29a), min_v, max_v);
+    let mut t29 = clip16_i32(token, _mm512_sub_epi32(t28a, t29a), min_v, max_v);
+    let mut t30 = clip16_i32(token, _mm512_sub_epi32(t31a, t30a), min_v, max_v);
+    let mut t31 = clip16_i32(token, _mm512_add_epi32(t31a, t30a), min_v, max_v);
+
+    let t17a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t30, 799, t17, 4017 - 4096, 2048), t17);
+    let t30a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, t30, 4017 - 4096, t17, 799, 2048), t30);
+    let t18a_inner = _mm512_add_epi32(
+        _mm512_mullo_epi32(t29, _mm512_set1_epi32(4017 - 4096)),
+        _mm512_mullo_epi32(t18, _mm512_set1_epi32(799)),
+    );
+    let t18a = _mm512_sub_epi32(
+        _mm512_srai_epi32::<12>(_mm512_add_epi32(
+            _mm512_sub_epi32(_mm512_setzero_si512(), t18a_inner),
+            _mm512_set1_epi32(2048),
+        )),
+        t29,
+    );
+    let t29a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t29, 799, t18, 4017 - 4096, 2048), t18);
+    let t21a = mac_msub_shr_v4::<11>(token, t26, 1703, t21, 1138, 1024);
+    let t26a = mac_madd_shr_v4::<11>(token, t26, 1138, t21, 1703, 1024);
+    let t22a_inner = _mm512_add_epi32(
+        _mm512_mullo_epi32(t25, _mm512_set1_epi32(1138)),
+        _mm512_mullo_epi32(t22, _mm512_set1_epi32(1703)),
+    );
+    let t22a = _mm512_srai_epi32::<11>(_mm512_add_epi32(
+        _mm512_sub_epi32(_mm512_setzero_si512(), t22a_inner),
+        _mm512_set1_epi32(1024),
+    ));
+    let t25a = mac_msub_shr_v4::<11>(token, t25, 1703, t22, 1138, 1024);
+
+    let t16a = clip16_i32(token, _mm512_add_epi32(t16, t19), min_v, max_v);
+    t17 = clip16_i32(token, _mm512_add_epi32(t17a, t18a), min_v, max_v);
+    t18 = clip16_i32(token, _mm512_sub_epi32(t17a, t18a), min_v, max_v);
+    let t19a = clip16_i32(token, _mm512_sub_epi32(t16, t19), min_v, max_v);
+    let t20a = clip16_i32(token, _mm512_sub_epi32(t23, t20), min_v, max_v);
+    t21 = clip16_i32(token, _mm512_sub_epi32(t22a, t21a), min_v, max_v);
+    t22 = clip16_i32(token, _mm512_add_epi32(t22a, t21a), min_v, max_v);
+    let t23a = clip16_i32(token, _mm512_add_epi32(t23, t20), min_v, max_v);
+    let t24a = clip16_i32(token, _mm512_add_epi32(t24, t27), min_v, max_v);
+    t25 = clip16_i32(token, _mm512_add_epi32(t25a, t26a), min_v, max_v);
+    t26 = clip16_i32(token, _mm512_sub_epi32(t25a, t26a), min_v, max_v);
+    let t27a = clip16_i32(token, _mm512_sub_epi32(t24, t27), min_v, max_v);
+    let t28a = clip16_i32(token, _mm512_sub_epi32(t31, t28), min_v, max_v);
+    t29 = clip16_i32(token, _mm512_sub_epi32(t30a, t29a), min_v, max_v);
+    t30 = clip16_i32(token, _mm512_add_epi32(t30a, t29a), min_v, max_v);
+    let t31a = clip16_i32(token, _mm512_add_epi32(t31, t28), min_v, max_v);
+
+    let t18a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t29, 1567, t18, 3784 - 4096, 2048), t18);
+    let t29a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, t29, 3784 - 4096, t18, 1567, 2048), t29);
+    let t19 = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t28a, 1567, t19a, 3784 - 4096, 2048), t19a);
+    let t28 = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, t28a, 3784 - 4096, t19a, 1567, 2048), t28a);
+    let t20_inner = _mm512_add_epi32(
+        _mm512_mullo_epi32(t27a, _mm512_set1_epi32(3784 - 4096)),
+        _mm512_mullo_epi32(t20a, _mm512_set1_epi32(1567)),
+    );
+    let t20 = _mm512_sub_epi32(
+        _mm512_srai_epi32::<12>(_mm512_add_epi32(
+            _mm512_sub_epi32(_mm512_setzero_si512(), t20_inner),
+            _mm512_set1_epi32(2048),
+        )),
+        t27a,
+    );
+    let t27 = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t27a, 1567, t20a, 3784 - 4096, 2048), t20a);
+    let t21a_inner = _mm512_add_epi32(
+        _mm512_mullo_epi32(t26, _mm512_set1_epi32(3784 - 4096)),
+        _mm512_mullo_epi32(t21, _mm512_set1_epi32(1567)),
+    );
+    let t21a = _mm512_sub_epi32(
+        _mm512_srai_epi32::<12>(_mm512_add_epi32(
+            _mm512_sub_epi32(_mm512_setzero_si512(), t21a_inner),
+            _mm512_set1_epi32(2048),
+        )),
+        t26,
+    );
+    let t26a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t26, 1567, t21, 3784 - 4096, 2048), t21);
+
+    t16 = clip16_i32(token, _mm512_add_epi32(t16a, t23a), min_v, max_v);
+    let t17a = clip16_i32(token, _mm512_add_epi32(t17, t22), min_v, max_v);
+    t18 = clip16_i32(token, _mm512_add_epi32(t18a, t21a), min_v, max_v);
+    let t19a = clip16_i32(token, _mm512_add_epi32(t19, t20), min_v, max_v);
+    let t20a = clip16_i32(token, _mm512_sub_epi32(t19, t20), min_v, max_v);
+    t21 = clip16_i32(token, _mm512_sub_epi32(t18a, t21a), min_v, max_v);
+    let t22a = clip16_i32(token, _mm512_sub_epi32(t17, t22), min_v, max_v);
+    t23 = clip16_i32(token, _mm512_sub_epi32(t16a, t23a), min_v, max_v);
+    t24 = clip16_i32(token, _mm512_sub_epi32(t31a, t24a), min_v, max_v);
+    let t25a = clip16_i32(token, _mm512_sub_epi32(t30, t25), min_v, max_v);
+    t26 = clip16_i32(token, _mm512_sub_epi32(t29a, t26a), min_v, max_v);
+    let t27a = clip16_i32(token, _mm512_sub_epi32(t28, t27), min_v, max_v);
+    let t28a = clip16_i32(token, _mm512_add_epi32(t28, t27), min_v, max_v);
+    t29 = clip16_i32(token, _mm512_add_epi32(t29a, t26a), min_v, max_v);
+    let t30a = clip16_i32(token, _mm512_add_epi32(t30, t25), min_v, max_v);
+    t31 = clip16_i32(token, _mm512_add_epi32(t31a, t24a), min_v, max_v);
+
+    let mul181_sum = |a: __m512i, b: __m512i| {
+        let s = _mm512_add_epi32(a, b);
+        _mm512_srai_epi32::<8>(_mm512_add_epi32(
+            _mm512_mullo_epi32(s, _mm512_set1_epi32(181)),
+            _mm512_set1_epi32(128),
+        ))
+    };
+    let mul181_diff = |a: __m512i, b: __m512i| {
+        let s = _mm512_sub_epi32(a, b);
+        _mm512_srai_epi32::<8>(_mm512_add_epi32(
+            _mm512_mullo_epi32(s, _mm512_set1_epi32(181)),
+            _mm512_set1_epi32(128),
+        ))
+    };
+    let t20_final = mul181_diff(t27a, t20a);
+    let t27_final = mul181_sum(t27a, t20a);
+    let t21a_final = mul181_diff(t26, t21);
+    let t26a_final = mul181_sum(t26, t21);
+    let t22_final = mul181_diff(t25a, t22a);
+    let t25_final = mul181_sum(t25a, t22a);
+    let t23a = mul181_diff(t24, t23);
+    let t24a = mul181_sum(t24, t23);
+
+    let t0 = c[0]; let t1 = c[2]; let t2 = c[4]; let t3 = c[6];
+    let t4 = c[8]; let t5 = c[10]; let t6 = c[12]; let t7 = c[14];
+    let t8 = c[16]; let t9 = c[18]; let t10 = c[20]; let t11 = c[22];
+    let t12 = c[24]; let t13 = c[26]; let t14 = c[28]; let t15 = c[30];
+
+    c[0] = clip16_i32(token, _mm512_add_epi32(t0, t31), min_v, max_v);
+    c[1] = clip16_i32(token, _mm512_add_epi32(t1, t30a), min_v, max_v);
+    c[2] = clip16_i32(token, _mm512_add_epi32(t2, t29), min_v, max_v);
+    c[3] = clip16_i32(token, _mm512_add_epi32(t3, t28a), min_v, max_v);
+    c[4] = clip16_i32(token, _mm512_add_epi32(t4, t27_final), min_v, max_v);
+    c[5] = clip16_i32(token, _mm512_add_epi32(t5, t26a_final), min_v, max_v);
+    c[6] = clip16_i32(token, _mm512_add_epi32(t6, t25_final), min_v, max_v);
+    c[7] = clip16_i32(token, _mm512_add_epi32(t7, t24a), min_v, max_v);
+    c[8] = clip16_i32(token, _mm512_add_epi32(t8, t23a), min_v, max_v);
+    c[9] = clip16_i32(token, _mm512_add_epi32(t9, t22_final), min_v, max_v);
+    c[10] = clip16_i32(token, _mm512_add_epi32(t10, t21a_final), min_v, max_v);
+    c[11] = clip16_i32(token, _mm512_add_epi32(t11, t20_final), min_v, max_v);
+    c[12] = clip16_i32(token, _mm512_add_epi32(t12, t19a), min_v, max_v);
+    c[13] = clip16_i32(token, _mm512_add_epi32(t13, t18), min_v, max_v);
+    c[14] = clip16_i32(token, _mm512_add_epi32(t14, t17a), min_v, max_v);
+    c[15] = clip16_i32(token, _mm512_add_epi32(t15, t16), min_v, max_v);
+    c[16] = clip16_i32(token, _mm512_sub_epi32(t15, t16), min_v, max_v);
+    c[17] = clip16_i32(token, _mm512_sub_epi32(t14, t17a), min_v, max_v);
+    c[18] = clip16_i32(token, _mm512_sub_epi32(t13, t18), min_v, max_v);
+    c[19] = clip16_i32(token, _mm512_sub_epi32(t12, t19a), min_v, max_v);
+    c[20] = clip16_i32(token, _mm512_sub_epi32(t11, t20_final), min_v, max_v);
+    c[21] = clip16_i32(token, _mm512_sub_epi32(t10, t21a_final), min_v, max_v);
+    c[22] = clip16_i32(token, _mm512_sub_epi32(t9, t22_final), min_v, max_v);
+    c[23] = clip16_i32(token, _mm512_sub_epi32(t8, t23a), min_v, max_v);
+    c[24] = clip16_i32(token, _mm512_sub_epi32(t7, t24a), min_v, max_v);
+    c[25] = clip16_i32(token, _mm512_sub_epi32(t6, t25_final), min_v, max_v);
+    c[26] = clip16_i32(token, _mm512_sub_epi32(t5, t26a_final), min_v, max_v);
+    c[27] = clip16_i32(token, _mm512_sub_epi32(t4, t27_final), min_v, max_v);
+    c[28] = clip16_i32(token, _mm512_sub_epi32(t3, t28a), min_v, max_v);
+    c[29] = clip16_i32(token, _mm512_sub_epi32(t2, t29), min_v, max_v);
+    c[30] = clip16_i32(token, _mm512_sub_epi32(t1, t30a), min_v, max_v);
+    c[31] = clip16_i32(token, _mm512_sub_epi32(t0, t31), min_v, max_v);
+}
+
+/// Run dct32 1D column transform over a row-major buffer using AVX-512.
+/// Processes 16 cols at a time. `total_w` must be a multiple of 16.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn dct32_cols_avx512(
+    token: Server64,
+    tmp: &mut [i32],
+    total_w: usize,
+    n_rows: usize,
+    min: i32,
+    max: i32,
+) {
+    let min_v = _mm512_set1_epi32(min);
+    let max_v = _mm512_set1_epi32(max);
+    let n_chunks = total_w / 16;
+    for cx_chunk in 0..n_chunks {
+        let cx = cx_chunk * 16;
+        let mut v = [_mm512_setzero_si512(); 32];
+        for i in 0..32usize.min(n_rows) {
+            let arr_ref: &[i32; 16] = (&tmp[i * total_w + cx..i * total_w + cx + 16])
+                .try_into()
+                .unwrap();
+            v[i] = loadu_512!(arr_ref);
+        }
+        dct32_1d_cols16(token, &mut v, min_v, max_v);
+        for i in 0..32usize.min(n_rows) {
+            let arr_ref: &mut [i32; 16] = (&mut tmp[i * total_w + cx..i * total_w + cx + 16])
+                .try_into()
+                .unwrap();
+            storeu_512!(arr_ref, v[i]);
+        }
+    }
+}
+
 /// Run dct16 1D column transform over a row-major buffer using AVX-512.
 /// `tmp` has `total_w` cols × `n_rows` rows. Processes 16 cols at a time.
 /// `n_chunks` = `total_w / 16`. Caller is responsible for ensuring this divides.
@@ -3192,6 +3431,11 @@ fn dct32x32_cols_simd(
     min: i32,
     max: i32,
 ) {
+    // Try AVX-512 first: 16 cols per chunk (2 chunks total for 32x32).
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct32_cols_avx512(t512, tmp, 32, 32, min, max);
+        return;
+    }
     let min_v = _mm256_set1_epi32(min);
     let max_v = _mm256_set1_epi32(max);
     for cx_chunk in 0..4 {
