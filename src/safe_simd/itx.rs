@@ -17218,6 +17218,88 @@ impl_ffi_wrapper_16bpc!(
 );
 
 /// Macro for 16x16 transform variants 16bpc
+/// Strided-style 16bpc 16x16 macro with SIMD col pass.
+macro_rules! impl_16x16_transform_16bpc_strided_simd_col {
+    ($name:ident, $row_fn:ident, $simd_col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[arcane]
+        fn $name(
+            _token: Desktop64,
+            dst: &mut [u16],
+            dst_stride: usize,
+            coeff: &mut [i16],
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            use crate::src::safe_simd::pixel_access::{loadu_128, storeu_128};
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
+            let stride_u16 = dst_stride / 2;
+            let row_clip_min = (!bitdepth_max) << 7;
+            let row_clip_max = !row_clip_min;
+            let col_clip_min = (!bitdepth_max) << 5;
+            let col_clip_max = !col_clip_min;
+            let mut tmp = [0i32; 256];
+
+            let rnd = 2;
+            let shift = 2;
+            for y in 0..16 {
+                let mut scratch = [0i32; 16];
+                for x in 0..16 {
+                    scratch[x] = coeff[y + x * 16] as i32;
+                }
+                $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
+                for x in 0..16 {
+                    tmp[y * 16 + x] =
+                        iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+                }
+            }
+
+            // SIMD column transform
+            $simd_col_fn(_token, &mut tmp, col_clip_min, col_clip_max);
+
+            // Add to destination
+            let zero = _mm_setzero_si128();
+            let max_val = _mm_set1_epi32(bitdepth_max);
+            for y in 0..16 {
+                let dst_off = y * stride_u16;
+                for chunk in 0..2 {
+                    let x_base = chunk * 8;
+                    let dst_chunk_off = dst_off + x_base;
+                    let d = loadu_128!(
+                        <&[u16; 8]>::try_from(&dst[dst_chunk_off..dst_chunk_off + 8]).unwrap()
+                    );
+                    let d_lo = _mm_unpacklo_epi16(d, zero);
+                    let d_hi = _mm_unpackhi_epi16(d, zero);
+                    let c_lo = _mm_set_epi32(
+                        (tmp[y * 16 + x_base + 3] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 2] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 1] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 0] + 8) >> 4,
+                    );
+                    let c_hi = _mm_set_epi32(
+                        (tmp[y * 16 + x_base + 7] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 6] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 5] + 8) >> 4,
+                        (tmp[y * 16 + x_base + 4] + 8) >> 4,
+                    );
+                    let sum_lo = _mm_add_epi32(d_lo, c_lo);
+                    let sum_hi = _mm_add_epi32(d_hi, c_hi);
+                    let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_val), zero);
+                    let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
+                    let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
+                    storeu_128!(
+                        <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                        packed
+                    );
+                }
+            }
+
+            coeff[..256].fill(0);
+        }
+    };
+}
+
 macro_rules! impl_16x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
@@ -17314,35 +17396,35 @@ macro_rules! impl_16x16_transform_16bpc {
 }
 
 // 16x16 hybrid identity transforms 16bpc
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_strided_simd_col!(
     inv_txfm_add_identity_dct_16x16_16bpc_avx2_inner,
     identity16_1d,
-    dct16_1d
+    dct16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_strided_simd_col!(
     inv_txfm_add_dct_identity_16x16_16bpc_avx2_inner,
     dct16_1d,
-    identity16_1d
+    identity16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_strided_simd_col!(
     inv_txfm_add_identity_adst_16x16_16bpc_avx2_inner,
     identity16_1d,
-    adst16_1d
+    adst16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_strided_simd_col!(
     inv_txfm_add_adst_identity_16x16_16bpc_avx2_inner,
     adst16_1d,
-    identity16_1d
+    identity16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_strided_simd_col!(
     inv_txfm_add_identity_flipadst_16x16_16bpc_avx2_inner,
     identity16_1d,
-    flipadst16_1d
+    flipadst16x16_cols_simd
 );
-impl_16x16_transform_16bpc!(
+impl_16x16_transform_16bpc_strided_simd_col!(
     inv_txfm_add_flipadst_identity_16x16_16bpc_avx2_inner,
     flipadst16_1d,
-    identity16_1d
+    identity16x16_cols_simd
 );
 
 impl_ffi_wrapper_16bpc!(
