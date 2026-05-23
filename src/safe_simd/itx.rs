@@ -5427,9 +5427,16 @@ fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
         }
     }
 
-    // Column transform (32 elements each, 16 columns)
-    for x in 0..16 {
-        identity32_1d(&mut tmp[x..], 16, clip_min, clip_max);
+    // Column transform: SIMD across 16 columns (2 chunks of 8), identity32 = *4
+    {
+        for cx_chunk in 0..2 {
+            let cx = cx_chunk * 8;
+            for i in 0..32 {
+                let v = loadu_256!(&tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8]);
+                let result = _mm256_slli_epi32::<2>(v);
+                storeu_256!(&mut tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8], result);
+            }
+        }
     }
 
     // Add to destination
@@ -5552,9 +5559,21 @@ fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
         }
     }
 
-    // Column transform (16 elements each, 32 columns)
-    for x in 0..32 {
-        identity16_1d(&mut tmp[x..], 32, clip_min, clip_max);
+    // Column transform: SIMD across 32 columns (4 chunks of 8), identity16 = 2*in + (in*1697+1024 >> 11)
+    {
+        let c1697 = _mm256_set1_epi32(1697);
+        let c1024 = _mm256_set1_epi32(1024);
+        for cx_chunk in 0..4 {
+            let cx = cx_chunk * 8;
+            for i in 0..16 {
+                let v = loadu_256!(&tmp[i * 32 + cx..i * 32 + cx + 8], [i32; 8]);
+                let two_v = _mm256_slli_epi32::<1>(v);
+                let mul = _mm256_mullo_epi32(v, c1697);
+                let shifted = _mm256_srai_epi32::<11>(_mm256_add_epi32(mul, c1024));
+                let result = _mm256_add_epi32(two_v, shifted);
+                storeu_256!(&mut tmp[i * 32 + cx..i * 32 + cx + 8], [i32; 8], result);
+            }
+        }
     }
 
     // Add to destination
