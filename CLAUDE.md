@@ -46,24 +46,24 @@ Run via `just profile-quick`. Single-threaded, 100 iters (IVF) / 5 iters (AVIF).
 
 | Build | ms/iter | vs ASM |
 |-------|---------|--------|
-| ASM | 123.9 | 1.0x |
-| Partial ASM | 175.9 | 1.42x |
-| Checked | 223.3 | 1.80x |
-| Unchecked | 219.8 | 1.77x |
+| ASM | 120.9 | 1.0x |
+| Partial ASM | 170.4 | 1.41x |
+| Checked | 218.7 | 1.81x |
+| Unchecked | 211.3 | 1.75x |
 
 **8K photo AVIF (8192x5464):**
 
 | Build | ms/iter | vs ASM |
 |-------|---------|--------|
-| ASM | 713.9 | 1.0x |
-| Partial ASM | 880.4 | 1.23x |
-| Checked | 1271.8 | 1.78x |
-| Unchecked | 1225.8 | 1.72x |
+| ASM | 694.8 | 1.0x |
+| Partial ASM | 861.8 | 1.24x |
+| Checked | 1229.0 | 1.77x |
+| Unchecked | 1162.2 | 1.67x |
 
 Progress vs 2026-02-13 baseline (Checked):
-- IVF: 1.68x → 1.61x
-- 4K AVIF: 1.98x → 1.80x  (~9% improvement)
-- 8K AVIF: 1.95x → 1.78x  (~9% improvement)
+- IVF: 1.68x → 1.63x
+- 4K AVIF: 1.98x → 1.81x  (~9% gap closed)
+- 8K AVIF: 1.95x → 1.77x  (~9% gap closed)
 
 Optimizations landed (all in safe checked, `#![forbid(unsafe_code)]`):
 - `cfl_pred` SIMD (8bpc+16bpc)
