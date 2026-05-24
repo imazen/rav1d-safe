@@ -3653,6 +3653,54 @@ macro_rules! impl_16x16_transform_simd_col {
     };
 }
 
+/// Macro variant: row pass uses SIMD ADST-16 (8 rows at a time), column pass
+/// uses SIMD. `$flipped` is `true` for flipadst row, `false` for plain adst.
+macro_rules! impl_16x16_transform_simd_row_adst_col {
+    ($name:ident, $flipped:expr, $simd_col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[arcane]
+        fn $name(
+            _token: Desktop64,
+            dst: &mut [u8],
+            dst_stride: usize,
+            coeff: &mut [i16],
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
+            let row_clip_min = i16::MIN as i32;
+            let row_clip_max = i16::MAX as i32;
+            let col_clip_min = i16::MIN as i32;
+            let col_clip_max = i16::MAX as i32;
+            let mut tmp = [0i32; 256];
+            // SIMD row ADST-16: 2 batches of 8 rows, no rect2, shift=2, rnd=2.
+            {
+                let coeff_slice = coeff.as_slice();
+                for y_base in [0usize, 8] {
+                    simd_row_adst16_8bpc_8rows(
+                        _token,
+                        coeff_slice,
+                        16,
+                        y_base,
+                        false,
+                        $flipped,
+                        2,
+                        2,
+                        &mut tmp,
+                        row_clip_min,
+                        row_clip_max,
+                        col_clip_min,
+                        col_clip_max,
+                    );
+                }
+            }
+            $simd_col_fn(_token, &mut tmp, col_clip_min, col_clip_max);
+            add_16x16_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        }
+    };
+}
+
 /// Macro variant: row pass uses SIMD DCT-16 (8 rows at a time), column pass
 /// uses SIMD. Use for transforms where row_fn == dct16_1d AND col is SIMD.
 /// Same shape as `impl_16x16_transform_simd_col` but skips the scalar
@@ -3736,42 +3784,42 @@ macro_rules! impl_16x16_ffi_wrapper {
 }
 
 // Generate inner functions for all 16x16 transform combinations
-impl_16x16_transform_simd_col!(
+impl_16x16_transform_simd_row_adst_col!(
     inv_txfm_add_adst_dct_16x16_8bpc_avx2_inner,
-    adst16_1d,
+    false,
     dct16x16_cols_simd
 );
 impl_16x16_transform_simd_row_dct_col!(
     inv_txfm_add_dct_adst_16x16_8bpc_avx2_inner,
     adst16x16_cols_simd
 );
-impl_16x16_transform_simd_col!(
+impl_16x16_transform_simd_row_adst_col!(
     inv_txfm_add_adst_adst_16x16_8bpc_avx2_inner,
-    adst16_1d,
+    false,
     adst16x16_cols_simd
 );
-impl_16x16_transform_simd_col!(
+impl_16x16_transform_simd_row_adst_col!(
     inv_txfm_add_flipadst_dct_16x16_8bpc_avx2_inner,
-    flipadst16_1d,
+    true,
     dct16x16_cols_simd
 );
 impl_16x16_transform_simd_row_dct_col!(
     inv_txfm_add_dct_flipadst_16x16_8bpc_avx2_inner,
     flipadst16x16_cols_simd
 );
-impl_16x16_transform_simd_col!(
+impl_16x16_transform_simd_row_adst_col!(
     inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2_inner,
-    flipadst16_1d,
+    true,
     flipadst16x16_cols_simd
 );
-impl_16x16_transform_simd_col!(
+impl_16x16_transform_simd_row_adst_col!(
     inv_txfm_add_adst_flipadst_16x16_8bpc_avx2_inner,
-    adst16_1d,
+    false,
     flipadst16x16_cols_simd
 );
-impl_16x16_transform_simd_col!(
+impl_16x16_transform_simd_row_adst_col!(
     inv_txfm_add_flipadst_adst_16x16_8bpc_avx2_inner,
-    flipadst16_1d,
+    true,
     adst16x16_cols_simd
 );
 impl_16x16_transform_simd_col!(
@@ -3788,9 +3836,9 @@ impl_16x16_transform_simd_col!(
     identity16_1d,
     adst16x16_cols_simd
 );
-impl_16x16_transform_simd_col!(
+impl_16x16_transform_simd_row_adst_col!(
     inv_txfm_add_adst_identity_16x16_8bpc_avx2_inner,
-    adst16_1d,
+    false,
     identity16x16_cols_simd
 );
 impl_16x16_transform_simd_col!(
@@ -3798,9 +3846,9 @@ impl_16x16_transform_simd_col!(
     identity16_1d,
     flipadst16x16_cols_simd
 );
-impl_16x16_transform_simd_col!(
+impl_16x16_transform_simd_row_adst_col!(
     inv_txfm_add_flipadst_identity_16x16_8bpc_avx2_inner,
-    flipadst16_1d,
+    true,
     identity16x16_cols_simd
 );
 
@@ -5829,6 +5877,96 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_avx2(
     );
 }
 
+/// SIMD row ADST-8 for 8xN transforms, 8bpc. Same shape as
+/// `simd_row_dct8_8bpc_8rows` but calls `adst8_1d_cols8`. If `flipped`,
+/// reverses output order after ADST (flipadst). Currently unwired — kept
+/// for the future 8x16/8x32 mixed-row adst transform refactor.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+#[allow(dead_code)]
+fn simd_row_adst8_8bpc_8rows(
+    token: Desktop64,
+    coeff: &[i16],
+    coeff_h: usize,
+    y_base: usize,
+    apply_rect2: bool,
+    flipped: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    let row_min_v = _mm256_set1_epi32(row_min);
+    let row_max_v = _mm256_set1_epi32(row_max);
+    let col_min_v = _mm256_set1_epi32(col_min);
+    let col_max_v = _mm256_set1_epi32(col_max);
+    let rect2_v = _mm256_set1_epi32(181);
+    let bias_v = _mm256_set1_epi32(128);
+    let rnd_v = _mm256_set1_epi32(rnd);
+    let mut cols = [_mm256_setzero_si256(); 8];
+    for x in 0..8 {
+        let off = y_base + x * coeff_h;
+        let arr: &[i16; 8] = (&coeff[off..off + 8]).try_into().unwrap();
+        let v16 = loadu_128!(arr);
+        let v32 = _mm256_cvtepi16_epi32(v16);
+        cols[x] = if apply_rect2 {
+            _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(v32, rect2_v), bias_v))
+        } else {
+            v32
+        };
+    }
+    adst8_1d_cols8(token, &mut cols, row_min_v, row_max_v);
+    if flipped {
+        // ADST output reversed: c[i] <- c[7-i]
+        cols.reverse();
+    }
+    for x in 0..8 {
+        let rounded = match shift {
+            0 => _mm256_add_epi32(cols[x], rnd_v),
+            1 => _mm256_srai_epi32::<1>(_mm256_add_epi32(cols[x], rnd_v)),
+            2 => _mm256_srai_epi32::<2>(_mm256_add_epi32(cols[x], rnd_v)),
+            _ => _mm256_srai_epi32::<2>(_mm256_add_epi32(cols[x], rnd_v)),
+        };
+        cols[x] = _mm256_max_epi32(_mm256_min_epi32(rounded, col_max_v), col_min_v);
+    }
+    let t0 = _mm256_unpacklo_epi32(cols[0], cols[1]);
+    let t1 = _mm256_unpackhi_epi32(cols[0], cols[1]);
+    let t2 = _mm256_unpacklo_epi32(cols[2], cols[3]);
+    let t3 = _mm256_unpackhi_epi32(cols[2], cols[3]);
+    let t4 = _mm256_unpacklo_epi32(cols[4], cols[5]);
+    let t5 = _mm256_unpackhi_epi32(cols[4], cols[5]);
+    let t6 = _mm256_unpacklo_epi32(cols[6], cols[7]);
+    let t7 = _mm256_unpackhi_epi32(cols[6], cols[7]);
+    let u0 = _mm256_unpacklo_epi64(t0, t2);
+    let u1 = _mm256_unpackhi_epi64(t0, t2);
+    let u2 = _mm256_unpacklo_epi64(t1, t3);
+    let u3 = _mm256_unpackhi_epi64(t1, t3);
+    let u4 = _mm256_unpacklo_epi64(t4, t6);
+    let u5 = _mm256_unpackhi_epi64(t4, t6);
+    let u6 = _mm256_unpacklo_epi64(t5, t7);
+    let u7 = _mm256_unpackhi_epi64(t5, t7);
+    let r0 = _mm256_permute2x128_si256::<0x20>(u0, u4);
+    let r1 = _mm256_permute2x128_si256::<0x20>(u1, u5);
+    let r2 = _mm256_permute2x128_si256::<0x20>(u2, u6);
+    let r3 = _mm256_permute2x128_si256::<0x20>(u3, u7);
+    let r4 = _mm256_permute2x128_si256::<0x31>(u0, u4);
+    let r5 = _mm256_permute2x128_si256::<0x31>(u1, u5);
+    let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
+    let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
+    let s = 8;
+    storeu_256!(&mut tmp[(y_base + 0) * s..(y_base + 0) * s + 8], [i32; 8], r0);
+    storeu_256!(&mut tmp[(y_base + 1) * s..(y_base + 1) * s + 8], [i32; 8], r1);
+    storeu_256!(&mut tmp[(y_base + 2) * s..(y_base + 2) * s + 8], [i32; 8], r2);
+    storeu_256!(&mut tmp[(y_base + 3) * s..(y_base + 3) * s + 8], [i32; 8], r3);
+    storeu_256!(&mut tmp[(y_base + 4) * s..(y_base + 4) * s + 8], [i32; 8], r4);
+    storeu_256!(&mut tmp[(y_base + 5) * s..(y_base + 5) * s + 8], [i32; 8], r5);
+    storeu_256!(&mut tmp[(y_base + 6) * s..(y_base + 6) * s + 8], [i32; 8], r6);
+    storeu_256!(&mut tmp[(y_base + 7) * s..(y_base + 7) * s + 8], [i32; 8], r7);
+}
+
 /// SIMD row DCT-8 for 8xN transforms, 8bpc. Processes 8 rows at once via
 /// `dct8_1d_cols8` + 8x8 transpose. Coeff is column-major (stride `coeff_h`);
 /// writes row-major into `tmp` (stride 8).
@@ -5911,6 +6049,96 @@ fn simd_row_dct8_8bpc_8rows(
     storeu_256!(&mut tmp[(y_base + 5) * s..(y_base + 5) * s + 8], [i32; 8], r5);
     storeu_256!(&mut tmp[(y_base + 6) * s..(y_base + 6) * s + 8], [i32; 8], r6);
     storeu_256!(&mut tmp[(y_base + 7) * s..(y_base + 7) * s + 8], [i32; 8], r7);
+}
+
+/// SIMD row ADST-16 for 16xN transforms, 8bpc. Same shape as
+/// `simd_row_dct16_8bpc_8rows` but calls `adst16_1d_cols8`. If `flipped`,
+/// reverses output order after ADST (flipadst).
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn simd_row_adst16_8bpc_8rows(
+    token: Desktop64,
+    coeff: &[i16],
+    coeff_h: usize,
+    y_base: usize,
+    apply_rect2: bool,
+    flipped: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    let row_min_v = _mm256_set1_epi32(row_min);
+    let row_max_v = _mm256_set1_epi32(row_max);
+    let col_min_v = _mm256_set1_epi32(col_min);
+    let col_max_v = _mm256_set1_epi32(col_max);
+    let rect2_v = _mm256_set1_epi32(181);
+    let bias_v = _mm256_set1_epi32(128);
+    let rnd_v = _mm256_set1_epi32(rnd);
+    let mut cols = [_mm256_setzero_si256(); 16];
+    for x in 0..16 {
+        let off = y_base + x * coeff_h;
+        let arr: &[i16; 8] = (&coeff[off..off + 8]).try_into().unwrap();
+        let v16 = loadu_128!(arr);
+        let v32 = _mm256_cvtepi16_epi32(v16);
+        cols[x] = if apply_rect2 {
+            _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(v32, rect2_v), bias_v))
+        } else {
+            v32
+        };
+    }
+    adst16_1d_cols8(token, &mut cols, row_min_v, row_max_v);
+    if flipped {
+        cols.reverse();
+    }
+    for x in 0..16 {
+        let rounded = match shift {
+            0 => _mm256_add_epi32(cols[x], rnd_v),
+            1 => _mm256_srai_epi32::<1>(_mm256_add_epi32(cols[x], rnd_v)),
+            2 => _mm256_srai_epi32::<2>(_mm256_add_epi32(cols[x], rnd_v)),
+            _ => _mm256_srai_epi32::<2>(_mm256_add_epi32(cols[x], rnd_v)),
+        };
+        cols[x] = _mm256_max_epi32(_mm256_min_epi32(rounded, col_max_v), col_min_v);
+    }
+    for chunk in 0..2 {
+        let b = chunk * 8;
+        let t0 = _mm256_unpacklo_epi32(cols[b + 0], cols[b + 1]);
+        let t1 = _mm256_unpackhi_epi32(cols[b + 0], cols[b + 1]);
+        let t2 = _mm256_unpacklo_epi32(cols[b + 2], cols[b + 3]);
+        let t3 = _mm256_unpackhi_epi32(cols[b + 2], cols[b + 3]);
+        let t4 = _mm256_unpacklo_epi32(cols[b + 4], cols[b + 5]);
+        let t5 = _mm256_unpackhi_epi32(cols[b + 4], cols[b + 5]);
+        let t6 = _mm256_unpacklo_epi32(cols[b + 6], cols[b + 7]);
+        let t7 = _mm256_unpackhi_epi32(cols[b + 6], cols[b + 7]);
+        let u0 = _mm256_unpacklo_epi64(t0, t2);
+        let u1 = _mm256_unpackhi_epi64(t0, t2);
+        let u2 = _mm256_unpacklo_epi64(t1, t3);
+        let u3 = _mm256_unpackhi_epi64(t1, t3);
+        let u4 = _mm256_unpacklo_epi64(t4, t6);
+        let u5 = _mm256_unpackhi_epi64(t4, t6);
+        let u6 = _mm256_unpacklo_epi64(t5, t7);
+        let u7 = _mm256_unpackhi_epi64(t5, t7);
+        let r0 = _mm256_permute2x128_si256::<0x20>(u0, u4);
+        let r1 = _mm256_permute2x128_si256::<0x20>(u1, u5);
+        let r2 = _mm256_permute2x128_si256::<0x20>(u2, u6);
+        let r3 = _mm256_permute2x128_si256::<0x20>(u3, u7);
+        let r4 = _mm256_permute2x128_si256::<0x31>(u0, u4);
+        let r5 = _mm256_permute2x128_si256::<0x31>(u1, u5);
+        let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
+        let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
+        let s = 16;
+        storeu_256!(&mut tmp[(y_base + 0) * s + b..(y_base + 0) * s + b + 8], [i32; 8], r0);
+        storeu_256!(&mut tmp[(y_base + 1) * s + b..(y_base + 1) * s + b + 8], [i32; 8], r1);
+        storeu_256!(&mut tmp[(y_base + 2) * s + b..(y_base + 2) * s + b + 8], [i32; 8], r2);
+        storeu_256!(&mut tmp[(y_base + 3) * s + b..(y_base + 3) * s + b + 8], [i32; 8], r3);
+        storeu_256!(&mut tmp[(y_base + 4) * s + b..(y_base + 4) * s + b + 8], [i32; 8], r4);
+        storeu_256!(&mut tmp[(y_base + 5) * s + b..(y_base + 5) * s + b + 8], [i32; 8], r5);
+        storeu_256!(&mut tmp[(y_base + 6) * s + b..(y_base + 6) * s + b + 8], [i32; 8], r6);
+        storeu_256!(&mut tmp[(y_base + 7) * s + b..(y_base + 7) * s + b + 8], [i32; 8], r7);
+    }
 }
 
 /// SIMD row DCT-16 for 16xN transforms, 8bpc. Processes 8 rows at once via
