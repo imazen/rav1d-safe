@@ -42,28 +42,21 @@ Run via `just profile-quick`. Single-threaded, 100 iters (IVF) / 5 iters (AVIF).
 | Checked | 170.3 | 1.61x |
 | Unchecked | 163.3 | 1.54x |
 
-**4K photo AVIF (3840x2561):**
+**4K photo AVIF (3840x2561) — measured with zenbench (interleaved, paired):**
 
-| Build | ms/iter | vs ASM |
-|-------|---------|--------|
-| ASM | 125.5 | 1.0x |
-| Partial ASM | 187.7 | 1.49x |
-| Checked | 216.0 | 1.72x |
-| Unchecked | 222.0 | 1.77x |
+| Build | ms/iter ± mad | vs ASM |
+|-------|---------------|--------|
+| ASM (decode_4k_1t) | 132.0 ± 9.0  | 1.0x |
+| Safe Checked (decode_4k_1t) | 222.7 ± 4.7 | **1.69x** |
 
-**8K photo AVIF (8192x5464):**
-
-| Build | ms/iter | vs ASM |
-|-------|---------|--------|
-| ASM | 725.1 | 1.0x |
-| Partial ASM | 904.4 | 1.25x |
-| Checked | 1238.6 | 1.71x |
-| Unchecked | 1176.9 | 1.62x |
+zenbench was the right tool — wall-clock from `just profile-quick` had
+±10% run-to-run variance from thermal throttling during back-to-back
+compile/bench cycles. zenbench's interleaved methodology with
+calibration gives 95% CI of ~2% even on noisy systems.
 
 Progress vs 2026-02-13 baseline (Checked):
-- IVF: 1.68x → 1.62x  (~4% gap closed)
-- 4K AVIF: 1.98x → 1.72x  (**~13% gap closed**)
-- 8K AVIF: 1.95x → 1.71x  (**~12% gap closed**)
+- 4K AVIF: 1.98x → **1.69x** (**~15% gap closed** under zenbench)
+- IVF/8K not yet measured under zenbench.
 
 Optimizations landed (all in safe checked, `#![forbid(unsafe_code)]`):
 - `cfl_pred` SIMD (8bpc+16bpc)
