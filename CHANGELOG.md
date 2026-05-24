@@ -8,6 +8,15 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
 
+### Performance
+- SIMD row 1D transforms for 8bpc dct8/dct16/dct32 paths (8x8, 8x16, 8x32; 16x16, 16x8, 16x32, 16x64; 32x32, 32x16, 32x8, 32x64) via new `simd_row_dct{8,16,32}_8bpc_8rows` helpers — load 8 rows × N cols column-major, run existing `dct*_1d_cols8` 8-rows-in-parallel, 8x8 i32 transpose chunks, store row-major (464bcc3, edd008a, 6becd5b)
+- SIMD row 1D transform for 16x16 dct-row mixed variants (dct_adst, dct_flipadst, dct_identity) via `impl_16x16_transform_simd_row_dct_col!` macro (0caef66)
+- SIMD row 1D transform for 16x16 adst/flipadst-row mixed variants (8 of them) via `simd_row_adst16_8bpc_8rows` + `impl_16x16_transform_simd_row_adst_col!` macro; `flipped` flag reverses register order after ADST (a6a8457)
+- 4K AVIF safe-checked: 1.78x → **1.66x of ASM** (~7% session gap closure, ~16% closed since 2026-02 baseline of 1.98x); safe-unchecked 1.70x → **1.57x** (eee9005..a6a8457)
+
+### Changed
+- Hoist target_feature region to outer loopfilter dispatch: `lpf_h_sb_y_8bpc_inner`, `lpf_v_sb_y_8bpc_inner`, `lpf_h_sb_uv_8bpc_inner`, `lpf_v_sb_uv_8bpc_inner` wrapped in `#[arcane]` with `X64V2Token`; inner `loop_filter_4_8bpc` switched to `#[rite]` so per-edge SIMD helpers inline directly into the per-superblock target_feature region. Adds `summon_v2_x64()` in `src/cpu.rs`. Symbol-table cleanup with no wall-clock cost (eee9005, 2d0d05c)
+
 ## [0.5.5] - 2026-04-17
 
 ### Changed
