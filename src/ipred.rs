@@ -369,9 +369,8 @@ fn cfl_pred_direct<BD: BitDepth>(
         _ => unreachable!(),
     };
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::ipred::cfl_pred_dispatch::<BD>(
-        dst, width, height, dc, ac, alpha, bd,
-    ) {
+    if crate::src::safe_simd::ipred::cfl_pred_dispatch::<BD>(dst, width, height, dc, ac, alpha, bd)
+    {
         return;
     }
     cfl_pred(dst, width, height, dc, ac, alpha, bd);

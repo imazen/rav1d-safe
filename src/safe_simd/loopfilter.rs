@@ -376,10 +376,7 @@ fn loop_filter_4_8bpc_wd6_simd_v(
     //      && (abs_p2p1<=i) && (abs_q2q1<=i)
     let m_p1p0 = not_gt(abs_p1p0, i_v);
     let m_q1q0 = not_gt(abs_q1q0, i_v);
-    let val_ee = _mm_add_epi32(
-        _mm_slli_epi32::<1>(abs_p0q0),
-        _mm_srli_epi32::<1>(abs_p1q1),
-    );
+    let val_ee = _mm_add_epi32(_mm_slli_epi32::<1>(abs_p0q0), _mm_srli_epi32::<1>(abs_p1q1));
     let m_val = not_gt(val_ee, e_v);
     let m_p2p1 = not_gt(abs_p2p1, i_v);
     let m_q2q1 = not_gt(abs_q2q1, i_v);
@@ -575,10 +572,7 @@ fn loop_filter_4_8bpc_wd8_simd_v(
 
     let m_p1p0 = not_gt(abs_p1p0, i_v);
     let m_q1q0 = not_gt(abs_q1q0, i_v);
-    let val_ee = _mm_add_epi32(
-        _mm_slli_epi32::<1>(abs_p0q0),
-        _mm_srli_epi32::<1>(abs_p1q1),
-    );
+    let val_ee = _mm_add_epi32(_mm_slli_epi32::<1>(abs_p0q0), _mm_srli_epi32::<1>(abs_p1q1));
     let m_val = not_gt(val_ee, e_v);
     let m_p2p1 = not_gt(abs_p2p1, i_v);
     let m_q2q1 = not_gt(abs_q2q1, i_v);
@@ -586,10 +580,7 @@ fn loop_filter_4_8bpc_wd8_simd_v(
     let m_q3q2 = not_gt(abs_q3q2, i_v);
     let fm_mask = _mm_and_si128(
         _mm_and_si128(_mm_and_si128(m_p1p0, m_q1q0), m_val),
-        _mm_and_si128(
-            _mm_and_si128(m_p2p1, m_q2q1),
-            _mm_and_si128(m_p3p2, m_q3q2),
-        ),
+        _mm_and_si128(_mm_and_si128(m_p2p1, m_q2q1), _mm_and_si128(m_p3p2, m_q3q2)),
     );
 
     // flat8in = abs(p2-p0)<=f && abs(p1-p0)<=f && abs(q1-q0)<=f && abs(q2-q0)<=f
@@ -620,7 +611,10 @@ fn loop_filter_4_8bpc_wd8_simd_v(
     let add3 = |a: __m128i, b: __m128i, c: __m128i| add(add(a, b), c);
     let add4 = |a: __m128i, b: __m128i, c: __m128i, d: __m128i| add(add(a, b), add(c, d));
 
-    let out_m3 = _mm_srai_epi32::<3>(add(add4(triple(p3_v), dbl(p2_v), p1_v, p0_v), add(q0_v, c4)));
+    let out_m3 = _mm_srai_epi32::<3>(add(
+        add4(triple(p3_v), dbl(p2_v), p1_v, p0_v),
+        add(q0_v, c4),
+    ));
     let out_m2 = _mm_srai_epi32::<3>(add(
         add4(dbl(p3_v), p2_v, dbl(p1_v), p0_v),
         add3(q0_v, q1_v, c4),
@@ -792,10 +786,7 @@ fn loop_filter_4_8bpc_wd16_simd_v(
 
     let m_p1p0 = not_gt(abs_p1p0, i_v);
     let m_q1q0 = not_gt(abs_q1q0, i_v);
-    let val_ee = _mm_add_epi32(
-        _mm_slli_epi32::<1>(abs_p0q0),
-        _mm_srli_epi32::<1>(abs_p1q1),
-    );
+    let val_ee = _mm_add_epi32(_mm_slli_epi32::<1>(abs_p0q0), _mm_srli_epi32::<1>(abs_p1q1));
     let m_val = not_gt(val_ee, e_v);
     let m_p2p1 = not_gt(abs_p2p1, i_v);
     let m_q2q1 = not_gt(abs_q2q1, i_v);
@@ -803,10 +794,7 @@ fn loop_filter_4_8bpc_wd16_simd_v(
     let m_q3q2 = not_gt(abs_q3q2, i_v);
     let fm_mask = _mm_and_si128(
         _mm_and_si128(_mm_and_si128(m_p1p0, m_q1q0), m_val),
-        _mm_and_si128(
-            _mm_and_si128(m_p2p1, m_q2q1),
-            _mm_and_si128(m_p3p2, m_q3q2),
-        ),
+        _mm_and_si128(_mm_and_si128(m_p2p1, m_q2q1), _mm_and_si128(m_p3p2, m_q3q2)),
     );
 
     // flat8out = abs(p6/p5/p4-p0)<=f && abs(q4/q5/q6-q0)<=f
@@ -853,8 +841,14 @@ fn loop_filter_4_8bpc_wd16_simd_v(
     //   out[-6] = (p6*6 + p6*2 + p5*2 + p4*2 + p3 + p2 + p1 + p0 + q0 + 8) >> 4
     // Note: in the scalar, "p6 + p6 + p6 + p6 + p6 + p6 * 2" simplifies to p6 * 7.
     //       But adding scalars and the "*2" terms separately, we get sum = p6*5 + p6*2 = p6*7.
-    let p6_5 = _mm_add_epi32(_mm_add_epi32(_mm_add_epi32(p6_v, p6_v), _mm_add_epi32(p6_v, p6_v)), p6_v); // p6*5
-    let q6_5 = _mm_add_epi32(_mm_add_epi32(_mm_add_epi32(q6_v, q6_v), _mm_add_epi32(q6_v, q6_v)), q6_v); // q6*5
+    let p6_5 = _mm_add_epi32(
+        _mm_add_epi32(_mm_add_epi32(p6_v, p6_v), _mm_add_epi32(p6_v, p6_v)),
+        p6_v,
+    ); // p6*5
+    let q6_5 = _mm_add_epi32(
+        _mm_add_epi32(_mm_add_epi32(q6_v, q6_v), _mm_add_epi32(q6_v, q6_v)),
+        q6_v,
+    ); // q6*5
 
     // out[-6] = p6*7 + p5*2 + p4*2 + p3 + p2 + p1 + p0 + q0 + 8 >> 4
     let mut s = add(p6_5, _mm_add_epi32(dbl(p6_v), dbl(p5_v)));
@@ -973,7 +967,10 @@ fn loop_filter_4_8bpc_wd16_simd_v(
     // 8-tap filter outputs (positions -3..2) for !flat8out && flat8in case.
     // (same as wd=8 path)
     let triple = |v: __m128i| _mm_add_epi32(dbl(v), v);
-    let out8_m3 = _mm_srai_epi32::<3>(add(add4(triple(p3_v), dbl(p2_v), p1_v, p0_v), add(q0_v, c4)));
+    let out8_m3 = _mm_srai_epi32::<3>(add(
+        add4(triple(p3_v), dbl(p2_v), p1_v, p0_v),
+        add(q0_v, c4),
+    ));
     let out8_m2 = _mm_srai_epi32::<3>(add(
         add4(dbl(p3_v), p2_v, dbl(p1_v), p0_v),
         add3(q0_v, q1_v, c4),
@@ -1168,7 +1165,10 @@ fn loop_filter_4_8bpc_narrow_simd_h(
     let m_val = not_gt(val, e_v);
     let fm_mask = _mm_and_si128(_mm_and_si128(m_p1p0, m_q1q0), m_val);
 
-    let hev_mask = _mm_or_si128(_mm_cmpgt_epi32(abs_p1p0, h_v), _mm_cmpgt_epi32(abs_q1q0, h_v));
+    let hev_mask = _mm_or_si128(
+        _mm_cmpgt_epi32(abs_p1p0, h_v),
+        _mm_cmpgt_epi32(abs_q1q0, h_v),
+    );
 
     let neg128 = _mm_set1_epi32(-128);
     let pos127 = _mm_set1_epi32(127);
@@ -1340,10 +1340,7 @@ fn loop_filter_4_8bpc_wd8_simd_h(
 
     let m_p1p0 = not_gt(abs_p1p0, i_v);
     let m_q1q0 = not_gt(abs_q1q0, i_v);
-    let val_ee = _mm_add_epi32(
-        _mm_slli_epi32::<1>(abs_p0q0),
-        _mm_srli_epi32::<1>(abs_p1q1),
-    );
+    let val_ee = _mm_add_epi32(_mm_slli_epi32::<1>(abs_p0q0), _mm_srli_epi32::<1>(abs_p1q1));
     let m_val = not_gt(val_ee, e_v);
     let m_p2p1 = not_gt(abs_p2p1, i_v);
     let m_q2q1 = not_gt(abs_q2q1, i_v);
@@ -1351,10 +1348,7 @@ fn loop_filter_4_8bpc_wd8_simd_h(
     let m_q3q2 = not_gt(abs_q3q2, i_v);
     let fm_mask = _mm_and_si128(
         _mm_and_si128(_mm_and_si128(m_p1p0, m_q1q0), m_val),
-        _mm_and_si128(
-            _mm_and_si128(m_p2p1, m_q2q1),
-            _mm_and_si128(m_p3p2, m_q3q2),
-        ),
+        _mm_and_si128(_mm_and_si128(m_p2p1, m_q2q1), _mm_and_si128(m_p3p2, m_q3q2)),
     );
 
     let abs_p2p0 = abs(p2_v, p0_v);
@@ -1376,7 +1370,10 @@ fn loop_filter_4_8bpc_wd8_simd_h(
     let add3 = |a: __m128i, b: __m128i, c: __m128i| add(add(a, b), c);
     let add4 = |a: __m128i, b: __m128i, c: __m128i, d: __m128i| add(add(a, b), add(c, d));
 
-    let out_m3 = _mm_srai_epi32::<3>(add(add4(triple(p3_v), dbl(p2_v), p1_v, p0_v), add(q0_v, c4)));
+    let out_m3 = _mm_srai_epi32::<3>(add(
+        add4(triple(p3_v), dbl(p2_v), p1_v, p0_v),
+        add(q0_v, c4),
+    ));
     let out_m2 = _mm_srai_epi32::<3>(add(
         add4(dbl(p3_v), p2_v, dbl(p1_v), p0_v),
         add3(q0_v, q1_v, c4),
@@ -1663,8 +1660,14 @@ fn loop_filter_4_8bpc_wd16_simd_h(
     let c8 = _mm_set1_epi32(8);
 
     // 14-tap wide filter outputs (positions -6..5)
-    let p6_5 = _mm_add_epi32(_mm_add_epi32(_mm_add_epi32(p6_v, p6_v), _mm_add_epi32(p6_v, p6_v)), p6_v);
-    let q6_5 = _mm_add_epi32(_mm_add_epi32(_mm_add_epi32(q6_v, q6_v), _mm_add_epi32(q6_v, q6_v)), q6_v);
+    let p6_5 = _mm_add_epi32(
+        _mm_add_epi32(_mm_add_epi32(p6_v, p6_v), _mm_add_epi32(p6_v, p6_v)),
+        p6_v,
+    );
+    let q6_5 = _mm_add_epi32(
+        _mm_add_epi32(_mm_add_epi32(q6_v, q6_v), _mm_add_epi32(q6_v, q6_v)),
+        q6_v,
+    );
 
     let mut s = add(p6_5, _mm_add_epi32(dbl(p6_v), dbl(p5_v)));
     s = add(s, dbl(p4_v));
@@ -1769,7 +1772,10 @@ fn loop_filter_4_8bpc_wd16_simd_h(
 
     // 8-tap outputs (when !flat8out && flat8in)
     let triple = |v: __m128i| _mm_add_epi32(dbl(v), v);
-    let out8_m3 = _mm_srai_epi32::<3>(add(add4(triple(p3_v), dbl(p2_v), p1_v, p0_v), add(q0_v, c4)));
+    let out8_m3 = _mm_srai_epi32::<3>(add(
+        add4(triple(p3_v), dbl(p2_v), p1_v, p0_v),
+        add(q0_v, c4),
+    ));
     let out8_m2 = _mm_srai_epi32::<3>(add(
         add4(dbl(p3_v), p2_v, dbl(p1_v), p0_v),
         add3(q0_v, q1_v, c4),
@@ -1798,7 +1804,10 @@ fn loop_filter_4_8bpc_wd16_simd_h(
     let diff_q0p0 = _mm_sub_epi32(q0_v, p0_v);
     let three_d = _mm_add_epi32(_mm_slli_epi32::<1>(diff_q0p0), diff_q0p0);
     let diff_p1q1 = _mm_sub_epi32(p1_v, q1_v);
-    let hev_mask = _mm_or_si128(_mm_cmpgt_epi32(abs_p1p0, h_v), _mm_cmpgt_epi32(abs_q1q0, h_v));
+    let hev_mask = _mm_or_si128(
+        _mm_cmpgt_epi32(abs_p1p0, h_v),
+        _mm_cmpgt_epi32(abs_q1q0, h_v),
+    );
     let f_hev = iclip(_mm_add_epi32(three_d, iclip(diff_p1q1)));
     let f_no = iclip(three_d);
     let c4i = c4;
@@ -1994,12 +2003,7 @@ fn loop_filter_4_8bpc_narrow_simd_v(
     // Pixels at row offsets -2, -1, 0, 1 from each filter position
     let load4 = |off: isize| -> __m128i {
         let start = signed_idx(base, strideb * off);
-        let bytes = [
-            buf[start],
-            buf[start + 1],
-            buf[start + 2],
-            buf[start + 3],
-        ];
+        let bytes = [buf[start], buf[start + 1], buf[start + 2], buf[start + 3]];
         let as_i32 = i32::from_le_bytes(bytes);
         let v4u8 = _mm_cvtsi32_si128(as_i32);
         _mm_cvtepu8_epi32(v4u8)
@@ -2024,14 +2028,14 @@ fn loop_filter_4_8bpc_narrow_simd_v(
     };
     let m_p1p0 = not_gt(abs_p1p0, i_v);
     let m_q1q0 = not_gt(abs_q1q0, i_v);
-    let val = _mm_add_epi32(
-        _mm_slli_epi32::<1>(abs_p0q0),
-        _mm_srli_epi32::<1>(abs_p1q1),
-    );
+    let val = _mm_add_epi32(_mm_slli_epi32::<1>(abs_p0q0), _mm_srli_epi32::<1>(abs_p1q1));
     let m_val = not_gt(val, e_v);
     let fm_mask = _mm_and_si128(_mm_and_si128(m_p1p0, m_q1q0), m_val);
 
-    let hev_mask = _mm_or_si128(_mm_cmpgt_epi32(abs_p1p0, h_v), _mm_cmpgt_epi32(abs_q1q0, h_v));
+    let hev_mask = _mm_or_si128(
+        _mm_cmpgt_epi32(abs_p1p0, h_v),
+        _mm_cmpgt_epi32(abs_q1q0, h_v),
+    );
 
     let neg128 = _mm_set1_epi32(-128);
     let pos127 = _mm_set1_epi32(127);
@@ -2077,7 +2081,7 @@ fn loop_filter_4_8bpc_narrow_simd_v(
     // Pack 4 i32 lanes back to 4 u8 (each clipped to [0,255]).
     // Use _mm_packus_epi32 then _mm_packus_epi16.
     let pack4 = |v: __m128i| -> i32 {
-        let u16x4 = _mm_packus_epi32(v, v);    // low 4 u16
+        let u16x4 = _mm_packus_epi32(v, v); // low 4 u16
         let u8x4 = _mm_packus_epi16(u16x4, u16x4); // low 4 u8
         _mm_cvtsi128_si32(u8x4)
     };

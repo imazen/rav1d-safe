@@ -14,16 +14,20 @@ fn obu_4k() -> &'static [u8] {
 #[test]
 fn mt_stress_4k() {
     let obu = obu_4k();
-    
+
     for n_threads in [1, 2, 4, 8, 16] {
         for trial in 0..5 {
             let mut settings = Settings::default();
             settings.threads = n_threads;
             settings.frame_size_limit = 8192 * 8192;
             let mut decoder = Decoder::with_settings(settings).expect("decoder");
-            
+
             let result = decoder.decode(obu);
-            assert!(result.is_ok(), "threads={n_threads} trial={trial}: error {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "threads={n_threads} trial={trial}: error {:?}",
+                result.err()
+            );
             let _ = decoder.flush();
             eprintln!("threads={n_threads} trial={trial}: ok");
         }

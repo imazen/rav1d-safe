@@ -4930,9 +4930,8 @@ fn cfl_pred_8bpc_inner(
                 let p16_lo = _mm256_castsi256_si128(p16_ordered); // 8 u16 in order
                 let p8 = _mm_packus_epi16(p16_lo, p16_lo); // low 8 bytes = result
                 // Store low 8 bytes
-                let dst_chunk: &mut [u8; 8] = (&mut dst[row_off + x..row_off + x + 8])
-                    .try_into()
-                    .unwrap();
+                let dst_chunk: &mut [u8; 8] =
+                    (&mut dst[row_off + x..row_off + x + 8]).try_into().unwrap();
                 safe_unaligned_simd::x86_64::_mm_storeu_si64(dst_chunk, p8);
                 x += 8;
             }
@@ -5010,10 +5009,9 @@ fn cfl_pred_16bpc_inner(
                 let p16_lo = _mm256_castsi256_si128(p16_ordered); // 8 u16 in order
                 // Store 16 bytes (8 u16) at dst[row_off + x*2 ..]
                 let byte_x = x * 2;
-                let dst_chunk: &mut [u8; 16] =
-                    (&mut dst[row_off + byte_x..row_off + byte_x + 16])
-                        .try_into()
-                        .unwrap();
+                let dst_chunk: &mut [u8; 16] = (&mut dst[row_off + byte_x..row_off + byte_x + 16])
+                    .try_into()
+                    .unwrap();
                 storeu_128!(dst_chunk, p16_lo);
                 x += 8;
             }

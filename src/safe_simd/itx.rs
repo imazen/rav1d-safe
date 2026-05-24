@@ -2167,14 +2167,26 @@ fn dct4_1d_cols16(token: Server64, c: &mut [__m512i; 4], min_v: __m512i, max_v: 
 fn dct8_1d_cols16(token: Server64, c: &mut [__m512i; 8], min_v: __m512i, max_v: __m512i) {
     let mut even = [c[0], c[2], c[4], c[6]];
     dct4_1d_cols16(token, &mut even, min_v, max_v);
-    c[0] = even[0]; c[2] = even[1]; c[4] = even[2]; c[6] = even[3];
+    c[0] = even[0];
+    c[2] = even[1];
+    c[4] = even[2];
+    c[6] = even[3];
 
-    let in1 = c[1]; let in3 = c[3]; let in5 = c[5]; let in7 = c[7];
+    let in1 = c[1];
+    let in3 = c[3];
+    let in5 = c[5];
+    let in7 = c[7];
 
-    let t4a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, in1, 799, in7, 4017 - 4096, 2048), in7);
+    let t4a = _mm512_sub_epi32(
+        mac_msub_shr_v4::<12>(token, in1, 799, in7, 4017 - 4096, 2048),
+        in7,
+    );
     let t5a = mac_msub_shr_v4::<11>(token, in5, 1703, in3, 1138, 1024);
     let t6a = mac_madd_shr_v4::<11>(token, in5, 1138, in3, 1703, 1024);
-    let t7a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in1, 4017 - 4096, in7, 799, 2048), in1);
+    let t7a = _mm512_add_epi32(
+        mac_madd_shr_v4::<12>(token, in1, 4017 - 4096, in7, 799, 2048),
+        in1,
+    );
 
     let t4 = clip16_i32(token, _mm512_add_epi32(t4a, t5a), min_v, max_v);
     let t5a_n = clip16_i32(token, _mm512_sub_epi32(t4a, t5a), min_v, max_v);
@@ -2192,7 +2204,10 @@ fn dct8_1d_cols16(token: Server64, c: &mut [__m512i; 8], min_v: __m512i, max_v: 
         _mm512_set1_epi32(128),
     ));
 
-    let t0 = c[0]; let t1 = c[2]; let t2 = c[4]; let t3 = c[6];
+    let t0 = c[0];
+    let t1 = c[2];
+    let t2 = c[4];
+    let t3 = c[6];
 
     c[0] = clip16_i32(token, _mm512_add_epi32(t0, t7), min_v, max_v);
     c[1] = clip16_i32(token, _mm512_add_epi32(t1, t6), min_v, max_v);
@@ -2210,11 +2225,23 @@ fn dct8_1d_cols16(token: Server64, c: &mut [__m512i; 8], min_v: __m512i, max_v: 
 fn dct16_1d_cols16(token: Server64, c: &mut [__m512i; 16], min_v: __m512i, max_v: __m512i) {
     let mut even = [c[0], c[2], c[4], c[6], c[8], c[10], c[12], c[14]];
     dct8_1d_cols16(token, &mut even, min_v, max_v);
-    c[0] = even[0]; c[2] = even[1]; c[4] = even[2]; c[6] = even[3];
-    c[8] = even[4]; c[10] = even[5]; c[12] = even[6]; c[14] = even[7];
+    c[0] = even[0];
+    c[2] = even[1];
+    c[4] = even[2];
+    c[6] = even[3];
+    c[8] = even[4];
+    c[10] = even[5];
+    c[12] = even[6];
+    c[14] = even[7];
 
-    let in1 = c[1]; let in3 = c[3]; let in5 = c[5]; let in7 = c[7];
-    let in9 = c[9]; let in11 = c[11]; let in13 = c[13]; let in15 = c[15];
+    let in1 = c[1];
+    let in3 = c[3];
+    let in5 = c[5];
+    let in7 = c[7];
+    let in9 = c[9];
+    let in11 = c[11];
+    let in13 = c[13];
+    let in15 = c[15];
 
     let t8a = _mm512_sub_epi32(
         mac_msub_shr_v4::<12>(token, in1, 401, in15, 4076 - 4096, 2048),
@@ -2252,7 +2279,10 @@ fn dct16_1d_cols16(token: Server64, c: &mut [__m512i; 16], min_v: __m512i, max_v
     let mut t14 = clip16_i32(token, _mm512_sub_epi32(t15a, t14a), min_v, max_v);
     let t15 = clip16_i32(token, _mm512_add_epi32(t15a, t14a), min_v, max_v);
 
-    let t9a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t14, 1567, t9, 3784 - 4096, 2048), t9);
+    let t9a = _mm512_sub_epi32(
+        mac_msub_shr_v4::<12>(token, t14, 1567, t9, 3784 - 4096, 2048),
+        t9,
+    );
     let t14a = _mm512_add_epi32(
         mac_madd_shr_v4::<12>(token, t14, 3784 - 4096, t9, 1567, 2048),
         t14,
@@ -2303,8 +2333,14 @@ fn dct16_1d_cols16(token: Server64, c: &mut [__m512i; 16], min_v: __m512i, max_v
         _mm512_set1_epi32(128),
     ));
 
-    let t0 = c[0]; let t1 = c[2]; let t2 = c[4]; let t3 = c[6];
-    let t4 = c[8]; let t5 = c[10]; let t6 = c[12]; let t7 = c[14];
+    let t0 = c[0];
+    let t1 = c[2];
+    let t2 = c[4];
+    let t3 = c[6];
+    let t4 = c[8];
+    let t5 = c[10];
+    let t6 = c[12];
+    let t7 = c[14];
 
     c[0] = clip16_i32(token, _mm512_add_epi32(t0, t15a), min_v, max_v);
     c[1] = clip16_i32(token, _mm512_add_epi32(t1, t14), min_v, max_v);
@@ -2330,36 +2366,102 @@ fn dct16_1d_cols16(token: Server64, c: &mut [__m512i; 16], min_v: __m512i, max_v
 fn dct32_1d_cols16(token: Server64, c: &mut [__m512i; 32], min_v: __m512i, max_v: __m512i) {
     // Apply DCT16 to even positions
     let mut even = [
-        c[0], c[2], c[4], c[6], c[8], c[10], c[12], c[14],
-        c[16], c[18], c[20], c[22], c[24], c[26], c[28], c[30],
+        c[0], c[2], c[4], c[6], c[8], c[10], c[12], c[14], c[16], c[18], c[20], c[22], c[24],
+        c[26], c[28], c[30],
     ];
     dct16_1d_cols16(token, &mut even, min_v, max_v);
-    c[0] = even[0]; c[2] = even[1]; c[4] = even[2]; c[6] = even[3];
-    c[8] = even[4]; c[10] = even[5]; c[12] = even[6]; c[14] = even[7];
-    c[16] = even[8]; c[18] = even[9]; c[20] = even[10]; c[22] = even[11];
-    c[24] = even[12]; c[26] = even[13]; c[28] = even[14]; c[30] = even[15];
+    c[0] = even[0];
+    c[2] = even[1];
+    c[4] = even[2];
+    c[6] = even[3];
+    c[8] = even[4];
+    c[10] = even[5];
+    c[12] = even[6];
+    c[14] = even[7];
+    c[16] = even[8];
+    c[18] = even[9];
+    c[20] = even[10];
+    c[22] = even[11];
+    c[24] = even[12];
+    c[26] = even[13];
+    c[28] = even[14];
+    c[30] = even[15];
 
-    let in1 = c[1]; let in3 = c[3]; let in5 = c[5]; let in7 = c[7];
-    let in9 = c[9]; let in11 = c[11]; let in13 = c[13]; let in15 = c[15];
-    let in17 = c[17]; let in19 = c[19]; let in21 = c[21]; let in23 = c[23];
-    let in25 = c[25]; let in27 = c[27]; let in29 = c[29]; let in31 = c[31];
+    let in1 = c[1];
+    let in3 = c[3];
+    let in5 = c[5];
+    let in7 = c[7];
+    let in9 = c[9];
+    let in11 = c[11];
+    let in13 = c[13];
+    let in15 = c[15];
+    let in17 = c[17];
+    let in19 = c[19];
+    let in21 = c[21];
+    let in23 = c[23];
+    let in25 = c[25];
+    let in27 = c[27];
+    let in29 = c[29];
+    let in31 = c[31];
 
-    let t16a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, in1, 201, in31, 4091 - 4096, 2048), in31);
-    let t17a = _mm512_add_epi32(mac_msub_shr_v4::<12>(token, in17, 3035 - 4096, in15, 2751, 2048), in17);
-    let t18a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, in9, 1751, in23, 3703 - 4096, 2048), in23);
-    let t19a = _mm512_add_epi32(mac_msub_shr_v4::<12>(token, in25, 3857 - 4096, in7, 1380, 2048), in25);
-    let t20a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, in5, 995, in27, 3973 - 4096, 2048), in27);
-    let t21a = _mm512_add_epi32(mac_msub_shr_v4::<12>(token, in21, 3513 - 4096, in11, 2106, 2048), in21);
+    let t16a = _mm512_sub_epi32(
+        mac_msub_shr_v4::<12>(token, in1, 201, in31, 4091 - 4096, 2048),
+        in31,
+    );
+    let t17a = _mm512_add_epi32(
+        mac_msub_shr_v4::<12>(token, in17, 3035 - 4096, in15, 2751, 2048),
+        in17,
+    );
+    let t18a = _mm512_sub_epi32(
+        mac_msub_shr_v4::<12>(token, in9, 1751, in23, 3703 - 4096, 2048),
+        in23,
+    );
+    let t19a = _mm512_add_epi32(
+        mac_msub_shr_v4::<12>(token, in25, 3857 - 4096, in7, 1380, 2048),
+        in25,
+    );
+    let t20a = _mm512_sub_epi32(
+        mac_msub_shr_v4::<12>(token, in5, 995, in27, 3973 - 4096, 2048),
+        in27,
+    );
+    let t21a = _mm512_add_epi32(
+        mac_msub_shr_v4::<12>(token, in21, 3513 - 4096, in11, 2106, 2048),
+        in21,
+    );
     let t22a = mac_msub_shr_v4::<11>(token, in13, 1220, in19, 1645, 1024);
-    let t23a = _mm512_add_epi32(mac_msub_shr_v4::<12>(token, in29, 4052 - 4096, in3, 601, 2048), in29);
-    let t24a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in29, 601, in3, 4052 - 4096, 2048), in3);
+    let t23a = _mm512_add_epi32(
+        mac_msub_shr_v4::<12>(token, in29, 4052 - 4096, in3, 601, 2048),
+        in29,
+    );
+    let t24a = _mm512_add_epi32(
+        mac_madd_shr_v4::<12>(token, in29, 601, in3, 4052 - 4096, 2048),
+        in3,
+    );
     let t25a = mac_madd_shr_v4::<11>(token, in13, 1645, in19, 1220, 1024);
-    let t26a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in21, 2106, in11, 3513 - 4096, 2048), in11);
-    let t27a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in5, 3973 - 4096, in27, 995, 2048), in5);
-    let t28a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in25, 1380, in7, 3857 - 4096, 2048), in7);
-    let t29a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in9, 3703 - 4096, in23, 1751, 2048), in9);
-    let t30a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in17, 2751, in15, 3035 - 4096, 2048), in15);
-    let t31a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, in1, 4091 - 4096, in31, 201, 2048), in1);
+    let t26a = _mm512_add_epi32(
+        mac_madd_shr_v4::<12>(token, in21, 2106, in11, 3513 - 4096, 2048),
+        in11,
+    );
+    let t27a = _mm512_add_epi32(
+        mac_madd_shr_v4::<12>(token, in5, 3973 - 4096, in27, 995, 2048),
+        in5,
+    );
+    let t28a = _mm512_add_epi32(
+        mac_madd_shr_v4::<12>(token, in25, 1380, in7, 3857 - 4096, 2048),
+        in7,
+    );
+    let t29a = _mm512_add_epi32(
+        mac_madd_shr_v4::<12>(token, in9, 3703 - 4096, in23, 1751, 2048),
+        in9,
+    );
+    let t30a = _mm512_add_epi32(
+        mac_madd_shr_v4::<12>(token, in17, 2751, in15, 3035 - 4096, 2048),
+        in15,
+    );
+    let t31a = _mm512_add_epi32(
+        mac_madd_shr_v4::<12>(token, in1, 4091 - 4096, in31, 201, 2048),
+        in1,
+    );
 
     let mut t16 = clip16_i32(token, _mm512_add_epi32(t16a, t17a), min_v, max_v);
     let mut t17 = clip16_i32(token, _mm512_sub_epi32(t16a, t17a), min_v, max_v);
@@ -2378,8 +2480,14 @@ fn dct32_1d_cols16(token: Server64, c: &mut [__m512i; 32], min_v: __m512i, max_v
     let mut t30 = clip16_i32(token, _mm512_sub_epi32(t31a, t30a), min_v, max_v);
     let mut t31 = clip16_i32(token, _mm512_add_epi32(t31a, t30a), min_v, max_v);
 
-    let t17a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t30, 799, t17, 4017 - 4096, 2048), t17);
-    let t30a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, t30, 4017 - 4096, t17, 799, 2048), t30);
+    let t17a = _mm512_sub_epi32(
+        mac_msub_shr_v4::<12>(token, t30, 799, t17, 4017 - 4096, 2048),
+        t17,
+    );
+    let t30a = _mm512_add_epi32(
+        mac_madd_shr_v4::<12>(token, t30, 4017 - 4096, t17, 799, 2048),
+        t30,
+    );
     let t18a_inner = _mm512_add_epi32(
         _mm512_mullo_epi32(t29, _mm512_set1_epi32(4017 - 4096)),
         _mm512_mullo_epi32(t18, _mm512_set1_epi32(799)),
@@ -2391,7 +2499,10 @@ fn dct32_1d_cols16(token: Server64, c: &mut [__m512i; 32], min_v: __m512i, max_v
         )),
         t29,
     );
-    let t29a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t29, 799, t18, 4017 - 4096, 2048), t18);
+    let t29a = _mm512_sub_epi32(
+        mac_msub_shr_v4::<12>(token, t29, 799, t18, 4017 - 4096, 2048),
+        t18,
+    );
     let t21a = mac_msub_shr_v4::<11>(token, t26, 1703, t21, 1138, 1024);
     let t26a = mac_madd_shr_v4::<11>(token, t26, 1138, t21, 1703, 1024);
     let t22a_inner = _mm512_add_epi32(
@@ -2421,10 +2532,22 @@ fn dct32_1d_cols16(token: Server64, c: &mut [__m512i; 32], min_v: __m512i, max_v
     t30 = clip16_i32(token, _mm512_add_epi32(t30a, t29a), min_v, max_v);
     let t31a = clip16_i32(token, _mm512_add_epi32(t31, t28), min_v, max_v);
 
-    let t18a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t29, 1567, t18, 3784 - 4096, 2048), t18);
-    let t29a = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, t29, 3784 - 4096, t18, 1567, 2048), t29);
-    let t19 = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t28a, 1567, t19a, 3784 - 4096, 2048), t19a);
-    let t28 = _mm512_add_epi32(mac_madd_shr_v4::<12>(token, t28a, 3784 - 4096, t19a, 1567, 2048), t28a);
+    let t18a = _mm512_sub_epi32(
+        mac_msub_shr_v4::<12>(token, t29, 1567, t18, 3784 - 4096, 2048),
+        t18,
+    );
+    let t29a = _mm512_add_epi32(
+        mac_madd_shr_v4::<12>(token, t29, 3784 - 4096, t18, 1567, 2048),
+        t29,
+    );
+    let t19 = _mm512_sub_epi32(
+        mac_msub_shr_v4::<12>(token, t28a, 1567, t19a, 3784 - 4096, 2048),
+        t19a,
+    );
+    let t28 = _mm512_add_epi32(
+        mac_madd_shr_v4::<12>(token, t28a, 3784 - 4096, t19a, 1567, 2048),
+        t28a,
+    );
     let t20_inner = _mm512_add_epi32(
         _mm512_mullo_epi32(t27a, _mm512_set1_epi32(3784 - 4096)),
         _mm512_mullo_epi32(t20a, _mm512_set1_epi32(1567)),
@@ -2436,7 +2559,10 @@ fn dct32_1d_cols16(token: Server64, c: &mut [__m512i; 32], min_v: __m512i, max_v
         )),
         t27a,
     );
-    let t27 = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t27a, 1567, t20a, 3784 - 4096, 2048), t20a);
+    let t27 = _mm512_sub_epi32(
+        mac_msub_shr_v4::<12>(token, t27a, 1567, t20a, 3784 - 4096, 2048),
+        t20a,
+    );
     let t21a_inner = _mm512_add_epi32(
         _mm512_mullo_epi32(t26, _mm512_set1_epi32(3784 - 4096)),
         _mm512_mullo_epi32(t21, _mm512_set1_epi32(1567)),
@@ -2448,7 +2574,10 @@ fn dct32_1d_cols16(token: Server64, c: &mut [__m512i; 32], min_v: __m512i, max_v
         )),
         t26,
     );
-    let t26a = _mm512_sub_epi32(mac_msub_shr_v4::<12>(token, t26, 1567, t21, 3784 - 4096, 2048), t21);
+    let t26a = _mm512_sub_epi32(
+        mac_msub_shr_v4::<12>(token, t26, 1567, t21, 3784 - 4096, 2048),
+        t21,
+    );
 
     t16 = clip16_i32(token, _mm512_add_epi32(t16a, t23a), min_v, max_v);
     let t17a = clip16_i32(token, _mm512_add_epi32(t17, t22), min_v, max_v);
@@ -2490,10 +2619,22 @@ fn dct32_1d_cols16(token: Server64, c: &mut [__m512i; 32], min_v: __m512i, max_v
     let t23a = mul181_diff(t24, t23);
     let t24a = mul181_sum(t24, t23);
 
-    let t0 = c[0]; let t1 = c[2]; let t2 = c[4]; let t3 = c[6];
-    let t4 = c[8]; let t5 = c[10]; let t6 = c[12]; let t7 = c[14];
-    let t8 = c[16]; let t9 = c[18]; let t10 = c[20]; let t11 = c[22];
-    let t12 = c[24]; let t13 = c[26]; let t14 = c[28]; let t15 = c[30];
+    let t0 = c[0];
+    let t1 = c[2];
+    let t2 = c[4];
+    let t3 = c[6];
+    let t4 = c[8];
+    let t5 = c[10];
+    let t6 = c[12];
+    let t7 = c[14];
+    let t8 = c[16];
+    let t9 = c[18];
+    let t10 = c[20];
+    let t11 = c[22];
+    let t12 = c[24];
+    let t13 = c[26];
+    let t14 = c[28];
+    let t15 = c[30];
 
     c[0] = clip16_i32(token, _mm512_add_epi32(t0, t31), min_v, max_v);
     c[1] = clip16_i32(token, _mm512_add_epi32(t1, t30a), min_v, max_v);
@@ -2590,10 +2731,9 @@ fn dct16_cols_avx512(
         }
         dct16_1d_cols16(token, &mut v, min_v, max_v);
         for i in 0..16usize.min(n_rows) {
-            let arr_ref: &mut [i32; 16] =
-                (&mut tmp[i * total_w + cx..i * total_w + cx + 16])
-                    .try_into()
-                    .unwrap();
+            let arr_ref: &mut [i32; 16] = (&mut tmp[i * total_w + cx..i * total_w + cx + 16])
+                .try_into()
+                .unwrap();
             storeu_512!(arr_ref, v[i]);
         }
     }
@@ -2650,13 +2790,19 @@ fn dct8_1d_cols8(token: Desktop64, c: &mut [__m256i; 8], min_v: __m256i, max_v: 
     let in7 = c[7];
 
     // t4a = (in1 * 799 - in7 * (4017 - 4096) + 2048 >> 12) - in7
-    let t4a = _mm256_sub_epi32(mac_msub_shr::<12>(token, in1, 799, in7, 4017 - 4096, 2048), in7);
+    let t4a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, in1, 799, in7, 4017 - 4096, 2048),
+        in7,
+    );
     // t5a = (in5 * 1703 - in3 * 1138 + 1024) >> 11
     let t5a = mac_msub_shr::<11>(token, in5, 1703, in3, 1138, 1024);
     // t6a = (in5 * 1138 + in3 * 1703 + 1024) >> 11
     let t6a = mac_madd_shr::<11>(token, in5, 1138, in3, 1703, 1024);
     // t7a = (in1 * (4017 - 4096) + in7 * 799 + 2048 >> 12) + in1
-    let t7a = _mm256_add_epi32(mac_madd_shr::<12>(token, in1, 4017 - 4096, in7, 799, 2048), in1);
+    let t7a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in1, 4017 - 4096, in7, 799, 2048),
+        in1,
+    );
 
     let t4 = clip8(token, _mm256_add_epi32(t4a, t5a), min_v, max_v);
     let t5a_n = clip8(token, _mm256_sub_epi32(t4a, t5a), min_v, max_v);
@@ -2695,17 +2841,41 @@ fn dct8_1d_cols8(token: Desktop64, c: &mut [__m256i; 8], min_v: __m256i, max_v: 
 #[cfg(target_arch = "x86_64")]
 #[rite]
 fn adst8_1d_cols8(token: Desktop64, c: &mut [__m256i; 8], min_v: __m256i, max_v: __m256i) {
-    let in0 = c[0]; let in1 = c[1]; let in2 = c[2]; let in3 = c[3];
-    let in4 = c[4]; let in5 = c[5]; let in6 = c[6]; let in7 = c[7];
+    let in0 = c[0];
+    let in1 = c[1];
+    let in2 = c[2];
+    let in3 = c[3];
+    let in4 = c[4];
+    let in5 = c[5];
+    let in6 = c[6];
+    let in7 = c[7];
 
-    let t0a = _mm256_add_epi32(mac_madd_shr::<12>(token, in7, 4076 - 4096, in0, 401, 2048), in7);
-    let t1a = _mm256_sub_epi32(mac_msub_shr::<12>(token, in7, 401, in0, 4076 - 4096, 2048), in0);
-    let t2a = _mm256_add_epi32(mac_madd_shr::<12>(token, in5, 3612 - 4096, in2, 1931, 2048), in5);
-    let t3a = _mm256_sub_epi32(mac_msub_shr::<12>(token, in5, 1931, in2, 3612 - 4096, 2048), in2);
+    let t0a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in7, 4076 - 4096, in0, 401, 2048),
+        in7,
+    );
+    let t1a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, in7, 401, in0, 4076 - 4096, 2048),
+        in0,
+    );
+    let t2a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in5, 3612 - 4096, in2, 1931, 2048),
+        in5,
+    );
+    let t3a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, in5, 1931, in2, 3612 - 4096, 2048),
+        in2,
+    );
     let t4a = mac_madd_shr::<11>(token, in3, 1299, in4, 1583, 1024);
     let t5a = mac_msub_shr::<11>(token, in3, 1583, in4, 1299, 1024);
-    let t6a = _mm256_add_epi32(mac_madd_shr::<12>(token, in1, 1189, in6, 3920 - 4096, 2048), in6);
-    let t7a = _mm256_add_epi32(mac_msub_shr::<12>(token, in1, 3920 - 4096, in6, 1189, 2048), in1);
+    let t6a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in1, 1189, in6, 3920 - 4096, 2048),
+        in6,
+    );
+    let t7a = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, in1, 3920 - 4096, in6, 1189, 2048),
+        in1,
+    );
 
     let t0 = clip8(token, _mm256_add_epi32(t0a, t4a), min_v, max_v);
     let t1 = clip8(token, _mm256_add_epi32(t1a, t5a), min_v, max_v);
@@ -2716,10 +2886,22 @@ fn adst8_1d_cols8(token: Desktop64, c: &mut [__m256i; 8], min_v: __m256i, max_v:
     let t6 = clip8(token, _mm256_sub_epi32(t2a, t6a), min_v, max_v);
     let t7 = clip8(token, _mm256_sub_epi32(t3a, t7a), min_v, max_v);
 
-    let t4a = _mm256_add_epi32(mac_madd_shr::<12>(token, t4, 3784 - 4096, t5, 1567, 2048), t4);
-    let t5a = _mm256_sub_epi32(mac_msub_shr::<12>(token, t4, 1567, t5, 3784 - 4096, 2048), t5);
-    let t6a = _mm256_add_epi32(mac_msub_shr::<12>(token, t7, 3784 - 4096, t6, 1567, 2048), t7);
-    let t7a = _mm256_add_epi32(mac_madd_shr::<12>(token, t7, 1567, t6, 3784 - 4096, 2048), t6);
+    let t4a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t4, 3784 - 4096, t5, 1567, 2048),
+        t4,
+    );
+    let t5a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t4, 1567, t5, 3784 - 4096, 2048),
+        t5,
+    );
+    let t6a = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, t7, 3784 - 4096, t6, 1567, 2048),
+        t7,
+    );
+    let t7a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t7, 1567, t6, 3784 - 4096, 2048),
+        t6,
+    );
 
     let zero = _mm256_setzero_si256();
     let out0 = clip8(token, _mm256_add_epi32(t0, t2), min_v, max_v);
@@ -2766,7 +2948,10 @@ fn adst8_1d_cols8(token: Desktop64, c: &mut [__m256i; 8], min_v: __m256i, max_v:
 #[rite]
 fn flipadst8_1d_cols8(token: Desktop64, c: &mut [__m256i; 8], min_v: __m256i, max_v: __m256i) {
     adst8_1d_cols8(token, c, min_v, max_v);
-    let t0 = c[0]; let t1 = c[1]; let t2 = c[2]; let t3 = c[3];
+    let t0 = c[0];
+    let t1 = c[1];
+    let t2 = c[2];
+    let t3 = c[3];
     c[0] = c[7];
     c[1] = c[6];
     c[2] = c[5];
@@ -2856,7 +3041,10 @@ fn dct16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_v
     let t15 = clip8(token, _mm256_add_epi32(t15a, t14a), min_v, max_v);
 
     // t9a  = (t14 * 1567 - t9 * (3784 - 4096) + 2048 >> 12) - t9
-    let t9a = _mm256_sub_epi32(mac_msub_shr::<12>(token, t14, 1567, t9, 3784 - 4096, 2048), t9);
+    let t9a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t14, 1567, t9, 3784 - 4096, 2048),
+        t9,
+    );
     // t14a = (t14 * (3784 - 4096) + t9 * 1567 + 2048 >> 12) + t14
     let t14a = _mm256_add_epi32(
         mac_madd_shr::<12>(token, t14, 3784 - 4096, t9, 1567, 2048),
@@ -2971,28 +3159,82 @@ fn inv_txfm_16x16_row_pass_only(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 fn adst16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_v: __m256i) {
-    let in0 = c[0]; let in1 = c[1]; let in2 = c[2]; let in3 = c[3];
-    let in4 = c[4]; let in5 = c[5]; let in6 = c[6]; let in7 = c[7];
-    let in8 = c[8]; let in9 = c[9]; let in10 = c[10]; let in11 = c[11];
-    let in12 = c[12]; let in13 = c[13]; let in14 = c[14]; let in15 = c[15];
+    let in0 = c[0];
+    let in1 = c[1];
+    let in2 = c[2];
+    let in3 = c[3];
+    let in4 = c[4];
+    let in5 = c[5];
+    let in6 = c[6];
+    let in7 = c[7];
+    let in8 = c[8];
+    let in9 = c[9];
+    let in10 = c[10];
+    let in11 = c[11];
+    let in12 = c[12];
+    let in13 = c[13];
+    let in14 = c[14];
+    let in15 = c[15];
 
     // First batch of t[0..16]: each is (a*c1 + b*c2 + 2048) >> 12 ± v
-    let mut t0 = _mm256_add_epi32(mac_madd_shr::<12>(token, in15, 4091 - 4096, in0, 201, 2048), in15);
-    let mut t1 = _mm256_sub_epi32(mac_msub_shr::<12>(token, in15, 201, in0, 4091 - 4096, 2048), in0);
-    let mut t2 = _mm256_add_epi32(mac_madd_shr::<12>(token, in13, 3973 - 4096, in2, 995, 2048), in13);
-    let mut t3 = _mm256_sub_epi32(mac_msub_shr::<12>(token, in13, 995, in2, 3973 - 4096, 2048), in2);
-    let mut t4 = _mm256_add_epi32(mac_madd_shr::<12>(token, in11, 3703 - 4096, in4, 1751, 2048), in11);
-    let mut t5 = _mm256_sub_epi32(mac_msub_shr::<12>(token, in11, 1751, in4, 3703 - 4096, 2048), in4);
+    let mut t0 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in15, 4091 - 4096, in0, 201, 2048),
+        in15,
+    );
+    let mut t1 = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, in15, 201, in0, 4091 - 4096, 2048),
+        in0,
+    );
+    let mut t2 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in13, 3973 - 4096, in2, 995, 2048),
+        in13,
+    );
+    let mut t3 = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, in13, 995, in2, 3973 - 4096, 2048),
+        in2,
+    );
+    let mut t4 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in11, 3703 - 4096, in4, 1751, 2048),
+        in11,
+    );
+    let mut t5 = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, in11, 1751, in4, 3703 - 4096, 2048),
+        in4,
+    );
     let mut t6 = mac_madd_shr::<11>(token, in9, 1645, in6, 1220, 1024);
     let mut t7 = mac_msub_shr::<11>(token, in9, 1220, in6, 1645, 1024);
-    let mut t8 = _mm256_add_epi32(mac_madd_shr::<12>(token, in7, 2751, in8, 3035 - 4096, 2048), in8);
-    let mut t9 = _mm256_add_epi32(mac_msub_shr::<12>(token, in7, 3035 - 4096, in8, 2751, 2048), in7);
-    let mut t10 = _mm256_add_epi32(mac_madd_shr::<12>(token, in5, 2106, in10, 3513 - 4096, 2048), in10);
-    let mut t11 = _mm256_add_epi32(mac_msub_shr::<12>(token, in5, 3513 - 4096, in10, 2106, 2048), in5);
-    let mut t12 = _mm256_add_epi32(mac_madd_shr::<12>(token, in3, 1380, in12, 3857 - 4096, 2048), in12);
-    let mut t13 = _mm256_add_epi32(mac_msub_shr::<12>(token, in3, 3857 - 4096, in12, 1380, 2048), in3);
-    let mut t14 = _mm256_add_epi32(mac_madd_shr::<12>(token, in1, 601, in14, 4052 - 4096, 2048), in14);
-    let mut t15 = _mm256_add_epi32(mac_msub_shr::<12>(token, in1, 4052 - 4096, in14, 601, 2048), in1);
+    let mut t8 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in7, 2751, in8, 3035 - 4096, 2048),
+        in8,
+    );
+    let mut t9 = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, in7, 3035 - 4096, in8, 2751, 2048),
+        in7,
+    );
+    let mut t10 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in5, 2106, in10, 3513 - 4096, 2048),
+        in10,
+    );
+    let mut t11 = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, in5, 3513 - 4096, in10, 2106, 2048),
+        in5,
+    );
+    let mut t12 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in3, 1380, in12, 3857 - 4096, 2048),
+        in12,
+    );
+    let mut t13 = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, in3, 3857 - 4096, in12, 1380, 2048),
+        in3,
+    );
+    let mut t14 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in1, 601, in14, 4052 - 4096, 2048),
+        in14,
+    );
+    let mut t15 = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, in1, 4052 - 4096, in14, 601, 2048),
+        in1,
+    );
 
     let t0a = clip8(token, _mm256_add_epi32(t0, t8), min_v, max_v);
     let t1a = clip8(token, _mm256_add_epi32(t1, t9), min_v, max_v);
@@ -3011,14 +3253,38 @@ fn adst16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_
     let mut t14a = clip8(token, _mm256_sub_epi32(t6, t14), min_v, max_v);
     let mut t15a = clip8(token, _mm256_sub_epi32(t7, t15), min_v, max_v);
 
-    t8 = _mm256_add_epi32(mac_madd_shr::<12>(token, t8a, 4017 - 4096, t9a, 799, 2048), t8a);
-    t9 = _mm256_sub_epi32(mac_msub_shr::<12>(token, t8a, 799, t9a, 4017 - 4096, 2048), t9a);
-    t10 = _mm256_add_epi32(mac_madd_shr::<12>(token, t10a, 2276, t11a, 3406 - 4096, 2048), t11a);
-    t11 = _mm256_add_epi32(mac_msub_shr::<12>(token, t10a, 3406 - 4096, t11a, 2276, 2048), t10a);
-    t12 = _mm256_add_epi32(mac_msub_shr::<12>(token, t13a, 4017 - 4096, t12a, 799, 2048), t13a);
-    t13 = _mm256_add_epi32(mac_madd_shr::<12>(token, t13a, 799, t12a, 4017 - 4096, 2048), t12a);
-    t14 = _mm256_sub_epi32(mac_msub_shr::<12>(token, t15a, 2276, t14a, 3406 - 4096, 2048), t14a);
-    t15 = _mm256_add_epi32(mac_madd_shr::<12>(token, t15a, 3406 - 4096, t14a, 2276, 2048), t15a);
+    t8 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t8a, 4017 - 4096, t9a, 799, 2048),
+        t8a,
+    );
+    t9 = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t8a, 799, t9a, 4017 - 4096, 2048),
+        t9a,
+    );
+    t10 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t10a, 2276, t11a, 3406 - 4096, 2048),
+        t11a,
+    );
+    t11 = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, t10a, 3406 - 4096, t11a, 2276, 2048),
+        t10a,
+    );
+    t12 = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, t13a, 4017 - 4096, t12a, 799, 2048),
+        t13a,
+    );
+    t13 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t13a, 799, t12a, 4017 - 4096, 2048),
+        t12a,
+    );
+    t14 = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t15a, 2276, t14a, 3406 - 4096, 2048),
+        t14a,
+    );
+    t15 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t15a, 3406 - 4096, t14a, 2276, 2048),
+        t15a,
+    );
 
     t0 = clip8(token, _mm256_add_epi32(t0a, t4a), min_v, max_v);
     t1 = clip8(token, _mm256_add_epi32(t1a, t5a), min_v, max_v);
@@ -3037,14 +3303,38 @@ fn adst16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_
     t14a = clip8(token, _mm256_sub_epi32(t10, t14), min_v, max_v);
     t15a = clip8(token, _mm256_sub_epi32(t11, t15), min_v, max_v);
 
-    t4a = _mm256_add_epi32(mac_madd_shr::<12>(token, t4, 3784 - 4096, t5, 1567, 2048), t4);
-    t5a = _mm256_sub_epi32(mac_msub_shr::<12>(token, t4, 1567, t5, 3784 - 4096, 2048), t5);
-    t6a = _mm256_add_epi32(mac_msub_shr::<12>(token, t7, 3784 - 4096, t6, 1567, 2048), t7);
-    t7a = _mm256_add_epi32(mac_madd_shr::<12>(token, t7, 1567, t6, 3784 - 4096, 2048), t6);
-    t12 = _mm256_add_epi32(mac_madd_shr::<12>(token, t12a, 3784 - 4096, t13a, 1567, 2048), t12a);
-    t13 = _mm256_sub_epi32(mac_msub_shr::<12>(token, t12a, 1567, t13a, 3784 - 4096, 2048), t13a);
-    t14 = _mm256_add_epi32(mac_msub_shr::<12>(token, t15a, 3784 - 4096, t14a, 1567, 2048), t15a);
-    t15 = _mm256_add_epi32(mac_madd_shr::<12>(token, t15a, 1567, t14a, 3784 - 4096, 2048), t14a);
+    t4a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t4, 3784 - 4096, t5, 1567, 2048),
+        t4,
+    );
+    t5a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t4, 1567, t5, 3784 - 4096, 2048),
+        t5,
+    );
+    t6a = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, t7, 3784 - 4096, t6, 1567, 2048),
+        t7,
+    );
+    t7a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t7, 1567, t6, 3784 - 4096, 2048),
+        t6,
+    );
+    t12 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t12a, 3784 - 4096, t13a, 1567, 2048),
+        t12a,
+    );
+    t13 = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t12a, 1567, t13a, 3784 - 4096, 2048),
+        t13a,
+    );
+    t14 = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, t15a, 3784 - 4096, t14a, 1567, 2048),
+        t15a,
+    );
+    t15 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t15a, 1567, t14a, 3784 - 4096, 2048),
+        t14a,
+    );
 
     let zero = _mm256_setzero_si256();
     // Outputs (some negated)
@@ -3056,7 +3346,10 @@ fn adst16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_
     let out12 = clip8(token, _mm256_add_epi32(t5a, t7a), min_v, max_v);
     let t6_new = clip8(token, _mm256_sub_epi32(t4a, t6a), min_v, max_v);
     let t7_new = clip8(token, _mm256_sub_epi32(t5a, t7a), min_v, max_v);
-    let out1 = _mm256_sub_epi32(zero, clip8(token, _mm256_add_epi32(t8a, t10a), min_v, max_v));
+    let out1 = _mm256_sub_epi32(
+        zero,
+        clip8(token, _mm256_add_epi32(t8a, t10a), min_v, max_v),
+    );
     let out14 = clip8(token, _mm256_add_epi32(t9a, t11a), min_v, max_v);
     let t10_new = clip8(token, _mm256_sub_epi32(t8a, t10a), min_v, max_v);
     let t11_new = clip8(token, _mm256_sub_epi32(t9a, t11a), min_v, max_v);
@@ -3137,12 +3430,7 @@ fn flipadst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max
 /// identity16: out = 2*in + ((in*1697 + 1024) >> 11). No clipping.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn identity16x16_cols_simd(
-    _token: Desktop64,
-    tmp: &mut [i32; 256],
-    _min: i32,
-    _max: i32,
-) {
+fn identity16x16_cols_simd(_token: Desktop64, tmp: &mut [i32; 256], _min: i32, _max: i32) {
     let c1697 = _mm256_set1_epi32(1697);
     let c1024 = _mm256_set1_epi32(1024);
     for cx_chunk in 0..2 {
@@ -3182,12 +3470,7 @@ fn adst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i3
 /// Processes 8 cols at a time, twice.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct16x16_cols_simd(
-    token: Desktop64,
-    tmp: &mut [i32; 256],
-    min: i32,
-    max: i32,
-) {
+fn dct16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i32) {
     // Try AVX-512 first: processes 16 cols at once instead of 8.
     if let Some(t512) = crate::src::cpu::summon_avx512() {
         dct16_cols_avx512(t512, tmp, 16, 16, min, max);
@@ -3214,37 +3497,103 @@ fn dct16x16_cols_simd(
 fn dct32_1d_cols8(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, max_v: __m256i) {
     // Apply DCT16 to even positions
     let mut even = [
-        c[0], c[2], c[4], c[6], c[8], c[10], c[12], c[14],
-        c[16], c[18], c[20], c[22], c[24], c[26], c[28], c[30],
+        c[0], c[2], c[4], c[6], c[8], c[10], c[12], c[14], c[16], c[18], c[20], c[22], c[24],
+        c[26], c[28], c[30],
     ];
     dct16_1d_cols8(token, &mut even, min_v, max_v);
-    c[0] = even[0]; c[2] = even[1]; c[4] = even[2]; c[6] = even[3];
-    c[8] = even[4]; c[10] = even[5]; c[12] = even[6]; c[14] = even[7];
-    c[16] = even[8]; c[18] = even[9]; c[20] = even[10]; c[22] = even[11];
-    c[24] = even[12]; c[26] = even[13]; c[28] = even[14]; c[30] = even[15];
+    c[0] = even[0];
+    c[2] = even[1];
+    c[4] = even[2];
+    c[6] = even[3];
+    c[8] = even[4];
+    c[10] = even[5];
+    c[12] = even[6];
+    c[14] = even[7];
+    c[16] = even[8];
+    c[18] = even[9];
+    c[20] = even[10];
+    c[22] = even[11];
+    c[24] = even[12];
+    c[26] = even[13];
+    c[28] = even[14];
+    c[30] = even[15];
 
-    let in1 = c[1]; let in3 = c[3]; let in5 = c[5]; let in7 = c[7];
-    let in9 = c[9]; let in11 = c[11]; let in13 = c[13]; let in15 = c[15];
-    let in17 = c[17]; let in19 = c[19]; let in21 = c[21]; let in23 = c[23];
-    let in25 = c[25]; let in27 = c[27]; let in29 = c[29]; let in31 = c[31];
+    let in1 = c[1];
+    let in3 = c[3];
+    let in5 = c[5];
+    let in7 = c[7];
+    let in9 = c[9];
+    let in11 = c[11];
+    let in13 = c[13];
+    let in15 = c[15];
+    let in17 = c[17];
+    let in19 = c[19];
+    let in21 = c[21];
+    let in23 = c[23];
+    let in25 = c[25];
+    let in27 = c[27];
+    let in29 = c[29];
+    let in31 = c[31];
 
     // First batch: 16 t*a values, each (a * c1 ± b * c2 + 2048 >> 12) ± op
-    let t16a = _mm256_sub_epi32(mac_msub_shr::<12>(token, in1, 201, in31, 4091 - 4096, 2048), in31);
-    let t17a = _mm256_add_epi32(mac_msub_shr::<12>(token, in17, 3035 - 4096, in15, 2751, 2048), in17);
-    let t18a = _mm256_sub_epi32(mac_msub_shr::<12>(token, in9, 1751, in23, 3703 - 4096, 2048), in23);
-    let t19a = _mm256_add_epi32(mac_msub_shr::<12>(token, in25, 3857 - 4096, in7, 1380, 2048), in25);
-    let t20a = _mm256_sub_epi32(mac_msub_shr::<12>(token, in5, 995, in27, 3973 - 4096, 2048), in27);
-    let t21a = _mm256_add_epi32(mac_msub_shr::<12>(token, in21, 3513 - 4096, in11, 2106, 2048), in21);
+    let t16a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, in1, 201, in31, 4091 - 4096, 2048),
+        in31,
+    );
+    let t17a = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, in17, 3035 - 4096, in15, 2751, 2048),
+        in17,
+    );
+    let t18a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, in9, 1751, in23, 3703 - 4096, 2048),
+        in23,
+    );
+    let t19a = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, in25, 3857 - 4096, in7, 1380, 2048),
+        in25,
+    );
+    let t20a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, in5, 995, in27, 3973 - 4096, 2048),
+        in27,
+    );
+    let t21a = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, in21, 3513 - 4096, in11, 2106, 2048),
+        in21,
+    );
     let t22a = mac_msub_shr::<11>(token, in13, 1220, in19, 1645, 1024);
-    let t23a = _mm256_add_epi32(mac_msub_shr::<12>(token, in29, 4052 - 4096, in3, 601, 2048), in29);
-    let t24a = _mm256_add_epi32(mac_madd_shr::<12>(token, in29, 601, in3, 4052 - 4096, 2048), in3);
+    let t23a = _mm256_add_epi32(
+        mac_msub_shr::<12>(token, in29, 4052 - 4096, in3, 601, 2048),
+        in29,
+    );
+    let t24a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in29, 601, in3, 4052 - 4096, 2048),
+        in3,
+    );
     let t25a = mac_madd_shr::<11>(token, in13, 1645, in19, 1220, 1024);
-    let t26a = _mm256_add_epi32(mac_madd_shr::<12>(token, in21, 2106, in11, 3513 - 4096, 2048), in11);
-    let t27a = _mm256_add_epi32(mac_madd_shr::<12>(token, in5, 3973 - 4096, in27, 995, 2048), in5);
-    let t28a = _mm256_add_epi32(mac_madd_shr::<12>(token, in25, 1380, in7, 3857 - 4096, 2048), in7);
-    let t29a = _mm256_add_epi32(mac_madd_shr::<12>(token, in9, 3703 - 4096, in23, 1751, 2048), in9);
-    let t30a = _mm256_add_epi32(mac_madd_shr::<12>(token, in17, 2751, in15, 3035 - 4096, 2048), in15);
-    let t31a = _mm256_add_epi32(mac_madd_shr::<12>(token, in1, 4091 - 4096, in31, 201, 2048), in1);
+    let t26a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in21, 2106, in11, 3513 - 4096, 2048),
+        in11,
+    );
+    let t27a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in5, 3973 - 4096, in27, 995, 2048),
+        in5,
+    );
+    let t28a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in25, 1380, in7, 3857 - 4096, 2048),
+        in7,
+    );
+    let t29a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in9, 3703 - 4096, in23, 1751, 2048),
+        in9,
+    );
+    let t30a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in17, 2751, in15, 3035 - 4096, 2048),
+        in15,
+    );
+    let t31a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, in1, 4091 - 4096, in31, 201, 2048),
+        in1,
+    );
 
     let mut t16 = clip8(token, _mm256_add_epi32(t16a, t17a), min_v, max_v);
     let mut t17 = clip8(token, _mm256_sub_epi32(t16a, t17a), min_v, max_v);
@@ -3264,8 +3613,14 @@ fn dct32_1d_cols8(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, max_v
     let mut t31 = clip8(token, _mm256_add_epi32(t31a, t30a), min_v, max_v);
 
     // Second batch
-    let t17a = _mm256_sub_epi32(mac_msub_shr::<12>(token, t30, 799, t17, 4017 - 4096, 2048), t17);
-    let t30a = _mm256_add_epi32(mac_madd_shr::<12>(token, t30, 4017 - 4096, t17, 799, 2048), t30);
+    let t17a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t30, 799, t17, 4017 - 4096, 2048),
+        t17,
+    );
+    let t30a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t30, 4017 - 4096, t17, 799, 2048),
+        t30,
+    );
     // t18a = ((-(t29 * (4017 - 4096) + t18 * 799) + 2048) >> 12) - t29
     let t18a_inner = _mm256_add_epi32(
         _mm256_mullo_epi32(t29, _mm256_set1_epi32(4017 - 4096)),
@@ -3278,7 +3633,10 @@ fn dct32_1d_cols8(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, max_v
         )),
         t29,
     );
-    let t29a = _mm256_sub_epi32(mac_msub_shr::<12>(token, t29, 799, t18, 4017 - 4096, 2048), t18);
+    let t29a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t29, 799, t18, 4017 - 4096, 2048),
+        t18,
+    );
     let t21a = mac_msub_shr::<11>(token, t26, 1703, t21, 1138, 1024);
     let t26a = mac_madd_shr::<11>(token, t26, 1138, t21, 1703, 1024);
     // t22a = (-(t25 * 1138 + t22 * 1703) + 1024) >> 11
@@ -3310,10 +3668,22 @@ fn dct32_1d_cols8(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, max_v
     let t31a = clip8(token, _mm256_add_epi32(t31, t28), min_v, max_v);
 
     // Third batch
-    let t18a = _mm256_sub_epi32(mac_msub_shr::<12>(token, t29, 1567, t18, 3784 - 4096, 2048), t18);
-    let t29a = _mm256_add_epi32(mac_madd_shr::<12>(token, t29, 3784 - 4096, t18, 1567, 2048), t29);
-    let t19 = _mm256_sub_epi32(mac_msub_shr::<12>(token, t28a, 1567, t19a, 3784 - 4096, 2048), t19a);
-    let t28 = _mm256_add_epi32(mac_madd_shr::<12>(token, t28a, 3784 - 4096, t19a, 1567, 2048), t28a);
+    let t18a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t29, 1567, t18, 3784 - 4096, 2048),
+        t18,
+    );
+    let t29a = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t29, 3784 - 4096, t18, 1567, 2048),
+        t29,
+    );
+    let t19 = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t28a, 1567, t19a, 3784 - 4096, 2048),
+        t19a,
+    );
+    let t28 = _mm256_add_epi32(
+        mac_madd_shr::<12>(token, t28a, 3784 - 4096, t19a, 1567, 2048),
+        t28a,
+    );
     // t20 = ((-(t27a * (3784 - 4096) + t20a * 1567) + 2048) >> 12) - t27a
     let t20_inner = _mm256_add_epi32(
         _mm256_mullo_epi32(t27a, _mm256_set1_epi32(3784 - 4096)),
@@ -3326,7 +3696,10 @@ fn dct32_1d_cols8(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, max_v
         )),
         t27a,
     );
-    let t27 = _mm256_sub_epi32(mac_msub_shr::<12>(token, t27a, 1567, t20a, 3784 - 4096, 2048), t20a);
+    let t27 = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t27a, 1567, t20a, 3784 - 4096, 2048),
+        t20a,
+    );
     // t21a = ((-(t26 * (3784 - 4096) + t21 * 1567) + 2048) >> 12) - t26
     let t21a_inner = _mm256_add_epi32(
         _mm256_mullo_epi32(t26, _mm256_set1_epi32(3784 - 4096)),
@@ -3339,7 +3712,10 @@ fn dct32_1d_cols8(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, max_v
         )),
         t26,
     );
-    let t26a = _mm256_sub_epi32(mac_msub_shr::<12>(token, t26, 1567, t21, 3784 - 4096, 2048), t21);
+    let t26a = _mm256_sub_epi32(
+        mac_msub_shr::<12>(token, t26, 1567, t21, 3784 - 4096, 2048),
+        t21,
+    );
 
     t16 = clip8(token, _mm256_add_epi32(t16a, t23a), min_v, max_v);
     let t17a = clip8(token, _mm256_add_epi32(t17, t22), min_v, max_v);
@@ -3383,10 +3759,22 @@ fn dct32_1d_cols8(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, max_v
     let t24a = mul181(t24, t23);
 
     // Pull out even-position outputs (already updated by dct16)
-    let t0 = c[0]; let t1 = c[2]; let t2 = c[4]; let t3 = c[6];
-    let t4 = c[8]; let t5 = c[10]; let t6 = c[12]; let t7 = c[14];
-    let t8 = c[16]; let t9 = c[18]; let t10 = c[20]; let t11 = c[22];
-    let t12 = c[24]; let t13 = c[26]; let t14 = c[28]; let t15 = c[30];
+    let t0 = c[0];
+    let t1 = c[2];
+    let t2 = c[4];
+    let t3 = c[6];
+    let t4 = c[8];
+    let t5 = c[10];
+    let t6 = c[12];
+    let t7 = c[14];
+    let t8 = c[16];
+    let t9 = c[18];
+    let t10 = c[20];
+    let t11 = c[22];
+    let t12 = c[24];
+    let t13 = c[26];
+    let t14 = c[28];
+    let t15 = c[30];
 
     c[0] = clip8(token, _mm256_add_epi32(t0, t31), min_v, max_v);
     c[1] = clip8(token, _mm256_add_epi32(t1, t30a), min_v, max_v);
@@ -3426,12 +3814,7 @@ fn dct32_1d_cols8(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, max_v
 /// Processes 8 cols at a time -- 4 chunks total.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct32x32_cols_simd(
-    token: Desktop64,
-    tmp: &mut [i32; 1024],
-    min: i32,
-    max: i32,
-) {
+fn dct32x32_cols_simd(token: Desktop64, tmp: &mut [i32; 1024], min: i32, max: i32) {
     // Try AVX-512 first: 16 cols per chunk (2 chunks total for 32x32).
     if let Some(t512) = crate::src::cpu::summon_avx512() {
         dct32_cols_avx512(t512, tmp, 32, 32, min, max);
@@ -3648,7 +4031,14 @@ macro_rules! impl_16x16_transform_simd_col {
                 col_clip_max,
             );
             $simd_col_fn(_token, &mut tmp, col_clip_min, col_clip_max);
-            add_16x16_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+            add_16x16_to_dst(
+                _token,
+                &mut *dst,
+                dst_stride,
+                &tmp,
+                &mut *coeff,
+                bitdepth_max,
+            );
         }
     };
 }
@@ -3696,7 +4086,14 @@ macro_rules! impl_16x16_transform_simd_row_adst_col {
                 }
             }
             $simd_col_fn(_token, &mut tmp, col_clip_min, col_clip_max);
-            add_16x16_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+            add_16x16_to_dst(
+                _token,
+                &mut *dst,
+                dst_stride,
+                &tmp,
+                &mut *coeff,
+                bitdepth_max,
+            );
         }
     };
 }
@@ -3745,7 +4142,14 @@ macro_rules! impl_16x16_transform_simd_row_dct_col {
                 }
             }
             $simd_col_fn(_token, &mut tmp, col_clip_min, col_clip_max);
-            add_16x16_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+            add_16x16_to_dst(
+                _token,
+                &mut *dst,
+                dst_stride,
+                &tmp,
+                &mut *coeff,
+                bitdepth_max,
+            );
         }
     };
 }
@@ -5957,14 +6361,46 @@ fn simd_row_adst8_8bpc_8rows(
     let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
     let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
     let s = 8;
-    storeu_256!(&mut tmp[(y_base + 0) * s..(y_base + 0) * s + 8], [i32; 8], r0);
-    storeu_256!(&mut tmp[(y_base + 1) * s..(y_base + 1) * s + 8], [i32; 8], r1);
-    storeu_256!(&mut tmp[(y_base + 2) * s..(y_base + 2) * s + 8], [i32; 8], r2);
-    storeu_256!(&mut tmp[(y_base + 3) * s..(y_base + 3) * s + 8], [i32; 8], r3);
-    storeu_256!(&mut tmp[(y_base + 4) * s..(y_base + 4) * s + 8], [i32; 8], r4);
-    storeu_256!(&mut tmp[(y_base + 5) * s..(y_base + 5) * s + 8], [i32; 8], r5);
-    storeu_256!(&mut tmp[(y_base + 6) * s..(y_base + 6) * s + 8], [i32; 8], r6);
-    storeu_256!(&mut tmp[(y_base + 7) * s..(y_base + 7) * s + 8], [i32; 8], r7);
+    storeu_256!(
+        &mut tmp[(y_base + 0) * s..(y_base + 0) * s + 8],
+        [i32; 8],
+        r0
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 1) * s..(y_base + 1) * s + 8],
+        [i32; 8],
+        r1
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 2) * s..(y_base + 2) * s + 8],
+        [i32; 8],
+        r2
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 3) * s..(y_base + 3) * s + 8],
+        [i32; 8],
+        r3
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 4) * s..(y_base + 4) * s + 8],
+        [i32; 8],
+        r4
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 5) * s..(y_base + 5) * s + 8],
+        [i32; 8],
+        r5
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 6) * s..(y_base + 6) * s + 8],
+        [i32; 8],
+        r6
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 7) * s..(y_base + 7) * s + 8],
+        [i32; 8],
+        r7
+    );
 }
 
 /// SIMD row DCT-8 for 8xN transforms, 8bpc. Processes 8 rows at once via
@@ -6041,14 +6477,46 @@ fn simd_row_dct8_8bpc_8rows(
     let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
     let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
     let s = 8;
-    storeu_256!(&mut tmp[(y_base + 0) * s..(y_base + 0) * s + 8], [i32; 8], r0);
-    storeu_256!(&mut tmp[(y_base + 1) * s..(y_base + 1) * s + 8], [i32; 8], r1);
-    storeu_256!(&mut tmp[(y_base + 2) * s..(y_base + 2) * s + 8], [i32; 8], r2);
-    storeu_256!(&mut tmp[(y_base + 3) * s..(y_base + 3) * s + 8], [i32; 8], r3);
-    storeu_256!(&mut tmp[(y_base + 4) * s..(y_base + 4) * s + 8], [i32; 8], r4);
-    storeu_256!(&mut tmp[(y_base + 5) * s..(y_base + 5) * s + 8], [i32; 8], r5);
-    storeu_256!(&mut tmp[(y_base + 6) * s..(y_base + 6) * s + 8], [i32; 8], r6);
-    storeu_256!(&mut tmp[(y_base + 7) * s..(y_base + 7) * s + 8], [i32; 8], r7);
+    storeu_256!(
+        &mut tmp[(y_base + 0) * s..(y_base + 0) * s + 8],
+        [i32; 8],
+        r0
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 1) * s..(y_base + 1) * s + 8],
+        [i32; 8],
+        r1
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 2) * s..(y_base + 2) * s + 8],
+        [i32; 8],
+        r2
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 3) * s..(y_base + 3) * s + 8],
+        [i32; 8],
+        r3
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 4) * s..(y_base + 4) * s + 8],
+        [i32; 8],
+        r4
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 5) * s..(y_base + 5) * s + 8],
+        [i32; 8],
+        r5
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 6) * s..(y_base + 6) * s + 8],
+        [i32; 8],
+        r6
+    );
+    storeu_256!(
+        &mut tmp[(y_base + 7) * s..(y_base + 7) * s + 8],
+        [i32; 8],
+        r7
+    );
 }
 
 /// SIMD row ADST-16 for 16xN transforms, 8bpc. Same shape as
@@ -6130,14 +6598,46 @@ fn simd_row_adst16_8bpc_8rows(
         let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
         let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
         let s = 16;
-        storeu_256!(&mut tmp[(y_base + 0) * s + b..(y_base + 0) * s + b + 8], [i32; 8], r0);
-        storeu_256!(&mut tmp[(y_base + 1) * s + b..(y_base + 1) * s + b + 8], [i32; 8], r1);
-        storeu_256!(&mut tmp[(y_base + 2) * s + b..(y_base + 2) * s + b + 8], [i32; 8], r2);
-        storeu_256!(&mut tmp[(y_base + 3) * s + b..(y_base + 3) * s + b + 8], [i32; 8], r3);
-        storeu_256!(&mut tmp[(y_base + 4) * s + b..(y_base + 4) * s + b + 8], [i32; 8], r4);
-        storeu_256!(&mut tmp[(y_base + 5) * s + b..(y_base + 5) * s + b + 8], [i32; 8], r5);
-        storeu_256!(&mut tmp[(y_base + 6) * s + b..(y_base + 6) * s + b + 8], [i32; 8], r6);
-        storeu_256!(&mut tmp[(y_base + 7) * s + b..(y_base + 7) * s + b + 8], [i32; 8], r7);
+        storeu_256!(
+            &mut tmp[(y_base + 0) * s + b..(y_base + 0) * s + b + 8],
+            [i32; 8],
+            r0
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 1) * s + b..(y_base + 1) * s + b + 8],
+            [i32; 8],
+            r1
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 2) * s + b..(y_base + 2) * s + b + 8],
+            [i32; 8],
+            r2
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 3) * s + b..(y_base + 3) * s + b + 8],
+            [i32; 8],
+            r3
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 4) * s + b..(y_base + 4) * s + b + 8],
+            [i32; 8],
+            r4
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 5) * s + b..(y_base + 5) * s + b + 8],
+            [i32; 8],
+            r5
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 6) * s + b..(y_base + 6) * s + b + 8],
+            [i32; 8],
+            r6
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 7) * s + b..(y_base + 7) * s + b + 8],
+            [i32; 8],
+            r7
+        );
     }
 }
 
@@ -6217,14 +6717,46 @@ fn simd_row_dct16_8bpc_8rows(
         let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
         let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
         let s = 16;
-        storeu_256!(&mut tmp[(y_base + 0) * s + b..(y_base + 0) * s + b + 8], [i32; 8], r0);
-        storeu_256!(&mut tmp[(y_base + 1) * s + b..(y_base + 1) * s + b + 8], [i32; 8], r1);
-        storeu_256!(&mut tmp[(y_base + 2) * s + b..(y_base + 2) * s + b + 8], [i32; 8], r2);
-        storeu_256!(&mut tmp[(y_base + 3) * s + b..(y_base + 3) * s + b + 8], [i32; 8], r3);
-        storeu_256!(&mut tmp[(y_base + 4) * s + b..(y_base + 4) * s + b + 8], [i32; 8], r4);
-        storeu_256!(&mut tmp[(y_base + 5) * s + b..(y_base + 5) * s + b + 8], [i32; 8], r5);
-        storeu_256!(&mut tmp[(y_base + 6) * s + b..(y_base + 6) * s + b + 8], [i32; 8], r6);
-        storeu_256!(&mut tmp[(y_base + 7) * s + b..(y_base + 7) * s + b + 8], [i32; 8], r7);
+        storeu_256!(
+            &mut tmp[(y_base + 0) * s + b..(y_base + 0) * s + b + 8],
+            [i32; 8],
+            r0
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 1) * s + b..(y_base + 1) * s + b + 8],
+            [i32; 8],
+            r1
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 2) * s + b..(y_base + 2) * s + b + 8],
+            [i32; 8],
+            r2
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 3) * s + b..(y_base + 3) * s + b + 8],
+            [i32; 8],
+            r3
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 4) * s + b..(y_base + 4) * s + b + 8],
+            [i32; 8],
+            r4
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 5) * s + b..(y_base + 5) * s + b + 8],
+            [i32; 8],
+            r5
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 6) * s + b..(y_base + 6) * s + b + 8],
+            [i32; 8],
+            r6
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 7) * s + b..(y_base + 7) * s + b + 8],
+            [i32; 8],
+            r7
+        );
     }
 }
 
@@ -6306,14 +6838,46 @@ fn simd_row_dct32_8bpc_8rows(
         let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
         let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
         let s = 32;
-        storeu_256!(&mut tmp[(y_base + 0) * s + b..(y_base + 0) * s + b + 8], [i32; 8], r0);
-        storeu_256!(&mut tmp[(y_base + 1) * s + b..(y_base + 1) * s + b + 8], [i32; 8], r1);
-        storeu_256!(&mut tmp[(y_base + 2) * s + b..(y_base + 2) * s + b + 8], [i32; 8], r2);
-        storeu_256!(&mut tmp[(y_base + 3) * s + b..(y_base + 3) * s + b + 8], [i32; 8], r3);
-        storeu_256!(&mut tmp[(y_base + 4) * s + b..(y_base + 4) * s + b + 8], [i32; 8], r4);
-        storeu_256!(&mut tmp[(y_base + 5) * s + b..(y_base + 5) * s + b + 8], [i32; 8], r5);
-        storeu_256!(&mut tmp[(y_base + 6) * s + b..(y_base + 6) * s + b + 8], [i32; 8], r6);
-        storeu_256!(&mut tmp[(y_base + 7) * s + b..(y_base + 7) * s + b + 8], [i32; 8], r7);
+        storeu_256!(
+            &mut tmp[(y_base + 0) * s + b..(y_base + 0) * s + b + 8],
+            [i32; 8],
+            r0
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 1) * s + b..(y_base + 1) * s + b + 8],
+            [i32; 8],
+            r1
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 2) * s + b..(y_base + 2) * s + b + 8],
+            [i32; 8],
+            r2
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 3) * s + b..(y_base + 3) * s + b + 8],
+            [i32; 8],
+            r3
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 4) * s + b..(y_base + 4) * s + b + 8],
+            [i32; 8],
+            r4
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 5) * s + b..(y_base + 5) * s + b + 8],
+            [i32; 8],
+            r5
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 6) * s + b..(y_base + 6) * s + b + 8],
+            [i32; 8],
+            r6
+        );
+        storeu_256!(
+            &mut tmp[(y_base + 7) * s + b..(y_base + 7) * s + b + 8],
+            [i32; 8],
+            r7
+        );
     }
 }
 
@@ -9718,11 +10282,16 @@ macro_rules! impl_8x8_transform_simd_col {
             let mut tmp = [0i32; 64];
             for y in 0..8 {
                 let (o0, o1, o2, o3, o4, o5, o6, o7) = $row_fn(
-                    coeff[y * 8] as i32, coeff[y * 8 + 1] as i32,
-                    coeff[y * 8 + 2] as i32, coeff[y * 8 + 3] as i32,
-                    coeff[y * 8 + 4] as i32, coeff[y * 8 + 5] as i32,
-                    coeff[y * 8 + 6] as i32, coeff[y * 8 + 7] as i32,
-                    MIN, MAX,
+                    coeff[y * 8] as i32,
+                    coeff[y * 8 + 1] as i32,
+                    coeff[y * 8 + 2] as i32,
+                    coeff[y * 8 + 3] as i32,
+                    coeff[y * 8 + 4] as i32,
+                    coeff[y * 8 + 5] as i32,
+                    coeff[y * 8 + 6] as i32,
+                    coeff[y * 8 + 7] as i32,
+                    MIN,
+                    MAX,
                 );
                 tmp[y * 8] = o0;
                 tmp[y * 8 + 1] = o1;
@@ -14394,14 +14963,25 @@ macro_rules! impl_8x8_transform_16bpc_simd_col {
             let mut tmp = [0i32; 64];
             for y in 0..8 {
                 let (o0, o1, o2, o3, o4, o5, o6, o7) = $row_fn(
-                    coeff[y * 8] as i32, coeff[y * 8 + 1] as i32,
-                    coeff[y * 8 + 2] as i32, coeff[y * 8 + 3] as i32,
-                    coeff[y * 8 + 4] as i32, coeff[y * 8 + 5] as i32,
-                    coeff[y * 8 + 6] as i32, coeff[y * 8 + 7] as i32,
-                    MIN, MAX,
+                    coeff[y * 8] as i32,
+                    coeff[y * 8 + 1] as i32,
+                    coeff[y * 8 + 2] as i32,
+                    coeff[y * 8 + 3] as i32,
+                    coeff[y * 8 + 4] as i32,
+                    coeff[y * 8 + 5] as i32,
+                    coeff[y * 8 + 6] as i32,
+                    coeff[y * 8 + 7] as i32,
+                    MIN,
+                    MAX,
                 );
-                tmp[y * 8] = o0; tmp[y * 8 + 1] = o1; tmp[y * 8 + 2] = o2; tmp[y * 8 + 3] = o3;
-                tmp[y * 8 + 4] = o4; tmp[y * 8 + 5] = o5; tmp[y * 8 + 6] = o6; tmp[y * 8 + 7] = o7;
+                tmp[y * 8] = o0;
+                tmp[y * 8 + 1] = o1;
+                tmp[y * 8 + 2] = o2;
+                tmp[y * 8 + 3] = o3;
+                tmp[y * 8 + 4] = o4;
+                tmp[y * 8 + 5] = o5;
+                tmp[y * 8 + 6] = o6;
+                tmp[y * 8 + 7] = o7;
             }
 
             {
@@ -18408,7 +18988,8 @@ macro_rules! impl_16x16_transform_16bpc_strided_simd_col {
                     let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_val), zero);
                     let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
                     storeu_128!(
-                        <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8]).unwrap(),
+                        <&mut [u16; 8]>::try_from(&mut dst[dst_chunk_off..dst_chunk_off + 8])
+                            .unwrap(),
                         packed
                     );
                 }

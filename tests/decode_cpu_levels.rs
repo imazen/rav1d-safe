@@ -13,7 +13,7 @@
 #[cfg(debug_assertions)]
 compile_error!("decode_cpu_levels tests require release mode: cargo test --release");
 
-use rav1d_safe::src::managed::{CpuLevel, Decoder, DecodeFrameType, Frame, Planes, Settings};
+use rav1d_safe::src::managed::{CpuLevel, DecodeFrameType, Decoder, Frame, Planes, Settings};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -603,8 +603,7 @@ fn test_cpu_levels_comprehensive() {
 fn test_vq_suite_standalone() {
     let meson = dav1d_test_data().join("8-bit/vq_suite/meson.build");
     let vectors = parse_meson_build(&meson);
-    let standalone: Vec<&TestVector> =
-        vectors.iter().filter(|v| v.args.is_some()).collect();
+    let standalone: Vec<&TestVector> = vectors.iter().filter(|v| v.args.is_some()).collect();
 
     assert!(
         !standalone.is_empty(),
