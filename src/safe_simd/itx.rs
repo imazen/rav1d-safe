@@ -5662,8 +5662,10 @@ fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 16 columns (2 chunks of 8), 32 rows
-    {
+    // Column transform: SIMD across 16 columns, 32 rows
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct32_cols_avx512(t512, &mut tmp, 16, 32, col_clip_min, col_clip_max);
+    } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
         for cx_chunk in 0..2 {
@@ -5803,8 +5805,10 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 32 columns (4 chunks of 8), 16 rows
-    {
+    // Column transform: SIMD across 32 columns, 16 rows
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct16_cols_avx512(t512, &mut tmp, 32, 16, col_clip_min, col_clip_max);
+    } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
         for cx_chunk in 0..4 {
@@ -6355,8 +6359,10 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 64 columns (8 chunks of 8), 32 rows
-    {
+    // Column transform: SIMD across 64 columns, 32 rows
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct32_cols_avx512(t512, &mut tmp, 64, 32, col_clip_min, col_clip_max);
+    } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
         for cx_chunk in 0..8 {
@@ -7838,8 +7844,10 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 64 columns (8 chunks of 8), 16 rows
-    {
+    // Column transform: SIMD across 64 columns, 16 rows
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct16_cols_avx512(t512, &mut tmp, 64, 16, col_clip_min, col_clip_max);
+    } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
         for cx_chunk in 0..8 {
@@ -12577,8 +12585,10 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 16 columns (2 chunks of 8), 32 rows
-    {
+    // Column transform: SIMD across 16 columns, 32 rows
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct32_cols_avx512(t512, &mut tmp, 16, 32, col_clip_min, col_clip_max);
+    } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
         for cx_chunk in 0..2 {
@@ -12721,8 +12731,10 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 32 columns (4 chunks of 8), 16 rows
-    {
+    // Column transform: SIMD across 32 columns, 16 rows
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct16_cols_avx512(t512, &mut tmp, 32, 16, col_clip_min, col_clip_max);
+    } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
         for cx_chunk in 0..4 {
@@ -13286,8 +13298,10 @@ fn inv_txfm_add_dct_dct_64x32_16bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 64 columns (8 chunks of 8), 32 rows
-    {
+    // Column transform: SIMD across 64 columns, 32 rows
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct32_cols_avx512(t512, &mut tmp, 64, 32, col_clip_min, col_clip_max);
+    } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
         for cx_chunk in 0..8 {
@@ -13582,8 +13596,10 @@ fn inv_txfm_add_dct_dct_64x16_16bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 64 columns (8 chunks of 8), 16 rows
-    {
+    // Column transform: SIMD across 64 columns, 16 rows
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct16_cols_avx512(t512, &mut tmp, 64, 16, col_clip_min, col_clip_max);
+    } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
         for cx_chunk in 0..8 {
