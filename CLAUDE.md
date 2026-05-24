@@ -29,34 +29,40 @@ Completed modules (AVX2 + NEON, 8bpc + 16bpc):
 784/803 dav1d test vectors pass at all bit depths and all CPU levels (scalar, SSE4, AVX2).
 19 failures are infrastructure (1 sframe, 6 SVC operating points, 12 vq_suite decode modes).
 
-## Benchmarks (2026-05-23 after rectangular dct_dct SIMD column transforms)
+## Benchmarks (2026-05-24 after SIMD row 1D transforms for dct8/16/32)
 
-Run via `just profile-quick`. Single-threaded, 100 iters (IVF) / 5 iters (AVIF).
-
-**allintra 8bpc IVF (352x288, 39 frames):**
+**4K photo AVIF (3840x2561) — interleaved A/B (30 iters/build, 4 runs):**
 
 | Build | ms/iter | vs ASM |
 |-------|---------|--------|
-| ASM | 106.1 | 1.0x |
-| Partial ASM | 147.9 | 1.39x |
-| Checked | 170.3 | 1.61x |
-| Unchecked | 163.3 | 1.54x |
-
-**4K photo AVIF (3840x2561) — measured with zenbench (interleaved, paired):**
-
-| Build | ms/iter ± mad | vs ASM |
-|-------|---------------|--------|
-| ASM (decode_4k_1t) | 132.0 ± 9.0  | 1.0x |
-| Safe Checked (decode_4k_1t) | 222.7 ± 4.7 | **1.69x** |
-
-zenbench was the right tool — wall-clock from `just profile-quick` had
-±10% run-to-run variance from thermal throttling during back-to-back
-compile/bench cycles. zenbench's interleaved methodology with
-calibration gives 95% CI of ~2% even on noisy systems.
+| ASM | 118.6 | 1.0x |
+| Safe Checked | 197.1 | **1.66x** |
+| Safe Unchecked | 188.5 | **1.59x** |
 
 Progress vs 2026-02-13 baseline (Checked):
-- 4K AVIF: 1.98x → **1.69x** (**~15% gap closed** under zenbench)
-- IVF/8K not yet measured under zenbench.
+- 4K AVIF: 1.98x → **1.66x** (~16% absolute gap closed; ~33% of remaining gap)
+
+Optimizations in this session (2026-05-24, all in safe checked, `#![forbid(unsafe_code)]`):
+- Dispatch refactor: loopfilter outer dispatch wrapped in #[arcane] V2, inner
+  loop_filter_4_8bpc switched to #[rite] so per-edge SIMD helpers inline
+  (no wall-clock change; cleaner symbol table)
+- SIMD row DCT-32 8bpc for 32x32, 32x16, 32x8, 32x64 (was scalar dct32_1d
+  per row; now dct32_1d_cols8 + 32x8→8x32 transpose, 8 rows in parallel
+  via SIMD lanes)
+- SIMD row DCT-16 8bpc for 16x16, 16x8, 16x32, 16x64 (analogous pattern)
+- SIMD row DCT-8 8bpc for 8x8, 8x16, 8x32 (analogous pattern)
+- Helpers: `simd_row_dct{8,16,32}_8bpc_8rows` in safe_simd/itx.rs
+
+Pattern: load 8 i16 per column × N columns (contiguous in column-major
+coeff), cvtepi16_epi32, optional rect2_scale, dct_1d_cols8, round+clip,
+8x8 i32 transpose chunk(s), store row-major. Each helper is #[rite]
+target_feature so it inlines into the #[arcane] outer transform.
+
+Wall-clock impact (4K AVIF, checked, vs prior session baseline 1.78x):
+- After dispatch refactor: 1.78x (no change)
+- After SIMD row dct32: 1.71x (4.5% gap closure)
+- After SIMD row dct16: 1.69x (1% more)
+- After SIMD row dct8: 1.66x (2% more)
 
 Optimizations landed (all in safe checked, `#![forbid(unsafe_code)]`):
 - `cfl_pred` SIMD (8bpc+16bpc)
