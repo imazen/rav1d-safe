@@ -5768,6 +5768,95 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_avx2(
     );
 }
 
+/// SIMD row DCT-32 for 32xN transforms, 8bpc.
+/// Loads 8 consecutive rows starting at `y_base` from `coeff` (column-major,
+/// stride `coeff_h`). Optionally applies rect2_scale (`* 181 + 128 >> 8`).
+/// Runs `dct32_1d_cols8` (8 rows in parallel via SIMD lanes), rounds with
+/// `rnd` then arithmetic-right-shifts by `shift`, clips to col range, and
+/// transposes 32x8 → 8x32 to store row-major into `tmp` (stride 32).
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn simd_row_dct32_8bpc_8rows(
+    token: Desktop64,
+    coeff: &[i16],
+    coeff_h: usize,
+    y_base: usize,
+    apply_rect2: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    let row_min_v = _mm256_set1_epi32(row_min);
+    let row_max_v = _mm256_set1_epi32(row_max);
+    let col_min_v = _mm256_set1_epi32(col_min);
+    let col_max_v = _mm256_set1_epi32(col_max);
+    let rect2_v = _mm256_set1_epi32(181);
+    let bias_v = _mm256_set1_epi32(128);
+    let rnd_v = _mm256_set1_epi32(rnd);
+    let mut cols = [_mm256_setzero_si256(); 32];
+    for x in 0..32 {
+        let off = y_base + x * coeff_h;
+        let arr: &[i16; 8] = (&coeff[off..off + 8]).try_into().unwrap();
+        let v16 = loadu_128!(arr);
+        let v32 = _mm256_cvtepi16_epi32(v16);
+        cols[x] = if apply_rect2 {
+            _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(v32, rect2_v), bias_v))
+        } else {
+            v32
+        };
+    }
+    dct32_1d_cols8(token, &mut cols, row_min_v, row_max_v);
+    for x in 0..32 {
+        let rounded = match shift {
+            1 => _mm256_srai_epi32::<1>(_mm256_add_epi32(cols[x], rnd_v)),
+            2 => _mm256_srai_epi32::<2>(_mm256_add_epi32(cols[x], rnd_v)),
+            _ => _mm256_add_epi32(cols[x], rnd_v),
+        };
+        cols[x] = _mm256_max_epi32(_mm256_min_epi32(rounded, col_max_v), col_min_v);
+    }
+    // Transpose 32x8 → 8x32 (4 chunks of 8 columns), store rows contiguously
+    for chunk in 0..4 {
+        let b = chunk * 8;
+        let t0 = _mm256_unpacklo_epi32(cols[b + 0], cols[b + 1]);
+        let t1 = _mm256_unpackhi_epi32(cols[b + 0], cols[b + 1]);
+        let t2 = _mm256_unpacklo_epi32(cols[b + 2], cols[b + 3]);
+        let t3 = _mm256_unpackhi_epi32(cols[b + 2], cols[b + 3]);
+        let t4 = _mm256_unpacklo_epi32(cols[b + 4], cols[b + 5]);
+        let t5 = _mm256_unpackhi_epi32(cols[b + 4], cols[b + 5]);
+        let t6 = _mm256_unpacklo_epi32(cols[b + 6], cols[b + 7]);
+        let t7 = _mm256_unpackhi_epi32(cols[b + 6], cols[b + 7]);
+        let u0 = _mm256_unpacklo_epi64(t0, t2);
+        let u1 = _mm256_unpackhi_epi64(t0, t2);
+        let u2 = _mm256_unpacklo_epi64(t1, t3);
+        let u3 = _mm256_unpackhi_epi64(t1, t3);
+        let u4 = _mm256_unpacklo_epi64(t4, t6);
+        let u5 = _mm256_unpackhi_epi64(t4, t6);
+        let u6 = _mm256_unpacklo_epi64(t5, t7);
+        let u7 = _mm256_unpackhi_epi64(t5, t7);
+        let r0 = _mm256_permute2x128_si256::<0x20>(u0, u4);
+        let r1 = _mm256_permute2x128_si256::<0x20>(u1, u5);
+        let r2 = _mm256_permute2x128_si256::<0x20>(u2, u6);
+        let r3 = _mm256_permute2x128_si256::<0x20>(u3, u7);
+        let r4 = _mm256_permute2x128_si256::<0x31>(u0, u4);
+        let r5 = _mm256_permute2x128_si256::<0x31>(u1, u5);
+        let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
+        let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
+        let s = 32;
+        storeu_256!(&mut tmp[(y_base + 0) * s + b..(y_base + 0) * s + b + 8], [i32; 8], r0);
+        storeu_256!(&mut tmp[(y_base + 1) * s + b..(y_base + 1) * s + b + 8], [i32; 8], r1);
+        storeu_256!(&mut tmp[(y_base + 2) * s + b..(y_base + 2) * s + b + 8], [i32; 8], r2);
+        storeu_256!(&mut tmp[(y_base + 3) * s + b..(y_base + 3) * s + b + 8], [i32; 8], r3);
+        storeu_256!(&mut tmp[(y_base + 4) * s + b..(y_base + 4) * s + b + 8], [i32; 8], r4);
+        storeu_256!(&mut tmp[(y_base + 5) * s + b..(y_base + 5) * s + b + 8], [i32; 8], r5);
+        storeu_256!(&mut tmp[(y_base + 6) * s + b..(y_base + 6) * s + b + 8], [i32; 8], r6);
+        storeu_256!(&mut tmp[(y_base + 7) * s + b..(y_base + 7) * s + b + 8], [i32; 8], r7);
+    }
+}
+
 /// Full 2D DCT_DCT 32x16 inverse transform
 #[cfg(target_arch = "x86_64")]
 #[arcane]
@@ -5788,20 +5877,24 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
     let col_clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 32 * 16];
 
-    // is_rect2 = true for 32x16
-    let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
-
-    // Row transform (32 elements each, 16 rows)
-    let rnd = 1;
-    let shift = 1;
-    for y in 0..16 {
-        let mut scratch = [0i32; 32];
-        for x in 0..32 {
-            scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
-        }
-        dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
-        for x in 0..32 {
-            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+    // SIMD row transform: 2 batches of 8 rows. is_rect2=true, shift=1, rnd=1.
+    {
+        let coeff_slice = coeff.as_slice();
+        for y_base in [0usize, 8] {
+            simd_row_dct32_8bpc_8rows(
+                _token,
+                coeff_slice,
+                16,
+                y_base,
+                true,
+                1,
+                1,
+                &mut tmp,
+                row_clip_min,
+                row_clip_max,
+                col_clip_min,
+                col_clip_max,
+            );
         }
     }
 
@@ -6186,22 +6279,26 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
     let col_clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 32 * 64];
 
-    // is_rect2 = true for 32x64
-    let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
-
-    // Row transform (32 elements each, 64 rows)
-    // But only 32 rows of coefficients are present for 64-pt transforms
-    let rnd = 1;
-    let shift = 1;
-    for y in 0..32 {
-        let mut scratch = [0i32; 32];
-        for x in 0..32 {
-            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
-        }
-        // Use regular dct32 for rows (all 32 inputs are non-zero)
-        dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
-        for x in 0..32 {
-            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+    // SIMD row transform: 4 batches of 8 rows (only 32 rows of coefficients
+    // exist for 64-pt transforms; remaining 32 rows pad below). is_rect2=true,
+    // shift=1, rnd=1.
+    {
+        let coeff_slice = coeff.as_slice();
+        for y_base in [0usize, 8, 16, 24] {
+            simd_row_dct32_8bpc_8rows(
+                _token,
+                coeff_slice,
+                32,
+                y_base,
+                true,
+                1,
+                1,
+                &mut tmp,
+                row_clip_min,
+                row_clip_max,
+                col_clip_min,
+                col_clip_max,
+            );
         }
     }
 
@@ -7344,19 +7441,23 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
     let col_clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 32 * 8];
 
-    // rect4 scaling
-    // Row transform (32 elements each, 8 rows)
-    let rnd = 2;
-    let shift = 2;
-    for y in 0..8 {
-        let mut scratch = [0i32; 32];
-        for x in 0..32 {
-            scratch[x] = coeff[y + x * 8] as i32;
-        }
-        dct32_1d(&mut scratch[..32], 1, row_clip_min, row_clip_max);
-        for x in 0..32 {
-            tmp[y * 32 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
-        }
+    // SIMD row transform: 1 batch of 8 rows (h=8). No rect2, shift=2, rnd=2.
+    {
+        let coeff_slice = coeff.as_slice();
+        simd_row_dct32_8bpc_8rows(
+            _token,
+            coeff_slice,
+            8,
+            0,
+            false,
+            2,
+            2,
+            &mut tmp,
+            row_clip_min,
+            row_clip_max,
+            col_clip_min,
+            col_clip_max,
+        );
     }
 
     // Column transform: SIMD across 32 columns (4 chunks of 8), 8 rows
@@ -10523,17 +10624,26 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
     let col_clip_max = i16::MAX as i32;
 
     let mut tmp = [0i32; 1024];
-    inv_txfm_32x32_inner(
-        &mut tmp,
-        &*coeff,
-        dct32_1d,
-        // Column transform pass is replaced by SIMD below; pass a no-op here.
-        |_, _, _, _| {},
-        row_clip_min,
-        row_clip_max,
-        col_clip_min,
-        col_clip_max,
-    );
+    // SIMD row transform: 4 batches of 8 rows. No rect2, shift=2, rnd=2.
+    {
+        let coeff_slice = coeff.as_slice();
+        for y_base in [0usize, 8, 16, 24] {
+            simd_row_dct32_8bpc_8rows(
+                _token,
+                coeff_slice,
+                32,
+                y_base,
+                false,
+                2,
+                2,
+                &mut tmp,
+                row_clip_min,
+                row_clip_max,
+                col_clip_min,
+                col_clip_max,
+            );
+        }
+    }
     // SIMD column transform: 8 columns × 4 chunks
     dct32x32_cols_simd(_token, &mut tmp, col_clip_min, col_clip_max);
     if let Some(t512) = crate::src::cpu::summon_avx512() {
