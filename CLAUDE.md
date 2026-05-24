@@ -74,7 +74,8 @@ Optimizations landed (all in safe checked, `#![forbid(unsafe_code)]`):
 - Identity column SIMD inlined into identity_identity rectangular 8x32/32x8, 16x32/32x16 (both bpcs) plus 16bpc identity rect variants
 - **AVX-512 (Server64/X64V4Token) column transforms `dct16_cols_avx512` + `dct32_cols_avx512`**, wired into 16x16, 32x32, 16x32, 32x16, 64x16, 64x32 (both bpcs) — 16 cols/chunk vs 8 with AVX2
 - **Per-row DisjointMut guard batching** in inv_txfm_add scalar fallback + ipred scalar paths (splat_dc, cfl_pred, paeth, smooth_v/h, smooth, z1, z2): one wider `strided_slice_mut` covering the whole block instead of N guards per row
-- **Complete SIMD v-direction loopfilter (8bpc)** for all widths (wd=4/6/8/16). Four #[arcane] functions with X64V2Token; contiguous 4-byte column loads + cvtepu8_epi32. Three-way branchless mask-select between 14-tap/8-tap/4-tap based on fm + flat8in + flat8out. h-direction remains scalar (needs gather)
+- **SIMD v-direction loopfilter (8bpc)** for all widths (wd=4/6/8/16). Four #[arcane] functions with X64V2Token; contiguous 4-byte column loads + cvtepu8_epi32. Three-way branchless mask-select between 14-tap/8-tap/4-tap based on fm + flat8in + flat8out
+- **SIMD h-direction loopfilter (8bpc) for narrow + wd=8** via 4×4 i32 transpose loads: load each row's contiguous N-byte chunk, transpose to pixel-position vectors, compute, transpose back. wd=6 and wd=16 h-filter remain scalar
 
 Remaining biggest gaps (without unsafe):
 1. **Loopfilter** — `loop_filter_4_8bpc` is fully scalar at 10% of profile vs <1% ASM (biggest single remaining win, ~500-1000 lines of SIMD work)
