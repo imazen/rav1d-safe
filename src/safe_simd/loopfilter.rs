@@ -105,6 +105,16 @@ fn loop_filter_4_8bpc(
             }
         }
     }
+    // SIMD h-filter narrow: stridea==stride, strideb==1, wd==4.
+    // 4 lanes are 4 different rows; we load contiguous 4-byte chunks per row
+    // and transpose 4×4 i32 into pixel-position vectors.
+    #[cfg(target_arch = "x86_64")]
+    if strideb == 1 && stridea != 1 && wd == 4 && bitdepth_max == 255 {
+        if let Some(token) = X64V2Token::summon() {
+            loop_filter_4_8bpc_narrow_simd_h(token, buf, base, e, i, h, stridea);
+            return;
+        }
+    }
     let f = 1i32;
 
     for idx in 0..4isize {
@@ -1073,6 +1083,154 @@ fn loop_filter_4_8bpc_wd16_simd_v(
     store4(buf, pack4(final_3), 3);
     store4(buf, pack4(final_4), 4);
     store4(buf, pack4(final_5), 5);
+}
+
+// ============================================================================
+// SIMD inner loop filter for the narrow 4-tap H-FILTER case (wd=4, stridea==stride)
+// ============================================================================
+
+/// SIMD narrow 4-tap loop filter for 8bpc H-FILTER direction.
+/// In h-filter, 4 filter positions are 4 different ROWS (stridea=stride) and
+/// the filter pixels are at column offsets -2/-1/0/1 (strideb=1, contiguous).
+/// We load 4 contiguous bytes per row (each row holds one lane's p1/p0/q0/q1),
+/// transpose 4x4 to get pixel-position vectors, do the same SIMD compute as
+/// the v-filter narrow path, then transpose back to row layout and store.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn loop_filter_4_8bpc_narrow_simd_h(
+    _token: X64V2Token,
+    buf: &mut [u8],
+    base: usize,
+    e: i32,
+    i: i32,
+    h: i32,
+    stridea: isize,
+) {
+    // Load one row of 4 bytes as 4 i32 lanes per row.
+    let load_row = |row: isize| -> __m128i {
+        let start = signed_idx(base, row * stridea - 2);
+        let bytes = [buf[start], buf[start + 1], buf[start + 2], buf[start + 3]];
+        let as_i32 = i32::from_le_bytes(bytes);
+        _mm_cvtepu8_epi32(_mm_cvtsi32_si128(as_i32))
+    };
+
+    // row_v[k] = [p1_k, p0_k, q0_k, q1_k] (4 i32 lanes from row k)
+    let r0 = load_row(0);
+    let r1 = load_row(1);
+    let r2 = load_row(2);
+    let r3 = load_row(3);
+
+    // Transpose 4x4 i32: rows -> columns
+    // r0=[a0,a1,a2,a3], r1=[b0,b1,b2,b3], r2=[c0,c1,c2,c3], r3=[d0,d1,d2,d3]
+    // Want: out0=[a0,b0,c0,d0], out1=[a1,b1,c1,d1], etc.
+    let t0 = _mm_unpacklo_epi32(r0, r1); // [a0,b0,a1,b1]
+    let t1 = _mm_unpackhi_epi32(r0, r1); // [a2,b2,a3,b3]
+    let t2 = _mm_unpacklo_epi32(r2, r3); // [c0,d0,c1,d1]
+    let t3 = _mm_unpackhi_epi32(r2, r3); // [c2,d2,c3,d3]
+    let p1_v = _mm_unpacklo_epi64(t0, t2); // [a0,b0,c0,d0]
+    let p0_v = _mm_unpackhi_epi64(t0, t2); // [a1,b1,c1,d1]
+    let q0_v = _mm_unpacklo_epi64(t1, t3); // [a2,b2,c2,d2]
+    let q1_v = _mm_unpackhi_epi64(t1, t3); // [a3,b3,c3,d3]
+
+    // Same SIMD compute as v-filter narrow path
+    let i_v = _mm_set1_epi32(i);
+    let e_v = _mm_set1_epi32(e);
+    let h_v = _mm_set1_epi32(h);
+
+    let abs_p1p0 = _mm_abs_epi32(_mm_sub_epi32(p1_v, p0_v));
+    let abs_q1q0 = _mm_abs_epi32(_mm_sub_epi32(q1_v, q0_v));
+    let abs_p0q0 = _mm_abs_epi32(_mm_sub_epi32(p0_v, q0_v));
+    let abs_p1q1 = _mm_abs_epi32(_mm_sub_epi32(p1_v, q1_v));
+
+    let not_gt = |a: __m128i, b: __m128i| -> __m128i {
+        _mm_andnot_si128(_mm_cmpgt_epi32(a, b), _mm_set1_epi32(-1))
+    };
+    let m_p1p0 = not_gt(abs_p1p0, i_v);
+    let m_q1q0 = not_gt(abs_q1q0, i_v);
+    let val = _mm_add_epi32(_mm_slli_epi32::<1>(abs_p0q0), _mm_srli_epi32::<1>(abs_p1q1));
+    let m_val = not_gt(val, e_v);
+    let fm_mask = _mm_and_si128(_mm_and_si128(m_p1p0, m_q1q0), m_val);
+
+    let hev_mask = _mm_or_si128(_mm_cmpgt_epi32(abs_p1p0, h_v), _mm_cmpgt_epi32(abs_q1q0, h_v));
+
+    let neg128 = _mm_set1_epi32(-128);
+    let pos127 = _mm_set1_epi32(127);
+    let iclip = |v: __m128i| _mm_min_epi32(_mm_max_epi32(v, neg128), pos127);
+
+    let diff_q0p0 = _mm_sub_epi32(q0_v, p0_v);
+    let three_d = _mm_add_epi32(_mm_slli_epi32::<1>(diff_q0p0), diff_q0p0);
+    let diff_p1q1 = _mm_sub_epi32(p1_v, q1_v);
+
+    let f_hev = iclip(_mm_add_epi32(three_d, iclip(diff_p1q1)));
+    let f_no = iclip(three_d);
+
+    let c4 = _mm_set1_epi32(4);
+    let c3 = _mm_set1_epi32(3);
+    let one = _mm_set1_epi32(1);
+
+    let f1_hev = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_hev, c4), pos127));
+    let f2_hev = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_hev, c3), pos127));
+    let f1_no = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_no, c4), pos127));
+    let f2_no = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_no, c3), pos127));
+    let f_extra = _mm_srai_epi32::<1>(_mm_add_epi32(f1_no, one));
+
+    let p0_hev = _mm_add_epi32(p0_v, f2_hev);
+    let q0_hev = _mm_sub_epi32(q0_v, f1_hev);
+    let p0_no = _mm_add_epi32(p0_v, f2_no);
+    let q0_no = _mm_sub_epi32(q0_v, f1_no);
+    let p1_no = _mm_add_epi32(p1_v, f_extra);
+    let q1_no = _mm_sub_epi32(q1_v, f_extra);
+
+    let blendv = |a: __m128i, b: __m128i, mask: __m128i| -> __m128i {
+        _mm_or_si128(_mm_andnot_si128(mask, a), _mm_and_si128(mask, b))
+    };
+    let p1_filt = blendv(p1_no, p1_v, hev_mask);
+    let p0_filt = blendv(p0_no, p0_hev, hev_mask);
+    let q0_filt = blendv(q0_no, q0_hev, hev_mask);
+    let q1_filt = blendv(q1_no, q1_v, hev_mask);
+
+    let p1_final = blendv(p1_v, p1_filt, fm_mask);
+    let p0_final = blendv(p0_v, p0_filt, fm_mask);
+    let q0_final = blendv(q0_v, q0_filt, fm_mask);
+    let q1_final = blendv(q1_v, q1_filt, fm_mask);
+
+    // Clip to [0, 255]
+    let zero = _mm_setzero_si128();
+    let max_u8 = _mm_set1_epi32(255);
+    let clip_u8 = |v: __m128i| _mm_min_epi32(_mm_max_epi32(v, zero), max_u8);
+    let p1_final = clip_u8(p1_final);
+    let p0_final = clip_u8(p0_final);
+    let q0_final = clip_u8(q0_final);
+    let q1_final = clip_u8(q1_final);
+
+    // Transpose back: pixel-position vectors -> row vectors
+    let t0 = _mm_unpacklo_epi32(p1_final, p0_final); // [a0,a1,b0,b1]
+    let t1 = _mm_unpackhi_epi32(p1_final, p0_final); // [c0,c1,d0,d1]
+    let t2 = _mm_unpacklo_epi32(q0_final, q1_final); // [a2,a3,b2,b3]
+    let t3 = _mm_unpackhi_epi32(q0_final, q1_final); // [c2,c3,d2,d3]
+    let row0 = _mm_unpacklo_epi64(t0, t2); // [a0,a1,a2,a3]
+    let row1 = _mm_unpackhi_epi64(t0, t2); // [b0,b1,b2,b3]
+    let row2 = _mm_unpacklo_epi64(t1, t3); // [c0,c1,c2,c3]
+    let row3 = _mm_unpackhi_epi64(t1, t3); // [d0,d1,d2,d3]
+
+    // Each row vector has 4 i32 lanes (already clipped to [0,255]). Pack to 4 u8.
+    let pack_row = |v: __m128i| -> i32 {
+        let u16x4 = _mm_packus_epi32(v, v);
+        let u8x4 = _mm_packus_epi16(u16x4, u16x4);
+        _mm_cvtsi128_si32(u8x4)
+    };
+    let store_row = |buf: &mut [u8], packed: i32, row: isize| {
+        let start = signed_idx(base, row * stridea - 2);
+        let bytes = packed.to_le_bytes();
+        buf[start] = bytes[0];
+        buf[start + 1] = bytes[1];
+        buf[start + 2] = bytes[2];
+        buf[start + 3] = bytes[3];
+    };
+    store_row(buf, pack_row(row0), 0);
+    store_row(buf, pack_row(row1), 1);
+    store_row(buf, pack_row(row2), 2);
+    store_row(buf, pack_row(row3), 3);
 }
 
 // ============================================================================
