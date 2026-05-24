@@ -20,7 +20,7 @@
 #![allow(unused_imports)]
 
 #[cfg(target_arch = "x86_64")]
-use archmage::{Desktop64, SimdToken, X64V2Token, arcane};
+use archmage::{Desktop64, SimdToken, X64V2Token, arcane, rite};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
@@ -69,11 +69,12 @@ fn signed_idx(base: usize, offset: isize) -> usize {
 /// `stridea` is the stride between the 4 parallel pixels.
 /// `strideb` is the stride in the filter direction.
 ///
-/// Takes an `X64V2Token` so the per-edge SIMD dispatch happens inside an
-/// `#[arcane]` V2 target_feature region — inner SIMD helpers (also
-/// `#[arcane]` V2) inline with zero trampoline cost.
+/// `#[rite]` inlines this directly into matching-feature callers (e.g.
+/// `lpf_h_sb_y_8bpc_inner` is `#[arcane]` V2 — `loop_filter_4_8bpc` inlines
+/// into its body so the per-edge SIMD dispatch is a direct call chain
+/// with no target_feature trampoline anywhere.
 #[cfg(any(target_arch = "x86_64", target_arch = "wasm32"))]
-#[cfg_attr(target_arch = "x86_64", arcane)]
+#[cfg_attr(target_arch = "x86_64", rite)]
 fn loop_filter_4_8bpc(
     #[cfg(target_arch = "x86_64")] _token: X64V2Token,
     buf: &mut [u8],
