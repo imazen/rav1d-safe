@@ -93,6 +93,10 @@ fn loop_filter_4_8bpc(
                     loop_filter_4_8bpc_wd6_simd_v(token, buf, base, e, i, h, strideb);
                     return;
                 }
+                8 => {
+                    loop_filter_4_8bpc_wd8_simd_v(token, buf, base, e, i, h, strideb);
+                    return;
+                }
                 _ => {}
             }
         }
@@ -481,6 +485,216 @@ fn loop_filter_4_8bpc_wd6_simd_v(
     store4(buf, pack4(final_p0), -1);
     store4(buf, pack4(final_q0), 0);
     store4(buf, pack4(final_q1), 1);
+}
+
+// ============================================================================
+// SIMD inner loop filter for the wd=8 V-FILTER case (wd=8, strideb>1)
+// ============================================================================
+
+/// SIMD wd=8 loop filter for 8bpc V-FILTER direction.
+/// Processes 4 filter positions (4 adjacent cols) in parallel. Loads p3..q3
+/// contiguously, computes fm + flat8in, computes 8-tap filter outputs (6 positions),
+/// computes narrow filter fallback, mask-selects per lane.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn loop_filter_4_8bpc_wd8_simd_v(
+    _token: X64V2Token,
+    buf: &mut [u8],
+    base: usize,
+    e: i32,
+    i: i32,
+    h: i32,
+    strideb: isize,
+) {
+    let load4 = |off: isize| -> __m128i {
+        let start = signed_idx(base, strideb * off);
+        let bytes = [buf[start], buf[start + 1], buf[start + 2], buf[start + 3]];
+        let as_i32 = i32::from_le_bytes(bytes);
+        _mm_cvtepu8_epi32(_mm_cvtsi32_si128(as_i32))
+    };
+
+    let p3_v = load4(-4);
+    let p2_v = load4(-3);
+    let p1_v = load4(-2);
+    let p0_v = load4(-1);
+    let q0_v = load4(0);
+    let q1_v = load4(1);
+    let q2_v = load4(2);
+    let q3_v = load4(3);
+
+    let i_v = _mm_set1_epi32(i);
+    let e_v = _mm_set1_epi32(e);
+    let h_v = _mm_set1_epi32(h);
+    let f_v = _mm_set1_epi32(1);
+
+    let abs = |a: __m128i, b: __m128i| _mm_abs_epi32(_mm_sub_epi32(a, b));
+
+    let abs_p1p0 = abs(p1_v, p0_v);
+    let abs_q1q0 = abs(q1_v, q0_v);
+    let abs_p0q0 = abs(p0_v, q0_v);
+    let abs_p1q1 = abs(p1_v, q1_v);
+    let abs_p2p1 = abs(p2_v, p1_v);
+    let abs_q2q1 = abs(q2_v, q1_v);
+    let abs_p3p2 = abs(p3_v, p2_v);
+    let abs_q3q2 = abs(q3_v, q2_v);
+
+    let not_gt = |a: __m128i, b: __m128i| -> __m128i {
+        _mm_andnot_si128(_mm_cmpgt_epi32(a, b), _mm_set1_epi32(-1))
+    };
+
+    let m_p1p0 = not_gt(abs_p1p0, i_v);
+    let m_q1q0 = not_gt(abs_q1q0, i_v);
+    let val_ee = _mm_add_epi32(
+        _mm_slli_epi32::<1>(abs_p0q0),
+        _mm_srli_epi32::<1>(abs_p1q1),
+    );
+    let m_val = not_gt(val_ee, e_v);
+    let m_p2p1 = not_gt(abs_p2p1, i_v);
+    let m_q2q1 = not_gt(abs_q2q1, i_v);
+    let m_p3p2 = not_gt(abs_p3p2, i_v);
+    let m_q3q2 = not_gt(abs_q3q2, i_v);
+    let fm_mask = _mm_and_si128(
+        _mm_and_si128(_mm_and_si128(m_p1p0, m_q1q0), m_val),
+        _mm_and_si128(
+            _mm_and_si128(m_p2p1, m_q2q1),
+            _mm_and_si128(m_p3p2, m_q3q2),
+        ),
+    );
+
+    // flat8in = abs(p2-p0)<=f && abs(p1-p0)<=f && abs(q1-q0)<=f && abs(q2-q0)<=f
+    //          && abs(p3-p0)<=f && abs(q3-q0)<=f
+    let abs_p2p0 = abs(p2_v, p0_v);
+    let abs_q2q0 = abs(q2_v, q0_v);
+    let abs_p3p0 = abs(p3_v, p0_v);
+    let abs_q3q0 = abs(q3_v, q0_v);
+    let flat_mask = _mm_and_si128(
+        _mm_and_si128(not_gt(abs_p2p0, f_v), not_gt(abs_p1p0, f_v)),
+        _mm_and_si128(
+            _mm_and_si128(not_gt(abs_q1q0, f_v), not_gt(abs_q2q0, f_v)),
+            _mm_and_si128(not_gt(abs_p3p0, f_v), not_gt(abs_q3q0, f_v)),
+        ),
+    );
+
+    // 8-tap filter outputs (positions -3..2):
+    //   out[-3] = (p3 + p3 + p3 + 2*p2 + p1 + p0 + q0 + 4) >> 3
+    //   out[-2] = (p3 + p3 + p2 + 2*p1 + p0 + q0 + q1 + 4) >> 3
+    //   out[-1] = (p3 + p2 + p1 + 2*p0 + q0 + q1 + q2 + 4) >> 3
+    //   out[ 0] = (p2 + p1 + p0 + 2*q0 + q1 + q2 + q3 + 4) >> 3
+    //   out[ 1] = (p1 + p0 + q0 + 2*q1 + q2 + q3 + q3 + 4) >> 3
+    //   out[ 2] = (p0 + q0 + q1 + 2*q2 + q3 + q3 + q3 + 4) >> 3
+    let dbl = |v: __m128i| _mm_slli_epi32::<1>(v);
+    let triple = |v: __m128i| _mm_add_epi32(dbl(v), v);
+    let c4 = _mm_set1_epi32(4);
+    let add = |a: __m128i, b: __m128i| _mm_add_epi32(a, b);
+    let add3 = |a: __m128i, b: __m128i, c: __m128i| add(add(a, b), c);
+    let add4 = |a: __m128i, b: __m128i, c: __m128i, d: __m128i| add(add(a, b), add(c, d));
+
+    let out_m3 = _mm_srai_epi32::<3>(add(add4(triple(p3_v), dbl(p2_v), p1_v, p0_v), add(q0_v, c4)));
+    let out_m2 = _mm_srai_epi32::<3>(add(
+        add4(dbl(p3_v), p2_v, dbl(p1_v), p0_v),
+        add3(q0_v, q1_v, c4),
+    ));
+    let out_m1 = _mm_srai_epi32::<3>(add(
+        add4(p3_v, p2_v, p1_v, dbl(p0_v)),
+        add4(q0_v, q1_v, q2_v, c4),
+    ));
+    let out_0 = _mm_srai_epi32::<3>(add(
+        add4(p2_v, p1_v, p0_v, dbl(q0_v)),
+        add4(q1_v, q2_v, q3_v, c4),
+    ));
+    let out_1 = _mm_srai_epi32::<3>(add(
+        add4(p1_v, p0_v, q0_v, dbl(q1_v)),
+        add4(q2_v, q3_v, q3_v, c4),
+    ));
+    let out_2 = _mm_srai_epi32::<3>(add(
+        add4(p0_v, q0_v, q1_v, dbl(q2_v)),
+        add4(q3_v, q3_v, q3_v, c4),
+    ));
+
+    // Narrow filter (4-tap)
+    let neg128 = _mm_set1_epi32(-128);
+    let pos127 = _mm_set1_epi32(127);
+    let iclip = |v: __m128i| _mm_min_epi32(_mm_max_epi32(v, neg128), pos127);
+
+    let diff_q0p0 = _mm_sub_epi32(q0_v, p0_v);
+    let three_d = _mm_add_epi32(_mm_slli_epi32::<1>(diff_q0p0), diff_q0p0);
+    let diff_p1q1 = _mm_sub_epi32(p1_v, q1_v);
+
+    let hev_mask = _mm_or_si128(
+        _mm_cmpgt_epi32(abs_p1p0, h_v),
+        _mm_cmpgt_epi32(abs_q1q0, h_v),
+    );
+
+    let f_hev = iclip(_mm_add_epi32(three_d, iclip(diff_p1q1)));
+    let f_no = iclip(three_d);
+
+    let c4i = _mm_set1_epi32(4);
+    let c3i = _mm_set1_epi32(3);
+    let one = _mm_set1_epi32(1);
+
+    let f1_hev = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_hev, c4i), pos127));
+    let f2_hev = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_hev, c3i), pos127));
+    let f1_no = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_no, c4i), pos127));
+    let f2_no = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_no, c3i), pos127));
+    let f_extra = _mm_srai_epi32::<1>(_mm_add_epi32(f1_no, one));
+
+    let p0_hev = _mm_add_epi32(p0_v, f2_hev);
+    let q0_hev = _mm_sub_epi32(q0_v, f1_hev);
+    let p0_no = _mm_add_epi32(p0_v, f2_no);
+    let q0_no = _mm_sub_epi32(q0_v, f1_no);
+    let p1_no = _mm_add_epi32(p1_v, f_extra);
+    let q1_no = _mm_sub_epi32(q1_v, f_extra);
+
+    let blendv = |a: __m128i, b: __m128i, mask: __m128i| -> __m128i {
+        _mm_or_si128(_mm_andnot_si128(mask, a), _mm_and_si128(mask, b))
+    };
+
+    let narrow_p1 = blendv(p1_no, p1_v, hev_mask);
+    let narrow_p0 = blendv(p0_no, p0_hev, hev_mask);
+    let narrow_q0 = blendv(q0_no, q0_hev, hev_mask);
+    let narrow_q1 = blendv(q1_no, q1_v, hev_mask);
+
+    // Select between 8-tap (flat_mask) and narrow (otherwise):
+    //   At -3, 2: narrow doesn't touch, keep p3/q2 from original
+    //   At -2, 1: narrow output (depending on hev)
+    //   At -1, 0: narrow output (always written)
+    let out_m3_sel = blendv(p2_v, out_m3, flat_mask); // narrow keeps original p2 (= position -3 in 8-tap)
+    let out_m2_sel = blendv(narrow_p1, out_m2, flat_mask);
+    let out_m1_sel = blendv(narrow_p0, out_m1, flat_mask);
+    let out_0_sel = blendv(narrow_q0, out_0, flat_mask);
+    let out_1_sel = blendv(narrow_q1, out_1, flat_mask);
+    let out_2_sel = blendv(q2_v, out_2, flat_mask);
+
+    // Apply fm mask: if !fm, keep original
+    let final_p2 = blendv(p2_v, out_m3_sel, fm_mask);
+    let final_p1 = blendv(p1_v, out_m2_sel, fm_mask);
+    let final_p0 = blendv(p0_v, out_m1_sel, fm_mask);
+    let final_q0 = blendv(q0_v, out_0_sel, fm_mask);
+    let final_q1 = blendv(q1_v, out_1_sel, fm_mask);
+    let final_q2 = blendv(q2_v, out_2_sel, fm_mask);
+
+    let pack4 = |v: __m128i| -> i32 {
+        let u16x4 = _mm_packus_epi32(v, v);
+        let u8x4 = _mm_packus_epi16(u16x4, u16x4);
+        _mm_cvtsi128_si32(u8x4)
+    };
+    let store4 = |buf: &mut [u8], packed: i32, off: isize| {
+        let start = signed_idx(base, strideb * off);
+        let bytes = packed.to_le_bytes();
+        buf[start] = bytes[0];
+        buf[start + 1] = bytes[1];
+        buf[start + 2] = bytes[2];
+        buf[start + 3] = bytes[3];
+    };
+    // Wait — at -3 we should only store if flat (8-tap writes -3). Otherwise keep original.
+    // The final_p2 already encodes this via blendv. But narrow doesn't touch -3 at all,
+    // and fm_mask=0 keeps original. So always storing final_p2 is correct.
+    store4(buf, pack4(final_p2), -3);
+    store4(buf, pack4(final_p1), -2);
+    store4(buf, pack4(final_p0), -1);
+    store4(buf, pack4(final_q0), 0);
+    store4(buf, pack4(final_q1), 1);
+    store4(buf, pack4(final_q2), 2);
 }
 
 // ============================================================================
