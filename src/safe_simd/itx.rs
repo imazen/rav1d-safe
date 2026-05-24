@@ -3653,6 +3653,55 @@ macro_rules! impl_16x16_transform_simd_col {
     };
 }
 
+/// Macro variant: row pass uses SIMD DCT-16 (8 rows at a time), column pass
+/// uses SIMD. Use for transforms where row_fn == dct16_1d AND col is SIMD.
+/// Same shape as `impl_16x16_transform_simd_col` but skips the scalar
+/// dct16_1d for ~1% wall-clock savings.
+macro_rules! impl_16x16_transform_simd_row_dct_col {
+    ($name:ident, $simd_col_fn:ident) => {
+        #[cfg(target_arch = "x86_64")]
+        #[arcane]
+        fn $name(
+            _token: Desktop64,
+            dst: &mut [u8],
+            dst_stride: usize,
+            coeff: &mut [i16],
+            _eob: i32,
+            bitdepth_max: i32,
+        ) {
+            let mut dst = dst.flex_mut();
+            let mut coeff = coeff.flex_mut();
+            let row_clip_min = i16::MIN as i32;
+            let row_clip_max = i16::MAX as i32;
+            let col_clip_min = i16::MIN as i32;
+            let col_clip_max = i16::MAX as i32;
+            let mut tmp = [0i32; 256];
+            // SIMD row DCT-16: 2 batches of 8 rows, no rect2, shift=2, rnd=2.
+            {
+                let coeff_slice = coeff.as_slice();
+                for y_base in [0usize, 8] {
+                    simd_row_dct16_8bpc_8rows(
+                        _token,
+                        coeff_slice,
+                        16,
+                        y_base,
+                        false,
+                        2,
+                        2,
+                        &mut tmp,
+                        row_clip_min,
+                        row_clip_max,
+                        col_clip_min,
+                        col_clip_max,
+                    );
+                }
+            }
+            $simd_col_fn(_token, &mut tmp, col_clip_min, col_clip_max);
+            add_16x16_to_dst(_token, &mut *dst, dst_stride, &tmp, &mut *coeff, bitdepth_max);
+        }
+    };
+}
+
 /// Macro to generate FFI wrappers for 16x16 transforms
 macro_rules! impl_16x16_ffi_wrapper {
     ($wrapper:ident, $inner:ident) => {
@@ -3692,9 +3741,8 @@ impl_16x16_transform_simd_col!(
     adst16_1d,
     dct16x16_cols_simd
 );
-impl_16x16_transform_simd_col!(
+impl_16x16_transform_simd_row_dct_col!(
     inv_txfm_add_dct_adst_16x16_8bpc_avx2_inner,
-    dct16_1d,
     adst16x16_cols_simd
 );
 impl_16x16_transform_simd_col!(
@@ -3707,9 +3755,8 @@ impl_16x16_transform_simd_col!(
     flipadst16_1d,
     dct16x16_cols_simd
 );
-impl_16x16_transform_simd_col!(
+impl_16x16_transform_simd_row_dct_col!(
     inv_txfm_add_dct_flipadst_16x16_8bpc_avx2_inner,
-    dct16_1d,
     flipadst16x16_cols_simd
 );
 impl_16x16_transform_simd_col!(
@@ -3732,9 +3779,8 @@ impl_16x16_transform_simd_col!(
     identity16_1d,
     dct16x16_cols_simd
 );
-impl_16x16_transform_simd_col!(
+impl_16x16_transform_simd_row_dct_col!(
     inv_txfm_add_dct_identity_16x16_8bpc_avx2_inner,
-    dct16_1d,
     identity16x16_cols_simd
 );
 impl_16x16_transform_simd_col!(
