@@ -68,8 +68,14 @@ fn signed_idx(base: usize, offset: isize) -> usize {
 /// `buf` is the pixel buffer, `base` is the offset to the edge point.
 /// `stridea` is the stride between the 4 parallel pixels.
 /// `strideb` is the stride in the filter direction.
+///
+/// Takes an `X64V2Token` so the per-edge SIMD dispatch happens inside an
+/// `#[arcane]` V2 target_feature region — inner SIMD helpers (also
+/// `#[arcane]` V2) inline with zero trampoline cost.
 #[cfg(any(target_arch = "x86_64", target_arch = "wasm32"))]
+#[cfg_attr(target_arch = "x86_64", arcane)]
 fn loop_filter_4_8bpc(
+    #[cfg(target_arch = "x86_64")] _token: X64V2Token,
     buf: &mut [u8],
     base: usize,
     e: i32,
@@ -81,28 +87,27 @@ fn loop_filter_4_8bpc(
     bitdepth_max: i32,
 ) {
     // Fast paths: SIMD v-filter (stridea==1, contiguous 4-byte column loads).
+    // Token already provided by caller — direct dispatch, no per-edge summon.
     #[cfg(target_arch = "x86_64")]
     if stridea == 1 && bitdepth_max == 255 {
-        if let Some(token) = X64V2Token::summon() {
-            match wd {
-                4 => {
-                    loop_filter_4_8bpc_narrow_simd_v(token, buf, base, e, i, h, strideb);
-                    return;
-                }
-                6 => {
-                    loop_filter_4_8bpc_wd6_simd_v(token, buf, base, e, i, h, strideb);
-                    return;
-                }
-                8 => {
-                    loop_filter_4_8bpc_wd8_simd_v(token, buf, base, e, i, h, strideb);
-                    return;
-                }
-                16 => {
-                    loop_filter_4_8bpc_wd16_simd_v(token, buf, base, e, i, h, strideb);
-                    return;
-                }
-                _ => {}
+        match wd {
+            4 => {
+                loop_filter_4_8bpc_narrow_simd_v(_token, buf, base, e, i, h, strideb);
+                return;
             }
+            6 => {
+                loop_filter_4_8bpc_wd6_simd_v(_token, buf, base, e, i, h, strideb);
+                return;
+            }
+            8 => {
+                loop_filter_4_8bpc_wd8_simd_v(_token, buf, base, e, i, h, strideb);
+                return;
+            }
+            16 => {
+                loop_filter_4_8bpc_wd16_simd_v(_token, buf, base, e, i, h, strideb);
+                return;
+            }
+            _ => {}
         }
     }
     // SIMD h-filter: stridea==stride, strideb==1. 4 lanes are 4 different rows;
@@ -110,22 +115,20 @@ fn loop_filter_4_8bpc(
     // pixel-position vectors.
     #[cfg(target_arch = "x86_64")]
     if strideb == 1 && stridea != 1 && bitdepth_max == 255 {
-        if let Some(token) = X64V2Token::summon() {
-            match wd {
-                4 => {
-                    loop_filter_4_8bpc_narrow_simd_h(token, buf, base, e, i, h, stridea);
-                    return;
-                }
-                8 => {
-                    loop_filter_4_8bpc_wd8_simd_h(token, buf, base, e, i, h, stridea);
-                    return;
-                }
-                16 => {
-                    loop_filter_4_8bpc_wd16_simd_h(token, buf, base, e, i, h, stridea);
-                    return;
-                }
-                _ => {}
+        match wd {
+            4 => {
+                loop_filter_4_8bpc_narrow_simd_h(_token, buf, base, e, i, h, stridea);
+                return;
             }
+            8 => {
+                loop_filter_4_8bpc_wd8_simd_h(_token, buf, base, e, i, h, stridea);
+                return;
+            }
+            16 => {
+                loop_filter_4_8bpc_wd16_simd_h(_token, buf, base, e, i, h, stridea);
+                return;
+            }
+            _ => {}
         }
     }
     let f = 1i32;
@@ -2107,7 +2110,10 @@ fn read_lvl(lvl: &[AtomicU8], offset: usize, byte_idx: usize) -> u8 {
 
 /// Loop filter for Y plane, horizontal edges (8bpc)
 #[cfg(any(target_arch = "x86_64", target_arch = "wasm32"))]
+#[cfg_attr(target_arch = "x86_64", arcane)]
+#[allow(unused_mut)]
 fn lpf_h_sb_y_8bpc_inner(
+    #[cfg(target_arch = "x86_64")] _token: X64V2Token,
     buf: &mut [u8],
     mut dst_offset: usize,
     stride: isize,
@@ -2156,6 +2162,8 @@ fn lpf_h_sb_y_8bpc_inner(
                 };
 
                 loop_filter_4_8bpc(
+                    #[cfg(target_arch = "x86_64")]
+                    _token,
                     buf,
                     dst_offset,
                     e,
@@ -2177,7 +2185,10 @@ fn lpf_h_sb_y_8bpc_inner(
 
 /// Loop filter for Y plane, vertical edges (8bpc)
 #[cfg(any(target_arch = "x86_64", target_arch = "wasm32"))]
+#[cfg_attr(target_arch = "x86_64", arcane)]
+#[allow(unused_mut)]
 fn lpf_v_sb_y_8bpc_inner(
+    #[cfg(target_arch = "x86_64")] _token: X64V2Token,
     buf: &mut [u8],
     mut dst_offset: usize,
     stride: isize,
@@ -2226,6 +2237,8 @@ fn lpf_v_sb_y_8bpc_inner(
                 };
 
                 loop_filter_4_8bpc(
+                    #[cfg(target_arch = "x86_64")]
+                    _token,
                     buf,
                     dst_offset,
                     e,
@@ -2247,7 +2260,10 @@ fn lpf_v_sb_y_8bpc_inner(
 
 /// Loop filter for UV planes, horizontal edges (8bpc)
 #[cfg(any(target_arch = "x86_64", target_arch = "wasm32"))]
+#[cfg_attr(target_arch = "x86_64", arcane)]
+#[allow(unused_mut)]
 fn lpf_h_sb_uv_8bpc_inner(
+    #[cfg(target_arch = "x86_64")] _token: X64V2Token,
     buf: &mut [u8],
     mut dst_offset: usize,
     stride: isize,
@@ -2290,6 +2306,8 @@ fn lpf_h_sb_uv_8bpc_inner(
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
 
                 loop_filter_4_8bpc(
+                    #[cfg(target_arch = "x86_64")]
+                    _token,
                     buf,
                     dst_offset,
                     e,
@@ -2311,7 +2329,10 @@ fn lpf_h_sb_uv_8bpc_inner(
 
 /// Loop filter for UV planes, vertical edges (8bpc)
 #[cfg(any(target_arch = "x86_64", target_arch = "wasm32"))]
+#[cfg_attr(target_arch = "x86_64", arcane)]
+#[allow(unused_mut)]
 fn lpf_v_sb_uv_8bpc_inner(
+    #[cfg(target_arch = "x86_64")] _token: X64V2Token,
     buf: &mut [u8],
     mut dst_offset: usize,
     stride: isize,
@@ -2354,6 +2375,8 @@ fn lpf_v_sb_uv_8bpc_inner(
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
 
                 loop_filter_4_8bpc(
+                    #[cfg(target_arch = "x86_64")]
+                    _token,
                     buf,
                     dst_offset,
                     e,
@@ -2397,7 +2420,9 @@ pub unsafe extern "C" fn lpf_h_sb_y_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
+    let token = X64V2Token::summon().expect("AVX2 implies V2");
     lpf_h_sb_y_8bpc_inner(
+        token,
         buf,
         0,
         stride as isize,
@@ -2431,7 +2456,9 @@ pub unsafe extern "C" fn lpf_v_sb_y_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
+    let token = X64V2Token::summon().expect("AVX2 implies V2");
     lpf_v_sb_y_8bpc_inner(
+        token,
         buf,
         0,
         stride as isize,
@@ -2465,7 +2492,9 @@ pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
+    let token = X64V2Token::summon().expect("AVX2 implies V2");
     lpf_h_sb_uv_8bpc_inner(
+        token,
         buf,
         0,
         stride as isize,
@@ -2499,7 +2528,9 @@ pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
+    let token = X64V2Token::summon().expect("AVX2 implies V2");
     lpf_v_sb_uv_8bpc_inner(
+        token,
         buf,
         0,
         stride as isize,
@@ -3181,7 +3212,9 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
 
-    let Some(_token) = crate::src::cpu::summon_avx2() else {
+    // Summon V2 token once at the outer dispatch — passed through to the
+    // `#[arcane]` outer inners so per-edge SIMD calls inline (no trampoline).
+    let Some(token) = crate::src::cpu::summon_v2_x64() else {
         return false;
     };
 
@@ -3272,6 +3305,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                 let stride_i = cs as isize;
                 match (is_y, is_v) {
                     (true, false) => lpf_h_sb_y_8bpc_inner(
+                        token,
                         buf,
                         base,
                         stride_i,
@@ -3285,6 +3319,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                         bitdepth_max,
                     ),
                     (true, true) => lpf_v_sb_y_8bpc_inner(
+                        token,
                         buf,
                         base,
                         stride_i,
@@ -3298,6 +3333,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                         bitdepth_max,
                     ),
                     (false, false) => lpf_h_sb_uv_8bpc_inner(
+                        token,
                         buf,
                         base,
                         stride_i,
@@ -3311,6 +3347,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                         bitdepth_max,
                     ),
                     (false, true) => lpf_v_sb_uv_8bpc_inner(
+                        token,
                         buf,
                         base,
                         stride_i,
@@ -3334,6 +3371,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                 let stride_i = stride as isize;
                 match (is_y, is_v) {
                     (true, false) => lpf_h_sb_y_8bpc_inner(
+                        token,
                         buf,
                         base,
                         stride_i,
@@ -3347,6 +3385,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                         bitdepth_max,
                     ),
                     (true, true) => lpf_v_sb_y_8bpc_inner(
+                        token,
                         buf,
                         base,
                         stride_i,
@@ -3360,6 +3399,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                         bitdepth_max,
                     ),
                     (false, false) => lpf_h_sb_uv_8bpc_inner(
+                        token,
                         buf,
                         base,
                         stride_i,
@@ -3373,6 +3413,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                         bitdepth_max,
                     ),
                     (false, true) => lpf_v_sb_uv_8bpc_inner(
+                        token,
                         buf,
                         base,
                         stride_i,
@@ -3627,6 +3668,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             match (is_y, is_v) {
                 (true, false) => lpf_h_sb_y_8bpc_inner(
+                    token,
                     buf,
                     base,
                     stride as isize,
@@ -3640,6 +3682,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     bitdepth_max,
                 ),
                 (true, true) => lpf_v_sb_y_8bpc_inner(
+                    token,
                     buf,
                     base,
                     stride as isize,
@@ -3653,6 +3696,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     bitdepth_max,
                 ),
                 (false, false) => lpf_h_sb_uv_8bpc_inner(
+                    token,
                     buf,
                     base,
                     stride as isize,
@@ -3666,6 +3710,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     bitdepth_max,
                 ),
                 (false, true) => lpf_v_sb_uv_8bpc_inner(
+                    token,
                     buf,
                     base,
                     stride as isize,
