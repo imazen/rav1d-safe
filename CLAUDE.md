@@ -46,24 +46,24 @@ Run via `just profile-quick`. Single-threaded, 100 iters (IVF) / 5 iters (AVIF).
 
 | Build | ms/iter | vs ASM |
 |-------|---------|--------|
-| ASM | 120.9 | 1.0x |
-| Partial ASM | 170.4 | 1.41x |
-| Checked | 218.7 | 1.81x |
-| Unchecked | 211.3 | 1.75x |
+| ASM | 125.5 | 1.0x |
+| Partial ASM | 187.7 | 1.49x |
+| Checked | 216.0 | 1.72x |
+| Unchecked | 222.0 | 1.77x |
 
 **8K photo AVIF (8192x5464):**
 
 | Build | ms/iter | vs ASM |
 |-------|---------|--------|
-| ASM | 694.8 | 1.0x |
-| Partial ASM | 861.8 | 1.24x |
-| Checked | 1229.0 | 1.77x |
-| Unchecked | 1162.2 | 1.67x |
+| ASM | 725.1 | 1.0x |
+| Partial ASM | 904.4 | 1.25x |
+| Checked | 1238.6 | 1.71x |
+| Unchecked | 1176.9 | 1.62x |
 
 Progress vs 2026-02-13 baseline (Checked):
-- IVF: 1.68x → 1.63x
-- 4K AVIF: 1.98x → 1.81x  (~9% gap closed)
-- 8K AVIF: 1.95x → 1.77x  (~9% gap closed)
+- IVF: 1.68x → 1.62x  (~4% gap closed)
+- 4K AVIF: 1.98x → 1.72x  (**~13% gap closed**)
+- 8K AVIF: 1.95x → 1.71x  (**~12% gap closed**)
 
 Optimizations landed (all in safe checked, `#![forbid(unsafe_code)]`):
 - `cfl_pred` SIMD (8bpc+16bpc)
@@ -72,6 +72,9 @@ Optimizations landed (all in safe checked, `#![forbid(unsafe_code)]`):
 - ADST / Identity / FlipADST column SIMD wired into all 14 non-trivial 16x16 transform combinations (both bpcs)
 - ADST / FlipADST / Identity column SIMD wired into all 14 non-trivial 8x8 transform combinations (8bpc)
 - Identity column SIMD inlined into identity_identity rectangular 8x32/32x8, 16x32/32x16 (both bpcs) plus 16bpc identity rect variants
+- **AVX-512 (Server64/X64V4Token) column transforms `dct16_cols_avx512` + `dct32_cols_avx512`**, wired into 16x16, 32x32, 16x32, 32x16, 64x16, 64x32 (both bpcs) — 16 cols/chunk vs 8 with AVX2
+- **Per-row DisjointMut guard batching** in inv_txfm_add scalar fallback + ipred scalar paths (splat_dc, cfl_pred, paeth, smooth_v/h, smooth, z1, z2): one wider `strided_slice_mut` covering the whole block instead of N guards per row
+- **Complete SIMD v-direction loopfilter (8bpc)** for all widths (wd=4/6/8/16). Four #[arcane] functions with X64V2Token; contiguous 4-byte column loads + cvtepu8_epi32. Three-way branchless mask-select between 14-tap/8-tap/4-tap based on fm + flat8in + flat8out. h-direction remains scalar (needs gather)
 
 Remaining biggest gaps (without unsafe):
 1. **Loopfilter** — `loop_filter_4_8bpc` is fully scalar at 10% of profile vs <1% ASM (biggest single remaining win, ~500-1000 lines of SIMD work)
