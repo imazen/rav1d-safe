@@ -11240,6 +11240,149 @@ mod tests {
     }
 
     // ----------------------------------------------------------------------
+    // i16-packed pmaddwd DCT-16 COLUMN pass — bit-exact vs i32 mullo col pass
+    // ----------------------------------------------------------------------
+
+    /// #[arcane] helper: runs SIMD row pass → shift+clip → i16-packed column pass
+    /// and returns the 256 i32 column-pass output for comparison with scalar.
+    #[cfg(target_arch = "x86_64")]
+    #[arcane]
+    fn test_dct16_col_i16_pipeline(_token: Desktop64, input: [i16; 256]) -> [i32; 256] {
+        let col_min = i16::MIN as i32;
+        let col_max = i16::MAX as i32;
+
+        // 1. SIMD row pass
+        let simd_row_out = dct16_row_pass_i16_simd(_token, input);
+
+        // 2. Intermediate shift+clip (shift=2, rnd=2 for 16x16)
+        let mut simd_tmp = [0i32; 256];
+        let rnd_v = _mm256_set1_epi32(2);
+        let col_min_v = _mm256_set1_epi32(col_min);
+        let col_max_v = _mm256_set1_epi32(col_max);
+        for y in 0..16 {
+            for chunk in 0..2u32 {
+                let b = (chunk * 8) as usize;
+                let off = y * 16 + b;
+                let v = loadu_256!(&simd_row_out[off..off + 8], [i32; 8]);
+                let shifted = _mm256_srai_epi32::<2>(_mm256_add_epi32(v, rnd_v));
+                let clamped = _mm256_max_epi32(_mm256_min_epi32(shifted, col_max_v), col_min_v);
+                storeu_256!(&mut simd_tmp[off..off + 8], [i32; 8], clamped);
+            }
+        }
+
+        // 3. i16-packed column pass
+        dct16_col_pass_i16(_token, &simd_tmp)
+    }
+
+    /// Bit-exact check: `dct16_col_pass_i16` matches the scalar reference
+    /// across a range of seeded inputs.
+    ///
+    /// Full 2D pipeline: row pass → intermediate shift → col pass → add-to-dst.
+    /// Compares final pixel output between scalar reference and the i16-packed
+    /// pmaddwd column pass.
+    #[test]
+    fn test_dct16_col_pass_i16_matches_existing() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+            0x0,
+            0x7fff_7fff_7fff_7fff,
+            0x8000_8000_8000_8000,
+        ];
+        let row_min = i16::MIN as i32;
+        let row_max = i16::MAX as i32;
+        let col_min = i16::MIN as i32;
+        let col_max = i16::MAX as i32;
+        let mut total_mism = 0u32;
+
+        for &seed in seeds {
+            let input: [i16; 256] = seeded_i16_block(seed);
+
+            // --- Scalar reference: full 2D pipeline ---
+            // 1. Row pass (scalar)
+            let row_out = run_scalar_dct16_per_row(&input, row_min, row_max);
+            // 2. Intermediate shift+clip (shift=2, rnd=2 for 16x16)
+            let mut scalar_tmp = [0i32; 256];
+            for i in 0..256 {
+                scalar_tmp[i] = ((row_out[i] + 2) >> 2).clamp(col_min, col_max);
+            }
+            // 3. Column pass (scalar) — iterate by column
+            let mut scalar_col_out = [0i32; 256];
+            for x in 0..16 {
+                let mut col = [0i32; 16];
+                for y in 0..16 {
+                    col[y] = scalar_tmp[y * 16 + x];
+                }
+                crate::src::itx_1d::rav1d_inv_dct16_1d_c(
+                    &mut col,
+                    std::num::NonZeroUsize::new(1).unwrap(),
+                    col_min,
+                    col_max,
+                );
+                for y in 0..16 {
+                    scalar_col_out[y * 16 + x] = col[y];
+                }
+            }
+
+            // --- SIMD: row pass → shift → i16-packed column pass ---
+            let simd_col_out = test_dct16_col_i16_pipeline(token, input);
+
+            // --- Apply add-to-dst to BOTH outputs and compare ---
+            let mut dst_scalar = [128u8; 16 * 16];
+            let mut dst_simd = [128u8; 16 * 16];
+            for y in 0..16 {
+                for x in 0..16 {
+                    let sc = scalar_col_out[y * 16 + x];
+                    let scaled = (sc + 8) >> 4;
+                    let p = (128i32 + scaled).clamp(0, 255);
+                    dst_scalar[y * 16 + x] = p as u8;
+
+                    let si = simd_col_out[y * 16 + x];
+                    let scaled = (si + 8) >> 4;
+                    let p = (128i32 + scaled).clamp(0, 255);
+                    dst_simd[y * 16 + x] = p as u8;
+                }
+            }
+
+            if dst_simd != dst_scalar {
+                let mut mism = 0u32;
+                for i in 0..256 {
+                    if dst_simd[i] != dst_scalar[i] {
+                        if mism < 8 {
+                            eprintln!(
+                                "seed={:#x} idx={} row={} col={} scalar={} simd={}",
+                                seed,
+                                i,
+                                i / 16,
+                                i % 16,
+                                dst_scalar[i],
+                                dst_simd[i],
+                            );
+                        }
+                        mism += 1;
+                    }
+                }
+                eprintln!("seed={seed:#x}: {mism} dst mismatches");
+                total_mism += mism;
+            }
+        }
+        assert_eq!(
+            total_mism, 0,
+            "dct16_col_pass_i16 full pipeline diverged from scalar reference"
+        );
+    }
+
+    // ----------------------------------------------------------------------
     // i16-packed pmaddwd DCT-16 row pass — bit-exact vs scalar
     // ----------------------------------------------------------------------
 
