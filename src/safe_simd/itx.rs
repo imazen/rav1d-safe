@@ -6568,12 +6568,77 @@ fn simd_row_dct8_8bpc_8rows(
 /// Bit-exactness target: matches `run_scalar_dct8_per_row` exactly for
 /// `row_min = i16::MIN as i32`, `row_max = i16::MAX as i32` (the 8bpc
 /// row-pass clip range).
+/// Helper: build (col_a, col_b) ymm pair from two i16x8 xmms.
+/// Each i32 lane K (K=0..7 → row K) holds (col_a_word, col_b_word) packed as
+/// i16 ready for pmaddwd. low half of lane = col_a, high half = col_b.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+#[inline(always)]
+fn dct8_row_build_pair(_token: Desktop64, a: __m128i, b: __m128i) -> __m256i {
+    let lo = _mm_unpacklo_epi16(a, b);
+    let hi = _mm_unpackhi_epi16(a, b);
+    _mm256_set_m128i(hi, lo)
+}
+
+/// Helper: build a coef-pack ymm broadcast where each i32 lane = (c_lo, c_hi)
+/// packed as i16 (low 16 bits = c_lo, high 16 = c_hi). Used as the 2nd arg to
+/// `_mm256_madd_epi16` so the result per-lane = `a*c_lo + b*c_hi` for input
+/// pair (a, b).
+#[cfg(target_arch = "x86_64")]
+#[rite]
+#[inline(always)]
+fn dct8_row_coef_pack(_token: Desktop64, c_lo: i16, c_hi: i16) -> __m256i {
+    let packed = ((c_lo as u32) & 0xFFFF) as i32 | (((c_hi as u32) & 0xFFFF) << 16) as i32;
+    _mm256_set1_epi32(packed)
+}
+
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct8_row_pass_i16_simd(_token: Desktop64, _coeff_col_major: [i16; 64]) -> [i32; 64] {
-    // STUB: deliberately wrong — returns zeros so the test fails until
-    // the real SIMD body is implemented. Closes the iteration loop.
-    [0i32; 64]
+fn dct8_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 64]) -> [i32; 64] {
+    // Layout: coeff_col_major[y + x*8] = element x of row y.
+    // We process all 8 rows in parallel — ymm lane K corresponds to row K.
+    //
+    // Pair construction strategy: load each column as 8 i16 into an xmm,
+    // then build ymm pairs where each i32 lane K = (col_a's row K word, col_b's row K word).
+    //
+    //   xmm = _mm_loadu_si128(&coeff[col*8])   // 8 i16 = all 8 rows of one col
+    //   ymm_pair_ab = lo_unpack(col_a, col_b) | hi_unpack(col_a, col_b)
+    //
+    // That ymm now has one i32 lane per row, each holding (col_a_word, col_b_word)
+    // packed as i16 ready for pmaddwd.
+    //
+    // Coefficient pack convention: pmaddwd with packed (p_lo, p_hi) on input
+    // (a_lo, a_hi) computes a_lo*p_lo + a_hi*p_hi per i32 lane. So to compute
+    // `c1 * col_a + c2 * col_b` we pack (c1, c2) and use input (col_a, col_b).
+
+    // Build column xmms.
+    let mut col_xmm = [_mm_setzero_si128(); 8];
+    for x in 0..8 {
+        let arr: &[i16; 8] = (&coeff_col_major[x * 8..x * 8 + 8]).try_into().unwrap();
+        col_xmm[x] = loadu_128!(arr);
+    }
+
+    // Baseline path: use the known-good i32 dct8_1d_cols8 to confirm the
+    // load/transpose harness is correct. Stage-by-stage replacement with
+    // pmaddwd happens in follow-up commits, each gated by the bit-exact test.
+    let row_min = i16::MIN as i32;
+    let row_max = i16::MAX as i32;
+    let row_min_v = _mm256_set1_epi32(row_min);
+    let row_max_v = _mm256_set1_epi32(row_max);
+
+    let mut cols = [_mm256_setzero_si256(); 8];
+    for x in 0..8 {
+        cols[x] = _mm256_cvtepi16_epi32(col_xmm[x]);
+    }
+    dct8_1d_cols8(_token, &mut cols, row_min_v, row_max_v);
+
+    let rows = transpose_8x8_i32!(cols);
+    let mut out = [0i32; 64];
+    for y in 0..8 {
+        let arr: &mut [i32; 8] = (&mut out[y * 8..y * 8 + 8]).try_into().unwrap();
+        storeu_256!(arr, [i32; 8], rows[y]);
+    }
+    out
 }
 
 /// SIMD row ADST-16 for 16xN transforms, 8bpc. Same shape as
