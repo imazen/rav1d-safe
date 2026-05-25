@@ -2100,6 +2100,160 @@ fn loop_filter_4_8bpc_narrow_simd_v(
 }
 
 // ============================================================================
+// SIMD inner narrow loop filter — V-FILTER, 8 columns at a time (YMM)
+// ============================================================================
+
+/// SIMD narrow 4-tap loop filter for 8bpc V-FILTER direction.
+/// Wider variant: processes **8** adjacent filter positions (8 columns) per
+/// call by widening from `__m128i` (4 i32 lanes) to `__m256i` (8 i32 lanes).
+/// Caller must pre-verify the next 4 columns also use narrow (wd=4) and the
+/// same `l`/`e`/`i`/`h` parameters as the current group; the outer dispatcher
+/// merges two `vmask[0]`-only adjacent edges into one of these calls.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn loop_filter_4_8bpc_narrow_simd_v_x8(
+    _token: Desktop64,
+    buf: &mut [u8],
+    base: usize,
+    e: i32,
+    i: i32,
+    h: i32,
+    strideb: isize,
+) {
+    // Load 8 contiguous u8 columns at a given row offset, widen to 8 i32.
+    let load8 = |off: isize| -> __m256i {
+        let start = signed_idx(base, strideb * off);
+        let lo = i64::from_ne_bytes([
+            buf[start],
+            buf[start + 1],
+            buf[start + 2],
+            buf[start + 3],
+            buf[start + 4],
+            buf[start + 5],
+            buf[start + 6],
+            buf[start + 7],
+        ]);
+        let v8u8 = _mm_set_epi64x(0, lo);
+        _mm256_cvtepu8_epi32(v8u8)
+    };
+
+    let p1_v = load8(-2);
+    let p0_v = load8(-1);
+    let q0_v = load8(0);
+    let q1_v = load8(1);
+
+    let i_v = _mm256_set1_epi32(i);
+    let e_v = _mm256_set1_epi32(e);
+    let h_v = _mm256_set1_epi32(h);
+
+    let abs_p1p0 = _mm256_abs_epi32(_mm256_sub_epi32(p1_v, p0_v));
+    let abs_q1q0 = _mm256_abs_epi32(_mm256_sub_epi32(q1_v, q0_v));
+    let abs_p0q0 = _mm256_abs_epi32(_mm256_sub_epi32(p0_v, q0_v));
+    let abs_p1q1 = _mm256_abs_epi32(_mm256_sub_epi32(p1_v, q1_v));
+
+    let not_gt = |a: __m256i, b: __m256i| -> __m256i {
+        _mm256_andnot_si256(_mm256_cmpgt_epi32(a, b), _mm256_set1_epi32(-1))
+    };
+    let m_p1p0 = not_gt(abs_p1p0, i_v);
+    let m_q1q0 = not_gt(abs_q1q0, i_v);
+    let val = _mm256_add_epi32(
+        _mm256_slli_epi32::<1>(abs_p0q0),
+        _mm256_srli_epi32::<1>(abs_p1q1),
+    );
+    let m_val = not_gt(val, e_v);
+    let fm_mask = _mm256_and_si256(_mm256_and_si256(m_p1p0, m_q1q0), m_val);
+
+    let hev_mask = _mm256_or_si256(
+        _mm256_cmpgt_epi32(abs_p1p0, h_v),
+        _mm256_cmpgt_epi32(abs_q1q0, h_v),
+    );
+
+    let neg128 = _mm256_set1_epi32(-128);
+    let pos127 = _mm256_set1_epi32(127);
+    let iclip = |v: __m256i| _mm256_min_epi32(_mm256_max_epi32(v, neg128), pos127);
+
+    let diff_q0p0 = _mm256_sub_epi32(q0_v, p0_v);
+    let three_d = _mm256_add_epi32(_mm256_slli_epi32::<1>(diff_q0p0), diff_q0p0);
+    let diff_p1q1 = _mm256_sub_epi32(p1_v, q1_v);
+
+    let f_hev = iclip(_mm256_add_epi32(three_d, iclip(diff_p1q1)));
+    let f_nohev = iclip(three_d);
+
+    let c4 = _mm256_set1_epi32(4);
+    let c3 = _mm256_set1_epi32(3);
+    let one = _mm256_set1_epi32(1);
+
+    let f1_hev = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_hev, c4), pos127));
+    let f2_hev = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_hev, c3), pos127));
+    let f1_no = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_nohev, c4), pos127));
+    let f2_no = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_nohev, c3), pos127));
+    let f_extra = _mm256_srai_epi32::<1>(_mm256_add_epi32(f1_no, one));
+
+    let p0_hev = _mm256_add_epi32(p0_v, f2_hev);
+    let q0_hev = _mm256_sub_epi32(q0_v, f1_hev);
+    let p0_no = _mm256_add_epi32(p0_v, f2_no);
+    let q0_no = _mm256_sub_epi32(q0_v, f1_no);
+    let p1_no = _mm256_add_epi32(p1_v, f_extra);
+    let q1_no = _mm256_sub_epi32(q1_v, f_extra);
+
+    let blendv = |a: __m256i, b: __m256i, mask: __m256i| -> __m256i {
+        _mm256_or_si256(_mm256_andnot_si256(mask, a), _mm256_and_si256(mask, b))
+    };
+    let p1_filt = blendv(p1_no, p1_v, hev_mask);
+    let p0_filt = blendv(p0_no, p0_hev, hev_mask);
+    let q0_filt = blendv(q0_no, q0_hev, hev_mask);
+    let q1_filt = blendv(q1_no, q1_v, hev_mask);
+
+    let p1_final = blendv(p1_v, p1_filt, fm_mask);
+    let p0_final = blendv(p0_v, p0_filt, fm_mask);
+    let q0_final = blendv(q0_v, q0_filt, fm_mask);
+    let q1_final = blendv(q1_v, q1_filt, fm_mask);
+
+    // Pack 8 i32 lanes (clamped to [0,255]) back to 8 u8.
+    //
+    // After _mm256_packus_epi32(v,v): [u16x8 in low lane | u16x8 in high lane],
+    //   where each lane's u16x8 = (lo_i32x4_packed, lo_i32x4_packed). I.e. the
+    //   low qword (8 bytes -> 4 u16) of each lane has the 4 lane-local i32s
+    //   packed to u16.
+    // After _mm256_packus_epi16(u16x, u16x): each 128-bit lane has 16 u8 where
+    //   the low 4 bytes are the lane-local i32x4 packed to u8 (the rest is a
+    //   duplicate we ignore).
+    // permute4x64::<0b1000> rearranges qwords: result[qword 0] = src[qword 0]
+    //   (lane0 low 8 bytes), result[qword 1] = src[qword 2] (lane1 low 8 bytes).
+    //   We only care about bytes [0..4] of qword 0 (a0..a3) and bytes [0..4]
+    //   of qword 1 (a4..a7); together they form 8 contiguous bytes in [0..8].
+    // But qword 0's bytes [4..8] are a duplicate of a0..a3 — they get
+    //   overwritten by qword 1's a4..a7 only if we shift. Easier: use a
+    //   shuffle_epi8 to gather the right bytes.
+    //
+    // Use permutevar8x32_epi32 on the packus_epi16 result. We need lanes
+    //   [0, 4, 0, 4, ?, ?, ?, ?] — actually no: we operate on the u8 result
+    //   where lane0 dwords are [u32 dup of a0..a3]x4 and lane1 dwords are
+    //   [u32 dup of a4..a7]x4. We want low 64 bits = a0..a3,a4..a7. That's
+    //   dword indices [0, 4] picked into [0, 1].
+    let pack8 = |v: __m256i| -> i64 {
+        let u16x = _mm256_packus_epi32(v, v);
+        let u8x = _mm256_packus_epi16(u16x, u16x);
+        // Permute control: gather i32 lane 0 of low half and i32 lane 0 of
+        // high half. _mm256_permutevar8x32_epi32 indexes 8 i32 lanes globally
+        // (lanes 0..3 = low half, lanes 4..7 = high half).
+        let idx = _mm256_setr_epi32(0, 4, 0, 0, 0, 0, 0, 0);
+        let p = _mm256_permutevar8x32_epi32(u8x, idx);
+        let lo128 = _mm256_castsi256_si128(p);
+        _mm_cvtsi128_si64(lo128)
+    };
+    let store8 = |buf: &mut [u8], packed: i64, off: isize| {
+        let start = signed_idx(base, strideb * off);
+        let bytes = packed.to_ne_bytes();
+        buf[start..start + 8].copy_from_slice(&bytes);
+    };
+    store8(buf, pack8(p1_final), -2);
+    store8(buf, pack8(p0_final), -1);
+    store8(buf, pack8(q0_final), 0);
+    store8(buf, pack8(q1_final), 1);
+}
+
+// ============================================================================
 // SUPERBLOCK FILTER FUNCTIONS (8bpc)
 // ============================================================================
 
@@ -2214,25 +2368,32 @@ fn lpf_v_sb_y_8bpc_inner(
     let vm = vmask[0] | vmask[1] | vmask[2];
     let mut lvl_offset = lvl_base;
 
+    // Helper: compute (l, h, e, i) for the edge at `lvl_offset` (or 0 if no
+    // filter). Mirrors the original per-iteration logic.
+    let derive_levels = |lvl_offset: usize| -> Option<(u8, i32, i32, i32)> {
+        let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
+        let l = if lvl_val != 0 {
+            lvl_val
+        } else if lvl_offset >= b4_strideb {
+            read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
+        } else {
+            0
+        };
+        if l == 0 {
+            None
+        } else {
+            let h = (l >> 4) as i32;
+            let e = lut.e[l as usize] as i32;
+            let i = lut.i[l as usize] as i32;
+            Some((l, h, e, i))
+        }
+    };
+
     let mut xy = 1u32;
     while vm & !xy.wrapping_sub(1) != 0 {
         if vm & xy != 0 {
-            let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
-            let l = if lvl_val != 0 {
-                lvl_val
-            } else {
-                if lvl_offset >= b4_strideb {
-                    read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
-                } else {
-                    0
-                }
-            };
-
-            if l != 0 {
-                let h = (l >> 4) as i32;
-                let e = lut.e[l as usize] as i32;
-                let i = lut.i[l as usize] as i32;
-
+            if let Some((l, h, e, i)) = derive_levels(lvl_offset) {
+                // Determine current edge's wd-tier.
                 let idx = if vmask[2] & xy != 0 {
                     16
                 } else if vmask[1] & xy != 0 {
@@ -2240,6 +2401,34 @@ fn lpf_v_sb_y_8bpc_inner(
                 } else {
                     4
                 };
+
+                // Fast path: x8 YMM kernel for narrow (wd=4) v-filter when
+                // the next adjacent edge is also wd=4 with identical filter
+                // parameters. Doubles throughput per call (8 cols vs 4).
+                #[cfg(target_arch = "x86_64")]
+                {
+                    let next_xy = xy.wrapping_shl(1);
+                    let next_is_narrow = next_xy != 0
+                        && (vmask[0] & next_xy) != 0
+                        && (vmask[1] & next_xy) == 0
+                        && (vmask[2] & next_xy) == 0;
+                    if idx == 4 && next_is_narrow && bitdepth_max == 255 {
+                        if let Some((l2, _, _, _)) =
+                            derive_levels(lvl_offset + b4_stridea)
+                        {
+                            if l2 == l {
+                                loop_filter_4_8bpc_narrow_simd_v_x8(
+                                    _token, buf, dst_offset, e, i, h, strideb,
+                                );
+                                // Advance both edges in one step.
+                                xy = next_xy << 1;
+                                dst_offset = signed_idx(dst_offset, 8 * stridea);
+                                lvl_offset += 2 * b4_stridea;
+                                continue;
+                            }
+                        }
+                    }
+                }
 
                 loop_filter_4_8bpc(
                     #[cfg(target_arch = "x86_64")]
