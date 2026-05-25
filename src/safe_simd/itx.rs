@@ -9164,6 +9164,222 @@ mod tests {
         eprintln!("WHT permutations: {}", report.permutations_run);
         assert!(report.permutations_run >= 1);
     }
+
+    // ----------------------------------------------------------------------
+    // itx_mul2x_pack! — bit-exact match against scalar reference
+    // ----------------------------------------------------------------------
+
+    /// Test helper exercising `itx_mul2x_pack!` from within a target_feature
+    /// scope. Computes `madd(paired) >> 12` (dav1d row-pass shift) for each i32
+    /// lane, where `paired` is constructed from input i16 arrays `a`, `b` via
+    /// `unpacklo_epi16(b, a)` so each lane = `(a_word << 16) | b_word` — same
+    /// shape as dav1d's `punpcklwd m_a, m_b` output. Returns the 8 i32 results
+    /// post-shift; caller compares against scalar arithmetic.
+    ///
+    /// `#[arcane]` so the test can call it without an `unsafe` block — the
+    /// archmage attribute handles target_feature scoping internally.
+    #[arcane]
+    fn itx_mul2x_pack_probe(
+        _token: Desktop64,
+        a: [i16; 16],
+        b: [i16; 16],
+        coef_a: i16,
+        coef_b: i16,
+    ) -> [i32; 16] {
+        // Load i16 vectors (16 lanes = 256 bit).
+        let arr_a: &[i16; 16] = &a;
+        let arr_b: &[i16; 16] = &b;
+        let va = loadu_256!(arr_a, [i16; 16]);
+        let vb = loadu_256!(arr_b, [i16; 16]);
+        // Pair: each 32-bit lane = (a_word << 16) | b_word, i.e. low 16-bit
+        // half is `a` and high 16-bit half is `b`. This is the dav1d
+        // ITX_MUL2X_PACK input shape (the `unpacklo m1, m_a, m_b` form).
+        let lo = _mm256_unpacklo_epi16(va, vb);
+        let hi = _mm256_unpackhi_epi16(va, vb);
+        // Apply macro with rnd = 2048 (== pd_2048), shift = 12.
+        let r_lo = itx_mul2x_pack!(lo, coef_a, coef_b, 2048, 12);
+        let r_hi = itx_mul2x_pack!(hi, coef_a, coef_b, 2048, 12);
+        // Store post-shift i32 lanes.
+        let mut out_lo = [0i32; 8];
+        let mut out_hi = [0i32; 8];
+        let arr_lo: &mut [i32; 8] = &mut out_lo;
+        let arr_hi: &mut [i32; 8] = &mut out_hi;
+        storeu_256!(arr_lo, [i32; 8], r_lo);
+        storeu_256!(arr_hi, [i32; 8], r_hi);
+        // Re-interleave so output[i] corresponds to input pair (a[i], b[i]).
+        // AVX2 unpacklo/unpackhi work within 128-bit lanes, so:
+        //   out_lo[0..4] ← (a[0..4], b[0..4]) pairs
+        //   out_hi[0..4] ← (a[4..8], b[4..8]) pairs
+        //   out_lo[4..8] ← (a[8..12], b[8..12]) pairs
+        //   out_hi[4..8] ← (a[12..16], b[12..16]) pairs
+        let mut out = [0i32; 16];
+        out[0..4].copy_from_slice(&out_lo[0..4]);
+        out[4..8].copy_from_slice(&out_hi[0..4]);
+        out[8..12].copy_from_slice(&out_lo[4..8]);
+        out[12..16].copy_from_slice(&out_hi[4..8]);
+        out
+    }
+
+    /// Bit-exact check: itx_mul2x_pack! matches the scalar C reference
+    /// `(a*c1 + b*c2 + rnd) >> 12` on a wide range of seeded random inputs.
+    ///
+    /// This is the regression gate for any future i16-packed row DCT work:
+    /// before swapping a scalar 1D path for a `itx_mul2x_pack!`-driven one,
+    /// the equivalent test must extend here. The scalar formula is the
+    /// arithmetic dav1d's C reference performs — match it bit-exactly.
+    #[test]
+    fn test_itx_mul2x_pack_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+        // Coefficient pairs from the actual AV1 trig tables (dct8/16 row pass).
+        // Mix of (small, small), (small, large), (negative, positive),
+        // (positive, negative) — the four sign permutations exercised by
+        // ITX_MULSUB_2W call sites.
+        let coef_pairs: &[(i16, i16)] = &[
+            (799, 4017),    // dct8 t4a/t7a
+            (3406, 2276),   // dct8 t5a/t6a
+            (1567, 3784),   // dct8 t2/t3
+            (2896, 2896),   // dct8 t0/t1
+            (-2896, 2896),  // dct8 t6/t5
+            (401, 4076),    // dct16 t8a/t15a
+            (3166, 2598),   // dct16 t9a/t14a
+            (1931, 3612),   // dct16 t10a/t13a
+            (3920, 1189),   // dct16 t11a/t12a
+            (-3784, 1567),  // dct16 t10a (oddhalf)
+            (i16::MIN, 1),  // sign extreme
+            (1, i16::MAX),  // sign extreme
+            (i16::MAX, i16::MIN),
+        ];
+
+        // Seed-based LCG (no external deps). Lcg64Xsh32-style.
+        let mut state: u64 = 0xdeadbeef_cafe_babe;
+        let mut next_i16 = || -> i16 {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((state >> 32) as i32 as i16)
+        };
+
+        const N_TRIALS: usize = 64;
+        let mut mismatches = 0u32;
+        for trial in 0..N_TRIALS {
+            // Random i16 vectors with broad coverage including the high end
+            // (where overflow would manifest in a wrong implementation).
+            let mut a = [0i16; 16];
+            let mut b = [0i16; 16];
+            for i in 0..16 {
+                a[i] = next_i16();
+                b[i] = next_i16();
+            }
+            // Occasionally inject saturated inputs to exercise overflow corners.
+            if trial % 8 == 0 {
+                a[trial % 16] = i16::MAX;
+                b[(trial + 1) % 16] = i16::MIN;
+            }
+            for &(c1, c2) in coef_pairs {
+                let simd_out = itx_mul2x_pack_probe(token, a, b, c1, c2);
+                for i in 0..16 {
+                    // Scalar C arithmetic: `(a*c1 + b*c2 + 2048) >> 12`.
+                    let scalar = ((a[i] as i32) * (c1 as i32)
+                        + (b[i] as i32) * (c2 as i32)
+                        + 2048)
+                        >> 12;
+                    if scalar != simd_out[i] {
+                        if mismatches < 8 {
+                            eprintln!(
+                                "MISMATCH trial={trial} i={i} c1={c1} c2={c2} a={} b={} simd={} scalar={}",
+                                a[i], b[i], simd_out[i], scalar
+                            );
+                        }
+                        mismatches += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            mismatches, 0,
+            "itx_mul2x_pack! diverged from scalar C reference (a*c1 + b*c2 + 2048) >> 12"
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // transpose_8x8_i32! — round-trip identity
+    // ----------------------------------------------------------------------
+
+    /// `#[arcane]` helper that builds an 8x8 i32 column-major block, runs the
+    /// transpose macro, and stores row-major. Returns the row-major output.
+    /// Caller compares against a scalar transpose of the input.
+    #[arcane]
+    fn transpose_8x8_probe(_token: Desktop64, input_col_major: [i32; 64]) -> [i32; 64] {
+        // Load 8 columns into 8 __m256i (each column is 8 i32 lanes).
+        let mut cols = [_mm256_setzero_si256(); 8];
+        for x in 0..8 {
+            let arr: &[i32; 8] = (&input_col_major[x * 8..x * 8 + 8])
+                .try_into()
+                .unwrap();
+            cols[x] = loadu_256!(arr, [i32; 8]);
+        }
+        let rows = transpose_8x8_i32!(cols);
+        let mut out = [0i32; 64];
+        for y in 0..8 {
+            let arr: &mut [i32; 8] = (&mut out[y * 8..y * 8 + 8])
+                .try_into()
+                .unwrap();
+            storeu_256!(arr, [i32; 8], rows[y]);
+        }
+        out
+    }
+
+    /// transpose_8x8_i32! returns the row-major image of the column-major
+    /// input — i.e. `out[y*8 + x] == in[x*8 + y]` for all (x, y).
+    #[test]
+    fn test_transpose_8x8_i32_roundtrip() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+        // Deterministic checkerboard inputs to make off-by-one shuffles
+        // obvious in stderr if the macro regresses.
+        let mut col_major = [0i32; 64];
+        for x in 0..8 {
+            for y in 0..8 {
+                // Distinct value per (x, y) — high bits encode column, low
+                // bits encode row, so a transpose error shows as a clean
+                // bit-pattern mismatch.
+                col_major[x * 8 + y] = ((x as i32) << 24) | ((y as i32) << 8) | 0x55;
+            }
+        }
+        let row_major = transpose_8x8_probe(token, col_major);
+        for y in 0..8 {
+            for x in 0..8 {
+                assert_eq!(
+                    row_major[y * 8 + x],
+                    col_major[x * 8 + y],
+                    "transpose mismatch at (x={x}, y={y})"
+                );
+            }
+        }
+        // Also try a randomized input.
+        let mut state: u64 = 0xface_feed_dead_beef;
+        let mut rand = || -> i32 {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state as i32
+        };
+        let mut col_major2 = [0i32; 64];
+        for v in col_major2.iter_mut() {
+            *v = rand();
+        }
+        let row_major2 = transpose_8x8_probe(token, col_major2);
+        for y in 0..8 {
+            for x in 0..8 {
+                assert_eq!(
+                    row_major2[y * 8 + x],
+                    col_major2[x * 8 + y],
+                    "transpose (random) mismatch at (x={x}, y={y})"
+                );
+            }
+        }
+    }
 }
 
 // ============================================================================
