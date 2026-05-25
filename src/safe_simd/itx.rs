@@ -9369,6 +9369,145 @@ mod tests {
             }
         }
     }
+
+    // ----------------------------------------------------------------------
+    // Scalar reference for i16-packed DCT row-pass attempts.
+    // Future T-5 (i16-packed pmaddwd DCT) work calls this as the
+    // bit-exactness oracle; iterates in milliseconds vs 30-second MD5 cycles.
+    // ----------------------------------------------------------------------
+
+    /// Run scalar `rav1d_inv_dct8_1d_c` per row on column-major i16 coeff
+    /// (the dav1d 8x8 row-pass input shape). Returns row-major i32 output
+    /// matching what `simd_row_dct8_8bpc_8rows` writes to `tmp` before the
+    /// rounding/shift step.
+    ///
+    /// Bit-exactness target: ANY new SIMD row-pass implementation must
+    /// produce byte-identical i32 output for the same input. Use:
+    /// ```ignore
+    /// let scalar_out = run_scalar_dct8_per_row(&input);
+    /// let simd_out   = call_new_simd_row_pass(&input);
+    /// assert_eq!(scalar_out, simd_out);
+    /// ```
+    #[allow(dead_code)]
+    pub(super) fn run_scalar_dct8_per_row(
+        coeff_col_major: &[i16; 64],
+        row_min: i32,
+        row_max: i32,
+    ) -> [i32; 64] {
+        use std::num::NonZeroUsize;
+        let mut tmp_row_major = [0i32; 64];
+        for y in 0..8 {
+            let mut row = [0i32; 8];
+            for x in 0..8 {
+                row[x] = coeff_col_major[y + x * 8] as i32;
+            }
+            crate::src::itx_1d::rav1d_inv_dct8_1d_c(
+                &mut row,
+                NonZeroUsize::new(1).unwrap(),
+                row_min,
+                row_max,
+            );
+            for x in 0..8 {
+                tmp_row_major[y * 8 + x] = row[x];
+            }
+        }
+        tmp_row_major
+    }
+
+    /// Same shape for DCT-16: 16 rows × 16 cols column-major i16 input
+    /// → row-major i32 output (each row independently transformed).
+    #[allow(dead_code)]
+    pub(super) fn run_scalar_dct16_per_row(
+        coeff_col_major: &[i16; 256],
+        row_min: i32,
+        row_max: i32,
+    ) -> [i32; 256] {
+        use std::num::NonZeroUsize;
+        let mut tmp_row_major = [0i32; 256];
+        for y in 0..16 {
+            let mut row = [0i32; 16];
+            for x in 0..16 {
+                row[x] = coeff_col_major[y + x * 16] as i32;
+            }
+            crate::src::itx_1d::rav1d_inv_dct16_1d_c(
+                &mut row,
+                NonZeroUsize::new(1).unwrap(),
+                row_min,
+                row_max,
+            );
+            for x in 0..16 {
+                tmp_row_major[y * 16 + x] = row[x];
+            }
+        }
+        tmp_row_major
+    }
+
+    /// Same shape for DCT-32: 32 rows × 32 cols column-major i16 input
+    /// → row-major i32 output (each row independently transformed).
+    #[allow(dead_code)]
+    pub(super) fn run_scalar_dct32_per_row(
+        coeff_col_major: &[i16; 1024],
+        row_min: i32,
+        row_max: i32,
+    ) -> [i32; 1024] {
+        use std::num::NonZeroUsize;
+        let mut tmp_row_major = [0i32; 1024];
+        for y in 0..32 {
+            let mut row = [0i32; 32];
+            for x in 0..32 {
+                row[x] = coeff_col_major[y + x * 32] as i32;
+            }
+            crate::src::itx_1d::rav1d_inv_dct32_1d_c(
+                &mut row,
+                NonZeroUsize::new(1).unwrap(),
+                row_min,
+                row_max,
+            );
+            for x in 0..32 {
+                tmp_row_major[y * 32 + x] = row[x];
+            }
+        }
+        tmp_row_major
+    }
+
+    /// Seeded deterministic RNG for bit-exact tests — small LCG, no deps.
+    #[allow(dead_code)]
+    pub(super) fn seeded_i16_block<const N: usize>(seed: u64) -> [i16; N] {
+        let mut state = seed.wrapping_mul(6364136223846793005);
+        let mut out = [0i16; N];
+        for v in out.iter_mut() {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            // Reduce to i16 range; allow full ±32767 to exercise saturation paths.
+            *v = (state >> 32) as i16;
+        }
+        out
+    }
+
+    /// Sanity check on the test harness itself: the scalar reference helpers
+    /// must accept any seed without panicking and produce deterministic
+    /// output. If this fails, no other DCT test can be trusted.
+    #[test]
+    fn test_dct_scalar_reference_helpers_are_deterministic() {
+        let row_min = i16::MIN as i32;
+        let row_max = i16::MAX as i32;
+
+        let in8: [i16; 64] = seeded_i16_block(0xdeadbeef);
+        let a8 = run_scalar_dct8_per_row(&in8, row_min, row_max);
+        let b8 = run_scalar_dct8_per_row(&in8, row_min, row_max);
+        assert_eq!(a8, b8, "dct8 scalar reference is non-deterministic");
+
+        let in16: [i16; 256] = seeded_i16_block(0xc0ffee);
+        let a16 = run_scalar_dct16_per_row(&in16, row_min, row_max);
+        let b16 = run_scalar_dct16_per_row(&in16, row_min, row_max);
+        assert_eq!(a16, b16, "dct16 scalar reference is non-deterministic");
+
+        let in32: [i16; 1024] = seeded_i16_block(0xfeedface);
+        let a32 = run_scalar_dct32_per_row(&in32, row_min, row_max);
+        let b32 = run_scalar_dct32_per_row(&in32, row_min, row_max);
+        assert_eq!(a32, b32, "dct32 scalar reference is non-deterministic");
+    }
 }
 
 // ============================================================================
