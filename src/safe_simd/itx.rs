@@ -1495,8 +1495,7 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
         for y in 0..8 {
             let v = loadu_256!(&raw[y * 8..y * 8 + 8], [i32; 8]);
             let shifted = _mm256_srai_epi32::<1>(_mm256_add_epi32(v, rnd_v));
-            let clipped =
-                _mm256_max_epi32(_mm256_min_epi32(shifted, col_max_v), col_min_v);
+            let clipped = _mm256_max_epi32(_mm256_min_epi32(shifted, col_max_v), col_min_v);
             storeu_256!(&mut tmp[y * 8..y * 8 + 8], [i32; 8], clipped);
         }
     }
@@ -4403,8 +4402,7 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
                 let off = y * 16 + b;
                 let v = loadu_256!(&raw[off..off + 8], [i32; 8]);
                 let shifted = _mm256_srai_epi32::<2>(_mm256_add_epi32(v, rnd_v));
-                let clamped =
-                    _mm256_max_epi32(_mm256_min_epi32(shifted, col_max_v), col_min_v);
+                let clamped = _mm256_max_epi32(_mm256_min_epi32(shifted, col_max_v), col_min_v);
                 storeu_256!(&mut tmp[off..off + 8], [i32; 8], clamped);
             }
         }
@@ -6743,10 +6741,7 @@ fn dct8_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 64]) -> [i32
 /// 10 `madd_epi16` (5c Zen3) = ~100 cycles saved per 8x8 block.
 #[cfg(target_arch = "x86_64")]
 #[rite]
-fn dct8_col_pass_i16(
-    _token: Desktop64,
-    tmp_row_major: &[i32; 64],
-) -> [__m256i; 8] {
+fn dct8_col_pass_i16(_token: Desktop64, tmp_row_major: &[i32; 64]) -> [__m256i; 8] {
     // Step 1: Convert each row from 8 × i32 to 8 × i16 in an xmm.
     // Values are guaranteed clipped to i16 range by the intermediate shift+clip.
     let mut row_xmm = [_mm_setzero_si128(); 8];
@@ -6873,6 +6868,336 @@ fn dct8_col_pass_i16(
     out
 }
 
+/// i16-packed pmaddwd DCT-16 column pass.
+///
+/// Takes row-major i32 `tmp[y*16 + x]` (16 rows x 16 cols, values in i16 range after
+/// intermediate shift+clip), runs the DCT-16 column transform using `_mm256_madd_epi16`
+/// (pmaddwd) instead of `_mm256_mullo_epi32`, and returns row-major i32 output ready
+/// for add-to-dst.
+///
+/// Processes 8 columns at a time (2 chunks). For each chunk, loads 16 rows of 8 i32,
+/// packs to 16 xmm of i16, runs DCT-16 = DCT-8 on even rows + odd-half butterflies,
+/// outputs 16 ymm of i32.
+///
+/// Algorithm: DCT-16 column decomposition:
+///   1. DCT-8 on even-indexed rows (0,2,4,6,8,10,12,14) — same pmaddwd as dct8_col_pass_i16
+///   2. Odd-half: 4 pmaddwd pairs (stage 1) → butterfly → 2 pmaddwd pairs (stage 2)
+///      → butterfly → 2 pmaddwd pairs (stage 3, 181 cross-multiply) → combine
+///   3. out[k] = even[k] + odd[k], out[15-k] = even[k] - odd[k]
+///
+/// Benefits vs i32 mullo column pass: replaces 24 `mullo_epi32` (10c Zen3) with
+/// 20 `madd_epi16` (5c Zen3) per 8-col chunk.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn dct16_col_pass_i16(_token: Desktop64, tmp_row_major: &[i32; 256]) -> [i32; 256] {
+    let mut result = [0i32; 256];
+    let col_min = i16::MIN as i32;
+    let col_max = i16::MAX as i32;
+    let col_min_v = _mm256_set1_epi32(col_min);
+    let col_max_v = _mm256_set1_epi32(col_max);
+    let clip = |v: __m256i| _mm256_max_epi32(_mm256_min_epi32(v, col_max_v), col_min_v);
+
+    let pd_2048 = _mm256_set1_epi32(2048);
+    let pd_128 = _mm256_set1_epi32(128);
+
+    // Process 8 columns at a time (2 chunks for 16 cols total).
+    for cx_chunk in 0..2u32 {
+        let cx = (cx_chunk * 8) as usize;
+
+        // Step 1: Convert each of the 16 rows from 8 x i32 to 8 x i16 in an xmm.
+        // Values are guaranteed clipped to i16 range by the intermediate shift+clip.
+        let mut row_xmm = [_mm_setzero_si128(); 16];
+        for y in 0..16 {
+            let v = loadu_256!(&tmp_row_major[y * 16 + cx..y * 16 + cx + 8], [i32; 8]);
+            let lo128 = _mm256_castsi256_si128(v);
+            let hi128 = _mm256_extracti128_si256(v, 1);
+            row_xmm[y] = _mm_packs_epi32(lo128, hi128);
+        }
+
+        // ====== EVEN HALF: DCT-8 on even-indexed rows (0,2,4,6,8,10,12,14) ======
+        // This is structurally identical to dct8_col_pass_i16, operating on rows
+        // 0,2,4,6,8,10,12,14 instead of 0..7.
+
+        // --- DCT-4 (innermost even) on rows 0,4,8,12 ---
+        let pair_0_8 = dct8_row_build_pair(_token, row_xmm[0], row_xmm[8]);
+        let pair_4_12 = dct8_row_build_pair(_token, row_xmm[4], row_xmm[12]);
+
+        // t0 = (row0 + row8) * 181 + 128 >> 8
+        let e_t0 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_0_8, dct8_row_coef_pack(_token, 181, 181)),
+            pd_128,
+        ));
+        // t1 = (row0 - row8) * 181 + 128 >> 8
+        let e_t1 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_0_8, dct8_row_coef_pack(_token, 181, -181)),
+            pd_128,
+        ));
+        // t2 = (row4 * 1567 - row12 * 3784 + 2048) >> 12
+        let e_t2 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_4_12, dct8_row_coef_pack(_token, 1567, -3784)),
+            pd_2048,
+        ));
+        // t3 = (row4 * 3784 + row12 * 1567 + 2048) >> 12
+        let e_t3 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_4_12, dct8_row_coef_pack(_token, 3784, 1567)),
+            pd_2048,
+        ));
+
+        // DCT-4 output
+        let dct4_0 = clip(_mm256_add_epi32(e_t0, e_t3));
+        let dct4_1 = clip(_mm256_add_epi32(e_t1, e_t2));
+        let dct4_2 = clip(_mm256_sub_epi32(e_t1, e_t2));
+        let dct4_3 = clip(_mm256_sub_epi32(e_t0, e_t3));
+
+        // --- DCT-8 odd half on rows 2, 6, 10, 14 ---
+        let pair_2_14 = dct8_row_build_pair(_token, row_xmm[2], row_xmm[14]);
+        let pair_10_6 = dct8_row_build_pair(_token, row_xmm[10], row_xmm[6]);
+
+        // t4a = (row2 * 799 - row14 * 4017 + 2048) >> 12
+        let t4a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_2_14, dct8_row_coef_pack(_token, 799, -4017)),
+            pd_2048,
+        ));
+        // t7a = (row2 * 4017 + row14 * 799 + 2048) >> 12
+        let t7a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_2_14, dct8_row_coef_pack(_token, 4017, 799)),
+            pd_2048,
+        ));
+        // t5a = (row10 * 3406 - row6 * 2276 + 2048) >> 12
+        let t5a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_10_6, dct8_row_coef_pack(_token, 3406, -2276)),
+            pd_2048,
+        ));
+        // t6a = (row10 * 2276 + row6 * 3406 + 2048) >> 12
+        let t6a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_10_6, dct8_row_coef_pack(_token, 2276, 3406)),
+            pd_2048,
+        ));
+
+        // DCT-8 odd stage 1 butterfly
+        let e_t4 = clip(_mm256_add_epi32(t4a, t5a));
+        let e_t5a_n = clip(_mm256_sub_epi32(t4a, t5a));
+        let e_t7 = clip(_mm256_add_epi32(t7a, t6a));
+        let e_t6a_n = clip(_mm256_sub_epi32(t7a, t6a));
+
+        // DCT-8 odd stage 2 — sqrt(2) cross-multiply via pmaddwd
+        let e_t5a_n_xmm = _mm_packs_epi32(
+            _mm256_castsi256_si128(e_t5a_n),
+            _mm256_extracti128_si256(e_t5a_n, 1),
+        );
+        let e_t6a_n_xmm = _mm_packs_epi32(
+            _mm256_castsi256_si128(e_t6a_n),
+            _mm256_extracti128_si256(e_t6a_n, 1),
+        );
+        let pair_65 = dct8_row_build_pair(_token, e_t6a_n_xmm, e_t5a_n_xmm);
+        // t5 = (t6a_n * 181 - t5a_n * 181 + 128) >> 8 = (t6a_n - t5a_n)*181 + 128 >> 8
+        let e_t5 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_65, dct8_row_coef_pack(_token, 181, -181)),
+            pd_128,
+        ));
+        // t6 = (t6a_n * 181 + t5a_n * 181 + 128) >> 8 = (t6a_n + t5a_n)*181 + 128 >> 8
+        let e_t6 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_65, dct8_row_coef_pack(_token, 181, 181)),
+            pd_128,
+        ));
+
+        // DCT-8 final butterfly — produces even[0..7]
+        let even_0 = clip(_mm256_add_epi32(dct4_0, e_t7));
+        let even_1 = clip(_mm256_add_epi32(dct4_1, e_t6));
+        let even_2 = clip(_mm256_add_epi32(dct4_2, e_t5));
+        let even_3 = clip(_mm256_add_epi32(dct4_3, e_t4));
+        let even_4 = clip(_mm256_sub_epi32(dct4_3, e_t4));
+        let even_5 = clip(_mm256_sub_epi32(dct4_2, e_t5));
+        let even_6 = clip(_mm256_sub_epi32(dct4_1, e_t6));
+        let even_7 = clip(_mm256_sub_epi32(dct4_0, e_t7));
+
+        // ====== ODD HALF: butterflies on odd-indexed rows (1,3,5,7,9,11,13,15) ======
+
+        // Stage 1: 4 pmaddwd pairs with trig constants
+        let pair_1_15 = dct8_row_build_pair(_token, row_xmm[1], row_xmm[15]);
+        let pair_9_7 = dct8_row_build_pair(_token, row_xmm[9], row_xmm[7]);
+        let pair_5_11 = dct8_row_build_pair(_token, row_xmm[5], row_xmm[11]);
+        let pair_13_3 = dct8_row_build_pair(_token, row_xmm[13], row_xmm[3]);
+
+        // t8a  = (row1 * 401 - row15 * 4076 + 2048) >> 12
+        let o_t8a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_1_15, dct8_row_coef_pack(_token, 401, -4076)),
+            pd_2048,
+        ));
+        // t15a = (row1 * 4076 + row15 * 401 + 2048) >> 12
+        let o_t15a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_1_15, dct8_row_coef_pack(_token, 4076, 401)),
+            pd_2048,
+        ));
+        // t9a  = (row9 * 3166 - row7 * 2598 + 2048) >> 12
+        let o_t9a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_9_7, dct8_row_coef_pack(_token, 3166, -2598)),
+            pd_2048,
+        ));
+        // t14a = (row9 * 2598 + row7 * 3166 + 2048) >> 12
+        let o_t14a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_9_7, dct8_row_coef_pack(_token, 2598, 3166)),
+            pd_2048,
+        ));
+        // t10a = (row5 * 1931 - row11 * 3612 + 2048) >> 12
+        let o_t10a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_5_11, dct8_row_coef_pack(_token, 1931, -3612)),
+            pd_2048,
+        ));
+        // t13a = (row5 * 3612 + row11 * 1931 + 2048) >> 12
+        let o_t13a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_5_11, dct8_row_coef_pack(_token, 3612, 1931)),
+            pd_2048,
+        ));
+        // t11a = (row13 * 3920 - row3 * 1189 + 2048) >> 12
+        let o_t11a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_13_3, dct8_row_coef_pack(_token, 3920, -1189)),
+            pd_2048,
+        ));
+        // t12a = (row13 * 1189 + row3 * 3920 + 2048) >> 12
+        let o_t12a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_13_3, dct8_row_coef_pack(_token, 1189, 3920)),
+            pd_2048,
+        ));
+
+        // Additive butterfly 1
+        let o_t8 = clip(_mm256_add_epi32(o_t8a, o_t9a));
+        let o_t9 = clip(_mm256_sub_epi32(o_t8a, o_t9a));
+        let o_t10 = clip(_mm256_sub_epi32(o_t11a, o_t10a));
+        let o_t11 = clip(_mm256_add_epi32(o_t11a, o_t10a));
+        let o_t12 = clip(_mm256_add_epi32(o_t12a, o_t13a));
+        let o_t13 = clip(_mm256_sub_epi32(o_t12a, o_t13a));
+        let o_t14 = clip(_mm256_sub_epi32(o_t15a, o_t14a));
+        let o_t15 = clip(_mm256_add_epi32(o_t15a, o_t14a));
+
+        // Stage 2: multiplicative butterflies via pmaddwd (values in i16 range from clip)
+        let o_t14_xmm = _mm_packs_epi32(
+            _mm256_castsi256_si128(o_t14),
+            _mm256_extracti128_si256(o_t14, 1),
+        );
+        let o_t9_xmm = _mm_packs_epi32(
+            _mm256_castsi256_si128(o_t9),
+            _mm256_extracti128_si256(o_t9, 1),
+        );
+        let pair_14_9 = dct8_row_build_pair(_token, o_t14_xmm, o_t9_xmm);
+
+        // t9a  = (t14 * 1567 - t9 * 3784 + 2048) >> 12
+        let o_t9a_new = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_14_9, dct8_row_coef_pack(_token, 1567, -3784)),
+            pd_2048,
+        ));
+        // t14a = (t14 * 3784 + t9 * 1567 + 2048) >> 12
+        let o_t14a_new = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_14_9, dct8_row_coef_pack(_token, 3784, 1567)),
+            pd_2048,
+        ));
+
+        let o_t13_xmm = _mm_packs_epi32(
+            _mm256_castsi256_si128(o_t13),
+            _mm256_extracti128_si256(o_t13, 1),
+        );
+        let o_t10_xmm = _mm_packs_epi32(
+            _mm256_castsi256_si128(o_t10),
+            _mm256_extracti128_si256(o_t10, 1),
+        );
+        let pair_13_10 = dct8_row_build_pair(_token, o_t13_xmm, o_t10_xmm);
+
+        // t10a = (-t13 * 3784 - t10 * 1567 + 2048) >> 12
+        let o_t10a_new = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_13_10, dct8_row_coef_pack(_token, -3784, -1567)),
+            pd_2048,
+        ));
+        // t13a = (t13 * 1567 - t10 * 3784 + 2048) >> 12
+        let o_t13a_new = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_13_10, dct8_row_coef_pack(_token, 1567, -3784)),
+            pd_2048,
+        ));
+
+        // Additive butterfly 2
+        let o_t8a_f = clip(_mm256_add_epi32(o_t8, o_t11));
+        let o_t9_f = clip(_mm256_add_epi32(o_t9a_new, o_t10a_new));
+        let o_t10_f = clip(_mm256_sub_epi32(o_t9a_new, o_t10a_new));
+        let o_t11a_f = clip(_mm256_sub_epi32(o_t8, o_t11));
+        let o_t12a_f = clip(_mm256_sub_epi32(o_t15, o_t12));
+        let o_t13_f = clip(_mm256_sub_epi32(o_t14a_new, o_t13a_new));
+        let o_t14_f = clip(_mm256_add_epi32(o_t14a_new, o_t13a_new));
+        let o_t15a_f = clip(_mm256_add_epi32(o_t15, o_t12));
+
+        // Stage 3: sqrt(2) cross-multiply via pmaddwd (values in i16 range from clip)
+        let o_t13_f_xmm = _mm_packs_epi32(
+            _mm256_castsi256_si128(o_t13_f),
+            _mm256_extracti128_si256(o_t13_f, 1),
+        );
+        let o_t10_f_xmm = _mm_packs_epi32(
+            _mm256_castsi256_si128(o_t10_f),
+            _mm256_extracti128_si256(o_t10_f, 1),
+        );
+        let pair_13f_10f = dct8_row_build_pair(_token, o_t13_f_xmm, o_t10_f_xmm);
+
+        // t10a = (t13 * 181 - t10 * 181 + 128) >> 8 = (t13 - t10) * 181 + 128 >> 8
+        let o_t10a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_13f_10f, dct8_row_coef_pack(_token, 181, -181)),
+            pd_128,
+        ));
+        // t13a = (t13 * 181 + t10 * 181 + 128) >> 8 = (t13 + t10) * 181 + 128 >> 8
+        let o_t13a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_13f_10f, dct8_row_coef_pack(_token, 181, 181)),
+            pd_128,
+        ));
+
+        let o_t12a_f_xmm = _mm_packs_epi32(
+            _mm256_castsi256_si128(o_t12a_f),
+            _mm256_extracti128_si256(o_t12a_f, 1),
+        );
+        let o_t11a_f_xmm = _mm_packs_epi32(
+            _mm256_castsi256_si128(o_t11a_f),
+            _mm256_extracti128_si256(o_t11a_f, 1),
+        );
+        let pair_12a_11a = dct8_row_build_pair(_token, o_t12a_f_xmm, o_t11a_f_xmm);
+
+        // t11 = (t12a * 181 - t11a * 181 + 128) >> 8 = (t12a - t11a) * 181 + 128 >> 8
+        let o_t11_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_12a_11a, dct8_row_coef_pack(_token, 181, -181)),
+            pd_128,
+        ));
+        // t12 = (t12a * 181 + t11a * 181 + 128) >> 8 = (t12a + t11a) * 181 + 128 >> 8
+        let o_t12_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_12a_11a, dct8_row_coef_pack(_token, 181, 181)),
+            pd_128,
+        ));
+
+        // ====== FINAL COMBINE: out[k] = clip(even[k] + odd[k]), out[15-k] = clip(even[k] - odd[k]) ======
+        // Mapping (from scalar inv_dct16_1d_internal_c):
+        //   out[0]  = clip(even[0] + t15a_f)   out[15] = clip(even[0] - t15a_f)
+        //   out[1]  = clip(even[1] + t14_f)    out[14] = clip(even[1] - t14_f)
+        //   out[2]  = clip(even[2] + t13a_f)   out[13] = clip(even[2] - t13a_f)
+        //   out[3]  = clip(even[3] + t12_f)    out[12] = clip(even[3] - t12_f)
+        //   out[4]  = clip(even[4] + t11_f)    out[11] = clip(even[4] - t11_f)
+        //   out[5]  = clip(even[5] + t10a_f)   out[10] = clip(even[5] - t10a_f)
+        //   out[6]  = clip(even[6] + t9_f)     out[9]  = clip(even[6] - t9_f)
+        //   out[7]  = clip(even[7] + t8a_f)    out[8]  = clip(even[7] - t8a_f)
+        let odd = [
+            o_t15a_f, o_t14_f, o_t13a_f, o_t12_f, o_t11_f, o_t10a_f, o_t9_f, o_t8a_f,
+        ];
+        let even = [
+            even_0, even_1, even_2, even_3, even_4, even_5, even_6, even_7,
+        ];
+
+        let mut cols = [_mm256_setzero_si256(); 16];
+        for k in 0..8 {
+            cols[k] = clip(_mm256_add_epi32(even[k], odd[k]));
+            cols[15 - k] = clip(_mm256_sub_epi32(even[k], odd[k]));
+        }
+
+        // Store results back to row-major output.
+        for y in 0..16 {
+            storeu_256!(&mut result[y * 16 + cx..y * 16 + cx + 8], [i32; 8], cols[y]);
+        }
+    }
+
+    result
+}
+
 /// i16-packed pmaddwd DCT-16 row pass — operates on 16 rows of 16 i16 coefficients
 /// stored in column-major order, producing 256 i32 outputs in row-major order.
 ///
@@ -6988,15 +7313,9 @@ fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 256]) -> [i
 
         // DCT-8 odd stage 2 — sqrt(2) cross-multiply
         let d_65 = _mm256_sub_epi32(t6a_n, t5a_n);
-        let t5 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(d_65, c_181),
-            pd_128,
-        ));
+        let t5 = _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(d_65, c_181), pd_128));
         let s_65 = _mm256_add_epi32(t6a_n, t5a_n);
-        let t6 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(s_65, c_181),
-            pd_128,
-        ));
+        let t6 = _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(s_65, c_181), pd_128));
 
         // DCT-8 final butterfly
         let even = [
@@ -7122,28 +7441,20 @@ fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 256]) -> [i
         // Stage 3: sqrt(2) cross-multiply (181/256)
         // t10a = ((t13 - t10) * 181 + 128) >> 8
         let d2 = _mm256_sub_epi32(o_t13, o_t10);
-        let o_t10a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(d2, c_181),
-            pd_128,
-        ));
+        let o_t10a_f =
+            _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(d2, c_181), pd_128));
         // t13a = ((t13 + t10) * 181 + 128) >> 8
         let s2 = _mm256_add_epi32(o_t13, o_t10);
-        let o_t13a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(s2, c_181),
-            pd_128,
-        ));
+        let o_t13a_f =
+            _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(s2, c_181), pd_128));
         // t11 = ((t12a - t11a) * 181 + 128) >> 8
         let d3 = _mm256_sub_epi32(o_t12a_f, o_t11a_f);
-        let o_t11_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(d3, c_181),
-            pd_128,
-        ));
+        let o_t11_f =
+            _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(d3, c_181), pd_128));
         // t12 = ((t12a + t11a) * 181 + 128) >> 8
         let s3 = _mm256_add_epi32(o_t12a_f, o_t11a_f);
-        let o_t12_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(s3, c_181),
-            pd_128,
-        ));
+        let o_t12_f =
+            _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(s3, c_181), pd_128));
 
         // ====== FINAL COMBINE: out[k] = clip(even[k] + odd[15-k reversed mapping]) ======
         // Mapping from scalar:
@@ -7156,8 +7467,7 @@ fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 256]) -> [i
         //   out[6]  = clip(even[6] + t9)       out[9]  = clip(even[6] - t9)
         //   out[7]  = clip(even[7] + t8a_f)    out[8]  = clip(even[7] - t8a_f)
         let odd = [
-            o_t15a_f, o_t14, o_t13a_f, o_t12_f,
-            o_t11_f, o_t10a_f, o_t9, o_t8a_f,
+            o_t15a_f, o_t14, o_t13a_f, o_t12_f, o_t11_f, o_t10a_f, o_t9, o_t8a_f,
         ];
 
         let mut cols = [_mm256_setzero_si256(); 16];
@@ -7170,14 +7480,19 @@ fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 256]) -> [i
         for chunk in 0..2u32 {
             let b = (chunk * 8) as usize;
             let chunk_cols: [__m256i; 8] = [
-                cols[b], cols[b + 1], cols[b + 2], cols[b + 3],
-                cols[b + 4], cols[b + 5], cols[b + 6], cols[b + 7],
+                cols[b],
+                cols[b + 1],
+                cols[b + 2],
+                cols[b + 3],
+                cols[b + 4],
+                cols[b + 5],
+                cols[b + 6],
+                cols[b + 7],
             ];
             let rows = transpose_8x8_i32!(chunk_cols);
             for r in 0..8 {
                 let dst_off = (y_base + r) * 16 + b;
-                let arr: &mut [i32; 8] =
-                    (&mut out[dst_off..dst_off + 8]).try_into().unwrap();
+                let arr: &mut [i32; 8] = (&mut out[dst_off..dst_off + 8]).try_into().unwrap();
                 storeu_256!(arr, [i32; 8], rows[r]);
             }
         }
@@ -7277,13 +7592,9 @@ fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 1024]) -> [
         let t6a_n = clip(_mm256_sub_epi32(t7a, t6a));
 
         let d_56 = _mm256_sub_epi32(t6a_n, t5a_n);
-        let t5 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(d_56, c_181), pd_128,
-        ));
+        let t5 = _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(d_56, c_181), pd_128));
         let s_56 = _mm256_add_epi32(t6a_n, t5a_n);
-        let t6 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(s_56, c_181), pd_128,
-        ));
+        let t6 = _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(s_56, c_181), pd_128));
 
         let dct8_o0 = clip(_mm256_add_epi32(dct4_o0, t7));
         let dct8_o1 = clip(_mm256_add_epi32(dct4_o1, t6));
@@ -7296,7 +7607,7 @@ fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 1024]) -> [
 
         // ===== DCT-16 odd half on columns [2,6,10,14,18,22,26,30] =====
         let pair_16_1_15 = build_pair(_token, cx[2], cx[30]);
-        let pair_16_9_7  = build_pair(_token, cx[18], cx[14]);
+        let pair_16_9_7 = build_pair(_token, cx[18], cx[14]);
         let pair_16_5_11 = build_pair(_token, cx[10], cx[22]);
         let pair_16_13_3 = build_pair(_token, cx[26], cx[6]);
 
@@ -7391,16 +7702,20 @@ fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 1024]) -> [
 
         // DCT-16 odd final: sqrt(2) cross-muls
         let t10a = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_sub_epi32(t13, t10), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_sub_epi32(t13, t10), c_181),
+            pd_128,
         ));
         let t13a = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_add_epi32(t13, t10), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_add_epi32(t13, t10), c_181),
+            pd_128,
         ));
         let t11 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_sub_epi32(t12a, t11a), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_sub_epi32(t12a, t11a), c_181),
+            pd_128,
         ));
         let t12 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_add_epi32(t12a, t11a), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_add_epi32(t12a, t11a), c_181),
+            pd_128,
         ));
 
         // DCT-16 final butterfly
@@ -7424,14 +7739,14 @@ fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 1024]) -> [
         ];
 
         // ===== DCT-32 odd half on all 16 odd columns =====
-        let pair_32_1_31  = build_pair(_token, cx[1], cx[31]);
+        let pair_32_1_31 = build_pair(_token, cx[1], cx[31]);
         let pair_32_17_15 = build_pair(_token, cx[17], cx[15]);
-        let pair_32_9_23  = build_pair(_token, cx[9], cx[23]);
-        let pair_32_25_7  = build_pair(_token, cx[25], cx[7]);
-        let pair_32_5_27  = build_pair(_token, cx[5], cx[27]);
+        let pair_32_9_23 = build_pair(_token, cx[9], cx[23]);
+        let pair_32_25_7 = build_pair(_token, cx[25], cx[7]);
+        let pair_32_5_27 = build_pair(_token, cx[5], cx[27]);
         let pair_32_21_11 = build_pair(_token, cx[21], cx[11]);
         let pair_32_13_19 = build_pair(_token, cx[13], cx[19]);
-        let pair_32_29_3  = build_pair(_token, cx[29], cx[3]);
+        let pair_32_29_3 = build_pair(_token, cx[29], cx[3]);
 
         // Initial 16 trig butterflies (all >>12 +2048)
         let t16a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
@@ -7689,42 +8004,50 @@ fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 1024]) -> [
 
         // DCT-32 odd final: sqrt(2) cross-muls
         let t20_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_sub_epi32(t27a, t20a), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_sub_epi32(t27a, t20a), c_181),
+            pd_128,
         ));
         let t27_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_add_epi32(t27a, t20a), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_add_epi32(t27a, t20a), c_181),
+            pd_128,
         ));
         let t21a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_sub_epi32(t26, t21), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_sub_epi32(t26, t21), c_181),
+            pd_128,
         ));
         let t26a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_add_epi32(t26, t21), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_add_epi32(t26, t21), c_181),
+            pd_128,
         ));
         let t22_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_sub_epi32(t25a, t22a), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_sub_epi32(t25a, t22a), c_181),
+            pd_128,
         ));
         let t25_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_add_epi32(t25a, t22a), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_add_epi32(t25a, t22a), c_181),
+            pd_128,
         ));
         let t23a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_sub_epi32(t24, t23), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_sub_epi32(t24, t23), c_181),
+            pd_128,
         ));
         let t24a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
-            _mm256_mullo_epi32(_mm256_add_epi32(t24, t23), c_181), pd_128,
+            _mm256_mullo_epi32(_mm256_add_epi32(t24, t23), c_181),
+            pd_128,
         ));
 
         // Final DCT-32 butterfly: combine dct16 even outputs with odd half
         let mut cols = [_mm256_setzero_si256(); 32];
-        cols[0]  = clip(_mm256_add_epi32(dct16_o[0],  t31));
-        cols[1]  = clip(_mm256_add_epi32(dct16_o[1],  t30a));
-        cols[2]  = clip(_mm256_add_epi32(dct16_o[2],  t29));
-        cols[3]  = clip(_mm256_add_epi32(dct16_o[3],  t28a));
-        cols[4]  = clip(_mm256_add_epi32(dct16_o[4],  t27_f));
-        cols[5]  = clip(_mm256_add_epi32(dct16_o[5],  t26a_f));
-        cols[6]  = clip(_mm256_add_epi32(dct16_o[6],  t25_f));
-        cols[7]  = clip(_mm256_add_epi32(dct16_o[7],  t24a_f));
-        cols[8]  = clip(_mm256_add_epi32(dct16_o[8],  t23a_f));
-        cols[9]  = clip(_mm256_add_epi32(dct16_o[9],  t22_f));
+        cols[0] = clip(_mm256_add_epi32(dct16_o[0], t31));
+        cols[1] = clip(_mm256_add_epi32(dct16_o[1], t30a));
+        cols[2] = clip(_mm256_add_epi32(dct16_o[2], t29));
+        cols[3] = clip(_mm256_add_epi32(dct16_o[3], t28a));
+        cols[4] = clip(_mm256_add_epi32(dct16_o[4], t27_f));
+        cols[5] = clip(_mm256_add_epi32(dct16_o[5], t26a_f));
+        cols[6] = clip(_mm256_add_epi32(dct16_o[6], t25_f));
+        cols[7] = clip(_mm256_add_epi32(dct16_o[7], t24a_f));
+        cols[8] = clip(_mm256_add_epi32(dct16_o[8], t23a_f));
+        cols[9] = clip(_mm256_add_epi32(dct16_o[9], t22_f));
         cols[10] = clip(_mm256_add_epi32(dct16_o[10], t21a_f));
         cols[11] = clip(_mm256_add_epi32(dct16_o[11], t20_f));
         cols[12] = clip(_mm256_add_epi32(dct16_o[12], t19a));
@@ -7737,29 +8060,34 @@ fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 1024]) -> [
         cols[19] = clip(_mm256_sub_epi32(dct16_o[12], t19a));
         cols[20] = clip(_mm256_sub_epi32(dct16_o[11], t20_f));
         cols[21] = clip(_mm256_sub_epi32(dct16_o[10], t21a_f));
-        cols[22] = clip(_mm256_sub_epi32(dct16_o[9],  t22_f));
-        cols[23] = clip(_mm256_sub_epi32(dct16_o[8],  t23a_f));
-        cols[24] = clip(_mm256_sub_epi32(dct16_o[7],  t24a_f));
-        cols[25] = clip(_mm256_sub_epi32(dct16_o[6],  t25_f));
-        cols[26] = clip(_mm256_sub_epi32(dct16_o[5],  t26a_f));
-        cols[27] = clip(_mm256_sub_epi32(dct16_o[4],  t27_f));
-        cols[28] = clip(_mm256_sub_epi32(dct16_o[3],  t28a));
-        cols[29] = clip(_mm256_sub_epi32(dct16_o[2],  t29));
-        cols[30] = clip(_mm256_sub_epi32(dct16_o[1],  t30a));
-        cols[31] = clip(_mm256_sub_epi32(dct16_o[0],  t31));
+        cols[22] = clip(_mm256_sub_epi32(dct16_o[9], t22_f));
+        cols[23] = clip(_mm256_sub_epi32(dct16_o[8], t23a_f));
+        cols[24] = clip(_mm256_sub_epi32(dct16_o[7], t24a_f));
+        cols[25] = clip(_mm256_sub_epi32(dct16_o[6], t25_f));
+        cols[26] = clip(_mm256_sub_epi32(dct16_o[5], t26a_f));
+        cols[27] = clip(_mm256_sub_epi32(dct16_o[4], t27_f));
+        cols[28] = clip(_mm256_sub_epi32(dct16_o[3], t28a));
+        cols[29] = clip(_mm256_sub_epi32(dct16_o[2], t29));
+        cols[30] = clip(_mm256_sub_epi32(dct16_o[1], t30a));
+        cols[31] = clip(_mm256_sub_epi32(dct16_o[0], t31));
 
         // Transpose 32x8 -> 8x32 in 4 chunks of 8 columns, store row-major.
         for chunk in 0..4 {
             let b = chunk * 8;
             let chunk_cols: [__m256i; 8] = [
-                cols[b], cols[b + 1], cols[b + 2], cols[b + 3],
-                cols[b + 4], cols[b + 5], cols[b + 6], cols[b + 7],
+                cols[b],
+                cols[b + 1],
+                cols[b + 2],
+                cols[b + 3],
+                cols[b + 4],
+                cols[b + 5],
+                cols[b + 6],
+                cols[b + 7],
             ];
             let rows = transpose_8x8_i32!(chunk_cols);
             for row in 0..8 {
                 let y = y_base + row;
-                let arr: &mut [i32; 8] =
-                    (&mut out[y * 32 + b..y * 32 + b + 8]).try_into().unwrap();
+                let arr: &mut [i32; 8] = (&mut out[y * 32 + b..y * 32 + b + 8]).try_into().unwrap();
                 storeu_256!(arr, [i32; 8], rows[row]);
             }
         }
@@ -10813,9 +11141,17 @@ mod tests {
         // Test via the full 2D transform pipeline: compare safe SIMD output
         // (which now uses dct8_col_pass_i16) against the scalar reference.
         let seeds: &[u64] = &[
-            0xdeadbeef, 0xc0ffee, 0xfeedface, 0xbaadf00d,
-            0x12345678, 0xa5a5a5a5, 0x5a5a5a5a, 0xffff_ffff_ffff_ffff,
-            0x0, 0x7fff_7fff_7fff_7fff, 0x8000_8000_8000_8000,
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+            0x0,
+            0x7fff_7fff_7fff_7fff,
+            0x8000_8000_8000_8000,
         ];
         let row_min = i16::MIN as i32;
         let row_max = i16::MAX as i32;
@@ -10855,7 +11191,12 @@ mod tests {
             let mut dst_simd = [128u8; 8 * 8]; // neutral start
             let mut coeff_simd = input;
             inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
-                token, &mut dst_simd, 8, &mut coeff_simd, 64, 255,
+                token,
+                &mut dst_simd,
+                8,
+                &mut coeff_simd,
+                64,
+                255,
             );
 
             // --- Apply the same add-to-dst to the scalar output ---
@@ -10877,7 +11218,12 @@ mod tests {
                         if mism < 8 {
                             eprintln!(
                                 "seed={:#x} idx={} row={} col={} scalar={} simd={}",
-                                seed, i, i / 8, i % 8, dst_scalar[i], dst_simd[i],
+                                seed,
+                                i,
+                                i / 8,
+                                i % 8,
+                                dst_scalar[i],
+                                dst_simd[i],
                             );
                         }
                         mism += 1;
@@ -10908,13 +11254,7 @@ mod tests {
         let row_min = i16::MIN as i32;
         let row_max = i16::MAX as i32;
         let seeds: &[u64] = &[
-            0xdeadbeef,
-            0xc0ffee,
-            0xfeedface,
-            0xbaadf00d,
-            0x12345678,
-            0xaabbccdd,
-            0x11223344,
+            0xdeadbeef, 0xc0ffee, 0xfeedface, 0xbaadf00d, 0x12345678, 0xaabbccdd, 0x11223344,
             0x55667788,
         ];
         let mut total_mismatches = 0u32;
