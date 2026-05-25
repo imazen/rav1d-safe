@@ -5784,8 +5784,9 @@ pub fn cfl_pred_dispatch<BD: BitDepth>(
 
 /// CFL AC 4:2:0 8bpc inner kernel — AVX2.
 ///
-/// `src_compact`: contiguous luma bytes, `2*active_h` rows of `2*active_w` bytes each.
-/// `src_stride`: byte stride between rows in `src_compact` (= `2*active_w`).
+/// `src_bytes`: luma byte slice (compact or original-layout).
+/// `src_base`: byte offset of first source pixel within `src_bytes`.
+/// `src_stride`: byte stride between source rows (signed; can be negative).
 /// `ac`: output i16 buffer of length `width * height`.
 /// `width`, `height`: chroma block dimensions (final ac layout).
 /// `active_w`, `active_h`: in-bounds chroma extent (right/bottom edges may pad).
@@ -5798,8 +5799,9 @@ fn cfl_ac_420_8bpc_inner(
     height: usize,
     active_w: usize,
     active_h: usize,
-    src_compact: &[u8],
-    src_stride: usize,
+    src_bytes: &[u8],
+    src_base: usize,
+    src_stride: isize,
 ) {
     let ones = _mm256_set1_epi8(1);
 
@@ -5814,18 +5816,18 @@ fn cfl_ac_420_8bpc_inner(
     //     store to ac[y*width + x..]
     for y in 0..active_h {
         let aci = y * width;
-        let row1_off = (2 * y) * src_stride;
-        let row2_off = (2 * y + 1) * src_stride;
+        let row1_off = (src_base as isize + (2 * y) as isize * src_stride) as usize;
+        let row2_off = (src_base as isize + (2 * y + 1) as isize * src_stride) as usize;
 
         let mut x = 0;
         // 16-chroma-pixel SIMD chunk (32 luma bytes per row).
         while x + 16 <= active_w {
             let lx = 2 * x;
             let r1 = loadu_256!(
-                <&[u8; 32]>::try_from(&src_compact[row1_off + lx..row1_off + lx + 32]).unwrap()
+                <&[u8; 32]>::try_from(&src_bytes[row1_off + lx..row1_off + lx + 32]).unwrap()
             );
             let r2 = loadu_256!(
-                <&[u8; 32]>::try_from(&src_compact[row2_off + lx..row2_off + lx + 32]).unwrap()
+                <&[u8; 32]>::try_from(&src_bytes[row2_off + lx..row2_off + lx + 32]).unwrap()
             );
             let s1 = _mm256_maddubs_epi16(r1, ones); // 16 i16, lane-local
             let s2 = _mm256_maddubs_epi16(r2, ones);
@@ -5843,10 +5845,10 @@ fn cfl_ac_420_8bpc_inner(
         while x + 8 <= active_w {
             let lx = 2 * x;
             let r1 = loadu_128!(
-                <&[u8; 16]>::try_from(&src_compact[row1_off + lx..row1_off + lx + 16]).unwrap()
+                <&[u8; 16]>::try_from(&src_bytes[row1_off + lx..row1_off + lx + 16]).unwrap()
             );
             let r2 = loadu_128!(
-                <&[u8; 16]>::try_from(&src_compact[row2_off + lx..row2_off + lx + 16]).unwrap()
+                <&[u8; 16]>::try_from(&src_bytes[row2_off + lx..row2_off + lx + 16]).unwrap()
             );
             let ones128 = _mm_set1_epi8(1);
             let s1 = _mm_maddubs_epi16(r1, ones128);
@@ -5862,10 +5864,10 @@ fn cfl_ac_420_8bpc_inner(
         // Scalar tail for narrow widths (active_w == 4 with no leftover).
         while x < active_w {
             let lx = 2 * x;
-            let a = src_compact[row1_off + lx] as i32;
-            let b = src_compact[row1_off + lx + 1] as i32;
-            let c = src_compact[row2_off + lx] as i32;
-            let d = src_compact[row2_off + lx + 1] as i32;
+            let a = src_bytes[row1_off + lx] as i32;
+            let b = src_bytes[row1_off + lx + 1] as i32;
+            let c = src_bytes[row2_off + lx] as i32;
+            let d = src_bytes[row2_off + lx + 1] as i32;
             ac[aci + x] = ((a + b + c + d) << 1) as i16;
             x += 1;
         }
@@ -5952,20 +5954,21 @@ fn cfl_ac_422_8bpc_inner(
     height: usize,
     active_w: usize,
     active_h: usize,
-    src_compact: &[u8],
-    src_stride: usize,
+    src_bytes: &[u8],
+    src_base: usize,
+    src_stride: isize,
 ) {
     let ones = _mm256_set1_epi8(1);
 
     for y in 0..active_h {
         let aci = y * width;
-        let row_off = y * src_stride;
+        let row_off = (src_base as isize + y as isize * src_stride) as usize;
 
         let mut x = 0;
         while x + 16 <= active_w {
             let lx = 2 * x;
             let r1 = loadu_256!(
-                <&[u8; 32]>::try_from(&src_compact[row_off + lx..row_off + lx + 32]).unwrap()
+                <&[u8; 32]>::try_from(&src_bytes[row_off + lx..row_off + lx + 32]).unwrap()
             );
             let s1 = _mm256_maddubs_epi16(r1, ones);
             // 1x2 horizontal sum, then << 2.
@@ -5979,7 +5982,7 @@ fn cfl_ac_422_8bpc_inner(
         while x + 8 <= active_w {
             let lx = 2 * x;
             let r1 = loadu_128!(
-                <&[u8; 16]>::try_from(&src_compact[row_off + lx..row_off + lx + 16]).unwrap()
+                <&[u8; 16]>::try_from(&src_bytes[row_off + lx..row_off + lx + 16]).unwrap()
             );
             let ones128 = _mm_set1_epi8(1);
             let s1 = _mm_maddubs_epi16(r1, ones128);
@@ -5992,8 +5995,8 @@ fn cfl_ac_422_8bpc_inner(
         }
         while x < active_w {
             let lx = 2 * x;
-            let a = src_compact[row_off + lx] as i32;
-            let b = src_compact[row_off + lx + 1] as i32;
+            let a = src_bytes[row_off + lx] as i32;
+            let b = src_bytes[row_off + lx + 1] as i32;
             ac[aci + x] = ((a + b) << 2) as i16;
             x += 1;
         }
@@ -6070,17 +6073,18 @@ fn cfl_ac_444_8bpc_inner(
     height: usize,
     active_w: usize,
     active_h: usize,
-    src_compact: &[u8],
-    src_stride: usize,
+    src_bytes: &[u8],
+    src_base: usize,
+    src_stride: isize,
 ) {
     for y in 0..active_h {
         let aci = y * width;
-        let row_off = y * src_stride;
+        let row_off = (src_base as isize + y as isize * src_stride) as usize;
 
         let mut x = 0;
         while x + 16 <= active_w {
             let r1 = loadu_128!(
-                <&[u8; 16]>::try_from(&src_compact[row_off + x..row_off + x + 16]).unwrap()
+                <&[u8; 16]>::try_from(&src_bytes[row_off + x..row_off + x + 16]).unwrap()
             );
             // u8 -> i16 widen, then << 3.
             let widened = _mm256_cvtepu8_epi16(r1);
@@ -6093,7 +6097,7 @@ fn cfl_ac_444_8bpc_inner(
         }
         while x + 8 <= active_w {
             // Load 8 u8, widen to 8 i16, shift.
-            let arr: &[u8; 8] = (&src_compact[row_off + x..row_off + x + 8])
+            let arr: &[u8; 8] = (&src_bytes[row_off + x..row_off + x + 8])
                 .try_into()
                 .unwrap();
             // Use a stack-padded 16-byte load.
@@ -6109,7 +6113,7 @@ fn cfl_ac_444_8bpc_inner(
             x += 8;
         }
         while x < active_w {
-            ac[aci + x] = (src_compact[row_off + x] as i16) << 3;
+            ac[aci + x] = (src_bytes[row_off + x] as i16) << 3;
             x += 1;
         }
 
@@ -6175,6 +6179,11 @@ fn cfl_ac_444_8bpc_inner(
 /// Safe dispatch for CFL AC. Returns true if SIMD was used.
 ///
 /// 8bpc only for now; 16bpc returns false (caller falls back to scalar).
+///
+/// Single-threaded fast path: reads the source luma via `narrow_guard` (one
+/// DisjointMut entry, no heap alloc — same shape as the cfl_pred dispatcher).
+/// Tile-threading path: copies source into a per-row compact buffer for
+/// MT-safe disjoint reads, matching the scalar `cfl_ac_rust` pattern.
 #[cfg(target_arch = "x86_64")]
 pub fn cfl_ac_dispatch<BD: BitDepth>(
     ac: &mut [i16],
@@ -6187,6 +6196,9 @@ pub fn cfl_ac_dispatch<BD: BitDepth>(
     is_ss_ver: bool,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
+    use crate::include::dav1d::picture::tile_threading_active;
+    use crate::src::strided::Strided as _;
+    use zerocopy::IntoBytes;
 
     // 16bpc not yet supported.
     if BD::BPC != BPC::BPC8 {
@@ -6208,45 +6220,50 @@ pub fn cfl_ac_dispatch<BD: BitDepth>(
     let src_w = active_w << ss_hor;
     let src_h = active_h << ss_ver;
 
-    // Read source luma into a per-row compact buffer (MT-safe).
-    let (src_compact, src_stride) = y_src.compact_read_per_row::<BD>(src_w, src_h);
-
     let ac_block = &mut ac[..width * height];
 
-    if is_ss_hor && is_ss_ver {
-        cfl_ac_420_8bpc_inner(
-            token,
-            ac_block,
-            width,
-            height,
-            active_w,
-            active_h,
-            &src_compact,
-            src_stride,
-        );
-    } else if is_ss_hor && !is_ss_ver {
-        cfl_ac_422_8bpc_inner(
-            token,
-            ac_block,
-            width,
-            height,
-            active_w,
-            active_h,
-            &src_compact,
-            src_stride,
-        );
+    if tile_threading_active() {
+        // MT-safe path: per-row guards into a compact buffer.
+        let (src_compact, src_stride) = y_src.compact_read_per_row::<BD>(src_w, src_h);
+        let src_stride_i = src_stride as isize;
+        if is_ss_hor && is_ss_ver {
+            cfl_ac_420_8bpc_inner(
+                token, ac_block, width, height, active_w, active_h, &src_compact, 0,
+                src_stride_i,
+            );
+        } else if is_ss_hor && !is_ss_ver {
+            cfl_ac_422_8bpc_inner(
+                token, ac_block, width, height, active_w, active_h, &src_compact, 0,
+                src_stride_i,
+            );
+        } else {
+            cfl_ac_444_8bpc_inner(
+                token, ac_block, width, height, active_w, active_h, &src_compact, 0,
+                src_stride_i,
+            );
+        }
     } else {
-        // 4:4:4
-        cfl_ac_444_8bpc_inner(
-            token,
-            ac_block,
-            width,
-            height,
-            active_w,
-            active_h,
-            &src_compact,
-            src_stride,
-        );
+        // Single-threaded fast path: read directly from the picture buffer
+        // via narrow_guard (no heap alloc, no memcpy).
+        let (src_guard, src_base) = y_src.narrow_guard::<BD>(src_w, src_h);
+        let src_bytes: &[u8] = src_guard.as_bytes();
+        let src_stride_i = y_src.data.stride();
+        if is_ss_hor && is_ss_ver {
+            cfl_ac_420_8bpc_inner(
+                token, ac_block, width, height, active_w, active_h, src_bytes, src_base,
+                src_stride_i,
+            );
+        } else if is_ss_hor && !is_ss_ver {
+            cfl_ac_422_8bpc_inner(
+                token, ac_block, width, height, active_w, active_h, src_bytes, src_base,
+                src_stride_i,
+            );
+        } else {
+            cfl_ac_444_8bpc_inner(
+                token, ac_block, width, height, active_w, active_h, src_bytes, src_base,
+                src_stride_i,
+            );
+        }
     }
     true
 }
