@@ -1484,23 +1484,21 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
     // Input is column-major: coeff[y + x * 8]
     let mut tmp = [0i32; 64];
 
-    // SIMD row transform: 1 batch of 8 rows. No rect2, shift=1, rnd=1.
+    // i16-packed pmaddwd row pass (T-5 #5: bit-exact proven against scalar reference).
     {
-        let coeff_slice = coeff.as_slice();
-        simd_row_dct8_8bpc_8rows(
-            _token,
-            coeff_slice,
-            8,
-            0,
-            false,
-            1,
-            1,
-            &mut tmp,
-            row_clip_min,
-            row_clip_max,
-            col_clip_min,
-            col_clip_max,
-        );
+        let coeff_arr: &[i16; 64] = coeff.as_slice()[..64].try_into().unwrap();
+        let raw = dct8_row_pass_i16_simd(_token, *coeff_arr);
+        // Apply intermediate shift (rnd=1, shift=1 for 8x8) + clip to col range.
+        let rnd_v = _mm256_set1_epi32(1);
+        let col_min_v = _mm256_set1_epi32(col_clip_min);
+        let col_max_v = _mm256_set1_epi32(col_clip_max);
+        for y in 0..8 {
+            let v = loadu_256!(&raw[y * 8..y * 8 + 8], [i32; 8]);
+            let shifted = _mm256_srai_epi32::<1>(_mm256_add_epi32(v, rnd_v));
+            let clipped =
+                _mm256_max_epi32(_mm256_min_epi32(shifted, col_max_v), col_min_v);
+            storeu_256!(&mut tmp[y * 8..y * 8 + 8], [i32; 8], clipped);
+        }
     }
 
     // Column transform: SIMD across 8 columns (single chunk)
