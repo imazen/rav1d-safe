@@ -1955,6 +1955,297 @@ fn loop_filter_4_8bpc_wd8_simd_h(
 }
 
 // ============================================================================
+// SIMD wd=8 H-FILTER x8 widen — processes 8 rows in parallel (YMM)
+// ============================================================================
+
+/// SIMD wd=8 loop filter for 8bpc H-FILTER direction, **8-row variant**.
+/// Doubles wd8_simd_h's lane count from XMM (4 i32 = 4 rows) to YMM (8 i32 =
+/// 8 rows). Used by the outer dispatcher when two adjacent 4-row edges share
+/// the same level.
+///
+/// Approach: do two 4×4 i32 transposes (one per 4-row group), then combine
+/// the halves via inserti128 to form YMM pixel-position vectors with rows
+/// 0-3 in the low lane and rows 4-7 in the high lane. Run the same compute
+/// as wd8_simd_v_x8. To store, split YMM back into XMM halves and reverse-
+/// transpose each 4-row group separately. Positions -4 (p3) and +3 (q3) are
+/// unchanged by 8-tap and preserved by writing only offsets -3..+2 (6 bytes
+/// per row).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn loop_filter_4_8bpc_wd8_simd_h_x8(
+    _token: Desktop64,
+    buf: &mut [u8],
+    base: usize,
+    e: i32,
+    i: i32,
+    h: i32,
+    stridea: isize,
+) {
+    let load_row_lo = |row: isize| -> __m128i {
+        let start = signed_idx(base, row * stridea - 4);
+        let bytes = [buf[start], buf[start + 1], buf[start + 2], buf[start + 3]];
+        let as_i32 = i32::from_le_bytes(bytes);
+        _mm_cvtepu8_epi32(_mm_cvtsi32_si128(as_i32))
+    };
+    let load_row_hi = |row: isize| -> __m128i {
+        let start = signed_idx(base, row * stridea);
+        let bytes = [buf[start], buf[start + 1], buf[start + 2], buf[start + 3]];
+        let as_i32 = i32::from_le_bytes(bytes);
+        _mm_cvtepu8_epi32(_mm_cvtsi32_si128(as_i32))
+    };
+
+    let transpose4 = |r0: __m128i, r1: __m128i, r2: __m128i, r3: __m128i| -> [__m128i; 4] {
+        let t0 = _mm_unpacklo_epi32(r0, r1);
+        let t1 = _mm_unpackhi_epi32(r0, r1);
+        let t2 = _mm_unpacklo_epi32(r2, r3);
+        let t3 = _mm_unpackhi_epi32(r2, r3);
+        [
+            _mm_unpacklo_epi64(t0, t2),
+            _mm_unpackhi_epi64(t0, t2),
+            _mm_unpacklo_epi64(t1, t3),
+            _mm_unpackhi_epi64(t1, t3),
+        ]
+    };
+
+    let lo_a = transpose4(load_row_lo(0), load_row_lo(1), load_row_lo(2), load_row_lo(3));
+    let hi_a = transpose4(load_row_hi(0), load_row_hi(1), load_row_hi(2), load_row_hi(3));
+    let lo_b = transpose4(load_row_lo(4), load_row_lo(5), load_row_lo(6), load_row_lo(7));
+    let hi_b = transpose4(load_row_hi(4), load_row_hi(5), load_row_hi(6), load_row_hi(7));
+
+    let combine = |a: __m128i, b: __m128i| -> __m256i {
+        _mm256_inserti128_si256::<1>(_mm256_castsi128_si256(a), b)
+    };
+
+    let p3_v = combine(lo_a[0], lo_b[0]);
+    let p2_v = combine(lo_a[1], lo_b[1]);
+    let p1_v = combine(lo_a[2], lo_b[2]);
+    let p0_v = combine(lo_a[3], lo_b[3]);
+    let q0_v = combine(hi_a[0], hi_b[0]);
+    let q1_v = combine(hi_a[1], hi_b[1]);
+    let q2_v = combine(hi_a[2], hi_b[2]);
+    let q3_v = combine(hi_a[3], hi_b[3]);
+
+    // Same YMM compute as wd8_simd_v_x8
+    let i_v = _mm256_set1_epi32(i);
+    let e_v = _mm256_set1_epi32(e);
+    let h_v = _mm256_set1_epi32(h);
+    let f_v = _mm256_set1_epi32(1);
+
+    let abs = |a: __m256i, b: __m256i| _mm256_abs_epi32(_mm256_sub_epi32(a, b));
+
+    let abs_p1p0 = abs(p1_v, p0_v);
+    let abs_q1q0 = abs(q1_v, q0_v);
+    let abs_p0q0 = abs(p0_v, q0_v);
+    let abs_p1q1 = abs(p1_v, q1_v);
+    let abs_p2p1 = abs(p2_v, p1_v);
+    let abs_q2q1 = abs(q2_v, q1_v);
+    let abs_p3p2 = abs(p3_v, p2_v);
+    let abs_q3q2 = abs(q3_v, q2_v);
+
+    let not_gt = |a: __m256i, b: __m256i| -> __m256i {
+        _mm256_andnot_si256(_mm256_cmpgt_epi32(a, b), _mm256_set1_epi32(-1))
+    };
+
+    let m_p1p0 = not_gt(abs_p1p0, i_v);
+    let m_q1q0 = not_gt(abs_q1q0, i_v);
+    let val_ee = _mm256_add_epi32(
+        _mm256_slli_epi32::<1>(abs_p0q0),
+        _mm256_srli_epi32::<1>(abs_p1q1),
+    );
+    let m_val = not_gt(val_ee, e_v);
+    let m_p2p1 = not_gt(abs_p2p1, i_v);
+    let m_q2q1 = not_gt(abs_q2q1, i_v);
+    let m_p3p2 = not_gt(abs_p3p2, i_v);
+    let m_q3q2 = not_gt(abs_q3q2, i_v);
+    let fm_mask = _mm256_and_si256(
+        _mm256_and_si256(_mm256_and_si256(m_p1p0, m_q1q0), m_val),
+        _mm256_and_si256(
+            _mm256_and_si256(m_p2p1, m_q2q1),
+            _mm256_and_si256(m_p3p2, m_q3q2),
+        ),
+    );
+
+    let abs_p2p0 = abs(p2_v, p0_v);
+    let abs_q2q0 = abs(q2_v, q0_v);
+    let abs_p3p0 = abs(p3_v, p0_v);
+    let abs_q3q0 = abs(q3_v, q0_v);
+    let flat_mask = _mm256_and_si256(
+        _mm256_and_si256(not_gt(abs_p2p0, f_v), not_gt(abs_p1p0, f_v)),
+        _mm256_and_si256(
+            _mm256_and_si256(not_gt(abs_q1q0, f_v), not_gt(abs_q2q0, f_v)),
+            _mm256_and_si256(not_gt(abs_p3p0, f_v), not_gt(abs_q3q0, f_v)),
+        ),
+    );
+
+    let dbl = |v: __m256i| _mm256_slli_epi32::<1>(v);
+    let triple = |v: __m256i| _mm256_add_epi32(dbl(v), v);
+    let c4 = _mm256_set1_epi32(4);
+    let add = |a: __m256i, b: __m256i| _mm256_add_epi32(a, b);
+    let add3 = |a: __m256i, b: __m256i, c: __m256i| add(add(a, b), c);
+    let add4 = |a: __m256i, b: __m256i, c: __m256i, d: __m256i| add(add(a, b), add(c, d));
+
+    let out_m3 = _mm256_srai_epi32::<3>(add(
+        add4(triple(p3_v), dbl(p2_v), p1_v, p0_v),
+        add(q0_v, c4),
+    ));
+    let out_m2 = _mm256_srai_epi32::<3>(add(
+        add4(dbl(p3_v), p2_v, dbl(p1_v), p0_v),
+        add3(q0_v, q1_v, c4),
+    ));
+    let out_m1 = _mm256_srai_epi32::<3>(add(
+        add4(p3_v, p2_v, p1_v, dbl(p0_v)),
+        add4(q0_v, q1_v, q2_v, c4),
+    ));
+    let out_0 = _mm256_srai_epi32::<3>(add(
+        add4(p2_v, p1_v, p0_v, dbl(q0_v)),
+        add4(q1_v, q2_v, q3_v, c4),
+    ));
+    let out_1 = _mm256_srai_epi32::<3>(add(
+        add4(p1_v, p0_v, q0_v, dbl(q1_v)),
+        add4(q2_v, q3_v, q3_v, c4),
+    ));
+    let out_2 = _mm256_srai_epi32::<3>(add(
+        add4(p0_v, q0_v, q1_v, dbl(q2_v)),
+        add4(q3_v, q3_v, q3_v, c4),
+    ));
+
+    let neg128 = _mm256_set1_epi32(-128);
+    let pos127 = _mm256_set1_epi32(127);
+    let iclip = |v: __m256i| _mm256_min_epi32(_mm256_max_epi32(v, neg128), pos127);
+    let diff_q0p0 = _mm256_sub_epi32(q0_v, p0_v);
+    let three_d = _mm256_add_epi32(_mm256_slli_epi32::<1>(diff_q0p0), diff_q0p0);
+    let diff_p1q1 = _mm256_sub_epi32(p1_v, q1_v);
+    let hev_mask = _mm256_or_si256(
+        _mm256_cmpgt_epi32(abs_p1p0, h_v),
+        _mm256_cmpgt_epi32(abs_q1q0, h_v),
+    );
+    let f_hev = iclip(_mm256_add_epi32(three_d, iclip(diff_p1q1)));
+    let f_no = iclip(three_d);
+    let c4i = _mm256_set1_epi32(4);
+    let c3i = _mm256_set1_epi32(3);
+    let one = _mm256_set1_epi32(1);
+    let f1_hev = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_hev, c4i), pos127));
+    let f2_hev = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_hev, c3i), pos127));
+    let f1_no = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_no, c4i), pos127));
+    let f2_no = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_no, c3i), pos127));
+    let f_extra = _mm256_srai_epi32::<1>(_mm256_add_epi32(f1_no, one));
+    let p0_hev = _mm256_add_epi32(p0_v, f2_hev);
+    let q0_hev = _mm256_sub_epi32(q0_v, f1_hev);
+    let p0_no = _mm256_add_epi32(p0_v, f2_no);
+    let q0_no = _mm256_sub_epi32(q0_v, f1_no);
+    let p1_no = _mm256_add_epi32(p1_v, f_extra);
+    let q1_no = _mm256_sub_epi32(q1_v, f_extra);
+
+    let blendv = |a: __m256i, b: __m256i, mask: __m256i| -> __m256i {
+        _mm256_or_si256(_mm256_andnot_si256(mask, a), _mm256_and_si256(mask, b))
+    };
+
+    let narrow_p1 = blendv(p1_no, p1_v, hev_mask);
+    let narrow_p0 = blendv(p0_no, p0_hev, hev_mask);
+    let narrow_q0 = blendv(q0_no, q0_hev, hev_mask);
+    let narrow_q1 = blendv(q1_no, q1_v, hev_mask);
+
+    let out_m3_sel = blendv(p2_v, out_m3, flat_mask);
+    let out_m2_sel = blendv(narrow_p1, out_m2, flat_mask);
+    let out_m1_sel = blendv(narrow_p0, out_m1, flat_mask);
+    let out_0_sel = blendv(narrow_q0, out_0, flat_mask);
+    let out_1_sel = blendv(narrow_q1, out_1, flat_mask);
+    let out_2_sel = blendv(q2_v, out_2, flat_mask);
+
+    let final_p2 = blendv(p2_v, out_m3_sel, fm_mask);
+    let final_p1 = blendv(p1_v, out_m2_sel, fm_mask);
+    let final_p0 = blendv(p0_v, out_m1_sel, fm_mask);
+    let final_q0 = blendv(q0_v, out_0_sel, fm_mask);
+    let final_q1 = blendv(q1_v, out_1_sel, fm_mask);
+    let final_q2 = blendv(q2_v, out_2_sel, fm_mask);
+
+    // Clip to [0, 255]
+    let zero = _mm256_setzero_si256();
+    let max_u8 = _mm256_set1_epi32(255);
+    let clip_u8 = |v: __m256i| _mm256_min_epi32(_mm256_max_epi32(v, zero), max_u8);
+    let final_p2 = clip_u8(final_p2);
+    let final_p1 = clip_u8(final_p1);
+    let final_p0 = clip_u8(final_p0);
+    let final_q0 = clip_u8(final_q0);
+    let final_q1 = clip_u8(final_q1);
+    let final_q2 = clip_u8(final_q2);
+
+    // Split YMM back into two XMM halves to use 4×4 reverse-transpose per group.
+    let split = |v: __m256i| -> (__m128i, __m128i) {
+        (
+            _mm256_castsi256_si128(v),
+            _mm256_extracti128_si256::<1>(v),
+        )
+    };
+    let (p2_a, p2_b) = split(final_p2);
+    let (p1_a, p1_b) = split(final_p1);
+    let (p0_a, p0_b) = split(final_p0);
+    let (q0_a, q0_b) = split(final_q0);
+    let (q1_a, q1_b) = split(final_q1);
+    let (q2_a, q2_b) = split(final_q2);
+
+    // Reverse-transpose 4 pixel-position XMM vectors into 4 row vectors.
+    let reverse_lo = |p2: __m128i, p1: __m128i, p0: __m128i, q0: __m128i| -> [__m128i; 4] {
+        let t0 = _mm_unpacklo_epi32(p2, p1);
+        let t1 = _mm_unpackhi_epi32(p2, p1);
+        let t2 = _mm_unpacklo_epi32(p0, q0);
+        let t3 = _mm_unpackhi_epi32(p0, q0);
+        [
+            _mm_unpacklo_epi64(t0, t2),
+            _mm_unpackhi_epi64(t0, t2),
+            _mm_unpacklo_epi64(t1, t3),
+            _mm_unpackhi_epi64(t1, t3),
+        ]
+    };
+    let reverse_hi = |q1: __m128i, q2: __m128i| -> [__m128i; 4] {
+        let zero = _mm_setzero_si128();
+        let t0 = _mm_unpacklo_epi32(q1, q2);
+        let t1 = _mm_unpackhi_epi32(q1, q2);
+        let t2 = _mm_unpacklo_epi32(zero, zero);
+        let t3 = _mm_unpackhi_epi32(zero, zero);
+        [
+            _mm_unpacklo_epi64(t0, t2),
+            _mm_unpackhi_epi64(t0, t2),
+            _mm_unpacklo_epi64(t1, t3),
+            _mm_unpackhi_epi64(t1, t3),
+        ]
+    };
+
+    let rows_lo_a = reverse_lo(p2_a, p1_a, p0_a, q0_a);
+    let rows_hi_a = reverse_hi(q1_a, q2_a);
+    let rows_lo_b = reverse_lo(p2_b, p1_b, p0_b, q0_b);
+    let rows_hi_b = reverse_hi(q1_b, q2_b);
+
+    let pack_row = |v: __m128i| -> i32 {
+        let u16x4 = _mm_packus_epi32(v, v);
+        let u8x4 = _mm_packus_epi16(u16x4, u16x4);
+        _mm_cvtsi128_si32(u8x4)
+    };
+    let store_row_6 = |buf: &mut [u8], packed_lo: i32, packed_hi: i32, row: isize| {
+        // 4 bytes at -3..+1 = [p2, p1, p0, q0]
+        let start_lo = signed_idx(base, row * stridea - 3);
+        let bytes_lo = packed_lo.to_le_bytes();
+        buf[start_lo] = bytes_lo[0];
+        buf[start_lo + 1] = bytes_lo[1];
+        buf[start_lo + 2] = bytes_lo[2];
+        buf[start_lo + 3] = bytes_lo[3];
+        // 2 bytes at +1..+3 = [q1, q2]
+        let start_hi = signed_idx(base, row * stridea + 1);
+        let bytes_hi = packed_hi.to_le_bytes();
+        buf[start_hi] = bytes_hi[0];
+        buf[start_hi + 1] = bytes_hi[1];
+    };
+    store_row_6(buf, pack_row(rows_lo_a[0]), pack_row(rows_hi_a[0]), 0);
+    store_row_6(buf, pack_row(rows_lo_a[1]), pack_row(rows_hi_a[1]), 1);
+    store_row_6(buf, pack_row(rows_lo_a[2]), pack_row(rows_hi_a[2]), 2);
+    store_row_6(buf, pack_row(rows_lo_a[3]), pack_row(rows_hi_a[3]), 3);
+    store_row_6(buf, pack_row(rows_lo_b[0]), pack_row(rows_hi_b[0]), 4);
+    store_row_6(buf, pack_row(rows_lo_b[1]), pack_row(rows_hi_b[1]), 5);
+    store_row_6(buf, pack_row(rows_lo_b[2]), pack_row(rows_hi_b[2]), 6);
+    store_row_6(buf, pack_row(rows_lo_b[3]), pack_row(rows_hi_b[3]), 7);
+}
+
+// ============================================================================
 // SIMD inner loop filter for the wd=16 H-FILTER case (wd=16, stridea==stride)
 // ============================================================================
 
@@ -2736,25 +3027,30 @@ fn lpf_h_sb_y_8bpc_inner(
     let vm = vmask[0] | vmask[1] | vmask[2];
     let mut lvl_offset = lvl_base;
 
+    // Helper: same as v-filter dispatcher
+    let derive_levels = |lvl_offset: usize| -> Option<(u8, i32, i32, i32)> {
+        let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
+        let l = if lvl_val != 0 {
+            lvl_val
+        } else if lvl_offset >= b4_strideb {
+            read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
+        } else {
+            0
+        };
+        if l == 0 {
+            None
+        } else {
+            let h = (l >> 4) as i32;
+            let e = lut.e[l as usize] as i32;
+            let i = lut.i[l as usize] as i32;
+            Some((l, h, e, i))
+        }
+    };
+
     let mut xy = 1u32;
     while vm & !xy.wrapping_sub(1) != 0 {
         if vm & xy != 0 {
-            let lvl_val = read_lvl(lvl, lvl_offset, lvl_byte_idx);
-            let l = if lvl_val != 0 {
-                lvl_val
-            } else {
-                if lvl_offset >= b4_strideb {
-                    read_lvl(lvl, lvl_offset - b4_strideb, lvl_byte_idx)
-                } else {
-                    0
-                }
-            };
-
-            if l != 0 {
-                let h = (l >> 4) as i32;
-                let e = lut.e[l as usize] as i32;
-                let i = lut.i[l as usize] as i32;
-
+            if let Some((l, h, e, i)) = derive_levels(lvl_offset) {
                 let idx = if vmask[2] & xy != 0 {
                     16
                 } else if vmask[1] & xy != 0 {
@@ -2762,6 +3058,37 @@ fn lpf_h_sb_y_8bpc_inner(
                 } else {
                     4
                 };
+
+                // Fast path: x8 YMM kernel when next adjacent edge has the
+                // same wd-tier AND the same `l`. Doubles throughput per call.
+                #[cfg(target_arch = "x86_64")]
+                {
+                    let next_xy = xy.wrapping_shl(1);
+                    if next_xy != 0 && bitdepth_max == 255 {
+                        let next_idx = if vmask[2] & next_xy != 0 {
+                            16
+                        } else if vmask[1] & next_xy != 0 {
+                            8
+                        } else if vmask[0] & next_xy != 0 {
+                            4
+                        } else {
+                            0
+                        };
+                        if next_idx == idx
+                            && idx == 8
+                            && let Some((l2, _, _, _)) = derive_levels(lvl_offset + b4_stridea)
+                            && l2 == l
+                        {
+                            loop_filter_4_8bpc_wd8_simd_h_x8(
+                                _token, buf, dst_offset, e, i, h, stridea,
+                            );
+                            xy = next_xy << 1;
+                            dst_offset = signed_idx(dst_offset, 8 * stridea);
+                            lvl_offset += 2 * b4_stridea;
+                            continue;
+                        }
+                    }
+                }
 
                 loop_filter_4_8bpc(
                     #[cfg(target_arch = "x86_64")]
