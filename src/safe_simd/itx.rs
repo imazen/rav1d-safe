@@ -7053,6 +7053,588 @@ fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 256]) -> [i
     out
 }
 
+/// i16-packed pmaddwd DCT-32 1D row pass. Takes 1024 i16 column-major
+/// coeffs (input shape: `coeff[y + x*32]` is element `x` of row `y`),
+/// runs DCT-32 independently across each of the 32 rows, and returns
+/// row-major i32 output (output shape: `out[y*32 + x]` is element `x`
+/// of row `y`).
+///
+/// Processes 8 rows at a time (4 batches), each batch using ymm registers
+/// with one i32 lane per row. The initial multiplicative stage of each
+/// sub-DCT (DCT-4, DCT-8 odd, DCT-16 odd, DCT-32 odd) uses pmaddwd on
+/// interleaved i16 column pairs — a single pmaddwd replaces a
+/// cvtepi16_epi32 + two mullo_epi32 + add_epi32 sequence.
+///
+/// Bit-exactness target: matches `run_scalar_dct32_per_row` exactly for
+/// `row_min = i16::MIN as i32`, `row_max = i16::MAX as i32`.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 1024]) -> [i32; 1024] {
+    let mut out = [0i32; 1024];
+    let build_pair = dct8_row_build_pair;
+    let coef_pack = dct8_row_coef_pack;
+
+    for batch in 0..4u32 {
+        let y_base = (batch * 8) as usize;
+
+        // Load 32 columns x 8 rows as xmm (i16).
+        let mut cx = [_mm_setzero_si128(); 32];
+        for x in 0..32 {
+            let off = y_base + x * 32;
+            let arr: &[i16; 8] = (&coeff_col_major[off..off + 8]).try_into().unwrap();
+            cx[x] = loadu_128!(arr);
+        }
+
+        let pd_2048 = _mm256_set1_epi32(2048);
+        let pd_128 = _mm256_set1_epi32(128);
+        let row_min_v = _mm256_set1_epi32(i16::MIN as i32);
+        let row_max_v = _mm256_set1_epi32(i16::MAX as i32);
+        let clip = |v: __m256i| _mm256_max_epi32(_mm256_min_epi32(v, row_max_v), row_min_v);
+        let c_181 = _mm256_set1_epi32(181);
+
+        // ===== DCT-4 on columns [0, 8, 16, 24] =====
+        let pair_04 = build_pair(_token, cx[0], cx[16]);
+        let pair_13 = build_pair(_token, cx[8], cx[24]);
+
+        let dct4_t0 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_04, coef_pack(_token, 181, 181)),
+            pd_128,
+        ));
+        let dct4_t1 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_04, coef_pack(_token, 181, -181)),
+            pd_128,
+        ));
+        let dct4_t2 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_13, coef_pack(_token, 1567, -3784)),
+            pd_2048,
+        ));
+        let dct4_t3 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_13, coef_pack(_token, 3784, 1567)),
+            pd_2048,
+        ));
+
+        let dct4_o0 = clip(_mm256_add_epi32(dct4_t0, dct4_t3));
+        let dct4_o1 = clip(_mm256_add_epi32(dct4_t1, dct4_t2));
+        let dct4_o2 = clip(_mm256_sub_epi32(dct4_t1, dct4_t2));
+        let dct4_o3 = clip(_mm256_sub_epi32(dct4_t0, dct4_t3));
+
+        // ===== DCT-8 odd half on columns [4, 12, 20, 28] =====
+        let pair_8_17 = build_pair(_token, cx[4], cx[28]);
+        let pair_8_53 = build_pair(_token, cx[20], cx[12]);
+
+        let t4a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_8_17, coef_pack(_token, 799, -4017)),
+            pd_2048,
+        ));
+        let t7a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_8_17, coef_pack(_token, 4017, 799)),
+            pd_2048,
+        ));
+        let t5a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_8_53, coef_pack(_token, 3406, -2276)),
+            pd_2048,
+        ));
+        let t6a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_8_53, coef_pack(_token, 2276, 3406)),
+            pd_2048,
+        ));
+
+        let t4 = clip(_mm256_add_epi32(t4a, t5a));
+        let t5a_n = clip(_mm256_sub_epi32(t4a, t5a));
+        let t7 = clip(_mm256_add_epi32(t7a, t6a));
+        let t6a_n = clip(_mm256_sub_epi32(t7a, t6a));
+
+        let d_56 = _mm256_sub_epi32(t6a_n, t5a_n);
+        let t5 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(d_56, c_181), pd_128,
+        ));
+        let s_56 = _mm256_add_epi32(t6a_n, t5a_n);
+        let t6 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(s_56, c_181), pd_128,
+        ));
+
+        let dct8_o0 = clip(_mm256_add_epi32(dct4_o0, t7));
+        let dct8_o1 = clip(_mm256_add_epi32(dct4_o1, t6));
+        let dct8_o2 = clip(_mm256_add_epi32(dct4_o2, t5));
+        let dct8_o3 = clip(_mm256_add_epi32(dct4_o3, t4));
+        let dct8_o4 = clip(_mm256_sub_epi32(dct4_o3, t4));
+        let dct8_o5 = clip(_mm256_sub_epi32(dct4_o2, t5));
+        let dct8_o6 = clip(_mm256_sub_epi32(dct4_o1, t6));
+        let dct8_o7 = clip(_mm256_sub_epi32(dct4_o0, t7));
+
+        // ===== DCT-16 odd half on columns [2,6,10,14,18,22,26,30] =====
+        let pair_16_1_15 = build_pair(_token, cx[2], cx[30]);
+        let pair_16_9_7  = build_pair(_token, cx[18], cx[14]);
+        let pair_16_5_11 = build_pair(_token, cx[10], cx[22]);
+        let pair_16_13_3 = build_pair(_token, cx[26], cx[6]);
+
+        let t8a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_16_1_15, coef_pack(_token, 401, -4076)),
+            pd_2048,
+        ));
+        let t15a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_16_1_15, coef_pack(_token, 4076, 401)),
+            pd_2048,
+        ));
+        // in9*1583 - in7*1299 doubled: in9*3166 - in7*2598
+        let t9a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_16_9_7, coef_pack(_token, 3166, -2598)),
+            pd_2048,
+        ));
+        let t14a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_16_9_7, coef_pack(_token, 2598, 3166)),
+            pd_2048,
+        ));
+        let t10a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_16_5_11, coef_pack(_token, 1931, -3612)),
+            pd_2048,
+        ));
+        let t13a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_16_5_11, coef_pack(_token, 3612, 1931)),
+            pd_2048,
+        ));
+        let t11a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_16_13_3, coef_pack(_token, 3920, -1189)),
+            pd_2048,
+        ));
+        let t12a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_16_13_3, coef_pack(_token, 1189, 3920)),
+            pd_2048,
+        ));
+
+        // DCT-16 odd stage 1
+        let t8 = clip(_mm256_add_epi32(t8a, t9a));
+        let mut t9 = clip(_mm256_sub_epi32(t8a, t9a));
+        let mut t10 = clip(_mm256_sub_epi32(t11a, t10a));
+        let t11 = clip(_mm256_add_epi32(t11a, t10a));
+        let t12 = clip(_mm256_add_epi32(t12a, t13a));
+        let mut t13 = clip(_mm256_sub_epi32(t12a, t13a));
+        let mut t14 = clip(_mm256_sub_epi32(t15a, t14a));
+        let t15 = clip(_mm256_add_epi32(t15a, t14a));
+
+        // DCT-16 odd stage 2: trig rotations (1567/3784)
+        let c1567 = _mm256_set1_epi32(1567);
+        let c3784 = _mm256_set1_epi32(3784);
+        let t9a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(t14, c1567),
+                _mm256_mullo_epi32(t9, c3784),
+            ),
+            pd_2048,
+        ));
+        let t14a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_add_epi32(
+                _mm256_mullo_epi32(t14, c3784),
+                _mm256_mullo_epi32(t9, c1567),
+            ),
+            pd_2048,
+        ));
+        let t10a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_setzero_si256(),
+                _mm256_add_epi32(
+                    _mm256_mullo_epi32(t13, c3784),
+                    _mm256_mullo_epi32(t10, c1567),
+                ),
+            ),
+            pd_2048,
+        ));
+        let t13a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(t13, c1567),
+                _mm256_mullo_epi32(t10, c3784),
+            ),
+            pd_2048,
+        ));
+
+        // DCT-16 odd stage 3
+        let t8a = clip(_mm256_add_epi32(t8, t11));
+        t9 = clip(_mm256_add_epi32(t9a, t10a));
+        t10 = clip(_mm256_sub_epi32(t9a, t10a));
+        let t11a = clip(_mm256_sub_epi32(t8, t11));
+        let t12a = clip(_mm256_sub_epi32(t15, t12));
+        t13 = clip(_mm256_sub_epi32(t14a, t13a));
+        t14 = clip(_mm256_add_epi32(t14a, t13a));
+        let t15a = clip(_mm256_add_epi32(t15, t12));
+
+        // DCT-16 odd final: sqrt(2) cross-muls
+        let t10a = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_sub_epi32(t13, t10), c_181), pd_128,
+        ));
+        let t13a = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_add_epi32(t13, t10), c_181), pd_128,
+        ));
+        let t11 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_sub_epi32(t12a, t11a), c_181), pd_128,
+        ));
+        let t12 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_add_epi32(t12a, t11a), c_181), pd_128,
+        ));
+
+        // DCT-16 final butterfly
+        let dct16_o = [
+            clip(_mm256_add_epi32(dct8_o0, t15a)),
+            clip(_mm256_add_epi32(dct8_o1, t14)),
+            clip(_mm256_add_epi32(dct8_o2, t13a)),
+            clip(_mm256_add_epi32(dct8_o3, t12)),
+            clip(_mm256_add_epi32(dct8_o4, t11)),
+            clip(_mm256_add_epi32(dct8_o5, t10a)),
+            clip(_mm256_add_epi32(dct8_o6, t9)),
+            clip(_mm256_add_epi32(dct8_o7, t8a)),
+            clip(_mm256_sub_epi32(dct8_o7, t8a)),
+            clip(_mm256_sub_epi32(dct8_o6, t9)),
+            clip(_mm256_sub_epi32(dct8_o5, t10a)),
+            clip(_mm256_sub_epi32(dct8_o4, t11)),
+            clip(_mm256_sub_epi32(dct8_o3, t12)),
+            clip(_mm256_sub_epi32(dct8_o2, t13a)),
+            clip(_mm256_sub_epi32(dct8_o1, t14)),
+            clip(_mm256_sub_epi32(dct8_o0, t15a)),
+        ];
+
+        // ===== DCT-32 odd half on all 16 odd columns =====
+        let pair_32_1_31  = build_pair(_token, cx[1], cx[31]);
+        let pair_32_17_15 = build_pair(_token, cx[17], cx[15]);
+        let pair_32_9_23  = build_pair(_token, cx[9], cx[23]);
+        let pair_32_25_7  = build_pair(_token, cx[25], cx[7]);
+        let pair_32_5_27  = build_pair(_token, cx[5], cx[27]);
+        let pair_32_21_11 = build_pair(_token, cx[21], cx[11]);
+        let pair_32_13_19 = build_pair(_token, cx[13], cx[19]);
+        let pair_32_29_3  = build_pair(_token, cx[29], cx[3]);
+
+        // Initial 16 trig butterflies (all >>12 +2048)
+        let t16a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_1_31, coef_pack(_token, 201, -4091)),
+            pd_2048,
+        ));
+        let t31a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_1_31, coef_pack(_token, 4091, 201)),
+            pd_2048,
+        ));
+        let t17a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_17_15, coef_pack(_token, 3035, -2751)),
+            pd_2048,
+        ));
+        let t30a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_17_15, coef_pack(_token, 2751, 3035)),
+            pd_2048,
+        ));
+        let t18a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_9_23, coef_pack(_token, 1751, -3703)),
+            pd_2048,
+        ));
+        let t29a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_9_23, coef_pack(_token, 3703, 1751)),
+            pd_2048,
+        ));
+        let t19a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_25_7, coef_pack(_token, 3857, -1380)),
+            pd_2048,
+        ));
+        let t28a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_25_7, coef_pack(_token, 1380, 3857)),
+            pd_2048,
+        ));
+        let t20a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_5_27, coef_pack(_token, 995, -3973)),
+            pd_2048,
+        ));
+        let t27a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_5_27, coef_pack(_token, 3973, 995)),
+            pd_2048,
+        ));
+        let t21a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_21_11, coef_pack(_token, 3513, -2106)),
+            pd_2048,
+        ));
+        let t26a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_21_11, coef_pack(_token, 2106, 3513)),
+            pd_2048,
+        ));
+        // in13*1220 - in19*1645 doubled: in13*2440 - in19*3290
+        let t22a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_13_19, coef_pack(_token, 2440, -3290)),
+            pd_2048,
+        ));
+        let t25a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_13_19, coef_pack(_token, 3290, 2440)),
+            pd_2048,
+        ));
+        let t23a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_29_3, coef_pack(_token, 4052, -601)),
+            pd_2048,
+        ));
+        let t24a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_32_29_3, coef_pack(_token, 601, 4052)),
+            pd_2048,
+        ));
+
+        // DCT-32 odd stage 1
+        let mut t16 = clip(_mm256_add_epi32(t16a, t17a));
+        let mut t17 = clip(_mm256_sub_epi32(t16a, t17a));
+        let mut t18 = clip(_mm256_sub_epi32(t19a, t18a));
+        let t19 = clip(_mm256_add_epi32(t19a, t18a));
+        let t20 = clip(_mm256_add_epi32(t20a, t21a));
+        let mut t21 = clip(_mm256_sub_epi32(t20a, t21a));
+        let mut t22 = clip(_mm256_sub_epi32(t23a, t22a));
+        let mut t23 = clip(_mm256_add_epi32(t23a, t22a));
+        let mut t24 = clip(_mm256_add_epi32(t24a, t25a));
+        let mut t25 = clip(_mm256_sub_epi32(t24a, t25a));
+        let mut t26 = clip(_mm256_sub_epi32(t27a, t26a));
+        let t27 = clip(_mm256_add_epi32(t27a, t26a));
+        let t28 = clip(_mm256_add_epi32(t28a, t29a));
+        let mut t29 = clip(_mm256_sub_epi32(t28a, t29a));
+        let mut t30 = clip(_mm256_sub_epi32(t31a, t30a));
+        let mut t31 = clip(_mm256_add_epi32(t31a, t30a));
+
+        // DCT-32 odd stage 2: trig rotations (799/4017 and 1703/1138)
+        let c799 = _mm256_set1_epi32(799);
+        let c4017 = _mm256_set1_epi32(4017);
+        let c1703 = _mm256_set1_epi32(1703);
+        let c1138 = _mm256_set1_epi32(1138);
+        let pd_1024 = _mm256_set1_epi32(1024);
+        let t17a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(t30, c799),
+                _mm256_mullo_epi32(t17, c4017),
+            ),
+            pd_2048,
+        ));
+        let t30a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_add_epi32(
+                _mm256_mullo_epi32(t30, c4017),
+                _mm256_mullo_epi32(t17, c799),
+            ),
+            pd_2048,
+        ));
+        let t18a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_setzero_si256(),
+                _mm256_add_epi32(
+                    _mm256_mullo_epi32(t29, c4017),
+                    _mm256_mullo_epi32(t18, c799),
+                ),
+            ),
+            pd_2048,
+        ));
+        let t29a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(t29, c799),
+                _mm256_mullo_epi32(t18, c4017),
+            ),
+            pd_2048,
+        ));
+        let t21a = _mm256_srai_epi32::<11>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(t26, c1703),
+                _mm256_mullo_epi32(t21, c1138),
+            ),
+            pd_1024,
+        ));
+        let t26a = _mm256_srai_epi32::<11>(_mm256_add_epi32(
+            _mm256_add_epi32(
+                _mm256_mullo_epi32(t26, c1138),
+                _mm256_mullo_epi32(t21, c1703),
+            ),
+            pd_1024,
+        ));
+        let t22a = _mm256_srai_epi32::<11>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_setzero_si256(),
+                _mm256_add_epi32(
+                    _mm256_mullo_epi32(t25, c1138),
+                    _mm256_mullo_epi32(t22, c1703),
+                ),
+            ),
+            pd_1024,
+        ));
+        let t25a = _mm256_srai_epi32::<11>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(t25, c1703),
+                _mm256_mullo_epi32(t22, c1138),
+            ),
+            pd_1024,
+        ));
+
+        // DCT-32 odd stage 3
+        let t16a = clip(_mm256_add_epi32(t16, t19));
+        t17 = clip(_mm256_add_epi32(t17a, t18a));
+        t18 = clip(_mm256_sub_epi32(t17a, t18a));
+        let t19a = clip(_mm256_sub_epi32(t16, t19));
+        let t20a = clip(_mm256_sub_epi32(t23, t20));
+        t21 = clip(_mm256_sub_epi32(t22a, t21a));
+        t22 = clip(_mm256_add_epi32(t22a, t21a));
+        let t23a = clip(_mm256_add_epi32(t23, t20));
+        let t24a = clip(_mm256_add_epi32(t24, t27));
+        t25 = clip(_mm256_add_epi32(t25a, t26a));
+        t26 = clip(_mm256_sub_epi32(t25a, t26a));
+        let t27a = clip(_mm256_sub_epi32(t24, t27));
+        let t28a = clip(_mm256_sub_epi32(t31, t28));
+        t29 = clip(_mm256_sub_epi32(t30a, t29a));
+        t30 = clip(_mm256_add_epi32(t30a, t29a));
+        let t31a = clip(_mm256_add_epi32(t31, t28));
+
+        // DCT-32 odd stage 4: trig rotations (1567/3784)
+        let t18a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(t29, c1567),
+                _mm256_mullo_epi32(t18, c3784),
+            ),
+            pd_2048,
+        ));
+        let t29a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_add_epi32(
+                _mm256_mullo_epi32(t29, c3784),
+                _mm256_mullo_epi32(t18, c1567),
+            ),
+            pd_2048,
+        ));
+        let t19 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(t28a, c1567),
+                _mm256_mullo_epi32(t19a, c3784),
+            ),
+            pd_2048,
+        ));
+        let t28 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_add_epi32(
+                _mm256_mullo_epi32(t28a, c3784),
+                _mm256_mullo_epi32(t19a, c1567),
+            ),
+            pd_2048,
+        ));
+        let t20 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_setzero_si256(),
+                _mm256_add_epi32(
+                    _mm256_mullo_epi32(t27a, c3784),
+                    _mm256_mullo_epi32(t20a, c1567),
+                ),
+            ),
+            pd_2048,
+        ));
+        let t27 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(t27a, c1567),
+                _mm256_mullo_epi32(t20a, c3784),
+            ),
+            pd_2048,
+        ));
+        let t21a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_setzero_si256(),
+                _mm256_add_epi32(
+                    _mm256_mullo_epi32(t26, c3784),
+                    _mm256_mullo_epi32(t21, c1567),
+                ),
+            ),
+            pd_2048,
+        ));
+        let t26a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(t26, c1567),
+                _mm256_mullo_epi32(t21, c3784),
+            ),
+            pd_2048,
+        ));
+
+        // DCT-32 odd stage 5
+        t16 = clip(_mm256_add_epi32(t16a, t23a));
+        let t17a = clip(_mm256_add_epi32(t17, t22));
+        t18 = clip(_mm256_add_epi32(t18a, t21a));
+        let t19a = clip(_mm256_add_epi32(t19, t20));
+        let t20a = clip(_mm256_sub_epi32(t19, t20));
+        t21 = clip(_mm256_sub_epi32(t18a, t21a));
+        let t22a = clip(_mm256_sub_epi32(t17, t22));
+        t23 = clip(_mm256_sub_epi32(t16a, t23a));
+        t24 = clip(_mm256_sub_epi32(t31a, t24a));
+        let t25a = clip(_mm256_sub_epi32(t30, t25));
+        t26 = clip(_mm256_sub_epi32(t29a, t26a));
+        let t27a = clip(_mm256_sub_epi32(t28, t27));
+        let t28a = clip(_mm256_add_epi32(t28, t27));
+        t29 = clip(_mm256_add_epi32(t29a, t26a));
+        let t30a = clip(_mm256_add_epi32(t30, t25));
+        t31 = clip(_mm256_add_epi32(t31a, t24a));
+
+        // DCT-32 odd final: sqrt(2) cross-muls
+        let t20_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_sub_epi32(t27a, t20a), c_181), pd_128,
+        ));
+        let t27_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_add_epi32(t27a, t20a), c_181), pd_128,
+        ));
+        let t21a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_sub_epi32(t26, t21), c_181), pd_128,
+        ));
+        let t26a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_add_epi32(t26, t21), c_181), pd_128,
+        ));
+        let t22_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_sub_epi32(t25a, t22a), c_181), pd_128,
+        ));
+        let t25_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_add_epi32(t25a, t22a), c_181), pd_128,
+        ));
+        let t23a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_sub_epi32(t24, t23), c_181), pd_128,
+        ));
+        let t24a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(_mm256_add_epi32(t24, t23), c_181), pd_128,
+        ));
+
+        // Final DCT-32 butterfly: combine dct16 even outputs with odd half
+        let mut cols = [_mm256_setzero_si256(); 32];
+        cols[0]  = clip(_mm256_add_epi32(dct16_o[0],  t31));
+        cols[1]  = clip(_mm256_add_epi32(dct16_o[1],  t30a));
+        cols[2]  = clip(_mm256_add_epi32(dct16_o[2],  t29));
+        cols[3]  = clip(_mm256_add_epi32(dct16_o[3],  t28a));
+        cols[4]  = clip(_mm256_add_epi32(dct16_o[4],  t27_f));
+        cols[5]  = clip(_mm256_add_epi32(dct16_o[5],  t26a_f));
+        cols[6]  = clip(_mm256_add_epi32(dct16_o[6],  t25_f));
+        cols[7]  = clip(_mm256_add_epi32(dct16_o[7],  t24a_f));
+        cols[8]  = clip(_mm256_add_epi32(dct16_o[8],  t23a_f));
+        cols[9]  = clip(_mm256_add_epi32(dct16_o[9],  t22_f));
+        cols[10] = clip(_mm256_add_epi32(dct16_o[10], t21a_f));
+        cols[11] = clip(_mm256_add_epi32(dct16_o[11], t20_f));
+        cols[12] = clip(_mm256_add_epi32(dct16_o[12], t19a));
+        cols[13] = clip(_mm256_add_epi32(dct16_o[13], t18));
+        cols[14] = clip(_mm256_add_epi32(dct16_o[14], t17a));
+        cols[15] = clip(_mm256_add_epi32(dct16_o[15], t16));
+        cols[16] = clip(_mm256_sub_epi32(dct16_o[15], t16));
+        cols[17] = clip(_mm256_sub_epi32(dct16_o[14], t17a));
+        cols[18] = clip(_mm256_sub_epi32(dct16_o[13], t18));
+        cols[19] = clip(_mm256_sub_epi32(dct16_o[12], t19a));
+        cols[20] = clip(_mm256_sub_epi32(dct16_o[11], t20_f));
+        cols[21] = clip(_mm256_sub_epi32(dct16_o[10], t21a_f));
+        cols[22] = clip(_mm256_sub_epi32(dct16_o[9],  t22_f));
+        cols[23] = clip(_mm256_sub_epi32(dct16_o[8],  t23a_f));
+        cols[24] = clip(_mm256_sub_epi32(dct16_o[7],  t24a_f));
+        cols[25] = clip(_mm256_sub_epi32(dct16_o[6],  t25_f));
+        cols[26] = clip(_mm256_sub_epi32(dct16_o[5],  t26a_f));
+        cols[27] = clip(_mm256_sub_epi32(dct16_o[4],  t27_f));
+        cols[28] = clip(_mm256_sub_epi32(dct16_o[3],  t28a));
+        cols[29] = clip(_mm256_sub_epi32(dct16_o[2],  t29));
+        cols[30] = clip(_mm256_sub_epi32(dct16_o[1],  t30a));
+        cols[31] = clip(_mm256_sub_epi32(dct16_o[0],  t31));
+
+        // Transpose 32x8 -> 8x32 in 4 chunks of 8 columns, store row-major.
+        for chunk in 0..4 {
+            let b = chunk * 8;
+            let chunk_cols: [__m256i; 8] = [
+                cols[b], cols[b + 1], cols[b + 2], cols[b + 3],
+                cols[b + 4], cols[b + 5], cols[b + 6], cols[b + 7],
+            ];
+            let rows = transpose_8x8_i32!(chunk_cols);
+            for row in 0..8 {
+                let y = y_base + row;
+                let arr: &mut [i32; 8] =
+                    (&mut out[y * 32 + b..y * 32 + b + 8]).try_into().unwrap();
+                storeu_256!(arr, [i32; 8], rows[row]);
+            }
+        }
+    }
+    out
+}
+
 /// SIMD row ADST-16 for 16xN transforms, 8bpc. Same shape as
 /// `simd_row_dct16_8bpc_8rows` but calls `adst16_1d_cols8`. If `flipped`,
 /// reverses output order after ADST (flipadst).
@@ -10137,6 +10719,64 @@ mod tests {
             "dct16_row_pass_i16_simd diverged from scalar reference"
         );
     }
+
+    // ----------------------------------------------------------------------
+    // i16-packed pmaddwd DCT-32 row pass -- bit-exact vs scalar
+    // ----------------------------------------------------------------------
+
+    /// Bit-exact check: `dct32_row_pass_i16_simd` matches
+    /// `run_scalar_dct32_per_row` across a range of seeded inputs.
+    #[test]
+    fn test_dct32_row_pass_i16_simd_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+        let row_min = i16::MIN as i32;
+        let row_max = i16::MAX as i32;
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+        ];
+        let mut total_mismatches = 0u32;
+        for &seed in seeds {
+            let input: [i16; 1024] = seeded_i16_block(seed);
+            let scalar_out = run_scalar_dct32_per_row(&input, row_min, row_max);
+            let simd_out = dct32_row_pass_i16_simd(token, input);
+            if simd_out != scalar_out {
+                let mut mism = 0u32;
+                for i in 0..1024 {
+                    if simd_out[i] != scalar_out[i] {
+                        if mism < 8 {
+                            eprintln!(
+                                "seed={:#x} idx={} row={} col={} scalar={} simd={} diff={}",
+                                seed,
+                                i,
+                                i / 32,
+                                i % 32,
+                                scalar_out[i],
+                                simd_out[i],
+                                simd_out[i].wrapping_sub(scalar_out[i])
+                            );
+                        }
+                        mism += 1;
+                    }
+                }
+                eprintln!("seed={seed:#x}: {mism} mismatches");
+                total_mismatches += mism;
+            }
+        }
+        assert_eq!(
+            total_mismatches, 0,
+            "dct32_row_pass_i16_simd diverged from scalar reference"
+        );
+    }
 }
 
 // ============================================================================
@@ -12630,33 +13270,31 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
 ) {
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
-    let row_clip_min = i16::MIN as i32;
-    let row_clip_max = i16::MAX as i32;
     let col_clip_min = i16::MIN as i32;
     let col_clip_max = i16::MAX as i32;
 
-    let mut tmp = [0i32; 1024];
-    // SIMD row transform: 4 batches of 8 rows. No rect2, shift=2, rnd=2.
+    // SIMD row transform via pmaddwd-based dct32_row_pass_i16_simd.
+    // No rect2 for 32x32. Row clips handled internally.
+    // Post-process: round+shift+clip to col range (shift=2, rnd=2).
+    let raw_coeff: [i16; 1024] = {
+        let s = coeff.as_slice();
+        let mut arr = [0i16; 1024];
+        arr.copy_from_slice(&s[..1024]);
+        arr
+    };
+    let mut tmp = dct32_row_pass_i16_simd(_token, raw_coeff);
     {
-        let coeff_slice = coeff.as_slice();
-        for y_base in [0usize, 8, 16, 24] {
-            simd_row_dct32_8bpc_8rows(
-                _token,
-                coeff_slice,
-                32,
-                y_base,
-                false,
-                2,
-                2,
-                &mut tmp,
-                row_clip_min,
-                row_clip_max,
-                col_clip_min,
-                col_clip_max,
-            );
+        let rnd_v = _mm256_set1_epi32(2);
+        let col_min_v = _mm256_set1_epi32(col_clip_min);
+        let col_max_v = _mm256_set1_epi32(col_clip_max);
+        for i in (0..1024).step_by(8) {
+            let v = loadu_256!(&tmp[i..i + 8], [i32; 8]);
+            let rounded = _mm256_srai_epi32::<2>(_mm256_add_epi32(v, rnd_v));
+            let clamped = _mm256_max_epi32(_mm256_min_epi32(rounded, col_max_v), col_min_v);
+            storeu_256!(&mut tmp[i..i + 8], [i32; 8], clamped);
         }
     }
-    // SIMD column transform: 8 columns × 4 chunks
+    // SIMD column transform: 8 columns x 4 chunks
     dct32x32_cols_simd(_token, &mut tmp, col_clip_min, col_clip_max);
     if let Some(t512) = crate::src::cpu::summon_avx512() {
         add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 32, bitdepth_max);
