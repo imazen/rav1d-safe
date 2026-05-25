@@ -6544,6 +6544,38 @@ fn simd_row_dct8_8bpc_8rows(
     );
 }
 
+// ============================================================================
+// i16-PACKED PMADDWD DCT-8 ROW PASS — attempt #5
+// ============================================================================
+//
+// Goal: replace the existing cross-column i32 row pass (which uses
+// `_mm256_mullo_epi32` for the multiplicative stages) with a `pmaddwd`-
+// driven i16-packed version mirroring dav1d's `IDCT8_1D_PACKED`
+// (`src/x86/itx_avx2.asm:566`). pmaddwd does 2 multiplies + 1 add per
+// 32-bit lane in one op (vs `mullo_epi32` + `add` for the i32 path),
+// roughly halving the multiplicative-stage instruction count.
+//
+// Iteration loop: standalone fn + bit-exact unit test vs
+// `run_scalar_dct8_per_row`. Wire-up into the live 8x8/8x16/8x32
+// transforms is a SEPARATE step after the standalone passes.
+
+/// i16-packed pmaddwd DCT-8 1D row pass. Takes 64 i16 column-major
+/// coeffs (input shape: `coeff[y + x*8]` is element `x` of row `y`),
+/// runs DCT-8 independently across each of the 8 rows, and returns
+/// row-major i32 output (output shape: `out[y*8 + x]` is element `x`
+/// of row `y`).
+///
+/// Bit-exactness target: matches `run_scalar_dct8_per_row` exactly for
+/// `row_min = i16::MIN as i32`, `row_max = i16::MAX as i32` (the 8bpc
+/// row-pass clip range).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn dct8_row_pass_i16_simd(_token: Desktop64, _coeff_col_major: [i16; 64]) -> [i32; 64] {
+    // STUB: deliberately wrong — returns zeros so the test fails until
+    // the real SIMD body is implemented. Closes the iteration loop.
+    [0i32; 64]
+}
+
 /// SIMD row ADST-16 for 16xN transforms, 8bpc. Same shape as
 /// `simd_row_dct16_8bpc_8rows` but calls `adst16_1d_cols8`. If `flipped`,
 /// reverses output order after ADST (flipadst).
@@ -9507,6 +9539,68 @@ mod tests {
         let a32 = run_scalar_dct32_per_row(&in32, row_min, row_max);
         let b32 = run_scalar_dct32_per_row(&in32, row_min, row_max);
         assert_eq!(a32, b32, "dct32 scalar reference is non-deterministic");
+    }
+
+    // ----------------------------------------------------------------------
+    // i16-packed pmaddwd DCT-8 row pass — bit-exact vs scalar
+    // ----------------------------------------------------------------------
+
+    /// Bit-exact check: `dct8_row_pass_i16_simd` matches
+    /// `run_scalar_dct8_per_row` across a range of seeded inputs.
+    ///
+    /// While `dct8_row_pass_i16_simd` is a stub returning zeros, this test
+    /// FAILS — that's the closed iteration loop. Each new SIMD stage added
+    /// to the function body must keep this test green.
+    #[test]
+    fn test_dct8_row_pass_i16_simd_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+        let row_min = i16::MIN as i32;
+        let row_max = i16::MAX as i32;
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+        ];
+        let mut total_mismatches = 0u32;
+        for &seed in seeds {
+            let input: [i16; 64] = seeded_i16_block(seed);
+            let scalar_out = run_scalar_dct8_per_row(&input, row_min, row_max);
+            let simd_out = dct8_row_pass_i16_simd(token, input);
+            if simd_out != scalar_out {
+                let mut mism = 0u32;
+                for i in 0..64 {
+                    if simd_out[i] != scalar_out[i] {
+                        if mism < 8 {
+                            eprintln!(
+                                "seed={:#x} idx={} row={} col={} scalar={} simd={} diff={}",
+                                seed,
+                                i,
+                                i / 8,
+                                i % 8,
+                                scalar_out[i],
+                                simd_out[i],
+                                simd_out[i].wrapping_sub(scalar_out[i])
+                            );
+                        }
+                        mism += 1;
+                    }
+                }
+                eprintln!("seed={seed:#x}: {mism} mismatches");
+                total_mismatches += mism;
+            }
+        }
+        assert_eq!(
+            total_mismatches, 0,
+            "dct8_row_pass_i16_simd diverged from scalar reference"
+        );
     }
 }
 
