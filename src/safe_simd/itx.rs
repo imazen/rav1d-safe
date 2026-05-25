@@ -6618,20 +6618,120 @@ fn dct8_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 64]) -> [i32
         col_xmm[x] = loadu_128!(arr);
     }
 
-    // Baseline path: use the known-good i32 dct8_1d_cols8 to confirm the
-    // load/transpose harness is correct. Stage-by-stage replacement with
-    // pmaddwd happens in follow-up commits, each gated by the bit-exact test.
+    // ----- Build (col_a, col_b) pairs for pmaddwd -----
+    // Each ymm pair contains 8 i32 lanes (one per row); each lane holds
+    // (col_a_word, col_b_word) packed as i16. pmaddwd with coef_pack(c_a, c_b)
+    // then computes (c_a * col_a + c_b * col_b) per i32 lane = per row.
+    let pair_17 = dct8_row_build_pair(_token, col_xmm[1], col_xmm[7]);
+    let pair_53 = dct8_row_build_pair(_token, col_xmm[5], col_xmm[3]);
+    let pair_26 = dct8_row_build_pair(_token, col_xmm[2], col_xmm[6]);
+    let pair_04 = dct8_row_build_pair(_token, col_xmm[0], col_xmm[4]);
+
+    let pd_2048 = _mm256_set1_epi32(2048);
+    let pd_128 = _mm256_set1_epi32(128);
+
+    // ----- Multiplicative stages — bit-exact to scalar C reference -----
+    // All formulas derived in the function-level comment trace above:
+    //   t4a = (in1*799 - in7*4017 + 2048) >> 12     [pair_17 = (in1, in7), coefs (799, -4017)]
+    //   t7a = (in1*4017 + in7*799  + 2048) >> 12    [coefs (4017, 799)]
+    //   t5a = (in5*3406 - in3*2276 + 2048) >> 12    [pair_53 = (in5, in3), coefs (3406, -2276)]
+    //         (= (in5*1703 - in3*1138 + 1024) >> 11)
+    //   t6a = (in5*2276 + in3*3406 + 2048) >> 12    [coefs (2276, 3406)]
+    //         (= (in5*1138 + in3*1703 + 1024) >> 11)
+    //   t2  = (in2*1567 - in6*3784 + 2048) >> 12    [pair_26 = (in2, in6), coefs (1567, -3784)]
+    //   t3  = (in2*3784 + in6*1567 + 2048) >> 12    [coefs (3784, 1567)]
+    //   t0  = (in0*181  + in4*181  + 128 ) >> 8     [pair_04 = (in0, in4), coefs (181, 181)]
+    //   t1  = (in0*181  + in4*-181 + 128 ) >> 8     [coefs (181, -181)]
+    let t4a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_17, dct8_row_coef_pack(_token, 799, -4017)),
+        pd_2048,
+    ));
+    let t7a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_17, dct8_row_coef_pack(_token, 4017, 799)),
+        pd_2048,
+    ));
+    let t5a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_53, dct8_row_coef_pack(_token, 3406, -2276)),
+        pd_2048,
+    ));
+    let t6a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_53, dct8_row_coef_pack(_token, 2276, 3406)),
+        pd_2048,
+    ));
+    let t2 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_26, dct8_row_coef_pack(_token, 1567, -3784)),
+        pd_2048,
+    ));
+    let t3 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_26, dct8_row_coef_pack(_token, 3784, 1567)),
+        pd_2048,
+    ));
+    let t0 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_04, dct8_row_coef_pack(_token, 181, 181)),
+        pd_128,
+    ));
+    let t1 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_04, dct8_row_coef_pack(_token, 181, -181)),
+        pd_128,
+    ));
+
+    // ----- Additive butterfly stages — match scalar exactly (clip vs row range) -----
+    // Use i32 add/sub + max/min clamp (= iclip semantics).
     let row_min = i16::MIN as i32;
     let row_max = i16::MAX as i32;
     let row_min_v = _mm256_set1_epi32(row_min);
     let row_max_v = _mm256_set1_epi32(row_max);
+    let clip = |v: __m256i| _mm256_max_epi32(_mm256_min_epi32(v, row_max_v), row_min_v);
 
+    // Stage 1 butterfly on (t4a, t5a) and (t6a, t7a):
+    //   t4   = clip(t4a + t5a)
+    //   t5a' = clip(t4a - t5a)
+    //   t7   = clip(t7a + t6a)
+    //   t6a' = clip(t7a - t6a)
+    let t4 = clip(_mm256_add_epi32(t4a, t5a));
+    let t5a_n = clip(_mm256_sub_epi32(t4a, t5a));
+    let t7 = clip(_mm256_add_epi32(t7a, t6a));
+    let t6a_n = clip(_mm256_sub_epi32(t7a, t6a));
+
+    // Stage 2 — t5/t6 via the 181 sqrt(2) coef:
+    //   t5 = ((t6a_n - t5a_n) * 181 + 128) >> 8
+    //   t6 = ((t6a_n + t5a_n) * 181 + 128) >> 8
+    let c_181 = _mm256_set1_epi32(181);
+    let d = _mm256_sub_epi32(t6a_n, t5a_n);
+    let t5 = _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(d, c_181), pd_128));
+    let s = _mm256_add_epi32(t6a_n, t5a_n);
+    let t6 = _mm256_srai_epi32::<8>(_mm256_add_epi32(_mm256_mullo_epi32(s, c_181), pd_128));
+
+    // DCT-4 even side: t0..t3 already computed above (full DCT-4 closed form).
+    // Combine to butterfly outputs (asm tmp0..tmp3 + DCT-8 final butterfly):
+    //   tmp0 = clip(t0 + t3); tmp3 = clip(t0 - t3)
+    //   tmp1 = clip(t1 + t2); tmp2 = clip(t1 - t2)
+    // (These match dct4_1d_internal_c's c[0]..c[3] = clip(t0+t3), clip(t1+t2), clip(t1-t2), clip(t0-t3))
+    let tmp0 = clip(_mm256_add_epi32(t0, t3));
+    let tmp1 = clip(_mm256_add_epi32(t1, t2));
+    let tmp2 = clip(_mm256_sub_epi32(t1, t2));
+    let tmp3 = clip(_mm256_sub_epi32(t0, t3));
+
+    // Final DCT-8 butterfly:
+    //   out0 = clip(tmp0 + t7)
+    //   out1 = clip(tmp1 + t6)
+    //   out2 = clip(tmp2 + t5)
+    //   out3 = clip(tmp3 + t4)
+    //   out4 = clip(tmp3 - t4)
+    //   out5 = clip(tmp2 - t5)
+    //   out6 = clip(tmp1 - t6)
+    //   out7 = clip(tmp0 - t7)
     let mut cols = [_mm256_setzero_si256(); 8];
-    for x in 0..8 {
-        cols[x] = _mm256_cvtepi16_epi32(col_xmm[x]);
-    }
-    dct8_1d_cols8(_token, &mut cols, row_min_v, row_max_v);
+    cols[0] = clip(_mm256_add_epi32(tmp0, t7));
+    cols[1] = clip(_mm256_add_epi32(tmp1, t6));
+    cols[2] = clip(_mm256_add_epi32(tmp2, t5));
+    cols[3] = clip(_mm256_add_epi32(tmp3, t4));
+    cols[4] = clip(_mm256_sub_epi32(tmp3, t4));
+    cols[5] = clip(_mm256_sub_epi32(tmp2, t5));
+    cols[6] = clip(_mm256_sub_epi32(tmp1, t6));
+    cols[7] = clip(_mm256_sub_epi32(tmp0, t7));
 
+    // Transpose 8x8 i32 col-major → row-major and store.
     let rows = transpose_8x8_i32!(cols);
     let mut out = [0i32; 64];
     for y in 0..8 {
