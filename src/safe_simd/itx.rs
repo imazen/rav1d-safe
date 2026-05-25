@@ -4401,24 +4401,26 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
     let col_clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 256];
 
-    // SIMD row transform: 2 batches of 8 rows. No rect2, shift=2, rnd=2.
+    // SIMD row transform via i16-packed pmaddwd DCT-16.
     {
-        let coeff_slice = coeff.as_slice();
-        for y_base in [0usize, 8] {
-            simd_row_dct16_8bpc_8rows(
-                _token,
-                coeff_slice,
-                16,
-                y_base,
-                false,
-                2,
-                2,
-                &mut tmp,
-                row_clip_min,
-                row_clip_max,
-                col_clip_min,
-                col_clip_max,
-            );
+        let coeff_arr: &[i16; 256] = coeff.as_slice()[..256].try_into().unwrap();
+        let raw = dct16_row_pass_i16_simd(_token, *coeff_arr);
+
+        // Apply rnd=2, shift=2, col_clip (same post-processing as
+        // simd_row_dct16_8bpc_8rows with shift=2, rnd=2).
+        let rnd_v = _mm256_set1_epi32(2);
+        let col_min_v = _mm256_set1_epi32(col_clip_min);
+        let col_max_v = _mm256_set1_epi32(col_clip_max);
+        for y in 0..16 {
+            for chunk in 0..2u32 {
+                let b = (chunk * 8) as usize;
+                let off = y * 16 + b;
+                let v = loadu_256!(&raw[off..off + 8], [i32; 8]);
+                let shifted = _mm256_srai_epi32::<2>(_mm256_add_epi32(v, rnd_v));
+                let clamped =
+                    _mm256_max_epi32(_mm256_min_epi32(shifted, col_max_v), col_min_v);
+                storeu_256!(&mut tmp[off..off + 8], [i32; 8], clamped);
+            }
         }
     }
 
@@ -6735,6 +6737,318 @@ fn dct8_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 64]) -> [i32
     for y in 0..8 {
         let arr: &mut [i32; 8] = (&mut out[y * 8..y * 8 + 8]).try_into().unwrap();
         storeu_256!(arr, [i32; 8], rows[y]);
+    }
+    out
+}
+
+/// i16-packed pmaddwd DCT-16 row pass — operates on 16 rows of 16 i16 coefficients
+/// stored in column-major order, producing 256 i32 outputs in row-major order.
+///
+/// Layout: `coeff_col_major[y + x*16]` = element x of row y (y=0..15, x=0..15).
+/// Output: `out[y*16 + x]` = transformed element x of row y.
+///
+/// Processes two batches of 8 rows (one per ymm lane) using pmaddwd for the
+/// initial multiplicative stages and i32 arithmetic for intermediate butterflies.
+///
+/// Algorithm: DCT-16 = DCT-8 on even-indexed inputs + odd-half butterflies + combine.
+/// The DCT-8 even half reuses the pmaddwd pair approach from `dct8_row_pass_i16_simd`.
+/// The odd half uses 4 pmaddwd pairs for stage 1, then i32 mullo for stage 2.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 256]) -> [i32; 256] {
+    let mut out = [0i32; 256];
+
+    let row_min = i16::MIN as i32;
+    let row_max = i16::MAX as i32;
+    let row_min_v = _mm256_set1_epi32(row_min);
+    let row_max_v = _mm256_set1_epi32(row_max);
+    let clip = |v: __m256i| _mm256_max_epi32(_mm256_min_epi32(v, row_max_v), row_min_v);
+
+    let pd_2048 = _mm256_set1_epi32(2048);
+    let pd_128 = _mm256_set1_epi32(128);
+    let c_181 = _mm256_set1_epi32(181);
+
+    // Process rows in two batches of 8
+    for batch in 0..2u32 {
+        let y_base = (batch * 8) as usize;
+
+        // Load 16 column xmms (8 i16 from this batch per column).
+        let mut col_xmm = [_mm_setzero_si128(); 16];
+        for x in 0..16 {
+            let off = y_base + x * 16;
+            let arr: &[i16; 8] = (&coeff_col_major[off..off + 8]).try_into().unwrap();
+            col_xmm[x] = loadu_128!(arr);
+        }
+
+        // ====== EVEN HALF: DCT-8 on even columns (0,2,4,6,8,10,12,14) ======
+        // These become the inputs to a standard DCT-8.
+        // Rename for clarity: ecol[k] = col_xmm[2*k]
+        //   ecol[0]=col0, ecol[1]=col2, ecol[2]=col4, ecol[3]=col6,
+        //   ecol[4]=col8, ecol[5]=col10, ecol[6]=col12, ecol[7]=col14
+        //
+        // DCT-8 structure (non-tx64):
+        //   DCT-4 on even of even: ecol[0], ecol[2], ecol[4], ecol[6]
+        //     which are original columns 0, 4, 8, 12
+        //   DCT-8 odd half on: ecol[1], ecol[3], ecol[5], ecol[7]
+        //     which are original columns 2, 6, 10, 14
+
+        // --- DCT-4 (innermost even) on columns 0, 4, 8, 12 ---
+        let pair_0_8 = dct8_row_build_pair(_token, col_xmm[0], col_xmm[8]);
+        let pair_4_12 = dct8_row_build_pair(_token, col_xmm[4], col_xmm[12]);
+
+        // t0 = (col0 + col8) * 181 + 128 >> 8
+        let e_t0 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_0_8, dct8_row_coef_pack(_token, 181, 181)),
+            pd_128,
+        ));
+        // t1 = (col0 - col8) * 181 + 128 >> 8
+        let e_t1 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_0_8, dct8_row_coef_pack(_token, 181, -181)),
+            pd_128,
+        ));
+        // t2 = (col4 * 1567 - col12 * 3784 + 2048) >> 12
+        let e_t2 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_4_12, dct8_row_coef_pack(_token, 1567, -3784)),
+            pd_2048,
+        ));
+        // t3 = (col4 * 3784 + col12 * 1567 + 2048) >> 12
+        let e_t3 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_4_12, dct8_row_coef_pack(_token, 3784, 1567)),
+            pd_2048,
+        ));
+
+        // DCT-4 output
+        let dct4_0 = clip(_mm256_add_epi32(e_t0, e_t3));
+        let dct4_1 = clip(_mm256_add_epi32(e_t1, e_t2));
+        let dct4_2 = clip(_mm256_sub_epi32(e_t1, e_t2));
+        let dct4_3 = clip(_mm256_sub_epi32(e_t0, e_t3));
+
+        // --- DCT-8 odd half on columns 2, 6, 10, 14 ---
+        let pair_2_14 = dct8_row_build_pair(_token, col_xmm[2], col_xmm[14]);
+        let pair_10_6 = dct8_row_build_pair(_token, col_xmm[10], col_xmm[6]);
+
+        // t4a = (col2 * 799 - col14 * 4017 + 2048) >> 12
+        let t4a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_2_14, dct8_row_coef_pack(_token, 799, -4017)),
+            pd_2048,
+        ));
+        // t7a = (col2 * 4017 + col14 * 799 + 2048) >> 12
+        let t7a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_2_14, dct8_row_coef_pack(_token, 4017, 799)),
+            pd_2048,
+        ));
+        // t5a = (col10 * 3406 - col6 * 2276 + 2048) >> 12
+        let t5a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_10_6, dct8_row_coef_pack(_token, 3406, -2276)),
+            pd_2048,
+        ));
+        // t6a = (col10 * 2276 + col6 * 3406 + 2048) >> 12
+        let t6a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_10_6, dct8_row_coef_pack(_token, 2276, 3406)),
+            pd_2048,
+        ));
+
+        // DCT-8 odd stage 1 butterfly
+        let t4 = clip(_mm256_add_epi32(t4a, t5a));
+        let t5a_n = clip(_mm256_sub_epi32(t4a, t5a));
+        let t7 = clip(_mm256_add_epi32(t7a, t6a));
+        let t6a_n = clip(_mm256_sub_epi32(t7a, t6a));
+
+        // DCT-8 odd stage 2 — sqrt(2) cross-multiply
+        let d_65 = _mm256_sub_epi32(t6a_n, t5a_n);
+        let t5 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(d_65, c_181),
+            pd_128,
+        ));
+        let s_65 = _mm256_add_epi32(t6a_n, t5a_n);
+        let t6 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(s_65, c_181),
+            pd_128,
+        ));
+
+        // DCT-8 final butterfly
+        let even = [
+            clip(_mm256_add_epi32(dct4_0, t7)),
+            clip(_mm256_add_epi32(dct4_1, t6)),
+            clip(_mm256_add_epi32(dct4_2, t5)),
+            clip(_mm256_add_epi32(dct4_3, t4)),
+            clip(_mm256_sub_epi32(dct4_3, t4)),
+            clip(_mm256_sub_epi32(dct4_2, t5)),
+            clip(_mm256_sub_epi32(dct4_1, t6)),
+            clip(_mm256_sub_epi32(dct4_0, t7)),
+        ];
+
+        // ====== ODD HALF: 8 butterflies on odd columns (1,3,5,7,9,11,13,15) ======
+
+        // Stage 1: multiplicative butterflies via pmaddwd (full coefficients)
+        let pair_1_15 = dct8_row_build_pair(_token, col_xmm[1], col_xmm[15]);
+        let pair_9_7 = dct8_row_build_pair(_token, col_xmm[9], col_xmm[7]);
+        let pair_5_11 = dct8_row_build_pair(_token, col_xmm[5], col_xmm[11]);
+        let pair_13_3 = dct8_row_build_pair(_token, col_xmm[13], col_xmm[3]);
+
+        // t8a  = (in1 * 401 - in15 * 4076 + 2048) >> 12
+        let o_t8a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_1_15, dct8_row_coef_pack(_token, 401, -4076)),
+            pd_2048,
+        ));
+        // t15a = (in1 * 4076 + in15 * 401 + 2048) >> 12
+        let o_t15a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_1_15, dct8_row_coef_pack(_token, 4076, 401)),
+            pd_2048,
+        ));
+        // t9a  = (in9 * 3166 - in7 * 2598 + 2048) >> 12  (doubled from >>11 form)
+        let o_t9a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_9_7, dct8_row_coef_pack(_token, 3166, -2598)),
+            pd_2048,
+        ));
+        // t14a = (in9 * 2598 + in7 * 3166 + 2048) >> 12  (doubled from >>11 form)
+        let o_t14a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_9_7, dct8_row_coef_pack(_token, 2598, 3166)),
+            pd_2048,
+        ));
+        // t10a = (in5 * 1931 - in11 * 3612 + 2048) >> 12
+        let o_t10a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_5_11, dct8_row_coef_pack(_token, 1931, -3612)),
+            pd_2048,
+        ));
+        // t13a = (in5 * 3612 + in11 * 1931 + 2048) >> 12
+        let o_t13a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_5_11, dct8_row_coef_pack(_token, 3612, 1931)),
+            pd_2048,
+        ));
+        // t11a = (in13 * 3920 - in3 * 1189 + 2048) >> 12
+        let o_t11a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_13_3, dct8_row_coef_pack(_token, 3920, -1189)),
+            pd_2048,
+        ));
+        // t12a = (in13 * 1189 + in3 * 3920 + 2048) >> 12
+        let o_t12a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_madd_epi16(pair_13_3, dct8_row_coef_pack(_token, 1189, 3920)),
+            pd_2048,
+        ));
+
+        // Additive butterfly 1
+        let o_t8 = clip(_mm256_add_epi32(o_t8a, o_t9a));
+        let mut o_t9 = clip(_mm256_sub_epi32(o_t8a, o_t9a));
+        let mut o_t10 = clip(_mm256_sub_epi32(o_t11a, o_t10a));
+        let o_t11 = clip(_mm256_add_epi32(o_t11a, o_t10a));
+        let o_t12 = clip(_mm256_add_epi32(o_t12a, o_t13a));
+        let mut o_t13 = clip(_mm256_sub_epi32(o_t12a, o_t13a));
+        let mut o_t14 = clip(_mm256_sub_epi32(o_t15a, o_t14a));
+        let o_t15 = clip(_mm256_add_epi32(o_t15a, o_t14a));
+
+        // Stage 2: multiplicative butterflies (i32 mullo, full-coefficient forms)
+        let c_1567 = _mm256_set1_epi32(1567);
+        let c_3784 = _mm256_set1_epi32(3784);
+
+        // t9a  = (t14 * 1567 - t9 * 3784 + 2048) >> 12
+        let o_t9a_new = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(o_t14, c_1567),
+                _mm256_mullo_epi32(o_t9, c_3784),
+            ),
+            pd_2048,
+        ));
+        // t14a = (t14 * 3784 + t9 * 1567 + 2048) >> 12
+        let o_t14a_new = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_add_epi32(
+                _mm256_mullo_epi32(o_t14, c_3784),
+                _mm256_mullo_epi32(o_t9, c_1567),
+            ),
+            pd_2048,
+        ));
+        // t10a = (-t13 * 3784 - t10 * 1567 + 2048) >> 12
+        let o_t10a_new = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_setzero_si256(),
+                _mm256_add_epi32(
+                    _mm256_mullo_epi32(o_t13, c_3784),
+                    _mm256_mullo_epi32(o_t10, c_1567),
+                ),
+            ),
+            pd_2048,
+        ));
+        // t13a = (t13 * 1567 - t10 * 3784 + 2048) >> 12
+        let o_t13a_new = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_sub_epi32(
+                _mm256_mullo_epi32(o_t13, c_1567),
+                _mm256_mullo_epi32(o_t10, c_3784),
+            ),
+            pd_2048,
+        ));
+
+        // Additive butterfly 2
+        let o_t8a_f = clip(_mm256_add_epi32(o_t8, o_t11));
+        o_t9 = clip(_mm256_add_epi32(o_t9a_new, o_t10a_new));
+        o_t10 = clip(_mm256_sub_epi32(o_t9a_new, o_t10a_new));
+        let o_t11a_f = clip(_mm256_sub_epi32(o_t8, o_t11));
+        let o_t12a_f = clip(_mm256_sub_epi32(o_t15, o_t12));
+        o_t13 = clip(_mm256_sub_epi32(o_t14a_new, o_t13a_new));
+        o_t14 = clip(_mm256_add_epi32(o_t14a_new, o_t13a_new));
+        let o_t15a_f = clip(_mm256_add_epi32(o_t15, o_t12));
+
+        // Stage 3: sqrt(2) cross-multiply (181/256)
+        // t10a = ((t13 - t10) * 181 + 128) >> 8
+        let d2 = _mm256_sub_epi32(o_t13, o_t10);
+        let o_t10a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(d2, c_181),
+            pd_128,
+        ));
+        // t13a = ((t13 + t10) * 181 + 128) >> 8
+        let s2 = _mm256_add_epi32(o_t13, o_t10);
+        let o_t13a_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(s2, c_181),
+            pd_128,
+        ));
+        // t11 = ((t12a - t11a) * 181 + 128) >> 8
+        let d3 = _mm256_sub_epi32(o_t12a_f, o_t11a_f);
+        let o_t11_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(d3, c_181),
+            pd_128,
+        ));
+        // t12 = ((t12a + t11a) * 181 + 128) >> 8
+        let s3 = _mm256_add_epi32(o_t12a_f, o_t11a_f);
+        let o_t12_f = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+            _mm256_mullo_epi32(s3, c_181),
+            pd_128,
+        ));
+
+        // ====== FINAL COMBINE: out[k] = clip(even[k] + odd[15-k reversed mapping]) ======
+        // Mapping from scalar:
+        //   out[0]  = clip(even[0] + t15a_f)   out[15] = clip(even[0] - t15a_f)
+        //   out[1]  = clip(even[1] + t14)       out[14] = clip(even[1] - t14)
+        //   out[2]  = clip(even[2] + t13a_f)   out[13] = clip(even[2] - t13a_f)
+        //   out[3]  = clip(even[3] + t12_f)    out[12] = clip(even[3] - t12_f)
+        //   out[4]  = clip(even[4] + t11_f)    out[11] = clip(even[4] - t11_f)
+        //   out[5]  = clip(even[5] + t10a_f)   out[10] = clip(even[5] - t10a_f)
+        //   out[6]  = clip(even[6] + t9)       out[9]  = clip(even[6] - t9)
+        //   out[7]  = clip(even[7] + t8a_f)    out[8]  = clip(even[7] - t8a_f)
+        let odd = [
+            o_t15a_f, o_t14, o_t13a_f, o_t12_f,
+            o_t11_f, o_t10a_f, o_t9, o_t8a_f,
+        ];
+
+        let mut cols = [_mm256_setzero_si256(); 16];
+        for k in 0..8 {
+            cols[k] = clip(_mm256_add_epi32(even[k], odd[k]));
+            cols[15 - k] = clip(_mm256_sub_epi32(even[k], odd[k]));
+        }
+
+        // Transpose 16x8 → 8x16 in 2 chunks of 8 columns, store row-major (stride 16).
+        for chunk in 0..2u32 {
+            let b = (chunk * 8) as usize;
+            let chunk_cols: [__m256i; 8] = [
+                cols[b], cols[b + 1], cols[b + 2], cols[b + 3],
+                cols[b + 4], cols[b + 5], cols[b + 6], cols[b + 7],
+            ];
+            let rows = transpose_8x8_i32!(chunk_cols);
+            for r in 0..8 {
+                let dst_off = (y_base + r) * 16 + b;
+                let arr: &mut [i32; 8] =
+                    (&mut out[dst_off..dst_off + 8]).try_into().unwrap();
+                storeu_256!(arr, [i32; 8], rows[r]);
+            }
+        }
     }
     out
 }
@@ -9763,6 +10077,64 @@ mod tests {
         assert_eq!(
             total_mismatches, 0,
             "dct8_row_pass_i16_simd diverged from scalar reference"
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // i16-packed pmaddwd DCT-16 row pass — bit-exact vs scalar
+    // ----------------------------------------------------------------------
+
+    /// Bit-exact check: `dct16_row_pass_i16_simd` matches
+    /// `run_scalar_dct16_per_row` across a range of seeded inputs.
+    #[test]
+    fn test_dct16_row_pass_i16_simd_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+        let row_min = i16::MIN as i32;
+        let row_max = i16::MAX as i32;
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xaabbccdd,
+            0x11223344,
+            0x55667788,
+        ];
+        let mut total_mismatches = 0u32;
+        for &seed in seeds {
+            let input: [i16; 256] = seeded_i16_block(seed);
+            let scalar_out = run_scalar_dct16_per_row(&input, row_min, row_max);
+            let simd_out = dct16_row_pass_i16_simd(token, input);
+            if simd_out != scalar_out {
+                let mut mism = 0u32;
+                for i in 0..256 {
+                    if simd_out[i] != scalar_out[i] {
+                        if mism < 16 {
+                            eprintln!(
+                                "seed={:#x} idx={} row={} col={} scalar={} simd={} diff={}",
+                                seed,
+                                i,
+                                i / 16,
+                                i % 16,
+                                scalar_out[i],
+                                simd_out[i],
+                                simd_out[i].wrapping_sub(scalar_out[i])
+                            );
+                        }
+                        mism += 1;
+                    }
+                }
+                eprintln!("seed={seed:#x}: {mism} mismatches");
+                total_mismatches += mism;
+            }
+        }
+        assert_eq!(
+            total_mismatches, 0,
+            "dct16_row_pass_i16_simd diverged from scalar reference"
         );
     }
 }
