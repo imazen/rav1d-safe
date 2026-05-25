@@ -9238,25 +9238,27 @@ mod tests {
         // (positive, negative) — the four sign permutations exercised by
         // ITX_MULSUB_2W call sites.
         let coef_pairs: &[(i16, i16)] = &[
-            (799, 4017),    // dct8 t4a/t7a
-            (3406, 2276),   // dct8 t5a/t6a
-            (1567, 3784),   // dct8 t2/t3
-            (2896, 2896),   // dct8 t0/t1
-            (-2896, 2896),  // dct8 t6/t5
-            (401, 4076),    // dct16 t8a/t15a
-            (3166, 2598),   // dct16 t9a/t14a
-            (1931, 3612),   // dct16 t10a/t13a
-            (3920, 1189),   // dct16 t11a/t12a
-            (-3784, 1567),  // dct16 t10a (oddhalf)
-            (i16::MIN, 1),  // sign extreme
-            (1, i16::MAX),  // sign extreme
+            (799, 4017),   // dct8 t4a/t7a
+            (3406, 2276),  // dct8 t5a/t6a
+            (1567, 3784),  // dct8 t2/t3
+            (2896, 2896),  // dct8 t0/t1
+            (-2896, 2896), // dct8 t6/t5
+            (401, 4076),   // dct16 t8a/t15a
+            (3166, 2598),  // dct16 t9a/t14a
+            (1931, 3612),  // dct16 t10a/t13a
+            (3920, 1189),  // dct16 t11a/t12a
+            (-3784, 1567), // dct16 t10a (oddhalf)
+            (i16::MIN, 1), // sign extreme
+            (1, i16::MAX), // sign extreme
             (i16::MAX, i16::MIN),
         ];
 
         // Seed-based LCG (no external deps). Lcg64Xsh32-style.
         let mut state: u64 = 0xdeadbeef_cafe_babe;
         let mut next_i16 = || -> i16 {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((state >> 32) as i32 as i16)
         };
 
@@ -9280,10 +9282,8 @@ mod tests {
                 let simd_out = itx_mul2x_pack_probe(token, a, b, c1, c2);
                 for i in 0..16 {
                     // Scalar C arithmetic: `(a*c1 + b*c2 + 2048) >> 12`.
-                    let scalar = ((a[i] as i32) * (c1 as i32)
-                        + (b[i] as i32) * (c2 as i32)
-                        + 2048)
-                        >> 12;
+                    let scalar =
+                        ((a[i] as i32) * (c1 as i32) + (b[i] as i32) * (c2 as i32) + 2048) >> 12;
                     if scalar != simd_out[i] {
                         if mismatches < 8 {
                             eprintln!(
@@ -9314,17 +9314,13 @@ mod tests {
         // Load 8 columns into 8 __m256i (each column is 8 i32 lanes).
         let mut cols = [_mm256_setzero_si256(); 8];
         for x in 0..8 {
-            let arr: &[i32; 8] = (&input_col_major[x * 8..x * 8 + 8])
-                .try_into()
-                .unwrap();
+            let arr: &[i32; 8] = (&input_col_major[x * 8..x * 8 + 8]).try_into().unwrap();
             cols[x] = loadu_256!(arr, [i32; 8]);
         }
         let rows = transpose_8x8_i32!(cols);
         let mut out = [0i32; 64];
         for y in 0..8 {
-            let arr: &mut [i32; 8] = (&mut out[y * 8..y * 8 + 8])
-                .try_into()
-                .unwrap();
+            let arr: &mut [i32; 8] = (&mut out[y * 8..y * 8 + 8]).try_into().unwrap();
             storeu_256!(arr, [i32; 8], rows[y]);
         }
         out
@@ -9362,7 +9358,9 @@ mod tests {
         // Also try a randomized input.
         let mut state: u64 = 0xface_feed_dead_beef;
         let mut rand = || -> i32 {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             state as i32
         };
         let mut col_major2 = [0i32; 64];
