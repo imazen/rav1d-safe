@@ -934,6 +934,372 @@ fn loop_filter_4_8bpc_wd8_simd_v_x8(
 }
 
 // ============================================================================
+// SIMD wd=16 V-FILTER x8 widen — processes 8 adjacent edges with same level
+// ============================================================================
+
+/// SIMD wd=16 loop filter for 8bpc V-FILTER direction, **8-column variant**.
+/// Doubles wd16_simd_v's lane count from XMM (4 i32) to YMM (8 i32). Used by
+/// the outer dispatcher when two adjacent wd=16 edges share the same level.
+///
+/// Same three-way branchless select between 14-tap wide, 8-tap fallback,
+/// and narrow filter as wd16_simd_v, just widened to YMM lanes throughout.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn loop_filter_4_8bpc_wd16_simd_v_x8(
+    _token: Desktop64,
+    buf: &mut [u8],
+    base: usize,
+    e: i32,
+    i: i32,
+    h: i32,
+    strideb: isize,
+) {
+    let load8 = |off: isize| -> __m256i {
+        let start = signed_idx(base, strideb * off);
+        let lo = i64::from_ne_bytes([
+            buf[start],
+            buf[start + 1],
+            buf[start + 2],
+            buf[start + 3],
+            buf[start + 4],
+            buf[start + 5],
+            buf[start + 6],
+            buf[start + 7],
+        ]);
+        let v8u8 = _mm_set_epi64x(0, lo);
+        _mm256_cvtepu8_epi32(v8u8)
+    };
+
+    // Load all 14 pixels p6..q6
+    let p6_v = load8(-7);
+    let p5_v = load8(-6);
+    let p4_v = load8(-5);
+    let p3_v = load8(-4);
+    let p2_v = load8(-3);
+    let p1_v = load8(-2);
+    let p0_v = load8(-1);
+    let q0_v = load8(0);
+    let q1_v = load8(1);
+    let q2_v = load8(2);
+    let q3_v = load8(3);
+    let q4_v = load8(4);
+    let q5_v = load8(5);
+    let q6_v = load8(6);
+
+    let i_v = _mm256_set1_epi32(i);
+    let e_v = _mm256_set1_epi32(e);
+    let h_v = _mm256_set1_epi32(h);
+    let f_v = _mm256_set1_epi32(1);
+
+    let abs = |a: __m256i, b: __m256i| _mm256_abs_epi32(_mm256_sub_epi32(a, b));
+
+    let abs_p1p0 = abs(p1_v, p0_v);
+    let abs_q1q0 = abs(q1_v, q0_v);
+    let abs_p0q0 = abs(p0_v, q0_v);
+    let abs_p1q1 = abs(p1_v, q1_v);
+    let abs_p2p1 = abs(p2_v, p1_v);
+    let abs_q2q1 = abs(q2_v, q1_v);
+    let abs_p3p2 = abs(p3_v, p2_v);
+    let abs_q3q2 = abs(q3_v, q2_v);
+
+    let not_gt = |a: __m256i, b: __m256i| -> __m256i {
+        _mm256_andnot_si256(_mm256_cmpgt_epi32(a, b), _mm256_set1_epi32(-1))
+    };
+
+    let m_p1p0 = not_gt(abs_p1p0, i_v);
+    let m_q1q0 = not_gt(abs_q1q0, i_v);
+    let val_ee = _mm256_add_epi32(
+        _mm256_slli_epi32::<1>(abs_p0q0),
+        _mm256_srli_epi32::<1>(abs_p1q1),
+    );
+    let m_val = not_gt(val_ee, e_v);
+    let m_p2p1 = not_gt(abs_p2p1, i_v);
+    let m_q2q1 = not_gt(abs_q2q1, i_v);
+    let m_p3p2 = not_gt(abs_p3p2, i_v);
+    let m_q3q2 = not_gt(abs_q3q2, i_v);
+    let fm_mask = _mm256_and_si256(
+        _mm256_and_si256(_mm256_and_si256(m_p1p0, m_q1q0), m_val),
+        _mm256_and_si256(
+            _mm256_and_si256(m_p2p1, m_q2q1),
+            _mm256_and_si256(m_p3p2, m_q3q2),
+        ),
+    );
+
+    let abs_p6p0 = abs(p6_v, p0_v);
+    let abs_p5p0 = abs(p5_v, p0_v);
+    let abs_p4p0 = abs(p4_v, p0_v);
+    let abs_q4q0 = abs(q4_v, q0_v);
+    let abs_q5q0 = abs(q5_v, q0_v);
+    let abs_q6q0 = abs(q6_v, q0_v);
+    let flat8out_mask = _mm256_and_si256(
+        _mm256_and_si256(
+            _mm256_and_si256(not_gt(abs_p6p0, f_v), not_gt(abs_p5p0, f_v)),
+            not_gt(abs_p4p0, f_v),
+        ),
+        _mm256_and_si256(
+            _mm256_and_si256(not_gt(abs_q4q0, f_v), not_gt(abs_q5q0, f_v)),
+            not_gt(abs_q6q0, f_v),
+        ),
+    );
+
+    let abs_p2p0 = abs(p2_v, p0_v);
+    let abs_q2q0 = abs(q2_v, q0_v);
+    let abs_p3p0 = abs(p3_v, p0_v);
+    let abs_q3q0 = abs(q3_v, q0_v);
+    let flat8in_mask = _mm256_and_si256(
+        _mm256_and_si256(not_gt(abs_p2p0, f_v), not_gt(abs_p1p0, f_v)),
+        _mm256_and_si256(
+            _mm256_and_si256(not_gt(abs_q1q0, f_v), not_gt(abs_q2q0, f_v)),
+            _mm256_and_si256(not_gt(abs_p3p0, f_v), not_gt(abs_q3q0, f_v)),
+        ),
+    );
+
+    let dbl = |v: __m256i| _mm256_slli_epi32::<1>(v);
+    let add = |a: __m256i, b: __m256i| _mm256_add_epi32(a, b);
+    let add3 = |a: __m256i, b: __m256i, c: __m256i| add(add(a, b), c);
+    let add4 = |a: __m256i, b: __m256i, c: __m256i, d: __m256i| add(add(a, b), add(c, d));
+    let c4 = _mm256_set1_epi32(4);
+    let c8 = _mm256_set1_epi32(8);
+
+    // 14-tap outputs (positions -6..5)
+    let p6_5 = _mm256_add_epi32(
+        _mm256_add_epi32(_mm256_add_epi32(p6_v, p6_v), _mm256_add_epi32(p6_v, p6_v)),
+        p6_v,
+    );
+    let q6_5 = _mm256_add_epi32(
+        _mm256_add_epi32(_mm256_add_epi32(q6_v, q6_v), _mm256_add_epi32(q6_v, q6_v)),
+        q6_v,
+    );
+
+    let mut s = add(p6_5, _mm256_add_epi32(dbl(p6_v), dbl(p5_v)));
+    s = add(s, dbl(p4_v));
+    s = add(s, add4(p3_v, p2_v, p1_v, p0_v));
+    s = add(s, add(q0_v, c8));
+    let out_m6 = _mm256_srai_epi32::<4>(s);
+
+    let mut s = add(p6_5, _mm256_add_epi32(dbl(p5_v), dbl(p4_v)));
+    s = add(s, dbl(p3_v));
+    s = add(s, add4(p2_v, p1_v, p0_v, q0_v));
+    s = add(s, add(q1_v, c8));
+    let out_m5 = _mm256_srai_epi32::<4>(s);
+
+    let p6_4 = _mm256_add_epi32(dbl(p6_v), dbl(p6_v));
+    let mut s = add(p6_4, p5_v);
+    s = add(s, _mm256_add_epi32(dbl(p4_v), dbl(p3_v)));
+    s = add(s, dbl(p2_v));
+    s = add(s, add4(p1_v, p0_v, q0_v, q1_v));
+    s = add(s, add(q2_v, c8));
+    let out_m4 = _mm256_srai_epi32::<4>(s);
+
+    let p6_3 = add(dbl(p6_v), p6_v);
+    let mut s = add(p6_3, _mm256_add_epi32(p5_v, p4_v));
+    s = add(s, _mm256_add_epi32(dbl(p3_v), dbl(p2_v)));
+    s = add(s, dbl(p1_v));
+    s = add(s, add4(p0_v, q0_v, q1_v, q2_v));
+    s = add(s, add(q3_v, c8));
+    let out_m3 = _mm256_srai_epi32::<4>(s);
+
+    let mut s = add(dbl(p6_v), p5_v);
+    s = add(s, _mm256_add_epi32(p4_v, p3_v));
+    s = add(s, _mm256_add_epi32(dbl(p2_v), dbl(p1_v)));
+    s = add(s, dbl(p0_v));
+    s = add(s, add4(q0_v, q1_v, q2_v, q3_v));
+    s = add(s, add(q4_v, c8));
+    let out_m2 = _mm256_srai_epi32::<4>(s);
+
+    let mut s = add(p6_v, p5_v);
+    s = add(s, _mm256_add_epi32(p4_v, p3_v));
+    s = add(s, p2_v);
+    s = add(s, _mm256_add_epi32(dbl(p1_v), dbl(p0_v)));
+    s = add(s, dbl(q0_v));
+    s = add(s, add4(q1_v, q2_v, q3_v, q4_v));
+    s = add(s, add(q5_v, c8));
+    let out_m1 = _mm256_srai_epi32::<4>(s);
+
+    let mut s = add(p5_v, p4_v);
+    s = add(s, _mm256_add_epi32(p3_v, p2_v));
+    s = add(s, p1_v);
+    s = add(s, _mm256_add_epi32(dbl(p0_v), dbl(q0_v)));
+    s = add(s, dbl(q1_v));
+    s = add(s, add4(q2_v, q3_v, q4_v, q5_v));
+    s = add(s, add(q6_v, c8));
+    let out_0 = _mm256_srai_epi32::<4>(s);
+
+    let mut s = add(p4_v, p3_v);
+    s = add(s, _mm256_add_epi32(p2_v, p1_v));
+    s = add(s, p0_v);
+    s = add(s, _mm256_add_epi32(dbl(q0_v), dbl(q1_v)));
+    s = add(s, dbl(q2_v));
+    s = add(s, add4(q3_v, q4_v, q5_v, q6_v));
+    s = add(s, add(q6_v, c8));
+    let out_1 = _mm256_srai_epi32::<4>(s);
+
+    let mut s = add(p3_v, p2_v);
+    s = add(s, _mm256_add_epi32(p1_v, p0_v));
+    s = add(s, q0_v);
+    s = add(s, _mm256_add_epi32(dbl(q1_v), dbl(q2_v)));
+    s = add(s, dbl(q3_v));
+    let q6_3 = add(dbl(q6_v), q6_v);
+    s = add(s, add3(q4_v, q5_v, q6_3));
+    s = add(s, c8);
+    let out_2 = _mm256_srai_epi32::<4>(s);
+
+    let q6_4 = _mm256_add_epi32(dbl(q6_v), dbl(q6_v));
+    let mut s = add(p2_v, p1_v);
+    s = add(s, _mm256_add_epi32(p0_v, q0_v));
+    s = add(s, q1_v);
+    s = add(s, _mm256_add_epi32(dbl(q2_v), dbl(q3_v)));
+    s = add(s, dbl(q4_v));
+    s = add(s, add(q5_v, q6_4));
+    s = add(s, c8);
+    let out_3 = _mm256_srai_epi32::<4>(s);
+
+    let mut s = add(p1_v, p0_v);
+    s = add(s, _mm256_add_epi32(q0_v, q1_v));
+    s = add(s, q2_v);
+    s = add(s, _mm256_add_epi32(dbl(q3_v), dbl(q4_v)));
+    s = add(s, dbl(q5_v));
+    s = add(s, q6_5);
+    s = add(s, c8);
+    let out_4 = _mm256_srai_epi32::<4>(s);
+
+    let q6_7 = _mm256_add_epi32(q6_5, _mm256_add_epi32(q6_v, q6_v));
+    let mut s = add(p0_v, q0_v);
+    s = add(s, _mm256_add_epi32(q1_v, q2_v));
+    s = add(s, q3_v);
+    s = add(s, _mm256_add_epi32(dbl(q4_v), dbl(q5_v)));
+    s = add(s, q6_7);
+    s = add(s, c8);
+    let out_5 = _mm256_srai_epi32::<4>(s);
+
+    // 8-tap outputs
+    let triple = |v: __m256i| _mm256_add_epi32(dbl(v), v);
+    let out8_m3 = _mm256_srai_epi32::<3>(add(
+        add4(triple(p3_v), dbl(p2_v), p1_v, p0_v),
+        add(q0_v, c4),
+    ));
+    let out8_m2 = _mm256_srai_epi32::<3>(add(
+        add4(dbl(p3_v), p2_v, dbl(p1_v), p0_v),
+        add3(q0_v, q1_v, c4),
+    ));
+    let out8_m1 = _mm256_srai_epi32::<3>(add(
+        add4(p3_v, p2_v, p1_v, dbl(p0_v)),
+        add4(q0_v, q1_v, q2_v, c4),
+    ));
+    let out8_0 = _mm256_srai_epi32::<3>(add(
+        add4(p2_v, p1_v, p0_v, dbl(q0_v)),
+        add4(q1_v, q2_v, q3_v, c4),
+    ));
+    let out8_1 = _mm256_srai_epi32::<3>(add(
+        add4(p1_v, p0_v, q0_v, dbl(q1_v)),
+        add4(q2_v, q3_v, q3_v, c4),
+    ));
+    let out8_2 = _mm256_srai_epi32::<3>(add(
+        add4(p0_v, q0_v, q1_v, dbl(q2_v)),
+        add4(q3_v, q3_v, q3_v, c4),
+    ));
+
+    // Narrow filter (4-tap)
+    let neg128 = _mm256_set1_epi32(-128);
+    let pos127 = _mm256_set1_epi32(127);
+    let iclip = |v: __m256i| _mm256_min_epi32(_mm256_max_epi32(v, neg128), pos127);
+    let diff_q0p0 = _mm256_sub_epi32(q0_v, p0_v);
+    let three_d = _mm256_add_epi32(_mm256_slli_epi32::<1>(diff_q0p0), diff_q0p0);
+    let diff_p1q1 = _mm256_sub_epi32(p1_v, q1_v);
+    let hev_mask = _mm256_or_si256(
+        _mm256_cmpgt_epi32(abs_p1p0, h_v),
+        _mm256_cmpgt_epi32(abs_q1q0, h_v),
+    );
+    let f_hev = iclip(_mm256_add_epi32(three_d, iclip(diff_p1q1)));
+    let f_no = iclip(three_d);
+    let c4i = c4;
+    let c3i = _mm256_set1_epi32(3);
+    let one = _mm256_set1_epi32(1);
+    let f1_hev = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_hev, c4i), pos127));
+    let f2_hev = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_hev, c3i), pos127));
+    let f1_no = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_no, c4i), pos127));
+    let f2_no = _mm256_srai_epi32::<3>(_mm256_min_epi32(_mm256_add_epi32(f_no, c3i), pos127));
+    let f_extra = _mm256_srai_epi32::<1>(_mm256_add_epi32(f1_no, one));
+    let p0_hev = _mm256_add_epi32(p0_v, f2_hev);
+    let q0_hev = _mm256_sub_epi32(q0_v, f1_hev);
+    let p0_no = _mm256_add_epi32(p0_v, f2_no);
+    let q0_no = _mm256_sub_epi32(q0_v, f1_no);
+    let p1_no = _mm256_add_epi32(p1_v, f_extra);
+    let q1_no = _mm256_sub_epi32(q1_v, f_extra);
+
+    let blendv = |a: __m256i, b: __m256i, mask: __m256i| -> __m256i {
+        _mm256_or_si256(_mm256_andnot_si256(mask, a), _mm256_and_si256(mask, b))
+    };
+
+    let narrow_p1 = blendv(p1_no, p1_v, hev_mask);
+    let narrow_p0 = blendv(p0_no, p0_hev, hev_mask);
+    let narrow_q0 = blendv(q0_no, q0_hev, hev_mask);
+    let narrow_q1 = blendv(q1_no, q1_v, hev_mask);
+
+    let wide_mask = _mm256_and_si256(flat8out_mask, flat8in_mask);
+
+    let mid_m3 = blendv(p2_v, out8_m3, flat8in_mask);
+    let mid_m2 = blendv(narrow_p1, out8_m2, flat8in_mask);
+    let mid_m1 = blendv(narrow_p0, out8_m1, flat8in_mask);
+    let mid_0 = blendv(narrow_q0, out8_0, flat8in_mask);
+    let mid_1 = blendv(narrow_q1, out8_1, flat8in_mask);
+    let mid_2 = blendv(q2_v, out8_2, flat8in_mask);
+
+    let sel_m6 = blendv(p5_v, out_m6, wide_mask);
+    let sel_m5 = blendv(p4_v, out_m5, wide_mask);
+    let sel_m4 = blendv(p3_v, out_m4, wide_mask);
+    let sel_m3 = blendv(mid_m3, out_m3, wide_mask);
+    let sel_m2 = blendv(mid_m2, out_m2, wide_mask);
+    let sel_m1 = blendv(mid_m1, out_m1, wide_mask);
+    let sel_0 = blendv(mid_0, out_0, wide_mask);
+    let sel_1 = blendv(mid_1, out_1, wide_mask);
+    let sel_2 = blendv(mid_2, out_2, wide_mask);
+    let sel_3 = blendv(q3_v, out_3, wide_mask);
+    let sel_4 = blendv(q4_v, out_4, wide_mask);
+    let sel_5 = blendv(q5_v, out_5, wide_mask);
+
+    let final_m6 = blendv(p5_v, sel_m6, fm_mask);
+    let final_m5 = blendv(p4_v, sel_m5, fm_mask);
+    let final_m4 = blendv(p3_v, sel_m4, fm_mask);
+    let final_m3 = blendv(p2_v, sel_m3, fm_mask);
+    let final_m2 = blendv(p1_v, sel_m2, fm_mask);
+    let final_m1 = blendv(p0_v, sel_m1, fm_mask);
+    let final_0 = blendv(q0_v, sel_0, fm_mask);
+    let final_1 = blendv(q1_v, sel_1, fm_mask);
+    let final_2 = blendv(q2_v, sel_2, fm_mask);
+    let final_3 = blendv(q3_v, sel_3, fm_mask);
+    let final_4 = blendv(q4_v, sel_4, fm_mask);
+    let final_5 = blendv(q5_v, sel_5, fm_mask);
+
+    // Pack 8 i32 → 8 u8 per position
+    let pack8 = |v: __m256i| -> i64 {
+        let u16x = _mm256_packus_epi32(v, v);
+        let u8x = _mm256_packus_epi16(u16x, u16x);
+        let idx = _mm256_setr_epi32(0, 4, 0, 0, 0, 0, 0, 0);
+        let p = _mm256_permutevar8x32_epi32(u8x, idx);
+        let lo128 = _mm256_castsi256_si128(p);
+        _mm_cvtsi128_si64(lo128)
+    };
+    let store8 = |buf: &mut [u8], packed: i64, off: isize| {
+        let start = signed_idx(base, strideb * off);
+        let bytes = packed.to_ne_bytes();
+        buf[start..start + 8].copy_from_slice(&bytes);
+    };
+    store8(buf, pack8(final_m6), -6);
+    store8(buf, pack8(final_m5), -5);
+    store8(buf, pack8(final_m4), -4);
+    store8(buf, pack8(final_m3), -3);
+    store8(buf, pack8(final_m2), -2);
+    store8(buf, pack8(final_m1), -1);
+    store8(buf, pack8(final_0), 0);
+    store8(buf, pack8(final_1), 1);
+    store8(buf, pack8(final_2), 2);
+    store8(buf, pack8(final_3), 3);
+    store8(buf, pack8(final_4), 4);
+    store8(buf, pack8(final_5), 5);
+}
+
+// ============================================================================
 // SIMD inner loop filter for the wd=16 V-FILTER case (wd=16, strideb>1)
 // ============================================================================
 
@@ -3205,6 +3571,15 @@ fn lpf_v_sb_y_8bpc_inner(
                                 }
                                 8 => {
                                     loop_filter_4_8bpc_wd8_simd_v_x8(
+                                        _token, buf, dst_offset, e, i, h, strideb,
+                                    );
+                                    xy = next_xy << 1;
+                                    dst_offset = signed_idx(dst_offset, 8 * stridea);
+                                    lvl_offset += 2 * b4_stridea;
+                                    continue;
+                                }
+                                16 => {
+                                    loop_filter_4_8bpc_wd16_simd_v_x8(
                                         _token, buf, dst_offset, e, i, h, strideb,
                                     );
                                     xy = next_xy << 1;
