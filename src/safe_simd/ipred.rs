@@ -5768,3 +5768,485 @@ pub fn cfl_pred_dispatch<BD: BitDepth>(
     );
     true
 }
+
+// ============================================================================
+// CFL AC (chroma-from-luma AC pre-pass) — SIMD
+// ============================================================================
+//
+// For each chroma block, sum the corresponding luma subblocks (2x2 for 4:2:0,
+// 1x2 for 4:2:2, 1x1 for 4:4:4), pad right/bottom edges, compute the mean,
+// and subtract the mean from each entry. Result feeds `cfl_pred_*`.
+//
+// Layout: `ac[width * height]` row-major. After computation, sum(ac) == 0.
+//
+// Max ac magnitude before mean-subtract: 2040 (= 4*255 << 1 for 4:2:0,
+// = 2*255 << 2 for 4:2:2, = 255 << 3 for 4:4:4). Comfortably fits i16.
+
+/// CFL AC 4:2:0 8bpc inner kernel — AVX2.
+///
+/// `src_compact`: contiguous luma bytes, `2*active_h` rows of `2*active_w` bytes each.
+/// `src_stride`: byte stride between rows in `src_compact` (= `2*active_w`).
+/// `ac`: output i16 buffer of length `width * height`.
+/// `width`, `height`: chroma block dimensions (final ac layout).
+/// `active_w`, `active_h`: in-bounds chroma extent (right/bottom edges may pad).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn cfl_ac_420_8bpc_inner(
+    _token: Desktop64,
+    ac: &mut [i16],
+    width: usize,
+    height: usize,
+    active_w: usize,
+    active_h: usize,
+    src_compact: &[u8],
+    src_stride: usize,
+) {
+    let ones = _mm256_set1_epi8(1);
+
+    // Step 1: Pair-sum 2 rows of luma into 1 row of ac.
+    // For each chroma row y in 0..active_h:
+    //   For x in 0..active_w (stride 16 in SIMD chunks):
+    //     load 32 u8 from row1, 32 u8 from row2
+    //     maddubs(row1, ones) -> 16 i16 pair-sums (a[0]+a[1], a[2]+a[3], ...)
+    //     maddubs(row2, ones) -> 16 i16 pair-sums
+    //     sum -> 16 i16 (range 0..1020)
+    //     shift left by 1 -> 16 i16 (range 0..2040)
+    //     store to ac[y*width + x..]
+    for y in 0..active_h {
+        let aci = y * width;
+        let row1_off = (2 * y) * src_stride;
+        let row2_off = (2 * y + 1) * src_stride;
+
+        let mut x = 0;
+        // 16-chroma-pixel SIMD chunk (32 luma bytes per row).
+        while x + 16 <= active_w {
+            let lx = 2 * x;
+            let r1 = loadu_256!(
+                <&[u8; 32]>::try_from(&src_compact[row1_off + lx..row1_off + lx + 32]).unwrap()
+            );
+            let r2 = loadu_256!(
+                <&[u8; 32]>::try_from(&src_compact[row2_off + lx..row2_off + lx + 32]).unwrap()
+            );
+            let s1 = _mm256_maddubs_epi16(r1, ones); // 16 i16, lane-local
+            let s2 = _mm256_maddubs_epi16(r2, ones);
+            let sum = _mm256_add_epi16(s1, s2);
+            let shifted = _mm256_slli_epi16::<1>(sum);
+            // Lane order: maddubs is lane-local so this stores 16 i16 in
+            // chroma order (lane 0 covers chroma x..x+8, lane 1 covers x+8..x+16).
+            storeu_256!(
+                <&mut [i16; 16]>::try_from(&mut ac[aci + x..aci + x + 16]).unwrap(),
+                shifted
+            );
+            x += 16;
+        }
+        // 8-chroma-pixel SIMD chunk (16 luma bytes per row).
+        while x + 8 <= active_w {
+            let lx = 2 * x;
+            let r1 = loadu_128!(
+                <&[u8; 16]>::try_from(&src_compact[row1_off + lx..row1_off + lx + 16]).unwrap()
+            );
+            let r2 = loadu_128!(
+                <&[u8; 16]>::try_from(&src_compact[row2_off + lx..row2_off + lx + 16]).unwrap()
+            );
+            let ones128 = _mm_set1_epi8(1);
+            let s1 = _mm_maddubs_epi16(r1, ones128);
+            let s2 = _mm_maddubs_epi16(r2, ones128);
+            let sum = _mm_add_epi16(s1, s2);
+            let shifted = _mm_slli_epi16::<1>(sum);
+            storeu_128!(
+                <&mut [i16; 8]>::try_from(&mut ac[aci + x..aci + x + 8]).unwrap(),
+                shifted
+            );
+            x += 8;
+        }
+        // Scalar tail for narrow widths (active_w == 4 with no leftover).
+        while x < active_w {
+            let lx = 2 * x;
+            let a = src_compact[row1_off + lx] as i32;
+            let b = src_compact[row1_off + lx + 1] as i32;
+            let c = src_compact[row2_off + lx] as i32;
+            let d = src_compact[row2_off + lx + 1] as i32;
+            ac[aci + x] = ((a + b + c + d) << 1) as i16;
+            x += 1;
+        }
+
+        // Right-edge padding: repeat last in-bounds chroma value.
+        if active_w < width {
+            let pad = ac[aci + active_w - 1];
+            for x in active_w..width {
+                ac[aci + x] = pad;
+            }
+        }
+    }
+
+    // Step 2: Bottom-edge padding (copy last in-bounds row down).
+    if active_h < height {
+        let src_row_start = (active_h - 1) * width;
+        // Use a manual copy loop to keep ac borrowed mutably without split_at.
+        for y in active_h..height {
+            let dst_off = y * width;
+            // Borrow tracker: ac is a single &mut slice; copy_within is safe.
+            ac.copy_within(src_row_start..src_row_start + width, dst_off);
+        }
+    }
+
+    // Step 3: Sum reduction -> mean.
+    let n = width * height;
+    let log2sz = (width.trailing_zeros() + height.trailing_zeros()) as i32;
+    let mut sum_i32 = 1i32 << log2sz >> 1; // round bias
+    {
+        // SIMD accumulator over the whole ac buffer.
+        let mut acc = _mm256_setzero_si256();
+        let mut i = 0;
+        while i + 16 <= n {
+            let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
+            // Widen i16 -> i32 in two halves, accumulate.
+            let lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v));
+            let hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256::<1>(v));
+            acc = _mm256_add_epi32(acc, lo);
+            acc = _mm256_add_epi32(acc, hi);
+            i += 16;
+        }
+        // Horizontal reduce acc (8 i32).
+        let acc_lo = _mm256_castsi256_si128(acc);
+        let acc_hi = _mm256_extracti128_si256::<1>(acc);
+        let s128 = _mm_add_epi32(acc_lo, acc_hi);
+        let s64 = _mm_add_epi32(s128, _mm_shuffle_epi32::<0b_01_00_11_10>(s128));
+        let s32 = _mm_add_epi32(s64, _mm_shuffle_epi32::<0b_00_00_00_01>(s64));
+        sum_i32 = sum_i32.wrapping_add(_mm_cvtsi128_si32(s32));
+        // Scalar tail (should be empty for width*height multiples of 16).
+        while i < n {
+            sum_i32 = sum_i32.wrapping_add(ac[i] as i32);
+            i += 1;
+        }
+    }
+    let mean = (sum_i32 >> log2sz) as i16;
+
+    // Step 4: Subtract mean from every entry.
+    {
+        let mean_v = _mm256_set1_epi16(mean);
+        let mut i = 0;
+        while i + 16 <= n {
+            let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
+            let r = _mm256_sub_epi16(v, mean_v);
+            storeu_256!(<&mut [i16; 16]>::try_from(&mut ac[i..i + 16]).unwrap(), r);
+            i += 16;
+        }
+        // Scalar tail.
+        while i < n {
+            ac[i] = ac[i].wrapping_sub(mean);
+            i += 1;
+        }
+    }
+}
+
+/// CFL AC 4:2:2 8bpc inner kernel — AVX2.
+///
+/// For 4:2:2: sum 1x2 luma pixels per chroma sample, shift left by 2.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn cfl_ac_422_8bpc_inner(
+    _token: Desktop64,
+    ac: &mut [i16],
+    width: usize,
+    height: usize,
+    active_w: usize,
+    active_h: usize,
+    src_compact: &[u8],
+    src_stride: usize,
+) {
+    let ones = _mm256_set1_epi8(1);
+
+    for y in 0..active_h {
+        let aci = y * width;
+        let row_off = y * src_stride;
+
+        let mut x = 0;
+        while x + 16 <= active_w {
+            let lx = 2 * x;
+            let r1 = loadu_256!(
+                <&[u8; 32]>::try_from(&src_compact[row_off + lx..row_off + lx + 32]).unwrap()
+            );
+            let s1 = _mm256_maddubs_epi16(r1, ones);
+            // 1x2 horizontal sum, then << 2.
+            let shifted = _mm256_slli_epi16::<2>(s1);
+            storeu_256!(
+                <&mut [i16; 16]>::try_from(&mut ac[aci + x..aci + x + 16]).unwrap(),
+                shifted
+            );
+            x += 16;
+        }
+        while x + 8 <= active_w {
+            let lx = 2 * x;
+            let r1 = loadu_128!(
+                <&[u8; 16]>::try_from(&src_compact[row_off + lx..row_off + lx + 16]).unwrap()
+            );
+            let ones128 = _mm_set1_epi8(1);
+            let s1 = _mm_maddubs_epi16(r1, ones128);
+            let shifted = _mm_slli_epi16::<2>(s1);
+            storeu_128!(
+                <&mut [i16; 8]>::try_from(&mut ac[aci + x..aci + x + 8]).unwrap(),
+                shifted
+            );
+            x += 8;
+        }
+        while x < active_w {
+            let lx = 2 * x;
+            let a = src_compact[row_off + lx] as i32;
+            let b = src_compact[row_off + lx + 1] as i32;
+            ac[aci + x] = ((a + b) << 2) as i16;
+            x += 1;
+        }
+
+        if active_w < width {
+            let pad = ac[aci + active_w - 1];
+            for x in active_w..width {
+                ac[aci + x] = pad;
+            }
+        }
+    }
+
+    // Bottom padding + mean computation/subtract — identical to 4:2:0 path.
+    if active_h < height {
+        let src_row_start = (active_h - 1) * width;
+        for y in active_h..height {
+            let dst_off = y * width;
+            ac.copy_within(src_row_start..src_row_start + width, dst_off);
+        }
+    }
+
+    let n = width * height;
+    let log2sz = (width.trailing_zeros() + height.trailing_zeros()) as i32;
+    let mut sum_i32 = 1i32 << log2sz >> 1;
+    {
+        let mut acc = _mm256_setzero_si256();
+        let mut i = 0;
+        while i + 16 <= n {
+            let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
+            let lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v));
+            let hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256::<1>(v));
+            acc = _mm256_add_epi32(acc, lo);
+            acc = _mm256_add_epi32(acc, hi);
+            i += 16;
+        }
+        let acc_lo = _mm256_castsi256_si128(acc);
+        let acc_hi = _mm256_extracti128_si256::<1>(acc);
+        let s128 = _mm_add_epi32(acc_lo, acc_hi);
+        let s64 = _mm_add_epi32(s128, _mm_shuffle_epi32::<0b_01_00_11_10>(s128));
+        let s32 = _mm_add_epi32(s64, _mm_shuffle_epi32::<0b_00_00_00_01>(s64));
+        sum_i32 = sum_i32.wrapping_add(_mm_cvtsi128_si32(s32));
+        while i < n {
+            sum_i32 = sum_i32.wrapping_add(ac[i] as i32);
+            i += 1;
+        }
+    }
+    let mean = (sum_i32 >> log2sz) as i16;
+
+    {
+        let mean_v = _mm256_set1_epi16(mean);
+        let mut i = 0;
+        while i + 16 <= n {
+            let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
+            let r = _mm256_sub_epi16(v, mean_v);
+            storeu_256!(<&mut [i16; 16]>::try_from(&mut ac[i..i + 16]).unwrap(), r);
+            i += 16;
+        }
+        while i < n {
+            ac[i] = ac[i].wrapping_sub(mean);
+            i += 1;
+        }
+    }
+}
+
+/// CFL AC 4:4:4 8bpc inner kernel — AVX2.
+///
+/// For 4:4:4: identity per pixel, shift left by 3.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn cfl_ac_444_8bpc_inner(
+    _token: Desktop64,
+    ac: &mut [i16],
+    width: usize,
+    height: usize,
+    active_w: usize,
+    active_h: usize,
+    src_compact: &[u8],
+    src_stride: usize,
+) {
+    for y in 0..active_h {
+        let aci = y * width;
+        let row_off = y * src_stride;
+
+        let mut x = 0;
+        while x + 16 <= active_w {
+            let r1 = loadu_128!(
+                <&[u8; 16]>::try_from(&src_compact[row_off + x..row_off + x + 16]).unwrap()
+            );
+            // u8 -> i16 widen, then << 3.
+            let widened = _mm256_cvtepu8_epi16(r1);
+            let shifted = _mm256_slli_epi16::<3>(widened);
+            storeu_256!(
+                <&mut [i16; 16]>::try_from(&mut ac[aci + x..aci + x + 16]).unwrap(),
+                shifted
+            );
+            x += 16;
+        }
+        while x + 8 <= active_w {
+            // Load 8 u8, widen to 8 i16, shift.
+            let arr: &[u8; 8] = (&src_compact[row_off + x..row_off + x + 8])
+                .try_into()
+                .unwrap();
+            // Use a stack-padded 16-byte load.
+            let mut buf = [0u8; 16];
+            buf[..8].copy_from_slice(arr);
+            let r1 = loadu_128!(&buf);
+            let widened = _mm_cvtepu8_epi16(r1);
+            let shifted = _mm_slli_epi16::<3>(widened);
+            storeu_128!(
+                <&mut [i16; 8]>::try_from(&mut ac[aci + x..aci + x + 8]).unwrap(),
+                shifted
+            );
+            x += 8;
+        }
+        while x < active_w {
+            ac[aci + x] = (src_compact[row_off + x] as i16) << 3;
+            x += 1;
+        }
+
+        if active_w < width {
+            let pad = ac[aci + active_w - 1];
+            for x in active_w..width {
+                ac[aci + x] = pad;
+            }
+        }
+    }
+
+    if active_h < height {
+        let src_row_start = (active_h - 1) * width;
+        for y in active_h..height {
+            let dst_off = y * width;
+            ac.copy_within(src_row_start..src_row_start + width, dst_off);
+        }
+    }
+
+    let n = width * height;
+    let log2sz = (width.trailing_zeros() + height.trailing_zeros()) as i32;
+    let mut sum_i32 = 1i32 << log2sz >> 1;
+    {
+        let mut acc = _mm256_setzero_si256();
+        let mut i = 0;
+        while i + 16 <= n {
+            let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
+            let lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v));
+            let hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256::<1>(v));
+            acc = _mm256_add_epi32(acc, lo);
+            acc = _mm256_add_epi32(acc, hi);
+            i += 16;
+        }
+        let acc_lo = _mm256_castsi256_si128(acc);
+        let acc_hi = _mm256_extracti128_si256::<1>(acc);
+        let s128 = _mm_add_epi32(acc_lo, acc_hi);
+        let s64 = _mm_add_epi32(s128, _mm_shuffle_epi32::<0b_01_00_11_10>(s128));
+        let s32 = _mm_add_epi32(s64, _mm_shuffle_epi32::<0b_00_00_00_01>(s64));
+        sum_i32 = sum_i32.wrapping_add(_mm_cvtsi128_si32(s32));
+        while i < n {
+            sum_i32 = sum_i32.wrapping_add(ac[i] as i32);
+            i += 1;
+        }
+    }
+    let mean = (sum_i32 >> log2sz) as i16;
+
+    {
+        let mean_v = _mm256_set1_epi16(mean);
+        let mut i = 0;
+        while i + 16 <= n {
+            let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
+            let r = _mm256_sub_epi16(v, mean_v);
+            storeu_256!(<&mut [i16; 16]>::try_from(&mut ac[i..i + 16]).unwrap(), r);
+            i += 16;
+        }
+        while i < n {
+            ac[i] = ac[i].wrapping_sub(mean);
+            i += 1;
+        }
+    }
+}
+
+/// Safe dispatch for CFL AC. Returns true if SIMD was used.
+///
+/// 8bpc only for now; 16bpc returns false (caller falls back to scalar).
+#[cfg(target_arch = "x86_64")]
+pub fn cfl_ac_dispatch<BD: BitDepth>(
+    ac: &mut [i16],
+    y_src: PicOffset,
+    w_pad: c_int,
+    h_pad: c_int,
+    width: usize,
+    height: usize,
+    is_ss_hor: bool,
+    is_ss_ver: bool,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+
+    // 16bpc not yet supported.
+    if BD::BPC != BPC::BPC8 {
+        return false;
+    }
+
+    let Some(token) = crate::src::cpu::summon_avx2() else {
+        return false;
+    };
+
+    let w_pad = (w_pad as usize) * 4;
+    let h_pad = (h_pad as usize) * 4;
+    debug_assert!(w_pad < width);
+    debug_assert!(h_pad < height);
+    let active_w = width - w_pad;
+    let active_h = height - h_pad;
+    let ss_hor = is_ss_hor as usize;
+    let ss_ver = is_ss_ver as usize;
+    let src_w = active_w << ss_hor;
+    let src_h = active_h << ss_ver;
+
+    // Read source luma into a per-row compact buffer (MT-safe).
+    let (src_compact, src_stride) = y_src.compact_read_per_row::<BD>(src_w, src_h);
+
+    let ac_block = &mut ac[..width * height];
+
+    if is_ss_hor && is_ss_ver {
+        cfl_ac_420_8bpc_inner(
+            token,
+            ac_block,
+            width,
+            height,
+            active_w,
+            active_h,
+            &src_compact,
+            src_stride,
+        );
+    } else if is_ss_hor && !is_ss_ver {
+        cfl_ac_422_8bpc_inner(
+            token,
+            ac_block,
+            width,
+            height,
+            active_w,
+            active_h,
+            &src_compact,
+            src_stride,
+        );
+    } else {
+        // 4:4:4
+        cfl_ac_444_8bpc_inner(
+            token,
+            ac_block,
+            width,
+            height,
+            active_w,
+            active_h,
+            &src_compact,
+            src_stride,
+        );
+    }
+    true
+}

@@ -276,7 +276,7 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cfl_ac(
 ) -> ());
 
 /// Direct dispatch for CFL AC - bypasses function pointer table.
-/// No safe_simd implementations exist, so this dispatches to scalar fallback.
+/// Tries safe_simd AVX2 first (8bpc only); falls back to scalar.
 /// `layout`: pixel layout subsampling variant
 #[cfg(not(feature = "asm"))]
 fn cfl_ac_direct<BD: BitDepth>(
@@ -293,6 +293,19 @@ fn cfl_ac_direct<BD: BitDepth>(
         Rav1dPixelLayoutSubSampled::I422 => (true, false),
         Rav1dPixelLayoutSubSampled::I444 => (false, false),
     };
+    #[cfg(target_arch = "x86_64")]
+    if crate::src::safe_simd::ipred::cfl_ac_dispatch::<BD>(
+        ac,
+        y,
+        w_pad,
+        h_pad,
+        cw as usize,
+        ch as usize,
+        is_ss_hor,
+        is_ss_ver,
+    ) {
+        return;
+    }
     cfl_ac_rust::<BD>(
         ac,
         y,
