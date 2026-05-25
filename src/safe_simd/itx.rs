@@ -6356,6 +6356,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_avx2(
 /// for the future 8x16/8x32 mixed-row adst transform refactor.
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[inline(always)]
 #[allow(dead_code)]
 fn simd_row_adst8_8bpc_8rows(
     token: Desktop64,
@@ -6454,6 +6455,7 @@ fn simd_row_adst8_8bpc_8rows(
 /// writes row-major into `tmp` (stride 8).
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[inline(always)]
 fn simd_row_dct8_8bpc_8rows(
     token: Desktop64,
     coeff: &[i16],
@@ -6547,6 +6549,7 @@ fn simd_row_dct8_8bpc_8rows(
 /// reverses output order after ADST (flipadst).
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[inline(always)]
 fn simd_row_adst16_8bpc_8rows(
     token: Desktop64,
     coeff: &[i16],
@@ -6656,6 +6659,7 @@ fn simd_row_adst16_8bpc_8rows(
 /// (stride `coeff_h`); writes row-major into `tmp` (stride 16).
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[inline(always)]
 fn simd_row_dct16_8bpc_8rows(
     token: Desktop64,
     coeff: &[i16],
@@ -6765,6 +6769,7 @@ fn simd_row_dct16_8bpc_8rows(
 /// transposes 32x8 → 8x32 to store row-major into `tmp` (stride 32).
 #[cfg(target_arch = "x86_64")]
 #[rite]
+#[inline(always)]
 fn simd_row_dct32_8bpc_8rows(
     token: Desktop64,
     coeff: &[i16],
