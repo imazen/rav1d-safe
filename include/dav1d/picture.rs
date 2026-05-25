@@ -48,6 +48,41 @@ pub fn with_pixel_guard_mut<BD: BitDepth, R>(
         f(bytes, offset, stride)
     }
 }
+
+/// Execute a closure with read-only byte access to a w×h pixel block.
+///
+/// In single-threaded mode: zero-copy via `narrow_guard`.
+/// In multi-threaded mode: copies into a compact buffer with per-row guards
+/// (one guard per row, each covering exactly `w` pixels) so the helper is
+/// safe to use alongside concurrent tile-thread writes on adjacent blocks.
+///
+/// The closure receives `(bytes, offset, stride)` — an immutable byte slice,
+/// the byte offset to the first pixel, and the byte stride between rows.
+///
+/// Counterpart to [`with_pixel_guard_mut`]; see [`feedback_mt_safe_batching`]
+/// for the rationale on why wide guards (`strided_slice_mut` / `narrow_guard`)
+/// are unsafe under tile threading even in the immutable case (they cover
+/// `(h-1)*stride + w` bytes and overlap with adjacent tiles' mutable ranges).
+#[inline]
+pub fn with_pixel_guard_immut<BD: BitDepth, R>(
+    pic: &crate::src::with_offset::WithOffset<&Rav1dPictureDataComponent>,
+    w: usize,
+    h: usize,
+    f: impl FnOnce(&[u8], usize, isize) -> R,
+) -> R {
+    use crate::src::strided::Strided as _;
+    let pixel_size = core::mem::size_of::<BD::Pixel>();
+    if tile_threading_active() {
+        let (buf, byte_stride) = pic.compact_read_per_row::<BD>(w, h);
+        f(&buf, 0, byte_stride as isize)
+    } else {
+        let (guard, base) = pic.narrow_guard::<BD>(w, h);
+        let bytes = guard.as_bytes();
+        let offset = base * pixel_size;
+        let stride = pic.stride();
+        f(bytes, offset, stride)
+    }
+}
 #[cfg(feature = "c-ffi")]
 use crate::include::common::validate::validate_input;
 #[cfg(feature = "c-ffi")]

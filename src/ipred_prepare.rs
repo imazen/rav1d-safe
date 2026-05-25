@@ -246,13 +246,27 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
         let left = &mut topleft_out[topleft_out_offset - sz..];
         if have_left {
             let px_have = cmp::min(sz, (h - y << 2) as usize);
-            // Per-row single-pixel reads to avoid stride-wide guard overlap
-            // with concurrent tile threads.
+            // Batched single-column read: one wide narrow_guard in ST mode
+            // (replaces N per-pixel BorrowTracker calls), per-row guards in
+            // MT mode (safe vs concurrent tile-thread mut guards on adjacent
+            // blocks). See `with_pixel_guard_immut` docs and the
+            // `feedback_mt_safe_batching` memory.
             let col_pic = dst - 1usize;
-            for i in 0..px_have {
-                let row_pic = col_pic + (i as isize * stride);
-                left[sz - 1 - i] = row_pic.slice::<BD>(1)[0];
-            }
+            let pixel_size = core::mem::size_of::<BD::Pixel>();
+            crate::include::dav1d::picture::with_pixel_guard_immut::<BD, _>(
+                &col_pic,
+                1,
+                px_have,
+                |bytes, offset, stride| {
+                    let pixels: &[BD::Pixel] = zerocopy::FromBytes::ref_from_bytes(&bytes[..])
+                        .expect("bytes pixel reinterpretation");
+                    for i in 0..px_have {
+                        let row_off = (offset as isize + i as isize * stride) as usize
+                            / pixel_size;
+                        left[sz - 1 - i] = pixels[row_off];
+                    }
+                },
+            );
             if px_have < sz {
                 BD::pixel_set(left, left[sz - px_have], sz - px_have);
             }
@@ -280,10 +294,22 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
             if have_bottomleft {
                 let px_have = cmp::min(sz, (h - y - th << 2) as usize);
                 let col_pic = dst + (sz as isize * stride - 1);
-                for i in 0..px_have {
-                    let row_pic = col_pic + (i as isize * stride);
-                    bottom_left[sz - 1 - i] = row_pic.slice::<BD>(1)[0];
-                }
+                let pixel_size = core::mem::size_of::<BD::Pixel>();
+                crate::include::dav1d::picture::with_pixel_guard_immut::<BD, _>(
+                    &col_pic,
+                    1,
+                    px_have,
+                    |bytes, offset, stride| {
+                        let pixels: &[BD::Pixel] =
+                            zerocopy::FromBytes::ref_from_bytes(&bytes[..])
+                                .expect("bytes pixel reinterpretation");
+                        for i in 0..px_have {
+                            let row_off = (offset as isize + i as isize * stride) as usize
+                                / pixel_size;
+                            bottom_left[sz - 1 - i] = pixels[row_off];
+                        }
+                    },
+                );
                 if px_have < sz {
                     BD::pixel_set(bottom_left, bottom_left[sz - px_have], sz - px_have);
                 }
