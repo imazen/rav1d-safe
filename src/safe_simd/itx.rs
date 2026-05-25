@@ -302,8 +302,9 @@ fn inv_txfm_add_dct_dct_4x4_8bpc_avx2_inner(
 /// DCT4 butterfly on 2 rows packed in __m256i
 /// Each 128-bit lane contains one row: [in0, in1, in2, in3] as i32
 /// Outputs are clipped to [clip_min, clip_max] to match scalar behavior.
+/// `#[rite]` so it inlines into matching-feature `#[arcane]` callers (zero call cost).
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn dct4_2rows_avx2(
     _token: Desktop64,
     rows01: __m256i,
@@ -3464,8 +3465,9 @@ fn adst16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_
 }
 
 /// Run flipadst16 1D column transform: adst16 then swap rows i ↔ 15-i.
+/// `#[rite]` so it inlines into matching-feature `#[arcane]` callers (zero call cost).
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn flipadst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i32) {
     let min_v = _mm256_set1_epi32(min);
     let max_v = _mm256_set1_epi32(max);
@@ -3490,8 +3492,9 @@ fn flipadst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max
 
 /// Run identity16 1D column transform over 16x16 row-major buffer (8 cols at a time).
 /// identity16: out = 2*in + ((in*1697 + 1024) >> 11). No clipping.
+/// `#[rite]` so it inlines into matching-feature `#[arcane]` callers (zero call cost).
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn identity16x16_cols_simd(_token: Desktop64, tmp: &mut [i32; 256], _min: i32, _max: i32) {
     let c1697 = _mm256_set1_epi32(1697);
     let c1024 = _mm256_set1_epi32(1024);
@@ -3510,8 +3513,9 @@ fn identity16x16_cols_simd(_token: Desktop64, tmp: &mut [i32; 256], _min: i32, _
 }
 
 /// Run adst16 1D column transform over 16x16 row-major buffer.
+/// `#[rite]` so it inlines into matching-feature `#[arcane]` callers (zero call cost).
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn adst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i32) {
     let min_v = _mm256_set1_epi32(min);
     let max_v = _mm256_set1_epi32(max);
@@ -3530,8 +3534,9 @@ fn adst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i3
 
 /// Run dct16 1D column transform over 16x16 row-major buffer (16 cols, 16 rows).
 /// Processes 8 cols at a time, twice.
+/// `#[rite]` so it inlines into matching-feature `#[arcane]` callers (zero call cost).
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn dct16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i32) {
     // Try AVX-512 first: processes 16 cols at once instead of 8.
     if let Some(t512) = crate::src::cpu::summon_avx512() {
@@ -3874,8 +3879,9 @@ fn dct32_1d_cols8(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, max_v
 
 /// Run dct32 1D column transform over 32x32 row-major buffer (32 cols, 32 rows).
 /// Processes 8 cols at a time -- 4 chunks total.
+/// `#[rite]` so it inlines into matching-feature `#[arcane]` callers (zero call cost).
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn dct32x32_cols_simd(token: Desktop64, tmp: &mut [i32; 1024], min: i32, max: i32) {
     // Try AVX-512 first: 16 cols per chunk (2 chunks total for 32x32).
     if let Some(t512) = crate::src::cpu::summon_avx512() {
@@ -3933,8 +3939,9 @@ fn inv_txfm_16x16_inner(
 }
 
 /// Add transformed coefficients to destination with SIMD
+/// `#[rite]` so it inlines into matching-feature `#[arcane]` callers (zero call cost).
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn add_16x16_to_dst(
     _token: Desktop64,
     dst: &mut [u8],
@@ -11760,8 +11767,9 @@ fn add_to_dst_16bpc_avx512(
 }
 
 /// Add transformed coefficients to destination with SIMD (32x32)
+/// `#[rite]` so it inlines into matching-feature `#[arcane]` callers (zero call cost).
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn add_32x32_to_dst(
     _token: Desktop64,
     dst: &mut [u8],
@@ -12010,8 +12018,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_avx2(
 // ============================================================================
 
 /// Add transformed coefficients to destination with SIMD (32x32 16bpc)
+/// `#[rite]` so it inlines into matching-feature `#[arcane]` callers (zero call cost).
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn add_32x32_to_dst_16bpc(
     _token: Desktop64,
     dst: &mut [u16],
@@ -12837,8 +12846,9 @@ fn inv_txfm_64x64_inner<C: Copy + Into<i32>>(
 }
 
 /// Add transformed coefficients to destination with SIMD (64x64)
+/// `#[rite]` so it inlines into matching-feature `#[arcane]` callers (zero call cost).
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn add_64x64_to_dst(
     _token: Desktop64,
     dst: &mut [u8],
@@ -12994,8 +13004,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_avx2(
 // ============================================================================
 
 /// Add transformed coefficients to destination with SIMD (64x64 16bpc)
+/// `#[rite]` so it inlines into matching-feature `#[arcane]` callers (zero call cost).
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn add_64x64_to_dst_16bpc(
     _token: Desktop64,
     dst: &mut [u16],
