@@ -76,6 +76,7 @@ fn inv_txfm_add<BD: BitDepth>(
     second_1d_fn: Itx1dFn,
     has_dc_only: bool,
     bd: BD,
+    tmp: &mut [i32],
 ) {
     let bitdepth_max = bd.bitdepth_max().as_::<i32>();
 
@@ -122,7 +123,10 @@ fn inv_txfm_add<BD: BitDepth>(
     let row_clip_max = !row_clip_min;
     let col_clip_max = !col_clip_min;
 
-    let mut tmp = [0; 64 * 64];
+    // `tmp` is sized exactly `w * h` i32s by the caller (`inv_txfm_add_rust`).
+    // The rows [sh..h) (if any) remain at the caller's zero initialization,
+    // which `second_1d_fn` reads as zero-padded inputs.
+    debug_assert!(tmp.len() >= w * h);
     let mut c = &mut tmp[..];
     for y in 0..sh {
         if is_rect2 {
@@ -244,6 +248,10 @@ fn inv_txfm_add_rust<const W: usize, const H: usize, const TYPE: TxfmType, BD: B
     let first_1d_fn = resolve_1d_fn(first, W);
     let second_1d_fn = resolve_1d_fn(second, H);
 
+    // Right-sized scratch (was a fixed `[0; 64*64]` = 16 KB array zeroed every
+    // call; now `W*H` i32s = 64 B for 4x4 up to 16 KB for 64x64). The flat
+    // view through `as_flattened_mut` is `&mut [i32]` of length exactly W*H.
+    let mut tmp = [[0i32; W]; H];
     inv_txfm_add(
         dst,
         coeff,
@@ -255,6 +263,7 @@ fn inv_txfm_add_rust<const W: usize, const H: usize, const TYPE: TxfmType, BD: B
         second_1d_fn,
         has_dc_only,
         bd,
+        tmp.as_flattened_mut(),
     )
 }
 
