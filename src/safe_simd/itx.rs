@@ -4408,8 +4408,8 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 8 columns at a time
-    dct16x16_cols_simd(_token, &mut tmp, col_clip_min, col_clip_max);
+    // Column transform: i16-packed pmaddwd (replaces i32 mullo dct16x16_cols_simd)
+    let col_out = dct16_col_pass_i16(_token, &tmp);
 
     // Add to destination with SIMD
     let zero = _mm256_setzero_si256();
@@ -4423,27 +4423,9 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
         let d = loadu_128!(<&[u8; 16]>::try_from(&dst[dst_off..dst_off + 16]).unwrap());
         let d16 = _mm256_cvtepu8_epi16(d);
 
-        // Load and scale coefficients (16 values)
-        let c0 = _mm256_set_epi32(
-            tmp[y * 16 + 7],
-            tmp[y * 16 + 6],
-            tmp[y * 16 + 5],
-            tmp[y * 16 + 4],
-            tmp[y * 16 + 3],
-            tmp[y * 16 + 2],
-            tmp[y * 16 + 1],
-            tmp[y * 16 + 0],
-        );
-        let c1 = _mm256_set_epi32(
-            tmp[y * 16 + 15],
-            tmp[y * 16 + 14],
-            tmp[y * 16 + 13],
-            tmp[y * 16 + 12],
-            tmp[y * 16 + 11],
-            tmp[y * 16 + 10],
-            tmp[y * 16 + 9],
-            tmp[y * 16 + 8],
-        );
+        // Load column-pass output (16 i32 values as 2 ymm)
+        let c0 = loadu_256!(&col_out[y * 16..y * 16 + 8], [i32; 8]);
+        let c1 = loadu_256!(&col_out[y * 16 + 8..y * 16 + 16], [i32; 8]);
 
         // Final scaling: (c + 8) >> 4
         let c0_scaled = _mm256_srai_epi32(_mm256_add_epi32(c0, rnd_final), 4);
@@ -11382,6 +11364,101 @@ mod tests {
         );
     }
 
+    /// Direct comparison: `dct16_col_pass_i16` vs `dct16x16_cols_simd` on the
+    /// same intermediate `tmp` buffer. This catches rounding differences between
+    /// the pmaddwd and mullo column passes.
+    #[cfg(target_arch = "x86_64")]
+    #[arcane]
+    fn test_dct16_col_direct_compare(
+        _token: Desktop64,
+        tmp: &[i32; 256],
+    ) -> (/*pmaddwd*/ [i32; 256], /*mullo*/ [i32; 256]) {
+        let col_min = i16::MIN as i32;
+        let col_max = i16::MAX as i32;
+
+        // pmaddwd version
+        let pmaddwd_out = dct16_col_pass_i16(_token, tmp);
+
+        // mullo version (in-place)
+        let mut mullo_tmp = *tmp;
+        dct16x16_cols_simd(_token, &mut mullo_tmp, col_min, col_max);
+
+        (pmaddwd_out, mullo_tmp)
+    }
+
+    #[test]
+    fn test_dct16_col_pass_i16_vs_mullo_direct() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+            0x0,
+            0x7fff_7fff_7fff_7fff,
+            0x8000_8000_8000_8000,
+            // Extra random seeds
+            0x0102030405060708,
+            0xFEDCBA9876543210,
+            0x1111111111111111,
+            0x9999999999999999,
+            0xAAAABBBBCCCCDDDD,
+        ];
+        let row_min = i16::MIN as i32;
+        let row_max = i16::MAX as i32;
+        let col_min = i16::MIN as i32;
+        let col_max = i16::MAX as i32;
+        let mut total_mism = 0u32;
+
+        for &seed in seeds {
+            let input: [i16; 256] = seeded_i16_block(seed);
+
+            // Run SIMD row pass + shift to get the intermediate tmp buffer
+            let row_out = run_scalar_dct16_per_row(&input, row_min, row_max);
+            let mut tmp = [0i32; 256];
+            for i in 0..256 {
+                tmp[i] = ((row_out[i] + 2) >> 2).clamp(col_min, col_max);
+            }
+
+            // Compare the two column pass implementations directly
+            let (pmaddwd_out, mullo_out) = test_dct16_col_direct_compare(token, &tmp);
+
+            if pmaddwd_out != mullo_out {
+                let mut mism = 0u32;
+                for i in 0..256 {
+                    if pmaddwd_out[i] != mullo_out[i] {
+                        if mism < 8 {
+                            eprintln!(
+                                "seed={:#x} idx={} row={} col={} mullo={} pmaddwd={}",
+                                seed,
+                                i,
+                                i / 16,
+                                i % 16,
+                                mullo_out[i],
+                                pmaddwd_out[i],
+                            );
+                        }
+                        mism += 1;
+                    }
+                }
+                eprintln!("seed={seed:#x}: {mism} col-pass mismatches");
+                total_mism += mism;
+            }
+        }
+        assert_eq!(
+            total_mism, 0,
+            "dct16_col_pass_i16 diverged from dct16x16_cols_simd"
+        );
+    }
+
     // ----------------------------------------------------------------------
     // i16-packed pmaddwd DCT-16 row pass — bit-exact vs scalar
     // ----------------------------------------------------------------------
@@ -11491,6 +11568,7 @@ mod tests {
             "dct32_row_pass_i16_simd diverged from scalar reference"
         );
     }
+
 }
 
 // ============================================================================
