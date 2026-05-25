@@ -46,6 +46,89 @@ const SQRT2_BITS: i32 = 8;
 const SQRT2_HALF: i32 = 181; // sqrt(2) * 128
 
 // ============================================================================
+// SHARED SIMD MACROS
+// ============================================================================
+
+/// 8x8 i32 in-register transpose, AVX2.
+///
+/// Input: `$a` is an `[__m256i; 8]` expression where each lane holds an
+/// 8-element i32 column.
+/// Output: an `[__m256i; 8]` array where each lane holds an 8-element i32 row.
+///
+/// Cost: 24 safe intrinsic calls (8 `unpacklo_epi32` + 8 `unpackhi_epi32`
+/// folded with `unpacklo_epi64`/`unpackhi_epi64` and 8 `permute2x128_si256`).
+/// All computation intrinsics are safe (Rust 1.93+); produces byte-identical
+/// asm to the hand-inlined sequence — verified via cargo asm.
+///
+/// Used by the `simd_row_*_8bpc_8rows` helpers and any other site that needs
+/// to flip an 8-wide column-major block to row-major before scalar-store.
+#[cfg(target_arch = "x86_64")]
+macro_rules! transpose_8x8_i32 {
+    ($a:expr) => {{
+        let __cols: [__m256i; 8] = $a;
+        let __t0 = _mm256_unpacklo_epi32(__cols[0], __cols[1]);
+        let __t1 = _mm256_unpackhi_epi32(__cols[0], __cols[1]);
+        let __t2 = _mm256_unpacklo_epi32(__cols[2], __cols[3]);
+        let __t3 = _mm256_unpackhi_epi32(__cols[2], __cols[3]);
+        let __t4 = _mm256_unpacklo_epi32(__cols[4], __cols[5]);
+        let __t5 = _mm256_unpackhi_epi32(__cols[4], __cols[5]);
+        let __t6 = _mm256_unpacklo_epi32(__cols[6], __cols[7]);
+        let __t7 = _mm256_unpackhi_epi32(__cols[6], __cols[7]);
+        let __u0 = _mm256_unpacklo_epi64(__t0, __t2);
+        let __u1 = _mm256_unpackhi_epi64(__t0, __t2);
+        let __u2 = _mm256_unpacklo_epi64(__t1, __t3);
+        let __u3 = _mm256_unpackhi_epi64(__t1, __t3);
+        let __u4 = _mm256_unpacklo_epi64(__t4, __t6);
+        let __u5 = _mm256_unpackhi_epi64(__t4, __t6);
+        let __u6 = _mm256_unpacklo_epi64(__t5, __t7);
+        let __u7 = _mm256_unpackhi_epi64(__t5, __t7);
+        let __r0 = _mm256_permute2x128_si256::<0x20>(__u0, __u4);
+        let __r1 = _mm256_permute2x128_si256::<0x20>(__u1, __u5);
+        let __r2 = _mm256_permute2x128_si256::<0x20>(__u2, __u6);
+        let __r3 = _mm256_permute2x128_si256::<0x20>(__u3, __u7);
+        let __r4 = _mm256_permute2x128_si256::<0x31>(__u0, __u4);
+        let __r5 = _mm256_permute2x128_si256::<0x31>(__u1, __u5);
+        let __r6 = _mm256_permute2x128_si256::<0x31>(__u2, __u6);
+        let __r7 = _mm256_permute2x128_si256::<0x31>(__u3, __u7);
+        [__r0, __r1, __r2, __r3, __r4, __r5, __r6, __r7]
+    }};
+}
+
+/// dav1d ITX_MUL2X_PACK equivalent — bit-exact to the C reference path.
+///
+/// Computes `dst_lo = lo * coef_a + hi * coef_b` for each i32 lane, where
+/// `(lo, hi)` are the two i16 halves of every i32 lane of `$paired`. This is
+/// exactly what `pmaddwd` does, so the macro packs `coef_a` (low 16) and
+/// `coef_b` (high 16) into a 32-bit broadcast and emits a single `pmaddwd` +
+/// `paddd` + `psrad`. The rounded value matches dav1d's row pass arithmetic
+/// `(p1 + p2 + 2048) >> 12`.
+///
+/// Input shape: `$paired` is `_mm256_unpacklo_epi16(a, b)` (or `_unpackhi`),
+/// i.e. each 32-bit lane is `(a_word << 16) | b_word` — call sites construct
+/// this directly. `$coef_a`/`$coef_b` are signed 16-bit values written as
+/// `i32` literals (we mask to u16 when packing so negatives round-trip
+/// correctly).
+///
+/// Output: i32 lanes post-shift. Pack to i16 via `_mm256_packs_epi32` to
+/// resume the i16 row pass.
+///
+/// All operands are computation intrinsics — safe since Rust 1.93+.
+/// `$shift` is a literal because `_mm256_srai_epi32` is const-generic.
+#[cfg(target_arch = "x86_64")]
+macro_rules! itx_mul2x_pack {
+    ($paired:expr, $coef_a:expr, $coef_b:expr, $rnd:expr, $shift:literal) => {{
+        let __coef_a: i32 = $coef_a as i32;
+        let __coef_b: i32 = $coef_b as i32;
+        let __packed_coef = _mm256_set1_epi32(
+            ((__coef_a as u32) & 0xFFFF) as i32 | (((__coef_b as u32) & 0xFFFF) << 16) as i32,
+        );
+        let __prod = _mm256_madd_epi16($paired, __packed_coef);
+        let __rounded = _mm256_add_epi32(__prod, _mm256_set1_epi32($rnd));
+        _mm256_srai_epi32::<$shift>(__rounded)
+    }};
+}
+
+// ============================================================================
 // 4x4 DCT_DCT - Full 2D SIMD Transform (8bpc)
 // ============================================================================
 
@@ -6336,70 +6419,47 @@ fn simd_row_adst8_8bpc_8rows(
         };
         cols[x] = _mm256_max_epi32(_mm256_min_epi32(rounded, col_max_v), col_min_v);
     }
-    let t0 = _mm256_unpacklo_epi32(cols[0], cols[1]);
-    let t1 = _mm256_unpackhi_epi32(cols[0], cols[1]);
-    let t2 = _mm256_unpacklo_epi32(cols[2], cols[3]);
-    let t3 = _mm256_unpackhi_epi32(cols[2], cols[3]);
-    let t4 = _mm256_unpacklo_epi32(cols[4], cols[5]);
-    let t5 = _mm256_unpackhi_epi32(cols[4], cols[5]);
-    let t6 = _mm256_unpacklo_epi32(cols[6], cols[7]);
-    let t7 = _mm256_unpackhi_epi32(cols[6], cols[7]);
-    let u0 = _mm256_unpacklo_epi64(t0, t2);
-    let u1 = _mm256_unpackhi_epi64(t0, t2);
-    let u2 = _mm256_unpacklo_epi64(t1, t3);
-    let u3 = _mm256_unpackhi_epi64(t1, t3);
-    let u4 = _mm256_unpacklo_epi64(t4, t6);
-    let u5 = _mm256_unpackhi_epi64(t4, t6);
-    let u6 = _mm256_unpacklo_epi64(t5, t7);
-    let u7 = _mm256_unpackhi_epi64(t5, t7);
-    let r0 = _mm256_permute2x128_si256::<0x20>(u0, u4);
-    let r1 = _mm256_permute2x128_si256::<0x20>(u1, u5);
-    let r2 = _mm256_permute2x128_si256::<0x20>(u2, u6);
-    let r3 = _mm256_permute2x128_si256::<0x20>(u3, u7);
-    let r4 = _mm256_permute2x128_si256::<0x31>(u0, u4);
-    let r5 = _mm256_permute2x128_si256::<0x31>(u1, u5);
-    let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
-    let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
+    let rows = transpose_8x8_i32!(cols);
     let s = 8;
     storeu_256!(
         &mut tmp[(y_base + 0) * s..(y_base + 0) * s + 8],
         [i32; 8],
-        r0
+        rows[0]
     );
     storeu_256!(
         &mut tmp[(y_base + 1) * s..(y_base + 1) * s + 8],
         [i32; 8],
-        r1
+        rows[1]
     );
     storeu_256!(
         &mut tmp[(y_base + 2) * s..(y_base + 2) * s + 8],
         [i32; 8],
-        r2
+        rows[2]
     );
     storeu_256!(
         &mut tmp[(y_base + 3) * s..(y_base + 3) * s + 8],
         [i32; 8],
-        r3
+        rows[3]
     );
     storeu_256!(
         &mut tmp[(y_base + 4) * s..(y_base + 4) * s + 8],
         [i32; 8],
-        r4
+        rows[4]
     );
     storeu_256!(
         &mut tmp[(y_base + 5) * s..(y_base + 5) * s + 8],
         [i32; 8],
-        r5
+        rows[5]
     );
     storeu_256!(
         &mut tmp[(y_base + 6) * s..(y_base + 6) * s + 8],
         [i32; 8],
-        r6
+        rows[6]
     );
     storeu_256!(
         &mut tmp[(y_base + 7) * s..(y_base + 7) * s + 8],
         [i32; 8],
-        r7
+        rows[7]
     );
 }
 
@@ -6452,70 +6512,47 @@ fn simd_row_dct8_8bpc_8rows(
         cols[x] = _mm256_max_epi32(_mm256_min_epi32(rounded, col_max_v), col_min_v);
     }
     // 8x8 transpose, store row-major (stride 8).
-    let t0 = _mm256_unpacklo_epi32(cols[0], cols[1]);
-    let t1 = _mm256_unpackhi_epi32(cols[0], cols[1]);
-    let t2 = _mm256_unpacklo_epi32(cols[2], cols[3]);
-    let t3 = _mm256_unpackhi_epi32(cols[2], cols[3]);
-    let t4 = _mm256_unpacklo_epi32(cols[4], cols[5]);
-    let t5 = _mm256_unpackhi_epi32(cols[4], cols[5]);
-    let t6 = _mm256_unpacklo_epi32(cols[6], cols[7]);
-    let t7 = _mm256_unpackhi_epi32(cols[6], cols[7]);
-    let u0 = _mm256_unpacklo_epi64(t0, t2);
-    let u1 = _mm256_unpackhi_epi64(t0, t2);
-    let u2 = _mm256_unpacklo_epi64(t1, t3);
-    let u3 = _mm256_unpackhi_epi64(t1, t3);
-    let u4 = _mm256_unpacklo_epi64(t4, t6);
-    let u5 = _mm256_unpackhi_epi64(t4, t6);
-    let u6 = _mm256_unpacklo_epi64(t5, t7);
-    let u7 = _mm256_unpackhi_epi64(t5, t7);
-    let r0 = _mm256_permute2x128_si256::<0x20>(u0, u4);
-    let r1 = _mm256_permute2x128_si256::<0x20>(u1, u5);
-    let r2 = _mm256_permute2x128_si256::<0x20>(u2, u6);
-    let r3 = _mm256_permute2x128_si256::<0x20>(u3, u7);
-    let r4 = _mm256_permute2x128_si256::<0x31>(u0, u4);
-    let r5 = _mm256_permute2x128_si256::<0x31>(u1, u5);
-    let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
-    let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
+    let rows = transpose_8x8_i32!(cols);
     let s = 8;
     storeu_256!(
         &mut tmp[(y_base + 0) * s..(y_base + 0) * s + 8],
         [i32; 8],
-        r0
+        rows[0]
     );
     storeu_256!(
         &mut tmp[(y_base + 1) * s..(y_base + 1) * s + 8],
         [i32; 8],
-        r1
+        rows[1]
     );
     storeu_256!(
         &mut tmp[(y_base + 2) * s..(y_base + 2) * s + 8],
         [i32; 8],
-        r2
+        rows[2]
     );
     storeu_256!(
         &mut tmp[(y_base + 3) * s..(y_base + 3) * s + 8],
         [i32; 8],
-        r3
+        rows[3]
     );
     storeu_256!(
         &mut tmp[(y_base + 4) * s..(y_base + 4) * s + 8],
         [i32; 8],
-        r4
+        rows[4]
     );
     storeu_256!(
         &mut tmp[(y_base + 5) * s..(y_base + 5) * s + 8],
         [i32; 8],
-        r5
+        rows[5]
     );
     storeu_256!(
         &mut tmp[(y_base + 6) * s..(y_base + 6) * s + 8],
         [i32; 8],
-        r6
+        rows[6]
     );
     storeu_256!(
         &mut tmp[(y_base + 7) * s..(y_base + 7) * s + 8],
         [i32; 8],
-        r7
+        rows[7]
     );
 }
 
@@ -6573,70 +6610,57 @@ fn simd_row_adst16_8bpc_8rows(
     }
     for chunk in 0..2 {
         let b = chunk * 8;
-        let t0 = _mm256_unpacklo_epi32(cols[b + 0], cols[b + 1]);
-        let t1 = _mm256_unpackhi_epi32(cols[b + 0], cols[b + 1]);
-        let t2 = _mm256_unpacklo_epi32(cols[b + 2], cols[b + 3]);
-        let t3 = _mm256_unpackhi_epi32(cols[b + 2], cols[b + 3]);
-        let t4 = _mm256_unpacklo_epi32(cols[b + 4], cols[b + 5]);
-        let t5 = _mm256_unpackhi_epi32(cols[b + 4], cols[b + 5]);
-        let t6 = _mm256_unpacklo_epi32(cols[b + 6], cols[b + 7]);
-        let t7 = _mm256_unpackhi_epi32(cols[b + 6], cols[b + 7]);
-        let u0 = _mm256_unpacklo_epi64(t0, t2);
-        let u1 = _mm256_unpackhi_epi64(t0, t2);
-        let u2 = _mm256_unpacklo_epi64(t1, t3);
-        let u3 = _mm256_unpackhi_epi64(t1, t3);
-        let u4 = _mm256_unpacklo_epi64(t4, t6);
-        let u5 = _mm256_unpackhi_epi64(t4, t6);
-        let u6 = _mm256_unpacklo_epi64(t5, t7);
-        let u7 = _mm256_unpackhi_epi64(t5, t7);
-        let r0 = _mm256_permute2x128_si256::<0x20>(u0, u4);
-        let r1 = _mm256_permute2x128_si256::<0x20>(u1, u5);
-        let r2 = _mm256_permute2x128_si256::<0x20>(u2, u6);
-        let r3 = _mm256_permute2x128_si256::<0x20>(u3, u7);
-        let r4 = _mm256_permute2x128_si256::<0x31>(u0, u4);
-        let r5 = _mm256_permute2x128_si256::<0x31>(u1, u5);
-        let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
-        let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
+        let chunk_cols: [__m256i; 8] = [
+            cols[b + 0],
+            cols[b + 1],
+            cols[b + 2],
+            cols[b + 3],
+            cols[b + 4],
+            cols[b + 5],
+            cols[b + 6],
+            cols[b + 7],
+        ];
+        let rows = transpose_8x8_i32!(chunk_cols);
         let s = 16;
         storeu_256!(
             &mut tmp[(y_base + 0) * s + b..(y_base + 0) * s + b + 8],
             [i32; 8],
-            r0
+            rows[0]
         );
         storeu_256!(
             &mut tmp[(y_base + 1) * s + b..(y_base + 1) * s + b + 8],
             [i32; 8],
-            r1
+            rows[1]
         );
         storeu_256!(
             &mut tmp[(y_base + 2) * s + b..(y_base + 2) * s + b + 8],
             [i32; 8],
-            r2
+            rows[2]
         );
         storeu_256!(
             &mut tmp[(y_base + 3) * s + b..(y_base + 3) * s + b + 8],
             [i32; 8],
-            r3
+            rows[3]
         );
         storeu_256!(
             &mut tmp[(y_base + 4) * s + b..(y_base + 4) * s + b + 8],
             [i32; 8],
-            r4
+            rows[4]
         );
         storeu_256!(
             &mut tmp[(y_base + 5) * s + b..(y_base + 5) * s + b + 8],
             [i32; 8],
-            r5
+            rows[5]
         );
         storeu_256!(
             &mut tmp[(y_base + 6) * s + b..(y_base + 6) * s + b + 8],
             [i32; 8],
-            r6
+            rows[6]
         );
         storeu_256!(
             &mut tmp[(y_base + 7) * s + b..(y_base + 7) * s + b + 8],
             [i32; 8],
-            r7
+            rows[7]
         );
     }
 }
@@ -6692,70 +6716,57 @@ fn simd_row_dct16_8bpc_8rows(
     // Transpose 16x8 → 8x16 in 2 chunks of 8 columns, store row-major (stride 16).
     for chunk in 0..2 {
         let b = chunk * 8;
-        let t0 = _mm256_unpacklo_epi32(cols[b + 0], cols[b + 1]);
-        let t1 = _mm256_unpackhi_epi32(cols[b + 0], cols[b + 1]);
-        let t2 = _mm256_unpacklo_epi32(cols[b + 2], cols[b + 3]);
-        let t3 = _mm256_unpackhi_epi32(cols[b + 2], cols[b + 3]);
-        let t4 = _mm256_unpacklo_epi32(cols[b + 4], cols[b + 5]);
-        let t5 = _mm256_unpackhi_epi32(cols[b + 4], cols[b + 5]);
-        let t6 = _mm256_unpacklo_epi32(cols[b + 6], cols[b + 7]);
-        let t7 = _mm256_unpackhi_epi32(cols[b + 6], cols[b + 7]);
-        let u0 = _mm256_unpacklo_epi64(t0, t2);
-        let u1 = _mm256_unpackhi_epi64(t0, t2);
-        let u2 = _mm256_unpacklo_epi64(t1, t3);
-        let u3 = _mm256_unpackhi_epi64(t1, t3);
-        let u4 = _mm256_unpacklo_epi64(t4, t6);
-        let u5 = _mm256_unpackhi_epi64(t4, t6);
-        let u6 = _mm256_unpacklo_epi64(t5, t7);
-        let u7 = _mm256_unpackhi_epi64(t5, t7);
-        let r0 = _mm256_permute2x128_si256::<0x20>(u0, u4);
-        let r1 = _mm256_permute2x128_si256::<0x20>(u1, u5);
-        let r2 = _mm256_permute2x128_si256::<0x20>(u2, u6);
-        let r3 = _mm256_permute2x128_si256::<0x20>(u3, u7);
-        let r4 = _mm256_permute2x128_si256::<0x31>(u0, u4);
-        let r5 = _mm256_permute2x128_si256::<0x31>(u1, u5);
-        let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
-        let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
+        let chunk_cols: [__m256i; 8] = [
+            cols[b + 0],
+            cols[b + 1],
+            cols[b + 2],
+            cols[b + 3],
+            cols[b + 4],
+            cols[b + 5],
+            cols[b + 6],
+            cols[b + 7],
+        ];
+        let rows = transpose_8x8_i32!(chunk_cols);
         let s = 16;
         storeu_256!(
             &mut tmp[(y_base + 0) * s + b..(y_base + 0) * s + b + 8],
             [i32; 8],
-            r0
+            rows[0]
         );
         storeu_256!(
             &mut tmp[(y_base + 1) * s + b..(y_base + 1) * s + b + 8],
             [i32; 8],
-            r1
+            rows[1]
         );
         storeu_256!(
             &mut tmp[(y_base + 2) * s + b..(y_base + 2) * s + b + 8],
             [i32; 8],
-            r2
+            rows[2]
         );
         storeu_256!(
             &mut tmp[(y_base + 3) * s + b..(y_base + 3) * s + b + 8],
             [i32; 8],
-            r3
+            rows[3]
         );
         storeu_256!(
             &mut tmp[(y_base + 4) * s + b..(y_base + 4) * s + b + 8],
             [i32; 8],
-            r4
+            rows[4]
         );
         storeu_256!(
             &mut tmp[(y_base + 5) * s + b..(y_base + 5) * s + b + 8],
             [i32; 8],
-            r5
+            rows[5]
         );
         storeu_256!(
             &mut tmp[(y_base + 6) * s + b..(y_base + 6) * s + b + 8],
             [i32; 8],
-            r6
+            rows[6]
         );
         storeu_256!(
             &mut tmp[(y_base + 7) * s + b..(y_base + 7) * s + b + 8],
             [i32; 8],
-            r7
+            rows[7]
         );
     }
 }
@@ -6813,70 +6824,57 @@ fn simd_row_dct32_8bpc_8rows(
     // Transpose 32x8 → 8x32 (4 chunks of 8 columns), store rows contiguously
     for chunk in 0..4 {
         let b = chunk * 8;
-        let t0 = _mm256_unpacklo_epi32(cols[b + 0], cols[b + 1]);
-        let t1 = _mm256_unpackhi_epi32(cols[b + 0], cols[b + 1]);
-        let t2 = _mm256_unpacklo_epi32(cols[b + 2], cols[b + 3]);
-        let t3 = _mm256_unpackhi_epi32(cols[b + 2], cols[b + 3]);
-        let t4 = _mm256_unpacklo_epi32(cols[b + 4], cols[b + 5]);
-        let t5 = _mm256_unpackhi_epi32(cols[b + 4], cols[b + 5]);
-        let t6 = _mm256_unpacklo_epi32(cols[b + 6], cols[b + 7]);
-        let t7 = _mm256_unpackhi_epi32(cols[b + 6], cols[b + 7]);
-        let u0 = _mm256_unpacklo_epi64(t0, t2);
-        let u1 = _mm256_unpackhi_epi64(t0, t2);
-        let u2 = _mm256_unpacklo_epi64(t1, t3);
-        let u3 = _mm256_unpackhi_epi64(t1, t3);
-        let u4 = _mm256_unpacklo_epi64(t4, t6);
-        let u5 = _mm256_unpackhi_epi64(t4, t6);
-        let u6 = _mm256_unpacklo_epi64(t5, t7);
-        let u7 = _mm256_unpackhi_epi64(t5, t7);
-        let r0 = _mm256_permute2x128_si256::<0x20>(u0, u4);
-        let r1 = _mm256_permute2x128_si256::<0x20>(u1, u5);
-        let r2 = _mm256_permute2x128_si256::<0x20>(u2, u6);
-        let r3 = _mm256_permute2x128_si256::<0x20>(u3, u7);
-        let r4 = _mm256_permute2x128_si256::<0x31>(u0, u4);
-        let r5 = _mm256_permute2x128_si256::<0x31>(u1, u5);
-        let r6 = _mm256_permute2x128_si256::<0x31>(u2, u6);
-        let r7 = _mm256_permute2x128_si256::<0x31>(u3, u7);
+        let chunk_cols: [__m256i; 8] = [
+            cols[b + 0],
+            cols[b + 1],
+            cols[b + 2],
+            cols[b + 3],
+            cols[b + 4],
+            cols[b + 5],
+            cols[b + 6],
+            cols[b + 7],
+        ];
+        let rows = transpose_8x8_i32!(chunk_cols);
         let s = 32;
         storeu_256!(
             &mut tmp[(y_base + 0) * s + b..(y_base + 0) * s + b + 8],
             [i32; 8],
-            r0
+            rows[0]
         );
         storeu_256!(
             &mut tmp[(y_base + 1) * s + b..(y_base + 1) * s + b + 8],
             [i32; 8],
-            r1
+            rows[1]
         );
         storeu_256!(
             &mut tmp[(y_base + 2) * s + b..(y_base + 2) * s + b + 8],
             [i32; 8],
-            r2
+            rows[2]
         );
         storeu_256!(
             &mut tmp[(y_base + 3) * s + b..(y_base + 3) * s + b + 8],
             [i32; 8],
-            r3
+            rows[3]
         );
         storeu_256!(
             &mut tmp[(y_base + 4) * s + b..(y_base + 4) * s + b + 8],
             [i32; 8],
-            r4
+            rows[4]
         );
         storeu_256!(
             &mut tmp[(y_base + 5) * s + b..(y_base + 5) * s + b + 8],
             [i32; 8],
-            r5
+            rows[5]
         );
         storeu_256!(
             &mut tmp[(y_base + 6) * s + b..(y_base + 6) * s + b + 8],
             [i32; 8],
-            r6
+            rows[6]
         );
         storeu_256!(
             &mut tmp[(y_base + 7) * s + b..(y_base + 7) * s + b + 8],
             [i32; 8],
-            r7
+            rows[7]
         );
     }
 }
