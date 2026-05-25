@@ -16,6 +16,22 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ### Changed
 - Hoist target_feature region to outer loopfilter dispatch: `lpf_h_sb_y_8bpc_inner`, `lpf_v_sb_y_8bpc_inner`, `lpf_h_sb_uv_8bpc_inner`, `lpf_v_sb_uv_8bpc_inner` wrapped in `#[arcane]` with `X64V2Token`; inner `loop_filter_4_8bpc` switched to `#[rite]` so per-edge SIMD helpers inline directly into the per-superblock target_feature region. Adds `summon_v2_x64()` in `src/cpu.rs`. Symbol-table cleanup with no wall-clock cost (eee9005, 2d0d05c)
+- Switch loopfilter SIMD helpers from `X64V2Token` (SSE4.2) to `Desktop64`/`X64V3Token` (AVX2+FMA+BMI2, Haswell 2013+/Zen 1+ — universal modern x86_64). Removes the now-unused `summon_v2_x64` helper. Unlocks YMM 8-lane width for narrow v-filter (aa23eb8, 9d1fe25)
+- Convert 11 inner SIMD helpers (`dct{16x16,32x32}_cols_simd`, `adst/flipadst/identity_16x16_cols_simd`, `add_{16x16,32x32,64x64}_to_dst{,_16bpc}`, `dct4_2rows_avx2`) from `#[arcane]` to `#[rite]` — they're called only from `#[arcane]` outers, so the boundary is just a hard inline barrier per CLAUDE.md rule "`#[arcane]` ONLY at outermost entry point". AVX-512 helpers correctly retain `#[arcane]` for feature elevation (f018bb5)
+- Force-inline 5 SIMD row helpers (`simd_row_dct{8,16,32}_8bpc_8rows`, `simd_row_adst{8,16}_8bpc_8rows`) with `#[inline(always)]` on top of `#[rite]` — LLVM was declining the inline due to function size (ffbdca4)
+
+### Added
+- `itx_mul2x_pack!` macro: bit-exact equivalent of dav1d's `ITX_MUL2X_PACK` (`pmaddwd` + `paddd` rnd + `psrad` shift) for future i16-packed butterfly implementations. Pure safe Rust; verified across 13,312 input pairings including sign extremes (8cadc48, a9fbce9)
+- `transpose_8x8_i32!` macro: consolidates the 24-instruction 8x8 i32 in-register transpose used by all five `simd_row_*_8rows` helpers (5 callers, 1 source of truth) (8cadc48)
+- DC-only fast path for DCT_DCT transforms in `itxfm_dispatch_{8,16}bpc` when `eob == 0`. Computes `dc` via the canonical formula (matches `src/itx.rs:89-105` scalar wrapper), broadcasts via new `#[arcane]` helpers `dc_only_add_8bpc` / `dc_only_add_16bpc` with width-tiered AVX2/SSE2/scalar paths. dav1d hits its `.dconly` shortcut on every `eob==0` block; we now do too (33f7402)
+- SIMD `cfl_ac_dispatch` in `src/safe_simd/ipred.rs` covering 4:2:0, 4:2:2, 4:4:4 chroma sampling at 8bpc. `cfl_ac_420_8bpc_inner` uses `_mm256_maddubs_epi16` for horizontal pair-sum, `cfl_ac_422_8bpc_inner` single-row pair-sum, `cfl_ac_444_8bpc_inner` `_mm256_cvtepu8_epi16` widening. ST path uses zero-copy `narrow_guard`; MT path uses `compact_read_per_row` for tile-thread safety. 16bpc remains scalar (returns false → existing fallback). `cfl_ac_rust` profile share dropped 1.49% → 1.05% (6512b9b, d48656c)
+- YMM x8 narrow v-filter (`loop_filter_4_8bpc_narrow_simd_v_x8`) for adjacent wd=4 edges with same `l`. New ~155 LOC kernel doubles per-call width when consecutive vmask bits share filter level. `cargo asm` confirms 98 YMM mnemonics in the dispatcher (was 0) (c320fa1)
+- `with_pixel_guard_immut` sibling to `with_pixel_guard_mut`: one immut guard for ST path (zero-copy `narrow_guard`, saves N-1 BorrowTracker calls per column), per-row compact reads for MT path. Wired into `ipred_prepare` LEFT/BOTTOM_LEFT loops — 32 guards → 1 guard for h=32 block (475e61d)
+
+### Performance
+- Right-size scalar `inv_txfm_add` tmp buffer: moved 16KB `[0; 64*64]` stack array out of runtime-sized outer fn into const-generic `inv_txfm_add_rust` as `[[0i32; W]; H]`. 4x4 now allocates 64 B; 8x8 → 256 B; 32x32 → 4 KB. Drops the per-call memset that was visible at 3% of profile via `__memset_avx512_unaligned_erms` (96e93d7)
+- `ctx_refill` bulk 8-byte BSWAP load: replaces byte-by-byte loop with single `u64::from_be_bytes(buf[..8])` + mask + shift. Matches dav1d's `src/x86/msac.asm:166-178` 5-instruction refill. Pure safe Rust on 64-bit targets; falls back to byte loop for `buf.len() < 8` (4e145dc)
+- Replace 8x8 scatter-loads (8 individual `_mm_set_epi32(tmp[y*8+i], ...)` cascades = 27 `vmovd` per block) with one contiguous `loadu_256!(&tmp[y*8..y*8+8])` then `castsi256_si128`/`extracti128_si256` split. Both bpc (ac490f9)
 
 ## [0.5.5] - 2026-04-17
 

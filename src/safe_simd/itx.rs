@@ -19602,7 +19602,14 @@ fn dc_only_compute(coeff0: i32, rect2: bool, shift: u32) -> i32 {
 fn dc_only_shift(w: usize, h: usize) -> u32 {
     match (w, h) {
         (4, 4) | (4, 8) | (8, 4) => 0,
-        (4, 16) | (8, 8) | (8, 16) | (16, 4) | (16, 8) | (32, 16) | (16, 32) | (32, 64)
+        (4, 16)
+        | (8, 8)
+        | (8, 16)
+        | (16, 4)
+        | (16, 8)
+        | (32, 16)
+        | (16, 32)
+        | (32, 64)
         | (64, 32) => 1,
         (8, 32) | (16, 16) | (16, 64) | (32, 8) | (32, 32) | (64, 16) | (64, 64) => 2,
         _ => 0,
@@ -19633,9 +19640,8 @@ fn dc_only_add_8bpc(
             let row_off = y * dst_stride;
             let mut x = 0;
             while x + 32 <= w {
-                let d = loadu_256!(
-                    <&[u8; 32]>::try_from(&dst[row_off + x..row_off + x + 32]).unwrap()
-                );
+                let d =
+                    loadu_256!(<&[u8; 32]>::try_from(&dst[row_off + x..row_off + x + 32]).unwrap());
                 // Unpack u8 -> i16, add dc, pack back with unsigned saturation.
                 // Note: unpack is per-lane, so we pack the lanes back the same way.
                 let d_lo = _mm256_unpacklo_epi8(d, zero);
@@ -19656,9 +19662,7 @@ fn dc_only_add_8bpc(
         let zero = _mm_setzero_si128();
         for y in 0..h {
             let row_off = y * dst_stride;
-            let d = loadu_128!(
-                <&[u8; 16]>::try_from(&dst[row_off..row_off + 16]).unwrap()
-            );
+            let d = loadu_128!(<&[u8; 16]>::try_from(&dst[row_off..row_off + 16]).unwrap());
             let d_lo = _mm_unpacklo_epi8(d, zero);
             let d_hi = _mm_unpackhi_epi8(d, zero);
             let sum_lo = _mm_add_epi16(d_lo, dc_v);
@@ -19763,8 +19767,7 @@ fn dc_only_add_16bpc(
         for y in 0..h {
             let row_off = y * px_stride;
             for x in 0..w {
-                dst[row_off + x] =
-                    (dst[row_off + x] as i32 + dc).clamp(0, bitdepth_max) as u16;
+                dst[row_off + x] = (dst[row_off + x] as i32 + dc).clamp(0, bitdepth_max) as u16;
             }
         }
     }

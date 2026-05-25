@@ -2413,9 +2413,7 @@ fn lpf_v_sb_y_8bpc_inner(
                         && (vmask[1] & next_xy) == 0
                         && (vmask[2] & next_xy) == 0;
                     if idx == 4 && next_is_narrow && bitdepth_max == 255 {
-                        if let Some((l2, _, _, _)) =
-                            derive_levels(lvl_offset + b4_stridea)
-                        {
+                        if let Some((l2, _, _, _)) = derive_levels(lvl_offset + b4_stridea) {
                             if l2 == l {
                                 loop_filter_4_8bpc_narrow_simd_v_x8(
                                     _token, buf, dst_offset, e, i, h, strideb,

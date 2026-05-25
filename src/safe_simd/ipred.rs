@@ -6228,17 +6228,38 @@ pub fn cfl_ac_dispatch<BD: BitDepth>(
         let src_stride_i = src_stride as isize;
         if is_ss_hor && is_ss_ver {
             cfl_ac_420_8bpc_inner(
-                token, ac_block, width, height, active_w, active_h, &src_compact, 0,
+                token,
+                ac_block,
+                width,
+                height,
+                active_w,
+                active_h,
+                &src_compact,
+                0,
                 src_stride_i,
             );
         } else if is_ss_hor && !is_ss_ver {
             cfl_ac_422_8bpc_inner(
-                token, ac_block, width, height, active_w, active_h, &src_compact, 0,
+                token,
+                ac_block,
+                width,
+                height,
+                active_w,
+                active_h,
+                &src_compact,
+                0,
                 src_stride_i,
             );
         } else {
             cfl_ac_444_8bpc_inner(
-                token, ac_block, width, height, active_w, active_h, &src_compact, 0,
+                token,
+                ac_block,
+                width,
+                height,
+                active_w,
+                active_h,
+                &src_compact,
+                0,
                 src_stride_i,
             );
         }
@@ -6250,17 +6271,38 @@ pub fn cfl_ac_dispatch<BD: BitDepth>(
         let src_stride_i = y_src.data.stride();
         if is_ss_hor && is_ss_ver {
             cfl_ac_420_8bpc_inner(
-                token, ac_block, width, height, active_w, active_h, src_bytes, src_base,
+                token,
+                ac_block,
+                width,
+                height,
+                active_w,
+                active_h,
+                src_bytes,
+                src_base,
                 src_stride_i,
             );
         } else if is_ss_hor && !is_ss_ver {
             cfl_ac_422_8bpc_inner(
-                token, ac_block, width, height, active_w, active_h, src_bytes, src_base,
+                token,
+                ac_block,
+                width,
+                height,
+                active_w,
+                active_h,
+                src_bytes,
+                src_base,
                 src_stride_i,
             );
         } else {
             cfl_ac_444_8bpc_inner(
-                token, ac_block, width, height, active_w, active_h, src_bytes, src_base,
+                token,
+                ac_block,
+                width,
+                height,
+                active_w,
+                active_h,
+                src_bytes,
+                src_base,
                 src_stride_i,
             );
         }
