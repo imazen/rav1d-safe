@@ -115,6 +115,7 @@ macro_rules! transpose_8x8_i32 {
 /// All operands are computation intrinsics — safe since Rust 1.93+.
 /// `$shift` is a literal because `_mm256_srai_epi32` is const-generic.
 #[cfg(target_arch = "x86_64")]
+#[allow(unused_macros)]
 macro_rules! itx_mul2x_pack {
     ($paired:expr, $coef_a:expr, $coef_b:expr, $rnd:expr, $shift:literal) => {{
         let __coef_a: i32 = $coef_a as i32;
@@ -1475,8 +1476,8 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
     // For 8bpc:
     // row_clip_min/max = i16::MIN/MAX (-32768, 32767)
     // col_clip_min/max = i16::MIN/MAX
-    let row_clip_min = i16::MIN as i32;
-    let row_clip_max = i16::MAX as i32;
+    let _row_clip_min = i16::MIN as i32;
+    let _row_clip_max = i16::MAX as i32;
     let col_clip_min = i16::MIN as i32;
     let col_clip_max = i16::MAX as i32;
 
@@ -3463,9 +3464,7 @@ fn flipadst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max
         adst16_1d_cols8(token, &mut v, min_v, max_v);
         // Swap rows: i <-> 15-i for i in 0..8
         for i in 0..8 {
-            let tmp_v = v[i];
-            v[i] = v[15 - i];
-            v[15 - i] = tmp_v;
+            v.swap(i, 15 - i);
         }
         for i in 0..16 {
             storeu_256!(&mut tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8], v[i]);
@@ -5125,8 +5124,8 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
     let mut dst = dst.flex_mut();
     let mut coeff = coeff.flex_mut();
     // For 8bpc: row_clip = col_clip = i16 range
-    let row_clip_min = i16::MIN as i32;
-    let row_clip_max = i16::MAX as i32;
+    let _row_clip_min = i16::MIN as i32;
+    let _row_clip_max = i16::MAX as i32;
     let col_clip_min = i16::MIN as i32;
     let col_clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 256];
@@ -11523,12 +11522,12 @@ mod tests {
         ];
 
         // Seed-based LCG (no external deps). Lcg64Xsh32-style.
-        let mut state: u64 = 0xdeadbeef_cafe_babe;
+        let mut state: u64 = 0xdead_beef_cafe_babe;
         let mut next_i16 = || -> i16 {
             state = state
                 .wrapping_mul(6364136223846793005)
                 .wrapping_add(1442695040888963407);
-            ((state >> 32) as i32 as i16)
+            (state >> 32) as i32 as i16
         };
 
         const N_TRIALS: usize = 64;
@@ -12313,7 +12312,6 @@ mod tests {
             "dct32_row_pass_i16_simd diverged from scalar reference"
         );
     }
-
 }
 
 // ============================================================================
@@ -13328,6 +13326,7 @@ fn dct8_1d_scalar(
 }
 
 /// Helper macro for 8x8 transform implementations
+#[allow(unused_macros)]
 macro_rules! impl_8x8_transform {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
@@ -18012,6 +18011,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_16bpc_avx2(
 // ============================================================================
 
 /// Helper macro for 8x8 transform implementations (16bpc)
+#[allow(unused_macros)]
 macro_rules! impl_8x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
@@ -18482,6 +18482,7 @@ impl_4x4_ffi_wrapper_16bpc!(
 // ============================================================================
 
 /// Helper macro for 16x16 transform implementations (16bpc)
+#[allow(unused_macros)]
 macro_rules! impl_16x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
@@ -21702,6 +21703,7 @@ impl_ffi_wrapper_16bpc!(
 // ============================================================================
 
 /// Macro for 8x8 transform variants 16bpc
+#[allow(unused_macros)]
 macro_rules! impl_8x8_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
@@ -22150,6 +22152,7 @@ macro_rules! impl_16x16_transform_16bpc_strided_simd_col {
     };
 }
 
+#[allow(unused_macros)]
 macro_rules! impl_16x16_transform_16bpc {
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]

@@ -19,8 +19,8 @@ use crate::include::dav1d::picture::PicOffset;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 
 use crate::src::cdef_apply::rav1d_cdef_brow;
-use crate::src::ctx::small_memset;
 use crate::src::ctx::CaseSet;
+use crate::src::ctx::small_memset;
 use crate::src::env::get_uv_inter_txtp;
 use crate::src::in_range::InRange;
 use crate::src::internal::Bxy;
@@ -2322,9 +2322,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                 debug_block_info!(f, t.b),
                                 &mut t.scratch,
                                 &mut t.cf,
-                                &f.a[t.a]
-                                    .lcoef
-                                    .index(a_start..a_start + t_dim.w as usize),
+                                &f.a[t.a].lcoef.index(a_start..a_start + t_dim.w as usize),
                                 &t.l.lcoef.index(l_start..l_start + t_dim.h as usize),
                                 intra.tx,
                                 bs,

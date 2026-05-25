@@ -143,19 +143,19 @@ fn parse_meson_build(meson_path: &Path) -> Vec<TestVector> {
 /// invocations. Multi-line: collect from `test(` through the matching `)`.
 fn parse_standalone_tests(content: &str, dir: &Path) -> Vec<TestVector> {
     let mut out = Vec::new();
-    let mut iter = content.lines();
+    let iter = content.lines();
     let mut buf = String::new();
     let mut depth: i32 = 0;
     let mut active = false;
-    while let Some(line) = iter.next() {
+    for line in iter {
         let trimmed = line.trim();
         if !active {
-            if trimmed.starts_with("test(") {
+            if let Some(rest) = trimmed.strip_prefix("test(") {
                 buf.clear();
                 buf.push_str(trimmed);
                 depth = 1;
                 // Account for any closing parens on the same line.
-                for ch in trimmed[5..].chars() {
+                for ch in rest.chars() {
                     match ch {
                         '(' => depth += 1,
                         ')' => depth -= 1,

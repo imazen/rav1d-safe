@@ -258,7 +258,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
                 1,
                 px_have,
                 |bytes, offset, stride| {
-                    let pixels: &[BD::Pixel] = zerocopy::FromBytes::ref_from_bytes(&bytes[..])
+                    let pixels: &[BD::Pixel] = zerocopy::FromBytes::ref_from_bytes(bytes)
                         .expect("bytes pixel reinterpretation");
                     for i in 0..px_have {
                         let row_off = (offset as isize + i as isize * stride) as usize / pixel_size;
@@ -299,7 +299,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
                     1,
                     px_have,
                     |bytes, offset, stride| {
-                        let pixels: &[BD::Pixel] = zerocopy::FromBytes::ref_from_bytes(&bytes[..])
+                        let pixels: &[BD::Pixel] = zerocopy::FromBytes::ref_from_bytes(bytes)
                             .expect("bytes pixel reinterpretation");
                         for i in 0..px_have {
                             let row_off =

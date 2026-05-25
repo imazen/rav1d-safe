@@ -2373,10 +2373,30 @@ fn loop_filter_4_8bpc_wd8_simd_h_x8(
         ]
     };
 
-    let lo_a = transpose4(load_row_lo(0), load_row_lo(1), load_row_lo(2), load_row_lo(3));
-    let hi_a = transpose4(load_row_hi(0), load_row_hi(1), load_row_hi(2), load_row_hi(3));
-    let lo_b = transpose4(load_row_lo(4), load_row_lo(5), load_row_lo(6), load_row_lo(7));
-    let hi_b = transpose4(load_row_hi(4), load_row_hi(5), load_row_hi(6), load_row_hi(7));
+    let lo_a = transpose4(
+        load_row_lo(0),
+        load_row_lo(1),
+        load_row_lo(2),
+        load_row_lo(3),
+    );
+    let hi_a = transpose4(
+        load_row_hi(0),
+        load_row_hi(1),
+        load_row_hi(2),
+        load_row_hi(3),
+    );
+    let lo_b = transpose4(
+        load_row_lo(4),
+        load_row_lo(5),
+        load_row_lo(6),
+        load_row_lo(7),
+    );
+    let hi_b = transpose4(
+        load_row_hi(4),
+        load_row_hi(5),
+        load_row_hi(6),
+        load_row_hi(7),
+    );
 
     let combine = |a: __m128i, b: __m128i| -> __m256i {
         _mm256_inserti128_si256::<1>(_mm256_castsi128_si256(a), b)
@@ -2538,10 +2558,7 @@ fn loop_filter_4_8bpc_wd8_simd_h_x8(
 
     // Split YMM back into two XMM halves to use 4×4 reverse-transpose per group.
     let split = |v: __m256i| -> (__m128i, __m128i) {
-        (
-            _mm256_castsi256_si128(v),
-            _mm256_extracti128_si256::<1>(v),
-        )
+        (_mm256_castsi256_si128(v), _mm256_extracti128_si256::<1>(v))
     };
     let (p2_a, p2_b) = split(final_p2);
     let (p1_a, p1_b) = split(final_p1);
