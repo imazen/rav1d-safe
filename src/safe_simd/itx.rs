@@ -1501,21 +1501,10 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 8 columns (single chunk)
-    {
-        let min_v = _mm256_set1_epi32(col_clip_min);
-        let max_v = _mm256_set1_epi32(col_clip_max);
-        let mut v = [_mm256_setzero_si256(); 8];
-        for i in 0..8 {
-            v[i] = loadu_256!(&tmp[i * 8..i * 8 + 8], [i32; 8]);
-        }
-        dct8_1d_cols8(_token, &mut v, min_v, max_v);
-        for i in 0..8 {
-            storeu_256!(&mut tmp[i * 8..i * 8 + 8], [i32; 8], v[i]);
-        }
-    }
+    // Column transform: i16-packed pmaddwd (replaces i32 mullo column pass)
+    let col_out = dct8_col_pass_i16(_token, &tmp);
 
-    // Add to destination with SIMD
+    // Add to destination with SIMD — col_out[y] is ymm of 8 i32 (one per column)
     let zero = _mm_setzero_si128();
     let max_val = _mm_set1_epi16(bitdepth_max as i16);
     let rnd_final = _mm256_set1_epi32(8);
@@ -1527,11 +1516,8 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
         let d = loadi64!(&dst[dst_off..dst_off + 8]);
         let d16 = _mm_unpacklo_epi8(d, zero);
 
-        // Load 8 contiguous i32 coefficients in one AVX2 load (replaces 8x vmovd + insertps)
-        let c_256 = loadu_256!(&tmp[y * 8..y * 8 + 8], [i32; 8]);
-
         // Final scaling: (c + 8) >> 4
-        let c_scaled = _mm256_srai_epi32(_mm256_add_epi32(c_256, rnd_final), 4);
+        let c_scaled = _mm256_srai_epi32(_mm256_add_epi32(col_out[y], rnd_final), 4);
 
         // Pack to 16-bit
         let c_lo_scaled = _mm256_castsi256_si128(c_scaled);
@@ -6741,6 +6727,152 @@ fn dct8_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 64]) -> [i32
     out
 }
 
+/// i16-packed pmaddwd DCT-8 column pass.
+///
+/// Takes row-major i32 `tmp[y*8 + x]` (8 rows × 8 cols, values in i16 range after
+/// intermediate shift+clip), runs the DCT-8 column transform using `_mm256_madd_epi16`
+/// (pmaddwd) instead of `_mm256_mullo_epi32`, and returns row-major i32 output
+/// ready for add-to-dst.
+///
+/// Each ymm lane (K=0..7) corresponds to column K. For a given "row" index r in the
+/// DCT, we have: `xmm[r]` = 8 i16 values (one per column). We pair rows via
+/// `dct8_row_build_pair(xmm[row_a], xmm[row_b])` → ymm where each i32 lane K =
+/// (row_a_colK, row_b_colK) ready for pmaddwd.
+///
+/// Benefits vs i32 mullo column pass: replaces 16 `mullo_epi32` (10c Zen3) with
+/// 10 `madd_epi16` (5c Zen3) = ~100 cycles saved per 8x8 block.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn dct8_col_pass_i16(
+    _token: Desktop64,
+    tmp_row_major: &[i32; 64],
+) -> [__m256i; 8] {
+    // Step 1: Convert each row from 8 × i32 to 8 × i16 in an xmm.
+    // Values are guaranteed clipped to i16 range by the intermediate shift+clip.
+    let mut row_xmm = [_mm_setzero_si128(); 8];
+    for y in 0..8 {
+        let v = loadu_256!(&tmp_row_major[y * 8..y * 8 + 8], [i32; 8]);
+        let lo128 = _mm256_castsi256_si128(v);
+        let hi128 = _mm256_extracti128_si256(v, 1);
+        // _mm_packs_epi32: [a0,a1,a2,a3] + [b0,b1,b2,b3] → [a0,a1,a2,a3,b0,b1,b2,b3] i16
+        // Since values are in i16 range, saturation is lossless.
+        row_xmm[y] = _mm_packs_epi32(lo128, hi128);
+    }
+
+    // Step 2: Build (row_a, row_b) pairs for pmaddwd.
+    // DCT-8 inputs: even side uses rows 0,2,4,6; odd side uses rows 1,3,5,7.
+    // Pair convention matches dct8_row_pass_i16_simd:
+    //   pair_17 = (row1, row7) — for t4a, t7a
+    //   pair_53 = (row5, row3) — for t5a, t6a
+    //   pair_26 = (row2, row6) — for t2, t3  (DCT-4 even)
+    //   pair_04 = (row0, row4) — for t0, t1  (DCT-4 even)
+    let pair_17 = dct8_row_build_pair(_token, row_xmm[1], row_xmm[7]);
+    let pair_53 = dct8_row_build_pair(_token, row_xmm[5], row_xmm[3]);
+    let pair_26 = dct8_row_build_pair(_token, row_xmm[2], row_xmm[6]);
+    let pair_04 = dct8_row_build_pair(_token, row_xmm[0], row_xmm[4]);
+
+    let pd_2048 = _mm256_set1_epi32(2048);
+    let pd_128 = _mm256_set1_epi32(128);
+
+    // Step 3: Multiplicative stages via pmaddwd (same formulas as row pass).
+    //   t4a = (in1*799 - in7*4017 + 2048) >> 12
+    //   t7a = (in1*4017 + in7*799  + 2048) >> 12
+    //   t5a = (in5*3406 - in3*2276 + 2048) >> 12
+    //   t6a = (in5*2276 + in3*3406 + 2048) >> 12
+    //   t2  = (in2*1567 - in6*3784 + 2048) >> 12
+    //   t3  = (in2*3784 + in6*1567 + 2048) >> 12
+    //   t0  = (in0*181  + in4*181  + 128 ) >> 8
+    //   t1  = (in0*181  - in4*181  + 128 ) >> 8
+    let t4a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_17, dct8_row_coef_pack(_token, 799, -4017)),
+        pd_2048,
+    ));
+    let t7a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_17, dct8_row_coef_pack(_token, 4017, 799)),
+        pd_2048,
+    ));
+    let t5a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_53, dct8_row_coef_pack(_token, 3406, -2276)),
+        pd_2048,
+    ));
+    let t6a = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_53, dct8_row_coef_pack(_token, 2276, 3406)),
+        pd_2048,
+    ));
+    let t2 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_26, dct8_row_coef_pack(_token, 1567, -3784)),
+        pd_2048,
+    ));
+    let t3 = _mm256_srai_epi32::<12>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_26, dct8_row_coef_pack(_token, 3784, 1567)),
+        pd_2048,
+    ));
+    let t0 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_04, dct8_row_coef_pack(_token, 181, 181)),
+        pd_128,
+    ));
+    let t1 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_04, dct8_row_coef_pack(_token, 181, -181)),
+        pd_128,
+    ));
+
+    // Step 4: Additive butterfly stages (i32 arithmetic with i16 clip).
+    let col_min = i16::MIN as i32;
+    let col_max = i16::MAX as i32;
+    let col_min_v = _mm256_set1_epi32(col_min);
+    let col_max_v = _mm256_set1_epi32(col_max);
+    let clip = |v: __m256i| _mm256_max_epi32(_mm256_min_epi32(v, col_max_v), col_min_v);
+
+    // Stage 1 butterfly on odd half:
+    let t4 = clip(_mm256_add_epi32(t4a, t5a));
+    let t5a_n = clip(_mm256_sub_epi32(t4a, t5a));
+    let t7 = clip(_mm256_add_epi32(t7a, t6a));
+    let t6a_n = clip(_mm256_sub_epi32(t7a, t6a));
+
+    // Stage 2 — t5/t6 via 181 multiply.
+    // t5a_n and t6a_n are i32 in i16 range. Pack them as i16 pair for pmaddwd:
+    //   pair = (t6a_n, t5a_n)
+    //   t5 = pmaddwd(pair, (181, -181)) + 128 >> 8   [= (t6a_n - t5a_n)*181 + 128 >> 8]
+    //   t6 = pmaddwd(pair, (181,  181)) + 128 >> 8   [= (t6a_n + t5a_n)*181 + 128 >> 8]
+    let t5a_n_xmm = _mm_packs_epi32(
+        _mm256_castsi256_si128(t5a_n),
+        _mm256_extracti128_si256(t5a_n, 1),
+    );
+    let t6a_n_xmm = _mm_packs_epi32(
+        _mm256_castsi256_si128(t6a_n),
+        _mm256_extracti128_si256(t6a_n, 1),
+    );
+    let pair_65 = dct8_row_build_pair(_token, t6a_n_xmm, t5a_n_xmm);
+    let t5 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_65, dct8_row_coef_pack(_token, 181, -181)),
+        pd_128,
+    ));
+    let t6 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_madd_epi16(pair_65, dct8_row_coef_pack(_token, 181, 181)),
+        pd_128,
+    ));
+
+    // DCT-4 even side: t0..t3 already computed above.
+    // Combine: tmp0..tmp3 = DCT-4 butterfly outputs.
+    let tmp0 = clip(_mm256_add_epi32(t0, t3));
+    let tmp1 = clip(_mm256_add_epi32(t1, t2));
+    let tmp2 = clip(_mm256_sub_epi32(t1, t2));
+    let tmp3 = clip(_mm256_sub_epi32(t0, t3));
+
+    // Final DCT-8 butterfly:
+    let mut out = [_mm256_setzero_si256(); 8];
+    out[0] = clip(_mm256_add_epi32(tmp0, t7));
+    out[1] = clip(_mm256_add_epi32(tmp1, t6));
+    out[2] = clip(_mm256_add_epi32(tmp2, t5));
+    out[3] = clip(_mm256_add_epi32(tmp3, t4));
+    out[4] = clip(_mm256_sub_epi32(tmp3, t4));
+    out[5] = clip(_mm256_sub_epi32(tmp2, t5));
+    out[6] = clip(_mm256_sub_epi32(tmp1, t6));
+    out[7] = clip(_mm256_sub_epi32(tmp0, t7));
+
+    out
+}
+
 /// i16-packed pmaddwd DCT-16 row pass — operates on 16 rows of 16 i16 coefficients
 /// stored in column-major order, producing 256 i32 outputs in row-major order.
 ///
@@ -10659,6 +10791,105 @@ mod tests {
         assert_eq!(
             total_mismatches, 0,
             "dct8_row_pass_i16_simd diverged from scalar reference"
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // i16-packed pmaddwd DCT-8 COLUMN pass — bit-exact vs i32 mullo col pass
+    // ----------------------------------------------------------------------
+
+    /// Bit-exact check: `dct8_col_pass_i16` matches `dct8_1d_cols8` (i32 mullo).
+    /// Uses the full pipeline (row pass → intermediate shift → col pass) to
+    /// exercise the i16-packed pmaddwd column pass against the i32 reference.
+    ///
+    /// The test body calls `inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner` (which
+    /// now uses dct8_col_pass_i16) and the scalar reference, comparing dst output.
+    #[test]
+    fn test_dct8_col_pass_i16_matches_i32_col_pass() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+        // Test via the full 2D transform pipeline: compare safe SIMD output
+        // (which now uses dct8_col_pass_i16) against the scalar reference.
+        let seeds: &[u64] = &[
+            0xdeadbeef, 0xc0ffee, 0xfeedface, 0xbaadf00d,
+            0x12345678, 0xa5a5a5a5, 0x5a5a5a5a, 0xffff_ffff_ffff_ffff,
+            0x0, 0x7fff_7fff_7fff_7fff, 0x8000_8000_8000_8000,
+        ];
+        let row_min = i16::MIN as i32;
+        let row_max = i16::MAX as i32;
+        let col_min = i16::MIN as i32;
+        let col_max = i16::MAX as i32;
+        let mut total_mism = 0u32;
+        for &seed in seeds {
+            let input: [i16; 64] = seeded_i16_block(seed);
+
+            // --- Scalar reference: full 2D pipeline ---
+            // 1. Row pass (scalar)
+            let row_out = run_scalar_dct8_per_row(&input, row_min, row_max);
+            // 2. Intermediate shift+clip
+            let mut scalar_tmp = [0i32; 64];
+            for i in 0..64 {
+                scalar_tmp[i] = ((row_out[i] + 1) >> 1).clamp(col_min, col_max);
+            }
+            // 3. Column pass (scalar) — iterate by column
+            let mut scalar_col_out = [0i32; 64];
+            for x in 0..8 {
+                let mut col = [0i32; 8];
+                for y in 0..8 {
+                    col[y] = scalar_tmp[y * 8 + x];
+                }
+                crate::src::itx_1d::rav1d_inv_dct8_1d_c(
+                    &mut col,
+                    NonZeroUsize::new(1).unwrap(),
+                    col_min,
+                    col_max,
+                );
+                for y in 0..8 {
+                    scalar_col_out[y * 8 + x] = col[y];
+                }
+            }
+
+            // --- SIMD: full 2D pipeline using the wired function ---
+            let mut dst_simd = [128u8; 8 * 8]; // neutral start
+            let mut coeff_simd = input;
+            inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
+                token, &mut dst_simd, 8, &mut coeff_simd, 64, 255,
+            );
+
+            // --- Apply the same add-to-dst to the scalar output ---
+            let mut dst_scalar = [128u8; 8 * 8];
+            for y in 0..8 {
+                for x in 0..8 {
+                    let c = scalar_col_out[y * 8 + x];
+                    let scaled = (c + 8) >> 4;
+                    let p = (dst_scalar[y * 8 + x] as i32 + scaled).clamp(0, 255);
+                    dst_scalar[y * 8 + x] = p as u8;
+                }
+            }
+
+            // Compare
+            if dst_simd != dst_scalar {
+                let mut mism = 0u32;
+                for i in 0..64 {
+                    if dst_simd[i] != dst_scalar[i] {
+                        if mism < 8 {
+                            eprintln!(
+                                "seed={:#x} idx={} row={} col={} scalar={} simd={}",
+                                seed, i, i / 8, i % 8, dst_scalar[i], dst_simd[i],
+                            );
+                        }
+                        mism += 1;
+                    }
+                }
+                eprintln!("seed={seed:#x}: {mism} dst mismatches");
+                total_mism += mism;
+            }
+        }
+        assert_eq!(
+            total_mism, 0,
+            "dct8_col_pass_i16 full pipeline diverged from scalar reference"
         );
     }
 
