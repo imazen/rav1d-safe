@@ -19568,6 +19568,208 @@ impl_itxfm_direct_dispatch!(
     h_flipadst_fn: flipadst_identity, v_flipadst_fn: identity_flipadst
 );
 
+/// Compute the scalar DC value used by the DCT_DCT DC-only fast path.
+///
+/// Mirrors the scalar reference in `src/itx.rs:89-105`:
+///
+/// ```text
+/// dc = coeff[0] as i32
+/// if rect2: dc = (dc * 181 + 128) >> 8
+/// dc = (dc * 181 + 128) >> 8
+/// dc = (dc + (1 << shift >> 1)) >> shift
+/// dc = (dc * 181 + 128 + 2048) >> 12
+/// ```
+#[cfg(not(feature = "asm"))]
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+fn dc_only_compute(coeff0: i32, rect2: bool, shift: u32) -> i32 {
+    let mut dc = coeff0;
+    if rect2 {
+        dc = (dc * 181 + 128) >> 8;
+    }
+    dc = (dc * 181 + 128) >> 8;
+    let rnd: i32 = if shift == 0 { 0 } else { 1 << (shift - 1) };
+    dc = (dc + rnd) >> shift;
+    dc = (dc * 181 + 128 + 2048) >> 12;
+    dc
+}
+
+/// Look up the per-size `shift` value for the DC-only formula. Matches the
+/// `shift` table in `inv_txfm_add_rust` (src/itx.rs).
+#[cfg(not(feature = "asm"))]
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+fn dc_only_shift(w: usize, h: usize) -> u32 {
+    match (w, h) {
+        (4, 4) | (4, 8) | (8, 4) => 0,
+        (4, 16) | (8, 8) | (8, 16) | (16, 4) | (16, 8) | (32, 16) | (16, 32) | (32, 64)
+        | (64, 32) => 1,
+        (8, 32) | (16, 16) | (16, 64) | (32, 8) | (32, 32) | (64, 16) | (64, 64) => 2,
+        _ => 0,
+    }
+}
+
+/// DC-only fast path for 8bpc DCT_DCT (eob == 0). Broadcasts the precomputed
+/// `dc` scalar across the block and adds + clamps with SIMD.
+#[cfg(not(feature = "asm"))]
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn dc_only_add_8bpc(
+    _token: Desktop64,
+    dst: &mut [u8],
+    dst_stride: usize,
+    w: usize,
+    h: usize,
+    dc: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let dc_i16 = dc.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+
+    if w >= 32 {
+        // 32-byte rows: one AVX2 vector per chunk of 32 columns
+        let dc_v = _mm256_set1_epi16(dc_i16);
+        let zero = _mm256_setzero_si256();
+        for y in 0..h {
+            let row_off = y * dst_stride;
+            let mut x = 0;
+            while x + 32 <= w {
+                let d = loadu_256!(
+                    <&[u8; 32]>::try_from(&dst[row_off + x..row_off + x + 32]).unwrap()
+                );
+                // Unpack u8 -> i16, add dc, pack back with unsigned saturation.
+                // Note: unpack is per-lane, so we pack the lanes back the same way.
+                let d_lo = _mm256_unpacklo_epi8(d, zero);
+                let d_hi = _mm256_unpackhi_epi8(d, zero);
+                let sum_lo = _mm256_add_epi16(d_lo, dc_v);
+                let sum_hi = _mm256_add_epi16(d_hi, dc_v);
+                // packus saturates signed i16 -> u8 [0, 255] = exactly what we want
+                let packed = _mm256_packus_epi16(sum_lo, sum_hi);
+                storeu_256!(
+                    <&mut [u8; 32]>::try_from(&mut dst[row_off + x..row_off + x + 32]).unwrap(),
+                    packed
+                );
+                x += 32;
+            }
+        }
+    } else if w == 16 {
+        let dc_v = _mm_set1_epi16(dc_i16);
+        let zero = _mm_setzero_si128();
+        for y in 0..h {
+            let row_off = y * dst_stride;
+            let d = loadu_128!(
+                <&[u8; 16]>::try_from(&dst[row_off..row_off + 16]).unwrap()
+            );
+            let d_lo = _mm_unpacklo_epi8(d, zero);
+            let d_hi = _mm_unpackhi_epi8(d, zero);
+            let sum_lo = _mm_add_epi16(d_lo, dc_v);
+            let sum_hi = _mm_add_epi16(d_hi, dc_v);
+            let packed = _mm_packus_epi16(sum_lo, sum_hi);
+            storeu_128!(
+                <&mut [u8; 16]>::try_from(&mut dst[row_off..row_off + 16]).unwrap(),
+                packed
+            );
+        }
+    } else if w == 8 {
+        let dc_v = _mm_set1_epi16(dc_i16);
+        let zero = _mm_setzero_si128();
+        for y in 0..h {
+            let row_off = y * dst_stride;
+            let d = loadi64!(&dst[row_off..row_off + 8]);
+            let d_lo = _mm_unpacklo_epi8(d, zero);
+            let sum = _mm_add_epi16(d_lo, dc_v);
+            let packed = _mm_packus_epi16(sum, sum);
+            storei64!(&mut dst[row_off..row_off + 8], packed);
+        }
+    } else {
+        // w == 4: scalar fallback (small h max 16 → ≤ 64 adds, not worth SIMD)
+        let dc_i32 = dc;
+        for y in 0..h {
+            let row_off = y * dst_stride;
+            for x in 0..w {
+                dst[row_off + x] = (dst[row_off + x] as i32 + dc_i32).clamp(0, 255) as u8;
+            }
+        }
+    }
+}
+
+/// DC-only fast path for 16bpc DCT_DCT (eob == 0). 16bpc uses u16 pixels and
+/// per-pixel clamp to `bitdepth_max` (1023 for 10-bit, 4095 for 12-bit).
+#[cfg(not(feature = "asm"))]
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn dc_only_add_16bpc(
+    _token: Desktop64,
+    dst: &mut [u16],
+    px_stride: usize,
+    w: usize,
+    h: usize,
+    dc: i32,
+    bitdepth_max: i32,
+) {
+    let mut dst = dst.flex_mut();
+
+    if w >= 16 {
+        let dc_v = _mm256_set1_epi32(dc);
+        let max_v = _mm256_set1_epi32(bitdepth_max);
+        let zero = _mm256_setzero_si256();
+        for y in 0..h {
+            let row_off = y * px_stride;
+            let mut x = 0;
+            while x + 16 <= w {
+                let d = loadu_256!(
+                    <&[u16; 16]>::try_from(&dst[row_off + x..row_off + x + 16]).unwrap()
+                );
+                let d_lo = _mm256_unpacklo_epi16(d, zero);
+                let d_hi = _mm256_unpackhi_epi16(d, zero);
+                // Reshuffle to true low/high halves
+                let d_0_4 = _mm256_permute2x128_si256(d_lo, d_hi, 0x20);
+                let d_4_8 = _mm256_permute2x128_si256(d_lo, d_hi, 0x31);
+                let sum_lo = _mm256_add_epi32(d_0_4, dc_v);
+                let sum_hi = _mm256_add_epi32(d_4_8, dc_v);
+                let clamped_lo = _mm256_max_epi32(_mm256_min_epi32(sum_lo, max_v), zero);
+                let clamped_hi = _mm256_max_epi32(_mm256_min_epi32(sum_hi, max_v), zero);
+                // packus_epi32 saturates signed-i32 to unsigned-u16
+                let packed = _mm256_packus_epi32(clamped_lo, clamped_hi);
+                // packus_epi32 interleaves lanes; permute4x64 fixes ordering
+                let packed = _mm256_permute4x64_epi64::<0xd8>(packed);
+                storeu_256!(
+                    <&mut [u16; 16]>::try_from(&mut dst[row_off + x..row_off + x + 16]).unwrap(),
+                    packed
+                );
+                x += 16;
+            }
+        }
+    } else if w == 8 {
+        let dc_v = _mm_set1_epi32(dc);
+        let max_v = _mm_set1_epi32(bitdepth_max);
+        let zero = _mm_setzero_si128();
+        for y in 0..h {
+            let row_off = y * px_stride;
+            let d = loadu_128!(<&[u16; 8]>::try_from(&dst[row_off..row_off + 8]).unwrap());
+            let d_lo = _mm_unpacklo_epi16(d, zero);
+            let d_hi = _mm_unpackhi_epi16(d, zero);
+            let sum_lo = _mm_add_epi32(d_lo, dc_v);
+            let sum_hi = _mm_add_epi32(d_hi, dc_v);
+            let clamped_lo = _mm_max_epi32(_mm_min_epi32(sum_lo, max_v), zero);
+            let clamped_hi = _mm_max_epi32(_mm_min_epi32(sum_hi, max_v), zero);
+            let packed = _mm_packus_epi32(clamped_lo, clamped_hi);
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst[row_off..row_off + 8]).unwrap(),
+                packed
+            );
+        }
+    } else {
+        // w == 4: scalar fallback
+        for y in 0..h {
+            let row_off = y * px_stride;
+            for x in 0..w {
+                dst[row_off + x] =
+                    (dst[row_off + x] as i32 + dc).clamp(0, bitdepth_max) as u16;
+            }
+        }
+    }
+}
+
 /// 8bpc dispatch: calls inner SIMD functions directly with slices.
 /// Arcane functions take (token, dst, stride_usize, coeff, eob, bdmax).
 /// Scalar functions take (dst, base, stride_isize, coeff, eob, bdmax).
@@ -19587,6 +19789,22 @@ fn itxfm_dispatch_8bpc(
     bdmax: i32,
 ) -> bool {
     use crate::src::levels::TxfmSize;
+
+    // DC-only fast path: DCT_DCT with eob == 0. Mirrors the scalar shortcut
+    // in `src/itx.rs:89-105`.
+    if eob == 0 && tx_type == DCT_DCT {
+        let txfm = match TxfmSize::from_repr(tx_size) {
+            Some(t) => t,
+            None => return false,
+        };
+        let (w, h) = txfm.to_wh();
+        let rect2 = w * 2 == h || h * 2 == w;
+        let shift = dc_only_shift(w, h);
+        let dc = dc_only_compute(coeff[0] as i32, rect2, shift);
+        coeff[0] = 0;
+        dc_only_add_8bpc(token, &mut dst[base..], stride_u, w, h, dc);
+        return true;
+    }
 
     // Arcane functions: dst starts at pixel (base=0 for positive stride)
     macro_rules! arcane {
@@ -19703,6 +19921,24 @@ fn itxfm_dispatch_16bpc(
     let coeff: &mut [i32] =
         zerocopy::FromBytes::mut_from_bytes(zerocopy::IntoBytes::as_mut_bytes(coeff_i16))
             .expect("coeff alignment/size mismatch for i32 reinterpretation");
+
+    // DC-only fast path: DCT_DCT with eob == 0. Mirrors the scalar shortcut
+    // in `src/itx.rs:89-105`.
+    if eob == 0 && tx_type == DCT_DCT {
+        let txfm = match TxfmSize::from_repr(tx_size) {
+            Some(t) => t,
+            None => return false,
+        };
+        let (w, h) = txfm.to_wh();
+        let rect2 = w * 2 == h || h * 2 == w;
+        let shift = dc_only_shift(w, h);
+        let dc = dc_only_compute(coeff[0], rect2, shift);
+        coeff[0] = 0;
+        // Convert byte_stride to u16 pixel stride
+        let px_stride = byte_stride / 2;
+        dc_only_add_16bpc(token, &mut dst[base..], px_stride, w, h, dc, bdmax);
+        return true;
+    }
 
     // Arcane 16bpc functions take byte_stride as usize
     macro_rules! arcane {
