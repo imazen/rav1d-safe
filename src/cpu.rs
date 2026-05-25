@@ -268,20 +268,6 @@ pub(crate) fn summon_avx2() -> Option<archmage::prelude::Desktop64> {
     archmage::prelude::Desktop64::summon()
 }
 
-/// Try to summon an SSE4.2+POPCNT token, gated by the CPU flags mask.
-/// Returns `None` if SSE4.1 is masked out (i.e. CpuLevel::Scalar mode) or
-/// CPU lacks SSE4.2. Used to wrap outer loops in `#[arcane]` so inner
-/// per-call SIMD dispatches share the target_feature region and inline.
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-pub(crate) fn summon_v2_x64() -> Option<archmage::X64V2Token> {
-    use archmage::SimdToken as _;
-    if !simd_enabled(CpuFlags::SSE41) {
-        return None;
-    }
-    archmage::X64V2Token::summon()
-}
-
 /// Try to summon an AVX-512 token, gated by the CPU flags mask.
 /// Returns `None` if AVX-512 ICL is masked out or unavailable.
 /// This gates safe_simd AVX-512 code paths on x86_64.
