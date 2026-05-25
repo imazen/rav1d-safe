@@ -20,7 +20,7 @@
 #![allow(unused_imports)]
 
 #[cfg(target_arch = "x86_64")]
-use archmage::{Desktop64, SimdToken, X64V2Token, arcane, rite};
+use archmage::{Desktop64, SimdToken, arcane, rite};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
@@ -76,7 +76,7 @@ fn signed_idx(base: usize, offset: isize) -> usize {
 #[cfg(any(target_arch = "x86_64", target_arch = "wasm32"))]
 #[cfg_attr(target_arch = "x86_64", rite)]
 fn loop_filter_4_8bpc(
-    #[cfg(target_arch = "x86_64")] _token: X64V2Token,
+    #[cfg(target_arch = "x86_64")] _token: Desktop64,
     buf: &mut [u8],
     base: usize,
     e: i32,
@@ -332,7 +332,7 @@ fn loop_filter_4_8bpc(
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn loop_filter_4_8bpc_wd6_simd_v(
-    _token: X64V2Token,
+    _token: Desktop64,
     buf: &mut [u8],
     base: usize,
     e: i32,
@@ -526,7 +526,7 @@ fn loop_filter_4_8bpc_wd6_simd_v(
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn loop_filter_4_8bpc_wd8_simd_v(
-    _token: X64V2Token,
+    _token: Desktop64,
     buf: &mut [u8],
     base: usize,
     e: i32,
@@ -733,7 +733,7 @@ fn loop_filter_4_8bpc_wd8_simd_v(
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn loop_filter_4_8bpc_wd16_simd_v(
-    _token: X64V2Token,
+    _token: Desktop64,
     buf: &mut [u8],
     base: usize,
     e: i32,
@@ -1112,7 +1112,7 @@ fn loop_filter_4_8bpc_wd16_simd_v(
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn loop_filter_4_8bpc_narrow_simd_h(
-    _token: X64V2Token,
+    _token: Desktop64,
     buf: &mut [u8],
     base: usize,
     e: i32,
@@ -1261,7 +1261,7 @@ fn loop_filter_4_8bpc_narrow_simd_h(
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn loop_filter_4_8bpc_wd8_simd_h(
-    _token: X64V2Token,
+    _token: Desktop64,
     buf: &mut [u8],
     base: usize,
     e: i32,
@@ -1522,7 +1522,7 @@ fn loop_filter_4_8bpc_wd8_simd_h(
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn loop_filter_4_8bpc_wd16_simd_h(
-    _token: X64V2Token,
+    _token: Desktop64,
     buf: &mut [u8],
     base: usize,
     e: i32,
@@ -1991,7 +1991,7 @@ fn loop_filter_4_8bpc_wd16_simd_h(
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn loop_filter_4_8bpc_narrow_simd_v(
-    _token: X64V2Token,
+    _token: Desktop64,
     buf: &mut [u8],
     base: usize,
     e: i32,
@@ -2118,7 +2118,7 @@ fn read_lvl(lvl: &[AtomicU8], offset: usize, byte_idx: usize) -> u8 {
 #[cfg_attr(target_arch = "x86_64", arcane)]
 #[allow(unused_mut)]
 fn lpf_h_sb_y_8bpc_inner(
-    #[cfg(target_arch = "x86_64")] _token: X64V2Token,
+    #[cfg(target_arch = "x86_64")] _token: Desktop64,
     buf: &mut [u8],
     mut dst_offset: usize,
     stride: isize,
@@ -2193,7 +2193,7 @@ fn lpf_h_sb_y_8bpc_inner(
 #[cfg_attr(target_arch = "x86_64", arcane)]
 #[allow(unused_mut)]
 fn lpf_v_sb_y_8bpc_inner(
-    #[cfg(target_arch = "x86_64")] _token: X64V2Token,
+    #[cfg(target_arch = "x86_64")] _token: Desktop64,
     buf: &mut [u8],
     mut dst_offset: usize,
     stride: isize,
@@ -2268,7 +2268,7 @@ fn lpf_v_sb_y_8bpc_inner(
 #[cfg_attr(target_arch = "x86_64", arcane)]
 #[allow(unused_mut)]
 fn lpf_h_sb_uv_8bpc_inner(
-    #[cfg(target_arch = "x86_64")] _token: X64V2Token,
+    #[cfg(target_arch = "x86_64")] _token: Desktop64,
     buf: &mut [u8],
     mut dst_offset: usize,
     stride: isize,
@@ -2337,7 +2337,7 @@ fn lpf_h_sb_uv_8bpc_inner(
 #[cfg_attr(target_arch = "x86_64", arcane)]
 #[allow(unused_mut)]
 fn lpf_v_sb_uv_8bpc_inner(
-    #[cfg(target_arch = "x86_64")] _token: X64V2Token,
+    #[cfg(target_arch = "x86_64")] _token: Desktop64,
     buf: &mut [u8],
     mut dst_offset: usize,
     stride: isize,
@@ -2425,7 +2425,7 @@ pub unsafe extern "C" fn lpf_h_sb_y_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
-    let token = X64V2Token::summon().expect("AVX2 implies V2");
+    let token = Desktop64::summon().expect("AVX2 implies Desktop64");
     lpf_h_sb_y_8bpc_inner(
         token,
         buf,
@@ -2461,7 +2461,7 @@ pub unsafe extern "C" fn lpf_v_sb_y_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
-    let token = X64V2Token::summon().expect("AVX2 implies V2");
+    let token = Desktop64::summon().expect("AVX2 implies Desktop64");
     lpf_v_sb_y_8bpc_inner(
         token,
         buf,
@@ -2497,7 +2497,7 @@ pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
-    let token = X64V2Token::summon().expect("AVX2 implies V2");
+    let token = Desktop64::summon().expect("AVX2 implies Desktop64");
     lpf_h_sb_uv_8bpc_inner(
         token,
         buf,
@@ -2533,7 +2533,7 @@ pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
-    let token = X64V2Token::summon().expect("AVX2 implies V2");
+    let token = Desktop64::summon().expect("AVX2 implies Desktop64");
     lpf_v_sb_uv_8bpc_inner(
         token,
         buf,
@@ -3217,9 +3217,11 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
 
-    // Summon V2 token once at the outer dispatch — passed through to the
-    // `#[arcane]` outer inners so per-edge SIMD calls inline (no trampoline).
-    let Some(token) = crate::src::cpu::summon_v2_x64() else {
+    // Summon Desktop64 (AVX2+FMA+BMI2) token once at the outer dispatch —
+    // passed through to the `#[arcane]` outer inners so per-edge SIMD calls
+    // inline (no trampoline). AVX2 unlocks YMM-wide intrinsics if the
+    // inner kernels widen.
+    let Some(token) = crate::src::cpu::summon_avx2() else {
         return false;
     };
 
