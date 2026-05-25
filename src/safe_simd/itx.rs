@@ -1528,23 +1528,11 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
         let d = loadi64!(&dst[dst_off..dst_off + 8]);
         let d16 = _mm_unpacklo_epi8(d, zero);
 
-        // Load and scale coefficients
-        let c_lo = _mm_set_epi32(
-            tmp[y * 8 + 3],
-            tmp[y * 8 + 2],
-            tmp[y * 8 + 1],
-            tmp[y * 8 + 0],
-        );
-        let c_hi = _mm_set_epi32(
-            tmp[y * 8 + 7],
-            tmp[y * 8 + 6],
-            tmp[y * 8 + 5],
-            tmp[y * 8 + 4],
-        );
+        // Load 8 contiguous i32 coefficients in one AVX2 load (replaces 8x vmovd + insertps)
+        let c_256 = loadu_256!(&tmp[y * 8..y * 8 + 8], [i32; 8]);
 
         // Final scaling: (c + 8) >> 4
-        let c_lo_256 = _mm256_set_m128i(c_hi, c_lo);
-        let c_scaled = _mm256_srai_epi32(_mm256_add_epi32(c_lo_256, rnd_final), 4);
+        let c_scaled = _mm256_srai_epi32(_mm256_add_epi32(c_256, rnd_final), 4);
 
         // Pack to 16-bit
         let c_lo_scaled = _mm256_castsi256_si128(c_scaled);
@@ -1672,19 +1660,10 @@ fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
         let d_lo = _mm_unpacklo_epi16(d, zero); // First 4 as i32
         let d_hi = _mm_unpackhi_epi16(d, zero); // Last 4 as i32
 
-        // Load and scale coefficients
-        let c_lo = _mm_set_epi32(
-            tmp[y * 8 + 3],
-            tmp[y * 8 + 2],
-            tmp[y * 8 + 1],
-            tmp[y * 8 + 0],
-        );
-        let c_hi = _mm_set_epi32(
-            tmp[y * 8 + 7],
-            tmp[y * 8 + 6],
-            tmp[y * 8 + 5],
-            tmp[y * 8 + 4],
-        );
+        // Load 8 contiguous i32 coefficients in one AVX2 load, split into two SSE halves
+        let c_256 = loadu_256!(&tmp[y * 8..y * 8 + 8], [i32; 8]);
+        let c_lo = _mm256_castsi256_si128(c_256);
+        let c_hi = _mm256_extracti128_si256(c_256, 1);
 
         // Final scaling: (c + 8) >> 4
         let c_lo_scaled = _mm_srai_epi32(_mm_add_epi32(c_lo, rnd_final), 4);
