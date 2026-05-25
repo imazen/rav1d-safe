@@ -377,7 +377,52 @@ fn ctx_refill(s: &mut MsacContext) {
     let mut c = (EC_WIN_SIZE as c_int) - 24 - s.cnt;
     let mut dif = s.dif;
     s.with_buf(|mut buf| {
+        // Bulk path: on 64-bit targets where `EcWin = u64`, dav1d's reference
+        // ASM does this refill as `mov r, [buf]; bswap r; not r; shift; or dif, r`
+        // — a single 8-byte big-endian load fills the entire 64-bit `dif`
+        // window in one shot. This is the canonical hot path of the entropy
+        // decoder (called for every `cnt < 0` refill, ~1-3 times per coefficient
+        // group). The per-byte loop below is kept as the tail (when buf has
+        // fewer than 8 bytes left) and as the EC_WIN_SIZE < 64 fallback.
+        if EC_WIN_SIZE >= 64 && buf.len() >= 8 {
+            // `c` at entry is in [0, EC_WIN_SIZE - 24], so for EC_WIN_SIZE=64
+            // it is in [0, 40] when called from a steady-state ctx_norm
+            // (cnt was in [-7, 16) right before refill), and at most 63
+            // including initialization paths. Either way, 8 bytes is enough
+            // to drive `c` strictly negative.
+            let bytes: [u8; 8] = buf[..8].try_into().unwrap();
+            // Read as big-endian: byte 0 goes to bits 56..63 of `raw`.
+            let raw = u64::from_be_bytes(bytes);
+            let inv = !raw; // matches `^ 0xff` per byte
+            // We will consume exactly k = (c/8) + 1 bytes; bytes k..8 in `inv`
+            // must not contribute to `dif`. Mask off the low (8-k) bytes.
+            let k = (c as usize / 8) + 1; // 1..=8
+            let keep_bits = (8 * k) as u32; // 8..=64
+            let mask: u64 = if keep_bits == 64 {
+                !0u64
+            } else {
+                (!0u64) << (64 - keep_bits)
+            };
+            let inv = inv & mask;
+            // Byte 0 in `inv` sits at bits [56, 63]. We want it at bits
+            // [c, c+7]. Shift by (c - 56): right-shift when c < 56, left
+            // when c >= 56. Each subsequent byte i lines up automatically
+            // since they're naturally 8 bits apart.
+            let shift = (c as i32) - 56;
+            let contribution: u64 = if shift >= 0 {
+                inv << (shift as u32)
+            } else {
+                inv >> ((-shift) as u32)
+            };
+            dif |= contribution as EcWin;
+            buf = &buf[k..];
+            c -= 8 * k as c_int; // becomes negative -> done
+        }
+        // Tail / fallback per-byte loop.
         loop {
+            if c < 0 {
+                break;
+            }
             if buf.is_empty() {
                 // set remaining bits to 1;
                 dif |= !(!(0xff as EcWin) << c);
@@ -386,9 +431,6 @@ fn ctx_refill(s: &mut MsacContext) {
             dif |= ((buf[0] ^ 0xff) as EcWin) << c;
             buf = &buf[1..];
             c -= 8;
-            if c < 0 {
-                break;
-            }
         }
         buf
     });
