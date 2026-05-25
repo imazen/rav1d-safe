@@ -4609,6 +4609,9 @@ fn dct32x32_cols_simd(token: Desktop64, tmp: &mut [i32; 1024], min: i32, max: i3
         dct32_cols_avx512(t512, tmp, 32, 32, min, max);
         return;
     }
+    // Use i16-packed pmaddwd when values are in i16 range (8bpc column pass).
+    // For 16bpc (10/12-bit), values exceed i16 range — use mullo_epi32 fallback.
+    let use_i16 = min == i16::MIN as i32 && max == i16::MAX as i32;
     let min_v = _mm256_set1_epi32(min);
     let max_v = _mm256_set1_epi32(max);
     for cx_chunk in 0..4 {
@@ -4617,7 +4620,11 @@ fn dct32x32_cols_simd(token: Desktop64, tmp: &mut [i32; 1024], min: i32, max: i3
         for i in 0..32 {
             v[i] = loadu_256!(&tmp[i * 32 + cx..i * 32 + cx + 8], [i32; 8]);
         }
-        dct32_1d_cols8_i16(token, &mut v, min_v, max_v);
+        if use_i16 {
+            dct32_1d_cols8_i16(token, &mut v, min_v, max_v);
+        } else {
+            dct32_1d_cols8(token, &mut v, min_v, max_v);
+        }
         for i in 0..32 {
             storeu_256!(&mut tmp[i * 32 + cx..i * 32 + cx + 8], [i32; 8], v[i]);
         }
@@ -6960,7 +6967,7 @@ fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
             for i in 0..32 {
                 v[i] = loadu_256!(&tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8]);
             }
-            dct32_1d_cols8(_token, &mut v, min_v, max_v);
+            dct32_1d_cols8_i16(_token, &mut v, min_v, max_v);
             for i in 0..32 {
                 storeu_256!(&mut tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8], v[i]);
             }
@@ -9035,7 +9042,7 @@ fn simd_row_dct16_8bpc_8rows(
 /// SIMD row DCT-32 for 32xN transforms, 8bpc.
 /// Loads 8 consecutive rows starting at `y_base` from `coeff` (column-major,
 /// stride `coeff_h`). Optionally applies rect2_scale (`* 181 + 128 >> 8`).
-/// Runs `dct32_1d_cols8` (8 rows in parallel via SIMD lanes), rounds with
+/// Runs `dct32_1d_cols8_i16` (8 rows in parallel via SIMD lanes), rounds with
 /// `rnd` then arithmetic-right-shifts by `shift`, clips to col range, and
 /// transposes 32x8 → 8x32 to store row-major into `tmp` (stride 32).
 #[cfg(target_arch = "x86_64")]
@@ -9074,7 +9081,7 @@ fn simd_row_dct32_8bpc_8rows(
             v32
         };
     }
-    dct32_1d_cols8(token, &mut cols, row_min_v, row_max_v);
+    dct32_1d_cols8_i16(token, &mut cols, row_min_v, row_max_v);
     for x in 0..32 {
         let rounded = match shift {
             1 => _mm256_srai_epi32::<1>(_mm256_add_epi32(cols[x], rnd_v)),
@@ -9752,7 +9759,7 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
             for i in 0..32 {
                 v[i] = loadu_256!(&tmp[i * 64 + cx..i * 64 + cx + 8], [i32; 8]);
             }
-            dct32_1d_cols8(_token, &mut v, min_v, max_v);
+            dct32_1d_cols8_i16(_token, &mut v, min_v, max_v);
             for i in 0..32 {
                 storeu_256!(&mut tmp[i * 64 + cx..i * 64 + cx + 8], [i32; 8], v[i]);
             }
@@ -10657,7 +10664,7 @@ fn inv_txfm_add_dct_dct_8x32_8bpc_avx2_inner(
         for i in 0..32 {
             v[i] = loadu_256!(&tmp[i * 8..i * 8 + 8], [i32; 8]);
         }
-        dct32_1d_cols8(_token, &mut v, min_v, max_v);
+        dct32_1d_cols8_i16(_token, &mut v, min_v, max_v);
         for i in 0..32 {
             storeu_256!(&mut tmp[i * 8..i * 8 + 8], [i32; 8], v[i]);
         }
