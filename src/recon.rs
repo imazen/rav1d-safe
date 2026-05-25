@@ -19,6 +19,7 @@ use crate::include::dav1d::picture::PicOffset;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 
 use crate::src::cdef_apply::rav1d_cdef_brow;
+use crate::src::ctx::small_memset;
 use crate::src::ctx::CaseSet;
 use crate::src::env::get_uv_inter_txtp;
 use crate::src::in_range::InRange;
@@ -1375,6 +1376,12 @@ fn read_coef_tree<BD: BitDepth>(
             };
         if t.frame_thread.pass != 2 {
             let ts_c = ts_c.unwrap();
+            // Fuse the decode_coefs read guards with the follow-up cf_ctx
+            // memset guards: ONE mutable guard per direction covers both
+            // (the memset ranges are subsets of bx4..bx4+txw / by4..by4+txh).
+            // Halves the BorrowTracker traffic at this hot site.
+            let mut a_guard = f.a[t.a].lcoef.index_mut(bx4..bx4 + txw as usize);
+            let mut l_guard = t.l.lcoef.index_mut(by4..by4 + txh as usize);
             eob = decode_coefs::<BD>(
                 f,
                 t.ts,
@@ -1382,8 +1389,8 @@ fn read_coef_tree<BD: BitDepth>(
                 debug_block_info!(f, t.b),
                 &mut t.scratch,
                 &mut t.cf,
-                &f.a[t.a].lcoef.index(bx4..bx4 + txw as usize),
-                &t.l.lcoef.index(by4..by4 + txh as usize),
+                &a_guard,
+                &l_guard,
                 ytx,
                 bs,
                 b,
@@ -1398,17 +1405,12 @@ fn read_coef_tree<BD: BitDepth>(
                     ytx, txtp, eob, ts_c.msac.rng,
                 );
             }
-            CaseSet::<16, true>::many(
-                [&t.l.lcoef, &f.a[t.a].lcoef],
-                [
-                    cmp::min(txh as c_int, f.bh - t.b.y) as usize,
-                    cmp::min(txw as c_int, f.bw - t.b.x) as usize,
-                ],
-                [by4, bx4],
-                |case, dir| {
-                    case.set_disjoint(dir, cf_ctx);
-                },
-            );
+            let a_memset_len = cmp::min(txw as c_int, f.bw - t.b.x) as usize;
+            let l_memset_len = cmp::min(txh as c_int, f.bh - t.b.y) as usize;
+            small_memset::<u8, 16, true>(&mut a_guard[..a_memset_len], cf_ctx);
+            small_memset::<u8, 16, true>(&mut l_guard[..l_memset_len], cf_ctx);
+            drop(a_guard);
+            drop(l_guard);
             let txtp_map =
                 &mut t.scratch.inter_intra_mut().ac_txtp_map.txtp_map_mut()[by4 * 32 + bx4..];
             CaseSet::<16, false>::one((), txw as usize, 0, |case, ()| {
