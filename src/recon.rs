@@ -793,8 +793,7 @@ fn decode_coefs<BD: BitDepth>(
         let sh = cmp::min(t_dim.h, 8);
 
         // eob
-        let mut ctx =
-            1 + (eob > (2u16 << tx2dszctx)) as u8 + (eob > (4u16 << tx2dszctx)) as u8;
+        let mut ctx = 1 + (eob > (2u16 << tx2dszctx)) as u8 + (eob > (4u16 << tx2dszctx)) as u8;
         let eob_tok =
             rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut eob_cdf[ctx as usize], 2);
         let mut tok = eob_tok + 1;

@@ -8,12 +8,18 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
 
-## [0.5.6] - 2026-05-25
+## [0.5.6] - 2026-05-26
 
 Performance release: closes the safe-checked-vs-ASM 4K AVIF gap from **1.66× to ~1.55×**
 (1.98× at the 2026-02 baseline → ~43% of the original gap closed) with zero new `unsafe` —
 `#![forbid(unsafe_code)]` holds for the default build throughout. No public API changes
 (`cargo semver-checks`: no semver update required).
+
+This release also adds AVX-512 (x86-64-v4 / ICL) and modern-ARM dispatch tiers (all
+bit-exact vs the AVX2/scalar reference; the benefit lands on native-512 hardware and is
+flat on AVX2-double-pump CPUs like Zen4) plus two ISA-independent dav1d algorithmic ports
+(decode_coefs index-offset, itx eob-pruning) that add a further ~3% on the AVX2 path. A
+fresh aggregate `just profile` will be recorded before publish.
 
 ### Performance — inverse transforms
 - i16-packed `pmaddwd` DCT row passes for 8bpc dct8/dct16/dct32 (`dct{8,16,32}_row_pass_i16_simd`), replacing the i32 `mullo_epi32` path. `_mm256_madd_epi16` (5c Zen3) does a multiply-add per pair where i32 needed `mullo`+`add` (10c). Bit-exact vs scalar reference across seeded fuzz; wired into the live 8x8/16x16/32x32 transforms (b660acc, 04ff4cf, 94fa376)
@@ -32,6 +38,18 @@ Performance release: closes the safe-checked-vs-ASM 4K AVIF gap from **1.66× to
 - SIMD `cfl_ac_dispatch` (4:2:0/4:2:2/4:4:4 8bpc) — `cfl_ac_rust` profile share 1.49% → 1.05% (6512b9b, d48656c)
 - `ctx_refill` bulk 8-byte BSWAP load via `u64::from_be_bytes`, matching dav1d's 5-instruction refill (4e145dc)
 - `with_pixel_guard_immut` + `decode_coefs` immutable a/l context slices + per-block guard fusion — reduces BorrowTracker traffic in `recon.rs`/`ipred_prepare.rs` hot paths (475e61d, 9f3ad5c, c33050e)
+
+### Performance — dav1d algorithmic ports (ISA-independent, help all CPUs)
+- `decode_coefs` index-offset optimization (dav1d `5ef6b241` + fix `63bf075a`): cache `slw`/`slh`/`tx2dszctx`, derive the eob context via shifts, and for `TX_CLASS_2D` index the `levels` scratch by `rc`/`rc_i` directly — dropping a per-coefficient `imul` in the single hottest loop of the profile (decode_coefs ~45% of 4K AVIF). **~2.6%** faster 4K AVIF (checked). Bit-exact: 14/14 MD5 + 6/6 cross-level conformance. (Our port matches dav1d's *fixed* form; the original `5ef6b241` had an `if (TX_CLASS_2D)` typo that disabled the hot-loop win in dav1d until June 2025.) (e24b479)
+- itx EOB pruning (dav1d `ca83ee6d`): in `dct{32,16}_row_pass_i16_simd`, OR-reduce each 8-row batch (fused with the existing column load) and skip the butterfly+transpose for all-zero batches via `_mm_testz_si128` — self-evidently bit-exact (`out` is pre-zeroed). 32x32: **−0.8% mean / −1.6% median** 4K AVIF; 16x16: neutral on photos, helps sparse content. New sparse-batch unit tests. (ab61fc3, 8bf5e84)
+
+### Added — AVX-512 (x86-64-v4 / ICL) and modern-ARM SIMD tiers
+All bit-exact vs the AVX2/scalar reference (14/14 MD5). On AVX2-double-pump hardware (Zen4) these bench flat; the benefit lands on native-512 execution units (Intel Ice Lake server / Sapphire Rapids, Zen5).
+- itx (`Server64`/X64V4): AVX-512 16-row DCT row passes + dct4/8/16/32 and identity (IDTX) column passes, wired into the wide transform sites (8997bc4, 75d2e68, 954a252, 4b81aa8, 0d74989)
+- cdef (`Server64`/X64V4): AVX-512 8bpc directional filter (629e454)
+- loopfilter (`Server64`/X64V4): AVX-512 wd=16 v-filter, 16 lanes (2e24a30, 572cb77)
+- ipred (`X64V4xToken`/AVX-512ICL): z1/z2/z3 directional predictors via `vpermi2b` register-resident gather — z3 was previously scalar (5667552, 430e7a8, 4b76f48)
+- ARM (`Arm64V2`/`Arm64V3`): scaffolded DotProd/I8MM 8-tap MC dispatch + a `summon_arm64v2/v3` runtime gate, cfg-gated OFF by default (the `vdotq_s32`/`vusdotq_s32` intrinsics are nightly-only). The stable default build is byte-for-byte unchanged NEON; bit-exactness of the DotProd source-bias correction is proven by an exhaustive host test (75f044c)
 
 ### Added
 - `itx_mul2x_pack!` macro: bit-exact `pmaddwd`+`paddd`+`psrad` equivalent of dav1d's `ITX_MUL2X_PACK`, verified across 13,312 input pairings (8cadc48, a9fbce9)
