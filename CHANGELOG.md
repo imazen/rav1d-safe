@@ -18,8 +18,8 @@ Performance release: closes the safe-checked-vs-ASM 4K AVIF gap from **1.66× to
 This release also adds AVX-512 (x86-64-v4 / ICL) and modern-ARM dispatch tiers (all
 bit-exact vs the AVX2/scalar reference; the benefit lands on native-512 hardware and is
 flat on AVX2-double-pump CPUs like Zen4) plus two ISA-independent dav1d algorithmic ports
-(decode_coefs index-offset, itx eob-pruning) that add a further ~3% on the AVX2 path. A
-fresh aggregate `just profile` will be recorded before publish.
+(decode_coefs index-offset, itx eob-pruning) that add a further ~3% on the AVX2 path
+(per-change interleaved A/B measurements in `benchmarks/decode_coefs_index_offset_2026-05-26.md`).
 
 ### Performance — inverse transforms
 - i16-packed `pmaddwd` DCT row passes for 8bpc dct8/dct16/dct32 (`dct{8,16,32}_row_pass_i16_simd`), replacing the i32 `mullo_epi32` path. `_mm256_madd_epi16` (5c Zen3) does a multiply-add per pair where i32 needed `mullo`+`add` (10c). Bit-exact vs scalar reference across seeded fuzz; wired into the live 8x8/16x16/32x32 transforms (b660acc, 04ff4cf, 94fa376)
