@@ -41,13 +41,18 @@ Dispatch pattern: `incant!` for multi-tier, or `if let Some(t) = X64V4xToken::su
 | ID | Kernel | Target ISA | File | Owner | Status | Commit |
 |----|--------|-----------|------|-------|--------|--------|
 | X1 | itx — extend AVX-512 to row pass + dct8/adst/IDTX cols16 | X64V4 (+V4x where wider) | `safe_simd/itx/part*.rs` | x1-recovery | DONE (DCT+IDTX); ADST cols16 remains | 75d2e68, 954a252, 4b81aa8, 0d74989 |
-| X2 | loopfilter 8bpc AVX-512 (all widths v+h) | X64V4 | `safe_simd/loopfilter.rs` | — | TODO | |
-| X3 | cdef 8bpc AVX-512 | X64V4 | `safe_simd/cdef.rs` | — | TODO | |
-| X4 | ipred directional z1/z2/z3 AVX-512ICL (vpermb) | X64V4x | `safe_simd/ipred.rs` | — | TODO | |
+| X2 | loopfilter 8bpc AVX-512 | X64V4 | `safe_simd/loopfilter.rs` | merged | PARTIAL: wd=16 v-filter x16 (bit-exact); wd 4/6/8 v + all h remain. Flat perf (trigger fires 0× on conformance + Zen4 downclock) | 2e24a30, 572cb77 |
+| X3 | cdef 8bpc AVX-512 | X64V4 | `safe_simd/cdef.rs` | merged DONE (bit-exact; CDEF below noise floor on photo) | 629e454 |
+| X4 | ipred directional z1/z2/z3 AVX-512ICL (vpermb) | X64V4x | `safe_simd/ipred.rs` | merged DONE (z1/z2/z3 bit-exact; z3 was scalar before; ~0.6% of photo profile) | ef03927, 430e7a8, 4b76f48 |
 | X5 | itx/cdef/loopfilter 16bpc AVX-512 | X64V4 | (after X1–X3) | — | TODO | |
-| R1 | mc 8tap dotprod + i8mm | Arm64V2/V3 | `safe_simd/mc_arm.rs`, `cpu.rs`, `build.rs` | agent-aee607 | BLOCKED on nightly intrinsics — scaffolded + cross-checks clean | worktree |
+| R1 | mc 8tap dotprod + i8mm | Arm64V2/V3 | `safe_simd/mc_arm.rs`, `cpu.rs`, `build.rs` | merged | SCAFFOLDED, cfg-gated OFF (nightly intrinsics — see note). Default build = NEON | 75f044c |
 | R2 | itx NEON tier (rdm sqrdmulh) | Arm64V2 | `safe_simd/itx_arm*.rs` | — | TODO | |
 | R3 | loopfilter/cdef ARM tier | Arm64V2 | `safe_simd/{loopfilter,cdef}_arm.rs` | — | TODO | |
+
+## Cross-cutting findings (2026-05-26 AVX-512/ARM wave — all merged to main)
+- **Zen4 double-pumps AVX-512** (256-bit execution units) → every AVX-512 kernel benches FLAT on this dev box. Bit-exactness (14/14 MD5 on this Zen4, which executes the V4 path) is the validation; wall-clock payoff is on native-512 hardware (Intel Ice Lake server / Sapphire Rapids, Zen5). Do NOT chase Zen4 speedups for AVX-512.
+- **ARM dotprod/i8mm are nightly-only std intrinsics** — the modern-ARM track is blocked on stable until #117223/#117224 stabilize, OR until a safe `sdot`/`usmmla` primitive is shipped to magetypes via inline-asm-in-audited-unsafe (the `safe_unaligned_simd` pattern). `rdm`/sqrdmulh stability for R2 still to be verified.
+- Merged result: 14/14 MD5, 30/30 lib tests, 4 build combos + aarch64 cross-check clean, 0 clippy. Pure safe Rust — zero new `#[allow(unsafe_code)]`.
 
 ## Notes
 - **R1 BLOCKER (verified 2026-05-26):** the ARM DotProd/I8MM compute intrinsics
