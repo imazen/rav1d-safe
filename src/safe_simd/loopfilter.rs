@@ -20,9 +20,11 @@
 #![allow(unused_imports)]
 
 #[cfg(target_arch = "x86_64")]
-use archmage::{Desktop64, SimdToken, arcane, rite};
+use archmage::{Desktop64, Server64, SimdToken, arcane, rite};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
+#[cfg(target_arch = "x86_64")]
+use crate::src::safe_simd::pixel_access::{loadu_128, storeu_128};
 
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
@@ -1297,6 +1299,337 @@ fn loop_filter_4_8bpc_wd16_simd_v_x8(
     store8(buf, pack8(final_3), 3);
     store8(buf, pack8(final_4), 4);
     store8(buf, pack8(final_5), 5);
+}
+
+// ============================================================================
+// SIMD wd=16 V-FILTER x16 widen (AVX-512) — processes 16 adjacent edges
+// ============================================================================
+
+/// SIMD wd=16 loop filter for 8bpc V-FILTER direction, **16-column variant**.
+/// Doubles `wd16_simd_v_x8`'s lane count from YMM (8 i32) to ZMM (16 i32).
+/// Used by the outer dispatcher when four adjacent wd=16 edges (16 columns)
+/// share the same filter level. Bit-exact with the x8 / x4 / scalar paths.
+///
+/// AVX-512 mask registers (`__mmask16`) replace the AVX2 vector masks: the
+/// `not_gt`/`hev` predicates produce mask registers directly, and the per-lane
+/// blends use `_mm512_mask_blend_epi32` (selects the second arg where the mask
+/// bit is set). The final i32→u8 pack uses `_mm512_cvtusepi32_epi8` (unsigned
+/// saturate), matching the AVX2 `packus` chain for in-range filter outputs.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn loop_filter_4_8bpc_wd16_simd_v_x16(
+    _token: Server64,
+    buf: &mut [u8],
+    base: usize,
+    e: i32,
+    i: i32,
+    h: i32,
+    strideb: isize,
+) {
+    let load16 = |off: isize| -> __m512i {
+        let start = signed_idx(base, strideb * off);
+        let v16u8: __m128i = loadu_128!(&buf[start..start + 16], [u8; 16]);
+        _mm512_cvtepu8_epi32(v16u8)
+    };
+
+    // Load all 14 pixels p6..q6
+    let p6_v = load16(-7);
+    let p5_v = load16(-6);
+    let p4_v = load16(-5);
+    let p3_v = load16(-4);
+    let p2_v = load16(-3);
+    let p1_v = load16(-2);
+    let p0_v = load16(-1);
+    let q0_v = load16(0);
+    let q1_v = load16(1);
+    let q2_v = load16(2);
+    let q3_v = load16(3);
+    let q4_v = load16(4);
+    let q5_v = load16(5);
+    let q6_v = load16(6);
+
+    let i_v = _mm512_set1_epi32(i);
+    let e_v = _mm512_set1_epi32(e);
+    let h_v = _mm512_set1_epi32(h);
+    let f_v = _mm512_set1_epi32(1);
+
+    let abs = |a: __m512i, b: __m512i| _mm512_abs_epi32(_mm512_sub_epi32(a, b));
+
+    let abs_p1p0 = abs(p1_v, p0_v);
+    let abs_q1q0 = abs(q1_v, q0_v);
+    let abs_p0q0 = abs(p0_v, q0_v);
+    let abs_p1q1 = abs(p1_v, q1_v);
+    let abs_p2p1 = abs(p2_v, p1_v);
+    let abs_q2q1 = abs(q2_v, q1_v);
+    let abs_p3p2 = abs(p3_v, p2_v);
+    let abs_q3q2 = abs(q3_v, q2_v);
+
+    // `not_gt(a, b)` == `!(a > b)` == `a <= b` as a mask register.
+    let not_gt = |a: __m512i, b: __m512i| -> __mmask16 { _mm512_cmple_epi32_mask(a, b) };
+
+    let m_p1p0 = not_gt(abs_p1p0, i_v);
+    let m_q1q0 = not_gt(abs_q1q0, i_v);
+    let val_ee = _mm512_add_epi32(
+        _mm512_slli_epi32::<1>(abs_p0q0),
+        _mm512_srli_epi32::<1>(abs_p1q1),
+    );
+    let m_val = not_gt(val_ee, e_v);
+    let m_p2p1 = not_gt(abs_p2p1, i_v);
+    let m_q2q1 = not_gt(abs_q2q1, i_v);
+    let m_p3p2 = not_gt(abs_p3p2, i_v);
+    let m_q3q2 = not_gt(abs_q3q2, i_v);
+    let fm_mask = m_p1p0 & m_q1q0 & m_val & m_p2p1 & m_q2q1 & m_p3p2 & m_q3q2;
+
+    let abs_p6p0 = abs(p6_v, p0_v);
+    let abs_p5p0 = abs(p5_v, p0_v);
+    let abs_p4p0 = abs(p4_v, p0_v);
+    let abs_q4q0 = abs(q4_v, q0_v);
+    let abs_q5q0 = abs(q5_v, q0_v);
+    let abs_q6q0 = abs(q6_v, q0_v);
+    let flat8out_mask = not_gt(abs_p6p0, f_v)
+        & not_gt(abs_p5p0, f_v)
+        & not_gt(abs_p4p0, f_v)
+        & not_gt(abs_q4q0, f_v)
+        & not_gt(abs_q5q0, f_v)
+        & not_gt(abs_q6q0, f_v);
+
+    let abs_p2p0 = abs(p2_v, p0_v);
+    let abs_q2q0 = abs(q2_v, q0_v);
+    let abs_p3p0 = abs(p3_v, p0_v);
+    let abs_q3q0 = abs(q3_v, q0_v);
+    let flat8in_mask = not_gt(abs_p2p0, f_v)
+        & not_gt(abs_p1p0, f_v)
+        & not_gt(abs_q1q0, f_v)
+        & not_gt(abs_q2q0, f_v)
+        & not_gt(abs_p3p0, f_v)
+        & not_gt(abs_q3q0, f_v);
+
+    let dbl = |v: __m512i| _mm512_slli_epi32::<1>(v);
+    let add = |a: __m512i, b: __m512i| _mm512_add_epi32(a, b);
+    let add3 = |a: __m512i, b: __m512i, c: __m512i| add(add(a, b), c);
+    let add4 = |a: __m512i, b: __m512i, c: __m512i, d: __m512i| add(add(a, b), add(c, d));
+    let c4 = _mm512_set1_epi32(4);
+    let c8 = _mm512_set1_epi32(8);
+
+    // 14-tap outputs (positions -6..5)
+    let p6_5 = add(add(add(p6_v, p6_v), add(p6_v, p6_v)), p6_v);
+    let q6_5 = add(add(add(q6_v, q6_v), add(q6_v, q6_v)), q6_v);
+
+    let mut s = add(p6_5, add(dbl(p6_v), dbl(p5_v)));
+    s = add(s, dbl(p4_v));
+    s = add(s, add4(p3_v, p2_v, p1_v, p0_v));
+    s = add(s, add(q0_v, c8));
+    let out_m6 = _mm512_srai_epi32::<4>(s);
+
+    let mut s = add(p6_5, add(dbl(p5_v), dbl(p4_v)));
+    s = add(s, dbl(p3_v));
+    s = add(s, add4(p2_v, p1_v, p0_v, q0_v));
+    s = add(s, add(q1_v, c8));
+    let out_m5 = _mm512_srai_epi32::<4>(s);
+
+    let p6_4 = add(dbl(p6_v), dbl(p6_v));
+    let mut s = add(p6_4, p5_v);
+    s = add(s, add(dbl(p4_v), dbl(p3_v)));
+    s = add(s, dbl(p2_v));
+    s = add(s, add4(p1_v, p0_v, q0_v, q1_v));
+    s = add(s, add(q2_v, c8));
+    let out_m4 = _mm512_srai_epi32::<4>(s);
+
+    let p6_3 = add(dbl(p6_v), p6_v);
+    let mut s = add(p6_3, add(p5_v, p4_v));
+    s = add(s, add(dbl(p3_v), dbl(p2_v)));
+    s = add(s, dbl(p1_v));
+    s = add(s, add4(p0_v, q0_v, q1_v, q2_v));
+    s = add(s, add(q3_v, c8));
+    let out_m3 = _mm512_srai_epi32::<4>(s);
+
+    let mut s = add(dbl(p6_v), p5_v);
+    s = add(s, add(p4_v, p3_v));
+    s = add(s, add(dbl(p2_v), dbl(p1_v)));
+    s = add(s, dbl(p0_v));
+    s = add(s, add4(q0_v, q1_v, q2_v, q3_v));
+    s = add(s, add(q4_v, c8));
+    let out_m2 = _mm512_srai_epi32::<4>(s);
+
+    let mut s = add(p6_v, p5_v);
+    s = add(s, add(p4_v, p3_v));
+    s = add(s, p2_v);
+    s = add(s, add(dbl(p1_v), dbl(p0_v)));
+    s = add(s, dbl(q0_v));
+    s = add(s, add4(q1_v, q2_v, q3_v, q4_v));
+    s = add(s, add(q5_v, c8));
+    let out_m1 = _mm512_srai_epi32::<4>(s);
+
+    let mut s = add(p5_v, p4_v);
+    s = add(s, add(p3_v, p2_v));
+    s = add(s, p1_v);
+    s = add(s, add(dbl(p0_v), dbl(q0_v)));
+    s = add(s, dbl(q1_v));
+    s = add(s, add4(q2_v, q3_v, q4_v, q5_v));
+    s = add(s, add(q6_v, c8));
+    let out_0 = _mm512_srai_epi32::<4>(s);
+
+    let mut s = add(p4_v, p3_v);
+    s = add(s, add(p2_v, p1_v));
+    s = add(s, p0_v);
+    s = add(s, add(dbl(q0_v), dbl(q1_v)));
+    s = add(s, dbl(q2_v));
+    s = add(s, add4(q3_v, q4_v, q5_v, q6_v));
+    s = add(s, add(q6_v, c8));
+    let out_1 = _mm512_srai_epi32::<4>(s);
+
+    let mut s = add(p3_v, p2_v);
+    s = add(s, add(p1_v, p0_v));
+    s = add(s, q0_v);
+    s = add(s, add(dbl(q1_v), dbl(q2_v)));
+    s = add(s, dbl(q3_v));
+    let q6_3 = add(dbl(q6_v), q6_v);
+    s = add(s, add3(q4_v, q5_v, q6_3));
+    s = add(s, c8);
+    let out_2 = _mm512_srai_epi32::<4>(s);
+
+    let q6_4 = add(dbl(q6_v), dbl(q6_v));
+    let mut s = add(p2_v, p1_v);
+    s = add(s, add(p0_v, q0_v));
+    s = add(s, q1_v);
+    s = add(s, add(dbl(q2_v), dbl(q3_v)));
+    s = add(s, dbl(q4_v));
+    s = add(s, add(q5_v, q6_4));
+    s = add(s, c8);
+    let out_3 = _mm512_srai_epi32::<4>(s);
+
+    let mut s = add(p1_v, p0_v);
+    s = add(s, add(q0_v, q1_v));
+    s = add(s, q2_v);
+    s = add(s, add(dbl(q3_v), dbl(q4_v)));
+    s = add(s, dbl(q5_v));
+    s = add(s, q6_5);
+    s = add(s, c8);
+    let out_4 = _mm512_srai_epi32::<4>(s);
+
+    let q6_7 = add(q6_5, add(q6_v, q6_v));
+    let mut s = add(p0_v, q0_v);
+    s = add(s, add(q1_v, q2_v));
+    s = add(s, q3_v);
+    s = add(s, add(dbl(q4_v), dbl(q5_v)));
+    s = add(s, q6_7);
+    s = add(s, c8);
+    let out_5 = _mm512_srai_epi32::<4>(s);
+
+    // 8-tap outputs
+    let triple = |v: __m512i| add(dbl(v), v);
+    let out8_m3 = _mm512_srai_epi32::<3>(add(
+        add4(triple(p3_v), dbl(p2_v), p1_v, p0_v),
+        add(q0_v, c4),
+    ));
+    let out8_m2 = _mm512_srai_epi32::<3>(add(
+        add4(dbl(p3_v), p2_v, dbl(p1_v), p0_v),
+        add3(q0_v, q1_v, c4),
+    ));
+    let out8_m1 = _mm512_srai_epi32::<3>(add(
+        add4(p3_v, p2_v, p1_v, dbl(p0_v)),
+        add4(q0_v, q1_v, q2_v, c4),
+    ));
+    let out8_0 = _mm512_srai_epi32::<3>(add(
+        add4(p2_v, p1_v, p0_v, dbl(q0_v)),
+        add4(q1_v, q2_v, q3_v, c4),
+    ));
+    let out8_1 = _mm512_srai_epi32::<3>(add(
+        add4(p1_v, p0_v, q0_v, dbl(q1_v)),
+        add4(q2_v, q3_v, q3_v, c4),
+    ));
+    let out8_2 = _mm512_srai_epi32::<3>(add(
+        add4(p0_v, q0_v, q1_v, dbl(q2_v)),
+        add4(q3_v, q3_v, q3_v, c4),
+    ));
+
+    // Narrow filter (4-tap)
+    let neg128 = _mm512_set1_epi32(-128);
+    let pos127 = _mm512_set1_epi32(127);
+    let iclip = |v: __m512i| _mm512_min_epi32(_mm512_max_epi32(v, neg128), pos127);
+    let diff_q0p0 = _mm512_sub_epi32(q0_v, p0_v);
+    let three_d = _mm512_add_epi32(_mm512_slli_epi32::<1>(diff_q0p0), diff_q0p0);
+    let diff_p1q1 = _mm512_sub_epi32(p1_v, q1_v);
+    let hev_mask = _mm512_cmpgt_epi32_mask(abs_p1p0, h_v) | _mm512_cmpgt_epi32_mask(abs_q1q0, h_v);
+    let f_hev = iclip(_mm512_add_epi32(three_d, iclip(diff_p1q1)));
+    let f_no = iclip(three_d);
+    let c3i = _mm512_set1_epi32(3);
+    let one = _mm512_set1_epi32(1);
+    let f1_hev = _mm512_srai_epi32::<3>(_mm512_min_epi32(_mm512_add_epi32(f_hev, c4), pos127));
+    let f2_hev = _mm512_srai_epi32::<3>(_mm512_min_epi32(_mm512_add_epi32(f_hev, c3i), pos127));
+    let f1_no = _mm512_srai_epi32::<3>(_mm512_min_epi32(_mm512_add_epi32(f_no, c4), pos127));
+    let f2_no = _mm512_srai_epi32::<3>(_mm512_min_epi32(_mm512_add_epi32(f_no, c3i), pos127));
+    let f_extra = _mm512_srai_epi32::<1>(_mm512_add_epi32(f1_no, one));
+    let p0_hev = _mm512_add_epi32(p0_v, f2_hev);
+    let q0_hev = _mm512_sub_epi32(q0_v, f1_hev);
+    let p0_no = _mm512_add_epi32(p0_v, f2_no);
+    let q0_no = _mm512_sub_epi32(q0_v, f1_no);
+    let p1_no = _mm512_add_epi32(p1_v, f_extra);
+    let q1_no = _mm512_sub_epi32(q1_v, f_extra);
+
+    // `blendv(a, b, k)` selects `b` where mask bit set, `a` where clear.
+    let blendv =
+        |a: __m512i, b: __m512i, k: __mmask16| -> __m512i { _mm512_mask_blend_epi32(k, a, b) };
+
+    let narrow_p1 = blendv(p1_no, p1_v, hev_mask);
+    let narrow_p0 = blendv(p0_no, p0_hev, hev_mask);
+    let narrow_q0 = blendv(q0_no, q0_hev, hev_mask);
+    let narrow_q1 = blendv(q1_no, q1_v, hev_mask);
+
+    let wide_mask = flat8out_mask & flat8in_mask;
+
+    let mid_m3 = blendv(p2_v, out8_m3, flat8in_mask);
+    let mid_m2 = blendv(narrow_p1, out8_m2, flat8in_mask);
+    let mid_m1 = blendv(narrow_p0, out8_m1, flat8in_mask);
+    let mid_0 = blendv(narrow_q0, out8_0, flat8in_mask);
+    let mid_1 = blendv(narrow_q1, out8_1, flat8in_mask);
+    let mid_2 = blendv(q2_v, out8_2, flat8in_mask);
+
+    let sel_m6 = blendv(p5_v, out_m6, wide_mask);
+    let sel_m5 = blendv(p4_v, out_m5, wide_mask);
+    let sel_m4 = blendv(p3_v, out_m4, wide_mask);
+    let sel_m3 = blendv(mid_m3, out_m3, wide_mask);
+    let sel_m2 = blendv(mid_m2, out_m2, wide_mask);
+    let sel_m1 = blendv(mid_m1, out_m1, wide_mask);
+    let sel_0 = blendv(mid_0, out_0, wide_mask);
+    let sel_1 = blendv(mid_1, out_1, wide_mask);
+    let sel_2 = blendv(mid_2, out_2, wide_mask);
+    let sel_3 = blendv(q3_v, out_3, wide_mask);
+    let sel_4 = blendv(q4_v, out_4, wide_mask);
+    let sel_5 = blendv(q5_v, out_5, wide_mask);
+
+    let final_m6 = blendv(p5_v, sel_m6, fm_mask);
+    let final_m5 = blendv(p4_v, sel_m5, fm_mask);
+    let final_m4 = blendv(p3_v, sel_m4, fm_mask);
+    let final_m3 = blendv(p2_v, sel_m3, fm_mask);
+    let final_m2 = blendv(p1_v, sel_m2, fm_mask);
+    let final_m1 = blendv(p0_v, sel_m1, fm_mask);
+    let final_0 = blendv(q0_v, sel_0, fm_mask);
+    let final_1 = blendv(q1_v, sel_1, fm_mask);
+    let final_2 = blendv(q2_v, sel_2, fm_mask);
+    let final_3 = blendv(q3_v, sel_3, fm_mask);
+    let final_4 = blendv(q4_v, sel_4, fm_mask);
+    let final_5 = blendv(q5_v, sel_5, fm_mask);
+
+    // Pack 16 i32 → 16 u8 per position via unsigned saturate (matches the AVX2
+    // `packus_epi32`/`packus_epi16` chain for outputs already in [0, 255]).
+    let store16 = |buf: &mut [u8], v: __m512i, off: isize| {
+        let packed: __m128i = _mm512_cvtusepi32_epi8(v);
+        let start = signed_idx(base, strideb * off);
+        storeu_128!(&mut buf[start..start + 16], [u8; 16], packed);
+    };
+    store16(buf, final_m6, -6);
+    store16(buf, final_m5, -5);
+    store16(buf, final_m4, -4);
+    store16(buf, final_m3, -3);
+    store16(buf, final_m2, -2);
+    store16(buf, final_m1, -1);
+    store16(buf, final_0, 0);
+    store16(buf, final_1, 1);
+    store16(buf, final_2, 2);
+    store16(buf, final_3, 3);
+    store16(buf, final_4, 4);
+    store16(buf, final_5, 5);
 }
 
 // ============================================================================
@@ -3554,6 +3887,50 @@ fn lpf_v_sb_y_8bpc_inner(
                 } else {
                     4
                 };
+
+                // Tier of the edge at bitmask position `bit` (0 = no edge).
+                let tier_at = |bit: u32| -> i32 {
+                    if vmask[2] & bit != 0 {
+                        16
+                    } else if vmask[1] & bit != 0 {
+                        8
+                    } else if vmask[0] & bit != 0 {
+                        4
+                    } else {
+                        0
+                    }
+                };
+
+                // Fast path: x16 ZMM (AVX-512) kernel when the next THREE
+                // adjacent edges (16 columns total) all share the same wd=16
+                // tier AND the same `l`. Quadruples throughput per call (16
+                // cols vs 4) on Zen 4 / x86-64-v4. Bit-exact with x8/x4/scalar.
+                #[cfg(target_arch = "x86_64")]
+                if idx == 16 && bitdepth_max == 255 {
+                    let xy1 = xy.wrapping_shl(1);
+                    let xy2 = xy.wrapping_shl(2);
+                    let xy3 = xy.wrapping_shl(3);
+                    if xy3 != 0
+                        && tier_at(xy1) == 16
+                        && tier_at(xy2) == 16
+                        && tier_at(xy3) == 16
+                        && let Some(token) = crate::src::cpu::summon_avx512()
+                        && let Some((l1, _, _, _)) = derive_levels(lvl_offset + b4_stridea)
+                        && l1 == l
+                        && let Some((l2, _, _, _)) = derive_levels(lvl_offset + 2 * b4_stridea)
+                        && l2 == l
+                        && let Some((l3, _, _, _)) = derive_levels(lvl_offset + 3 * b4_stridea)
+                        && l3 == l
+                    {
+                        loop_filter_4_8bpc_wd16_simd_v_x16(
+                            token, buf, dst_offset, e, i, h, strideb,
+                        );
+                        xy = xy3 << 1;
+                        dst_offset = signed_idx(dst_offset, 16 * stridea);
+                        lvl_offset += 4 * b4_stridea;
+                        continue;
+                    }
+                }
 
                 // Fast path: x8 YMM kernel when the next adjacent edge has
                 // the same wd-tier AND the same `l` (and therefore same e/i/h).
