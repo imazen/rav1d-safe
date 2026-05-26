@@ -45,11 +45,35 @@ Dispatch pattern: `incant!` for multi-tier, or `if let Some(t) = X64V4xToken::su
 | X3 | cdef 8bpc AVX-512 | X64V4 | `safe_simd/cdef.rs` | — | TODO | |
 | X4 | ipred directional z1/z2/z3 AVX-512ICL (vpermb) | X64V4x | `safe_simd/ipred.rs` | — | TODO | |
 | X5 | itx/cdef/loopfilter 16bpc AVX-512 | X64V4 | (after X1–X3) | — | TODO | |
-| R1 | mc 8tap/6tap dotprod + i8mm | Arm64V2/V3 | `safe_simd/mc_arm.rs` | — | TODO | |
+| R1 | mc 8tap dotprod + i8mm | Arm64V2/V3 | `safe_simd/mc_arm.rs`, `cpu.rs`, `build.rs` | agent-aee607 | BLOCKED on nightly intrinsics — scaffolded + cross-checks clean | worktree |
 | R2 | itx NEON tier (rdm sqrdmulh) | Arm64V2 | `safe_simd/itx_arm*.rs` | — | TODO | |
 | R3 | loopfilter/cdef ARM tier | Arm64V2 | `safe_simd/{loopfilter,cdef}_arm.rs` | — | TODO | |
 
 ## Notes
+- **R1 BLOCKER (verified 2026-05-26):** the ARM DotProd/I8MM compute intrinsics
+  needed for the 8-tap dot-product kernels — `vdotq_s32` (DotProd) and
+  `vusdotq_s32`/`vusmmlaq_s32` (I8MM) — are still **unstable library features**
+  on the stable channel as of Rust 1.95 (project toolchain) AND latest nightly
+  1.97: `stdarch_neon_dotprod` (rust-lang/rust#117224), `stdarch_neon_i8mm`
+  (rust-lang/rust#117223). They require `#![feature(...)]`, which only compiles
+  on nightly — incompatible with this crate's pinned `stable` toolchain and its
+  `#![forbid(unsafe_code)]` mandate (which bans blocking on nightly-only
+  features). archmage 0.9.23 confirms this in its own test suite ("ALL dotprod
+  intrinsics are nightly-only", "I8MM ... ALL UNSTABLE"). The `summon_arm64v2/v3`
+  helpers, the DotProd/I8MM H-filter kernels, the tier-selecting dispatch, and a
+  CI bit-exactness test are all **landed and cross-check clean**, but the kernels
+  are gated behind the OFF-by-default rustc cfgs `rav1d_arm_dotprod` /
+  `rav1d_arm_i8mm` so the stable build is byte-for-byte unchanged. Equivalence vs
+  NEON is proven: the DotProd `-128` source-bias correction (`+128*Σfilter`) is
+  exhaustively bit-exact (8M random + boundary inputs/filter, host test +
+  `test_dotprod_bias_correction_bit_exact`), and the kernel arithmetic + intrinsic
+  signatures compile clean on nightly. **To activate:** when the intrinsics
+  stabilize, drop the cfg gates and (on nightly until then) add
+  `#![feature(stdarch_neon_dotprod, stdarch_neon_i8mm)]`; the dispatch in
+  `put_8tap_8bpc_inner` / `prep_8tap_8bpc_inner` already prefers the higher tier
+  via `summon_arm64v3()`/`summon_arm64v2()`. Runtime bit-exactness on real ARM
+  silicon is deferred to aarch64 CI (host is x86; QEMU validated the NEON-path
+  tests).
 - Targeting v0.5.7 (v0.5.6 is release-prepped, pending publish go-ahead — does not block this work).
 - Independent algorithmic ports (decode_coefs 1.5.0 index-offset, msac 1.4.1, SGR 1.5.1) tracked separately — they help the AVX2 baseline on all CPUs and are ISA-independent.
 - Stale-doc fix needed: CLAUDE.md claims ADST 8x8/16x16 column SIMD is wired, but the safe `itxfm_dispatch_8bpc` routes non-DCT_DCT/non-IDTX ≥8x8 to scalar. Verify/wire/correct.

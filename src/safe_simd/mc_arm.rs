@@ -969,6 +969,104 @@ mod tests {
         // With disable_compile_time_tokens, we should see both states
         assert!(had_enabled, "token was never enabled");
     }
+
+    /// R1 equivalence guard (runs on ALL targets, no intrinsics): proves the
+    /// DotProd `-128` source-bias correction reconstructs the exact NEON
+    /// accumulator `Σ filter[i]*src[i]`. The I8MM path needs no correction
+    /// (u8×i8 is exact), so this guards the only non-trivial arithmetic.
+    /// If this ever fails, the `bias_corr = 128*Σfilter` term in
+    /// `h_filter_8tap_8bpc_dotprod` is wrong.
+    #[test]
+    fn test_dotprod_bias_correction_bit_exact() {
+        fn neon_sum(f: &[i8; 8], s: &[u8; 8]) -> i32 {
+            (0..8).map(|i| f[i] as i32 * s[i] as i32).sum()
+        }
+        fn dotprod_sum(f: &[i8; 8], s: &[u8; 8]) -> i32 {
+            let dot: i32 = (0..8).map(|i| f[i] as i32 * ((s[i] as i32) - 128)).sum();
+            let corr = 128i32 * f.iter().map(|&c| c as i32).sum::<i32>();
+            dot + corr
+        }
+        // Representative dav1d AV1 8-tap subpel filters (taps sum to 128).
+        let filters: [[i8; 8]; 4] = [
+            [0, 1, -3, 63, 4, -1, 0, 0],
+            [-1, 2, -5, 126, 8, -3, 1, 0],
+            [-2, 2, -6, 126, 8, -2, 2, 0],
+            [3, -6, 15, 113, -9, 4, -2, 0],
+        ];
+        let mut rng: u64 = 0x1234_5678_9abc_def0;
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng
+        };
+        for f in &filters {
+            for _ in 0..200_000 {
+                let mut s = [0u8; 8];
+                for x in &mut s {
+                    *x = (next() & 0xff) as u8;
+                }
+                assert_eq!(neon_sum(f, &s), dotprod_sum(f, &s));
+            }
+            for v in [0u8, 255] {
+                let s = [v; 8];
+                assert_eq!(neon_sum(f, &s), dotprod_sum(f, &s));
+            }
+        }
+    }
+
+    /// R1 CI bit-exactness: compare the DotProd / I8MM H-filter kernels against
+    /// the baseline NEON kernel on seeded input. Only compiled when the
+    /// higher-tier cfgs are enabled (the underlying intrinsics are nightly-only;
+    /// see the DotProd/I8MM section in this module). Runs on real aarch64 in CI;
+    /// the host (x86) cross-compiles but cannot execute it.
+    #[test]
+    #[cfg(all(target_arch = "aarch64", any(rav1d_arm_dotprod, rav1d_arm_i8mm)))]
+    fn test_arm_h_filter_8tap_matches_neon() {
+        use super::{MID_STRIDE, h_filter_8tap_8bpc_neon};
+        use archmage::{Arm64, SimdToken};
+
+        let token = Arm64::summon().expect("NEON always available on aarch64");
+        let filters: [[i8; 8]; 4] = [
+            [0, 1, -3, 63, 4, -1, 0, 0],
+            [-1, 2, -5, 126, 8, -3, 1, 0],
+            [-2, 2, -6, 126, 8, -2, 2, 0],
+            [3, -6, 15, 113, -9, 4, -2, 0],
+        ];
+        let mut rng: u64 = 0xdead_beef_cafe_0001;
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            (rng & 0xff) as u8
+        };
+
+        for &w in &[4usize, 8, 16, 32, 64, 128] {
+            for f in &filters {
+                // Source window: w + 7 samples (8 taps), plus padding for the
+                // 4-wide SIMD group reading [col .. col+8).
+                let src_len = w + 7 + 8;
+                let src: Vec<u8> = (0..src_len).map(|_| next()).collect();
+                let sh = 2u8; // 6 - intermediate_bits, the only MC H-filter sh.
+
+                let mut ref_out = [0i16; MID_STRIDE];
+                h_filter_8tap_8bpc_neon(token, &mut ref_out[..w], &src, w, f, sh);
+
+                #[cfg(rav1d_arm_dotprod)]
+                if let Some(t2) = crate::src::cpu::summon_arm64v2() {
+                    let mut got = [0i16; MID_STRIDE];
+                    super::h_filter_8tap_8bpc_dotprod(t2, &mut got[..w], &src, w, f, sh);
+                    assert_eq!(&got[..w], &ref_out[..w], "dotprod mismatch w={w} f={f:?}");
+                }
+                #[cfg(rav1d_arm_i8mm)]
+                if let Some(t3) = crate::src::cpu::summon_arm64v3() {
+                    let mut got = [0i16; MID_STRIDE];
+                    super::h_filter_8tap_8bpc_i8mm(t3, &mut got[..w], &src, w, f, sh);
+                    assert_eq!(&got[..w], &ref_out[..w], "i8mm mismatch w={w} f={f:?}");
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -2985,6 +3083,213 @@ fn h_filter_8tap_8bpc_put_neon(
     }
 }
 
+// ============================================================================
+// DotProd / I8MM 8-tap horizontal filter (Arm64V2 / Arm64V3) — R1
+//
+// STATUS: blocked on stable Rust. The compute intrinsics this needs
+// (`vdotq_s32` for DotProd, `vusdotq_s32`/`vusmmlaq_s32` for I8MM) are still
+// *unstable library features* on the stable channel as of Rust 1.95 (and even
+// latest nightly 1.97): `stdarch_neon_dotprod` (rust-lang/rust#117224) and
+// `stdarch_neon_i8mm` (rust-lang/rust#117223). They require `#![feature(...)]`,
+// which only compiles on nightly — incompatible with this crate's pinned
+// `stable` toolchain and its `#![forbid(unsafe_code)]` mandate, which forbids
+// blocking on nightly-only features (see CLAUDE.md "MANDATORY: Safe intrinsics
+// strategy", HARD RULE bullet 6 of the feature-flag section). archmage 0.9.23
+// confirms this in its own test suite: "ALL dotprod intrinsics are nightly-only
+// (stdarch_neon_dotprod)" and "I8MM ... 4 intrinsics, ALL UNSTABLE".
+//
+// The kernel below is therefore gated behind the custom rustc cfg
+// `rav1d_arm_dotprod` (and `rav1d_arm_i8mm`), which is OFF by default. The
+// stable `forbid(unsafe_code)` build never compiles this code. When the
+// upstream intrinsics stabilize, drop the cfg gate (and the
+// `#![feature(...)]` the caller would need on nightly) and wire the dispatch
+// in `put_8tap_8bpc_inner` to prefer this path when `summon_arm64v2()` /
+// `summon_arm64v3()` return `Some`. The arithmetic is written to be bit-exact
+// with `h_filter_8tap_8bpc_neon` (see equivalence argument per fn).
+// ============================================================================
+
+/// DotProd (Arm64V2) horizontal 8-tap filter to intermediate i16 buffer.
+///
+/// Bit-exact replacement for [`h_filter_8tap_8bpc_neon`]. The NEON path
+/// computes, per output column `j`:
+/// `sum_j = Σ_{i=0..8} filter[i] * src[j+i]`, then
+/// `dst[j] = (sum_j + rnd) >> sh` with `rnd = (1<<sh)>>1`.
+///
+/// `vdotq_s32` is a *signed* i8×i8 dot product, but `src` is u8 (0..=255), out
+/// of i8 range. We bias each source byte by `-128` so it fits i8, then add back
+/// the exact correction. For the per-column accumulator:
+///   `Σ filter[i] * (src[j+i] - 128)`
+///     `= Σ filter[i]*src[j+i]  -  128 * Σ filter[i]`
+/// so `sum_j = vdot_acc_j + 128 * filter_sum`, where `filter_sum = Σ filter[i]`
+/// is a per-filter constant. Because every product and the correction are
+/// computed in exact i32 arithmetic (no intermediate truncation), the recovered
+/// `sum_j` is identical to the NEON i16-accumulated `sum` for all valid AV1
+/// filters (whose partial sums stay within i16/i32 range — the same range the
+/// NEON path already relies on). The round+shift is then byte-identical.
+///
+/// 4 output columns are produced per `vdotq` group; two `vdotq` accumulate taps
+/// 0..4 and 4..8 respectively. The source is gathered so each 4-byte lane of the
+/// `b` operand holds `src[j..j+4]` for output column `j` (the dav1d DotProd MC
+/// source layout).
+#[cfg(all(target_arch = "aarch64", rav1d_arm_dotprod))]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn h_filter_8tap_8bpc_dotprod(
+    _token: archmage::Arm64V2Token,
+    dst: &mut [i16],
+    src: &[u8],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let rnd = ((1i32 << sh) >> 1) as i32;
+    // Per-filter correction for the -128 source bias (exact i32).
+    let filter_sum: i32 = filter.iter().map(|&c| c as i32).sum();
+    let bias_corr = 128i32 * filter_sum;
+
+    // Filter taps as i8 in two 4-lane groups, replicated across 4 output lanes.
+    let f_lo: [i8; 16] = [
+        filter[0], filter[1], filter[2], filter[3], filter[0], filter[1], filter[2], filter[3],
+        filter[0], filter[1], filter[2], filter[3], filter[0], filter[1], filter[2], filter[3],
+    ];
+    let f_hi: [i8; 16] = [
+        filter[4], filter[5], filter[6], filter[7], filter[4], filter[5], filter[6], filter[7],
+        filter[4], filter[5], filter[6], filter[7], filter[4], filter[5], filter[6], filter[7],
+    ];
+    let vf_lo = safe_simd::vld1q_s8(&f_lo);
+    let vf_hi = safe_simd::vld1q_s8(&f_hi);
+    let bias = vdupq_n_s8(-128i8);
+    let rnd_vec = vdupq_n_s32(rnd + bias_corr);
+
+    let mut col = 0;
+    // Process 4 output columns per iteration.
+    while col + 4 <= w && col + 7 < src.len() {
+        // Gather source window: lane group l holds src[col+l .. col+l+4] (taps 0..4)
+        // and src[col+l+4 .. col+l+8] (taps 4..8).
+        let mut win_lo = [0u8; 16];
+        let mut win_hi = [0u8; 16];
+        for l in 0..4 {
+            win_lo[l * 4..l * 4 + 4].copy_from_slice(&src[col + l..col + l + 4]);
+            win_hi[l * 4..l * 4 + 4].copy_from_slice(&src[col + l + 4..col + l + 8]);
+        }
+        // Bias u8 -> i8 by subtracting 128 (reinterpret then signed-add).
+        let s_lo = vaddq_s8(vreinterpretq_s8_u8(safe_simd::vld1q_u8(&win_lo)), bias);
+        let s_hi = vaddq_s8(vreinterpretq_s8_u8(safe_simd::vld1q_u8(&win_hi)), bias);
+
+        // Two signed dot products accumulate the 8 taps into 4 lanes.
+        let acc = vdotq_s32(vdupq_n_s32(0), vf_lo, s_lo);
+        let acc = vdotq_s32(acc, vf_hi, s_hi);
+
+        // sum_j = acc_j + bias_corr; then (sum_j + rnd) >> sh.
+        let sum = vaddq_s32(acc, rnd_vec);
+        let res32 = vshrq_n_s32_dyn(sum, sh);
+        let res16 = vqmovn_s32(res32);
+        // Store 4 i16 outputs.
+        let out_arr: &mut [i16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
+        safe_simd::vst1_s16(out_arr, res16);
+        col += 4;
+    }
+
+    // Scalar fallback for the tail (bit-identical to NEON scalar tail).
+    while col < w {
+        let mut sum = 0i32;
+        for i in 0..8 {
+            sum += filter[i] as i32 * src[col + i] as i32;
+        }
+        dst[col] = ((sum + rnd) >> sh) as i16;
+        col += 1;
+    }
+}
+
+/// I8MM (Arm64V3) horizontal 8-tap filter to intermediate i16 buffer.
+///
+/// Bit-exact replacement for [`h_filter_8tap_8bpc_neon`], same as
+/// [`h_filter_8tap_8bpc_dotprod`] but using `vusdotq_s32` (u8×i8 dot product),
+/// which removes the `-128` source bias entirely: the accumulator already holds
+/// the exact `Σ filter[i] * src[j+i]` because `src` is consumed as unsigned and
+/// `filter` as signed. No correction term is needed; round+shift is identical.
+#[cfg(all(target_arch = "aarch64", rav1d_arm_i8mm))]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn h_filter_8tap_8bpc_i8mm(
+    _token: archmage::Arm64V3Token,
+    dst: &mut [i16],
+    src: &[u8],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
+    let mut dst = dst.flex_mut();
+    let src = src.flex();
+    let rnd = ((1i32 << sh) >> 1) as i32;
+
+    let f_lo: [i8; 16] = [
+        filter[0], filter[1], filter[2], filter[3], filter[0], filter[1], filter[2], filter[3],
+        filter[0], filter[1], filter[2], filter[3], filter[0], filter[1], filter[2], filter[3],
+    ];
+    let f_hi: [i8; 16] = [
+        filter[4], filter[5], filter[6], filter[7], filter[4], filter[5], filter[6], filter[7],
+        filter[4], filter[5], filter[6], filter[7], filter[4], filter[5], filter[6], filter[7],
+    ];
+    let vf_lo = safe_simd::vld1q_s8(&f_lo);
+    let vf_hi = safe_simd::vld1q_s8(&f_hi);
+    let rnd_vec = vdupq_n_s32(rnd);
+
+    let mut col = 0;
+    while col + 4 <= w && col + 7 < src.len() {
+        let mut win_lo = [0u8; 16];
+        let mut win_hi = [0u8; 16];
+        for l in 0..4 {
+            win_lo[l * 4..l * 4 + 4].copy_from_slice(&src[col + l..col + l + 4]);
+            win_hi[l * 4..l * 4 + 4].copy_from_slice(&src[col + l + 4..col + l + 8]);
+        }
+        let s_lo = safe_simd::vld1q_u8(&win_lo);
+        let s_hi = safe_simd::vld1q_u8(&win_hi);
+
+        // u8 x i8 dot products — exact, no bias correction.
+        let acc = vusdotq_s32(vdupq_n_s32(0), s_lo, vf_lo);
+        let acc = vusdotq_s32(acc, s_hi, vf_hi);
+
+        let sum = vaddq_s32(acc, rnd_vec);
+        let res32 = vshrq_n_s32_dyn(sum, sh);
+        let res16 = vqmovn_s32(res32);
+        let out_arr: &mut [i16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
+        safe_simd::vst1_s16(out_arr, res16);
+        col += 4;
+    }
+
+    while col < w {
+        let mut sum = 0i32;
+        for i in 0..8 {
+            sum += filter[i] as i32 * src[col + i] as i32;
+        }
+        dst[col] = ((sum + rnd) >> sh) as i16;
+        col += 1;
+    }
+}
+
+/// Dynamic right-shift for `int32x4_t` by a runtime amount, expressed via the
+/// const-generic `vshrq_n_s32` (which requires an immediate). MC H-filter `sh`
+/// is always 2 (`6 - intermediate_bits`); branch on the values rav1d uses so
+/// every arm passes a const. Kept `#[rite]` so it inlines into the caller's
+/// target-feature region.
+#[cfg(all(target_arch = "aarch64", any(rav1d_arm_dotprod, rav1d_arm_i8mm)))]
+#[archmage::rite]
+fn vshrq_n_s32_dyn(v: int32x4_t, sh: u8) -> int32x4_t {
+    match sh {
+        2 => vshrq_n_s32::<2>(v),
+        4 => vshrq_n_s32::<4>(v),
+        6 => vshrq_n_s32::<6>(v),
+        _ => {
+            // Generic path via negative left-shift (vshlq_s32 with negative count
+            // is an arithmetic right shift). Exact for any sh in 0..=31.
+            vshlq_s32(v, vdupq_n_s32(-(sh as i32)))
+        }
+    }
+}
+
 /// Vertical 8-tap filter directly from source (V-only case)
 #[cfg(target_arch = "aarch64")]
 #[arcane]
@@ -3094,6 +3399,39 @@ fn v_filter_8tap_8bpc_direct_neon(
 
 /// Main 8-tap put function for 8bpc
 #[cfg(target_arch = "aarch64")]
+/// Tier-selecting wrapper for the horizontal 8-tap → i16 filter.
+///
+/// Prefers the I8MM (`Arm64V3`) path, then DotProd (`Arm64V2`), then baseline
+/// NEON. Each higher tier is gated behind its rustc cfg (`rav1d_arm_i8mm` /
+/// `rav1d_arm_dotprod`) which is OFF until the underlying `core::arch`
+/// intrinsics stabilize on the project's stable toolchain (see the DotProd /
+/// I8MM section above). On the default stable build this compiles to exactly
+/// the NEON call — zero behavioural change. `#[rite]` so it inlines into the
+/// `#[arcane]` caller's target-feature region.
+#[cfg(target_arch = "aarch64")]
+#[archmage::rite]
+#[allow(clippy::too_many_arguments)]
+fn dispatch_h_filter_8tap_8bpc(
+    token: Arm64,
+    dst: &mut [i16],
+    src: &[u8],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
+    #[cfg(rav1d_arm_i8mm)]
+    if let Some(t3) = crate::src::cpu::summon_arm64v3() {
+        h_filter_8tap_8bpc_i8mm(t3, dst, src, w, filter, sh);
+        return;
+    }
+    #[cfg(rav1d_arm_dotprod)]
+    if let Some(t2) = crate::src::cpu::summon_arm64v2() {
+        h_filter_8tap_8bpc_dotprod(t2, dst, src, w, filter, sh);
+        return;
+    }
+    h_filter_8tap_8bpc_neon(token, dst, src, w, filter, sh);
+}
+
 #[arcane]
 #[allow(clippy::too_many_arguments)]
 fn put_8tap_8bpc_inner(
@@ -3129,7 +3467,7 @@ fn put_8tap_8bpc_inner(
                     0usize.wrapping_sub((3 - y) * src_stride)
                 };
                 let src_row = &src[src_offset..];
-                h_filter_8tap_8bpc_neon(
+                dispatch_h_filter_8tap_8bpc(
                     token,
                     &mut mid[y][..w],
                     src_row,
@@ -3410,7 +3748,7 @@ fn prep_8tap_8bpc_inner(
                     0usize.wrapping_sub((3 - y) * src_stride)
                 };
                 let src_row = &src[src_offset..];
-                h_filter_8tap_8bpc_neon(
+                dispatch_h_filter_8tap_8bpc(
                     token,
                     &mut mid[y][..w],
                     src_row,

@@ -301,6 +301,70 @@ pub(crate) fn summon_avx512x() -> Option<archmage::X64V4xToken> {
     archmage::X64V4xToken::summon()
 }
 
+/// Check if a specific CPU feature is enabled after applying the mask (aarch64).
+/// Used by safe_simd aarch64 dispatch to respect `rav1d_set_cpu_flags_mask`.
+///
+/// `dead_code`-allowed: the only callers are [`summon_arm64v2`]/[`summon_arm64v3`],
+/// which in turn are only reachable from the `rav1d_arm_dotprod`/`rav1d_arm_i8mm`
+/// cfg-gated MC dispatch (OFF by default — see `safe_simd/mc_arm.rs`).
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+#[cfg_attr(not(any(rav1d_arm_dotprod, rav1d_arm_i8mm)), allow(dead_code))]
+pub(crate) fn simd_enabled(flag: CpuFlags) -> bool {
+    rav1d_get_cpu_flags().contains(flag)
+}
+
+/// Try to summon an `Arm64V2Token`, gated by the CPU-flags mask.
+///
+/// The `Arm64V2` archmage tier covers NEON + CRC + RDM (`sqrdmulh`) + DotProd
+/// (`sdot`/`udot`) + FP16 + AES + SHA2 (the ARMv8.2 modern baseline shared by
+/// Cortex-A55+, Apple M1+, and Graviton 2+). We gate the rav1d-visible
+/// [`CpuFlags::DOTPROD`] flag (so `rav1d_set_cpu_flags_mask` can force this path
+/// off for differential testing); `Arm64V2Token::summon()` then verifies the
+/// *full* tier at runtime and returns `None` if any member feature is missing,
+/// so callers fall back to the baseline NEON path.
+///
+/// Returns `None` if DotProd is masked out, or the wider tier is unavailable.
+/// Mirrors the x86 [`summon_avx2`]/[`summon_avx512`] pattern.
+///
+/// `dead_code`-allowed until the DotProd MC dispatch is enabled (the underlying
+/// `vdotq_s32` intrinsic is nightly-only; gated behind cfg `rav1d_arm_dotprod`).
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+#[cfg_attr(not(rav1d_arm_dotprod), allow(dead_code))]
+pub(crate) fn summon_arm64v2() -> Option<archmage::Arm64V2Token> {
+    use archmage::SimdToken as _;
+    if !simd_enabled(CpuFlags::DOTPROD) {
+        return None;
+    }
+    archmage::Arm64V2Token::summon()
+}
+
+/// Try to summon an `Arm64V3Token`, gated by the CPU-flags mask.
+///
+/// The `Arm64V3` archmage tier adds FHM, FCMA, SHA3, I8MM (`smmla`/`usmmla`),
+/// and BF16 over `Arm64V2` (the ARMv8.6 set on Cortex-A510+, Apple M2+,
+/// Graviton 3+, Cobalt 100). We gate the rav1d-visible [`CpuFlags::I8MM`] flag;
+/// `Arm64V3Token::summon()` verifies the full tier at runtime and returns `None`
+/// otherwise, so callers fall back to the `Arm64V2` (DotProd) or baseline NEON
+/// path.
+///
+/// Returns `None` if I8MM is masked out, or the wider tier is unavailable.
+///
+/// `dead_code`-allowed until the I8MM MC dispatch is enabled (the underlying
+/// `vusdotq_s32`/`vusmmlaq_s32` intrinsics are nightly-only; gated behind cfg
+/// `rav1d_arm_i8mm`).
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+#[cfg_attr(not(rav1d_arm_i8mm), allow(dead_code))]
+pub(crate) fn summon_arm64v3() -> Option<archmage::Arm64V3Token> {
+    use archmage::SimdToken as _;
+    if !simd_enabled(CpuFlags::I8MM) {
+        return None;
+    }
+    archmage::Arm64V3Token::summon()
+}
+
 /// Try to summon a Wasm128 token for WebAssembly SIMD128.
 /// This is compile-time only — wasm32 has no runtime feature detection.
 /// Returns `None` if not compiled with `+simd128` target feature.

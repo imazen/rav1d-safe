@@ -366,6 +366,17 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(asm_loopfilter)");
     println!("cargo::rustc-check-cfg=cfg(asm_fn_ptrs)");
 
+    // Opt-in cfgs for the modern-ARM MC kernels (R1). OFF by default: the
+    // DotProd (`vdotq_s32`) and I8MM (`vusdotq_s32`/`vusmmlaq_s32`) compute
+    // intrinsics are still nightly-only unstable library features
+    // (rust-lang/rust#117224, #117223) and cannot be used on the project's
+    // pinned stable toolchain under `#![forbid(unsafe_code)]`. Set
+    // `RUSTFLAGS="--cfg rav1d_arm_dotprod"` (and add the required
+    // `#![feature(stdarch_neon_dotprod)]` on a nightly build) once the
+    // intrinsics stabilize, to activate the higher-tier dispatch.
+    println!("cargo::rustc-check-cfg=cfg(rav1d_arm_dotprod)");
+    println!("cargo::rustc-check-cfg=cfg(rav1d_arm_i8mm)");
+
     // Emit cfg aliases so individual modules can use simple `#[cfg(asm_msac)]` etc.
     // instead of `#[cfg(any(feature = "asm", feature = "partial_asm"))]` at many sites.
     //
