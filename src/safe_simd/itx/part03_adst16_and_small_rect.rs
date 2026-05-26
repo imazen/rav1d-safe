@@ -174,25 +174,23 @@ macro_rules! impl_16x16_transform_simd_row_dct_col {
             let col_clip_min = i16::MIN as i32;
             let col_clip_max = i16::MAX as i32;
             let mut tmp = [0i32; 256];
-            // SIMD row DCT-16: 2 batches of 8 rows, no rect2, shift=2, rnd=2.
+            // SIMD row DCT-16: 16 rows (AVX-512 16-row path or AVX2 2x8). no rect2, shift=2, rnd=2.
             {
                 let coeff_slice = coeff.as_slice();
-                for y_base in [0usize, 8] {
-                    simd_row_dct16_8bpc_8rows(
-                        _token,
-                        coeff_slice,
-                        16,
-                        y_base,
-                        false,
-                        2,
-                        2,
-                        &mut tmp,
-                        row_clip_min,
-                        row_clip_max,
-                        col_clip_min,
-                        col_clip_max,
-                    );
-                }
+                row_dct16_8bpc_block(
+                    _token,
+                    coeff_slice,
+                    16,
+                    16,
+                    false,
+                    2,
+                    2,
+                    &mut tmp,
+                    row_clip_min,
+                    row_clip_max,
+                    col_clip_min,
+                    col_clip_max,
+                );
             }
             $simd_col_fn(_token, &mut tmp, col_clip_min, col_clip_max);
             add_16x16_to_dst(
@@ -1913,25 +1911,23 @@ fn inv_txfm_add_dct_dct_8x16_8bpc_avx2_inner(
     let col_clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 128];
 
-    // SIMD row transform: 2 batches of 8 rows. is_rect2=true, shift=1, rnd=1.
+    // SIMD row transform: 16 rows (AVX-512 16-row path or AVX2 2x8). rect2, shift=1, rnd=1.
     {
         let coeff_slice = coeff.as_slice();
-        for y_base in [0usize, 8] {
-            simd_row_dct8_8bpc_8rows(
-                _token,
-                coeff_slice,
-                16,
-                y_base,
-                true,
-                1,
-                1,
-                &mut tmp,
-                row_clip_min,
-                row_clip_max,
-                col_clip_min,
-                col_clip_max,
-            );
-        }
+        row_dct8_8bpc_block(
+            _token,
+            coeff_slice,
+            16,
+            16,
+            true,
+            1,
+            1,
+            &mut tmp,
+            row_clip_min,
+            row_clip_max,
+            col_clip_min,
+            col_clip_max,
+        );
     }
 
     // Column transform: SIMD across 8 columns (single chunk, 16 rows)

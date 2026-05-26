@@ -1008,6 +1008,158 @@ fn simd_row_dct32_8bpc_16rows(
     }
 }
 
+/// Row-pass dispatcher: run the DCT-8 row pass over `n_rows` rows (a multiple
+/// of 8) of an 8xN transform. Uses the AVX-512 16-row path when available
+/// (processing 16 rows per call), otherwise the AVX2 8-row path. Bit-exact
+/// either way (both reduce to the same scalar per-row DCT).
+#[cfg(target_arch = "x86_64")]
+#[rite]
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn row_dct8_8bpc_block(
+    token: Desktop64,
+    coeff: &[i16],
+    coeff_h: usize,
+    n_rows: usize,
+    apply_rect2: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    if n_rows >= 16
+        && let Some(t512) = crate::src::cpu::summon_avx512()
+    {
+        let mut y = 0;
+        while y + 16 <= n_rows {
+            simd_row_dct8_8bpc_16rows_entry(
+                t512, coeff, coeff_h, y, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+                col_max,
+            );
+            y += 16;
+        }
+        while y + 8 <= n_rows {
+            simd_row_dct8_8bpc_8rows(
+                token, coeff, coeff_h, y, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+                col_max,
+            );
+            y += 8;
+        }
+        return;
+    }
+    let mut y = 0;
+    while y + 8 <= n_rows {
+        simd_row_dct8_8bpc_8rows(
+            token, coeff, coeff_h, y, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+            col_max,
+        );
+        y += 8;
+    }
+}
+
+/// Row-pass dispatcher for the DCT-16 row pass over `n_rows` rows of a 16xN
+/// transform. AVX-512 16-row path when available, else AVX2 8-row path.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn row_dct16_8bpc_block(
+    token: Desktop64,
+    coeff: &[i16],
+    coeff_h: usize,
+    n_rows: usize,
+    apply_rect2: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    if n_rows >= 16
+        && let Some(t512) = crate::src::cpu::summon_avx512()
+    {
+        let mut y = 0;
+        while y + 16 <= n_rows {
+            simd_row_dct16_8bpc_16rows_entry(
+                t512, coeff, coeff_h, y, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+                col_max,
+            );
+            y += 16;
+        }
+        while y + 8 <= n_rows {
+            simd_row_dct16_8bpc_8rows(
+                token, coeff, coeff_h, y, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+                col_max,
+            );
+            y += 8;
+        }
+        return;
+    }
+    let mut y = 0;
+    while y + 8 <= n_rows {
+        simd_row_dct16_8bpc_8rows(
+            token, coeff, coeff_h, y, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+            col_max,
+        );
+        y += 8;
+    }
+}
+
+/// Row-pass dispatcher for the DCT-32 row pass over `n_rows` rows of a 32xN
+/// transform. AVX-512 16-row path when available, else AVX2 8-row path.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn row_dct32_8bpc_block(
+    token: Desktop64,
+    coeff: &[i16],
+    coeff_h: usize,
+    n_rows: usize,
+    apply_rect2: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    if n_rows >= 16
+        && let Some(t512) = crate::src::cpu::summon_avx512()
+    {
+        let mut y = 0;
+        while y + 16 <= n_rows {
+            simd_row_dct32_8bpc_16rows_entry(
+                t512, coeff, coeff_h, y, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+                col_max,
+            );
+            y += 16;
+        }
+        while y + 8 <= n_rows {
+            simd_row_dct32_8bpc_8rows(
+                token, coeff, coeff_h, y, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+                col_max,
+            );
+            y += 8;
+        }
+        return;
+    }
+    let mut y = 0;
+    while y + 8 <= n_rows {
+        simd_row_dct32_8bpc_8rows(
+            token, coeff, coeff_h, y, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+            col_max,
+        );
+        y += 8;
+    }
+}
+
 /// `#[arcane]` test/entry shims so the `#[rite]` 16-row row passes are callable
 /// from a non-target-feature context (tests, and direct dispatch wiring). These
 /// just forward to the inner helper, which inlines (zero cost).
