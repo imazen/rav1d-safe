@@ -1337,12 +1337,23 @@ fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 1024]) -> [
     for batch in 0..4u32 {
         let y_base = (batch * 8) as usize;
 
-        // Load 32 columns x 8 rows as xmm (i16).
+        // Load 32 columns x 8 rows as xmm (i16), OR-reducing to detect an
+        // all-zero 8-row batch. dav1d ca83ee6d restricts the first (row) pass
+        // to the non-zero rows based on eob; here we observe zero batches
+        // directly (table-free, self-evidently bit-exact: a zero row
+        // transforms to zero and `out` is pre-zeroed), skipping the butterfly
+        // + transpose for them. Wins on sparse blocks (low eob); the OR-reduce
+        // is ~free since we already load every column.
         let mut cx = [_mm_setzero_si128(); 32];
+        let mut nz = _mm_setzero_si128();
         for x in 0..32 {
             let off = y_base + x * 32;
             let arr: &[i16; 8] = (&coeff_col_major[off..off + 8]).try_into().unwrap();
             cx[x] = loadu_128!(arr);
+            nz = _mm_or_si128(nz, cx[x]);
+        }
+        if _mm_testz_si128(nz, nz) != 0 {
+            continue;
         }
 
         let pd_2048 = _mm256_set1_epi32(2048);

@@ -56,3 +56,29 @@ identity `rc == x*stride+y` (stride `== 1<<shift`, `y < stride`).
   its own AVX2 SIMD for SGR/wiener (the 6.6% in profile is the SIMD path), so the C
   rewrites do not touch our hot path. The 1.5.1 SGR *speed* gain was SSSE3 asm
   (`ef4aff75`), not portable to our AVX2 safe path. Skipped.
+
+---
+
+## itx 32x32 row-pass batch-skip prune (follow-on, 2026-05-26)
+
+Concept from dav1d `ca83ee6d` ("itx: restrict number of columns iterated over
+based on EOB"). Table-free variant: in `dct32_row_pass_i16_simd`, OR-reduce each
+8-row batch's coefficients (free — fused with the load we already do) and skip the
+butterfly+transpose for all-zero batches via `_mm_testz_si128`. `out` is pre-zeroed,
+so a skipped batch is self-evidently bit-exact (a zero row transforms to zero).
+
+Validation: 14/14 MD5, 6/6 cross-level conformance, plus a new sparse-batch unit
+test (`test_dct32_row_pass_i16_simd_sparse_batches`) that exercises the skip path.
+
+### A/B — 4K photo AVIF, checked v3/AVX2 (both binaries include the decode_coefs win)
+- Run 1 (cores 14,15, external interference on 4/6 rounds): clean rounds -1.5% / -1.7%.
+- Run 2 (cores 2,3, clean): before avg 189.85 ms, after avg 188.71 ms → **-0.6%**;
+  consistently after-faster but several rounds within noise.
+
+**Honest read: ~0.5-1.5%, real but marginal.** 32x32 dct_dct is a minority of
+transforms in 4K photos and photo 32x32 blocks aren't very sparse, so the skip
+fires less often than on flat/low-detail content. Never a regression in aggregate
+(the OR+testz overhead is ~free on dense blocks). Kept as a correct, tested
+foundation; the larger lever is extending eob-based pruning to the common transform
+sizes (16x16, 8x16, 16x8) and to the row *count* (dav1d's `last_nonzero_col_from_eob`
+table) rather than whole-8-row-batch granularity at 32x32 only.

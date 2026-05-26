@@ -945,6 +945,35 @@ mod tests {
         );
     }
 
+    /// Exercises the all-zero-batch skip in `dct32_row_pass_i16_simd`: inputs
+    /// where only the first `k` 8-row batches (coeff is column-major, so row =
+    /// `i % 32`) are non-zero. The skip must stay bit-exact vs the scalar
+    /// per-row reference, which transforms the zero rows to zero.
+    #[test]
+    fn test_dct32_row_pass_i16_simd_sparse_batches() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+        let row_min = i16::MIN as i32;
+        let row_max = i16::MAX as i32;
+        for nonzero_batches in [1usize, 2, 3, 4] {
+            let full: [i16; 1024] = seeded_i16_block(0x1234_5678 ^ nonzero_batches as u64);
+            let mut input = [0i16; 1024];
+            for i in 0..1024 {
+                if i % 32 < nonzero_batches * 8 {
+                    input[i] = full[i];
+                }
+            }
+            let scalar_out = run_scalar_dct32_per_row(&input, row_min, row_max);
+            let simd_out = dct32_row_pass_i16_simd(token, input);
+            assert_eq!(
+                simd_out, scalar_out,
+                "dct32_row_pass_i16_simd sparse ({nonzero_batches} batches) diverged from scalar"
+            );
+        }
+    }
+
     // ----------------------------------------------------------------------
     // AVX-512 16-row DCT row passes — bit-exact vs scalar per-row reference
     // ----------------------------------------------------------------------
