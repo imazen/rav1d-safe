@@ -1611,10 +1611,18 @@ fn loop_filter_4_8bpc_wd16_simd_v_x16(
     let final_4 = blendv(q4_v, sel_4, fm_mask);
     let final_5 = blendv(q5_v, sel_5, fm_mask);
 
-    // Pack 16 i32 → 16 u8 per position via unsigned saturate (matches the AVX2
-    // `packus_epi32`/`packus_epi16` chain for outputs already in [0, 255]).
+    // Pack 16 i32 → 16 u8 per position. The AVX2 path's
+    // `packus_epi32`/`packus_epi16` chain treats the i32 input as **signed**:
+    // negatives saturate to 0, values > 255 saturate to 255. AVX-512's
+    // `_mm512_cvtusepi32_epi8` instead reads the i32 as **unsigned**, so a
+    // small negative (e.g. the narrow filter's `q0 - f1` going below 0) would
+    // wrap to a huge value and saturate to 255 — a sign mismatch vs scalar.
+    // Clamp to [0, 255] first so the unsigned convert is exact.
+    let zero = _mm512_setzero_si512();
+    let max255 = _mm512_set1_epi32(255);
     let store16 = |buf: &mut [u8], v: __m512i, off: isize| {
-        let packed: __m128i = _mm512_cvtusepi32_epi8(v);
+        let clamped = _mm512_min_epi32(_mm512_max_epi32(v, zero), max255);
+        let packed: __m128i = _mm512_cvtusepi32_epi8(clamped);
         let start = signed_idx(base, strideb * off);
         storeu_128!(&mut buf[start..start + 16], [u8; 16], packed);
     };
