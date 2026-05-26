@@ -116,8 +116,9 @@ coverage:
     cargo llvm-cov --no-default-features --features "bitdepth_8,bitdepth_16" --html
     @echo "Open target/llvm-cov/html/index.html"
 
-# Run CI checks locally
-ci: fmt-check clippy test test-integration
+# Run CI checks locally (incl. cross-arch checks that CI runs — catches
+# x86_64-only code that breaks wasm32/aarch64 before it reaches CI)
+ci: fmt-check clippy cross-aarch64 check-wasm test test-integration
 
 # Download all test vectors (Argon, dav1d, Fluster)
 download-all-vectors:
