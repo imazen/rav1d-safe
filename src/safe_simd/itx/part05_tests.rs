@@ -1216,6 +1216,82 @@ mod tests {
         assert_eq!(total, 0, "dct8_cols_avx512 diverged from scalar");
     }
 
+    /// `dct4_cols_avx512` column pass: process a 16 x 4 row-major i32 buffer
+    /// (the 16x4 transform width it is wired into) and compare each transformed
+    /// column against the scalar `rav1d_inv_dct4_1d_c` oracle. 8 seeds, bit-exact.
+    #[test]
+    fn test_dct4_cols_avx512_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx512() else {
+            eprintln!("Skipping: AVX-512 not available");
+            return;
+        };
+        let col_min = i16::MIN as i32;
+        let col_max = i16::MAX as i32;
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+        ];
+        let total_w = 16usize;
+        let n_rows = 4usize;
+        let mut total = 0u32;
+        for &seed in seeds {
+            let n = total_w * n_rows;
+            let input: Vec<i32> = (0..n)
+                .map(|i| {
+                    let s = seed
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add(i as u64)
+                        .wrapping_mul(1442695040888963407);
+                    (s >> 49) as i16 as i32
+                })
+                .collect();
+
+            let mut scalar = input.clone();
+            for cx in 0..total_w {
+                let mut col = [0i32; 4];
+                for r in 0..n_rows {
+                    col[r] = input[r * total_w + cx];
+                }
+                crate::src::itx_1d::rav1d_inv_dct4_1d_c(
+                    &mut col,
+                    std::num::NonZeroUsize::new(1).unwrap(),
+                    col_min,
+                    col_max,
+                );
+                for r in 0..n_rows {
+                    scalar[r * total_w + cx] = col[r];
+                }
+            }
+
+            let mut simd = input.clone();
+            dct4_cols_avx512(token, &mut simd, total_w, n_rows, col_min, col_max);
+
+            if simd != scalar {
+                for i in 0..n {
+                    if simd[i] != scalar[i] && total < 8 {
+                        eprintln!(
+                            "dct4-cols512 seed={seed:#x} idx={i} row={} col={} scalar={} simd={}",
+                            i / total_w,
+                            i % total_w,
+                            scalar[i],
+                            simd[i]
+                        );
+                    }
+                    if simd[i] != scalar[i] {
+                        total += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(total, 0, "dct4_cols_avx512 diverged from scalar");
+    }
+
     /// AVX-512 identity column passes vs scalar oracle, over the (total_w,
     /// n_rows) widths they are wired into, 8 seeds each. Bit-exact. Covers
     /// `identity_shift_cols_avx512::<1>` (identity8 = *2),

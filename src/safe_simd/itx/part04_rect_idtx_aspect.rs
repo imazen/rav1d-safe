@@ -3083,8 +3083,11 @@ fn inv_txfm_add_dct_dct_16x4_8bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 16 columns (2 chunks of 8), 4 rows
-    {
+    // Column transform: dct4 across 16 columns, 4 rows. AVX-512 does all 16
+    // cols in one chunk; AVX2 falls back to 2 chunks of 8.
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct4_cols_avx512(t512, &mut tmp, 16, 4, col_clip_min, col_clip_max);
+    } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
         for cx_chunk in 0..2 {

@@ -704,6 +704,42 @@ fn dct16_cols_avx512(
     }
 }
 
+/// Run dct4 1D column transform over a row-major buffer using AVX-512.
+/// `tmp` has `total_w` cols × `n_rows` rows (n_rows is the DCT height, here 4).
+/// Processes 16 cols at a time. `total_w` must be a multiple of 16.
+/// Reuses `dct4_1d_cols16` — bit-identical to AVX2 `dct4_1d_cols8`, 16-wide.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn dct4_cols_avx512(
+    token: Server64,
+    tmp: &mut [i32],
+    total_w: usize,
+    n_rows: usize,
+    min: i32,
+    max: i32,
+) {
+    let min_v = _mm512_set1_epi32(min);
+    let max_v = _mm512_set1_epi32(max);
+    let n_chunks = total_w / 16;
+    for cx_chunk in 0..n_chunks {
+        let cx = cx_chunk * 16;
+        let mut v = [_mm512_setzero_si512(); 4];
+        for i in 0..4usize.min(n_rows) {
+            let arr_ref: &[i32; 16] = (&tmp[i * total_w + cx..i * total_w + cx + 16])
+                .try_into()
+                .unwrap();
+            v[i] = loadu_512!(arr_ref);
+        }
+        dct4_1d_cols16(token, &mut v, min_v, max_v);
+        for i in 0..4usize.min(n_rows) {
+            let arr_ref: &mut [i32; 16] = (&mut tmp[i * total_w + cx..i * total_w + cx + 16])
+                .try_into()
+                .unwrap();
+            storeu_512!(arr_ref, v[i]);
+        }
+    }
+}
+
 /// Run dct8 1D column transform over a row-major buffer using AVX-512.
 /// `tmp` has `total_w` cols × `n_rows` rows (n_rows is the DCT height, here 8).
 /// Processes 16 cols at a time. `total_w` must be a multiple of 16.
