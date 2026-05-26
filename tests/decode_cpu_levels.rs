@@ -4,9 +4,13 @@
 //! decode the same test vectors and verify that MD5 hashes match the
 //! dav1d reference values.
 //!
-//! Since `rav1d_set_cpu_flags_mask` is global state, all levels are tested
-//! sequentially within each test function. Do NOT split levels into separate
-//! `#[test]` functions — they would race in parallel test execution.
+//! `rav1d_set_cpu_flags_mask` is **process-global**, so any two tests that
+//! drive different `CpuLevel`s in parallel will race — one test's "scalar"
+//! decode can run with another test's avx2 mask still in effect, producing a
+//! spurious MD5 mismatch. `decode_at_level` therefore holds a static
+//! `CPU_LEVEL_LOCK` mutex across the full decoder lifetime, so the suite is
+//! correct regardless of the runner's `--test-threads` setting (CI uses
+//! `--test-threads=1` as belt-and-braces; this is the suspenders).
 //!
 //! **Requires `--release`** — debug mode is 50-100x slower and will time out.
 
@@ -17,6 +21,13 @@ use rav1d_safe::src::managed::{CpuLevel, DecodeFrameType, Decoder, Frame, Planes
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+/// Serializes the process-global `rav1d_set_cpu_flags_mask` across this
+/// binary's tests. Acquired for the full lifetime of every `decode_at_level`
+/// call (cpu-level set → decode → flush → drop), since the mask is read on
+/// every SIMD-dispatch site, not just at decoder init.
+static CPU_LEVEL_LOCK: Mutex<()> = Mutex::new(());
 
 mod ivf_parser;
 mod test_vectors;
@@ -305,6 +316,10 @@ fn decode_at_level(
     apply_grain: bool,
     overrides: Option<&VectorArgs>,
 ) -> Result<(String, usize), String> {
+    // Serialize the global cpu-flags mask across the binary's tests. Poison-
+    // tolerant: a panic in one test must not deadlock the rest of the suite.
+    let _guard = CPU_LEVEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     let file = File::open(ivf_path).map_err(|e| format!("open {}: {e}", ivf_path.display()))?;
     let mut reader = BufReader::new(file);
     let frames = ivf_parser::parse_all_frames(&mut reader)
