@@ -16,6 +16,8 @@
 use core::arch::x86_64::*;
 
 use archmage::{Desktop64, Server64, SimdToken, arcane};
+#[cfg(target_arch = "x86_64")]
+use archmage::X64V4xToken;
 use std::ffi::c_int;
 #[allow(non_camel_case_types)]
 type ptrdiff_t = isize;
@@ -1992,6 +1994,177 @@ pub unsafe extern "C" fn ipred_z1_8bpc_avx2(
         height as usize,
         angle as i32,
     );
+}
+
+/// Z1 intra prediction AVX-512ICL (v4x) inner for 8bpc.
+///
+/// Identical edge preparation to [`ipred_z1_8bpc_inner`]; the per-row sample
+/// blend keeps the (up to 128-byte) edge resident in two ZMM registers and
+/// uses `vpermi2b` (`_mm512_permutex2var_epi8`) to gather the per-pixel base
+/// samples instead of issuing per-chunk memory loads.
+///
+/// Bit-exactness: the fill case (`base >= max_base_x`) is reproduced by
+/// clamping both gather indices to `max_base_x`. Since `inv_frac + frac == 64`,
+/// the blend then yields `(top[max_base_x] * 64 + 32) >> 6 == top[max_base_x]`,
+/// matching the scalar/AVX2 flat fill exactly.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_z1_8bpc_v4x_inner(
+    _token: X64V4xToken,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+    angle: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let width_i = width as i32;
+    let height_i = height as i32;
+
+    let is_sm = (angle >> 9) & 1 != 0;
+    let enable_intra_edge_filter = (angle >> 10) != 0;
+    let angle = angle & 511;
+
+    let mut dx = dav1d_dr_intra_derivative[(angle >> 1) as usize] as i32;
+
+    let upsample_above = enable_intra_edge_filter
+        && (90 - angle) < 40
+        && ((width_i + height_i) as usize) <= (16 >> is_sm as usize);
+
+    let mut top_out = [0u8; 64 + 64];
+    let (top, max_base_x, base_inc);
+
+    if upsample_above {
+        upsample_edge_8bpc(
+            &mut top_out,
+            width_i + height_i,
+            topleft,
+            tl_off + 1,
+            -1,
+            width_i + std::cmp::min(width_i, height_i),
+        );
+        dx <<= 1;
+        top = top_out.as_slice();
+        max_base_x = (2 * (width_i + height_i) - 2) as usize;
+        base_inc = 2usize;
+    } else {
+        let filter_strength = if enable_intra_edge_filter {
+            get_filter_strength_simple(width_i + height_i, 90 - angle, is_sm)
+        } else {
+            0
+        };
+        if filter_strength != 0 {
+            filter_edge_8bpc(
+                &mut top_out,
+                width_i + height_i,
+                0,
+                width_i + height_i,
+                topleft,
+                tl_off + 1,
+                -1,
+                width_i + std::cmp::min(width_i, height_i),
+                filter_strength,
+            );
+            top = top_out.as_slice();
+            max_base_x = (width_i + height_i - 1) as usize;
+        } else {
+            top = &topleft[tl_off + 1..];
+            max_base_x = width + std::cmp::min(width, height) - 1;
+        }
+        base_inc = 1;
+    };
+
+    // Copy the live edge region into a 128-byte register-resident buffer.
+    // We only need samples up to `max_base_x` (inclusive); the tail is reached
+    // only via clamped indices, so pad it with the fill value to make any
+    // clamped lane correct.
+    let edge_len = (max_base_x + 1).min(128);
+    let mut ebuf = [0u8; 128];
+    let top_f = top.flex();
+    for i in 0..edge_len {
+        ebuf[i] = top_f[i];
+    }
+    let fill_val = top_f[max_base_x.min(127)];
+    for b in ebuf.iter_mut().skip(edge_len) {
+        *b = fill_val;
+    }
+
+    let edge_lo = loadu_512!((&ebuf[0..64]), [u8; 64]);
+    let edge_hi = loadu_512!((&ebuf[64..128]), [u8; 64]);
+
+    // vpermi2b clamps indices to the low 7 bits (0..127), exactly our edge span.
+    let max_idx8 = _mm512_set1_epi8((max_base_x.min(127)) as i8);
+    let rounding = _mm512_set1_epi16(32);
+
+    // Per-lane offset 0..63 for the 64-lane gather.
+    let lane_off: [u8; 64] = core::array::from_fn(|i| i as u8);
+    let lane_off_v = loadu_512!((&lane_off), [u8; 64]);
+    let one8 = _mm512_set1_epi8(1);
+
+    for y in 0..height_i {
+        let xpos = (y + 1) * dx;
+        let frac = (xpos & 0x3e) as i16;
+        let inv_frac = (64 - frac) as i16;
+
+        let frac_vec = _mm512_set1_epi16(frac);
+        let inv_frac_vec = _mm512_set1_epi16(inv_frac);
+
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let base0 = (xpos >> 6) as usize;
+
+        if base_inc == 1 {
+            let base0_v = _mm512_set1_epi8(base0.min(127) as i8);
+            let mut x = 0usize;
+            while x < width {
+                // idx0[lane] = base0 + x + lane ; idx1 = idx0 + 1, both clamped.
+                let xbase = _mm512_set1_epi8(x.min(127) as i8);
+                let idx0 = _mm512_adds_epu8(_mm512_adds_epu8(base0_v, xbase), lane_off_v);
+                let idx0 = _mm512_min_epu8(idx0, max_idx8);
+                let idx1 = _mm512_min_epu8(_mm512_adds_epu8(idx0, one8), max_idx8);
+
+                let t0 = _mm512_permutex2var_epi8(edge_lo, idx0, edge_hi);
+                let t1 = _mm512_permutex2var_epi8(edge_lo, idx1, edge_hi);
+
+                // Low 32 lanes -> i16 blend (the 32 pixels for this x window).
+                let t0_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t0));
+                let t1_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t1));
+                let p0 = _mm512_mullo_epi16(t0_lo, inv_frac_vec);
+                let p1 = _mm512_mullo_epi16(t1_lo, frac_vec);
+                let sblend = _mm512_add_epi16(_mm512_add_epi16(p0, p1), rounding);
+                let r = _mm512_srai_epi16::<6>(sblend);
+                // Saturating unsigned narrow 32xu16 -> 32xu8, lane-order preserving.
+                let out32 = _mm512_cvtusepi16_epi8(r);
+
+                let n = (width - x).min(32);
+                let mut tmp = [0u8; 32];
+                storeu_256!((&mut tmp), [u8; 32], out32);
+                dst[row_off + x..row_off + x + n].copy_from_slice(&tmp[..n]);
+                x += 32;
+            }
+        } else {
+            // Upsampled (base_inc == 2): scalar, matching the reference exactly.
+            let mut x = 0usize;
+            while x < width {
+                let base = base0 + base_inc * x;
+                if base < max_base_x {
+                    let t0 = top_f[base] as i32;
+                    let t1 = top_f[base + 1] as i32;
+                    let v = t0 * inv_frac as i32 + t1 * frac as i32;
+                    dst[row_off + x] = ((v + 32) >> 6) as u8;
+                } else {
+                    let fv = top_f[max_base_x];
+                    for xx in x..width {
+                        dst[row_off + xx] = fv;
+                    }
+                    break;
+                }
+                x += 1;
+            }
+        }
+    }
 }
 
 /// Helper: get filter strength (simplified version)
@@ -5073,6 +5246,10 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     #[cfg(not(target_arch = "x86_64"))]
     let avx512_token: Option<Server64> = None;
 
+    // Try AVX-512ICL (v4x: VBMI vpermb/vpermi2b) for directional predictors.
+    #[cfg(target_arch = "x86_64")]
+    let avx512x_token = crate::src::cpu::summon_avx512x();
+
     let w = width as usize;
     let h = height as usize;
     let bd_c = bd.into_c();
@@ -5226,17 +5403,31 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                     }
                 }
                 (BPC::BPC8, 6) => {
-                    ipred_z1_8bpc_inner(
-                        token,
-                        dst_bytes,
-                        dst_base_bytes,
-                        byte_stride,
-                        tl_bytes,
-                        topleft_off,
-                        w,
-                        h,
-                        angle as i32,
-                    );
+                    if let Some(t512x) = avx512x_token {
+                        ipred_z1_8bpc_v4x_inner(
+                            t512x,
+                            dst_bytes,
+                            dst_base_bytes,
+                            byte_stride,
+                            tl_bytes,
+                            topleft_off,
+                            w,
+                            h,
+                            angle as i32,
+                        );
+                    } else {
+                        ipred_z1_8bpc_inner(
+                            token,
+                            dst_bytes,
+                            dst_base_bytes,
+                            byte_stride,
+                            tl_bytes,
+                            topleft_off,
+                            w,
+                            h,
+                            angle as i32,
+                        );
+                    }
                 }
                 (BPC::BPC8, 7) => {
                     ipred_z2_8bpc_inner(

@@ -281,6 +281,26 @@ pub(crate) fn summon_avx512() -> Option<archmage::prelude::Server64> {
     archmage::prelude::Server64::summon()
 }
 
+/// Try to summon an AVX-512ICL ("v4x") token, gated by the CPU flags mask.
+/// Returns `None` if AVX-512 ICL is masked out or unavailable.
+///
+/// This is the Ice Lake / Zen 4 tier: `Server64` (F/BW/CD/DQ/VL) plus VBMI,
+/// VBMI2, VNNI, BITALG, VPOPCNTDQ, IFMA, GFNI, VAES, VPCLMULQDQ. VBMI is what
+/// provides the register-resident byte permutes `_mm512_permutexvar_epi8`
+/// (`vpermb`) and `_mm512_permutex2var_epi8` (`vpermi2b`). The repo's
+/// `CpuFlags::AVX512ICL` already requires exactly this feature set (see
+/// `run_time_detect`), so gating on the same flag as [`summon_avx512`] but
+/// summoning `X64V4xToken` is sound.
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+pub(crate) fn summon_avx512x() -> Option<archmage::X64V4xToken> {
+    use archmage::SimdToken as _;
+    if !simd_enabled(CpuFlags::AVX512ICL) {
+        return None;
+    }
+    archmage::X64V4xToken::summon()
+}
+
 /// Try to summon a Wasm128 token for WebAssembly SIMD128.
 /// This is compile-time only — wasm32 has no runtime feature detection.
 /// Returns `None` if not compiled with `+simd128` target feature.
