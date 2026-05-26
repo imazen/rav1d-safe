@@ -1,0 +1,33 @@
+# rav1d-safe v0.5.6 canonical profile — 2026-05-25
+# commit: 8b0cb6d (pre-bench-commit)
+# host: lilith, 32 cores, load ~2.0 during run
+# cmd: just profile (500 IVF iters, 20 AVIF iters), Rust 1.95.0, fat LTO
+
+=== ASM (hand-written assembly) ===
+Input: test-vectors/dav1d-test-data/8-bit/intra/av1-1-b8-02-allintra.ivf (39 frames, 1488225 bytes)
+Total: 52.140s (500 iters, 104.280ms/iter, 2.674ms/frame)
+Input: test-vectors/bench/photo_4k.avif (2037.7 KB AVIF, 2037.4 KB OBU)
+Total: 2.415s (20 iters, 120.7ms/iter)
+Input: test-vectors/bench/photo_8k.avif (7410.8 KB AVIF, 7410.5 KB OBU)
+Total: 14.282s (20 iters, 714.1ms/iter)
+=== Safe-SIMD (checked, forbid(unsafe_code)) ===
+Input: test-vectors/dav1d-test-data/8-bit/intra/av1-1-b8-02-allintra.ivf (39 frames, 1488225 bytes)
+Total: 79.321s (500 iters, 158.642ms/iter, 4.068ms/frame)
+Input: test-vectors/bench/photo_4k.avif (2037.7 KB AVIF, 2037.4 KB OBU)
+Total: 3.756s (20 iters, 187.8ms/iter)
+Input: test-vectors/bench/photo_8k.avif (7410.8 KB AVIF, 7410.5 KB OBU)
+Total: 22.064s (20 iters, 1103.2ms/iter)
+=== Safe-SIMD (unchecked bounds) ===
+Input: test-vectors/dav1d-test-data/8-bit/intra/av1-1-b8-02-allintra.ivf (39 frames, 1488225 bytes)
+Total: 76.626s (500 iters, 153.252ms/iter, 3.930ms/frame)
+Input: test-vectors/bench/photo_4k.avif (2037.7 KB AVIF, 2037.4 KB OBU)
+Total: 3.591s (20 iters, 179.5ms/iter)
+Input: test-vectors/bench/photo_8k.avif (7410.8 KB AVIF, 7410.5 KB OBU)
+Total: 21.338s (20 iters, 1066.9ms/iter)
+=== Partial ASM (ASM msac + loopfilter, safe SIMD rest) ===
+Input: test-vectors/dav1d-test-data/8-bit/intra/av1-1-b8-02-allintra.ivf (39 frames, 1488225 bytes)
+Total: 70.592s (500 iters, 141.183ms/iter, 3.620ms/frame)
+Input: test-vectors/bench/photo_4k.avif (2037.7 KB AVIF, 2037.4 KB OBU)
+Total: 3.021s (20 iters, 151.1ms/iter)
+Input: test-vectors/bench/photo_8k.avif (7410.8 KB AVIF, 7410.5 KB OBU)
+Total: 16.781s (20 iters, 839.1ms/iter)

@@ -172,12 +172,11 @@ Single still images at web-typical quality (YUV420, q60). Source: Google-native 
 
 | Resolution | ASM | Safe (checked) | Safe (unchecked) | Safe vs ASM |
 |------------|-----|----------------|------------------|-------------|
-| 4K (3840x2561) | 122 ms | 190 ms | 188 ms | 1.55x |
-| 8K (8192x5464) | 724 ms | 1319 ms | 1289 ms | 1.8x |
+| 4K (3840x2561) | 120.7 ms | 187.8 ms | 179.5 ms | 1.56x |
+| 8K (8192x5464) | 714.1 ms | 1103.2 ms | 1066.9 ms | 1.54x |
 
-(4K figures are post-0.5.6 SIMD work — i16-packed `pmaddwd` transforms + YMM-widened
-loopfilter brought the checked ratio from 2.0× to ~1.55×. The 8K row predates 0.5.6 and
-will improve similarly on re-measure.)
+(Measured at v0.5.6. The 0.5.6 SIMD work — i16-packed `pmaddwd` transform row+col passes
+and YMM-widened loopfilter — brought the 4K checked ratio from 2.0× down to 1.56×.)
 
 ### Small test vectors (IVF, multi-frame decode)
 
@@ -185,15 +184,16 @@ dav1d-test-data allintra 352x288 (39 frames). Entropy-heavy bitstream where the 
 
 | Build | ms/iter | ms/frame | vs ASM |
 |-------|---------|----------|--------|
-| ASM | 107.3 | 2.75 | 1.0x |
-| Safe (checked) | 173.1 | 4.44 | 1.61x |
-| Safe (unchecked) | 164.1 | 4.21 | 1.53x |
+| ASM | 104.3 | 2.67 | 1.0x |
+| Safe (checked) | 158.6 | 4.07 | 1.52x |
+| Safe (unchecked) | 153.3 | 3.93 | 1.47x |
+| Partial ASM | 141.2 | 3.62 | 1.35x |
 
 ### Where the gap comes from
 
-The safe build is ~1.55x slower on 4K real images and ~1.6x on entropy-heavy vectors. The gap breaks down:
+The safe build is ~1.56x slower on 4K real images and ~1.52x on entropy-heavy vectors. The gap breaks down:
 
-- **Entropy decoder (msac)**: ~35% of decode time. Serial dependency chain — the core symbol decode loop can't be parallelized. The `partial_asm` feature uses hand-tuned ASM for msac and loopfilter, bringing real photo decodes down to 1.4-1.5x vs full ASM.
+- **Entropy decoder (msac)**: ~45% of decode time. Serial dependency chain — the core symbol decode loop can't be parallelized; ~95% of `decode_coefs` is irreducible algorithmic cost (only ~3-5% is Rust-specific bounds-check/index overhead). The `partial_asm` feature uses hand-tuned ASM for msac and loopfilter, bringing 4K photo decodes to 1.25x vs full ASM.
 - **Calling conventions**: The ASM kernels use custom register allocation across function boundaries. Rust's ABI reloads registers at each call site.
 - **Scaled MC**: Falls back to scalar Rust (~2% of inter-frame content). The ASM version uses per-pixel variable-step register scheduling that doesn't map cleanly to safe intrinsics.
 - **Bounds checking**: The `unchecked` feature skips DisjointMut borrow tracking. This saves ~5% on photos, confirming the tracking overhead is modest.
