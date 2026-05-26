@@ -80,6 +80,9 @@ Dispatch pattern: `incant!` for multi-tier, or `if let Some(t) = X64V4xToken::su
   silicon is deferred to aarch64 CI (host is x86; QEMU validated the NEON-path
   tests).
 - Targeting v0.5.7 (v0.5.6 is release-prepped, pending publish go-ahead — does not block this work).
-- Independent algorithmic ports (decode_coefs 1.5.0 index-offset, msac 1.4.1, SGR 1.5.1) tracked separately — they help the AVX2 baseline on all CPUs and are ISA-independent.
+- Independent algorithmic ports (ISA-independent — help every CPU including this Zen4):
+  - **decode_coefs 1.5.0 index-offset (`5ef6b241`): DONE** — ported `e24b479`, **~2.6% faster** 4K AVIF checked (bit-exact, 14/14 MD5). 2D path indexes `levels` by `rc` directly, dropping a per-coefficient `imul`. See `benchmarks/decode_coefs_index_offset_2026-05-26.md`.
+  - **msac `d22de29c` minor optimizations: ALREADY PRESENT** in `src/msac.rs` (invert-once refill, `dif<<d` norm, `dif=0` init) — rav1d ported newer-than-1.0.0 msac. No work.
+  - **SGR/wiener 1.5.1 C rewrites: N/A** — they rewrite the scalar reference C + cut stack; our hot path runs AVX2 SIMD. The 1.5.1 SGR speed gain was SSSE3 asm, not portable to our AVX2 safe path.
 - Stale-doc fix needed: CLAUDE.md claims ADST 8x8/16x16 column SIMD is wired, but the safe `itxfm_dispatch_8bpc` routes non-DCT_DCT/non-IDTX ≥8x8 to scalar. Verify/wire/correct.
 - **X1 recovery status (2026-05-26):** AVX-512 column passes now cover dct4/dct8/dct16/dct32 + IDTX (identity8/16/32) at all wide (total_w≥16) sites, plus the 16-row DCT row passes. New helpers in `part02`: `dct4_cols_avx512`, `dct8_cols_avx512`, `identity_shift_cols_avx512<SHIFT>`, `identity16_cols_avx512`. All bit-exact vs scalar oracle (lib tests `test_{dct4,dct8,identity}_cols_avx512_matches_scalar`) and 14/14 MD5. **Remaining for full X1: ADST cols16** — no `adst{8,16}_1d_cols16` exists yet (AVX2 `adst*_1d_cols8` only); needs a 16-lane ADST helper + wiring at the wide adst column sites (`part02:2007/2058`, `part04:1951`, etc.). Perf flat on this Zen4 (double-pumped 512); payoff is native-512 hardware.

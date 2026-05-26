@@ -1,0 +1,258 @@
+decode_coefs analysis — 2026-05-25
+===================================
+
+Function: src/recon.rs:523-1256 (~733 LOC)
+Profile: 45% of 4K AVIF decode (checked), ~37% of ASM build
+Inner function: decode_coefs_class (lines 768-1014), monomorphized 3x for TxClass
+
+STRUCTURE OVERVIEW
+==================
+
+Phase 1: Per-block preamble (lines 560-726) — ~5% of function time
+  - skip_ctx + all_skip decode (1 msac call)
+  - transform type decode (0-1 msac calls, depends on block type)
+  - eob_bin + eob decode (2-4 msac calls)
+
+Phase 2: Coefficient loop (lines 899-978) — ~65% of function time
+  Per coefficient (eob-1 down to 1):
+    - Scan lookup: scan[i].get() — 1 table read (TwoD only)
+    - x/y computation: shift + mask — 2 ALU ops
+    - get_lo_ctx: 5 u8 reads from levels[] + 2 additions + table lookup — ~10 ops
+    - adapt4 decode (lo_tok): 1 msac call
+    - Conditional hi_tok: if tok==3, 1 more msac call (adapt4 with chained calls)
+    - cf.set: 1 bounded write to coeff buffer
+    - levels[]: 1 bounded write to scratch buffer
+
+Phase 3: DC coefficient (lines 979-1014) — ~5% of function time
+
+Phase 4: Dequant + sign loop (lines 1158-1250) — ~25% of function time
+  Per non-zero coefficient:
+    - sign decode: 1 msac bool_equi call
+    - cf.get: 1 bounded read
+    - Conditional read_golomb: rare (tok >= 15)
+    - dequant multiply + shift + clamp
+    - cf.set: 1 bounded write
+    - Linked list traversal via rc = rc_tok & 0x3ff
+
+OPERATION COUNTS PER COEFFICIENT
+=================================
+
+Phase 2 (inner loop, per coef):
+  SERIAL (msac state dependent):
+    - 1x rav1d_msac_decode_symbol_adapt4 (always)
+    - 0.15x rav1d_msac_decode_hi_tok (when tok==3, ~15% of coefficients)
+    Each adapt4 = ~25 cycles: compare, range update, normalize, update_cdf(3 entries)
+    Each hi_tok = 1-4 chained adapt4 calls = ~25-100 cycles
+
+  NON-SERIAL (between msac calls):
+    - scan table lookup: 1 cache line read (scan[] is u16 array, well-cached)
+    - get_lo_ctx: 5 byte reads from levels[] (stride-separated, potentially cold)
+    - x/y decomposition: 3-4 ALU ops
+    - levels[] write: 1 byte store
+    - cf.set: 1 i16/i32 store via bounds-checked index
+
+Phase 4 (sign/dequant, per non-zero coef):
+  SERIAL:
+    - 1x rav1d_msac_decode_bool_equi (~15 cycles)
+  NON-SERIAL:
+    - cf.get + dequant multiply + shift + clamp + cf.set: ~8 ALU ops + 2 bounded accesses
+
+TOTAL per coefficient (average): ~40-50 cycles serial (msac) + ~15-20 cycles non-serial
+
+DISJOINTMUT GUARD ANALYSIS
+============================
+
+In decode_coefs, DisjointMut is touched ONCE:
+  Line 755-758: CfSelect::Frame path does mut_slice_as() — 1 guard acquisition per call
+
+The cf local struct (line 727-749) wraps a plain &mut [BD::Coef] slice, NOT DisjointMut.
+The levels[] buffer is a &mut [u8; 32*34] from scratch — plain mutable reference, no tracking.
+
+DisjointMut overhead in decode_coefs itself: NEGLIGIBLE (<0.1%).
+The 9% DisjointMut overhead in the checked profile comes from CALLERS (recon_b) acquiring
+pixel buffer guards, not from decode_coefs.
+
+BOUNDS CHECK ANALYSIS
+======================
+
+Per coefficient in inner loop (Phase 2):
+  1. scan[i as usize].get() — i is loop counter 1..eob, scan.len() >= eob. Bounds check present.
+  2. levels[x * stride + y] — stride is <=16, x/y are small. Bounds check present.
+     Also: get_lo_ctx reads levels at 5 offsets — 5 bounds checks (partially elided by the
+     "bounds check all at once" pattern at line 497/507)
+  3. cf.index(rc): uses & (len-1) mask — NO bounds check needed (power-of-2 masking)
+  4. lo_cdf[ctx] / hi_cdf[ctx] — ctx is computed from known ranges, likely elided
+  5. eob_cdf[ctx] — ctx is 0-3, array is small, likely elided
+
+Per coefficient in Phase 4:
+  1. cf.get(rc) — masked index, no bounds check
+  2. qm_tbl[rc as usize] — rc can be up to 1023, qm_tbl sized accordingly. Bounds check present.
+
+TOTAL bounds checks per coefficient: ~2-3 surviving (levels access, scan access).
+At ~1 cycle each (branch prediction helps): ~3-5 cycles per coefficient.
+For a 32x32 block (1024 coefficients, ~200 non-zero average): ~600-1000 cycles total.
+vs ~40000 cycles serial msac cost: bounds checks are ~2% of decode_coefs.
+
+BRANCH PREDICTION ANALYSIS
+============================
+
+Per coefficient (Phase 2):
+  1. tx_class match: ELIMINATED at compile time (const generic TX_CLASS)
+  2. tok == 3 (triggers hi_tok): ~15% taken on natural content. UNPREDICTABLE.
+     This is the single worst branch — every misprediction costs ~15 cycles.
+  3. tok != 0 check (line 962): ~70% taken. Moderately predictable.
+  4. get_lo_ctx: all comparisons (mag > 512, x/y bounds) — predictable (rarely triggered)
+  5. debug branches: compiled out in release
+
+Per coefficient (Phase 4):
+  1. rc_tok >= 15<<11 (golomb escape): ~0.5% taken. Highly predictable (always NOT taken).
+  2. sign: 50/50. UNPREDICTABLE. But it's decoded via msac bool_equi (no branch on value).
+  3. rc != 0 (loop continuation): highly predictable until last iteration.
+
+KEY UNPREDICTABLE BRANCH: tok == 3 at line 934. ~15% misprediction rate.
+Cost estimate: 200 coefficients * 0.15 * 15 cycles = ~450 cycles per block.
+vs ~8000 cycles serial msac: ~5.6% of function time.
+
+RUST OVERHEAD vs ALGORITHMIC COST
+===================================
+
+Decomposition of the 45% profile share (checked build, 4K AVIF):
+
+  msac serial chain (algorithmic, same in C):        ~60-65% of decode_coefs
+    - adapt4/adapt8 symbol decode + CDF update
+    - ctx_norm + ctx_refill
+    - bool_equi for signs
+    - hi_tok chained adapt4
+    - read_golomb (rare)
+
+  get_lo_ctx context derivation (algorithmic):        ~12-15%
+    - 5 byte reads from levels array per coefficient
+    - Addition + table lookup
+    - Same cost in C (memory bound)
+
+  scan/position computation (algorithmic):             ~3-5%
+    - scan table lookup, shift, mask
+    - Same in C
+
+  Bounds checks (Rust overhead):                       ~2-3%
+    - levels[] access, scan[] access
+    - NOT present in C
+
+  cf.index masking (Rust overhead):                    ~1%
+    - Power-of-2 mask instead of raw pointer offset
+    - C uses pointer arithmetic (0 cost)
+
+  update_cdf (algorithmic, partially optimizable):     ~12-15%
+    - 3 entries for adapt4 (9 ops)
+    - Branchless mask-select is already optimal
+    - Called after EVERY symbol decode
+
+  levels[] zeroing (algorithmic):                      ~2-3%
+    - Line 841: fills stride*(4*swh_zero+2) bytes per call
+    - Up to 16*34=544 bytes for 32x32
+
+  Phase 4 dequant (algorithmic):                       ~3-5%
+    - Multiply, shift, clamp per non-zero coef
+
+  TOTAL Rust-specific overhead:                        ~3-5% of decode_coefs
+  TOTAL algorithmic (same in C):                       ~95-97%
+
+The Rust overhead is SMALL. The gap vs ASM comes from:
+  - msac: ASM uses SSE2 inline adapt4/8 (eliminated in safe build's branchless scalar)
+  - No SIMD in update_cdf (ASM has SSE2 vectorized CDF update)
+
+CDF UPDATE COST ANALYSIS
+==========================
+
+update_cdf (src/msac.rs:361-372) runs after EVERY symbol decode.
+
+For adapt4 (n=3): 3 iterations of branchless mask-select = ~9 ALU ops + 1 store for count.
+For adapt8 (n=7): 7 iterations = ~21 ALU ops.
+For bool_adapt (n=1): 1 iteration = ~3 ALU ops.
+
+Per coefficient (Phase 2): 1 adapt4 = 9 ops. 0.15x hi_tok = 0.15 * (1-4) * 9 = ~4-5 ops.
+Per coefficient (Phase 4): 1 bool_equi = NO CDF update (equi doesn't use CDF).
+
+CDF update is ~12-15% of decode_coefs. It's tightly coupled — each update modifies the CDF
+that the NEXT symbol with the same context reads. Deferral is NOT possible for:
+  - lo_cdf: same ctx can repeat within 2-3 coefficients (same position class)
+  - hi_cdf: same ctx repeats whenever consecutive coefficients trigger hi_tok
+  - eob_cdf: only used once per block (deferral irrelevant)
+
+BATCHING opportunity: The adapt4 branchless scalar computes all 3 v-values then counts.
+The CDF update immediately after could theoretically be fused, but the update needs `val`
+which is only known after the comparison. The dependency chain is:
+  v[i] depends on cdf[i] → val depends on v[i] → update depends on val → next cdf[i]
+
+The CDF update CANNOT be deferred because the same CDF array may be used for the very next
+coefficient (lo_cdf[ctx] where ctx repeats for adjacent coefficients in the same position class).
+
+CONCRETE PROPOSALS
+===================
+
+1. SIMD update_cdf for adapt4 (SSE2)
+   LOC: ~40 lines in msac.rs
+   Savings: ~3-4% of decode_coefs (~1.5% of total profile)
+   Confidence: HIGH — dav1d ASM does this; 3-entry CDF fits in one __m128i
+   Approach: Load 4 u16 into __m128i, compute mask/delta branchlessly, store back.
+   The current scalar branchless code does 3 iterations. SSE2 does it in ~4 instructions.
+   Risk: adapt4 is #[inline(always)], SSE2 would need the sse2!() macro pattern.
+
+2. Fused adapt4 + update_cdf
+   LOC: ~30 lines
+   Savings: ~2% of decode_coefs (~1% of total) — eliminated store/reload between decode and update
+   Confidence: MEDIUM — may already be optimized by LLVM since both are inlined
+   Approach: Combine symbol decode and CDF update into single function that keeps
+   cdf values in registers.
+
+3. Eliminate tok==3 branch with branchless hi_tok entry
+   LOC: ~20 lines
+   Savings: ~1% of decode_coefs (~0.5% of total) — eliminates ~200 branch mispredictions/block
+   Confidence: LOW — hi_tok is 1-4 chained decodes, hard to make branchless.
+   Approach: Always call a hi_tok wrapper that returns tok unchanged when tok<3.
+   Problem: wastes cycles on the 85% path where tok<3.
+
+4. Pre-compute scan x/y decomposition table
+   LOC: ~15 lines
+   Savings: ~0.5% of decode_coefs — replaces shift+mask with direct table read
+   Confidence: HIGH — trivial, cache-friendly
+   Approach: At decode_coefs entry, build local [u8; eob] arrays for x[] and y[] from scan[].
+   Problem: eob can be up to 1024, stack allocation. Better: pack x|y into scan table itself.
+
+5. levels[] zeroing via memset intrinsic
+   LOC: ~5 lines
+   Savings: ~0.5% — the manual loop at line 841 may not auto-vectorize
+   Confidence: HIGH
+   Approach: Replace the for loop with slice::fill(0) if LLVM optimizes it, or
+   explicit _mm256_storeu_si256 zero stores.
+
+6. Batch Phase 4 signs via msac_decode_bools
+   LOC: ~60 lines
+   Savings: ~3-5% of decode_coefs (~1.5-2% of total) — fewer refill checks
+   Confidence: LOW — signs are interleaved with cf reads in a linked list (rc chain).
+   The linked list means you don't know WHICH coefficients are non-zero until you traverse.
+   Not batchable without restructuring the encoding.
+
+7. SIMD get_lo_ctx for TxClass::TwoD
+   LOC: ~40 lines
+   Savings: ~2% of decode_coefs (~1% of total)
+   Confidence: MEDIUM — 5 gather reads from levels[] at stride offsets.
+   Problem: levels[] has stride 4*sh (up to 32), reads at (0,1), (1,0), (1,1), (0,2), (2,0).
+   These are non-contiguous, defeating SIMD load. Would need per-coefficient gather or
+   restructured levels layout.
+
+PRIORITY RANKING (savings/LOC ratio)
+======================================
+
+#1: SIMD update_cdf for adapt4         — 1.5%/40 LOC = 0.038%/line  *** BEST ROI ***
+#2: levels[] zeroing                    — 0.5%/5 LOC = 0.100%/line  (tiny absolute gain)
+#3: Pre-compute scan x/y               — 0.5%/15 LOC = 0.033%/line
+#4: Fused adapt4+update                — 1.0%/30 LOC = 0.033%/line
+#5: SIMD get_lo_ctx                    — 1.0%/40 LOC = 0.025%/line
+#6: Branchless hi_tok                  — 0.5%/20 LOC = 0.025%/line
+#7: Batch Phase 4 signs                — not feasible without encoding change
+
+OVERALL VERDICT: decode_coefs is ~95% algorithmic cost. The Rust overhead is only ~3-5%.
+The biggest wins come from SIMD-ifying the scalar support code (update_cdf, get_lo_ctx),
+not from eliminating Rust overhead. Total achievable savings: ~5-8% of decode_coefs
+(~2-3.5% of total decode time) with proposals #1-#5 combined.
