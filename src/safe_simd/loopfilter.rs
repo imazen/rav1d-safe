@@ -3729,6 +3729,7 @@ fn read_lvl(lvl: &[AtomicU8], offset: usize, byte_idx: usize) -> u8 {
 #[cfg(any(target_arch = "x86_64", target_arch = "wasm32"))]
 #[cfg_attr(target_arch = "x86_64", arcane)]
 #[allow(unused_mut)]
+#[cfg_attr(not(target_arch = "x86_64"), allow(unused_variables))]
 fn lpf_h_sb_y_8bpc_inner(
     #[cfg(target_arch = "x86_64")] _token: Desktop64,
     buf: &mut [u8],
@@ -3840,6 +3841,7 @@ fn lpf_h_sb_y_8bpc_inner(
 #[cfg(any(target_arch = "x86_64", target_arch = "wasm32"))]
 #[cfg_attr(target_arch = "x86_64", arcane)]
 #[allow(unused_mut)]
+#[cfg_attr(not(target_arch = "x86_64"), allow(unused_variables))]
 fn lpf_v_sb_y_8bpc_inner(
     #[cfg(target_arch = "x86_64")] _token: Desktop64,
     buf: &mut [u8],
@@ -5429,7 +5431,6 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             match (is_y, is_v) {
                 (true, false) => lpf_h_sb_y_8bpc_inner(
-                    token,
                     buf,
                     base,
                     stride as isize,
@@ -5443,7 +5444,6 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     bitdepth_max,
                 ),
                 (true, true) => lpf_v_sb_y_8bpc_inner(
-                    token,
                     buf,
                     base,
                     stride as isize,
@@ -5457,7 +5457,6 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     bitdepth_max,
                 ),
                 (false, false) => lpf_h_sb_uv_8bpc_inner(
-                    token,
                     buf,
                     base,
                     stride as isize,
@@ -5471,7 +5470,6 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     bitdepth_max,
                 ),
                 (false, true) => lpf_v_sb_uv_8bpc_inner(
-                    token,
                     buf,
                     base,
                     stride as isize,
