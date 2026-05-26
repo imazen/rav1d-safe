@@ -82,3 +82,20 @@ fires less often than on flat/low-detail content. Never a regression in aggregat
 foundation; the larger lever is extending eob-based pruning to the common transform
 sizes (16x16, 8x16, 16x8) and to the row *count* (dav1d's `last_nonzero_col_from_eob`
 table) rather than whole-8-row-batch granularity at 32x32 only.
+
+### Definitive 32x32-only A/B (12 rounds × 100 iters, spike-filtered n=10, cores 2,3)
+before (decode_coefs only) avg 188.31 ms, after (+32x32 prune) avg 186.77 ms →
+**-0.82% mean, -1.6% median**. Consistent small win, never a regression. **KEPT** (commit ab61fc3).
+
+### 16x16 prune: tried, REJECTED (net-negative on photos)
+Applying the same batch-skip to `dct16_row_pass_i16_simd` (16x16, 2 batches) and
+re-measuring 32x32+16x16 combined gave **+0.20%** (10 rounds) — i.e. adding 16x16 made
+it ~0.8-1.7% *worse* than 32x32-alone. 16x16 dct_dct blocks are both common and usually
+dense in 4K photos, so the OR+testz overhead fires on every block but the skip rarely
+triggers. **Not shipped** (stashed: `itx-16x16-batch-skip-prune-NET-NEGATIVE-on-photos`).
+
+**Lever conclusion:** itx eob-pruning is at/just-above the noise floor on 4K photos —
+transforms are ~2% of the profile and photo blocks aren't sparse. 32x32 is the only size
+where the skip fires often enough to net positive. The clear portable algorithmic win this
+session was decode_coefs (~2.6%); itx pruning adds ~1% more at 32x32. Extending to the
+long tail (8x16/16x8, eob-table row granularity) is not worth it on this corpus.
