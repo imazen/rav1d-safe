@@ -903,7 +903,9 @@ fn decode_coefs<BD: BitDepth>(
         }
         cf.set(rc, tok.to::<i16>() << 11);
         // For TX_CLASS_2D, `rc == x * stride + y` (stride is `1 << shift`, `y < stride`),
-        // so index `levels` by `rc` directly and skip the multiply (dav1d 5ef6b241).
+        // so index `levels` by `rc` directly and skip the multiply (dav1d 5ef6b241,
+        // corrected by 63bf075a — the C version had an `if (TX_CLASS_2D)` typo that
+        // left this disabled for ~10 months; we use the correct comparison + `rc_i`).
         if tx_class == TxClass::TwoD {
             levels[rc as usize] = level_tok as u8;
         } else {
@@ -933,7 +935,7 @@ fn decode_coefs<BD: BitDepth>(
             x %= 32;
             y %= 32;
             // Hot path: for TX_CLASS_2D, `rc_i == x * stride + y`, so index by `rc_i`
-            // directly and drop the per-coefficient multiply (dav1d 5ef6b241).
+            // directly and drop the per-coefficient multiply (dav1d 5ef6b241 + fix 63bf075a).
             let level = if tx_class == TxClass::TwoD {
                 &mut levels[rc_i as usize..]
             } else {

@@ -30,10 +30,21 @@ Interleaved A/B, 60 iters/run, cores 14,15. `before` = parent (2bb8769) recon.rs
 
 Clean rounds (1-4): before avg 207.0 ms, after avg 201.5 ms → **~2.6% faster**.
 
-Note: upstream measured only +0.46% (Chimera, Sapphire Rapids native build). The
-larger win here is expected — on the bounds-checked safe build, dropping a
-per-coefficient `imul` and indexing by an already-validated `rc` is proportionally
-more valuable than in dav1d's raw-pointer native path.
+Note: upstream measured only +0.46% (Chimera, Sapphire Rapids native build) — but that
+number is misleading. Follow-up dav1d commit `63bf075a` (June 2025) revealed that the
+hot-loop part of `5ef6b241` was **dead code for ~10 months**: the C used
+`if (TX_CLASS_2D)`, which tests the enum constant (= always false), so dav1d always took
+the slow `levels + x*stride+y` path. The inner loop also used `rc` instead of `rc_i`.
+dav1d's 0.46% therefore came only from the eob-ctx/stride shift changes, not the
+per-coefficient index win.
+
+Our Rust port used the **correct** forms from the start — `if tx_class == TxClass::TwoD`
+and `rc_i` in the inner loop — so it matches the *fixed* `63bf075a`, not the buggy
+original. That is why our measured ~2.6% far exceeds upstream's stated 0.46%: we actually
+enable the per-coefficient multiply elimination (and on a bounds-checked safe build,
+indexing by an already-validated `rc`/`rc_i` is proportionally more valuable than in
+dav1d's raw-pointer native path). Bit-exactness is proven by 14/14 MD5 + the algebraic
+identity `rc == x*stride+y` (stride `== 1<<shift`, `y < stride`).
 
 ## Other dav1d 1.x algorithmic ports surveyed (not actioned)
 - **msac `d22de29c` "minor msac optimizations"** (skip shifting 1s into LSB; invert
