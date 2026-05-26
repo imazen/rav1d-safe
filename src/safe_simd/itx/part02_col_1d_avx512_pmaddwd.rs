@@ -744,6 +744,63 @@ fn dct8_cols_avx512(
     }
 }
 
+/// AVX-512 identity column pass: `out = in << SHIFT`, over a row-major buffer.
+/// `SHIFT=1` is the identity4/identity8 scale (`*2`); `SHIFT=2` is identity32
+/// (`*4`). Processes 16 cols/chunk; `total_w` must be a multiple of 16.
+/// Bit-identical to the per-lane AVX2 `slli_epi32::<SHIFT>` path.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn identity_shift_cols_avx512<const SHIFT: u32>(
+    _token: Server64,
+    tmp: &mut [i32],
+    total_w: usize,
+    n_rows: usize,
+) {
+    let n_chunks = total_w / 16;
+    for cx_chunk in 0..n_chunks {
+        let cx = cx_chunk * 16;
+        for i in 0..n_rows {
+            let arr_ref: &[i32; 16] = (&tmp[i * total_w + cx..i * total_w + cx + 16])
+                .try_into()
+                .unwrap();
+            let v = loadu_512!(arr_ref);
+            let result = _mm512_slli_epi32::<SHIFT>(v);
+            let out_ref: &mut [i32; 16] = (&mut tmp[i * total_w + cx..i * total_w + cx + 16])
+                .try_into()
+                .unwrap();
+            storeu_512!(out_ref, result);
+        }
+    }
+}
+
+/// AVX-512 identity16 column pass: `out = 2*in + ((in*1697 + 1024) >> 11)`,
+/// over a row-major buffer. Processes 16 cols/chunk; `total_w` must be a
+/// multiple of 16. Bit-identical to the per-lane AVX2 identity16 path.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn identity16_cols_avx512(_token: Server64, tmp: &mut [i32], total_w: usize, n_rows: usize) {
+    let c1697 = _mm512_set1_epi32(1697);
+    let c1024 = _mm512_set1_epi32(1024);
+    let n_chunks = total_w / 16;
+    for cx_chunk in 0..n_chunks {
+        let cx = cx_chunk * 16;
+        for i in 0..n_rows {
+            let arr_ref: &[i32; 16] = (&tmp[i * total_w + cx..i * total_w + cx + 16])
+                .try_into()
+                .unwrap();
+            let v = loadu_512!(arr_ref);
+            let two_v = _mm512_slli_epi32::<1>(v);
+            let mul = _mm512_mullo_epi32(v, c1697);
+            let shifted = _mm512_srai_epi32::<11>(_mm512_add_epi32(mul, c1024));
+            let result = _mm512_add_epi32(two_v, shifted);
+            let out_ref: &mut [i32; 16] = (&mut tmp[i * total_w + cx..i * total_w + cx + 16])
+                .try_into()
+                .unwrap();
+            storeu_512!(out_ref, result);
+        }
+    }
+}
+
 // =============================================================================
 // AVX-512 row pass support: 16-row transpose + 16-row DCT row passes
 //
@@ -1964,6 +2021,11 @@ fn flipadst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max
 #[cfg(target_arch = "x86_64")]
 #[rite]
 fn identity16x16_cols_simd(_token: Desktop64, tmp: &mut [i32; 256], _min: i32, _max: i32) {
+    // AVX-512 first: 16 cols/chunk (1 chunk) instead of 8 (2 chunks).
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        identity16_cols_avx512(t512, tmp, 16, 16);
+        return;
+    }
     let c1697 = _mm256_set1_epi32(1697);
     let c1024 = _mm256_set1_epi32(1024);
     for cx_chunk in 0..2 {

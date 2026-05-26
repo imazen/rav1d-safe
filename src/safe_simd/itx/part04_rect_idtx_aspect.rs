@@ -2430,8 +2430,11 @@ fn inv_txfm_add_identity_identity_16x32_8bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 16 columns (2 chunks of 8), identity32 = *4
-    {
+    // Column transform: identity32 = *4 across 16 columns, 32 rows. AVX-512
+    // does all 16 cols in one chunk; AVX2 falls back to 2 chunks of 8.
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        identity_shift_cols_avx512::<2>(t512, &mut tmp, 16, 32);
+    } else {
         for cx_chunk in 0..2 {
             let cx = cx_chunk * 8;
             for i in 0..32 {
@@ -2562,8 +2565,11 @@ fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 32 columns (4 chunks of 8), identity16 = 2*in + (in*1697+1024 >> 11)
-    {
+    // Column transform: identity16 across 32 columns, 16 rows. AVX-512 does
+    // 16-col chunks (2 chunks); AVX2 falls back to 4 chunks of 8.
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        identity16_cols_avx512(t512, &mut tmp, 32, 16);
+    } else {
         let c1697 = _mm256_set1_epi32(1697);
         let c1024 = _mm256_set1_epi32(1024);
         for cx_chunk in 0..4 {
@@ -4085,8 +4091,11 @@ fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 32 columns (4 chunks of 8), 8 rows. identity8 = *2
-    {
+    // Column transform: identity8 = *2 across 32 columns, 8 rows. AVX-512 does
+    // 16-col chunks (2 chunks); AVX2 falls back to 4 chunks of 8.
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        identity_shift_cols_avx512::<1>(t512, &mut tmp, 32, 8);
+    } else {
         for cx_chunk in 0..4 {
             let cx = cx_chunk * 8;
             for i in 0..8 {

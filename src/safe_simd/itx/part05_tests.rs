@@ -1215,5 +1215,87 @@ mod tests {
         }
         assert_eq!(total, 0, "dct8_cols_avx512 diverged from scalar");
     }
+
+    /// AVX-512 identity column passes vs scalar oracle, over the (total_w,
+    /// n_rows) widths they are wired into, 8 seeds each. Bit-exact. Covers
+    /// `identity_shift_cols_avx512::<1>` (identity8 = *2),
+    /// `identity_shift_cols_avx512::<2>` (identity32 = *4), and
+    /// `identity16_cols_avx512` (2*in + ((in*1697+1024)>>11)).
+    #[test]
+    fn test_identity_cols_avx512_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx512() else {
+            eprintln!("Skipping: AVX-512 not available");
+            return;
+        };
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+        ];
+        // (total_w, n_rows, kind): kind 1=*2, 2=*4, 16=identity16.
+        let cases: &[(usize, usize, u8)] = &[
+            (16, 8, 1),
+            (32, 8, 1),
+            (16, 32, 2),
+            (32, 16, 16),
+            (16, 16, 16),
+        ];
+        let mut total = 0u32;
+        for &(total_w, n_rows, kind) in cases {
+            for &seed in seeds {
+                let n = total_w * n_rows;
+                // Keep inputs small enough that in*1697 stays within i32.
+                let input: Vec<i32> = (0..n)
+                    .map(|i| {
+                        let s = seed
+                            .wrapping_mul(6364136223846793005)
+                            .wrapping_add(i as u64)
+                            .wrapping_mul(1442695040888963407);
+                        (((s >> 40) as i32) & 0xffff) - 0x8000
+                    })
+                    .collect();
+
+                // Scalar oracle: apply the matching identity down each column.
+                let mut scalar = input.clone();
+                for cx in 0..total_w {
+                    for r in 0..n_rows {
+                        let v = input[r * total_w + cx];
+                        scalar[r * total_w + cx] = match kind {
+                            1 => v * 2,
+                            2 => v * 4,
+                            _ => 2 * v + ((v * 1697 + 1024) >> 11),
+                        };
+                    }
+                }
+
+                let mut simd = input.clone();
+                match kind {
+                    1 => identity_shift_cols_avx512::<1>(token, &mut simd, total_w, n_rows),
+                    2 => identity_shift_cols_avx512::<2>(token, &mut simd, total_w, n_rows),
+                    _ => identity16_cols_avx512(token, &mut simd, total_w, n_rows),
+                }
+
+                if simd != scalar {
+                    for i in 0..n {
+                        if simd[i] != scalar[i] && total < 8 {
+                            eprintln!(
+                                "idtx512 kind={kind} w={total_w} rows={n_rows} seed={seed:#x} idx={i} scalar={} simd={}",
+                                scalar[i], simd[i]
+                            );
+                        }
+                        if simd[i] != scalar[i] {
+                            total += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(total, 0, "identity AVX-512 column pass diverged from scalar");
+    }
 }
 
