@@ -84,9 +84,4 @@ fn main() {
         iterations,
         elapsed.as_secs_f64() * 1000.0 / iterations as f64
     );
-    eprintln!(
-        "X16_FIRE_COUNT={}",
-        rav1d_safe::src::safe_simd::loopfilter::X16_FIRE_COUNT
-            .load(std::sync::atomic::Ordering::Relaxed)
-    );
 }
