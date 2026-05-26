@@ -16,11 +16,11 @@ fn extract_obu(avif_bytes: &[u8]) -> Vec<u8> {
         .into_owned()
 }
 
-fn decode_once(obu: &[u8]) -> usize {
+fn decode_once(obu: &[u8], level: CpuLevel) -> usize {
     let mut settings = Settings::default();
     settings.threads = 1;
     settings.frame_size_limit = 8192 * 8192;
-    settings.cpu_level = CpuLevel::Native;
+    settings.cpu_level = level;
     let mut decoder = Decoder::with_settings(settings).expect("decoder creation failed");
 
     let mut count = 0;
@@ -51,6 +51,13 @@ fn main() {
     let avif_bytes = std::fs::read(&args[1]).expect("Failed to read file");
     let obu = extract_obu(&avif_bytes);
     let iterations: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(10);
+    let level = match args.get(3).map(|s| s.as_str()) {
+        Some("v3") => CpuLevel::X86V3,
+        Some("v4") => CpuLevel::X86V4,
+        Some("scalar") => CpuLevel::Scalar,
+        _ => CpuLevel::Native,
+    };
+    eprintln!("CpuLevel: {level:?}");
 
     eprintln!(
         "Input: {} ({:.1} KB AVIF, {:.1} KB OBU)",
@@ -61,12 +68,12 @@ fn main() {
     eprintln!("Iterations: {iterations}");
 
     // Warmup
-    let frame_count = decode_once(&obu);
+    let frame_count = decode_once(&obu, level);
     eprintln!("Frames per decode: {frame_count}");
 
     let start = Instant::now();
     for _ in 0..iterations {
-        let f = decode_once(black_box(&obu));
+        let f = decode_once(black_box(&obu), level);
         black_box(f);
     }
     let elapsed = start.elapsed();
@@ -76,5 +83,10 @@ fn main() {
         elapsed.as_secs_f64(),
         iterations,
         elapsed.as_secs_f64() * 1000.0 / iterations as f64
+    );
+    eprintln!(
+        "X16_FIRE_COUNT={}",
+        rav1d_safe::src::safe_simd::loopfilter::X16_FIRE_COUNT
+            .load(std::sync::atomic::Ordering::Relaxed)
     );
 }
