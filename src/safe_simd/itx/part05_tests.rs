@@ -944,5 +944,192 @@ mod tests {
             "dct32_row_pass_i16_simd diverged from scalar reference"
         );
     }
+
+    // ----------------------------------------------------------------------
+    // AVX-512 16-row DCT row passes — bit-exact vs scalar per-row reference
+    // ----------------------------------------------------------------------
+    //
+    // These exercise `simd_row_dct{8,16,32}_8bpc_16rows` (Server64, 16 lanes)
+    // against `run_scalar_dct{8,16,32}_per_row` (full N rows). The 16-row
+    // helpers process exactly one batch of 16 rows starting at y_base; for an
+    // NxN block where N==16 a single call covers the whole block, and the
+    // row-major `tmp` output must match the scalar oracle byte-for-byte with
+    // apply_rect2=false, rnd=0, shift=0.
+
+    /// dct8 16-row pass: build a 16-row x 8-col column-major input (coeff_h=16),
+    /// run the AVX-512 16-row dct8 pass, compare each row against scalar dct8.
+    #[test]
+    fn test_simd_row_dct8_16rows_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx512() else {
+            eprintln!("Skipping: AVX-512 not available");
+            return;
+        };
+        let row_min = i16::MIN as i32;
+        let row_max = i16::MAX as i32;
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+        ];
+        let mut total = 0u32;
+        for &seed in seeds {
+            // 16 rows x 8 cols, column-major: coeff[y + x*16], 8 cols => 128 elems.
+            let input: [i16; 128] = seeded_i16_block(seed);
+            // Scalar oracle: per-row dct8 across 16 rows.
+            let mut scalar = [0i32; 128]; // row-major 16 rows x 8 cols
+            for y in 0..16 {
+                let mut row = [0i32; 8];
+                for x in 0..8 {
+                    row[x] = input[y + x * 16] as i32;
+                }
+                crate::src::itx_1d::rav1d_inv_dct8_1d_c(
+                    &mut row,
+                    std::num::NonZeroUsize::new(1).unwrap(),
+                    row_min,
+                    row_max,
+                );
+                for x in 0..8 {
+                    scalar[y * 8 + x] = row[x];
+                }
+            }
+            let mut simd = [0i32; 128];
+            simd_row_dct8_8bpc_16rows_entry(
+                token, &input, 16, 0, false, 0, 0, &mut simd, row_min, row_max, row_min, row_max,
+            );
+            if simd != scalar {
+                for i in 0..128 {
+                    if simd[i] != scalar[i] && total < 8 {
+                        eprintln!(
+                            "dct8-16r seed={seed:#x} idx={i} row={} col={} scalar={} simd={}",
+                            i / 8,
+                            i % 8,
+                            scalar[i],
+                            simd[i]
+                        );
+                    }
+                    if simd[i] != scalar[i] {
+                        total += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(total, 0, "simd_row_dct8_8bpc_16rows diverged from scalar");
+    }
+
+    /// dct16 16-row pass: 16x16 column-major input, full block in one call.
+    #[test]
+    fn test_simd_row_dct16_16rows_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx512() else {
+            eprintln!("Skipping: AVX-512 not available");
+            return;
+        };
+        let row_min = i16::MIN as i32;
+        let row_max = i16::MAX as i32;
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+        ];
+        let mut total = 0u32;
+        for &seed in seeds {
+            let input: [i16; 256] = seeded_i16_block(seed);
+            let scalar = run_scalar_dct16_per_row(&input, row_min, row_max);
+            let mut simd = [0i32; 256];
+            simd_row_dct16_8bpc_16rows_entry(
+                token, &input, 16, 0, false, 0, 0, &mut simd, row_min, row_max, row_min, row_max,
+            );
+            if simd != scalar {
+                for i in 0..256 {
+                    if simd[i] != scalar[i] && total < 8 {
+                        eprintln!(
+                            "dct16-16r seed={seed:#x} idx={i} row={} col={} scalar={} simd={}",
+                            i / 16,
+                            i % 16,
+                            scalar[i],
+                            simd[i]
+                        );
+                    }
+                    if simd[i] != scalar[i] {
+                        total += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(total, 0, "simd_row_dct16_8bpc_16rows diverged from scalar");
+    }
+
+    /// dct32 16-row pass: 16 rows x 32 cols column-major input (coeff_h=16),
+    /// compared against scalar dct32 per-row over 16 rows.
+    #[test]
+    fn test_simd_row_dct32_16rows_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx512() else {
+            eprintln!("Skipping: AVX-512 not available");
+            return;
+        };
+        let row_min = i16::MIN as i32;
+        let row_max = i16::MAX as i32;
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+        ];
+        let mut total = 0u32;
+        for &seed in seeds {
+            // 16 rows x 32 cols, column-major coeff[y + x*16] => 512 elems.
+            let input: [i16; 512] = seeded_i16_block(seed);
+            let mut scalar = [0i32; 512]; // row-major 16 rows x 32 cols
+            for y in 0..16 {
+                let mut row = [0i32; 32];
+                for x in 0..32 {
+                    row[x] = input[y + x * 16] as i32;
+                }
+                crate::src::itx_1d::rav1d_inv_dct32_1d_c(
+                    &mut row,
+                    std::num::NonZeroUsize::new(1).unwrap(),
+                    row_min,
+                    row_max,
+                );
+                for x in 0..32 {
+                    scalar[y * 32 + x] = row[x];
+                }
+            }
+            let mut simd = [0i32; 512];
+            simd_row_dct32_8bpc_16rows_entry(
+                token, &input, 16, 0, false, 0, 0, &mut simd, row_min, row_max, row_min, row_max,
+            );
+            if simd != scalar {
+                for i in 0..512 {
+                    if simd[i] != scalar[i] && total < 8 {
+                        eprintln!(
+                            "dct32-16r seed={seed:#x} idx={i} row={} col={} scalar={} simd={}",
+                            i / 32,
+                            i % 32,
+                            scalar[i],
+                            simd[i]
+                        );
+                    }
+                    if simd[i] != scalar[i] {
+                        total += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(total, 0, "simd_row_dct32_8bpc_16rows diverged from scalar");
+    }
 }
 

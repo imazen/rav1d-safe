@@ -704,6 +704,382 @@ fn dct16_cols_avx512(
     }
 }
 
+// =============================================================================
+// AVX-512 row pass support: 16-row transpose + 16-row DCT row passes
+//
+// The AVX2 row pass (`simd_row_dct{8,16,32}_8bpc_8rows`) processes 8 rows per
+// call: load 8 i16 per column (one column = 8 rows) → cvtepi16_epi32 → run the
+// i32 column transform (each of 8 lanes = one row) → round/shift/clip →
+// transpose 8x8 → store row-major.
+//
+// The AVX-512 row pass processes 16 rows per call: load 16 i16 per column (one
+// column = 16 rows) into a `__m256i` → cvtepi16_epi32 to `__m512i` (16 lanes =
+// 16 rows) → run the proven `dct{8,16,32}_1d_cols16` (16-lane mullo transform,
+// already bit-exact vs scalar) → round/shift/clip → transpose 16xN → store.
+//
+// Reusing `dct*_1d_cols16` for the math (instead of a hand-written 512-bit
+// pmaddwd path) guarantees bit-exactness: it is the same i32 algorithm the
+// AVX-512 column pass already uses, which MD5 already exercises on this machine.
+// The only new SIMD is the 16x16 i32 transpose below.
+// =============================================================================
+
+/// Transpose a 16x16 block of i32 held as `[__m512i; 16]` (16 columns, each a
+/// 512-bit vector of 16 i32 = 16 rows) into 16 rows (each a 512-bit vector of
+/// 16 i32 = 16 columns). Pure value-intrinsic shuffle; bit-exact, no memory.
+///
+/// Strategy: 4 stages of unpack/permute, mirroring the classic AVX-512 16x16
+/// i32 transpose. Stage 1 interleaves adjacent columns at the 32-bit level,
+/// stage 2 at 64-bit, stage 3/4 cross the 128-bit lanes via `shuffle_i32x4`.
+#[cfg(target_arch = "x86_64")]
+#[allow(unused_macros)]
+macro_rules! transpose_16x16_i32 {
+    ($a:expr) => {{
+        let __c: [__m512i; 16] = $a;
+        // Stage 1: unpack 32-bit lanes between column pairs (0,1),(2,3),...
+        let __a0 = _mm512_unpacklo_epi32(__c[0], __c[1]);
+        let __a1 = _mm512_unpackhi_epi32(__c[0], __c[1]);
+        let __a2 = _mm512_unpacklo_epi32(__c[2], __c[3]);
+        let __a3 = _mm512_unpackhi_epi32(__c[2], __c[3]);
+        let __a4 = _mm512_unpacklo_epi32(__c[4], __c[5]);
+        let __a5 = _mm512_unpackhi_epi32(__c[4], __c[5]);
+        let __a6 = _mm512_unpacklo_epi32(__c[6], __c[7]);
+        let __a7 = _mm512_unpackhi_epi32(__c[6], __c[7]);
+        let __a8 = _mm512_unpacklo_epi32(__c[8], __c[9]);
+        let __a9 = _mm512_unpackhi_epi32(__c[8], __c[9]);
+        let __a10 = _mm512_unpacklo_epi32(__c[10], __c[11]);
+        let __a11 = _mm512_unpackhi_epi32(__c[10], __c[11]);
+        let __a12 = _mm512_unpacklo_epi32(__c[12], __c[13]);
+        let __a13 = _mm512_unpackhi_epi32(__c[12], __c[13]);
+        let __a14 = _mm512_unpacklo_epi32(__c[14], __c[15]);
+        let __a15 = _mm512_unpackhi_epi32(__c[14], __c[15]);
+        // Stage 2: unpack 64-bit lanes between the stage-1 quartets.
+        let __b0 = _mm512_unpacklo_epi64(__a0, __a2);
+        let __b1 = _mm512_unpackhi_epi64(__a0, __a2);
+        let __b2 = _mm512_unpacklo_epi64(__a1, __a3);
+        let __b3 = _mm512_unpackhi_epi64(__a1, __a3);
+        let __b4 = _mm512_unpacklo_epi64(__a4, __a6);
+        let __b5 = _mm512_unpackhi_epi64(__a4, __a6);
+        let __b6 = _mm512_unpacklo_epi64(__a5, __a7);
+        let __b7 = _mm512_unpackhi_epi64(__a5, __a7);
+        let __b8 = _mm512_unpacklo_epi64(__a8, __a10);
+        let __b9 = _mm512_unpackhi_epi64(__a8, __a10);
+        let __b10 = _mm512_unpacklo_epi64(__a9, __a11);
+        let __b11 = _mm512_unpackhi_epi64(__a9, __a11);
+        let __b12 = _mm512_unpacklo_epi64(__a12, __a14);
+        let __b13 = _mm512_unpackhi_epi64(__a12, __a14);
+        let __b14 = _mm512_unpacklo_epi64(__a13, __a15);
+        let __b15 = _mm512_unpackhi_epi64(__a13, __a15);
+        // Stage 3: shuffle 128-bit lanes to gather quarters (0,1) vs (2,3).
+        // shuffle_i32x4 imm 0x88 = lanes (0,2,0,2), 0xDD = lanes (1,3,1,3).
+        let __d0 = _mm512_shuffle_i32x4::<0x88>(__b0, __b4);
+        let __d1 = _mm512_shuffle_i32x4::<0x88>(__b1, __b5);
+        let __d2 = _mm512_shuffle_i32x4::<0x88>(__b2, __b6);
+        let __d3 = _mm512_shuffle_i32x4::<0x88>(__b3, __b7);
+        let __d4 = _mm512_shuffle_i32x4::<0xDD>(__b0, __b4);
+        let __d5 = _mm512_shuffle_i32x4::<0xDD>(__b1, __b5);
+        let __d6 = _mm512_shuffle_i32x4::<0xDD>(__b2, __b6);
+        let __d7 = _mm512_shuffle_i32x4::<0xDD>(__b3, __b7);
+        let __d8 = _mm512_shuffle_i32x4::<0x88>(__b8, __b12);
+        let __d9 = _mm512_shuffle_i32x4::<0x88>(__b9, __b13);
+        let __d10 = _mm512_shuffle_i32x4::<0x88>(__b10, __b14);
+        let __d11 = _mm512_shuffle_i32x4::<0x88>(__b11, __b15);
+        let __d12 = _mm512_shuffle_i32x4::<0xDD>(__b8, __b12);
+        let __d13 = _mm512_shuffle_i32x4::<0xDD>(__b9, __b13);
+        let __d14 = _mm512_shuffle_i32x4::<0xDD>(__b10, __b14);
+        let __d15 = _mm512_shuffle_i32x4::<0xDD>(__b11, __b15);
+        // Stage 4: final 128-bit lane interleave between the two halves.
+        let __r0 = _mm512_shuffle_i32x4::<0x88>(__d0, __d8);
+        let __r1 = _mm512_shuffle_i32x4::<0x88>(__d1, __d9);
+        let __r2 = _mm512_shuffle_i32x4::<0x88>(__d2, __d10);
+        let __r3 = _mm512_shuffle_i32x4::<0x88>(__d3, __d11);
+        let __r4 = _mm512_shuffle_i32x4::<0x88>(__d4, __d12);
+        let __r5 = _mm512_shuffle_i32x4::<0x88>(__d5, __d13);
+        let __r6 = _mm512_shuffle_i32x4::<0x88>(__d6, __d14);
+        let __r7 = _mm512_shuffle_i32x4::<0x88>(__d7, __d15);
+        let __r8 = _mm512_shuffle_i32x4::<0xDD>(__d0, __d8);
+        let __r9 = _mm512_shuffle_i32x4::<0xDD>(__d1, __d9);
+        let __r10 = _mm512_shuffle_i32x4::<0xDD>(__d2, __d10);
+        let __r11 = _mm512_shuffle_i32x4::<0xDD>(__d3, __d11);
+        let __r12 = _mm512_shuffle_i32x4::<0xDD>(__d4, __d12);
+        let __r13 = _mm512_shuffle_i32x4::<0xDD>(__d5, __d13);
+        let __r14 = _mm512_shuffle_i32x4::<0xDD>(__d6, __d14);
+        let __r15 = _mm512_shuffle_i32x4::<0xDD>(__d7, __d15);
+        [
+            __r0, __r1, __r2, __r3, __r4, __r5, __r6, __r7, __r8, __r9, __r10, __r11, __r12, __r13,
+            __r14, __r15,
+        ]
+    }};
+}
+
+/// AVX-512 helper: apply the intermediate shift/round/clip to a 512-bit i32
+/// vector (16 rows). `shift` is dynamic so we branch on the common values.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+#[inline(always)]
+fn row_shift_clip_v4(
+    _token: Server64,
+    v: __m512i,
+    rnd_v: __m512i,
+    shift: i32,
+    col_min_v: __m512i,
+    col_max_v: __m512i,
+) -> __m512i {
+    let rounded = match shift {
+        0 => _mm512_add_epi32(v, rnd_v),
+        1 => _mm512_srai_epi32::<1>(_mm512_add_epi32(v, rnd_v)),
+        2 => _mm512_srai_epi32::<2>(_mm512_add_epi32(v, rnd_v)),
+        _ => _mm512_srai_epi32::<2>(_mm512_add_epi32(v, rnd_v)),
+    };
+    _mm512_max_epi32(_mm512_min_epi32(rounded, col_max_v), col_min_v)
+}
+
+/// AVX-512 SIMD row DCT-8 for 8xN transforms, 8bpc, processing 16 rows at once.
+/// Mirrors `simd_row_dct8_8bpc_8rows` but uses the 16-lane `dct8_1d_cols16`
+/// transform and a 16x16 i32 transpose (8 cols of the row block live in the
+/// low 8 lanes of each transposed row). Output stride is 8.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+#[inline(always)]
+fn simd_row_dct8_8bpc_16rows(
+    token: Server64,
+    coeff: &[i16],
+    coeff_h: usize,
+    y_base: usize,
+    apply_rect2: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    let row_min_v = _mm512_set1_epi32(row_min);
+    let row_max_v = _mm512_set1_epi32(row_max);
+    let col_min_v = _mm512_set1_epi32(col_min);
+    let col_max_v = _mm512_set1_epi32(col_max);
+    let rect2_v = _mm512_set1_epi32(181);
+    let bias_v = _mm512_set1_epi32(128);
+    let rnd_v = _mm512_set1_epi32(rnd);
+    // Load 16 rows for each of the 8 columns; lane K = row K.
+    let mut cols = [_mm512_setzero_si512(); 16];
+    for x in 0..8 {
+        let off = y_base + x * coeff_h;
+        let arr: &[i16; 16] = (&coeff[off..off + 16]).try_into().unwrap();
+        let v16 = loadu_256!(arr);
+        let v32 = _mm512_cvtepi16_epi32(v16);
+        cols[x] = if apply_rect2 {
+            _mm512_srai_epi32::<8>(_mm512_add_epi32(_mm512_mullo_epi32(v32, rect2_v), bias_v))
+        } else {
+            v32
+        };
+    }
+    let mut dct: [__m512i; 8] = [
+        cols[0], cols[1], cols[2], cols[3], cols[4], cols[5], cols[6], cols[7],
+    ];
+    dct8_1d_cols16(token, &mut dct, row_min_v, row_max_v);
+    // Cols 8..15 must be zero for the 16x16 transpose to leave junk only in the
+    // high 8 i32 lanes of each output row, which we never store.
+    for x in 0..8 {
+        cols[x] = row_shift_clip_v4(token, dct[x], rnd_v, shift, col_min_v, col_max_v);
+    }
+    let rows = transpose_16x16_i32!(cols);
+    let s = 8;
+    for y in 0..16 {
+        // Each output row r holds cols[0..8] in its low 8 i32 lanes.
+        let lo = _mm512_castsi512_si256(rows[y]);
+        storeu_256!(&mut tmp[(y_base + y) * s..(y_base + y) * s + 8], [i32; 8], lo);
+    }
+}
+
+/// AVX-512 SIMD row DCT-16 for 16xN transforms, 8bpc, processing 16 rows at
+/// once. Mirrors `simd_row_dct16_8bpc_8rows`. 16 cols x 16 rows → 16x16
+/// transpose → 16 rows x 16 cols stored row-major (stride 16).
+#[cfg(target_arch = "x86_64")]
+#[rite]
+#[inline(always)]
+fn simd_row_dct16_8bpc_16rows(
+    token: Server64,
+    coeff: &[i16],
+    coeff_h: usize,
+    y_base: usize,
+    apply_rect2: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    let row_min_v = _mm512_set1_epi32(row_min);
+    let row_max_v = _mm512_set1_epi32(row_max);
+    let col_min_v = _mm512_set1_epi32(col_min);
+    let col_max_v = _mm512_set1_epi32(col_max);
+    let rect2_v = _mm512_set1_epi32(181);
+    let bias_v = _mm512_set1_epi32(128);
+    let rnd_v = _mm512_set1_epi32(rnd);
+    let mut cols = [_mm512_setzero_si512(); 16];
+    for x in 0..16 {
+        let off = y_base + x * coeff_h;
+        let arr: &[i16; 16] = (&coeff[off..off + 16]).try_into().unwrap();
+        let v16 = loadu_256!(arr);
+        let v32 = _mm512_cvtepi16_epi32(v16);
+        cols[x] = if apply_rect2 {
+            _mm512_srai_epi32::<8>(_mm512_add_epi32(_mm512_mullo_epi32(v32, rect2_v), bias_v))
+        } else {
+            v32
+        };
+    }
+    dct16_1d_cols16(token, &mut cols, row_min_v, row_max_v);
+    for x in 0..16 {
+        cols[x] = row_shift_clip_v4(token, cols[x], rnd_v, shift, col_min_v, col_max_v);
+    }
+    let rows = transpose_16x16_i32!(cols);
+    let s = 16;
+    for y in 0..16 {
+        storeu_512!(
+            &mut tmp[(y_base + y) * s..(y_base + y) * s + 16],
+            [i32; 16],
+            rows[y]
+        );
+    }
+}
+
+/// AVX-512 SIMD row DCT-32 for 32xN transforms, 8bpc, processing 16 rows at
+/// once. Mirrors `simd_row_dct32_8bpc_8rows`. 32 cols x 16 rows → two 16x16
+/// transposes → 16 rows x 32 cols stored row-major (stride 32).
+#[cfg(target_arch = "x86_64")]
+#[rite]
+#[inline(always)]
+fn simd_row_dct32_8bpc_16rows(
+    token: Server64,
+    coeff: &[i16],
+    coeff_h: usize,
+    y_base: usize,
+    apply_rect2: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    let row_min_v = _mm512_set1_epi32(row_min);
+    let row_max_v = _mm512_set1_epi32(row_max);
+    let col_min_v = _mm512_set1_epi32(col_min);
+    let col_max_v = _mm512_set1_epi32(col_max);
+    let rect2_v = _mm512_set1_epi32(181);
+    let bias_v = _mm512_set1_epi32(128);
+    let rnd_v = _mm512_set1_epi32(rnd);
+    let mut cols = [_mm512_setzero_si512(); 32];
+    for x in 0..32 {
+        let off = y_base + x * coeff_h;
+        let arr: &[i16; 16] = (&coeff[off..off + 16]).try_into().unwrap();
+        let v16 = loadu_256!(arr);
+        let v32 = _mm512_cvtepi16_epi32(v16);
+        cols[x] = if apply_rect2 {
+            _mm512_srai_epi32::<8>(_mm512_add_epi32(_mm512_mullo_epi32(v32, rect2_v), bias_v))
+        } else {
+            v32
+        };
+    }
+    dct32_1d_cols16(token, &mut cols, row_min_v, row_max_v);
+    for x in 0..32 {
+        cols[x] = row_shift_clip_v4(token, cols[x], rnd_v, shift, col_min_v, col_max_v);
+    }
+    let s = 32;
+    for chunk in 0..2 {
+        let b = chunk * 16;
+        let chunk_cols: [__m512i; 16] = [
+            cols[b], cols[b + 1], cols[b + 2], cols[b + 3], cols[b + 4], cols[b + 5], cols[b + 6],
+            cols[b + 7], cols[b + 8], cols[b + 9], cols[b + 10], cols[b + 11], cols[b + 12],
+            cols[b + 13], cols[b + 14], cols[b + 15],
+        ];
+        let rows = transpose_16x16_i32!(chunk_cols);
+        for y in 0..16 {
+            storeu_512!(
+                &mut tmp[(y_base + y) * s + b..(y_base + y) * s + b + 16],
+                [i32; 16],
+                rows[y]
+            );
+        }
+    }
+}
+
+/// `#[arcane]` test/entry shims so the `#[rite]` 16-row row passes are callable
+/// from a non-target-feature context (tests, and direct dispatch wiring). These
+/// just forward to the inner helper, which inlines (zero cost).
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn simd_row_dct8_8bpc_16rows_entry(
+    token: Server64,
+    coeff: &[i16],
+    coeff_h: usize,
+    y_base: usize,
+    apply_rect2: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    simd_row_dct8_8bpc_16rows(
+        token, coeff, coeff_h, y_base, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+        col_max,
+    );
+}
+
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn simd_row_dct16_8bpc_16rows_entry(
+    token: Server64,
+    coeff: &[i16],
+    coeff_h: usize,
+    y_base: usize,
+    apply_rect2: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    simd_row_dct16_8bpc_16rows(
+        token, coeff, coeff_h, y_base, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+        col_max,
+    );
+}
+
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn simd_row_dct32_8bpc_16rows_entry(
+    token: Server64,
+    coeff: &[i16],
+    coeff_h: usize,
+    y_base: usize,
+    apply_rect2: bool,
+    rnd: i32,
+    shift: i32,
+    tmp: &mut [i32],
+    row_min: i32,
+    row_max: i32,
+    col_min: i32,
+    col_max: i32,
+) {
+    simd_row_dct32_8bpc_16rows(
+        token, coeff, coeff_h, y_base, apply_rect2, rnd, shift, tmp, row_min, row_max, col_min,
+        col_max,
+    );
+}
+
 /// DCT4 1D transform across 8 columns in parallel.
 /// `c[i]` is `__m256i` containing the 8 lanes for row `i`.
 #[cfg(target_arch = "x86_64")]
