@@ -1426,24 +1426,33 @@ impl Rav1dPicAllocator {
         let stride = [y_stride, uv_stride];
         let [y_sz, uv_sz] = p.pic_len(stride)?;
 
-        // Round up to RAV1D_PICTURE_MULTIPLE for allocated data.
-        let round_up = |sz: usize| -> usize {
+        // Round up to RAV1D_PICTURE_MULTIPLE for allocated data. Use checked
+        // arithmetic: an overflow here (only reachable on 32-bit with crafted
+        // dimensions whose plane size lands just below usize::MAX) must surface
+        // as ENOMEM, not wrap into an under-sized allocation.
+        let round_up = |sz: usize| -> Rav1dResult<usize> {
             if sz == 0 {
-                0
+                Ok(0)
             } else {
-                (sz + RAV1D_PICTURE_MULTIPLE - 1) & !(RAV1D_PICTURE_MULTIPLE - 1)
+                Ok(sz
+                    .checked_add(RAV1D_PICTURE_MULTIPLE - 1)
+                    .ok_or(Rav1dError::ENOMEM)?
+                    & !(RAV1D_PICTURE_MULTIPLE - 1))
             }
         };
-        let y_sz = round_up(y_sz);
-        let uv_sz = round_up(uv_sz);
+        let y_sz = round_up(y_sz)?;
+        let uv_sz = round_up(uv_sz)?;
 
-        // Allocate per-plane buffers with alignment padding.
+        // Allocate per-plane buffers with alignment padding (checked add — see above).
         let alloc_plane = |sz: usize| -> Result<Vec<u8>, Rav1dError> {
             if sz == 0 {
                 return Ok(Vec::new());
             }
+            let alloc_len = sz
+                .checked_add(RAV1D_PICTURE_ALIGNMENT)
+                .ok_or(Rav1dError::ENOMEM)?;
             self.pool
-                .pop_init(sz + RAV1D_PICTURE_ALIGNMENT, 0)
+                .pop_init(alloc_len, 0)
                 .map_err(|_| Rav1dError::ENOMEM)
         };
 

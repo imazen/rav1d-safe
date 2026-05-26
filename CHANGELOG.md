@@ -8,6 +8,14 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
 
+## [0.5.7] - 2026-05-26
+
+Memory-safety release. Supersedes 0.5.6 (yanked).
+
+### Fixed
+- **Depend on `rav1d-disjoint-mut 0.3.1`** (was `0.3.0`). The published 0.3.0 (2026-02-14) predated two safety fixes that existed only locally: the `PicBuf::from_vec_aligned` arithmetic-overflow OOB (reachable on 32-bit with crafted picture dimensions) and the index-trait sealing soundness fix. 0.5.6 was built against the stale registry 0.3.0 and shipped without them; 0.5.7 pulls the fixed 0.3.1. (dd60e0a)
+- **Harden the picture allocator size arithmetic** (`alloc_picture_data`): `round_up` and the per-plane `sz + RAV1D_PICTURE_ALIGNMENT` were unchecked adds that could wrap on 32-bit for plane sizes just below `usize::MAX`, yielding an under-sized allocation. Both now use `checked_add` and surface `ENOMEM` instead of wrapping.
+
 ## [0.5.6] - 2026-05-26
 
 Performance release: closes the safe-checked-vs-ASM 4K AVIF gap from **1.66× to ~1.55×**
