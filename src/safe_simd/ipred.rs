@@ -15,9 +15,9 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-use archmage::{Desktop64, Server64, SimdToken, arcane};
 #[cfg(target_arch = "x86_64")]
 use archmage::X64V4xToken;
+use archmage::{Desktop64, Server64, SimdToken, arcane};
 use std::ffi::c_int;
 #[allow(non_camel_case_types)]
 type ptrdiff_t = isize;
@@ -6933,7 +6933,6 @@ pub fn cfl_ac_dispatch<BD: BitDepth>(
     true
 }
 
-
 // ============================================================================
 // AVX-512ICL (v4x) directional predictor bit-exactness tests
 // ============================================================================
@@ -7144,7 +7143,11 @@ mod v4x_dir_tests {
                     }
                     let (a, b) = run_z2(w, h, angle, mw, mh);
                     assert_block_eq(
-                        &a, &b, w, h, 64,
+                        &a,
+                        &b,
+                        w,
+                        h,
+                        64,
                         &format!("z2 w={w} h={h} angle={angle} mw={mw} mh={mh}"),
                     );
                     compared += 1;
@@ -7152,6 +7155,9 @@ mod v4x_dir_tests {
             }
         }
         eprintln!("z2_v4x compared {compared} configs");
-        assert!(compared >= 100, "z2 test compared too few configs: {compared}");
+        assert!(
+            compared >= 100,
+            "z2 test compared too few configs: {compared}"
+        );
     }
 }

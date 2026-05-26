@@ -120,9 +120,21 @@ fn load4rows_8bpc(_t: Server64, tmp: &[u16], idx_base: isize, disp: isize, rows:
         loadu_128!(&tmp[i..i + 8], [u16; 8])
     };
     let l0 = load_lane(0);
-    let l1 = if rows > 1 { load_lane(1) } else { _mm_setzero_si128() };
-    let l2 = if rows > 2 { load_lane(2) } else { _mm_setzero_si128() };
-    let l3 = if rows > 3 { load_lane(3) } else { _mm_setzero_si128() };
+    let l1 = if rows > 1 {
+        load_lane(1)
+    } else {
+        _mm_setzero_si128()
+    };
+    let l2 = if rows > 2 {
+        load_lane(2)
+    } else {
+        _mm_setzero_si128()
+    };
+    let l3 = if rows > 3 {
+        load_lane(3)
+    } else {
+        _mm_setzero_si128()
+    };
     let v = _mm512_castsi128_si512(l0);
     let v = _mm512_inserti32x4::<1>(v, l1);
     let v = _mm512_inserti32x4::<2>(v, l2);
@@ -199,18 +211,10 @@ fn cdef_filter_block_simd_8bpc_avx512(
                         let p0 = load4rows_8bpc(t, tmp, base, off, rows);
                         let p1 = load4rows_8bpc(t, tmp, base, -off, rows);
 
-                        let c0 = constrain_avx512(
-                            t,
-                            _mm512_sub_epi16(p0, px),
-                            pri_thresh,
-                            pri_shift_v,
-                        );
-                        let c1 = constrain_avx512(
-                            t,
-                            _mm512_sub_epi16(p1, px),
-                            pri_thresh,
-                            pri_shift_v,
-                        );
+                        let c0 =
+                            constrain_avx512(t, _mm512_sub_epi16(p0, px), pri_thresh, pri_shift_v);
+                        let c1 =
+                            constrain_avx512(t, _mm512_sub_epi16(p1, px), pri_thresh, pri_shift_v);
 
                         let tap_v = _mm512_set1_epi16(pri_tap_k as i16);
                         sum = _mm512_add_epi16(
@@ -237,30 +241,14 @@ fn cdef_filter_block_simd_8bpc_avx512(
 
                         let sec_tap_k = (2 - k as i32) as i16;
                         let sec_tap_v = _mm512_set1_epi16(sec_tap_k);
-                        let ds0 = constrain_avx512(
-                            t,
-                            _mm512_sub_epi16(s0, px),
-                            sec_thresh,
-                            sec_shift_v,
-                        );
-                        let ds1 = constrain_avx512(
-                            t,
-                            _mm512_sub_epi16(s1, px),
-                            sec_thresh,
-                            sec_shift_v,
-                        );
-                        let ds2 = constrain_avx512(
-                            t,
-                            _mm512_sub_epi16(s2, px),
-                            sec_thresh,
-                            sec_shift_v,
-                        );
-                        let ds3 = constrain_avx512(
-                            t,
-                            _mm512_sub_epi16(s3, px),
-                            sec_thresh,
-                            sec_shift_v,
-                        );
+                        let ds0 =
+                            constrain_avx512(t, _mm512_sub_epi16(s0, px), sec_thresh, sec_shift_v);
+                        let ds1 =
+                            constrain_avx512(t, _mm512_sub_epi16(s1, px), sec_thresh, sec_shift_v);
+                        let ds2 =
+                            constrain_avx512(t, _mm512_sub_epi16(s2, px), sec_thresh, sec_shift_v);
+                        let ds3 =
+                            constrain_avx512(t, _mm512_sub_epi16(s3, px), sec_thresh, sec_shift_v);
 
                         let sec_sum = _mm512_add_epi16(
                             _mm512_add_epi16(ds0, ds1),
@@ -290,8 +278,7 @@ fn cdef_filter_block_simd_8bpc_avx512(
                 // Rounding: (sum - (sum < 0) + 8) >> 4
                 let neg_mask: __mmask32 = _mm512_cmpgt_epi16_mask(zero, sum);
                 // add -1 where sum < 0 (subtract 1)
-                let minus1 =
-                    _mm512_mask_blend_epi16(neg_mask, zero, _mm512_set1_epi16(-1));
+                let minus1 = _mm512_mask_blend_epi16(neg_mask, zero, _mm512_set1_epi16(-1));
                 let adjusted = _mm512_add_epi16(sum, minus1);
                 let adjusted = _mm512_add_epi16(adjusted, _mm512_set1_epi16(8));
                 let adjusted = _mm512_srai_epi16::<4>(adjusted);
@@ -1013,7 +1000,12 @@ mod tests_avx512 {
 
     /// Run constrain on 32 i16 via the AVX-512 path, return the 32 results.
     #[arcane]
-    fn run_constrain_avx512(t: Server64, diff: &[i16; 32], threshold: i16, shift: i32) -> [i16; 32] {
+    fn run_constrain_avx512(
+        t: Server64,
+        diff: &[i16; 32],
+        threshold: i16,
+        shift: i32,
+    ) -> [i16; 32] {
         let diff_v = loadu_512!(diff, [i16; 32]);
         let thr_v = _mm512_set1_epi16(threshold);
         let shift_v = _mm_cvtsi32_si128(shift);
@@ -1046,14 +1038,21 @@ mod tests_avx512 {
         let term = (threshold as i32).wrapping_sub(shifted) as i16; // _mm_sub_epi16
         let max_term = term.max(0); // _mm_max_epi16(term, 0)
         let result_abs = adiff.min(max_term); // _mm_min_epi16(adiff, max_term)
-        if d < 0 { (0i16).wrapping_sub(result_abs) } else { result_abs }
+        if d < 0 {
+            (0i16).wrapping_sub(result_abs)
+        } else {
+            result_abs
+        }
     }
 
     // Tiny deterministic LCG so the test needs no external rand dep.
     struct Lcg(u64);
     impl Lcg {
         fn next_u32(&mut self) -> u32 {
-            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (self.0 >> 33) as u32
         }
     }

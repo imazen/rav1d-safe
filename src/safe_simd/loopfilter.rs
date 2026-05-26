@@ -20,11 +20,11 @@
 #![allow(unused_imports)]
 
 #[cfg(target_arch = "x86_64")]
+use crate::src::safe_simd::pixel_access::{loadu_128, storeu_128};
+#[cfg(target_arch = "x86_64")]
 use archmage::{Desktop64, Server64, SimdToken, arcane, rite};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
-#[cfg(target_arch = "x86_64")]
-use crate::src::safe_simd::pixel_access::{loadu_128, storeu_128};
 
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
