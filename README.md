@@ -172,8 +172,12 @@ Single still images at web-typical quality (YUV420, q60). Source: Google-native 
 
 | Resolution | ASM | Safe (checked) | Safe (unchecked) | Safe vs ASM |
 |------------|-----|----------------|------------------|-------------|
-| 4K (3840x2561) | 122 ms | 246 ms | 234 ms | 2.0x |
+| 4K (3840x2561) | 122 ms | 190 ms | 188 ms | 1.55x |
 | 8K (8192x5464) | 724 ms | 1319 ms | 1289 ms | 1.8x |
+
+(4K figures are post-0.5.6 SIMD work — i16-packed `pmaddwd` transforms + YMM-widened
+loopfilter brought the checked ratio from 2.0× to ~1.55×. The 8K row predates 0.5.6 and
+will improve similarly on re-measure.)
 
 ### Small test vectors (IVF, multi-frame decode)
 
@@ -187,7 +191,7 @@ dav1d-test-data allintra 352x288 (39 frames). Entropy-heavy bitstream where the 
 
 ### Where the gap comes from
 
-The safe build is ~2x slower on real images and ~1.7x on entropy-heavy vectors. The gap breaks down:
+The safe build is ~1.55x slower on 4K real images and ~1.6x on entropy-heavy vectors. The gap breaks down:
 
 - **Entropy decoder (msac)**: ~35% of decode time. Serial dependency chain — the core symbol decode loop can't be parallelized. The `partial_asm` feature uses hand-tuned ASM for msac and loopfilter, bringing real photo decodes down to 1.4-1.5x vs full ASM.
 - **Calling conventions**: The ASM kernels use custom register allocation across function boundaries. Rust's ABI reloads registers at each call site.

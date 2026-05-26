@@ -5,7 +5,7 @@ exclude = ["fuzz"]
 [package]
 name = "rav1d-safe"
 authors = ["Rav1d Developers", "Prossimo", "Imazen"]
-version = "0.5.5"
+version = "0.5.6"
 edition = "2024"
 rust-version = "1.89"
 description = "Safe SIMD fork of rav1d - Rust AV1 decoder with archmage intrinsics"
