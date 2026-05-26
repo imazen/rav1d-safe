@@ -8,7 +8,7 @@
 #![allow(dead_code)]
 
 #[cfg(target_arch = "x86_64")]
-use archmage::{Desktop64, SimdToken, arcane, rite};
+use archmage::{Desktop64, Server64, SimdToken, arcane, rite};
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
@@ -82,6 +82,249 @@ fn constrain_128(_t: Desktop64, diff: __m128i, threshold: __m128i, shift: __m128
     let sign_mask = _mm_cmpgt_epi16(zero, diff);
     let neg_result = _mm_sub_epi16(zero, result_abs);
     _mm_blendv_epi8(result_abs, neg_result, sign_mask)
+}
+
+/// 512-bit constrain — processes 32 i16 values at once (four rows of 8 pixels,
+/// one row per 128-bit lane). Bit-identical to `constrain_128` per lane:
+/// `sign(diff) * min(|diff|, max(0, threshold - (|diff| >> shift)))`.
+///
+/// AVX-512 has no `blendv`; the sign select uses a mask register
+/// (`_mm512_cmpgt_epi16_mask` + `_mm512_mask_blend_epi16`), which is exactly
+/// equivalent to the `_mm_blendv_epi8(result_abs, neg_result, sign_mask)` in
+/// `constrain_128` because the mask is per-16-bit-lane (`zero > diff`).
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn constrain_avx512(_t: Server64, diff: __m512i, threshold: __m512i, shift: __m128i) -> __m512i {
+    let zero = _mm512_setzero_si512();
+    let adiff = _mm512_abs_epi16(diff);
+    let shifted = _mm512_sra_epi16(adiff, shift);
+    let term = _mm512_sub_epi16(threshold, shifted);
+    let max_term = _mm512_max_epi16(term, zero);
+    let result_abs = _mm512_min_epi16(adiff, max_term);
+    let neg_result = _mm512_sub_epi16(zero, result_abs);
+    // sign_mask = (0 > diff) per i16 lane → negate where diff < 0
+    let sign: __mmask32 = _mm512_cmpgt_epi16_mask(zero, diff);
+    _mm512_mask_blend_epi16(sign, result_abs, neg_result)
+}
+
+/// Assemble a `__m512i` of 4 rows × 8 u16 from the tmp buffer, one row per
+/// 128-bit lane. `lane[j]` holds `tmp[idx_base + (y0 + j) * TMP_STRIDE + disp .. +8]`.
+/// `disp` is the (signed) directional-tap displacement, constant across rows.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn load4rows_8bpc(_t: Server64, tmp: &[u16], idx_base: isize, disp: isize, rows: usize) -> __m512i {
+    use super::pixel_access::loadu_128;
+    // Always load `rows` lanes; remaining lanes are zero (unused for w/h tail).
+    let load_lane = |j: usize| -> __m128i {
+        let i = (idx_base + (j as isize) * (TMP_STRIDE as isize) + disp) as usize;
+        loadu_128!(&tmp[i..i + 8], [u16; 8])
+    };
+    let l0 = load_lane(0);
+    let l1 = if rows > 1 { load_lane(1) } else { _mm_setzero_si128() };
+    let l2 = if rows > 2 { load_lane(2) } else { _mm_setzero_si128() };
+    let l3 = if rows > 3 { load_lane(3) } else { _mm_setzero_si128() };
+    let v = _mm512_castsi128_si512(l0);
+    let v = _mm512_inserti32x4::<1>(v, l1);
+    let v = _mm512_inserti32x4::<2>(v, l2);
+    _mm512_inserti32x4::<3>(v, l3)
+}
+
+/// AVX-512 CDEF filter for 8bpc — processes 4 rows of 8 pixels per iteration
+/// (32 i16 in one `__m512i`, one row per 128-bit lane). Bit-identical to the
+/// per-row 128-bit `cdef_filter_block_simd_8bpc` because every lane runs the
+/// same arithmetic on the same data the SSE path would touch for that row.
+///
+/// Block coverage: 8x8 → two 4-row groups; 4x8 → two 4-row groups (only the
+/// low 4 columns of each row are stored); 4x4 → one 4-row group.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn cdef_filter_block_simd_8bpc_avx512(
+    t: Server64,
+    tmp: &[u16],
+    tmp_offset: usize,
+    dst: PicOffset,
+    _stride: isize,
+    w: usize,
+    h: usize,
+    dir: usize,
+    pri_strength: c_int,
+    sec_strength: c_int,
+    damping: c_int,
+) {
+    use super::pixel_access::storei32;
+    use crate::include::common::bitdepth::BitDepth8;
+
+    let zero = _mm512_setzero_si512();
+
+    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth8, _>(
+        &dst,
+        w,
+        h,
+        |bytes, offset, stride| {
+            let pri_tap0 = 4 - (pri_strength & 1);
+            let pri_shift = if pri_strength != 0 {
+                cmp::max(0, damping - pri_strength.ilog2() as c_int)
+            } else {
+                0
+            };
+            let pri_thresh = _mm512_set1_epi16(pri_strength as i16);
+            let pri_shift_v = _mm_cvtsi32_si128(pri_shift);
+
+            let have_sec = sec_strength != 0;
+            let sec_shift = if have_sec {
+                damping - sec_strength.ilog2() as c_int
+            } else {
+                0
+            };
+            let sec_thresh = _mm512_set1_epi16(sec_strength as i16);
+            let sec_shift_v = _mm_cvtsi32_si128(sec_shift);
+            // Both primary and secondary present → min/max clamping is applied.
+            let do_clamp = pri_strength != 0 && have_sec;
+
+            // Process the block in groups of up to 4 rows.
+            let mut y0 = 0usize;
+            while y0 < h {
+                let rows = cmp::min(4, h - y0);
+                let base = (tmp_offset + y0 * TMP_STRIDE) as isize;
+
+                let px = load4rows_8bpc(t, tmp, base, 0, rows);
+                let mut sum = zero;
+                let mut min_v = px;
+                let mut max_v = px;
+
+                if pri_strength != 0 {
+                    let mut pri_tap_k = pri_tap0;
+                    for k in 0..2 {
+                        let off = dav1d_cdef_directions[dir + 2][k] as isize;
+                        let p0 = load4rows_8bpc(t, tmp, base, off, rows);
+                        let p1 = load4rows_8bpc(t, tmp, base, -off, rows);
+
+                        let c0 = constrain_avx512(
+                            t,
+                            _mm512_sub_epi16(p0, px),
+                            pri_thresh,
+                            pri_shift_v,
+                        );
+                        let c1 = constrain_avx512(
+                            t,
+                            _mm512_sub_epi16(p1, px),
+                            pri_thresh,
+                            pri_shift_v,
+                        );
+
+                        let tap_v = _mm512_set1_epi16(pri_tap_k as i16);
+                        sum = _mm512_add_epi16(
+                            sum,
+                            _mm512_mullo_epi16(tap_v, _mm512_add_epi16(c0, c1)),
+                        );
+                        pri_tap_k = pri_tap_k & 3 | 2;
+
+                        if do_clamp {
+                            min_v = _mm512_min_epu16(min_v, _mm512_min_epu16(p0, p1));
+                            max_v = _mm512_max_epi16(max_v, _mm512_max_epi16(p0, p1));
+                        }
+                    }
+                }
+
+                if have_sec {
+                    for k in 0..2 {
+                        let off2 = dav1d_cdef_directions[dir + 4][k] as isize;
+                        let off3 = dav1d_cdef_directions[dir + 0][k] as isize;
+                        let s0 = load4rows_8bpc(t, tmp, base, off2, rows);
+                        let s1 = load4rows_8bpc(t, tmp, base, -off2, rows);
+                        let s2 = load4rows_8bpc(t, tmp, base, off3, rows);
+                        let s3 = load4rows_8bpc(t, tmp, base, -off3, rows);
+
+                        let sec_tap_k = (2 - k as i32) as i16;
+                        let sec_tap_v = _mm512_set1_epi16(sec_tap_k);
+                        let ds0 = constrain_avx512(
+                            t,
+                            _mm512_sub_epi16(s0, px),
+                            sec_thresh,
+                            sec_shift_v,
+                        );
+                        let ds1 = constrain_avx512(
+                            t,
+                            _mm512_sub_epi16(s1, px),
+                            sec_thresh,
+                            sec_shift_v,
+                        );
+                        let ds2 = constrain_avx512(
+                            t,
+                            _mm512_sub_epi16(s2, px),
+                            sec_thresh,
+                            sec_shift_v,
+                        );
+                        let ds3 = constrain_avx512(
+                            t,
+                            _mm512_sub_epi16(s3, px),
+                            sec_thresh,
+                            sec_shift_v,
+                        );
+
+                        let sec_sum = _mm512_add_epi16(
+                            _mm512_add_epi16(ds0, ds1),
+                            _mm512_add_epi16(ds2, ds3),
+                        );
+                        sum = _mm512_add_epi16(sum, _mm512_mullo_epi16(sec_tap_v, sec_sum));
+
+                        if do_clamp {
+                            min_v = _mm512_min_epu16(
+                                min_v,
+                                _mm512_min_epu16(
+                                    _mm512_min_epu16(s0, s1),
+                                    _mm512_min_epu16(s2, s3),
+                                ),
+                            );
+                            max_v = _mm512_max_epi16(
+                                max_v,
+                                _mm512_max_epi16(
+                                    _mm512_max_epi16(s0, s1),
+                                    _mm512_max_epi16(s2, s3),
+                                ),
+                            );
+                        }
+                    }
+                }
+
+                // Rounding: (sum - (sum < 0) + 8) >> 4
+                let neg_mask: __mmask32 = _mm512_cmpgt_epi16_mask(zero, sum);
+                // add -1 where sum < 0 (subtract 1)
+                let minus1 =
+                    _mm512_mask_blend_epi16(neg_mask, zero, _mm512_set1_epi16(-1));
+                let adjusted = _mm512_add_epi16(sum, minus1);
+                let adjusted = _mm512_add_epi16(adjusted, _mm512_set1_epi16(8));
+                let adjusted = _mm512_srai_epi16::<4>(adjusted);
+                let mut result = _mm512_add_epi16(px, adjusted);
+                if do_clamp {
+                    result = _mm512_max_epi16(result, min_v);
+                    result = _mm512_min_epi16(result, max_v);
+                }
+
+                // Extract each row (128-bit lane), pack i16→u8, store.
+                for j in 0..rows {
+                    let lane = match j {
+                        0 => _mm512_extracti32x4_epi32::<0>(result),
+                        1 => _mm512_extracti32x4_epi32::<1>(result),
+                        2 => _mm512_extracti32x4_epi32::<2>(result),
+                        _ => _mm512_extracti32x4_epi32::<3>(result),
+                    };
+                    let row_u8 = _mm_packus_epi16(lane, _mm_setzero_si128());
+                    let row_off = (offset as isize + (y0 + j) as isize * stride) as usize;
+                    if w == 8 {
+                        use super::pixel_access::storeu_128;
+                        let mut out = [0u8; 16];
+                        storeu_128!(&mut out, row_u8);
+                        bytes[row_off..row_off + 8].copy_from_slice(&out[0..8]);
+                    } else {
+                        storei32!(&mut bytes[row_off..row_off + 4], row_u8);
+                    }
+                }
+
+                y0 += 4;
+            }
+        },
+    ); // with_pixel_guard_mut
 }
 
 /// Vectorized CDEF filter for 8bpc — processes 8 pixels per row using SSE.
@@ -760,6 +1003,117 @@ mod tests {
     }
 }
 
+// Pure-safe test module (no `asm` feature needed): verifies the AVX-512 8bpc
+// CDEF constrain is bit-identical to the 128-bit AVX2 path and to scalar.
+// `#[arcane]` drivers are safe trampolines callable from plain test context.
+#[cfg(all(test, target_arch = "x86_64"))]
+mod tests_avx512 {
+    use super::*;
+    use crate::src::safe_simd::pixel_access::{loadu_128, loadu_512, storeu_128, storeu_512};
+
+    /// Run constrain on 32 i16 via the AVX-512 path, return the 32 results.
+    #[arcane]
+    fn run_constrain_avx512(t: Server64, diff: &[i16; 32], threshold: i16, shift: i32) -> [i16; 32] {
+        let diff_v = loadu_512!(diff, [i16; 32]);
+        let thr_v = _mm512_set1_epi16(threshold);
+        let shift_v = _mm_cvtsi32_si128(shift);
+        let r = constrain_avx512(t, diff_v, thr_v, shift_v);
+        let mut out = [0i16; 32];
+        storeu_512!(&mut out, [i16; 32], r);
+        out
+    }
+
+    /// Run constrain on 8 i16 via the 128-bit AVX2 path, return the 8 results.
+    #[arcane]
+    fn run_constrain_128(t: Desktop64, diff: &[i16; 8], threshold: i16, shift: i32) -> [i16; 8] {
+        let diff_v = loadu_128!(diff, [i16; 8]);
+        let thr_v = _mm_set1_epi16(threshold);
+        let shift_v = _mm_cvtsi32_si128(shift);
+        let r = constrain_128(t, diff_v, thr_v, shift_v);
+        let mut out = [0i16; 8];
+        storeu_128!(&mut out, r);
+        out
+    }
+
+    /// Scalar reference that mirrors the SIMD i16 semantics exactly:
+    /// `_mm*_abs_epi16(i16::MIN)` saturates to `i16::MIN` (not 32768), and all
+    /// arithmetic is modular i16 (`wrapping_*`). This is the contract every
+    /// CDEF constrain path (scalar decode, AVX2, AVX-512) must honour, because
+    /// CDEF clamps the result with min/max afterward.
+    fn constrain_ref(d: i16, threshold: i16, shift: i32) -> i16 {
+        let adiff = d.wrapping_abs(); // i16::MIN.wrapping_abs() == i16::MIN, matches _mm_abs_epi16
+        let shifted = (adiff as i32) >> shift; // arithmetic shift of sign-extended i16
+        let term = (threshold as i32).wrapping_sub(shifted) as i16; // _mm_sub_epi16
+        let max_term = term.max(0); // _mm_max_epi16(term, 0)
+        let result_abs = adiff.min(max_term); // _mm_min_epi16(adiff, max_term)
+        if d < 0 { (0i16).wrapping_sub(result_abs) } else { result_abs }
+    }
+
+    // Tiny deterministic LCG so the test needs no external rand dep.
+    struct Lcg(u64);
+    impl Lcg {
+        fn next_u32(&mut self) -> u32 {
+            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (self.0 >> 33) as u32
+        }
+    }
+
+    #[test]
+    fn avx512_constrain_matches_avx2_and_scalar() {
+        let (v4, v3) = match (
+            crate::src::cpu::summon_avx512(),
+            crate::src::cpu::summon_avx2(),
+        ) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return, // AVX-512 not available on this CPU; covered by CI elsewhere.
+        };
+
+        let mut rng = Lcg(0x1234_5678_9abc_def0);
+        // CDEF diffs come from `p - px` where pixels are 0..255 plus the 0x8001
+        // boundary fill; cover a wide signed range including extremes.
+        for _ in 0..4096 {
+            // threshold = strength (1..=63 typical), shift = damping-derived (0..=7).
+            let threshold = (1 + (rng.next_u32() % 63)) as i16;
+            let shift = (rng.next_u32() % 8) as i32;
+
+            let mut diff = [0i16; 32];
+            for d in diff.iter_mut() {
+                // Mix small diffs, large diffs, and the boundary-fill sentinel.
+                let r = rng.next_u32();
+                *d = match r % 8 {
+                    0 => 0x7fff,
+                    1 => -0x8000,
+                    2 => 0x8001u16 as i16, // boundary fill sentinel as diff
+                    _ => ((r % 1023) as i16) - 511,
+                };
+            }
+
+            let out512 = run_constrain_avx512(v4, &diff, threshold, shift);
+
+            // Compare against scalar reference.
+            for (i, &d) in diff.iter().enumerate() {
+                assert_eq!(
+                    out512[i],
+                    constrain_ref(d, threshold, shift),
+                    "v4 vs scalar mismatch: diff={d} thr={threshold} shift={shift} lane={i}"
+                );
+            }
+
+            // Compare against the 128-bit AVX2 path, lane-for-lane, all 4 chunks.
+            for chunk in 0..4 {
+                let mut d8 = [0i16; 8];
+                d8.copy_from_slice(&diff[chunk * 8..chunk * 8 + 8]);
+                let out128 = run_constrain_128(v3, &d8, threshold, shift);
+                assert_eq!(
+                    &out512[chunk * 8..chunk * 8 + 8],
+                    &out128[..],
+                    "v4 vs avx2 mismatch: thr={threshold} shift={shift} chunk={chunk}"
+                );
+            }
+        }
+    }
+}
+
 // ============================================================================
 // CDEF FILTER FUNCTIONS (SIMD)
 // ============================================================================
@@ -1071,6 +1425,24 @@ fn cdef_filter_8x8_8bpc_avx2_inner(
     let stride = dst.pixel_stride::<BitDepth8>();
 
     #[cfg(target_arch = "x86_64")]
+    if let Some(token) = crate::src::cpu::summon_avx512() {
+        cdef_filter_block_simd_8bpc_avx512(
+            token,
+            &tmp,
+            tmp_offset,
+            dst,
+            stride,
+            8,
+            8,
+            dir as usize,
+            pri_strength,
+            sec_strength,
+            damping,
+        );
+        return;
+    }
+
+    #[cfg(target_arch = "x86_64")]
     if let Some(token) = crate::src::cpu::summon_avx2() {
         cdef_filter_block_simd_8bpc(
             token,
@@ -1161,6 +1533,24 @@ fn cdef_filter_4x8_8bpc_avx2_inner(
     let stride = dst.pixel_stride::<BitDepth8>();
 
     #[cfg(target_arch = "x86_64")]
+    if let Some(token) = crate::src::cpu::summon_avx512() {
+        cdef_filter_block_simd_8bpc_avx512(
+            token,
+            &tmp,
+            tmp_offset,
+            dst,
+            stride,
+            4,
+            8,
+            dir as usize,
+            pri_strength,
+            sec_strength,
+            damping,
+        );
+        return;
+    }
+
+    #[cfg(target_arch = "x86_64")]
     if let Some(token) = crate::src::cpu::summon_avx2() {
         cdef_filter_block_simd_8bpc(
             token,
@@ -1249,6 +1639,24 @@ fn cdef_filter_4x4_8bpc_avx2_inner(
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
     let stride = dst.pixel_stride::<BitDepth8>();
+
+    #[cfg(target_arch = "x86_64")]
+    if let Some(token) = crate::src::cpu::summon_avx512() {
+        cdef_filter_block_simd_8bpc_avx512(
+            token,
+            &tmp,
+            tmp_offset,
+            dst,
+            stride,
+            4,
+            4,
+            dir as usize,
+            pri_strength,
+            sec_strength,
+            damping,
+        );
+        return;
+    }
 
     #[cfg(target_arch = "x86_64")]
     if let Some(token) = crate::src::cpu::summon_avx2() {
