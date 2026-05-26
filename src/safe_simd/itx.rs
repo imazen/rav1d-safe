@@ -3884,6 +3884,25 @@ fn dct32_1d_cols8(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, max_v
 #[rite]
 #[inline(always)]
 fn i32_to_i16_pair(_token: Desktop64, a: __m256i, b: __m256i) -> __m256i {
+    // PRECONDITION: every i32 lane of `a` and `b` is already within i16 range.
+    // `_mm_packs_epi32` saturates out-of-range values silently — a violation
+    // would produce wrong pixels with no panic. Validate in debug builds so
+    // future callers that feed unclipped data fail loudly instead.
+    #[cfg(debug_assertions)]
+    {
+        let mut buf = [0i32; 16];
+        let lo: &mut [i32; 8] = (&mut buf[0..8]).try_into().unwrap();
+        storeu_256!(lo, [i32; 8], a);
+        let hi: &mut [i32; 8] = (&mut buf[8..16]).try_into().unwrap();
+        storeu_256!(hi, [i32; 8], b);
+        for &v in buf.iter() {
+            debug_assert!(
+                v >= i16::MIN as i32 && v <= i16::MAX as i32,
+                "i32_to_i16_pair: lane {v} outside i16 range — _mm_packs_epi32 would \
+                 silently saturate and corrupt output. Caller must clip before packing."
+            );
+        }
+    }
     let a_i16 = _mm_packs_epi32(_mm256_castsi256_si128(a), _mm256_extracti128_si256(a, 1));
     let b_i16 = _mm_packs_epi32(_mm256_castsi256_si128(b), _mm256_extracti128_si256(b, 1));
     _mm256_set_m128i(
