@@ -2614,6 +2614,185 @@ fn ipred_z3_8bpc_inner(
     }
 }
 
+/// Z3 intra prediction AVX-512ICL (v4x) inner for 8bpc.
+///
+/// The reference (`ipred_z3_8bpc_inner`) is fully scalar: column-major, with a
+/// *descending* edge access `left[left_off - base]`. This kernel reverses the
+/// live edge into an ascending, register-resident buffer (`lbuf[k] =
+/// left[left_off - k]`) so the per-column blend can gather samples with
+/// `vpermi2b` (`_mm512_permutex2var_epi8`) over 32 y-values at once, then
+/// narrows with `_mm512_cvtusepi16_epi8`. dst stores stay strided (one byte per
+/// y), matching the column-major output layout.
+///
+/// Bit-exactness: the flat-fill case (`base >= max_base_y`, which writes
+/// `left[left_off - max_base_y]`) is reproduced by padding `lbuf[k > max_base_y]
+/// = left[left_off - max_base_y]` and clamping *both* gather indices to
+/// `max_base_y`. With `inv_frac + frac == 64` the blend then yields the fill
+/// value exactly, matching the reference.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn ipred_z3_8bpc_v4x_inner(
+    _token: X64V4xToken,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+    angle: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let width_i = width as i32;
+    let height_i = height as i32;
+
+    let is_sm = (angle >> 9) & 1 != 0;
+    let enable_intra_edge_filter = (angle >> 10) != 0;
+    let angle = angle & 511;
+
+    let mut dy = dav1d_dr_intra_derivative[((270 - angle) >> 1) as usize] as usize;
+
+    let upsample_left = enable_intra_edge_filter
+        && (angle - 180) < 40
+        && (width_i + height_i) <= (16 >> is_sm as i32);
+
+    let mut left_out = [0u8; 64 + 64];
+    let (left, left_off, max_base_y, base_inc);
+
+    if upsample_left {
+        upsample_edge_8bpc(
+            &mut left_out,
+            width_i + height_i,
+            topleft,
+            tl_off - (width + height),
+            std::cmp::max(width_i - height_i, 0),
+            width_i + height_i + 1,
+        );
+        left_off = (2 * (width_i + height_i) - 2) as usize;
+        max_base_y = left_off;
+        dy <<= 1;
+        base_inc = 2usize;
+        left = left_out.as_slice();
+    } else {
+        let filter_strength = if enable_intra_edge_filter {
+            get_filter_strength_simple(width_i + height_i, angle - 180, is_sm)
+        } else {
+            0
+        };
+        if filter_strength != 0 {
+            filter_edge_8bpc(
+                &mut left_out,
+                width_i + height_i,
+                0,
+                width_i + height_i,
+                topleft,
+                tl_off - (width + height),
+                std::cmp::max(width_i - height_i, 0),
+                width_i + height_i + 1,
+                filter_strength,
+            );
+            left_off = (width_i + height_i - 1) as usize;
+            max_base_y = left_off;
+            left = left_out.as_slice();
+        } else {
+            left = topleft;
+            left_off = tl_off - 1;
+            max_base_y = height + std::cmp::min(width, height) - 1;
+        }
+        base_inc = 1;
+    };
+
+    let left_f = left.flex();
+
+    // Reverse the live edge into an ascending, register-resident buffer:
+    // lbuf[k] = left[left_off - k] for k in 0..=max_base_y; pad the tail with
+    // the fill value (lbuf[max_base_y]) so clamped lanes read the fill exactly.
+    let last = max_base_y.min(127);
+    let mut lbuf = [0u8; 128];
+    for k in 0..=last {
+        lbuf[k] = left_f[left_off - k];
+    }
+    let fill_val = lbuf[last];
+    for b in lbuf.iter_mut().skip(last + 1) {
+        *b = fill_val;
+    }
+
+    let edge_lo = loadu_512!((&lbuf[0..64]), [u8; 64]);
+    let edge_hi = loadu_512!((&lbuf[64..128]), [u8; 64]);
+
+    let max_idx8 = _mm512_set1_epi8(last as i8);
+    let rounding = _mm512_set1_epi16(32);
+    let lane_off: [u8; 64] = core::array::from_fn(|i| i as u8);
+    let lane_off_v = loadu_512!((&lane_off), [u8; 64]);
+    let one8 = _mm512_set1_epi8(1);
+
+    if base_inc == 1 {
+        for x in 0..width {
+            let ypos = dy * (x + 1);
+            let frac = (ypos & 0x3e) as i16;
+            let inv_frac = (64 - frac) as i16;
+            let frac_vec = _mm512_set1_epi16(frac);
+            let inv_frac_vec = _mm512_set1_epi16(inv_frac);
+            let base0 = ypos >> 6;
+            let base0_v = _mm512_set1_epi8(base0.min(127) as i8);
+
+            let mut y = 0usize;
+            while y < height {
+                // idx0[lane] = base0 + y + lane ; idx1 = idx0 + 1, both clamped.
+                let ybase = _mm512_set1_epi8(y.min(127) as i8);
+                let idx0 = _mm512_adds_epu8(_mm512_adds_epu8(base0_v, ybase), lane_off_v);
+                let idx0 = _mm512_min_epu8(idx0, max_idx8);
+                let idx1 = _mm512_min_epu8(_mm512_adds_epu8(idx0, one8), max_idx8);
+
+                let l0 = _mm512_permutex2var_epi8(edge_lo, idx0, edge_hi);
+                let l1 = _mm512_permutex2var_epi8(edge_lo, idx1, edge_hi);
+
+                let l0_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(l0));
+                let l1_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(l1));
+                let p0 = _mm512_mullo_epi16(l0_lo, inv_frac_vec);
+                let p1 = _mm512_mullo_epi16(l1_lo, frac_vec);
+                let sblend = _mm512_add_epi16(_mm512_add_epi16(p0, p1), rounding);
+                let r = _mm512_srai_epi16::<6>(sblend);
+                let out32 = _mm512_cvtusepi16_epi8(r);
+
+                let n = (height - y).min(32);
+                let mut tmp = [0u8; 32];
+                storeu_256!((&mut tmp), [u8; 32], out32);
+                // Strided byte store, matching column-major output.
+                for k in 0..n {
+                    let off = (dst_base as isize + (y + k) as isize * stride) as usize + x;
+                    dst[off] = tmp[k];
+                }
+                y += 32;
+            }
+        }
+    } else {
+        // Upsampled (base_inc == 2): scalar, matching the reference exactly.
+        for x in 0..width {
+            let ypos = dy * (x + 1);
+            let frac = (ypos & 0x3e) as i32;
+            let inv_frac = 64 - frac;
+            for y in 0..height_i {
+                let base = (ypos >> 6) + base_inc * y as usize;
+                if base < max_base_y {
+                    let l0 = left_f[left_off - base] as i32;
+                    let l1 = left_f[left_off - base - 1] as i32;
+                    let v = l0 * inv_frac + l1 * frac;
+                    let pixel_off = (dst_base as isize + y as isize * stride) as usize + x;
+                    dst[pixel_off] = ((v + 32) >> 6) as u8;
+                } else {
+                    let fv = left_f[left_off - max_base_y];
+                    for yy in y..height_i {
+                        let pixel_off = (dst_base as isize + yy as isize * stride) as usize + x;
+                        dst[pixel_off] = fv;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn ipred_z3_8bpc_avx2(
@@ -5445,17 +5624,31 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                     );
                 }
                 (BPC::BPC8, 8) => {
-                    ipred_z3_8bpc_inner(
-                        token,
-                        dst_bytes,
-                        dst_base_bytes,
-                        byte_stride,
-                        tl_bytes,
-                        topleft_off,
-                        w,
-                        h,
-                        angle as i32,
-                    );
+                    if let Some(t512x) = avx512x_token {
+                        ipred_z3_8bpc_v4x_inner(
+                            t512x,
+                            dst_bytes,
+                            dst_base_bytes,
+                            byte_stride,
+                            tl_bytes,
+                            topleft_off,
+                            w,
+                            h,
+                            angle as i32,
+                        );
+                    } else {
+                        ipred_z3_8bpc_inner(
+                            token,
+                            dst_bytes,
+                            dst_base_bytes,
+                            byte_stride,
+                            tl_bytes,
+                            topleft_off,
+                            w,
+                            h,
+                            angle as i32,
+                        );
+                    }
                 }
                 (BPC::BPC8, 9) => {
                     if let Some(t512) = avx512_token {
@@ -6546,6 +6739,18 @@ mod v4x_dir_tests {
         (dst_a, dst_b)
     }
 
+    fn run_z3(w: usize, h: usize, angle: i32) -> (Vec<u8>, Vec<u8>) {
+        let (tl, tl_off) = make_topleft();
+        let stride = 64isize;
+        let mut dst_a = vec![7u8; 64 * 64];
+        let mut dst_b = vec![7u8; 64 * 64];
+        let t3 = crate::src::cpu::summon_avx2().expect("avx2");
+        let t4x = crate::src::cpu::summon_avx512x().expect("v4x");
+        ipred_z3_8bpc_inner(t3, &mut dst_a, 0, stride, &tl, tl_off, w, h, angle);
+        ipred_z3_8bpc_v4x_inner(t4x, &mut dst_b, 0, stride, &tl, tl_off, w, h, angle);
+        (dst_a, dst_b)
+    }
+
     fn assert_block_eq(a: &[u8], b: &[u8], w: usize, h: usize, stride: usize, label: &str) {
         for y in 0..h {
             for x in 0..w {
@@ -6592,6 +6797,44 @@ mod v4x_dir_tests {
                     let angle = ba | fl;
                     let (a, b) = run_z1(w, h, angle);
                     assert_block_eq(&a, &b, w, h, 64, &format!("z1 w={w} h={h} angle={angle}"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn z3_v4x_matches_avx2() {
+        if crate::src::cpu::summon_avx512x().is_none() {
+            eprintln!("z3_v4x_matches_avx2: X64V4xToken unavailable, skipping (AVX2 path used)");
+            return;
+        }
+        // z3 base angles are 180..270 in encoding; the derivative index is
+        // (270 - angle) >> 1, so sweep angles whose index hits non-zero entries.
+        let base_angles = [184, 190, 198, 206, 214, 222, 230, 238, 246, 254, 262, 266];
+        let flag_sets = [0i32, 1 << 10, (1 << 10) | (1 << 9)];
+        let dims = [
+            (4, 4),
+            (4, 8),
+            (8, 4),
+            (8, 8),
+            (8, 16),
+            (16, 8),
+            (16, 16),
+            (16, 32),
+            (32, 16),
+            (32, 32),
+            (32, 64),
+            (64, 32),
+            (64, 64),
+            (4, 16),
+            (16, 4),
+        ];
+        for &(w, h) in &dims {
+            for &ba in &base_angles {
+                for &fl in &flag_sets {
+                    let angle = ba | fl;
+                    let (a, b) = run_z3(w, h, angle);
+                    assert_block_eq(&a, &b, w, h, 64, &format!("z3 w={w} h={h} angle={angle}"));
                 }
             }
         }
