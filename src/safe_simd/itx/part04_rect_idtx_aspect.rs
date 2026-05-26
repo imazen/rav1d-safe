@@ -1042,12 +1042,19 @@ fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 256]) -> [i
     for batch in 0..2u32 {
         let y_base = (batch * 8) as usize;
 
-        // Load 16 column xmms (8 i16 from this batch per column).
+        // Load 16 column xmms (8 i16 from this batch per column), OR-reducing to
+        // skip an all-zero 8-row batch (table-free, bit-exact: zero row -> zero,
+        // `out` is pre-zeroed). See dct32_row_pass_i16_simd for rationale.
         let mut col_xmm = [_mm_setzero_si128(); 16];
+        let mut nz = _mm_setzero_si128();
         for x in 0..16 {
             let off = y_base + x * 16;
             let arr: &[i16; 8] = (&coeff_col_major[off..off + 8]).try_into().unwrap();
             col_xmm[x] = loadu_128!(arr);
+            nz = _mm_or_si128(nz, col_xmm[x]);
+        }
+        if _mm_testz_si128(nz, nz) != 0 {
+            continue;
         }
 
         // ====== EVEN HALF: DCT-8 on even columns (0,2,4,6,8,10,12,14) ======

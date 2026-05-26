@@ -87,15 +87,29 @@ table) rather than whole-8-row-batch granularity at 32x32 only.
 before (decode_coefs only) avg 188.31 ms, after (+32x32 prune) avg 186.77 ms →
 **-0.82% mean, -1.6% median**. Consistent small win, never a regression. **KEPT** (commit ab61fc3).
 
-### 16x16 prune: tried, REJECTED (net-negative on photos)
-Applying the same batch-skip to `dct16_row_pass_i16_simd` (16x16, 2 batches) and
-re-measuring 32x32+16x16 combined gave **+0.20%** (10 rounds) — i.e. adding 16x16 made
-it ~0.8-1.7% *worse* than 32x32-alone. 16x16 dct_dct blocks are both common and usually
-dense in 4K photos, so the OR+testz overhead fires on every block but the skip rarely
-triggers. **Not shipped** (stashed: `itx-16x16-batch-skip-prune-NET-NEGATIVE-on-photos`).
+### 16x16 prune: NEUTRAL on photos (fair paired A/B) — SHIPPED
+Same batch-skip applied to `dct16_row_pass_i16_simd` (16x16, 2 batches). An initial
+estimate by *subtracting two separately-measured runs* (32x32-only vs 32x32+16x16) on a
+busy box suggested it regressed — but that cross-run subtraction is unsound. A **direct
+paired interleaved A/B** of the two binaries that differ ONLY by the 16x16 prune
+(randomized slot order, 20 rounds × 100 iters, spike-filtered n=19, cores 2,3):
 
-**Lever conclusion:** itx eob-pruning is at/just-above the noise floor on 4K photos —
-transforms are ~2% of the profile and photo blocks aren't sparse. 32x32 is the only size
-where the skip fires often enough to net positive. The clear portable algorithmic win this
-session was decode_coefs (~2.6%); itx pruning adds ~1% more at 32x32. Extending to the
-long tail (8x16/16x8, eob-table row granularity) is not worth it on this corpus.
+| | mean | median |
+|---|---|---|
+| 32x32 only | 190.27 ms | 190.80 ms |
+| 32x32 + 16x16 | 190.61 ms | 189.30 ms |
+
+Paired delta (16x16 vs not): **median -0.38% / mean +0.19%; sign test 10 faster / 9 slower**
+— statistical **noise**, i.e. neutral on 4K photos, NOT a regression. 16x16 dct_dct blocks
+are common and fairly dense in photos, so the skip fires rarely and the (free, load-fused)
+OR+testz overhead nets ~0. By construction it can only *help* on sparser content
+(screen/animation/flat regions skip more batches at the same overhead), which is why dav1d
+prunes all sizes. Bit-exact (14/14 MD5 + sparse unit test). **Shipped** for consistency +
+sparse-content upside, given it's proven neutral on the dense worst-case.
+
+**Lever conclusion:** itx eob-pruning sits at the noise floor on 4K photos (transforms are
+~2% of the profile and photo blocks aren't sparse). 32x32 shows a small measurable win
+(-0.8% mean), 16x16 is neutral-here-but-helps-sparse-content. The clear portable
+algorithmic win this session was decode_coefs (~2.6%). Further long-tail sizes (8x16/16x8,
+eob-table row granularity) would likewise be ~noise on photos — only worth it if a
+screen-content/animation corpus is the target.

@@ -885,6 +885,23 @@ mod tests {
             total_mismatches, 0,
             "dct16_row_pass_i16_simd diverged from scalar reference"
         );
+        // Exercise the all-zero-batch skip: only the first k 8-row batches
+        // (row = i % 16 for 16x16) non-zero.
+        for nonzero_batches in [1usize, 2] {
+            let full: [i16; 256] = seeded_i16_block(0x9e37_79b9 ^ nonzero_batches as u64);
+            let mut input = [0i16; 256];
+            for i in 0..256 {
+                if i % 16 < nonzero_batches * 8 {
+                    input[i] = full[i];
+                }
+            }
+            let scalar_out = run_scalar_dct16_per_row(&input, row_min, row_max);
+            let simd_out = dct16_row_pass_i16_simd(token, input);
+            assert_eq!(
+                simd_out, scalar_out,
+                "dct16_row_pass_i16_simd sparse ({nonzero_batches} batches) diverged from scalar"
+            );
+        }
     }
 
     // ----------------------------------------------------------------------
