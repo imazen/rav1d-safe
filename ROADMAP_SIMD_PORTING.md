@@ -40,7 +40,7 @@ Dispatch pattern: `incant!` for multi-tier, or `if let Some(t) = X64V4xToken::su
 
 | ID | Kernel | Target ISA | File | Owner | Status | Commit |
 |----|--------|-----------|------|-------|--------|--------|
-| X1 | itx — extend AVX-512 to row pass + dct8/adst/IDTX cols16 | X64V4 (+V4x where wider) | `safe_simd/itx/part*.rs` | — | TODO | |
+| X1 | itx — extend AVX-512 to row pass + dct8/adst/IDTX cols16 | X64V4 (+V4x where wider) | `safe_simd/itx/part*.rs` | x1-recovery | DONE (DCT+IDTX); ADST cols16 remains | 75d2e68, 954a252, 4b81aa8, 0d74989 |
 | X2 | loopfilter 8bpc AVX-512 (all widths v+h) | X64V4 | `safe_simd/loopfilter.rs` | — | TODO | |
 | X3 | cdef 8bpc AVX-512 | X64V4 | `safe_simd/cdef.rs` | — | TODO | |
 | X4 | ipred directional z1/z2/z3 AVX-512ICL (vpermb) | X64V4x | `safe_simd/ipred.rs` | — | TODO | |
@@ -53,3 +53,4 @@ Dispatch pattern: `incant!` for multi-tier, or `if let Some(t) = X64V4xToken::su
 - Targeting v0.5.7 (v0.5.6 is release-prepped, pending publish go-ahead — does not block this work).
 - Independent algorithmic ports (decode_coefs 1.5.0 index-offset, msac 1.4.1, SGR 1.5.1) tracked separately — they help the AVX2 baseline on all CPUs and are ISA-independent.
 - Stale-doc fix needed: CLAUDE.md claims ADST 8x8/16x16 column SIMD is wired, but the safe `itxfm_dispatch_8bpc` routes non-DCT_DCT/non-IDTX ≥8x8 to scalar. Verify/wire/correct.
+- **X1 recovery status (2026-05-26):** AVX-512 column passes now cover dct4/dct8/dct16/dct32 + IDTX (identity8/16/32) at all wide (total_w≥16) sites, plus the 16-row DCT row passes. New helpers in `part02`: `dct4_cols_avx512`, `dct8_cols_avx512`, `identity_shift_cols_avx512<SHIFT>`, `identity16_cols_avx512`. All bit-exact vs scalar oracle (lib tests `test_{dct4,dct8,identity}_cols_avx512_matches_scalar`) and 14/14 MD5. **Remaining for full X1: ADST cols16** — no `adst{8,16}_1d_cols16` exists yet (AVX2 `adst*_1d_cols8` only); needs a 16-lane ADST helper + wiring at the wide adst column sites (`part02:2007/2058`, `part04:1951`, etc.). Perf flat on this Zen4 (double-pumped 512); payoff is native-512 hardware.
