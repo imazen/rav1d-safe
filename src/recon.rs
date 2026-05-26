@@ -782,12 +782,19 @@ fn decode_coefs<BD: BitDepth>(
 
         let lo_cdf = &mut ts_c.cdf.coef.base_tok[t_dim.ctx as usize][chroma];
         let levels = scratch.inter_intra_mut().levels_pal.levels_mut();
+        // dav1d 5ef6b241 (1.5.0) "decode_coefs: Optimize index offset calculations":
+        // cache the capped log2 sizes and reuse `tx2dszctx` as a shift instead of
+        // recomputing `sw * sh` multiplies. `sw == 1 << slw`, `sh == 1 << slh`, so
+        // `sw * sh == 1 << tx2dszctx`.
+        let slw = cmp::min(t_dim.lw, TxfmSize::S32x32 as u8);
+        let slh = cmp::min(t_dim.lh, TxfmSize::S32x32 as u8);
+        let tx2dszctx = slw + slh;
         let sw = cmp::min(t_dim.w, 8);
         let sh = cmp::min(t_dim.h, 8);
 
         // eob
         let mut ctx =
-            1 + (eob > sw as u16 * sh as u16 * 2) as u8 + (eob > sw as u16 * sh as u16 * 4) as u8;
+            1 + (eob > (2u16 << tx2dszctx)) as u8 + (eob > (4u16 << tx2dszctx)) as u8;
         let eob_tok =
             rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut eob_cdf[ctx as usize], 2);
         let mut tok = eob_tok + 1;
@@ -895,7 +902,13 @@ fn decode_coefs<BD: BitDepth>(
             }
         }
         cf.set(rc, tok.to::<i16>() << 11);
-        levels[x as usize * stride as usize + y as usize] = level_tok as u8;
+        // For TX_CLASS_2D, `rc == x * stride + y` (stride is `1 << shift`, `y < stride`),
+        // so index `levels` by `rc` directly and skip the multiply (dav1d 5ef6b241).
+        if tx_class == TxClass::TwoD {
+            levels[rc as usize] = level_tok as u8;
+        } else {
+            levels[x as usize * stride as usize + y as usize] = level_tok as u8;
+        }
         for i in (1..eob).rev() {
             // ac
             let rc_i;
@@ -919,7 +932,13 @@ fn decode_coefs<BD: BitDepth>(
             debug_assert!(x < 32 && y < 32);
             x %= 32;
             y %= 32;
-            let level = &mut levels[x as usize * stride as usize + y as usize..];
+            // Hot path: for TX_CLASS_2D, `rc_i == x * stride + y`, so index by `rc_i`
+            // directly and drop the per-coefficient multiply (dav1d 5ef6b241).
+            let level = if tx_class == TxClass::TwoD {
+                &mut levels[rc_i as usize..]
+            } else {
+                &mut levels[x as usize * stride as usize + y as usize..]
+            };
             ctx = get_lo_ctx(level, tx_class, &mut mag, lo_ctx_offsets, x, y, stride);
             if tx_class == TxClass::TwoD {
                 y |= x;
