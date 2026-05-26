@@ -2464,6 +2464,229 @@ fn ipred_z2_8bpc_inner(
     }
 }
 
+/// Z2 intra prediction AVX-512ICL (v4x) inner for 8bpc.
+///
+/// z2 blends top and left edges. The left-edge portion (per-pixel varying
+/// frac_y) and the scalar tail are kept identical to the reference; only the
+/// ascending top-edge portion is upgraded to a 32-wide `vpermi2b` gather over a
+/// register-resident copy of `edge[edge_tl..]`. Because every pixel uses the
+/// same blend formula in either path, vectorizing the top portion up to the
+/// point where both `edge[idx]` and `edge[idx+1]` are in range is byte-exact;
+/// the scalar remainder (with the identical `idx + 2 > edge.len()` bound)
+/// covers the rest. Non-unit `base_inc_x` (upsampled above) is handled by the
+/// scalar remainder exactly as in the reference.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+#[allow(clippy::too_many_arguments)]
+fn ipred_z2_8bpc_v4x_inner(
+    _token: X64V4xToken,
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    topleft: &[u8],
+    tl_off: usize,
+    width: usize,
+    height: usize,
+    angle: i32,
+    max_width: i32,
+    max_height: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let width_i = width as i32;
+    let height_i = height as i32;
+
+    let is_sm = (angle >> 9) & 1 != 0;
+    let enable_intra_edge_filter = (angle >> 10) != 0;
+    let angle = angle & 511;
+
+    let mut dy = dav1d_dr_intra_derivative[((angle - 90) >> 1) as usize] as i32;
+    let mut dx = dav1d_dr_intra_derivative[((180 - angle) >> 1) as usize] as i32;
+
+    let upsample_left = enable_intra_edge_filter
+        && (180 - angle) < 40
+        && (width_i + height_i) <= (16 >> is_sm as i32);
+    let upsample_above = enable_intra_edge_filter
+        && (angle - 90) < 40
+        && (width_i + height_i) <= (16 >> is_sm as i32);
+
+    let mut edge = [0u8; 64 + 64 + 1];
+    let edge_tl = 64usize;
+
+    if upsample_above {
+        upsample_edge_8bpc(
+            &mut edge[edge_tl..],
+            width_i + 1,
+            topleft,
+            tl_off,
+            0,
+            width_i + 1,
+        );
+        dx <<= 1;
+    } else {
+        let filter_strength = if enable_intra_edge_filter {
+            get_filter_strength_simple(width_i + height_i, angle - 90, is_sm)
+        } else {
+            0
+        };
+        if filter_strength != 0 {
+            filter_edge_8bpc(
+                &mut edge[edge_tl + 1..],
+                width_i,
+                0,
+                max_width,
+                topleft,
+                tl_off + 1,
+                -1,
+                width_i,
+                filter_strength,
+            );
+        } else {
+            edge[edge_tl + 1..edge_tl + 1 + width]
+                .copy_from_slice(&topleft[tl_off + 1..tl_off + 1 + width]);
+        }
+    }
+
+    if upsample_left {
+        upsample_edge_8bpc(
+            &mut edge[edge_tl - height * 2..],
+            height_i + 1,
+            topleft,
+            tl_off.wrapping_sub(height),
+            0,
+            height_i + 1,
+        );
+        dy <<= 1;
+    } else {
+        let filter_strength = if enable_intra_edge_filter {
+            get_filter_strength_simple(width_i + height_i, 180 - angle, is_sm)
+        } else {
+            0
+        };
+        if filter_strength != 0 {
+            filter_edge_8bpc(
+                &mut edge[edge_tl - height..],
+                height_i,
+                height_i - max_height,
+                height_i,
+                topleft,
+                tl_off.wrapping_sub(height),
+                0,
+                height_i + 1,
+                filter_strength,
+            );
+        } else {
+            edge[edge_tl - height..edge_tl].copy_from_slice(&topleft[tl_off - height..tl_off]);
+        }
+    }
+
+    edge[edge_tl] = topleft[tl_off];
+
+    let edge_len = edge.len();
+    let edge = edge.as_slice().flex();
+
+    let base_inc_x = 1 + upsample_above as usize;
+    let left = edge_tl - (1 + upsample_left as usize);
+
+    // Register-resident copy of the ascending top edge: tbuf[k] = edge[edge_tl+k].
+    // The top portion reaches at most edge index edge_len-1, so k spans
+    // 0..=(edge_len-1-edge_tl) which is <= 64; pad the rest so clamped lanes
+    // are harmless (they are never stored — bounded by `top_k_max`).
+    let top_k_max = edge_len - 1 - edge_tl; // = 64
+    let mut tbuf = [0u8; 128];
+    for k in 0..=top_k_max {
+        tbuf[k] = edge[edge_tl + k];
+    }
+    let top_lo = loadu_512!((&tbuf[0..64]), [u8; 64]);
+    let top_hi = loadu_512!((&tbuf[64..128]), [u8; 64]);
+    let lane_off: [u8; 64] = core::array::from_fn(|i| i as u8);
+    let lane_off_v = loadu_512!((&lane_off), [u8; 64]);
+    let one8 = _mm512_set1_epi8(1);
+    let rounding512 = _mm512_set1_epi16(32);
+
+    for y in 0..height_i {
+        let xpos = ((1 + upsample_above as i32) << 6) - dx * (y + 1);
+        let base_x0 = xpos >> 6;
+        let frac_x = (xpos & 0x3e) as i16;
+        let inv_frac_x = (64 - frac_x) as i16;
+
+        let row_off = (dst_base as isize + y as isize * stride) as usize;
+
+        let left_count = if base_x0 >= 0 {
+            0usize
+        } else {
+            let needed = (-base_x0) as usize;
+            needed.div_ceil(base_inc_x).min(width)
+        };
+
+        // Left-edge portion — identical to the reference (scalar).
+        let mut x = 0usize;
+        while x < left_count {
+            let ypos = (y << (6 + upsample_left as i32)) - dy * (x as i32 + 1);
+            let base_y = ypos >> 6;
+            let frac_y = ypos & 0x3e;
+            let inv_frac_y = 64 - frac_y;
+
+            let l0_idx = left.wrapping_add_signed(-base_y as isize);
+            let l1_idx = left.wrapping_add_signed(-(base_y + 1) as isize);
+            let l0 = edge[l0_idx] as i32;
+            let l1 = edge[l1_idx] as i32;
+            let v = l0 * inv_frac_y + l1 * frac_y;
+            dst[row_off + x] = ((v + 32) >> 6) as u8;
+            x += 1;
+        }
+
+        // Top-edge portion — 32-wide vpermi2b gather (only for base_inc_x == 1).
+        if base_inc_x == 1 {
+            let frac_vec = _mm512_set1_epi16(frac_x);
+            let inv_frac_vec = _mm512_set1_epi16(inv_frac_x);
+            // Vectorize while a full 32-lane window stays in range:
+            //   idx       = edge_tl + base_x0 + x + lane         (need <= edge_len-1)
+            //   idx + 1   <= edge_len-1  =>  base_x0 + x + 31 + 1 <= top_k_max
+            while x + 32 <= width {
+                let base_x = base_x0 + x as i32; // >= 0 here (x >= left_count)
+                // last lane uses k = base_x + 31, and reads k+1; require k+1 <= top_k_max
+                if (base_x as usize) + 31 + 1 > top_k_max {
+                    break;
+                }
+                let k0 = _mm512_set1_epi8((base_x as usize).min(127) as i8);
+                let idx0 = _mm512_adds_epu8(k0, lane_off_v);
+                let idx1 = _mm512_adds_epu8(idx0, one8);
+
+                let t0 = _mm512_permutex2var_epi8(top_lo, idx0, top_hi);
+                let t1 = _mm512_permutex2var_epi8(top_lo, idx1, top_hi);
+
+                let t0_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t0));
+                let t1_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t1));
+                let p0 = _mm512_mullo_epi16(t0_lo, inv_frac_vec);
+                let p1 = _mm512_mullo_epi16(t1_lo, frac_vec);
+                let sblend = _mm512_add_epi16(_mm512_add_epi16(p0, p1), rounding512);
+                let r = _mm512_srai_epi16::<6>(sblend);
+                let out32 = _mm512_cvtusepi16_epi8(r);
+
+                let mut tmp = [0u8; 32];
+                storeu_256!((&mut tmp), [u8; 32], out32);
+                dst[row_off + x..row_off + x + 32].copy_from_slice(&tmp);
+                x += 32;
+            }
+        }
+
+        // Scalar remainder — identical to the reference (covers tail, the
+        // 16<chunk<32 leftover, and the upsampled base_inc_x == 2 case).
+        while x < width {
+            let base_x = (base_x0 + (base_inc_x * x) as i32) as usize;
+            let idx = edge_tl + base_x;
+            if idx + 2 > edge_len {
+                break;
+            }
+            let t0 = edge[idx] as i32;
+            let t1 = edge[idx + 1] as i32;
+            let v = t0 * inv_frac_x as i32 + t1 * frac_x as i32;
+            dst[row_off + x] = ((v + 32) >> 6) as u8;
+            x += 1;
+        }
+    }
+}
+
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe extern "C" fn ipred_z2_8bpc_avx2(
@@ -5609,19 +5832,35 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                     }
                 }
                 (BPC::BPC8, 7) => {
-                    ipred_z2_8bpc_inner(
-                        token,
-                        dst_bytes,
-                        dst_base_bytes,
-                        byte_stride,
-                        tl_bytes,
-                        topleft_off,
-                        w,
-                        h,
-                        angle as i32,
-                        max_width,
-                        max_height,
-                    );
+                    if let Some(t512x) = avx512x_token {
+                        ipred_z2_8bpc_v4x_inner(
+                            t512x,
+                            dst_bytes,
+                            dst_base_bytes,
+                            byte_stride,
+                            tl_bytes,
+                            topleft_off,
+                            w,
+                            h,
+                            angle as i32,
+                            max_width,
+                            max_height,
+                        );
+                    } else {
+                        ipred_z2_8bpc_inner(
+                            token,
+                            dst_bytes,
+                            dst_base_bytes,
+                            byte_stride,
+                            tl_bytes,
+                            topleft_off,
+                            w,
+                            h,
+                            angle as i32,
+                            max_width,
+                            max_height,
+                        );
+                    }
                 }
                 (BPC::BPC8, 8) => {
                     if let Some(t512x) = avx512x_token {
@@ -6751,6 +6990,19 @@ mod v4x_dir_tests {
         (dst_a, dst_b)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn run_z2(w: usize, h: usize, angle: i32, mw: i32, mh: i32) -> (Vec<u8>, Vec<u8>) {
+        let (tl, tl_off) = make_topleft();
+        let stride = 64isize;
+        let mut dst_a = vec![7u8; 64 * 64];
+        let mut dst_b = vec![7u8; 64 * 64];
+        let t3 = crate::src::cpu::summon_avx2().expect("avx2");
+        let t4x = crate::src::cpu::summon_avx512x().expect("v4x");
+        ipred_z2_8bpc_inner(t3, &mut dst_a, 0, stride, &tl, tl_off, w, h, angle, mw, mh);
+        ipred_z2_8bpc_v4x_inner(t4x, &mut dst_b, 0, stride, &tl, tl_off, w, h, angle, mw, mh);
+        (dst_a, dst_b)
+    }
+
     fn assert_block_eq(a: &[u8], b: &[u8], w: usize, h: usize, stride: usize, label: &str) {
         for y in 0..h {
             for x in 0..w {
@@ -6838,5 +7090,68 @@ mod v4x_dir_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn z2_v4x_matches_avx2() {
+        if crate::src::cpu::summon_avx512x().is_none() {
+            eprintln!("z2_v4x_matches_avx2: X64V4xToken unavailable, skipping (AVX2 path used)");
+            return;
+        }
+        // z2 angles span 90..180. Index ((angle-90)>>1) and ((180-angle)>>1)
+        // must hit valid derivative entries.
+        let base_angles = [94, 100, 108, 116, 124, 132, 140, 148, 156, 164, 172, 176];
+        let flag_sets = [0i32, 1 << 10, (1 << 10) | (1 << 9)];
+        let dims = [
+            (4, 4),
+            (4, 8),
+            (8, 4),
+            (8, 8),
+            (8, 16),
+            (16, 8),
+            (16, 16),
+            (16, 32),
+            (32, 16),
+            (32, 32),
+            (32, 64),
+            (64, 32),
+            (64, 64),
+            (4, 16),
+            (16, 4),
+        ];
+        let mut compared = 0usize;
+        for &(w, h) in &dims {
+            for &ba in &base_angles {
+                for &fl in &flag_sets {
+                    let angle = ba | fl;
+                    // Full block (max_width == width, max_height == height),
+                    // matching the common decoder path. Some synthetic
+                    // angle/dim combos exceed the edge-buffer reach that the
+                    // real decoder guarantees and panic the *reference* kernel;
+                    // those are not valid decoder inputs, so skip any config
+                    // where the reference itself faults and only assert
+                    // bit-equality on configs the reference accepts.
+                    let (mw, mh) = (w as i32, h as i32);
+                    let ref_ok = std::panic::catch_unwind(|| {
+                        let (tl, tl_off) = make_topleft();
+                        let mut d = vec![7u8; 64 * 64];
+                        let t3 = crate::src::cpu::summon_avx2().expect("avx2");
+                        ipred_z2_8bpc_inner(t3, &mut d, 0, 64, &tl, tl_off, w, h, angle, mw, mh);
+                    })
+                    .is_ok();
+                    if !ref_ok {
+                        continue;
+                    }
+                    let (a, b) = run_z2(w, h, angle, mw, mh);
+                    assert_block_eq(
+                        &a, &b, w, h, 64,
+                        &format!("z2 w={w} h={h} angle={angle} mw={mw} mh={mh}"),
+                    );
+                    compared += 1;
+                }
+            }
+        }
+        eprintln!("z2_v4x compared {compared} configs");
+        assert!(compared >= 100, "z2 test compared too few configs: {compared}");
     }
 }
