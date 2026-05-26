@@ -6500,3 +6500,100 @@ pub fn cfl_ac_dispatch<BD: BitDepth>(
     }
     true
 }
+
+
+// ============================================================================
+// AVX-512ICL (v4x) directional predictor bit-exactness tests
+// ============================================================================
+//
+// Compare the v4x (vpermb/vpermi2b) directional kernels against the AVX2
+// reference kernel byte-for-byte. On a box that summons both Desktop64 and
+// X64V4xToken (e.g. Zen 4) this runs the real kernels with real tokens -- no
+// forge_token_dangerously, no unsafe. On a box without v4x the comparison is
+// skipped (the v4x path is never taken there; AVX2 covers correctness, which
+// decode_md5_verify checks end-to-end). The skip decision is visible here at
+// the top of the test, not buried inside a kernel.
+#[cfg(all(test, target_arch = "x86_64"))]
+mod v4x_dir_tests {
+    use super::*;
+
+    // Topleft scratch buffer with deterministic pseudo-random samples. `tl_off`
+    // sits well inside so both negative (left) and positive (top) reaches are
+    // valid for any width/height up to 64.
+    fn make_topleft() -> (Vec<u8>, usize) {
+        let total = 512usize;
+        let tl_off = 200usize;
+        let mut buf = vec![0u8; total];
+        let mut st: u32 = 0x1234_5678;
+        for b in buf.iter_mut() {
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            *b = (st >> 3) as u8;
+        }
+        (buf, tl_off)
+    }
+
+    fn run_z1(w: usize, h: usize, angle: i32) -> (Vec<u8>, Vec<u8>) {
+        let (tl, tl_off) = make_topleft();
+        let stride = 64isize;
+        let mut dst_a = vec![7u8; 64 * 64];
+        let mut dst_b = vec![7u8; 64 * 64];
+        let t3 = crate::src::cpu::summon_avx2().expect("avx2");
+        let t4x = crate::src::cpu::summon_avx512x().expect("v4x");
+        ipred_z1_8bpc_inner(t3, &mut dst_a, 0, stride, &tl, tl_off, w, h, angle);
+        ipred_z1_8bpc_v4x_inner(t4x, &mut dst_b, 0, stride, &tl, tl_off, w, h, angle);
+        (dst_a, dst_b)
+    }
+
+    fn assert_block_eq(a: &[u8], b: &[u8], w: usize, h: usize, stride: usize, label: &str) {
+        for y in 0..h {
+            for x in 0..w {
+                let off = y * stride + x;
+                assert_eq!(
+                    a[off], b[off],
+                    "{label}: mismatch at ({x},{y}) avx2={} v4x={}",
+                    a[off], b[off]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn z1_v4x_matches_avx2() {
+        if crate::src::cpu::summon_avx512x().is_none() {
+            eprintln!("z1_v4x_matches_avx2: X64V4xToken unavailable, skipping (AVX2 path used)");
+            return;
+        }
+        // Representative z1 base angles (< 90, non-zero derivative). Bit 1<<10
+        // enables the intra-edge filter; 1<<9 selects smooth.
+        let base_angles = [3, 6, 14, 22, 30, 36, 44, 52, 60, 66, 74, 82, 86];
+        let flag_sets = [0i32, 1 << 10, (1 << 10) | (1 << 9)];
+        let dims = [
+            (4, 4),
+            (4, 8),
+            (8, 4),
+            (8, 8),
+            (8, 16),
+            (16, 8),
+            (16, 16),
+            (16, 32),
+            (32, 16),
+            (32, 32),
+            (32, 64),
+            (64, 32),
+            (64, 64),
+            (4, 16),
+            (16, 4),
+        ];
+        for &(w, h) in &dims {
+            for &ba in &base_angles {
+                for &fl in &flag_sets {
+                    let angle = ba | fl;
+                    let (a, b) = run_z1(w, h, angle);
+                    assert_block_eq(&a, &b, w, h, 64, &format!("z1 w={w} h={h} angle={angle}"));
+                }
+            }
+        }
+    }
+}
