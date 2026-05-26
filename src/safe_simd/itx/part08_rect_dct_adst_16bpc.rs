@@ -387,8 +387,11 @@ fn inv_txfm_add_dct_dct_16x8_16bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 16 columns (2 chunks of 8), 8 rows
-    {
+    // Column transform: SIMD across 16 columns (8 rows). AVX-512 does both
+    // 16-col chunks at once; AVX2 falls back to 2 chunks of 8.
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct8_cols_avx512(t512, &mut tmp, 16, 8, col_clip_min, col_clip_max);
+    } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
         for cx_chunk in 0..2 {
@@ -1184,8 +1187,11 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_avx2_inner(
         }
     }
 
-    // Column transform: SIMD across 32 columns (4 chunks of 8), 8 rows
-    {
+    // Column transform: SIMD across 32 columns (8 rows). AVX-512 does 16-col
+    // chunks (2 chunks); AVX2 falls back to 4 chunks of 8.
+    if let Some(t512) = crate::src::cpu::summon_avx512() {
+        dct8_cols_avx512(t512, &mut tmp, 32, 8, col_clip_min, col_clip_max);
+    } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
         for cx_chunk in 0..4 {

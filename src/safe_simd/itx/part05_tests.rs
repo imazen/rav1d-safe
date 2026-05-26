@@ -1131,5 +1131,89 @@ mod tests {
         }
         assert_eq!(total, 0, "simd_row_dct32_8bpc_16rows diverged from scalar");
     }
+
+    /// `dct8_cols_avx512` column pass: process a `total_w` x 8 row-major i32
+    /// buffer and compare each transformed column against the scalar
+    /// `rav1d_inv_dct8_1d_c` oracle. Exercised on 16- and 32-wide buffers
+    /// (the Nx8 transform widths it is wired into) across 8 seeds. Bit-exact.
+    #[test]
+    fn test_dct8_cols_avx512_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx512() else {
+            eprintln!("Skipping: AVX-512 not available");
+            return;
+        };
+        let col_min = i16::MIN as i32;
+        let col_max = i16::MAX as i32;
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+        ];
+        let mut total = 0u32;
+        for &total_w in &[16usize, 32usize] {
+            for &seed in seeds {
+                // total_w cols x 8 rows, row-major i32 input, derived from a
+                // seeded i16 block clamped to the col-clip range.
+                let n = total_w * 8;
+                let raw: Vec<i16> = (0..n)
+                    .map(|i| {
+                        let s = seed
+                            .wrapping_mul(6364136223846793005)
+                            .wrapping_add(i as u64)
+                            .wrapping_mul(1442695040888963407);
+                        (s >> 33) as i16
+                    })
+                    .collect();
+                let mut input = vec![0i32; n];
+                for i in 0..n {
+                    input[i] = raw[i] as i32;
+                }
+
+                // Scalar oracle: dct8 down each of total_w columns.
+                let mut scalar = input.clone();
+                for cx in 0..total_w {
+                    let mut col = [0i32; 8];
+                    for r in 0..8 {
+                        col[r] = input[r * total_w + cx];
+                    }
+                    crate::src::itx_1d::rav1d_inv_dct8_1d_c(
+                        &mut col,
+                        std::num::NonZeroUsize::new(1).unwrap(),
+                        col_min,
+                        col_max,
+                    );
+                    for r in 0..8 {
+                        scalar[r * total_w + cx] = col[r];
+                    }
+                }
+
+                let mut simd = input.clone();
+                dct8_cols_avx512(token, &mut simd, total_w, 8, col_min, col_max);
+
+                if simd != scalar {
+                    for i in 0..n {
+                        if simd[i] != scalar[i] && total < 8 {
+                            eprintln!(
+                                "dct8-cols512 w={total_w} seed={seed:#x} idx={i} row={} col={} scalar={} simd={}",
+                                i / total_w,
+                                i % total_w,
+                                scalar[i],
+                                simd[i]
+                            );
+                        }
+                        if simd[i] != scalar[i] {
+                            total += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(total, 0, "dct8_cols_avx512 diverged from scalar");
+    }
 }
 

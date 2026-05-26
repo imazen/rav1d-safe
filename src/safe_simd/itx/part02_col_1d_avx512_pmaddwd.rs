@@ -704,6 +704,46 @@ fn dct16_cols_avx512(
     }
 }
 
+/// Run dct8 1D column transform over a row-major buffer using AVX-512.
+/// `tmp` has `total_w` cols × `n_rows` rows (n_rows is the DCT height, here 8).
+/// Processes 16 cols at a time. `total_w` must be a multiple of 16.
+///
+/// The transform array `[__m512i; 8]` holds 8 column-vectors (one per DCT row);
+/// each 512-bit vector packs 16 columns (lanes). Lanes are independent, so this
+/// is bit-identical to the AVX2 `dct8_1d_cols8` math (same `dct8_1d_cols16`
+/// the AVX-512 column path already uses) computed 16-wide instead of 8-wide.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn dct8_cols_avx512(
+    token: Server64,
+    tmp: &mut [i32],
+    total_w: usize,
+    n_rows: usize,
+    min: i32,
+    max: i32,
+) {
+    let min_v = _mm512_set1_epi32(min);
+    let max_v = _mm512_set1_epi32(max);
+    let n_chunks = total_w / 16;
+    for cx_chunk in 0..n_chunks {
+        let cx = cx_chunk * 16;
+        let mut v = [_mm512_setzero_si512(); 8];
+        for i in 0..8usize.min(n_rows) {
+            let arr_ref: &[i32; 16] = (&tmp[i * total_w + cx..i * total_w + cx + 16])
+                .try_into()
+                .unwrap();
+            v[i] = loadu_512!(arr_ref);
+        }
+        dct8_1d_cols16(token, &mut v, min_v, max_v);
+        for i in 0..8usize.min(n_rows) {
+            let arr_ref: &mut [i32; 16] = (&mut tmp[i * total_w + cx..i * total_w + cx + 16])
+                .try_into()
+                .unwrap();
+            storeu_512!(arr_ref, v[i]);
+        }
+    }
+}
+
 // =============================================================================
 // AVX-512 row pass support: 16-row transpose + 16-row DCT row passes
 //
