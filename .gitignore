@@ -23,3 +23,7 @@ copter-report/
 Cargo.toml.original.txt
 *.rs.local
 .workongoing
+
+# Generated build/profiling artifacts (tracked by mistake, now untracked)
+rust_out
+wasmtime-guest-profile.json

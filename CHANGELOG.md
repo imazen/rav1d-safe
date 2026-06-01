@@ -8,6 +8,9 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
 
+### Changed
+- Trim benches/ from published tarball; guard `cargo:rustc-link-arg-benches` in build.rs on benches/ existence so `cargo package` verify succeeds. Untrack committed artifacts (rust_out ELF binary, wasmtime-guest-profile.json profiling output) and add them to .gitignore. (packaging hygiene)
+
 ## [0.5.7] - 2026-05-26
 
 Memory-safety release. Supersedes 0.5.6 (yanked).

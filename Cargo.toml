@@ -19,7 +19,6 @@ include = [
     "/include/**/*.rs",
     "/lib.rs",
     "/build.rs",
-    "/benches/**",
     "/examples/**",
     "/README.md",
     "/CHANGELOG.md",
