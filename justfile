@@ -36,9 +36,18 @@ clippy:
 fmt-check:
     cargo fmt --all -- --check
 
-# Format code
+# Format code + regenerate the public-API surface snapshots (docs/public-api/)
 fmt:
     cargo fmt --all
+    cargo test -p rav1d-safe --test public_api_doc
+
+# Regenerate the public-API surface snapshots only
+api-doc:
+    cargo test -p rav1d-safe --test public_api_doc
+
+# Verify the committed snapshots are current (what CI runs)
+api-doc-check:
+    ZEN_API_DOC=check cargo test -p rav1d-safe --test public_api_doc
 
 # Run all checks (fmt, clippy, test)
 check: fmt-check clippy test

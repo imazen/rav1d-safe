@@ -10,6 +10,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Public-API snapshot regen (tests/public_api_doc.rs) needs nightly
+  # rustdoc + cargo-public-api; only the clippy job carries them and runs the
+  # =check gate. Everywhere else the test skips.
+  ZEN_API_DOC: off
 
 jobs:
   # ==========================================================================
@@ -131,6 +135,20 @@ jobs:
       # C-FFI build (strict — must pass)
       - name: Clippy (c-ffi)
         run: cargo clippy --no-default-features --features "c-ffi,bitdepth_8,bitdepth_16" -- -D warnings
+
+      # Public-API snapshot check: the all-features section enables `asm`,
+      # so the rustdoc JSON build needs NASM.
+      - name: Install NASM
+        run: sudo apt-get update && sudo apt-get install -y nasm
+      - uses: dtolnay/rust-toolchain@nightly # rustdoc JSON for cargo-public-api
+      - uses: dtolnay/rust-toolchain@stable # restore stable as default
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-public-api
+      - name: Public-API snapshots are current
+        run: cargo test -p rav1d-safe --test public_api_doc
+        env:
+          ZEN_API_DOC: check
 
   # ==========================================================================
   # Format check
