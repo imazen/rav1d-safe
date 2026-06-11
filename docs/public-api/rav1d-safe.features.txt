@@ -1,0 +1,157 @@
+# rav1d-safe public API — additions from non-default features
+# features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,simd_test,unchecked
+# (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
+# Encodings: crate-name prefix stripped; auto traits collapse to a
+# count + exceptions; trait impls collapse to one roster line per
+# type (method signatures live at the trait definition); blanket
+# impls omitted; re-export duplicates annotated `[also: path]`.
+# DO NOT EDIT BY HAND — commit regenerated changes with the code.
+
+## summary
+#
+#   pub modules                                 2
+#   pub types (struct/enum/trait/alias)        13
+#   pub consts/statics                          2
+#   inherent methods                            6
+#   struct fields                              50
+#   enum variants                              25
+#   trait roster entries (type × trait)        16
+#   auto-trait-complete types                   6
+#   auto-trait exceptions                       6
+#
+# per-module pub lines:
+#   (root)                           27
+#   include                          66
+#   src                               5
+
+## items (98 lines)
+
+#[repr(C)] pub struct include::dav1d::common::Dav1dDataProps
+pub include::dav1d::common::Dav1dDataProps::duration: i64
+pub include::dav1d::common::Dav1dDataProps::offset: i64
+pub include::dav1d::common::Dav1dDataProps::size: usize
+pub include::dav1d::common::Dav1dDataProps::timestamp: i64
+pub include::dav1d::common::Dav1dDataProps::user_data: include::dav1d::common::Dav1dUserData
+#[repr(C)] pub struct include::dav1d::common::Dav1dUserData
+pub include::dav1d::common::Dav1dUserData::data: core::option::Option<core::ptr::non_null::NonNull<u8>>
+pub include::dav1d::common::Dav1dUserData::ref: core::option::Option<src::c_arc::RawCArc<u8>>
+#[repr(C)] pub struct include::dav1d::data::Dav1dData
+pub include::dav1d::data::Dav1dData::data: core::option::Option<core::ptr::non_null::NonNull<u8>>
+pub include::dav1d::data::Dav1dData::m: include::dav1d::common::Dav1dDataProps
+pub include::dav1d::data::Dav1dData::ref: core::option::Option<src::c_arc::RawCArc<[u8]>>
+pub include::dav1d::data::Dav1dData::sz: usize
+#[repr(C)] pub struct include::dav1d::dav1d::Dav1dLogger
+pub unsafe const fn include::dav1d::dav1d::Dav1dLogger::new(core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>, core::option::Option<fn(core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>, *const core::ffi::primitives::c_char)>) -> Self
+#[repr(C)] pub struct include::dav1d::dav1d::Dav1dSettings
+pub include::dav1d::dav1d::Dav1dSettings::all_layers: core::ffi::primitives::c_int
+pub include::dav1d::dav1d::Dav1dSettings::allocator: include::dav1d::picture::Dav1dPicAllocator
+pub include::dav1d::dav1d::Dav1dSettings::apply_grain: core::ffi::primitives::c_int
+pub include::dav1d::dav1d::Dav1dSettings::decode_frame_type: include::dav1d::dav1d::Dav1dDecodeFrameType
+pub include::dav1d::dav1d::Dav1dSettings::frame_size_limit: core::ffi::primitives::c_uint
+pub include::dav1d::dav1d::Dav1dSettings::inloop_filters: include::dav1d::dav1d::Dav1dInloopFilterType
+pub include::dav1d::dav1d::Dav1dSettings::logger: include::dav1d::dav1d::Dav1dLogger
+pub include::dav1d::dav1d::Dav1dSettings::max_frame_delay: core::ffi::primitives::c_int
+pub include::dav1d::dav1d::Dav1dSettings::n_threads: core::ffi::primitives::c_int
+pub include::dav1d::dav1d::Dav1dSettings::operating_point: core::ffi::primitives::c_int
+pub include::dav1d::dav1d::Dav1dSettings::output_invisible_frames: core::ffi::primitives::c_int
+pub include::dav1d::dav1d::Dav1dSettings::reserved: [u8; 16]
+pub include::dav1d::dav1d::Dav1dSettings::strict_std_compliance: core::ffi::primitives::c_int
+pub type include::dav1d::dav1d::Dav1dContext = src::c_arc::RawArc<src::internal::Rav1dContext>
+pub type include::dav1d::dav1d::Dav1dRef = ()
+#[repr(C)] pub struct include::dav1d::headers::Dav1dITUTT35
+pub include::dav1d::headers::Dav1dITUTT35::country_code: u8
+pub include::dav1d::headers::Dav1dITUTT35::country_code_extension_byte: u8
+pub include::dav1d::headers::Dav1dITUTT35::payload: include::dav1d::headers::ITUTT35PayloadPtr
+pub include::dav1d::headers::Dav1dITUTT35::payload_size: usize
+#[repr(transparent)] pub struct include::dav1d::headers::ITUTT35PayloadPtr(_)
+#[repr(C)] pub struct include::dav1d::picture::Dav1dPicAllocator
+pub include::dav1d::picture::Dav1dPicAllocator::alloc_picture_callback: core::option::Option<fn(*mut include::dav1d::picture::Dav1dPicture, core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>) -> src::error::Dav1dResult>
+pub include::dav1d::picture::Dav1dPicAllocator::cookie: core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>
+pub include::dav1d::picture::Dav1dPicAllocator::release_picture_callback: core::option::Option<fn(*mut include::dav1d::picture::Dav1dPicture, core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>)>
+#[repr(C)] pub struct include::dav1d::picture::Dav1dPicture
+pub include::dav1d::picture::Dav1dPicture::allocator_data: core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>
+pub include::dav1d::picture::Dav1dPicture::content_light: core::option::Option<core::ptr::non_null::NonNull<include::dav1d::headers::Rav1dContentLightLevel>>
+pub include::dav1d::picture::Dav1dPicture::content_light_ref: core::option::Option<src::c_arc::RawArc<include::dav1d::headers::Rav1dContentLightLevel>>
+pub include::dav1d::picture::Dav1dPicture::data: [core::option::Option<core::ptr::non_null::NonNull<core::ffi::c_void>>; 3]
+pub include::dav1d::picture::Dav1dPicture::frame_hdr: core::option::Option<core::ptr::non_null::NonNull<include::dav1d::headers::Dav1dFrameHeader>>
+pub include::dav1d::picture::Dav1dPicture::frame_hdr_ref: core::option::Option<src::c_arc::RawArc<include::dav1d::headers::DRav1d<include::dav1d::headers::Rav1dFrameHeader, include::dav1d::headers::Dav1dFrameHeader>>>
+pub include::dav1d::picture::Dav1dPicture::itut_t35: core::option::Option<core::ptr::non_null::NonNull<include::dav1d::headers::Dav1dITUTT35>>
+pub include::dav1d::picture::Dav1dPicture::itut_t35_ref: core::option::Option<src::c_arc::RawArc<include::dav1d::headers::DRav1d<alloc::boxed::Box<[include::dav1d::headers::Rav1dITUTT35]>, alloc::boxed::Box<[include::dav1d::headers::Dav1dITUTT35]>>>>
+pub include::dav1d::picture::Dav1dPicture::m: include::dav1d::common::Dav1dDataProps
+pub include::dav1d::picture::Dav1dPicture::mastering_display: core::option::Option<core::ptr::non_null::NonNull<include::dav1d::headers::Rav1dMasteringDisplay>>
+pub include::dav1d::picture::Dav1dPicture::mastering_display_ref: core::option::Option<src::c_arc::RawArc<include::dav1d::headers::Rav1dMasteringDisplay>>
+pub include::dav1d::picture::Dav1dPicture::n_itut_t35: usize
+pub include::dav1d::picture::Dav1dPicture::p: include::dav1d::picture::Dav1dPictureParameters
+pub include::dav1d::picture::Dav1dPicture::ref: core::option::Option<src::c_arc::RawArc<include::dav1d::picture::Rav1dPictureData>>
+pub include::dav1d::picture::Dav1dPicture::reserved: [usize; 4]
+pub include::dav1d::picture::Dav1dPicture::reserved_ref: [usize; 4]
+pub include::dav1d::picture::Dav1dPicture::seq_hdr: core::option::Option<core::ptr::non_null::NonNull<include::dav1d::headers::Dav1dSequenceHeader>>
+pub include::dav1d::picture::Dav1dPicture::seq_hdr_ref: core::option::Option<src::c_arc::RawArc<include::dav1d::headers::DRav1d<include::dav1d::headers::Rav1dSequenceHeader, include::dav1d::headers::Dav1dSequenceHeader>>>
+pub include::dav1d::picture::Dav1dPicture::stride: [isize; 2]
+pub fn include::dav1d::picture::Rav1dPictureDataComponent::as_strided_mut_ptr<BD: include::common::bitdepth::BitDepth>(&self) -> *mut <BD as include::common::bitdepth::BitDepth>::Pixel
+pub fn include::dav1d::picture::Rav1dPictureDataComponent::as_strided_ptr<BD: include::common::bitdepth::BitDepth>(&self) -> *const <BD as include::common::bitdepth::BitDepth>::Pixel
+pub struct include::dav1d::picture::Rav1dPictureDataComponentInner
+pub fn include::dav1d::picture::Rav1dPictureDataComponentInner::wrap_buf<BD: include::common::bitdepth::BitDepth>(&mut [<BD as include::common::bitdepth::BitDepth>::Pixel], usize) -> Self
+pub unsafe fn include::dav1d::picture::Rav1dPictureDataComponentInner::as_mut_ptr(*mut Self) -> *mut Self::Target
+pub unsafe fn include::dav1d::picture::Rav1dPictureDataComponentInner::as_mut_slice(*mut Self) -> *mut [Self::Target]
+pub fn include::dav1d::picture::Rav1dPictureDataComponentInner::len(&self) -> usize
+pub mod src::dav1d_api
+#[export_name = "dav1d_apply_grain"] pub unsafe c fn src::dav1d_api::dav1d_apply_grain(core::option::Option<include::dav1d::dav1d::Dav1dContext>, core::option::Option<core::ptr::non_null::NonNull<include::dav1d::picture::Dav1dPicture>>, core::option::Option<core::ptr::non_null::NonNull<include::dav1d::picture::Dav1dPicture>>) -> src::error::Dav1dResult
+#[export_name = "dav1d_close"] pub unsafe c fn src::dav1d_api::dav1d_close(core::option::Option<core::ptr::non_null::NonNull<core::option::Option<include::dav1d::dav1d::Dav1dContext>>>)
+#[export_name = "dav1d_data_create"] pub unsafe c fn src::dav1d_api::dav1d_data_create(core::option::Option<core::ptr::non_null::NonNull<include::dav1d::data::Dav1dData>>, usize) -> *mut u8
+#[export_name = "dav1d_data_props_unref"] pub unsafe c fn src::dav1d_api::dav1d_data_props_unref(core::option::Option<core::ptr::non_null::NonNull<include::dav1d::common::Dav1dDataProps>>)
+#[export_name = "dav1d_data_unref"] pub unsafe c fn src::dav1d_api::dav1d_data_unref(core::option::Option<core::ptr::non_null::NonNull<include::dav1d::data::Dav1dData>>)
+#[export_name = "dav1d_data_wrap"] pub unsafe c fn src::dav1d_api::dav1d_data_wrap(core::option::Option<core::ptr::non_null::NonNull<include::dav1d::data::Dav1dData>>, core::option::Option<core::ptr::non_null::NonNull<u8>>, usize, core::option::Option<fn(*const u8, core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>)>, core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>) -> src::error::Dav1dResult
+#[export_name = "dav1d_data_wrap_user_data"] pub unsafe c fn src::dav1d_api::dav1d_data_wrap_user_data(core::option::Option<core::ptr::non_null::NonNull<include::dav1d::data::Dav1dData>>, core::option::Option<core::ptr::non_null::NonNull<u8>>, core::option::Option<fn(*const u8, core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>)>, core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>) -> src::error::Dav1dResult
+#[export_name = "dav1d_default_settings"] pub unsafe c fn src::dav1d_api::dav1d_default_settings(core::ptr::non_null::NonNull<include::dav1d::dav1d::Dav1dSettings>)
+#[export_name = "dav1d_flush"] pub unsafe c fn src::dav1d_api::dav1d_flush(include::dav1d::dav1d::Dav1dContext)
+#[export_name = "dav1d_get_decode_error_data_props"] pub unsafe c fn src::dav1d_api::dav1d_get_decode_error_data_props(core::option::Option<include::dav1d::dav1d::Dav1dContext>, core::option::Option<core::ptr::non_null::NonNull<include::dav1d::common::Dav1dDataProps>>) -> src::error::Dav1dResult
+#[export_name = "dav1d_get_event_flags"] pub unsafe c fn src::dav1d_api::dav1d_get_event_flags(core::option::Option<include::dav1d::dav1d::Dav1dContext>, core::option::Option<core::ptr::non_null::NonNull<include::dav1d::dav1d::Dav1dEventFlags>>) -> src::error::Dav1dResult
+#[export_name = "dav1d_get_frame_delay"] pub unsafe c fn src::dav1d_api::dav1d_get_frame_delay(core::option::Option<core::ptr::non_null::NonNull<include::dav1d::dav1d::Dav1dSettings>>) -> src::error::Dav1dResult
+#[export_name = "dav1d_get_picture"] pub unsafe c fn src::dav1d_api::dav1d_get_picture(core::option::Option<include::dav1d::dav1d::Dav1dContext>, core::option::Option<core::ptr::non_null::NonNull<include::dav1d::picture::Dav1dPicture>>) -> src::error::Dav1dResult
+#[export_name = "dav1d_open"] pub unsafe c fn src::dav1d_api::dav1d_open(core::option::Option<core::ptr::non_null::NonNull<core::option::Option<include::dav1d::dav1d::Dav1dContext>>>, core::option::Option<core::ptr::non_null::NonNull<include::dav1d::dav1d::Dav1dSettings>>) -> src::error::Dav1dResult
+#[export_name = "dav1d_parse_sequence_header"] pub unsafe c fn src::dav1d_api::dav1d_parse_sequence_header(core::option::Option<core::ptr::non_null::NonNull<include::dav1d::headers::Dav1dSequenceHeader>>, core::option::Option<core::ptr::non_null::NonNull<u8>>, usize) -> src::error::Dav1dResult
+#[export_name = "dav1d_picture_unref"] pub unsafe c fn src::dav1d_api::dav1d_picture_unref(core::option::Option<core::ptr::non_null::NonNull<include::dav1d::picture::Dav1dPicture>>)
+#[export_name = "dav1d_send_data"] pub unsafe c fn src::dav1d_api::dav1d_send_data(core::option::Option<include::dav1d::dav1d::Dav1dContext>, core::option::Option<core::ptr::non_null::NonNull<include::dav1d::data::Dav1dData>>) -> src::error::Dav1dResult
+#[export_name = "dav1d_version"] pub c fn src::dav1d_api::dav1d_version() -> *const core::ffi::primitives::c_char
+#[export_name = "dav1d_version_api"] pub c fn src::dav1d_api::dav1d_version_api() -> core::ffi::primitives::c_uint
+pub mod src::send_sync_non_null
+#[repr(transparent)] pub struct src::send_sync_non_null::SendSyncNonNull<T: ?core::marker::Sized>(_)
+pub const fn src::send_sync_non_null::SendSyncNonNull<T>::as_ptr(&self) -> core::ptr::non_null::NonNull<T>
+pub unsafe const fn src::send_sync_non_null::SendSyncNonNull<T>::as_ref(&self) -> &T
+pub fn src::send_sync_non_null::SendSyncNonNull<T>::from_box(alloc::boxed::Box<T>) -> Self
+pub fn src::send_sync_non_null::SendSyncNonNull<T>::from_ref(&T) -> Self
+pub unsafe fn src::send_sync_non_null::SendSyncNonNull<T>::into_box(self) -> alloc::boxed::Box<T>
+pub unsafe const fn src::send_sync_non_null::SendSyncNonNull<T>::new_unchecked(core::ptr::non_null::NonNull<T>) -> Self
+pub const fn src::send_sync_non_null::SendSyncNonNull<T>::cast<U>(self) -> src::send_sync_non_null::SendSyncNonNull<U>
+
+## trait impls (11 types)
+
+core::option::Option<Rav1dLogger>: From<include::dav1d::dav1d::Dav1dLogger>
+core::option::Option<src::c_arc::CArc<u8>>: From<include::dav1d::common::Dav1dUserData>
+include::dav1d::common::Dav1dDataProps: Default
+include::dav1d::common::Dav1dUserData: Default, From<core::option::Option<src::c_arc::CArc<u8>>>
+include::dav1d::data::Dav1dData: Default
+include::dav1d::dav1d::Dav1dLogger: Clone, From<core::option::Option<Rav1dLogger>>, Write
+include::dav1d::headers::Dav1dITUTT35: From<&include::dav1d::headers::Rav1dITUTT35>
+include::dav1d::picture::Dav1dPicAllocator: Clone
+include::dav1d::picture::Dav1dPicture: Default
+include::dav1d::picture::Rav1dPictureDataComponentInner: rav1d_disjoint_mut::ExternalAsMutPtr
+src::send_sync_non_null::SendSyncNonNull<T>: Clone, Copy, Debug
+
+## auto traits
+
+6 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+include::dav1d::common::Dav1dDataProps: !Send !Sync
+include::dav1d::common::Dav1dUserData: !Send !Sync
+include::dav1d::data::Dav1dData: !Send !Sync
+include::dav1d::picture::Dav1dPicture: !RefUnwindSafe !Send !Sync !UnwindSafe
+include::dav1d::picture::Rav1dPictureData: !Freeze !RefUnwindSafe !Send !Sync !Unpin
+src::send_sync_non_null::SendSyncNonNull<T>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
+
+## removed by features (4 lines)
+
+pub type include::dav1d::headers::Dav1dITUTT35 = include::dav1d::headers::Rav1dITUTT35
+impl !core::panic::unwind_safe::UnwindSafe for include::dav1d::picture::Rav1dPictureData
+pub fn include::dav1d::picture::Rav1dPictureDataComponent::copy_pixels_to<BD: include::common::bitdepth::BitDepth>(&self, &mut [<BD as include::common::bitdepth::BitDepth>::Pixel])
+pub type include::dav1d::picture::Rav1dPictureDataComponentInner = rav1d_disjoint_mut::pic_buf::PicBuf

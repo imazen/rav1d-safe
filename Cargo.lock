@@ -874,7 +874,6 @@ dependencies = [
  "rav1d-disjoint-mut",
  "raw-cpuid",
  "safe_unaligned_simd",
- "serde_json",
  "strum",
  "tango-bench",
  "to_method",

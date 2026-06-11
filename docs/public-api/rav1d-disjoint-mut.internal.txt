@@ -1,0 +1,46 @@
+# rav1d-disjoint-mut public API — doc(hidden) items and excluded-feature surface
+# excluded features: (none)
+# (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
+# Encodings: crate-name prefix stripped; auto traits collapse to a
+# count + exceptions; trait impls collapse to one roster line per
+# type (method signatures live at the trait definition); blanket
+# impls omitted; re-export duplicates annotated `[also: path]`.
+# DO NOT EDIT BY HAND — commit regenerated changes with the code.
+
+## summary
+#
+#   pub types (struct/enum/trait/alias)         2
+#   pub consts/statics                          1
+#   inherent methods                            8
+#   struct fields                               1
+#   enum variants                               2
+#   trait roster entries (type × trait)         2
+#   auto-trait-complete types                   1
+#
+# per-module pub lines:
+#   (root)                           14
+
+## items (14 lines)
+
+pub const fn DisjointMut<T>::inner(&self) -> *mut T
+pub fn Bounds::assert_fields_are_eq(&self)
+pub fn PicBuf::as_usable_bytes(&self) -> &[u8]
+pub fn PicBuf::default() -> PicBuf
+pub fn PicBuf::from_slice_copy(&[u8]) -> Self
+pub fn PicBuf::from_vec_aligned(alloc::vec::Vec<u8>, usize, usize) -> Self
+pub fn PicBuf::is_empty(&self) -> bool
+pub fn PicBuf::len(&self) -> usize
+pub fn PicBuf::take_buf(&mut self) -> core::option::Option<alloc::vec::Vec<u8>>
+pub DisjointMutArcSlice::inner: alloc::sync::Arc<DisjointMutSlice<T>>
+pub struct PicBuf
+pub type PicBuf::Target = u8
+pub unsafe fn PicBuf::as_mut_ptr(*mut Self) -> *mut u8
+pub unsafe fn PicBuf::as_mut_slice(*mut Self) -> *mut [u8]
+
+## trait impls (1 types)
+
+PicBuf: AsMutPtr, Default
+
+## auto traits
+
+1 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe

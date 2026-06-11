@@ -1,0 +1,87 @@
+# rav1d-safe public API — doc(hidden) items and excluded-feature surface
+# excluded features: (none)
+# (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
+# Encodings: crate-name prefix stripped; auto traits collapse to a
+# count + exceptions; trait impls collapse to one roster line per
+# type (method signatures live at the trait definition); blanket
+# impls omitted; re-export duplicates annotated `[also: path]`.
+# DO NOT EDIT BY HAND — commit regenerated changes with the code.
+
+## summary
+#
+#   pub types (struct/enum/trait/alias)         3
+#   inherent methods                           29
+#   trait roster entries (type × trait)        31
+#
+# per-module pub lines:
+#   include                          23
+#   src                               9
+
+## items (32 lines)
+
+pub fn include::dav1d::headers::Rav1dAdaptiveBoolean::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dChromaSamplePosition::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dColorPrimaries::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dFilterMode::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dFrameType::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dMatrixCoefficients::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dObuType::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dPixelLayout::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dProfile::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dRestorationType::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dSequenceHeaderOperatingParameterInfo::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dSequenceHeaderOperatingPoint::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dTransferCharacteristics::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dTxfmMode::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::Rav1dWarpedMotionType::assert_fields_are_eq(&self)
+pub fn include::dav1d::headers::SgrIdx::assert_fields_are_eq(&self)
+pub fn include::dav1d::picture::AlignedPixelChunk::is_bit_valid<___ZcAlignment>(zerocopy::pointer::Maybe<'_, Self, ___ZcAlignment>) -> bool where ___ZcAlignment: zerocopy::pointer::invariant::Alignment
+pub fn include::dav1d::picture::AlignedPixelChunk::only_derive_is_allowed_to_implement_this_trait()
+pub fn include::dav1d::picture::AlignedPixelChunk::pointer_to_metadata(*mut Self) -> <Self as zerocopy::KnownLayout>::PointerMetadata
+pub fn include::dav1d::picture::AlignedPixelChunk::raw_from_ptr_len(core::ptr::non_null::NonNull<u8>, <Self as zerocopy::KnownLayout>::PointerMetadata) -> core::ptr::non_null::NonNull<Self>
+pub fn src::managed::ColorPrimaries::assert_fields_are_eq(&self)
+pub fn src::managed::ColorRange::assert_fields_are_eq(&self)
+pub fn src::managed::CpuLevel::assert_fields_are_eq(&self)
+pub fn src::managed::DecodeFrameType::assert_fields_are_eq(&self)
+pub fn src::managed::Error::assert_fields_are_eq(&self)
+pub fn src::managed::InloopFilters::assert_fields_are_eq(&self)
+pub fn src::managed::MatrixCoefficients::assert_fields_are_eq(&self)
+pub fn src::managed::PixelLayout::assert_fields_are_eq(&self)
+pub fn src::managed::TransferCharacteristics::assert_fields_are_eq(&self)
+pub type include::dav1d::picture::AlignedPixelChunk::MaybeUninit = __ZerocopyKnownLayoutMaybeUninit
+pub type include::dav1d::picture::AlignedPixelChunk::ProjectToTag = zerocopy::pointer::cast::CastToUnit
+pub type include::dav1d::picture::AlignedPixelChunk::Tag = ()
+
+## trait impls (31 types)
+
+include::dav1d::headers::Dav1dSequenceHeaderOperatingParameterInfo: TrivialClone
+include::dav1d::headers::Dav1dSequenceHeaderOperatingPoint: TrivialClone
+include::dav1d::headers::Rav1dAdaptiveBoolean: TrivialClone
+include::dav1d::headers::Rav1dChromaSamplePosition: TrivialClone
+include::dav1d::headers::Rav1dColorPrimaries: TrivialClone
+include::dav1d::headers::Rav1dFilterMode: TrivialClone
+include::dav1d::headers::Rav1dFrameHeaderOperatingPoint: TrivialClone
+include::dav1d::headers::Rav1dFrameType: TrivialClone
+include::dav1d::headers::Rav1dMatrixCoefficients: TrivialClone
+include::dav1d::headers::Rav1dObuType: TrivialClone
+include::dav1d::headers::Rav1dPixelLayout: TrivialClone
+include::dav1d::headers::Rav1dProfile: TrivialClone
+include::dav1d::headers::Rav1dRestorationType: TrivialClone
+include::dav1d::headers::Rav1dSequenceHeaderOperatingParameterInfo: TrivialClone
+include::dav1d::headers::Rav1dSequenceHeaderOperatingPoint: TrivialClone
+include::dav1d::headers::Rav1dTransferCharacteristics: TrivialClone
+include::dav1d::headers::Rav1dTxfmMode: TrivialClone
+include::dav1d::headers::Rav1dWarpedMotionType: TrivialClone
+include::dav1d::headers::SgrIdx: TrivialClone
+include::dav1d::picture::AlignedPixelChunk: zerocopy::HasTag
+src::managed::ColorInfo: TrivialClone
+src::managed::ColorPrimaries: TrivialClone
+src::managed::ColorRange: TrivialClone
+src::managed::ContentLightLevel: TrivialClone
+src::managed::CpuLevel: TrivialClone
+src::managed::DecodeFrameType: TrivialClone
+src::managed::InloopFilters: TrivialClone
+src::managed::MasteringDisplay: TrivialClone
+src::managed::MatrixCoefficients: TrivialClone
+src::managed::PixelLayout: TrivialClone
+src::managed::TransferCharacteristics: TrivialClone
