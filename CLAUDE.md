@@ -816,3 +816,13 @@ asm = ["c-ffi"]
 
 All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crate (PicBuf, Align types, AlignedVec AsMutPtr impls). The main crate is provably safe — auditors only need to review the small sub-crate.
 
+
+## Known Bugs
+
+### z2_v4x order-dependent test failure (issue #16, pre-existing)
+`z2_v4x_matches_avx2` fails (index -1 into len-129 edge array,
+`ipred.rs:2408`) when the lib suite runs in parallel on AVX-512 hosts
+(7950X); passes in isolation. 100% reproducible per mode on unmodified
+main — shared-mutable-state suspect (`set_tile_threading` global?).
+Invisible on CI (no AVX-512 on hosted runners). Do NOT attribute this
+failure to unrelated changes; verify against a clean main first.

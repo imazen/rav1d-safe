@@ -1133,9 +1133,21 @@ pub struct ScratchInterIntra {
 
 // Larger of the two between `ScratchInter` and `ScratchInterIntra`.
 const SCRATCH_SIZE: usize = mem::size_of::<ScratchInter>();
+// align(64): the accessors below view-cast these bytes as
+// `ScratchInter` / `ScratchInterIntra`, so the buffer must carry their
+// alignment AS A TYPE PROPERTY. While this lived inline in
+// `Rav1dTaskContext` the alignment held incidentally via field offset;
+// as a `Box` payload the type's own alignment is all the allocator
+// honors (zerocopy `new_box_zeroed` uses `Layout::new::<Self>()`), and
+// the casts fail with `AlignmentError` without it. The asserts pin the
+// requirement to the actual view types.
 #[derive(FromZeros)]
-#[repr(C)]
+#[repr(C, align(64))]
 pub struct TaskContextScratch([u8; SCRATCH_SIZE]);
+
+const _: () = assert!(mem::align_of::<TaskContextScratch>() >= mem::align_of::<ScratchInter>());
+const _: () =
+    assert!(mem::align_of::<TaskContextScratch>() >= mem::align_of::<ScratchInterIntra>());
 
 impl TaskContextScratch {
     pub fn inter_mut(&mut self) -> &mut ScratchInter {
@@ -1194,7 +1206,14 @@ pub(crate) struct Rav1dTaskContext {
     pub cf: Cf,
     pub al_pal: AlPal,
     pub pal_sz_uv: [[u8; 32]; 2], /* [2 a/l][32 bx4/by4] */
-    pub scratch: TaskContextScratch,
+    /// Boxed: at ~250 KB this is 89 % of the struct, and an inline field
+    /// forces every construction site to materialize it on the stack —
+    /// `rav1d_open`'s frame reserved the full-size slot even on branches
+    /// that never construct it, and every worker thread parked ~250 KB of
+    /// its stack for its lifetime (issue #15). One zeroed heap allocation
+    /// (mmap-class; no small-object fragmentation) built directly in
+    /// place by zerocopy — no stack temporary exists at any point.
+    pub scratch: Box<TaskContextScratch>,
 
     pub warpmv: Rav1dWarpedMotionParams,
     /// Index into the relevant `Rav1dFrameContext::lf.mask` array.
@@ -1220,7 +1239,8 @@ impl Rav1dTaskContext {
             cf: FromZeros::new_zeroed(),
             al_pal: FromZeros::new_zeroed(),
             pal_sz_uv: Default::default(),
-            scratch: FromZeros::new_zeroed(),
+            scratch: TaskContextScratch::new_box_zeroed()
+                .expect("OOM allocating 250 KB task-context scratch"),
             warpmv: Default::default(),
             lf_mask: Default::default(),
             top_pre_cdef_toggle: Default::default(),
@@ -1229,5 +1249,28 @@ impl Rav1dTaskContext {
             frame_thread: Default::default(),
             task_thread,
         }
+    }
+}
+
+#[cfg(test)]
+mod task_ctx_size {
+    use super::*;
+
+    /// `Rav1dTaskContext` is constructed by value in `rav1d_open` (the
+    /// single-threaded branch reserves its frame slot even when not
+    /// taken) and lives as a stack local on every worker thread, so its
+    /// `size_of` is a stack-usage contract for every embedder (issue
+    /// #15: 281,344 B before `scratch` was boxed; zenavif/zenmetrics
+    /// needed 32 MB rayon stacks). Keep it small.
+    #[test]
+    fn task_context_stays_stack_light() {
+        use core::mem::size_of;
+        let sz = size_of::<Rav1dTaskContext>();
+        eprintln!("Rav1dTaskContext = {sz}");
+        assert!(
+            sz < 48 * 1024,
+            "Rav1dTaskContext grew to {sz} B — inline buffers belong in \
+             `scratch`-style zeroed boxes (see issue #15)"
+        );
     }
 }

@@ -1,0 +1,27 @@
+# decode_avif A/B: inline scratch (main 3fb5135) vs Box<TaskContextScratch> (issue #15 fix)
+# date=2026-06-11 host=7950X cmd='cargo bench --bench decode_avif' (divan, 10 samples/round, 5 interleaved A/B rounds, nice -19, no target-cpu=native)
+# before=main@3fb5135 after=3fb5135+scratch-box+align64
+image	side	round	median_ms
+photo_4k	before	1	181.0
+photo_4k	before	2	181.1
+photo_4k	before	3	183.1
+photo_4k	before	4	183.1
+photo_4k	before	5	189.4
+photo_4k	after	1	188.5
+photo_4k	after	2	183.4
+photo_4k	after	3	183.7
+photo_4k	after	4	182.9
+photo_4k	after	5	193.1
+photo_8k	before	1	1115.0
+photo_8k	before	2	1118.0
+photo_8k	before	3	1113.0
+photo_8k	before	4	1137.0
+photo_8k	before	5	1117.0
+photo_8k	after	1	1100.0
+photo_8k	after	2	1125.0
+photo_8k	after	3	1101.0
+photo_8k	after	4	1149.0
+photo_8k	after	5	1099.0
+# summary: photo_4k mean-of-medians 183.5→186.3 ms (+1.5%, paired deltas -0.2..+7.5 ms, spreads overlap); photo_8k 1120.0→1114.8 ms (-0.5%, parity).
+# deref-cost hypothesis falsified by scaling: per-block scratch access grows with resolution, yet 8K is neutral/faster — 4K delta attributed to codegen/layout noise.
+# context: size_of Rav1dTaskContext 281344 -> 31104 B; full release suite + md5 conformance green at the after commit.
