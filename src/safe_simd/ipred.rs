@@ -7017,6 +7017,16 @@ mod v4x_dir_tests {
 
     #[test]
     fn z1_v4x_matches_avx2() {
+        // Hold archmage's token-testing lock for this test's whole duration.
+        // summon_avx2()/summon_avx512x() (here and again in run_z1) consult
+        // archmage's process-wide token-disable state. A concurrent
+        // for_each_token_permutation run (test_avg_token_permutations /
+        // test_wht4_token_permutations) disables tokens process-wide while it
+        // iterates; if that lands between this gate and the later re-summon,
+        // the token reads as None and the `.expect()` panics. The lock is the
+        // same mutex for_each_token_permutation acquires, so holding it keeps
+        // token state stable for the test. See issue #16.
+        let _tok_lock = archmage::testing::lock_token_testing();
         if crate::src::cpu::summon_avx512x().is_none() {
             eprintln!("z1_v4x_matches_avx2: X64V4xToken unavailable, skipping (AVX2 path used)");
             return;
@@ -7055,6 +7065,10 @@ mod v4x_dir_tests {
 
     #[test]
     fn z3_v4x_matches_avx2() {
+        // Stabilize archmage token state for the test's duration so a concurrent
+        // token-permutation test can't disable AVX2/AVX-512 between this gate and
+        // the re-summon in run_z3. Same mutex as for_each_token_permutation. See issue #16.
+        let _tok_lock = archmage::testing::lock_token_testing();
         if crate::src::cpu::summon_avx512x().is_none() {
             eprintln!("z3_v4x_matches_avx2: X64V4xToken unavailable, skipping (AVX2 path used)");
             return;
@@ -7093,6 +7107,10 @@ mod v4x_dir_tests {
 
     #[test]
     fn z2_v4x_matches_avx2() {
+        // Stabilize archmage token state for the test's duration so a concurrent
+        // token-permutation test can't disable AVX2/AVX-512 between this gate and
+        // the re-summon in run_z2. Same mutex as for_each_token_permutation. See issue #16.
+        let _tok_lock = archmage::testing::lock_token_testing();
         if crate::src::cpu::summon_avx512x().is_none() {
             eprintln!("z2_v4x_matches_avx2: X64V4xToken unavailable, skipping (AVX2 path used)");
             return;

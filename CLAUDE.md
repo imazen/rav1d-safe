@@ -819,10 +819,20 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
-### z2_v4x order-dependent test failure (issue #16, pre-existing)
-`z2_v4x_matches_avx2` fails (index -1 into len-129 edge array,
-`ipred.rs:2408`) when the lib suite runs in parallel on AVX-512 hosts
-(7950X); passes in isolation. 100% reproducible per mode on unmodified
-main — shared-mutable-state suspect (`set_tile_threading` global?).
-Invisible on CI (no AVX-512 on hosted runners). Do NOT attribute this
-failure to unrelated changes; verify against a clean main first.
+### z2_v4x order-dependent test failure (issue #16) — FIXED
+**Root cause (not what the symptom suggested):** the `z1/z2/z3_v4x_matches_avx2`
+tests summon AVX2/AVX-512 tokens at an `is_none()` gate, then *re-summon* with
+`.expect()` in `run_z*`. Those summons read archmage's process-wide
+token-disable state, which `test_avg_token_permutations` /
+`test_wht4_token_permutations` mutate (via `for_each_token_permutation`) while
+iterating. A permutation landing in that TOCTOU window made the token read as
+disabled → `.expect("avx2"/"v4x")` panicked → test failed (~20 % of parallel
+runs on the 7950X; invisible on CI, which lacks AVX-512). The
+`panicked at ipred.rs:2408` index-underflow prints were a **red herring** —
+out-of-reach synthetic configs the test's `catch_unwind` probe intentionally
+skips; the panic-hook still prints each caught one (≈30/run), which is noisy
+but harmless and unrelated to the failure. Not `set_tile_threading`.
+**Fix:** each v4x test holds `archmage::testing::lock_token_testing()` for its
+duration (the same mutex `for_each_token_permutation` acquires), so token state
+is stable end-to-end. Test-only; decoder parallelism/perf/accuracy unchanged.
+Verified: full lib suite 0/60 fails, v4x×permutations 0/150 fails (was 86/100).
