@@ -82,6 +82,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Install NASM (Linux)
         if: runner.os == 'Linux' && contains(matrix.features, 'asm')
         run: sudo apt-get update && sudo apt-get install -y nasm
@@ -105,7 +108,7 @@ jobs:
         run: cargo build --no-default-features --features "${{ matrix.features }}" --release ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
       - name: Run unit tests
-        run: cargo test --no-default-features --features "${{ matrix.features }}" --release --lib ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --lib ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
       # Download test vectors and run MD5 parity tests
       - name: Download test vectors
@@ -115,7 +118,7 @@ jobs:
 
       - name: Run MD5 decode parity tests
         if: matrix.label == 'safe-simd' && runner.os == 'Linux'
-        run: cargo test --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_verify
+        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_verify
         continue-on-error: true
 
   # ==========================================================================
@@ -192,8 +195,12 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
       - name: Run unit permutation tests
-        run: cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release --lib -- --test-threads=1 token_permutation
+        # nextest isolates each test in its own process, so the old
+        # --test-threads=1 race-avoidance is no longer needed.
+        run: cargo nextest run --profile ci --no-default-features --features "bitdepth_8,bitdepth_16" --release --lib -E 'test(token_permutation)'
 
   # ==========================================================================
   # Conformance: MD5 parity across all CPU tiers and bit depths
@@ -205,13 +212,17 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
       - name: Download test vectors
         run: |
           if [ ! -d test-vectors/dav1d-test-data ]; then
             git clone --depth 1 https://code.videolan.org/videolan/dav1d-test-data.git test-vectors/dav1d-test-data
           fi
       - name: Run conformance (all vectors × all CPU tiers)
-        run: cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release --test decode_permutations -- --test-threads=1
+        # Each per-tier test runs in its own process, so switching the global
+        # CPU-flags mask can't race across tests (no --test-threads=1 needed).
+        run: cargo nextest run --profile ci --no-default-features --features "bitdepth_8,bitdepth_16" --release --test decode_permutations
         timeout-minutes: 30
 
   # ==========================================================================
@@ -229,15 +240,19 @@ jobs:
           if [ ! -d test-vectors/dav1d-test-data ]; then
             git clone --depth 1 https://code.videolan.org/videolan/dav1d-test-data.git test-vectors/dav1d-test-data
           fi
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
       - name: Build threading tests
-        run: cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release --test reproduce_overlap --no-run
+        run: cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" --release --test reproduce_overlap --no-run
         timeout-minutes: 15
       - name: Run threading tests (tile threading, checked mode)
+        # The heavy-threading test-group in .config/nextest.toml caps these to
+        # one at a time (each spawns its own worker pool), preserving the old
+        # --test-threads=1 behavior while keeping per-test process isolation.
         run: |
-          cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release \
-            --test reproduce_overlap -- --ignored --test-threads=1 \
-            test_single_obu_tile_threading test_frame_threading_inter \
-            test_frame_threading_allintra test_single_obu_frame_threading
+          cargo nextest run --profile ci --no-default-features --features "bitdepth_8,bitdepth_16" --release \
+            --test reproduce_overlap --run-ignored ignored-only \
+            -E 'test(test_single_obu_tile_threading) | test(test_frame_threading_inter) | test(test_frame_threading_allintra) | test(test_single_obu_frame_threading)'
         timeout-minutes: 5
 
   # ==========================================================================
@@ -254,8 +269,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
       - name: Generate coverage
-        run: cargo llvm-cov --no-default-features --features "bitdepth_8,bitdepth_16" --lib --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest --no-default-features --features "bitdepth_8,bitdepth_16" --lib --lcov --output-path lcov.info
       - name: Upload to codecov
         uses: codecov/codecov-action@v5
         with:

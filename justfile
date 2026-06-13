@@ -16,9 +16,12 @@ build-asm:
 build-partial-asm:
     cargo build --no-default-features --features "bitdepth_8,bitdepth_16,partial_asm" --release
 
-# Run all tests
+# Run all tests (unit + integration via nextest; doctests via cargo test —
+# nextest does not run doctests). Process-per-test isolation keeps the
+# token-permutation / CPU-mask / thread-count tests from racing.
 test:
-    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release
+    cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" --release
+    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release --doc
 
 # Download test vectors
 download-vectors:
@@ -26,7 +29,7 @@ download-vectors:
 
 # Run integration tests (requires test vectors)
 test-integration: download-vectors
-    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --test integration_decode -- --ignored
+    cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" --test integration_decode --run-ignored ignored-only
 
 # Run clippy lints
 clippy:
@@ -73,9 +76,10 @@ check-wasm:
     cargo check --target wasm32-wasip1 --no-default-features \
         --features "bitdepth_8,bitdepth_16"
 
-# Build and test for 32-bit x86 (Linux)
+# Build and test for 32-bit x86 (Linux). i686 binaries run natively on the
+# x86_64 host, so nextest hosts them directly.
 test-i686:
-    cargo test --target i686-unknown-linux-gnu --no-default-features \
+    cargo nextest run --target i686-unknown-linux-gnu --no-default-features \
         --features "bitdepth_8,bitdepth_16" --release --lib
 
 # Check 32-bit compilation only
@@ -83,21 +87,22 @@ check-i686:
     cargo check --target i686-unknown-linux-gnu --no-default-features \
         --features "bitdepth_8,bitdepth_16"
 
-# Run token permutation tests (exercises all CPU tiers, single-threaded)
+# Run token permutation tests (exercises all CPU tiers; nextest isolates each
+# test in its own process, so no --test-threads=1 race-avoidance needed)
 test-permutations:
-    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" \
-        --release -- --test-threads=1
+    cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" \
+        --release -E 'test(token_permutation)'
 
 # E2E decode permutations: smoke test (1 vector x all tiers, ~1s)
 test-permutations-smoke:
-    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" \
-        --release --test decode_permutations -- test_permutations_smoke \
-        --test-threads=1 --nocapture
+    cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" \
+        --release --test decode_permutations -E 'test(test_permutations_smoke)' \
+        --no-capture
 
 # E2E decode permutations: full corpus x all tiers (~20 min)
 test-permutations-full:
-    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" \
-        --release --test decode_permutations -- --test-threads=1 --nocapture
+    cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" \
+        --release --test decode_permutations --no-capture
 
 # Generate documentation
 doc:
@@ -122,9 +127,9 @@ bench-zenavif:
 example-managed:
     cargo run --example managed_decode --no-default-features --features "bitdepth_8,bitdepth_16"
 
-# Coverage report
+# Coverage report (via nextest)
 coverage:
-    cargo llvm-cov --no-default-features --features "bitdepth_8,bitdepth_16" --html
+    cargo llvm-cov nextest --no-default-features --features "bitdepth_8,bitdepth_16" --html
     @echo "Open target/llvm-cov/html/index.html"
 
 # Run CI checks locally (incl. cross-arch checks that CI runs — catches
@@ -175,7 +180,7 @@ bench-partial-asm:
 
 # Run panic safety tests specifically
 test-panic:
-    cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --test panic_safety_test --release
+    cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" --test panic_safety_test --release
 
 # Profile decode: all four modes (asm, partial asm, safe checked, safe unchecked)
 # Uses allintra 8bpc IVF (39 frames) + real photos (4K + 8K AVIF)

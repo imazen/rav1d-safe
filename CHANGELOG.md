@@ -44,7 +44,19 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   within overlapping spreads); full md5 conformance suite green.
 
 ### Changed
-- Trim benches/ from published tarball; guard `cargo:rustc-link-arg-benches` in build.rs on benches/ existence so `cargo package` verify succeeds. Untrack committed artifacts (rust_out ELF binary, wasmtime-guest-profile.json profiling output) and add them to .gitignore. (packaging hygiene)
+- **Test runner switched to `cargo-nextest`** (justfile + CI). Nextest runs each
+  test in its own process, which removes a whole class of cross-test global-state
+  races structurally — the archmage token-permutation vs. v4x parity race
+  (issue #16), the process-global CPU-flags mask switched per tier by
+  `decode_permutations` / `decode_cpu_levels`, and the worker-thread-count
+  baselines in `thread_cleanup_test` — so the `--test-threads=1` workarounds in
+  the permutation/conformance/threading CI jobs are gone. `.config/nextest.toml`
+  adds a `default`/`ci` profile and a `heavy-threading` test-group that
+  serializes the multi-threaded decode tests (reproduce_overlap, mt_stress,
+  thread_cleanup) so separate processes don't oversubscribe small runners.
+  Doctests (which nextest doesn't run) get a dedicated `cargo test --doc` step.
+  Cross-target recipes that nextest can't host (`test-wasm`) and the QEMU
+  `cross test` aarch64 path stay on `cargo test`. No production-code change.
 
 ## [0.5.7] - 2026-05-26
 

@@ -1,0 +1,47 @@
+# cargo-nextest configuration.
+#
+# Nextest runs each test in its own process. For this crate that isolation is
+# load-bearing, not just a speedup: it removes the cross-test races that
+# previously needed `--test-threads=1` bandaids, because each test observes its
+# own process-local state instead of a shared global:
+#   * archmage's process-wide token-disable state, toggled by the
+#     `*_token_permutations` tests, vs. the `z{1,2,3}_v4x` parity tests
+#     (issue #16);
+#   * the process-global CPU-flags mask switched per CPU tier by
+#     `decode_permutations` / `decode_cpu_levels`;
+#   * the worker-thread-count baselines asserted by `thread_cleanup_test`.
+#
+# The plain `cargo test` path is still correct (the v4x tests hold
+# archmage::testing::lock_token_testing()); nextest just makes the whole class
+# of races structurally impossible.
+
+[profile.default]
+# Surface every failure rather than stopping at the first.
+fail-fast = false
+# Flag tests that run long (the scalar-tier conformance sweeps in
+# decode_permutations / decode_cpu_levels legitimately take minutes — the
+# no-SIMD path over the whole corpus), but only hard-kill a genuinely wedged
+# test: 300s × 10 = 50 min ceiling, far above any real test yet still a
+# deadlock backstop. CI jobs keep their own (tighter) `timeout-minutes`.
+slow-timeout = { period = "300s", terminate-after = 10 }
+
+[profile.ci]
+fail-fast = false
+retries = 0
+slow-timeout = { period = "300s", terminate-after = 10 }
+
+# Heavy multi-threaded decode tests spin up their own worker pools; running
+# several at once across separate processes oversubscribes small CI runners.
+# Serialize just those via a test group instead of serializing the whole run —
+# everything else (unit tests, conformance per-tier tests, the permutation and
+# v4x tests) stays fully parallel.
+[test-groups]
+heavy-threading = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary(reproduce_overlap) | binary(reproduce_overlap_scalar) | binary(tile_threading_overlap) | binary(mt_stress) | binary(thread_cleanup_test)'
+test-group = 'heavy-threading'
+
+[[profile.ci.overrides]]
+filter = 'binary(reproduce_overlap) | binary(reproduce_overlap_scalar) | binary(tile_threading_overlap) | binary(mt_stress) | binary(thread_cleanup_test)'
+test-group = 'heavy-threading'

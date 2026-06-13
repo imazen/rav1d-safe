@@ -165,10 +165,18 @@ This means: **every `#[allow(unsafe_code)]` in the codebase MUST be gated behind
 ```bash
 just build          # Safe-SIMD build
 just build-asm      # ASM build
-just test           # Run tests
+just test           # Run tests (cargo-nextest + doctests)
 just profile        # Benchmark all 3 modes (asm, checked, unchecked)
 just profile-quick  # Same but 100 iterations
 ```
+
+**Tests run under `cargo-nextest`** (process-per-test). Use `cargo nextest run
+--release --no-default-features --features "bitdepth_8,bitdepth_16"` rather than
+`cargo test` — the process isolation is what keeps the token-permutation /
+CPU-mask / thread-count tests from racing (see issue #16). Nextest does **not**
+run doctests, so `just test` also runs `cargo test --doc` separately. Config +
+the `heavy-threading` serial group live in `.config/nextest.toml`. WASM and the
+QEMU aarch64 `cross test` path stay on `cargo test` (nextest can't host them).
 
 ## Feature Flags
 
