@@ -126,7 +126,7 @@ pub struct Settings {
 
     /// Maximum frame size in total pixels, i.e. width * height (0 = unlimited)
     ///
-    /// Default: 35,389,440 (8K UHD: 8192 × 4320). Set to 0 to disable the limit.
+    /// Default: 120,000,000 (120 MP — admits 108 MP phone photos). Set to 0 to disable the limit.
     /// Frames exceeding this limit are rejected during OBU parsing with `Err(InvalidData)`.
     pub frame_size_limit: u32,
 
@@ -178,7 +178,7 @@ impl Default for Settings {
             // handle the asynchronous behavior by calling decode() or flush() multiple times.
             threads: 1,
             apply_grain: true,
-            frame_size_limit: 8192 * 4320, // 8K UHD (~35MP)
+            frame_size_limit: 120_000_000, // 120 MP (admits 108 MP phone photos)
             all_layers: true,
             operating_point: 0,
             max_frame_delay: 0,

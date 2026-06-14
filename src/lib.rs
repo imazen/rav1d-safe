@@ -87,11 +87,12 @@ impl Default for Rav1dSettings {
             apply_grain: true,
             operating_point: 0,
             all_layers: true,
-            // Safe default: cap at 8K UHD (~35MP). Setting 0 means "unlimited",
-            // which lets a malicious SequenceHeader declaring 65536x65536 trigger
-            // multi-GB allocation amplification on 64-bit hosts. Callers that
-            // really need larger frames must opt in explicitly.
-            frame_size_limit: 8192 * 4320,
+            // Safe default: cap at 120 MP (admits 108 MP phone photos and large
+            // AVIF stills). Setting 0 means "unlimited", which lets a malicious
+            // SequenceHeader declaring 65536x65536 trigger multi-GB allocation
+            // amplification on 64-bit hosts. Callers that really need larger
+            // frames must opt in explicitly.
+            frame_size_limit: 120_000_000,
             allocator: Default::default(),
             logger: Some(Rav1dLogger::default()),
             strict_std_compliance: false,
