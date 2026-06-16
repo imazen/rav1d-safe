@@ -308,10 +308,15 @@ fn boxsum5_8bpc(
     w: usize,
     h: usize,
 ) {
-    // Vertical pass: sum 5 consecutive rows into intermediate buffer
-    // Each output row[y] = src[y-2] + src[y-1] + src[y] + src[y+1] + src[y+2]
+    // Ported verbatim from the x86 scalar boxsum5_8bpc in looprestoration.rs.
+    // The previous ARM port wrote the box sum one row too low (out_idx =
+    // y*STRIDE for y starting at 2, vs x86's running sum_v starting at row 1),
+    // skewing the SGR 5x5 coefficients by a whole row on the NEON path.
+    // Vertical pass: sum 5 consecutive rows
     for x in 0..w {
-        // Initialize sliding window for first 4 rows
+        let mut sum_v = x;
+        let mut sumsq_v = x;
+
         let mut a = src[x] as i32;
         let mut a2 = a * a;
         let mut b = src[1 * REST_UNIT_STRIDE + x] as i32;
@@ -321,17 +326,17 @@ fn boxsum5_8bpc(
         let mut d = src[3 * REST_UNIT_STRIDE + x] as i32;
         let mut d2 = d * d;
 
-        // Process rows starting from row 2 (first valid output)
-        for y in 2..(h - 2) {
-            let s_idx = (y + 2) * REST_UNIT_STRIDE + x;
+        let mut s_idx = 3 * REST_UNIT_STRIDE + x;
+
+        // Skip first 2 rows, process up to h-2
+        for _ in 2..h - 2 {
+            s_idx += REST_UNIT_STRIDE;
             let e = src[s_idx] as i32;
             let e2 = e * e;
-
-            let out_idx = y * REST_UNIT_STRIDE + x;
-            sum[out_idx] = (a + b + c + d + e) as i16;
-            sumsq[out_idx] = a2 + b2 + c2 + d2 + e2;
-
-            // Slide window
+            sum_v += REST_UNIT_STRIDE;
+            sumsq_v += REST_UNIT_STRIDE;
+            sum[sum_v] = (a + b + c + d + e) as i16;
+            sumsq[sumsq_v] = a2 + b2 + c2 + d2 + e2;
             a = b;
             a2 = b2;
             b = c;
@@ -344,34 +349,34 @@ fn boxsum5_8bpc(
     }
 
     // Horizontal pass: sum 5 consecutive columns
-    for y in 2..(h - 2) {
-        let row_start = y * REST_UNIT_STRIDE;
+    let mut sum_idx = REST_UNIT_STRIDE;
+    let mut sumsq_idx = REST_UNIT_STRIDE;
+    for _ in 2..h - 2 {
+        let mut a = sum[sum_idx];
+        let mut a2 = sumsq[sumsq_idx];
+        let mut b = sum[sum_idx + 1];
+        let mut b2 = sumsq[sumsq_idx + 1];
+        let mut c = sum[sum_idx + 2];
+        let mut c2 = sumsq[sumsq_idx + 2];
+        let mut d = sum[sum_idx + 3];
+        let mut d2 = sumsq[sumsq_idx + 3];
 
-        let mut a = sum[row_start] as i32;
-        let mut a2 = sumsq[row_start];
-        let mut b = sum[row_start + 1] as i32;
-        let mut b2 = sumsq[row_start + 1];
-        let mut c = sum[row_start + 2] as i32;
-        let mut c2 = sumsq[row_start + 2];
-        let mut d = sum[row_start + 3] as i32;
-        let mut d2 = sumsq[row_start + 3];
-
-        for x in 2..(w - 2) {
-            let e = sum[row_start + x + 2] as i32;
-            let e2 = sumsq[row_start + x + 2];
-
-            sum[row_start + x] = (a + b + c + d + e) as i16;
-            sumsq[row_start + x] = a2 + b2 + c2 + d2 + e2;
-
+        for x in 2..w - 2 {
+            let e = sum[sum_idx + x + 2];
+            let e2 = sumsq[sumsq_idx + x + 2];
+            sum[sum_idx + x] = a + b + c + d + e;
+            sumsq[sumsq_idx + x] = a2 + b2 + c2 + d2 + e2;
             a = b;
-            a2 = b2;
             b = c;
-            b2 = c2;
             c = d;
-            c2 = d2;
             d = e;
+            a2 = b2;
+            b2 = c2;
+            c2 = d2;
             d2 = e2;
         }
+        sum_idx += REST_UNIT_STRIDE;
+        sumsq_idx += REST_UNIT_STRIDE;
     }
 }
 
@@ -383,22 +388,35 @@ fn boxsum3_8bpc(
     w: usize,
     h: usize,
 ) {
+    // Ported verbatim from the x86 scalar boxsum3_8bpc in looprestoration.rs.
+    // The previous ARM port wrote out_idx up to (h-2)*REST_UNIT_STRIDE + (w-1),
+    // i.e. 68*390 = 26520, one past the 26520-element buffer (OOB panic at the
+    // old line :399). The x86 body skips the first row, uses running indices,
+    // and stays in-bounds.
+
+    // Skip the first row
+    let src = &src[REST_UNIT_STRIDE..];
+
     // Vertical pass: sum 3 consecutive rows
-    for x in 0..w {
+    for x in 1..w - 1 {
+        let mut sum_v = x;
+        let mut sumsq_v = x;
+
         let mut a = src[x] as i32;
         let mut a2 = a * a;
-        let mut b = src[1 * REST_UNIT_STRIDE + x] as i32;
+        let mut b = src[REST_UNIT_STRIDE + x] as i32;
         let mut b2 = b * b;
 
-        for y in 1..(h - 1) {
-            let s_idx = (y + 1) * REST_UNIT_STRIDE + x;
+        let mut s_idx = REST_UNIT_STRIDE + x;
+
+        for _ in 2..h - 2 {
+            s_idx += REST_UNIT_STRIDE;
             let c = src[s_idx] as i32;
             let c2 = c * c;
-
-            let out_idx = y * REST_UNIT_STRIDE + x;
-            sum[out_idx] = (a + b + c) as i16;
-            sumsq[out_idx] = a2 + b2 + c2;
-
+            sum_v += REST_UNIT_STRIDE;
+            sumsq_v += REST_UNIT_STRIDE;
+            sum[sum_v] = (a + b + c) as i16;
+            sumsq[sumsq_v] = a2 + b2 + c2;
             a = b;
             a2 = b2;
             b = c;
@@ -407,26 +425,26 @@ fn boxsum3_8bpc(
     }
 
     // Horizontal pass: sum 3 consecutive columns
-    for y in 1..(h - 1) {
-        let row_start = y * REST_UNIT_STRIDE;
+    let mut sum_idx = REST_UNIT_STRIDE;
+    let mut sumsq_idx = REST_UNIT_STRIDE;
+    for _ in 2..h - 2 {
+        let mut a = sum[sum_idx + 1];
+        let mut a2 = sumsq[sumsq_idx + 1];
+        let mut b = sum[sum_idx + 2];
+        let mut b2 = sumsq[sumsq_idx + 2];
 
-        let mut a = sum[row_start] as i32;
-        let mut a2 = sumsq[row_start];
-        let mut b = sum[row_start + 1] as i32;
-        let mut b2 = sumsq[row_start + 1];
-
-        for x in 1..(w - 1) {
-            let c = sum[row_start + x + 1] as i32;
-            let c2 = sumsq[row_start + x + 1];
-
-            sum[row_start + x] = (a + b + c) as i16;
-            sumsq[row_start + x] = a2 + b2 + c2;
-
+        for x in 2..w - 2 {
+            let c = sum[sum_idx + x + 1];
+            let c2 = sumsq[sumsq_idx + x + 1];
+            sum[sum_idx + x] = a + b + c;
+            sumsq[sumsq_idx + x] = a2 + b2 + c2;
             a = b;
-            a2 = b2;
             b = c;
+            a2 = b2;
             b2 = c2;
         }
+        sum_idx += REST_UNIT_STRIDE;
+        sumsq_idx += REST_UNIT_STRIDE;
     }
 }
 
@@ -461,8 +479,12 @@ fn selfguided_filter_8bpc(
     let base = 2 * REST_UNIT_STRIDE + 3;
 
     for row_offset in (0..(h + 2)).step_by(step) {
-        let row_start = (row_offset as isize - 1) as usize;
-        let aa_base = base + row_start * REST_UNIT_STRIDE - REST_UNIT_STRIDE;
+        // Match the x86 scalar form. The previous ARM form computed
+        // `(row_offset as isize - 1) as usize` which is usize::MAX at
+        // row_offset==0 (multiply-overflow panic under overflow-checks; wrong
+        // index under release) AND resolved to row_offset*STRIDE + 3 instead of
+        // the correct (row_offset + 1)*STRIDE + 2 -- a ~389-element skew.
+        let aa_base = (row_offset + 1) * REST_UNIT_STRIDE + 2;
 
         for i in 0..(w + 2) {
             let idx = aa_base + i;
@@ -848,8 +870,14 @@ fn boxsum5_16bpc(
     w: usize,
     h: usize,
 ) {
+    // Ported verbatim from the x86 scalar boxsum5_16bpc in looprestoration.rs.
+    // The previous ARM port wrote the box sum one row too low, skewing the SGR
+    // 5x5 coefficients by a whole row on the NEON path.
     // Vertical pass: sum 5 consecutive rows
     for x in 0..w {
+        let mut sum_v = x;
+        let mut sumsq_v = x;
+
         let mut a = src[x] as i64;
         let mut a2 = a * a;
         let mut b = src[1 * REST_UNIT_STRIDE + x] as i64;
@@ -859,15 +887,17 @@ fn boxsum5_16bpc(
         let mut d = src[3 * REST_UNIT_STRIDE + x] as i64;
         let mut d2 = d * d;
 
-        for y in 2..(h - 2) {
-            let s_idx = (y + 2) * REST_UNIT_STRIDE + x;
+        let mut s_idx = 3 * REST_UNIT_STRIDE + x;
+
+        // Skip first 2 rows, process up to h-2
+        for _ in 2..h - 2 {
+            s_idx += REST_UNIT_STRIDE;
             let e = src[s_idx] as i64;
             let e2 = e * e;
-
-            let out_idx = y * REST_UNIT_STRIDE + x;
-            sum[out_idx] = (a + b + c + d + e) as i32;
-            sumsq[out_idx] = a2 + b2 + c2 + d2 + e2;
-
+            sum_v += REST_UNIT_STRIDE;
+            sumsq_v += REST_UNIT_STRIDE;
+            sum[sum_v] = (a + b + c + d + e) as i32;
+            sumsq[sumsq_v] = a2 + b2 + c2 + d2 + e2;
             a = b;
             a2 = b2;
             b = c;
@@ -880,34 +910,34 @@ fn boxsum5_16bpc(
     }
 
     // Horizontal pass: sum 5 consecutive columns
-    for y in 2..(h - 2) {
-        let row_start = y * REST_UNIT_STRIDE;
+    let mut sum_idx = REST_UNIT_STRIDE;
+    let mut sumsq_idx = REST_UNIT_STRIDE;
+    for _ in 2..h - 2 {
+        let mut a = sum[sum_idx] as i64;
+        let mut a2 = sumsq[sumsq_idx];
+        let mut b = sum[sum_idx + 1] as i64;
+        let mut b2 = sumsq[sumsq_idx + 1];
+        let mut c = sum[sum_idx + 2] as i64;
+        let mut c2 = sumsq[sumsq_idx + 2];
+        let mut d = sum[sum_idx + 3] as i64;
+        let mut d2 = sumsq[sumsq_idx + 3];
 
-        let mut a = sum[row_start] as i64;
-        let mut a2 = sumsq[row_start];
-        let mut b = sum[row_start + 1] as i64;
-        let mut b2 = sumsq[row_start + 1];
-        let mut c = sum[row_start + 2] as i64;
-        let mut c2 = sumsq[row_start + 2];
-        let mut d = sum[row_start + 3] as i64;
-        let mut d2 = sumsq[row_start + 3];
-
-        for x in 2..(w - 2) {
-            let e = sum[row_start + x + 2] as i64;
-            let e2 = sumsq[row_start + x + 2];
-
-            sum[row_start + x] = (a + b + c + d + e) as i32;
-            sumsq[row_start + x] = a2 + b2 + c2 + d2 + e2;
-
+        for x in 2..w - 2 {
+            let e = sum[sum_idx + x + 2] as i64;
+            let e2 = sumsq[sumsq_idx + x + 2];
+            sum[sum_idx + x] = (a + b + c + d + e) as i32;
+            sumsq[sumsq_idx + x] = a2 + b2 + c2 + d2 + e2;
             a = b;
-            a2 = b2;
             b = c;
-            b2 = c2;
             c = d;
-            c2 = d2;
             d = e;
+            a2 = b2;
+            b2 = c2;
+            c2 = d2;
             d2 = e2;
         }
+        sum_idx += REST_UNIT_STRIDE;
+        sumsq_idx += REST_UNIT_STRIDE;
     }
 }
 
@@ -919,22 +949,34 @@ fn boxsum3_16bpc(
     w: usize,
     h: usize,
 ) {
+    // Ported verbatim from the x86 scalar boxsum3_16bpc in looprestoration.rs.
+    // The previous ARM port wrote out_idx one past the 26520-element buffer
+    // (OOB panic at the old line :935). The x86 body skips the first row, uses
+    // running indices, and stays in-bounds.
+
+    // Skip the first row
+    let src = &src[REST_UNIT_STRIDE..];
+
     // Vertical pass: sum 3 consecutive rows
-    for x in 0..w {
+    for x in 1..w - 1 {
+        let mut sum_v = x;
+        let mut sumsq_v = x;
+
         let mut a = src[x] as i64;
         let mut a2 = a * a;
-        let mut b = src[1 * REST_UNIT_STRIDE + x] as i64;
+        let mut b = src[REST_UNIT_STRIDE + x] as i64;
         let mut b2 = b * b;
 
-        for y in 1..(h - 1) {
-            let s_idx = (y + 1) * REST_UNIT_STRIDE + x;
+        let mut s_idx = REST_UNIT_STRIDE + x;
+
+        for _ in 2..h - 2 {
+            s_idx += REST_UNIT_STRIDE;
             let c = src[s_idx] as i64;
             let c2 = c * c;
-
-            let out_idx = y * REST_UNIT_STRIDE + x;
-            sum[out_idx] = (a + b + c) as i32;
-            sumsq[out_idx] = a2 + b2 + c2;
-
+            sum_v += REST_UNIT_STRIDE;
+            sumsq_v += REST_UNIT_STRIDE;
+            sum[sum_v] = (a + b + c) as i32;
+            sumsq[sumsq_v] = a2 + b2 + c2;
             a = b;
             a2 = b2;
             b = c;
@@ -943,26 +985,26 @@ fn boxsum3_16bpc(
     }
 
     // Horizontal pass: sum 3 consecutive columns
-    for y in 1..(h - 1) {
-        let row_start = y * REST_UNIT_STRIDE;
+    let mut sum_idx = REST_UNIT_STRIDE;
+    let mut sumsq_idx = REST_UNIT_STRIDE;
+    for _ in 2..h - 2 {
+        let mut a = sum[sum_idx + 1] as i64;
+        let mut a2 = sumsq[sumsq_idx + 1];
+        let mut b = sum[sum_idx + 2] as i64;
+        let mut b2 = sumsq[sumsq_idx + 2];
 
-        let mut a = sum[row_start] as i64;
-        let mut a2 = sumsq[row_start];
-        let mut b = sum[row_start + 1] as i64;
-        let mut b2 = sumsq[row_start + 1];
-
-        for x in 1..(w - 1) {
-            let c = sum[row_start + x + 1] as i64;
-            let c2 = sumsq[row_start + x + 1];
-
-            sum[row_start + x] = (a + b + c) as i32;
-            sumsq[row_start + x] = a2 + b2 + c2;
-
+        for x in 2..w - 2 {
+            let c = sum[sum_idx + x + 1] as i64;
+            let c2 = sumsq[sumsq_idx + x + 1];
+            sum[sum_idx + x] = (a + b + c) as i32;
+            sumsq[sumsq_idx + x] = a2 + b2 + c2;
             a = b;
-            a2 = b2;
             b = c;
+            a2 = b2;
             b2 = c2;
         }
+        sum_idx += REST_UNIT_STRIDE;
+        sumsq_idx += REST_UNIT_STRIDE;
     }
 }
 
@@ -995,8 +1037,12 @@ fn selfguided_filter_16bpc(
     let base = 2 * REST_UNIT_STRIDE + 3;
 
     for row_offset in (0..(h + 2)).step_by(step) {
-        let row_start = (row_offset as isize - 1) as usize;
-        let aa_base = base + row_start * REST_UNIT_STRIDE - REST_UNIT_STRIDE;
+        // Match the x86 scalar form. The previous ARM form computed
+        // `(row_offset as isize - 1) as usize` which is usize::MAX at
+        // row_offset==0 (multiply-overflow panic under overflow-checks; wrong
+        // index under release) AND resolved to row_offset*STRIDE + 3 instead of
+        // the correct (row_offset + 1)*STRIDE + 2 -- a ~389-element skew.
+        let aa_base = (row_offset + 1) * REST_UNIT_STRIDE + 2;
 
         for i in 0..(w + 2) {
             let idx = aa_base + i;

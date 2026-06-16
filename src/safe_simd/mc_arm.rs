@@ -5925,7 +5925,11 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
                 let dst_stride_u16 = (dst_stride as usize) / 2;
                 let src_stride_u16 = (src_stride_raw as usize) / 2;
                 let dst_start = dst_offset;
-                let dst_byte_len = (h_u * dst_stride_u16 + w_u) * 2;
+                // The dst guard is sized (h-1)*stride + w by narrow_guard_mut /
+                // picture.rs (the last row needs only w pixels, not a full stride),
+                // so h*stride + w overshoots the slice by stride - w. Drop the last
+                // row's stride padding. (The 8bpc branch uses an open-ended slice.)
+                let dst_byte_len = (h_u.saturating_sub(1) * dst_stride_u16 + w_u) * 2;
                 let dst_u16: &mut [u16] =
                     FromBytes::mut_from_bytes(&mut dst_bytes[dst_start..dst_start + dst_byte_len])
                         .unwrap();
