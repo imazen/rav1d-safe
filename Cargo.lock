@@ -878,6 +878,7 @@ dependencies = [
  "strum",
  "tango-bench",
  "to_method",
+ "whereat",
  "zenavif-parse",
  "zenbench",
  "zerocopy",
@@ -1285,6 +1286,12 @@ dependencies = [
  "indexmap",
  "semver",
 ]
+
+[[package]]
+name = "whereat"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab90f361db038ba3135da12c938c328fb43a012992101879e3d6ebccb4d7eba8"
 
 [[package]]
 name = "winapi"

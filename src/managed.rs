@@ -97,7 +97,13 @@ impl From<Rav1dError> for Error {
     }
 }
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+/// Result type for the managed API. The error is wrapped in [`whereat::At`],
+/// which records the source location where the failure surfaced (for
+/// server-side logs). The internal decoder hot path uses the separate bare
+/// `Rav1dError`/`Rav1dResult` types, so this wrapper never enters an inner
+/// loop — it only applies at the per-frame managed-API boundary. Match the
+/// inner error with `err.error()` (borrow) or `err.decompose().0` (owned).
+pub type Result<T, E = whereat::At<Error>> = std::result::Result<T, E>;
 
 /// Decoder configuration settings
 ///
@@ -520,14 +526,15 @@ impl Decoder {
         };
 
         // Send data to decoder
-        crate::src::lib::rav1d_send_data(&self.ctx, &mut rav1d_data)?;
+        crate::src::lib::rav1d_send_data(&self.ctx, &mut rav1d_data)
+            .map_err(|e| whereat::at(Error::from(e)))?;
 
         // Try to get a picture
         let mut pic = Rav1dPicture::default();
         match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
             Ok(()) => Ok(Some(Frame { inner: pic })),
             Err(Rav1dError::EAGAIN) => Ok(None),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(whereat::at(Error::from(e))),
         }
     }
 
@@ -541,7 +548,7 @@ impl Decoder {
         match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
             Ok(()) => Ok(Some(Frame { inner: pic })),
             Err(Rav1dError::EAGAIN) => Ok(None),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(whereat::at(Error::from(e))),
         }
     }
 
@@ -558,7 +565,7 @@ impl Decoder {
             match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
                 Ok(()) => frames.push(Frame { inner: pic }),
                 Err(Rav1dError::EAGAIN) => break,
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(whereat::at(Error::from(e))),
             }
         }
         Ok(frames)
