@@ -67,6 +67,7 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   within overlapping spreads); full md5 conformance suite green.
 
 ### Changed
+- **README accuracy pass for untrusted-input servers** (found via an insulated external-developer usability test): documented that `frame_size_limit` is a **total-pixel** (`width * height`) cap with a **120 MP default** (not unlimited, not the "4K" the old example implied) and that `0` disables it; added an honest **Cancellation** note that no in-flight decode-abort token exists (the frame-size cap is the only pre-decode guard); added a canonical crate-root `use rav1d_safe::{…}` import and reconciled the `Planes` variant names (`Planes::Depth8`/`Depth16` enum variants vs `Planes8`/`Planes16` structs); and documented the **planar-YUV output** format (`y()`/`u()`/`v()` accessors, `PixelLayout` subsampling, 8 vs 10/12-bit planes) (#411).
 - **Test runner switched to `cargo-nextest`** (justfile + CI). Nextest runs each
   test in its own process, which removes a whole class of cross-test global-state
   races structurally — the archmage token-permutation vs. v4x parity race
