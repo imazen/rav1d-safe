@@ -5125,6 +5125,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     ),
                 }
                 lpf_pic.compact_write_back_per_row::<BitDepth8>(cw, ch, &cb);
+                crate::include::dav1d::picture::recycle_compact_scratch(cb);
             } else {
                 let mut guard = dst
                     .data
@@ -5295,6 +5296,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     ),
                 }
                 lpf_pic.compact_write_back_per_row::<BitDepth16>(compact_w, compact_h, &compact);
+                crate::include::dav1d::picture::recycle_compact_scratch(compact);
             } else {
                 let start_pixel = dst.offset - reach_before;
                 let total_pixels = (reach_before + reach_after).min(buf_pixel_len - start_pixel);

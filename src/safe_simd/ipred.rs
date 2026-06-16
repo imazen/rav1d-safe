@@ -6886,6 +6886,7 @@ pub fn cfl_ac_dispatch<BD: BitDepth>(
                 src_stride_i,
             );
         }
+        crate::include::dav1d::picture::recycle_compact_scratch(src_compact);
     } else {
         // Single-threaded fast path: read directly from the picture buffer
         // via narrow_guard (no heap alloc, no memcpy).

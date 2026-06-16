@@ -1,5 +1,6 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Global flag: true when tile threading is active (n_tc > 1).
@@ -15,6 +16,41 @@ pub fn set_tile_threading(active: bool) {
 /// Check if tile threading is active.
 pub fn tile_threading_active() -> bool {
     TILE_THREADING.load(Ordering::Relaxed)
+}
+
+thread_local! {
+    /// Reusable scratch buffer backing [`WithOffset::compact_read_per_row`].
+    /// Pulled on read, returned via [`recycle_compact_scratch`] after the
+    /// compact buffer has been written back / consumed.
+    ///
+    /// Under tile threading the loop filter / ipred / `with_pixel_guard_*`
+    /// paths materialize a per-edge / per-block compact buffer; allocating one
+    /// `Vec` per call produced ~3M alloc+free pairs decoding a single 8K frame
+    /// (issue #17) — cheap on glibc, pathological on the Windows allocator.
+    /// Reusing one buffer per thread eliminates that churn. It is per-thread,
+    /// so each tile thread owns its own buffer with no cross-tile aliasing —
+    /// tile threading stays enabled.
+    static COMPACT_SCRATCH: Cell<Option<Vec<u8>>> = const { Cell::new(None) };
+}
+
+/// Return a compact scratch buffer to the thread-local pool so the next
+/// [`WithOffset::compact_read_per_row`] on this thread can reuse the allocation.
+///
+/// Pairs with the `Vec` that `compact_read_per_row` returns. Calling this is an
+/// optimization, not a requirement: simply dropping the `Vec` is always correct
+/// (the next read just allocates a fresh buffer). If a panic unwinds past a
+/// pending recycle the buffer is freed normally — no unsoundness, the pool is
+/// merely empty for the next call (same contract as the MC mid-buffer pool).
+///
+/// Crate-internal: this is decoder plumbing, not part of the public API.
+#[inline]
+pub(crate) fn recycle_compact_scratch(buf: Vec<u8>) {
+    // Keep whichever buffer has the larger capacity so re-entrant reads (a read
+    // nested inside a `with_pixel_guard_*` closure) don't shrink the pool.
+    COMPACT_SCRATCH.with(|c| match c.take() {
+        Some(existing) if existing.capacity() >= buf.capacity() => c.set(Some(existing)),
+        _ => c.set(Some(buf)),
+    });
 }
 
 use crate::include::common::bitdepth::BitDepth;
@@ -39,6 +75,7 @@ pub fn with_pixel_guard_mut<BD: BitDepth, R>(
         let (mut buf, byte_stride) = pic.compact_read_per_row::<BD>(w, h);
         let result = f(&mut buf, 0, byte_stride as isize);
         pic.compact_write_back_per_row::<BD>(w, h, &buf);
+        recycle_compact_scratch(buf);
         result
     } else {
         let (mut guard, base) = pic.narrow_guard_mut::<BD>(w, h);
@@ -74,7 +111,9 @@ pub fn with_pixel_guard_immut<BD: BitDepth, R>(
     let pixel_size = core::mem::size_of::<BD::Pixel>();
     if tile_threading_active() {
         let (buf, byte_stride) = pic.compact_read_per_row::<BD>(w, h);
-        f(&buf, 0, byte_stride as isize)
+        let result = f(&buf, 0, byte_stride as isize);
+        recycle_compact_scratch(buf);
+        result
     } else {
         let (guard, base) = pic.narrow_guard::<BD>(w, h);
         let bytes = guard.as_bytes();
@@ -793,9 +832,16 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         use zerocopy::IntoBytes;
         let pixel_size = core::mem::size_of::<BD::Pixel>();
         let byte_stride = w * pixel_size;
+        let needed = h * byte_stride;
         let pxstride = self.data.pixel_stride::<BD>();
         let abs_stride = pxstride.unsigned_abs();
-        let mut buf = vec![0u8; h * byte_stride];
+        // Reuse a thread-local scratch buffer instead of allocating per call
+        // (issue #17). `resize` keeps the existing capacity across reuse and
+        // only zero-fills when growing past the previous high-water mark; the
+        // per-row copy below fully overwrites `buf[..needed]` regardless, so the
+        // returned `Vec` is byte-identical to the former `vec![0u8; needed]`.
+        let mut buf = COMPACT_SCRATCH.with(|c| c.take()).unwrap_or_default();
+        buf.resize(needed, 0);
         for row in 0..h {
             let row_off = if pxstride >= 0 {
                 self.offset + row * abs_stride
