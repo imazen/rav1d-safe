@@ -45,7 +45,22 @@ fn decode(obu_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
 
 ## API Overview
 
-The public API lives in `src/managed.rs` and is re-exported at the crate root.
+The public API lives in `src/managed.rs` and is re-exported at the crate root, so **every public type is reachable directly from `rav1d_safe`** — no `src::managed::` path needed. One canonical import covering the whole surface:
+
+```rust
+use rav1d_safe::{
+    Decoder, Settings, CpuLevel, Error, Frame, Result,
+    Planes,                       // enum; you match Planes::Depth8(_) / Planes::Depth16(_)
+    Planes8, Planes16,            // the inner per-bit-depth plane sets the variants wrap
+    PlaneView8, PlaneView16,      // zero-copy 2D plane views
+    PixelLayout,                  // I400 / I420 / I422 / I444 (chroma subsampling)
+    DecodeFrameType, InloopFilters,
+    // HDR / color metadata:
+    ColorInfo, ColorPrimaries, TransferCharacteristics, MatrixCoefficients,
+    ColorRange, ContentLightLevel, MasteringDisplay,
+    enabled_features,
+};
+```
 
 **Core types:**
 
@@ -53,17 +68,47 @@ The public API lives in `src/managed.rs` and is re-exported at the crate root.
 |------|---------|
 | `Decoder` | Decodes AV1 OBU data into frames |
 | `Frame` | Decoded frame with metadata (cloneable, Arc-backed) |
-| `Planes` | Enum dispatching to `Planes8` or `Planes16` by bit depth |
-| `PlaneView8` / `PlaneView16` | Zero-copy 2D view with `row()`, `pixel()`, `rows()` |
-| `Settings` | Thread count, film grain, filters, frame size limit, CPU level |
-| `CpuLevel` | SIMD dispatch level (Scalar, X86V2, X86V3, X86V4, Neon, Native) |
-| `Error` | Enum: `InvalidData`, `OutOfMemory`, `NeedMoreData`, etc. |
+| `Planes` | Enum with variants `Planes::Depth8(Planes8)` / `Planes::Depth16(Planes16)`, dispatched by bit depth |
+| `Planes8` / `Planes16` | Per-bit-depth plane set: `.y()` → luma view, `.u()` / `.v()` → `Option<view>` (`None` for I400 monochrome) |
+| `PlaneView8` / `PlaneView16` | Zero-copy 2D view: `row(y)`, `pixel(x, y)`, `rows()`, `width()`, `height()`, `stride()` |
+| `Settings` | Thread count, film grain, frame size limit, inloop filters, CPU level, etc. |
+| `CpuLevel` | SIMD dispatch level (`Scalar`, `X86V2`, `X86V3`, `X86V4`, `Neon`, `Native`) |
+| `Error` | Enum: `InvalidData`, `OutOfMemory`, `NeedMoreData`, `InvalidSettings(&str)`, `InitFailed`, `Other(String)` |
+
+> **Naming note (reconciles the example above):** `Depth8` / `Depth16` are the *variants* of the `Planes` enum — you write `Planes::Depth8(..)` in a `match`. `Planes8` / `Planes16` are the *struct types* those variants wrap, and are also re-exported at the crate root so you can name them in signatures. Both are correct; they refer to different things.
 
 **Metadata types:** `ColorInfo`, `ColorPrimaries`, `TransferCharacteristics`, `MatrixCoefficients`, `ColorRange`, `ContentLightLevel`, `MasteringDisplay`, `PixelLayout`
 
 ### Input Format
 
 The decoder expects raw AV1 Open Bitstream Unit (OBU) data. If you have IVF or WebM containers, strip the container framing first and pass the OBU payload. See `tests/ivf_parser.rs` for an IVF parser example. For AVIF images, use [zenavif-parse](https://crates.io/crates/zenavif-parse) to extract the OBU data from the ISOBMFF container.
+
+### Output Format
+
+`decode()` / `flush()` yield a `Frame` of **planar YUV** pixels — there is no built-in RGB conversion (do that downstream, e.g. with `zenpixels-convert`, or via `zenavif` for AVIF). Read the planes through the bit-depth-dispatched `Planes` enum:
+
+```rust
+let layout = frame.pixel_layout();        // PixelLayout: I400 | I420 | I422 | I444
+let bpc    = frame.bit_depth();           // 8, 10, or 12
+
+match frame.planes() {
+    Planes::Depth8(p) => {                 // 8-bit content: planes are u8
+        let y = p.y();                     // PlaneView8 (luma, always present)
+        let u = p.u();                     // Option<PlaneView8> — None for I400 monochrome
+        let v = p.v();                     // Option<PlaneView8>
+        let (w, h, stride) = (y.width(), y.height(), y.stride());
+        for row in y.rows() { /* row: &[u8], one luma scanline, zero-copy */ }
+        let _ = (u, v, w, h, stride);
+    }
+    Planes::Depth16(p) => {                // 10/12-bit content: planes are u16
+        let _y = p.y();                    // PlaneView16; pixel(x, y) -> u16
+    }
+}
+```
+
+- **Subsampling** is reported by `frame.pixel_layout()`: `I420` (4:2:0, chroma half-width & half-height), `I422` (4:2:2, half-width), `I444` (4:4:4, full-res chroma), `I400` (monochrome — `u()`/`v()` return `None`).
+- **Bit depth** is `frame.bit_depth()` (8 / 10 / 12). `Planes::Depth8` carries `u8` samples; `Planes::Depth16` carries `u16` (the 10/12-bit value is in the low bits).
+- Each `PlaneView{8,16}` is a strided 2D view: `row(y)` borrows one scanline, `rows()` iterates them, `pixel(x, y)` reads one sample, and `width()`/`height()`/`stride()` give its geometry. All accessors are zero-copy borrows into the decoder's frame buffer (held alive by the `Frame`).
 
 ### Threading
 
@@ -81,11 +126,25 @@ let decoder = Decoder::with_settings(Settings {
 
 // Constrained decoding — limit frame size and CPU features
 let decoder = Decoder::with_settings(Settings {
-    frame_size_limit: 3840 * 2160, // reject frames larger than 4K
+    // Unit is TOTAL PIXELS (width * height), NOT bytes and NOT max-dimension.
+    // 3840 * 2160 here means "reject any frame whose width*height exceeds ~8.3 MP" (a 4K cap).
+    frame_size_limit: 3840 * 2160,
     cpu_level: CpuLevel::Native,   // use best available SIMD
     ..Default::default()
 })?;
 ```
+
+#### `frame_size_limit` — the pre-decode DoS guard (read this before decoding untrusted AV1)
+
+This is the only resource bound applied *before* a frame is decoded, so it is the knob that matters for untrusted input. Verified against `src/managed.rs` and `src/obu.rs`:
+
+- **Unit:** the maximum **`width * height` in pixels** (total luma sample count). Not bytes, not the longest dimension. The check is literally `width * height > frame_size_limit` during OBU header parsing — a frame is rejected before any pixel buffer is allocated or decoded.
+- **Default:** **`120_000_000` (120 megapixels)** — chosen to admit ~108 MP phone photos. It is **not** unlimited by default, but 120 MP is large; **set it lower for untrusted servers** (e.g. `7680 * 4320` for an 8K cap, or `3840 * 2160` for 4K).
+- **Disable:** set `frame_size_limit: 0` to turn the limit off entirely (no cap).
+- **On rejection:** the offending OBU fails parsing and `decode()` returns an `Err` (surfaced as `Error::Other` carrying the internal `ERANGE` range error — *not* `Error::InvalidData`). The decoder logs `Frame size WxH exceeds limit N`.
+- **32-bit hosts:** on targets where `usize` is < 64 bits, the effective cap is additionally clamped to `8192 * 8192` regardless of the value you set (a non-zero larger value is silently reduced; `0`/unlimited still means unlimited).
+
+> **Caveat for servers:** `frame_size_limit` bounds the *declared frame dimensions* only. It does **not** bound total decode time, memory of a large-but-legal frame, or the number of OBUs/frames in a stream. There is no per-decode time budget — see *Cancellation* below.
 
 With `threads >= 2` or `threads == 0`, the decoder uses tile threading to parallelize decode within each frame. `decode()` may return `None` for complete frames because processing is asynchronous — call it repeatedly or use `flush()` to drain.
 
@@ -112,7 +171,13 @@ let color = frame.color_info();
 
 ### Error Handling
 
-All fallible operations return `Result<T, rav1d_safe::Error>`. Error variants: `InvalidData`, `OutOfMemory`, `NeedMoreData`, `InitFailed`, `InvalidSettings`, `Other`.
+Fallible operations return the crate's `Result<T>` alias, which is `Result<T, whereat::At<Error>>` — the `Error` is wrapped in [`whereat`]'s `At<…>`, recording the source location where the failure surfaced (handy for server logs). Unwrap the inner `Error` with `err.error()` (borrow) or `err.decompose().0` (owned). `Error` variants: `InvalidData`, `OutOfMemory`, `NeedMoreData`, `InitFailed`, `InvalidSettings(&str)`, `Other(String)`. (`From<Rav1dError>` maps the internal `EAGAIN → NeedMoreData`, `ENOMEM → OutOfMemory`, `EINVAL → InvalidData`, and everything else — including the `frame_size_limit` `ERANGE` — to `Other`.)
+
+### Cancellation
+
+**There is no in-flight decode cancellation.** The decoder exposes no stop/cancel/abort token — once `decode()` (or `flush()`) starts processing a frame, it runs to completion on the calling thread (plus any worker threads); you cannot interrupt a slow-but-valid decode from another thread, and dropping the `Decoder` joins its workers rather than aborting mid-frame.
+
+For untrusted input this means the **only pre-decode guard is `frame_size_limit`** (see above), which bounds declared frame dimensions but not wall-clock decode time. If you need a hard time bound on a server, enforce it *around* the decoder — e.g. run `decode()` on a worker thread/task with your own timeout and abandon the result (the decode still finishes in the background; budget for that), or pre-screen stream size/frame count before feeding OBUs. A first-class cooperative-cancellation token (e.g. via the `enough` crate) is **not** currently implemented; this is tracked upstream.
 
 ## Safety Model
 
