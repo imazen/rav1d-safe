@@ -222,10 +222,15 @@ fn cdef_direct<BD: BitDepth>(
                     let (mut guard, _) = dst.strided_slice_mut::<BD>(w, h);
                     guard.copy_from_slice(&simd_pixels);
                 }
-                panic!(
-                    "CDEF SIMD/scalar: {} pixel diffs, first at ({},{}) idx={}: simd={} scalar={} variant={} pri={} sec={} dir={} damping={}",
+                let msg = format!(
+                    "CDEF_MISMATCH diffs={} first=({},{}) idx={} simd={} scalar={} variant={} pri={} sec={} dir={} damping={}",
                     diffs, x, y, idx, sv, rv, variant, pri_strength, sec_strength, dir, damping
                 );
+                if std::env::var_os("SIMD_TEST_LOG").is_some() {
+                    eprintln!("{msg}");
+                } else {
+                    panic!("{msg}");
+                }
             }
 
             // Restore SIMD output

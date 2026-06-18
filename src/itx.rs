@@ -484,16 +484,32 @@ impl itxfm::Fn {
                         let scalar_pixels = guard.to_vec();
                         drop(guard);
 
+                        // Bit-exactness gate: NEON must match the generic scalar
+                        // exactly. Panics on any divergence; set SIMD_TEST_LOG=1 to
+                        // log-and-continue and collect the full mismatch inventory in
+                        // one decode pass (issue #414).
+                        let mut nbad = 0usize;
+                        let mut max_diff = 0i32;
                         for y in 0..h {
                             for x in 0..w {
                                 let idx = y * pxstride + x;
-                                let sv = simd_pixels[idx].as_::<i32>();
-                                let rv = scalar_pixels[idx].as_::<i32>();
-                                assert_eq!(
-                                    sv, rv,
-                                    "ITX SIMD/scalar mismatch at ({},{}) idx={}: simd={} scalar={} size={}x{} type={} eob={}",
-                                    x, y, idx, sv, rv, w, h, tx_type, eob
-                                );
+                                let d = (simd_pixels[idx].as_::<i32>()
+                                    - scalar_pixels[idx].as_::<i32>())
+                                .abs();
+                                if d != 0 {
+                                    nbad += 1;
+                                    max_diff = max_diff.max(d);
+                                }
+                            }
+                        }
+                        if nbad != 0 {
+                            let msg = format!(
+                                "ITX_MISMATCH size={w}x{h} type={tx_type} eob={eob} nbad={nbad} max_diff={max_diff}"
+                            );
+                            if std::env::var_os("SIMD_TEST_LOG").is_some() {
+                                eprintln!("{msg}");
+                            } else {
+                                panic!("{msg}");
                             }
                         }
 

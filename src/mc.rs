@@ -753,9 +753,14 @@ fn mc_put_direct<BD: BitDepth>(
         }
         if nbad != 0 {
             let (hf, vf) = filter.hv();
-            eprintln!(
+            let msg = format!(
                 "MC_PUT_MISMATCH w={wu} h={hu} mx={mx} my={my} hf={hf:?} vf={vf:?} nbad={nbad} max_diff={max_diff}"
             );
+            if std::env::var_os("SIMD_TEST_LOG").is_some() {
+                eprintln!("{msg}");
+            } else {
+                panic!("{msg}");
+            }
         }
         {
             let (mut g, _) = dst.strided_slice_mut::<BD>(wu, hu);
@@ -822,9 +827,14 @@ fn mct_prep_direct<BD: BitDepth>(
         }
         if nbad != 0 {
             let (hf, vf) = filter.hv();
-            eprintln!(
+            let msg = format!(
                 "MC_PREP_MISMATCH w={wu} h={hu} mx={mx} my={my} hf={hf:?} vf={vf:?} nbad={nbad} max_diff={max_diff}"
             );
+            if std::env::var_os("SIMD_TEST_LOG").is_some() {
+                eprintln!("{msg}");
+            } else {
+                panic!("{msg}");
+            }
         }
         tmp[..n].copy_from_slice(&simd_out);
         return;

@@ -228,16 +228,28 @@ fn lr_filter_direct<BD: BitDepth>(
                 3 => "sgr_3x3",
                 _ => "sgr_mix",
             };
+            // Bit-exactness gate: panics on divergence; set SIMD_TEST_LOG=1 to
+            // log-and-continue for the full inventory in one pass (issue #414).
+            let mut nbad = 0usize;
+            let mut max_diff = 0i32;
             for y in 0..h_usize {
                 for x in 0..w_usize {
                     let idx = offset + y * pxstride + x;
-                    let sv = simd_buf[idx].as_::<i32>();
-                    let rv = scalar_buf[idx].as_::<i32>();
-                    assert_eq!(
-                        sv, rv,
-                        "LR SIMD/scalar mismatch at ({},{}) idx={}: simd={} scalar={} variant={} w={} h={}",
-                        x, y, idx, sv, rv, variant_name, w, h
-                    );
+                    let d = (simd_buf[idx].as_::<i32>() - scalar_buf[idx].as_::<i32>()).abs();
+                    if d != 0 {
+                        nbad += 1;
+                        max_diff = max_diff.max(d);
+                    }
+                }
+            }
+            if nbad != 0 {
+                let msg = format!(
+                    "LR_MISMATCH variant={variant_name} w={w} h={h} nbad={nbad} max_diff={max_diff}"
+                );
+                if std::env::var_os("SIMD_TEST_LOG").is_some() {
+                    eprintln!("{msg}");
+                } else {
+                    panic!("{msg}");
                 }
             }
 

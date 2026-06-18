@@ -166,10 +166,15 @@ fn loopfilter_sb_direct<BD: BitDepth>(
                 }
             }
             if let Some((idx, x, y, sv, rv)) = first_diff {
-                panic!(
-                    "LF SIMD/scalar: {} pixel diffs, first at ({},{}) idx={}: simd={} scalar={} is_y={} is_v={} w={}",
+                let msg = format!(
+                    "LF_MISMATCH diffs={} first=({},{}) idx={} simd={} scalar={} is_y={} is_v={} w={}",
                     diffs, x, y, idx, sv, rv, is_y, is_v, w
                 );
+                if std::env::var_os("SIMD_TEST_LOG").is_some() {
+                    eprintln!("{msg}");
+                } else {
+                    panic!("{msg}");
+                }
             }
 
             // Restore SIMD output so decoder proceeds correctly
