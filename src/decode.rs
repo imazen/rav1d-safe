@@ -58,6 +58,7 @@ use crate::src::env::get_mask_comp_ctx;
 use crate::src::env::get_partition_ctx;
 use crate::src::env::get_poc_diff;
 use crate::src::env::get_tx_ctx;
+use crate::src::error::Rav1dError::ECANCELED;
 use crate::src::error::Rav1dError::EINVAL;
 use crate::src::error::Rav1dError::ENOMEM;
 use crate::src::error::Rav1dError::ENOPROTOOPT;
@@ -4806,6 +4807,10 @@ fn rav1d_decode_frame_main(c: &Rav1dContext, f: &mut Rav1dFrameData) -> Rav1dRes
     let [rows, cols] = [rows, cols].map(|it| it.into());
     // Need to clone this because `(f.bd_fn().filter_sbrow)(f, sby);` takes a `&mut` to `f` within the loop.
     let row_start_sb = frame_hdr.tiling.row_start_sb;
+    // Cooperative cancellation (issue #412): clone the token once (None when
+    // unset / `Unstoppable`), then poll it per sbrow — the natural granularity
+    // for bounding an in-flight decode without abandoning the calling thread.
+    let stop = c.stop_token();
     for (tile_row, sbh_start_end) in row_start_sb[..rows + 1].windows(2).take(rows).enumerate() {
         // Needed until #[feature(array_windows)] stabilizes; it should hopefully optimize out.
         let [sbh_start, sbh_end] = <[u16; 2]>::try_from(sbh_start_end).unwrap();
@@ -4813,6 +4818,11 @@ fn rav1d_decode_frame_main(c: &Rav1dContext, f: &mut Rav1dFrameData) -> Rav1dRes
         let sbh_end = cmp::min(sbh_end.into(), f.sbh);
 
         for sby in sbh_start.into()..sbh_end {
+            if let Some(stop) = &stop
+                && stop.check().is_err()
+            {
+                return Err(ECANCELED);
+            }
             let seq_hdr = &***f.seq_hdr.as_ref().ok_or(EINVAL)?;
             let frame_hdr = &***f.frame_hdr.as_ref().ok_or(EINVAL)?;
             t.b.y = sby << 4 + seq_hdr.sb128;

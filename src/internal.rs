@@ -431,6 +431,35 @@ pub struct Rav1dContext {
     pub(crate) logger: Option<Rav1dLogger>,
 
     pub(crate) picture_pool: Arc<MemPool<u8>>,
+
+    /// Cooperative cancellation token (issue #412). When set, the decode loop
+    /// checks it at sbrow boundaries (single-threaded) and at task boundaries
+    /// (multi-threaded) and aborts the in-flight frame with
+    /// [`Rav1dError::ECANCELED`](crate::src::error::Rav1dError::ECANCELED) if it
+    /// fires. `None` (the default) means never stop — zero overhead. Behind a
+    /// `Mutex` because the context is shared `Arc` across worker threads and the
+    /// owner may swap the token between decodes; the lock is taken only once per
+    /// frame (the token `Arc` is cloned out before the per-sbrow loop), never in
+    /// an inner pixel loop.
+    pub(crate) stop: Mutex<Option<Arc<dyn enough::Stop>>>,
+}
+
+impl Rav1dContext {
+    /// Set (or clear with `None`) the cooperative cancellation token checked by
+    /// the decode loop. See [`Rav1dContext::stop`].
+    pub(crate) fn set_stop(&self, stop: Option<Arc<dyn enough::Stop>>) {
+        *self.stop.lock() = stop;
+    }
+
+    /// Clone out the current cancellation token, if any. Callers clone once
+    /// before a decode and then check the returned token per sbrow/task without
+    /// re-locking. Returns `None` when no token is set or the token can never
+    /// fire ([`enough::Stop::may_stop`] is `false`, e.g. `Unstoppable`), so the
+    /// hot loop skips the check entirely.
+    pub(crate) fn stop_token(&self) -> Option<Arc<dyn enough::Stop>> {
+        let token = self.stop.lock().clone()?;
+        token.may_stop().then_some(token)
+    }
 }
 
 // PicDataPtr uses SendSyncNonNull<u8>, so Rav1dContext

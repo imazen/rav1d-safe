@@ -1040,7 +1040,16 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
         drop(task_thread_lock.take().expect("thread lock was not held"));
 
         'found_unlocked: loop {
-            let flush = c.flush.load(Ordering::SeqCst) as i32;
+            // Cooperative cancellation (issue #412): a fired stop token aborts the
+            // in-flight frame through the same per-frame error path as `c.flush`
+            // (which is how `rav1d_flush` drops frames), so multi-threaded /
+            // tile-threaded decodes honor the token too. Frame-local: this OR
+            // sets only this frame context's error, not the global flush flag.
+            // `stop_token()` returns `None` (a cheap unlocked-after-clone path)
+            // when no token is set or it can never fire, so the common case adds
+            // only one uncontended lock per sbrow-granularity task.
+            let stop = c.stop_token().is_some_and(|s| s.should_stop()) as i32;
+            let flush = c.flush.load(Ordering::SeqCst) as i32 | stop;
             let mut error_0 = fc.task_thread.error.fetch_or(flush, Ordering::SeqCst) | flush;
 
             // run it

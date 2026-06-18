@@ -59,6 +59,11 @@ use crate::src::internal::Rav1dContext;
 use std::ops::Deref;
 use std::sync::Arc;
 
+/// Cooperative cancellation token support (issue #412). Re-exported from the
+/// [`enough`] crate so callers can pass a `&dyn Stop` / `Arc<dyn Stop>` to
+/// [`Decoder::set_stop`] without depending on `enough` directly.
+pub use enough::{Stop, StopReason, Unstoppable};
+
 /// Decoder errors
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -67,6 +72,10 @@ pub enum Error {
     OutOfMemory,
     InvalidData,
     NeedMoreData,
+    /// The in-flight decode was stopped cooperatively via the token set with
+    /// [`Decoder::set_stop`] (issue #412). The caller owns the token and knows
+    /// why it fired (cancellation vs. timeout); re-check it for the reason.
+    Cancelled,
     Other(String),
 }
 
@@ -78,6 +87,7 @@ impl std::fmt::Display for Error {
             Self::OutOfMemory => write!(f, "out of memory"),
             Self::InvalidData => write!(f, "invalid data"),
             Self::NeedMoreData => write!(f, "need more data"),
+            Self::Cancelled => write!(f, "decode cancelled via stop token"),
             Self::Other(msg) => write!(f, "decode error: {}", msg),
         }
     }
@@ -91,6 +101,7 @@ impl From<Rav1dError> for Error {
             Rav1dError::EAGAIN => Self::NeedMoreData,
             Rav1dError::ENOMEM => Self::OutOfMemory,
             Rav1dError::EINVAL => Self::InvalidData,
+            Rav1dError::ECANCELED => Self::Cancelled,
             Rav1dError::EGeneric => Self::Other("generic error".to_string()),
             _ => Self::Other(format!("{:?}", err)),
         }
@@ -451,6 +462,11 @@ impl std::fmt::Display for CpuLevel {
 pub struct Decoder {
     ctx: Arc<Rav1dContext>,
     worker_handles: Vec<std::thread::JoinHandle<()>>,
+    /// Cooperative cancellation token (issue #412). Kept here as well as in the
+    /// context so that on any decode error we can authoritatively report
+    /// [`Error::Cancelled`] by re-checking the caller's token — independent of
+    /// how the internal error code is plumbed.
+    stop: Option<Arc<dyn Stop>>,
 }
 
 /// Returns `true` if the `unchecked` feature is enabled.
@@ -480,7 +496,50 @@ impl Decoder {
         Ok(Self {
             ctx,
             worker_handles,
+            stop: None,
         })
+    }
+
+    /// Set (or clear with `None`) a cooperative cancellation token (issue #412).
+    ///
+    /// While set, the decode loop polls the token at sbrow boundaries and aborts
+    /// the in-flight frame with [`Error::Cancelled`] if it fires — so a server
+    /// can bound a slow decode of a crafted-but-legal stream without abandoning
+    /// the worker thread. Pass any `Arc<dyn Stop>` (a deadline, a flag, an
+    /// [`Unstoppable`] no-op); `None` (the default) disables checking at zero
+    /// cost. The token applies to subsequent `decode` / `get_frame` / `flush`
+    /// calls and may be swapped between them.
+    ///
+    /// Both decode paths honor the token: the single-threaded loop (`threads = 1`,
+    /// the default) checks it per sbrow, and tile-threaded workers (`threads > 1`)
+    /// check it per task and abort the frame through the same error path the
+    /// internal flush uses. Granularity is one superblock row, so a cancel lands
+    /// within a few milliseconds even on a large frame, not at the next frame
+    /// boundary.
+    ///
+    /// ```no_run
+    /// # use rav1d_safe::src::managed::{Decoder, Unstoppable};
+    /// # use std::sync::Arc;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut decoder = Decoder::new()?;
+    /// decoder.set_stop(Some(Arc::new(Unstoppable)));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn set_stop(&mut self, stop: Option<Arc<dyn Stop>>) {
+        self.ctx.set_stop(stop.clone());
+        self.stop = stop;
+    }
+
+    /// If a cancellation token is set and currently signalling stop, returns
+    /// `Err(Cancelled)`; otherwise maps the raw error normally. Used to give the
+    /// caller an authoritative `Cancelled` regardless of the internal error code.
+    fn classify_decode_error(&self, e: Rav1dError) -> whereat::At<Error> {
+        if self.stop.as_ref().is_some_and(|s| s.should_stop()) {
+            whereat::at(Error::Cancelled)
+        } else {
+            whereat::at(Error::from(e))
+        }
     }
 
     /// Decode AV1 OBU data from a byte slice
@@ -525,16 +584,19 @@ impl Decoder {
             }
         };
 
-        // Send data to decoder
+        // Send data to decoder. With tile threading (and frame threading off)
+        // an in-flight frame may be decoded synchronously here, so a fired stop
+        // token can surface on this call — route it through the same classifier
+        // so it reports `Cancelled`, not the raw decode error.
         crate::src::lib::rav1d_send_data(&self.ctx, &mut rav1d_data)
-            .map_err(|e| whereat::at(Error::from(e)))?;
+            .map_err(|e| self.classify_decode_error(e))?;
 
         // Try to get a picture
         let mut pic = Rav1dPicture::default();
         match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
             Ok(()) => Ok(Some(Frame { inner: pic })),
             Err(Rav1dError::EAGAIN) => Ok(None),
-            Err(e) => Err(whereat::at(Error::from(e))),
+            Err(e) => Err(self.classify_decode_error(e)),
         }
     }
 
@@ -548,7 +610,7 @@ impl Decoder {
         match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
             Ok(()) => Ok(Some(Frame { inner: pic })),
             Err(Rav1dError::EAGAIN) => Ok(None),
-            Err(e) => Err(whereat::at(Error::from(e))),
+            Err(e) => Err(self.classify_decode_error(e)),
         }
     }
 
@@ -565,7 +627,7 @@ impl Decoder {
             match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
                 Ok(()) => frames.push(Frame { inner: pic }),
                 Err(Rav1dError::EAGAIN) => break,
-                Err(e) => return Err(whereat::at(Error::from(e))),
+                Err(e) => return Err(self.classify_decode_error(e)),
             }
         }
         Ok(frames)

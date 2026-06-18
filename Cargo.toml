@@ -38,6 +38,9 @@ whereat = "0.1.5"
 atomig = { version = "0.4.1", features = ["derive"] }
 bitflags = "2.4.0"
 cfg-if = "1.0.0"
+# Cooperative cancellation token (issue #412). no_std trait crate; the `Stop`
+# trait is Send+Sync and object-safe, so we store `Arc<dyn Stop>` in the context.
+enough = "0.4.4"
 rav1d-disjoint-mut = { version = "0.3.1", path = "crates/rav1d-disjoint-mut", default-features = false, features = ["std", "aligned", "pic-buf", "zerocopy"] }
 libc = { version = "0.2", optional = true }
 parking_lot = "0.12.2"

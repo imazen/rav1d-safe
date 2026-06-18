@@ -27,6 +27,14 @@ pub enum Rav1dError {
     EINVAL = 22,
     ERANGE = 34,
     ENOPROTOOPT = 92,
+
+    /// Decode was stopped cooperatively via a [`Stop`](enough::Stop) token
+    /// (issue #412). Not a POSIX passthrough — this is an internal rav1d signal,
+    /// so it is intentionally excluded from the `c-ffi` errno static assertions
+    /// below. The numeric value matches Linux `ECANCELED` (125) for the common
+    /// case, but the managed API authoritatively reports cancellation by
+    /// re-checking the caller's token, not by this code.
+    ECANCELED = 125,
 }
 
 // When c-ffi is enabled, verify our hardcoded values match the platform's errno.

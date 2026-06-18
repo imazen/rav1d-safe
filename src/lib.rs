@@ -249,6 +249,7 @@ pub(crate) fn rav1d_open(
         flush: Default::default(),
         dsp: Default::default(),
         picture_pool: Default::default(),
+        stop: Default::default(),
     };
 
     #[cfg_attr(not(feature = "c-ffi"), allow(unused_mut))]

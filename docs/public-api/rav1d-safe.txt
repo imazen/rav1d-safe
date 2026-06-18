@@ -6,7 +6,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: rav1d-safe.txt 1186 lines (supported surface) | rav1d-safe.features.txt 116 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,simd_test,unchecked) | rav1d-safe.internal.txt 63 lines (64 hidden + 0 excluded-feature)
+# files: rav1d-safe.txt 1193 lines (supported surface) | rav1d-safe.features.txt 116 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,simd_test,unchecked) | rav1d-safe.internal.txt 63 lines (64 hidden + 0 excluded-feature)
 
 ## summary
 #
@@ -14,20 +14,21 @@
 #   pub types (struct/enum/trait/alias)       129
 #   pub consts/statics                        195
 #   free functions                              6
-#   inherent methods                           99
+#   inherent methods                          101
 #   struct fields                             464
-#   enum variants                             202
+#   enum variants                             204
+#   re-exports                                  3
 #   trait roster entries (type × trait)       283
 #   conditional trait impls (verbatim)          7
 #   auto-trait-complete types                  74
 #   auto-trait exceptions                      12
 #
 # per-module pub lines:
-#   (root)                          151
+#   (root)                          152
 #   include                         753
-#   src                             202
+#   src                             208
 
-## items (1078 lines)
+## items (1085 lines)
 
 pub mod rav1d_safe
 pub mod include
@@ -806,6 +807,9 @@ pub type include::dav1d::picture::Rav1dPictureDataComponentInner = rav1d_disjoin
 pub type include::dav1d::picture::Rav1dPictureDataComponentOffset<'a> = src::with_offset::WithOffset<&'a include::dav1d::picture::Rav1dPictureDataComponent>
 pub mod src
 pub mod src::managed
+pub use src::managed::Stop
+pub use src::managed::StopReason
+pub use src::managed::Unstoppable
 pub src::managed::ColorPrimaries::BT2020 = 9
 pub src::managed::ColorPrimaries::BT470BG = 5
 pub src::managed::ColorPrimaries::BT470M = 4
@@ -836,6 +840,7 @@ pub src::managed::DecodeFrameType::All
 pub src::managed::DecodeFrameType::Intra
 pub src::managed::DecodeFrameType::Key
 pub src::managed::DecodeFrameType::Reference
+pub src::managed::Error::Cancelled
 pub src::managed::Error::InitFailed
 pub src::managed::Error::InvalidData
 pub src::managed::Error::InvalidSettings(&'static str)
@@ -891,6 +896,7 @@ pub fn src::managed::Decoder::decode(&mut self, &[u8]) -> src::managed::Result<c
 pub fn src::managed::Decoder::flush(&mut self) -> src::managed::Result<alloc::vec::Vec<src::managed::Frame>>
 pub fn src::managed::Decoder::get_frame(&mut self) -> src::managed::Result<core::option::Option<src::managed::Frame>>
 pub fn src::managed::Decoder::new() -> src::managed::Result<Self>
+pub fn src::managed::Decoder::set_stop(&mut self, core::option::Option<alloc::sync::Arc<dyn enough::Stop>>)
 pub fn src::managed::Decoder::with_settings(src::managed::Settings) -> src::managed::Result<Self>
 pub fn src::managed::Frame::bit_depth(&self) -> u8
 pub fn src::managed::Frame::color_info(&self) -> src::managed::ColorInfo
@@ -982,6 +988,7 @@ pub DecodeFrameType::Intra
 pub DecodeFrameType::Key
 pub DecodeFrameType::Reference
 pub enum Error [also: src::managed]
+pub Error::Cancelled
 pub Error::InitFailed
 pub Error::InvalidData
 pub Error::InvalidSettings(&'static str)
@@ -1044,6 +1051,7 @@ pub fn src::managed::Decoder::decode(&mut self, &[u8]) -> src::managed::Result<c
 pub fn src::managed::Decoder::flush(&mut self) -> src::managed::Result<alloc::vec::Vec<src::managed::Frame>>
 pub fn src::managed::Decoder::get_frame(&mut self) -> src::managed::Result<core::option::Option<src::managed::Frame>>
 pub fn src::managed::Decoder::new() -> src::managed::Result<Self>
+pub fn src::managed::Decoder::set_stop(&mut self, core::option::Option<alloc::sync::Arc<dyn enough::Stop>>)
 pub fn src::managed::Decoder::with_settings(src::managed::Settings) -> src::managed::Result<Self>
 pub struct Frame [also: src::managed]
 pub fn src::managed::Frame::bit_depth(&self) -> u8

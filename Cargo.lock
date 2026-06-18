@@ -867,6 +867,7 @@ dependencies = [
  "cc",
  "cfg-if",
  "divan",
+ "enough",
  "libc",
  "md5",
  "nasm-rs",
