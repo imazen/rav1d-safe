@@ -384,13 +384,6 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(rav1d_arm_dotprod)");
     println!("cargo::rustc-check-cfg=cfg(rav1d_arm_i8mm)");
 
-    // `rav1d_arm_itx_bitexact` re-enables the aarch64 NEON inverse-transform
-    // dispatch, which is gated off by default because it is not yet bit-exact
-    // with the scalar reference (issue #400). Set
-    // `RUSTFLAGS="--cfg rav1d_arm_itx_bitexact"` only once each NEON transform
-    // is verified byte-identical to the generic scalar itx.
-    println!("cargo::rustc-check-cfg=cfg(rav1d_arm_itx_bitexact)");
-
     // Emit cfg aliases so individual modules can use simple `#[cfg(asm_msac)]` etc.
     // instead of `#[cfg(any(feature = "asm", feature = "partial_asm"))]` at many sites.
     //

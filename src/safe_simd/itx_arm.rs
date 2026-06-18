@@ -8373,23 +8373,21 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     eob: i32,
     bd: BD,
 ) -> bool {
-    // Issue #400: the aarch64 NEON inverse transforms below are NOT bit-exact
-    // with the scalar/spec reference. Their NEON-vs-scalar unit tests pass only
-    // under a `MAX_DIFF = 15` tolerance, but AV1 decode requires bit-exact
-    // output, so on aarch64 they produced wrong pixels — decoding the same
-    // stream gave a different YUV MD5 on aarch64 vs x86 (e.g. kodim03,
-    // alpha_noispe), and the differential-vs-dav1d fuzz target crashed on arm64.
-    // Until the NEON arithmetic is made bit-exact, fall back to the proven
-    // generic scalar itx (verified byte-identical to x86). Same correctness-first
-    // pattern as `loopfilter_arm::loopfilter_sb_dispatch`. The NEON dispatch is
-    // preserved but compiled out behind the (never-set) `rav1d_arm_itx_bitexact`
-    // cfg, so it can be re-enabled once each transform is verified bit-exact.
+    // Issue #400: the aarch64 NEON inverse transforms are now bit-exact with the
+    // scalar/spec reference — verified tolerance-0 against the generic itx
+    // (`simd_test` feature) across the full dav1d conformance corpus on native
+    // arm64, and end-to-end as identical YUV MD5 to x86. The earlier divergence
+    // (NEON-vs-scalar tests passing only under a MAX_DIFF tolerance) was fixed
+    // per transform: missing intermediate clipping + wrong sh=32 layout/shifts on
+    // the large DCTs (routed through the spec's clipping 1-D DCT + NEON add), and
+    // the frequent 8x32/32x8/32x16 NEON kernels' wrong rect2 scaling, shifts,
+    // row-group skips and DC path. So the NEON dispatch runs on aarch64 again.
     //
     // When asm feature is not enabled, dispatch to NEON inner functions directly
     // for transform sizes that have been ported. Fall back to scalar for the rest.
     #[cfg(not(feature = "asm"))]
     {
-        #[cfg(all(target_arch = "aarch64", rav1d_arm_itx_bitexact))]
+        #[cfg(target_arch = "aarch64")]
         {
             use crate::include::common::bitdepth::BPC;
             use crate::src::levels::{self, TxfmSize};
@@ -9120,9 +9118,8 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             return false;
         }
 
-        // Generic-scalar fallback: non-aarch64 builds, and aarch64 builds where
-        // the NEON itx is gated off (the default — see the #400 note above).
-        #[cfg(not(all(target_arch = "aarch64", rav1d_arm_itx_bitexact)))]
+        // Non-aarch64 builds with asm off: nothing ported here, use generic scalar.
+        #[cfg(not(target_arch = "aarch64"))]
         {
             let _ = (tx_size, tx_type, &dst, coeff, eob, &bd);
             return false;

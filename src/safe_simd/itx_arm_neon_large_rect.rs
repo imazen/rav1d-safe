@@ -65,26 +65,23 @@ fn dc_only_large_rect_8bpc(
     h: usize,
     shift: i32,
 ) {
-    let dc = coeff[0];
+    // DC-only fast path, bit-exact with the spec (issue #400). The previous code
+    // applied the rect2 sqrdmulh unconditionally (wrong for the 4:1 non-rect2
+    // sizes 8x32 / 32x8) and split the final normalization into >>8 then >>4
+    // (off-by-1 vs the spec's single *181+128+2048>>12). Compute dc in i32
+    // exactly as inv_txfm_add's dc_only branch, then broadcast for the NEON add.
+    // Note vqrdmulhq_s16(v, 2896*8) == (v*181+128)>>8 exactly.
+    let mut dc = coeff[0] as i32;
     coeff[0] = 0;
-
-    let scale = vdupq_n_s16((2896 * 8) as i16);
-    let v = vdupq_n_s16(dc);
-
-    // First sqrdmulh
-    let v = vqrdmulhq_s16(v, scale);
-    // For ratio >1: extra rect2 sqrdmulh
-    let v = vqrdmulhq_s16(v, scale);
-    // Apply shift
-    let v = match shift {
-        1 => vrshrq_n_s16::<1>(v),
-        2 => vrshrq_n_s16::<2>(v),
-        _ => v,
-    };
-    // Second sqrdmulh
-    let v = vqrdmulhq_s16(v, scale);
-    // Final srshr >>4
-    let v = vrshrq_n_s16::<4>(v);
+    let is_rect2 = w * 2 == h || h * 2 == w;
+    let rnd = (1i32 << shift) >> 1;
+    if is_rect2 {
+        dc = (dc * 181 + 128) >> 8;
+    }
+    dc = (dc * 181 + 128) >> 8;
+    dc = (dc + rnd) >> shift;
+    dc = (dc * 181 + 128 + 2048) >> 12;
+    let v = vdupq_n_s16(dc as i16);
 
     for y in 0..h {
         let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
@@ -249,21 +246,23 @@ fn horz_dct8_for_8x32(
         coeff[base..base + 8].fill(0);
     }
 
-    // Scale input
-    scale_input_q_8(&mut v);
+    // 8x32 is 4:1, NOT rect2 (issue #400): no √2 input scaling (idct_8_q takes
+    // unscaled input, as 8x8 does), and the spec intermediate shift is 2 (not the
+    // rect2 sizes' 1). The previous copy from horz_dct16_for_16x32 wrongly applied
+    // scale_input + >>1, ~1.41× too large.
 
     // Apply 8-point DCT
     let (r0, r1, r2, r3, r4, r5, r6, r7) = idct_8_q(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
 
-    // srshr>>1 (rectangular normalization)
-    let r0 = vrshrq_n_s16::<1>(r0);
-    let r1 = vrshrq_n_s16::<1>(r1);
-    let r2 = vrshrq_n_s16::<1>(r2);
-    let r3 = vrshrq_n_s16::<1>(r3);
-    let r4 = vrshrq_n_s16::<1>(r4);
-    let r5 = vrshrq_n_s16::<1>(r5);
-    let r6 = vrshrq_n_s16::<1>(r6);
-    let r7 = vrshrq_n_s16::<1>(r7);
+    // Intermediate round-shift (v + 2) >> 2; i16 store gives the spec i16 clip.
+    let r0 = vrshrq_n_s16::<2>(r0);
+    let r1 = vrshrq_n_s16::<2>(r1);
+    let r2 = vrshrq_n_s16::<2>(r2);
+    let r3 = vrshrq_n_s16::<2>(r3);
+    let r4 = vrshrq_n_s16::<2>(r4);
+    let r5 = vrshrq_n_s16::<2>(r5);
+    let r6 = vrshrq_n_s16::<2>(r6);
+    let r7 = vrshrq_n_s16::<2>(r7);
 
     // Transpose 8x8
     let (t0, t1, t2, t3, t4, t5, t6, t7) = transpose_8x8h(r0, r1, r2, r3, r4, r5, r6, r7);
@@ -512,23 +511,19 @@ pub(crate) fn inv_txfm_add_dct_dct_8x32_8bpc_neon_inner(
 ) {
     // DC-only fast path
     if eob == 0 {
-        dc_only_large_rect_8bpc(dst, dst_base, dst_stride, coeff, 8, 32, 1);
+        dc_only_large_rect_8bpc(dst, dst_base, dst_stride, coeff, 8, 32, 2);
         return;
     }
-
-    // eob thresholds for 8x32 row groups (32 rows in 4 groups of 8)
-    let eob_thresholds: [i32; 4] = [36, 136, 300, 1024];
 
     // Scratch: 32 rows x 8 columns
     let mut scratch = [0i16; 256];
 
-    // Row transform: process 4 groups of 8 rows
+    // Row transform: process all 4 groups of 8 rows. (The previous eob-threshold
+    // early-break skipped row groups that can still hold non-zero coefficients at
+    // high eob — issue #400. Re-introduce a correct eob skip as a perf follow-up.)
+    let _ = eob;
     for group in 0..4 {
         let row_start = group * 8;
-        if group > 0 && eob < eob_thresholds[group - 1] {
-            break;
-        }
-
         // coeff layout is column-major: coeff[row + col * 32]
         horz_dct8_for_8x32(
             coeff,
@@ -625,7 +620,7 @@ pub(crate) fn inv_txfm_add_dct_dct_32x8_8bpc_neon_inner(
     _bitdepth_max: i32,
 ) {
     if eob == 0 {
-        dc_only_large_rect_8bpc(dst, dst_base, dst_stride, coeff, 32, 8, 1);
+        dc_only_large_rect_8bpc(dst, dst_base, dst_stride, coeff, 32, 8, 2);
         return;
     }
 
@@ -676,11 +671,10 @@ pub(crate) fn inv_txfm_add_dct_dct_32x8_8bpc_neon_inner(
     // Let me just use the simpler approach for 32x8:
     // Use the scalar row transform, then NEON column add.
 
-    // Actually, let me reconsider. I'll re-implement the scratch properly.
-    // For now, clear scratch and redo.
-    scratch.fill(0);
-
-    horz_32x8_rect(coeff, 0, 8, &mut scratch, 0);
+    // horz_dct_32x8 above already wrote the correct 32-point row transform
+    // (hardcoded >>2, same kernel 32x32 uses bit-exactly). The previous code
+    // wiped it and substituted the rect2 kernel horz_32x8_rect — wrong for 32x8
+    // (4:1, not rect2). Issue #400.
 
     // Column transform: 4 groups of 8 columns
     for group in 0..4 {
@@ -719,6 +713,12 @@ fn horz_32x8_rect(
         even_in[c] = safe_simd::vld1q_s16(&arr);
         coeff[base..base + 8].fill(0);
     }
+
+    // rect2 √2 input scaling for 32x16 (issue #400): this kernel's only caller is
+    // 32x16 (2:1, rect2), which the spec scales by *181+128>>8 before the row
+    // DCT. vqrdmulhq(v, 2896*8) == (v*181+128)>>8 exactly. The previous code
+    // omitted it, leaving a content-dependent ~1.41× error.
+    scale_input_q_16(&mut even_in);
 
     let even_out = idct_16_q(even_in);
 
@@ -764,6 +764,9 @@ fn horz_32x8_rect(
         odd_in[c] = safe_simd::vld1q_s16(&arr);
         coeff[base..base + 8].fill(0);
     }
+
+    // rect2 √2 input scaling (see even-input note above).
+    scale_input_q_16(&mut odd_in);
 
     let odd_out = idct32_odd_q(odd_in);
 
@@ -1013,17 +1016,14 @@ pub(crate) fn inv_txfm_add_dct_dct_32x16_8bpc_neon_inner(
         return;
     }
 
-    let eob_thresholds: [i32; 2] = [36, 512];
-
     // Scratch: 16 rows x 32 columns
     let mut scratch = [0i16; 512];
 
-    // Row transform: 2 groups of 8 rows, 32-point DCT
+    // Row transform: both groups of 8 rows (the eob-threshold early-break skipped
+    // non-zero rows at high eob — issue #400).
+    let _ = eob;
     for group in 0..2 {
         let row_start = group * 8;
-        if group > 0 && eob < eob_thresholds[group - 1] {
-            break;
-        }
 
         horz_32x16_rect(
             coeff,

@@ -35,15 +35,13 @@ pub mod looprestoration_arm;
 #[cfg(target_arch = "aarch64")]
 pub mod itx_arm;
 
-// The aarch64 NEON itx kernels are gated off at the dispatch level until they
-// are bit-exact with the scalar reference (issue #400 — see
-// `itx_arm::itxfm_add_dispatch`). Their only non-test callers are behind the
-// never-set `rav1d_arm_itx_bitexact` cfg, so allow dead code until then; the
-// allow lifts automatically once the NEON path is re-enabled.
+// The aarch64 NEON itx kernels (issue #400) are bit-exact and dispatched for
+// 8bpc; the 16bpc variants exist but aren't NEON-dispatched yet, so allow dead
+// code in these modules.
 macro_rules! itx_neon_mod {
     ($name:ident) => {
         #[cfg(target_arch = "aarch64")]
-        #[cfg_attr(not(rav1d_arm_itx_bitexact), allow(dead_code))]
+        #[allow(dead_code)]
         pub mod $name;
     };
 }
