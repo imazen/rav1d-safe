@@ -57,18 +57,18 @@ fn wiener_filter_8bpc_inner(
     let mut hor = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
     let filter = &params.filter;
 
-    let (center_tap, tap_count, tap_start) = if filter_len == 7 {
-        (3, 7, 0)
-    } else {
-        (2, 5, 1)
-    };
+    // Always the 7-tap window centered at +3; the 5-tap case is expressed by zero
+    // outer coefficients (filter[..][0] == filter[..][6] == 0), exactly as
+    // wiener_rust does. The old (2, 5, 1) form mis-centered the 5-tap window by one.
+    let (center_tap, tap_count, tap_start) = (3usize, 7usize, 0usize);
+    let _ = filter_len;
 
     let round_bits_h = 3i32;
     let rounding_off_h = 1i32 << (round_bits_h - 1);
     let clip_limit = 1i32 << (8 + 1 + 7 - round_bits_h);
 
     // Horizontal filter pass
-    let row_count = if filter_len == 7 { h + 6 } else { h + 4 };
+    let row_count = h + 6;
     for row in 0..row_count {
         let tmp_row = &tmp[row * REST_UNIT_STRIDE..];
         let hor_row = &mut hor[row * REST_UNIT_STRIDE..row * REST_UNIT_STRIDE + w];
@@ -126,36 +126,32 @@ fn wiener_filter_16bpc_inner(
     let mut hor = [0i32; (64 + 3 + 3) * REST_UNIT_STRIDE];
     let filter = &params.filter;
 
-    let (center_tap, tap_count, tap_start) = if filter_len == 7 {
-        (3, 7, 0)
-    } else {
-        (2, 5, 1)
-    };
+    // Always 7-tap centered at +3 (zero outer coeffs express the 5-tap case),
+    // matching wiener_rust. The old (2,5,1) mis-centered the 5-tap window by one.
+    let (tap_count, tap_start) = (7usize, 0usize);
+    let _ = filter_len;
 
-    let round_bits_h = (bitdepth + 8 - 11) as i32;
-    let rounding_off_h = 1i32 << (round_bits_h - 1).max(0);
+    // Mirror wiener_rust exactly: round_bits_h = 3 + (12bpc)*2, no separate *128
+    // center tap (that is 8bpc-only — for 16bpc the center is in filter[0][3]).
+    let round_bits_h = 3 + (bitdepth == 12) as i32 * 2;
+    let rounding_off_h = 1i32 << (round_bits_h - 1);
     let clip_limit = 1i32 << (bitdepth + 1 + 7 - round_bits_h);
 
-    let row_count = if filter_len == 7 { h + 6 } else { h + 4 };
+    let row_count = h + 6;
     for row in 0..row_count {
         let tmp_row = &tmp[row * REST_UNIT_STRIDE..];
         let hor_row = &mut hor[row * REST_UNIT_STRIDE..row * REST_UNIT_STRIDE + w];
 
         for x in 0..w {
             let mut sum = 1i32 << (bitdepth + 6);
-            sum += tmp_row[x + center_tap] as i32 * 128;
             for k in 0..tap_count {
                 sum += tmp_row[x + k] as i32 * filter[0][tap_start + k] as i32;
             }
-            hor_row[x] = iclip(
-                (sum + rounding_off_h) >> round_bits_h.max(0),
-                0,
-                clip_limit - 1,
-            );
+            hor_row[x] = iclip((sum + rounding_off_h) >> round_bits_h, 0, clip_limit - 1);
         }
     }
 
-    let round_bits_v = 11i32;
+    let round_bits_v = 11 - (bitdepth == 12) as i32 * 2;
     let rounding_off_v = 1i32 << (round_bits_v - 1);
     let round_offset = 1i32 << (bitdepth + round_bits_v - 1);
     let stride = p.pixel_stride::<BitDepth16>();
