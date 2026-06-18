@@ -1137,14 +1137,13 @@ pub(crate) fn inv_txfm_add_identity_identity_8x32_8bpc_neon_inner(
     eob: i32,
     _bitdepth_max: i32,
 ) {
-    let eob_thresholds: [i32; 4] = [36, 136, 300, 1024];
+    // Process all 4 row groups. Coeffs beyond eob are decoder-zeroed and identity
+    // of 0 adds nothing, so an eob early-break only risks dropping a non-zero row
+    // that lands beyond a threshold in scan (not row) order — the residual bug.
+    let _ = eob;
 
     // Process in 4 groups of 8 rows
     for rg in 0..4 {
-        if rg > 0 && eob < eob_thresholds[rg - 1] {
-            break;
-        }
-
         let row_start = rg * 8;
 
         // Load 8 columns x 8 rows (column-major)
@@ -1161,10 +1160,14 @@ pub(crate) fn inv_txfm_add_identity_identity_8x32_8bpc_neon_inner(
         let (r0, r1, r2, r3, r4, r5, r6, r7) =
             transpose_8x8h(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
 
-        // Add with shift >>2 (identity shift for 32-height blocks)
+        // 8x32 IDTX is not rect2 (log2(8)+log2(32)=8, even) so no sqrt2 input
+        // scaling. Net = round2(round2(c,1),2): row identity8 (x2) then the
+        // intermediate round2(.,2) collapse to round2(c,1); col identity32 (x4)
+        // then final round2(.,4) collapse to round2(.,2). The old single >>2 was
+        // 2x too large and skipped the intermediate rounding.
         let rows = [r0, r1, r2, r3, r4, r5, r6, r7];
         for r in 0..8 {
-            let shifted = vrshrq_n_s16::<2>(rows[r]);
+            let shifted = vrshrq_n_s16::<2>(vrshrq_n_s16::<1>(rows[r]));
             let row_off = dst_base.wrapping_add_signed((row_start + r) as isize * dst_stride);
 
             let dst_bytes: [u8; 8] = dst[row_off..row_off + 8].try_into().unwrap();
@@ -1209,7 +1212,9 @@ pub(crate) fn inv_txfm_add_identity_identity_32x8_8bpc_neon_inner(
 
         let rows = [r0, r1, r2, r3, r4, r5, r6, r7];
         for r in 0..8 {
-            let shifted = vrshrq_n_s16::<2>(rows[r]);
+            // 32x8 IDTX (not rect2): row identity32 (x4) + intermediate round2(.,2)
+            // is exact (=c); col identity8 (x2) + final round2(.,4) => net round2(c,3).
+            let shifted = vrshrq_n_s16::<3>(rows[r]);
             let row_off = dst_base.wrapping_add_signed(r as isize * dst_stride) + col_start;
 
             let dst_bytes: [u8; 8] = dst[row_off..row_off + 8].try_into().unwrap();
