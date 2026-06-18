@@ -3952,7 +3952,9 @@ fn h_filter_8tap_16bpc_neon(
 
         // Add rounding and shift
         let rnd_vec = vdupq_n_s32(rnd);
-        let result = vshrq_n_s32::<4>(vaddq_s32(sum, rnd_vec)); // sh typically 4 for 16bpc intermediate
+        // Dynamic arithmetic right shift by `sh` (the shift was hardcoded `::<4>`
+        // while rnd tracked `sh`; put H+V passes sh = 6 - intermediate_bits = 2).
+        let result = vshlq_s32(vaddq_s32(sum, rnd_vec), vdupq_n_s32(-(sh as i32)));
 
         let dst_arr: &mut [i32; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
         safe_simd::vst1q_s32(dst_arr, result);
@@ -4020,8 +4022,9 @@ fn v_filter_8tap_16bpc_neon(
         let rnd_vec = vdupq_n_s32(rnd);
         sum = vaddq_s32(sum, rnd_vec);
 
-        // Shift - typically sh = 8 for 16bpc (4 + 4)
-        let result = vshrq_n_s32::<8>(sum);
+        // Dynamic arithmetic right shift by `sh` (was hardcoded `::<8>`; put H+V
+        // V-pass passes sh = 6 + intermediate_bits = 10). rnd already added above.
+        let result = vshlq_s32(sum, vdupq_n_s32(-(sh as i32)));
 
         // Clamp to [0, max]
         let max_vec = vdupq_n_s32(max as i32);
@@ -4060,6 +4063,10 @@ fn h_filter_8tap_16bpc_put_neon(
 ) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
+    // H-only put: intermediate_rnd = 32 + (1<<(6-ib)>>1), ib = 14 - bitdepth
+    // (=4 @10bpc -> 34, =2 @12bpc -> 40). bitdepth derived from `max`.
+    let ib = max.leading_zeros() as i32 - 2;
+    let irnd = 32 + ((1i32 << (6 - ib)) >> 1);
     let mut col = 0;
 
     while col + 4 <= w {
@@ -4099,8 +4106,8 @@ fn h_filter_8tap_16bpc_put_neon(
         sum = vmlaq_n_s32(sum, s6_32, c6);
         sum = vmlaq_n_s32(sum, s7_32, c7);
 
-        // Round and shift: (sum + 32) >> 6
-        let rnd_vec = vdupq_n_s32(32);
+        // Round and shift: (sum + intermediate_rnd) >> 6
+        let rnd_vec = vdupq_n_s32(irnd);
         let result = vshrq_n_s32::<6>(vaddq_s32(sum, rnd_vec));
 
         // Clamp
@@ -4120,7 +4127,7 @@ fn h_filter_8tap_16bpc_put_neon(
         for i in 0..8 {
             sum += filter[i] as i32 * src[col + i] as i32;
         }
-        dst[col] = ((sum + 32) >> 6).clamp(0, max as i32) as u16;
+        dst[col] = ((sum + irnd) >> 6).clamp(0, max as i32) as u16;
         col += 1;
     }
 }
@@ -4226,7 +4233,9 @@ fn put_8tap_16bpc_inner(
 ) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
-    let intermediate_bits = 4u8;
+    // intermediate_bits = 14 - bitdepth (4 @10bpc, 2 @12bpc), not a hardcoded 4 —
+    // the H+V mid scale cancels but its rounding does not, so 12bpc needs ib=2.
+    let intermediate_bits = bitdepth_max.leading_zeros() as u8 - 2;
 
     let fh = get_filter_coeff(mx, w, h_filter_type);
     let fv = get_filter_coeff(my, h, v_filter_type);
