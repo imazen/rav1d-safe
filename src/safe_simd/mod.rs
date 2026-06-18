@@ -35,35 +35,28 @@ pub mod looprestoration_arm;
 #[cfg(target_arch = "aarch64")]
 pub mod itx_arm;
 
-#[cfg(target_arch = "aarch64")]
-pub mod itx_arm_neon_wht;
-
-#[cfg(target_arch = "aarch64")]
-pub mod itx_arm_neon_common;
-
-#[cfg(target_arch = "aarch64")]
-pub mod itx_arm_neon_4x4;
-
-#[cfg(target_arch = "aarch64")]
-pub mod itx_arm_neon_8x8;
-
-#[cfg(target_arch = "aarch64")]
-pub mod itx_arm_neon_rect;
-
-#[cfg(target_arch = "aarch64")]
-pub mod itx_arm_neon_16x16;
-
-#[cfg(target_arch = "aarch64")]
-pub mod itx_arm_neon_32;
-
-#[cfg(target_arch = "aarch64")]
-pub mod itx_arm_neon_rect_large;
-
-#[cfg(target_arch = "aarch64")]
-pub mod itx_arm_neon_large_rect;
-
-#[cfg(target_arch = "aarch64")]
-pub mod itx_arm_neon_64;
+// The aarch64 NEON itx kernels are gated off at the dispatch level until they
+// are bit-exact with the scalar reference (issue #400 — see
+// `itx_arm::itxfm_add_dispatch`). Their only non-test callers are behind the
+// never-set `rav1d_arm_itx_bitexact` cfg, so allow dead code until then; the
+// allow lifts automatically once the NEON path is re-enabled.
+macro_rules! itx_neon_mod {
+    ($name:ident) => {
+        #[cfg(target_arch = "aarch64")]
+        #[cfg_attr(not(rav1d_arm_itx_bitexact), allow(dead_code))]
+        pub mod $name;
+    };
+}
+itx_neon_mod!(itx_arm_neon_wht);
+itx_neon_mod!(itx_arm_neon_common);
+itx_neon_mod!(itx_arm_neon_4x4);
+itx_neon_mod!(itx_arm_neon_8x8);
+itx_neon_mod!(itx_arm_neon_rect);
+itx_neon_mod!(itx_arm_neon_16x16);
+itx_neon_mod!(itx_arm_neon_32);
+itx_neon_mod!(itx_arm_neon_rect_large);
+itx_neon_mod!(itx_arm_neon_large_rect);
+itx_neon_mod!(itx_arm_neon_64);
 
 pub mod cdef;
 

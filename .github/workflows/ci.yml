@@ -110,6 +110,14 @@ jobs:
       - name: Run unit tests
         run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --lib ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
+      # Committed-vector integration tests — no download needed, run on every
+      # platform (incl. native arm64) as a HARD gate. decode_md5_committed pins
+      # cross-arch bit-exact decode (issue #400: aarch64 NEON itx must match the
+      # x86 reference); safe_simd_crashes covers the arm SGR/itx fallback paths
+      # (issue #14). These catch arch-specific decoder divergence in CI.
+      - name: Run committed-vector decode tests (cross-arch correctness)
+        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_committed --test safe_simd_crashes ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+
       # Download test vectors and run MD5 parity tests
       - name: Download test vectors
         if: matrix.label == 'safe-simd' && runner.os == 'Linux'
