@@ -98,7 +98,7 @@ fn cdef_direct<BD: BitDepth>(
     };
 
     // Save pre-SIMD state for comparison testing
-    #[cfg(feature = "simd_test")]
+    #[cfg(feature = "__simd_test")]
     let pre_state = {
         let (guard, _) = dst.strided_slice::<BD>(w, h);
         guard.to_vec()
@@ -163,7 +163,7 @@ fn cdef_direct<BD: BitDepth>(
     }
 
     if simd_handled {
-        #[cfg(feature = "simd_test")]
+        #[cfg(feature = "__simd_test")]
         {
             use crate::include::common::bitdepth::AsPrimitive;
             let pre_pixels = pre_state;
@@ -226,7 +226,7 @@ fn cdef_direct<BD: BitDepth>(
                     "CDEF_MISMATCH diffs={} first=({},{}) idx={} simd={} scalar={} variant={} pri={} sec={} dir={} damping={}",
                     diffs, x, y, idx, sv, rv, variant, pri_strength, sec_strength, dir, damping
                 );
-                if std::env::var_os("SIMD_TEST_LOG").is_some() {
+                if cfg!(feature = "__simd_test_log") {
                     eprintln!("{msg}");
                 } else {
                     panic!("{msg}");

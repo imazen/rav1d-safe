@@ -27,7 +27,7 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   aarch64 produced wrong pixels (the same stream decoded to a different YUV MD5
   on aarch64 vs x86 — e.g. kodim03, alpha_noispe — and the `differential_dav1d`
   fuzz target diverged from dav1d on arm64). Root-caused and fixed per transform
-  on a native arm64 box using the `simd_test` dual-compute (NEON vs the generic
+  on a native arm64 box using the `__simd_test` dual-compute (NEON vs the generic
   spec itx) across the full dav1d conformance corpus until **zero** divergence:
   the large DCTs (64x64/64x32/32x64/16x64/64x16) had missing intermediate
   clipping, wrong `sh=32` coefficient layout, bogus rect2 scaling and wrong

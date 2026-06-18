@@ -437,7 +437,7 @@ impl itxfm::Fn {
                 // Direct dispatch: no function pointers, no extern "C" ABI overhead.
 
                 // Save pre-SIMD state for comparison testing
-                #[cfg(feature = "simd_test")]
+                #[cfg(feature = "__simd_test")]
                 let pre_state = {
                     let txsz = TxfmSize::from_repr(tx_size).unwrap();
                     let (w, h) = txsz.to_wh();
@@ -459,7 +459,7 @@ impl itxfm::Fn {
                     { let _ = (tx_size, tx_type, &dst, &coeff, eob, &bd); false }
                 };
                 if simd_handled {
-                    #[cfg(feature = "simd_test")]
+                    #[cfg(feature = "__simd_test")]
                     {
                         let (orig_pixels, orig_coeff, w, h) = pre_state;
                         let pxstride = dst.pixel_stride::<BD>().unsigned_abs();
@@ -485,9 +485,9 @@ impl itxfm::Fn {
                         drop(guard);
 
                         // Bit-exactness gate: NEON must match the generic scalar
-                        // exactly. Panics on any divergence; set SIMD_TEST_LOG=1 to
-                        // log-and-continue and collect the full mismatch inventory in
-                        // one decode pass (issue #414).
+                        // exactly. Panics on any divergence; the `__simd_test_log`
+                        // feature logs-and-continues to collect the full mismatch
+                        // inventory in one decode pass (issue #414).
                         let mut nbad = 0usize;
                         let mut max_diff = 0i32;
                         for y in 0..h {
@@ -506,7 +506,7 @@ impl itxfm::Fn {
                             let msg = format!(
                                 "ITX_MISMATCH size={w}x{h} type={tx_type} eob={eob} nbad={nbad} max_diff={max_diff}"
                             );
-                            if std::env::var_os("SIMD_TEST_LOG").is_some() {
+                            if cfg!(feature = "__simd_test_log") {
                                 eprintln!("{msg}");
                             } else {
                                 panic!("{msg}");

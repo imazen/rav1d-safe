@@ -21,5 +21,5 @@ subset is AVX-512-accelerated, so the lane-width gain is below noise (and is
 offset by AVX-512 downclocking on Zen 4 for a sparsely-firing kernel).
 
 Correctness: 14/14 decode_md5_verify (unchecked) pass with the v4 path live;
-simd_test per-call SIMD-vs-scalar oracle shows zero divergence on the
+__simd_test per-call SIMD-vs-scalar oracle shows zero divergence on the
 previously-failing vectors after the unsigned-pack clamp fix (96e78d1).

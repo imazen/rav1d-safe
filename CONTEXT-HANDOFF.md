@@ -4,7 +4,7 @@ Status as of 2026-06-18. **Tracking issue: #414.**
 
 The `mc_arm` 8-tap OOB crash (Bug A) masked the entire aarch64 NEON DSP on inter
 and 16bpc frames — itx/looprestoration/cdef NEON kernels on inter-frame
-transforms never ran under the `simd_test` gate, so several were never
+transforms never ran under the `__simd_test` gate, so several were never
 bit-exact-verified. Fixing the crash unblocked them. The handoff's earlier "itx
 is bit-exact" was true only for intra/8bpc.
 
@@ -15,7 +15,7 @@ is bit-exact" was true only for intra/8bpc.
 | Commit | What |
 |---|---|
 | 626a3d8 | mc_arm 8-tap **OOB crash fixed (all bitdepths)** + **8bpc MC bit-exact** (put+prep, all filters) + MC dual-compute harness |
-| 9fe68bd5 | **env-gate** all 6 simd_test harnesses (mc/itx/lr/cdef/lf): panic by default, `SIMD_TEST_LOG=1` logs-and-continues |
+| 9fe68bd5 | **env-gate** all 6 __simd_test harnesses (mc/itx/lr/cdef/lf): panic by default, `__simd_test_log` logs-and-continues |
 | e8af9a8b | **16bpc MC bit-exact** (10+12 bit) — dynamic shifts + bitdepth-dependent rounding |
 | 710537f8 | **looprestoration wiener5 bit-exact** — was mis-centered (13k mismatches) |
 
@@ -24,17 +24,18 @@ corpus). LR wiener5 + wiener7 bit-exact. Loopfilter bit-exact (0). MC_PREP 0.**
 
 ---
 
-## 2. The SIMD_TEST_LOG workflow (the tool)
+## 2. The `__simd_test` / `__simd_test_log` workflow (the tool)
 
-All 6 harnesses are env-gated: unset = panic on first NEON/scalar divergence (the
-bit-exactness gate); `SIMD_TEST_LOG=1` = log `MODULE_MISMATCH … nbad= max_diff=`
+All 6 harnesses are feature-gated (compile-time, no runtime env read):
+`__simd_test` = panic on first NEON/scalar divergence (the bit-exactness gate);
+`__simd_test_log` (implies `__simd_test`) = log `MODULE_MISMATCH … nbad= max_diff=`
 and continue → ONE decode pass = full cross-module inventory.
 - Native arm64: **Hetzner arm-big** (`ssh arm-big`, repo `~/work/zen/rav1d-safe-itx`,
   `source ~/.cargo/env`, `CARGO_BUILD_JOBS=7`, dav1d corpus at `test-vectors/`).
 - **Run SINGLE-THREADED** (`--test-threads=1 --nocapture`) when reading the log live —
   `--test-threads=3` buffers per-test output and the mismatch lines don't stream.
-- Build `--features bitdepth_8,bitdepth_16,simd_test` (~1m07s). Verify a fix:
-  re-run WITHOUT SIMD_TEST_LOG → no panic == bit-exact.
+- Inventory: build `--features bitdepth_8,bitdepth_16,__simd_test_log` (~1m07s).
+  Verify a fix: rebuild with just `__simd_test` → no panic == bit-exact.
 
 ---
 
@@ -50,7 +51,7 @@ NOT collapse to one shift (the two rounding points matter). Identity scales: id8
 ×2, id16 ×2√2, id32 ×4; rect2 √2 iff log2(w)+log2(h) is odd. Also drop the `eob`
 row-group early-break for identity (it can skip a non-zero row past a scan-order
 threshold; identity of the zeroed tail adds nothing). Diagnose with
-`SIMD_TEST_LOG=1` → `ITX_MISMATCH size= type= eob= max_diff=` (harness in
+`__simd_test_log` → `ITX_MISMATCH size= type= eob= max_diff=` (harness in
 `src/itx.rs` vs `inv_txfm_add_rust`). Files: `src/safe_simd/itx_arm.rs` +
 `itx_arm_neon_64.rs` + `itx_arm_neon_large_rect.rs`. Per-size shift math in memory
 `arm64-neon-full-inventory`.

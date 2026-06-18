@@ -720,11 +720,11 @@ fn mc_put_direct<BD: BitDepth>(
     if crate::src::safe_simd::mc::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
         return;
     }
-    // aarch64 + `simd_test`: dual-compute the NEON output against the generic
+    // aarch64 + `__simd_test`: dual-compute the NEON output against the generic
     // scalar reference and report any divergence (issue #414 MC bit-exactness).
     // The scalar `put_*_rust` fully overwrites the w×h block, so we snapshot the
     // NEON output, let the scalar overwrite, compare, then restore the NEON pixels.
-    #[cfg(all(target_arch = "aarch64", feature = "simd_test"))]
+    #[cfg(all(target_arch = "aarch64", feature = "__simd_test"))]
     if crate::src::safe_simd::mc_arm::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
         let wu = w as usize;
         let hu = h as usize;
@@ -756,7 +756,7 @@ fn mc_put_direct<BD: BitDepth>(
             let msg = format!(
                 "MC_PUT_MISMATCH w={wu} h={hu} mx={mx} my={my} hf={hf:?} vf={vf:?} nbad={nbad} max_diff={max_diff}"
             );
-            if std::env::var_os("SIMD_TEST_LOG").is_some() {
+            if cfg!(feature = "__simd_test_log") {
                 eprintln!("{msg}");
             } else {
                 panic!("{msg}");
@@ -768,7 +768,7 @@ fn mc_put_direct<BD: BitDepth>(
         }
         return;
     }
-    #[cfg(all(target_arch = "aarch64", not(feature = "simd_test")))]
+    #[cfg(all(target_arch = "aarch64", not(feature = "__simd_test")))]
     if crate::src::safe_simd::mc_arm::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
         return;
     }
@@ -801,10 +801,10 @@ fn mct_prep_direct<BD: BitDepth>(
     if crate::src::safe_simd::mc::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
         return;
     }
-    // aarch64 + `simd_test`: dual-compute NEON prep output vs scalar (issue #414).
+    // aarch64 + `__simd_test`: dual-compute NEON prep output vs scalar (issue #414).
     // `prep_*_rust` fully overwrites tmp[..w*h], so snapshot NEON, let scalar
     // overwrite, compare, restore NEON.
-    #[cfg(all(target_arch = "aarch64", feature = "simd_test"))]
+    #[cfg(all(target_arch = "aarch64", feature = "__simd_test"))]
     if crate::src::safe_simd::mc_arm::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
         let wu = w as usize;
         let hu = h as usize;
@@ -830,7 +830,7 @@ fn mct_prep_direct<BD: BitDepth>(
             let msg = format!(
                 "MC_PREP_MISMATCH w={wu} h={hu} mx={mx} my={my} hf={hf:?} vf={vf:?} nbad={nbad} max_diff={max_diff}"
             );
-            if std::env::var_os("SIMD_TEST_LOG").is_some() {
+            if cfg!(feature = "__simd_test_log") {
                 eprintln!("{msg}");
             } else {
                 panic!("{msg}");
@@ -839,7 +839,7 @@ fn mct_prep_direct<BD: BitDepth>(
         tmp[..n].copy_from_slice(&simd_out);
         return;
     }
-    #[cfg(all(target_arch = "aarch64", not(feature = "simd_test")))]
+    #[cfg(all(target_arch = "aarch64", not(feature = "__simd_test")))]
     if crate::src::safe_simd::mc_arm::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
         return;
     }

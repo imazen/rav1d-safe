@@ -91,7 +91,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     let bd_max = f.bitdepth_max;
 
     // Save pre-SIMD state for comparison testing
-    #[cfg(feature = "simd_test")]
+    #[cfg(feature = "__simd_test")]
     let saved_buf = {
         let (guard, _) = dst.full_guard::<BD>();
         guard.to_vec()
@@ -128,7 +128,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     };
 
     if simd_handled {
-        #[cfg(feature = "simd_test")]
+        #[cfg(feature = "__simd_test")]
         {
             // Save SIMD output
             let (guard, _) = dst.full_guard::<BD>();
@@ -170,7 +170,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
                     "LF_MISMATCH diffs={} first=({},{}) idx={} simd={} scalar={} is_y={} is_v={} w={}",
                     diffs, x, y, idx, sv, rv, is_y, is_v, w
                 );
-                if std::env::var_os("SIMD_TEST_LOG").is_some() {
+                if cfg!(feature = "__simd_test_log") {
                     eprintln!("{msg}");
                 } else {
                     panic!("{msg}");

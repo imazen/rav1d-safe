@@ -8375,7 +8375,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
 ) -> bool {
     // Issue #400: the aarch64 NEON inverse transforms are now bit-exact with the
     // scalar/spec reference — verified tolerance-0 against the generic itx
-    // (`simd_test` feature) across the full dav1d conformance corpus on native
+    // (`__simd_test` feature) across the full dav1d conformance corpus on native
     // arm64, and end-to-end as identical YUV MD5 to x86. The earlier divergence
     // (NEON-vs-scalar tests passing only under a MAX_DIFF tolerance) was fixed
     // per transform: missing intermediate clipping + wrong sh=32 layout/shifts on

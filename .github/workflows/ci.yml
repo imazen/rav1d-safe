@@ -118,13 +118,13 @@ jobs:
       - name: Run committed-vector decode tests (cross-arch correctness)
         run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_committed --test safe_simd_crashes ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
-      # SIMD-vs-spec bit-exactness gate (issue #400). The `simd_test` feature makes
+      # SIMD-vs-spec bit-exactness gate (issue #400). The `__simd_test` feature makes
       # every inverse-transform call dual-compute SIMD and the generic scalar itx
       # and assert they're identical. Running it over the committed vectors guards
       # the aarch64 NEON itx (and x86 itx) against any future non-bit-exact drift —
       # a stronger check than the final MD5 alone. Hard gate (passes today).
-      - name: Run itx NEON/SIMD bit-exactness check (simd_test)
-        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }},simd_test" --release --test decode_md5_committed ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+      - name: Run itx NEON/SIMD bit-exactness check (__simd_test)
+        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }},__simd_test" --release --test decode_md5_committed ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
       # Download test vectors and run the full dav1d MD5 conformance. Runs on x86
       # AND native arm64 (safe-simd-arm64) — the comprehensive aarch64 regression

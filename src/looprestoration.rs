@@ -169,7 +169,7 @@ fn lr_filter_direct<BD: BitDepth>(
     bd: BD,
 ) {
     // Save pre-SIMD state for comparison testing
-    #[cfg(feature = "simd_test")]
+    #[cfg(feature = "__simd_test")]
     let saved_buf = {
         let (guard, _) = dst.full_guard::<BD>();
         guard.to_vec()
@@ -196,7 +196,7 @@ fn lr_filter_direct<BD: BitDepth>(
     };
 
     if simd_handled {
-        #[cfg(feature = "simd_test")]
+        #[cfg(feature = "__simd_test")]
         {
             let pxstride = dst.pixel_stride::<BD>().unsigned_abs();
             let h_usize = h as usize;
@@ -228,8 +228,8 @@ fn lr_filter_direct<BD: BitDepth>(
                 3 => "sgr_3x3",
                 _ => "sgr_mix",
             };
-            // Bit-exactness gate: panics on divergence; set SIMD_TEST_LOG=1 to
-            // log-and-continue for the full inventory in one pass (issue #414).
+            // Bit-exactness gate: panics on divergence; the `__simd_test_log`
+            // feature logs-and-continues for the full inventory in one pass (#414).
             let mut nbad = 0usize;
             let mut max_diff = 0i32;
             for y in 0..h_usize {
@@ -246,7 +246,7 @@ fn lr_filter_direct<BD: BitDepth>(
                 let msg = format!(
                     "LR_MISMATCH variant={variant_name} w={w} h={h} nbad={nbad} max_diff={max_diff}"
                 );
-                if std::env::var_os("SIMD_TEST_LOG").is_some() {
+                if cfg!(feature = "__simd_test_log") {
                     eprintln!("{msg}");
                 } else {
                     panic!("{msg}");

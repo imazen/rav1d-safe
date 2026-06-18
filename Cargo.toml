@@ -98,7 +98,12 @@ asm_arm64_sve2 = ["asm"]
 
 
 # Run SIMD and scalar side-by-side, panic on any mismatch (testing only)
-simd_test = []
+__simd_test = []
+
+# Like __simd_test but LOG every mismatch and continue instead of panicking, for a
+# one-pass cross-module bit-exactness inventory. Compile-time so there is no
+# per-mismatch env-var read. (implies __simd_test)
+__simd_test_log = ["__simd_test"]
 
 # Bit depth support
 bitdepth_8 = []
