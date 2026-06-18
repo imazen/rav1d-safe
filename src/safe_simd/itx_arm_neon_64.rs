@@ -222,6 +222,86 @@ fn dc_only_rect64_16bpc(
 ///
 /// Processes in 8-pixel-wide chunks for NEON efficiency.
 /// `tmp` is row-major: tmp[y * w + x] for row y, column x.
+/// Select the generic clipping 1-D inverse-DCT for an `n`-point transform.
+#[cfg(target_arch = "aarch64")]
+fn dct_1d_for(n: usize) -> fn(&mut [i32], core::num::NonZeroUsize, i32, i32) {
+    use crate::src::itx_1d::*;
+    match n {
+        4 => rav1d_inv_dct4_1d_c,
+        8 => rav1d_inv_dct8_1d_c,
+        16 => rav1d_inv_dct16_1d_c,
+        32 => rav1d_inv_dct32_1d_c,
+        64 => rav1d_inv_dct64_1d_c,
+        _ => unreachable!(),
+    }
+}
+
+/// Bit-exact `DCT_DCT` 2-D inverse transform for 8bpc, for the large
+/// (≥32 in one dim) sizes whose previous NEON path used unclipped scalar 1-D
+/// DCTs and diverged from the spec (issue #400). Mirrors
+/// `inv_txfm_add_rust::<W,H,DCT_DCT>` exactly — top-left `min(dim,32)` coeffs,
+/// optional rect2 (`*181+128>>8`) input scaling, per-stage i16 clipping inside
+/// the 1-D DCTs, intermediate `(v+rnd)>>shift` clip, final `(v+8)>>4` — and
+/// keeps the NEON pixel add. `shift` is the spec's per-size intermediate shift.
+#[cfg(target_arch = "aarch64")]
+#[rite(neon)]
+pub(crate) fn neon_dct_dct_2d_8bpc(
+    dst: &mut [u8],
+    dst_base: usize,
+    dst_stride: isize,
+    coeff: &mut [i16],
+    w: usize,
+    h: usize,
+    shift: i32,
+) {
+    use crate::include::common::intops::iclip;
+    const MIN: i32 = i16::MIN as i32;
+    const MAX: i32 = i16::MAX as i32;
+    let stride1 = core::num::NonZeroUsize::new(1).unwrap();
+    let sh = h.min(32);
+    let sw = w.min(32);
+    let is_rect2 = w * 2 == h || h * 2 == w;
+    let rnd = (1i32 << shift) >> 1;
+    let dct_w = dct_1d_for(w);
+    let dct_h = dct_1d_for(h);
+
+    let mut tmp = vec![0i32; w * h];
+
+    // Row pass: `sh` rows, each a clipping DCT over `sw` (rect2-scaled,
+    // zero-padded) inputs.
+    let mut row = [0i32; 64];
+    for y in 0..sh {
+        row[..w].fill(0);
+        for x in 0..sw {
+            let c = coeff_or_zero(coeff, y + x * sh);
+            row[x] = if is_rect2 { (c * 181 + 128) >> 8 } else { c };
+        }
+        dct_w(&mut row[..w], stride1, MIN, MAX);
+        tmp[y * w..][..w].copy_from_slice(&row[..w]);
+    }
+
+    // Intermediate round-shift + clip over the populated rows.
+    for v in tmp[..w * sh].iter_mut() {
+        *v = iclip((*v + rnd) >> shift, MIN, MAX);
+    }
+
+    // Column pass: all `w` columns, clipping DCT (rows `sh..h` zero-padded).
+    let mut col = [0i32; 64];
+    for x in 0..w {
+        for y in 0..h {
+            col[y] = tmp[y * w + x];
+        }
+        dct_h(&mut col[..h], stride1, MIN, MAX);
+        for y in 0..h {
+            tmp[y * w + x] = col[y];
+        }
+    }
+
+    // Final NEON add with the spec's `(v + 8) >> 4`.
+    neon_add_to_dst_8bpc(dst, dst_base, dst_stride, &tmp, w, h, 4);
+    coeff.fill(0);
+}
+
 /// `total_shift` is the final rounding shift (e.g., 12 for 64x64, 11 for rect).
 #[cfg(target_arch = "aarch64")]
 #[rite(neon)]
@@ -797,36 +877,10 @@ pub(crate) fn inv_txfm_add_dct_dct_64x64_8bpc_neon_inner(
         return;
     }
 
-    // Scalar 2D transform
-    let mut tmp = vec![0i32; 4096];
-
-    for y in 0..64 {
-        let mut input = [0i32; 64];
-        for x in 0..64 {
-            input[x] = coeff_or_zero(coeff, y + x * 64);
-        }
-        let out = scalar_dct64_1d(&input);
-        for x in 0..64 {
-            tmp[y * 64 + x] = out[x];
-        }
-    }
-
-    for x in 0..64 {
-        let mut input = [0i32; 64];
-        for y in 0..64 {
-            input[y] = tmp[y * 64 + x];
-        }
-        let out = scalar_dct64_1d(&input);
-        for y in 0..64 {
-            tmp[y * 64 + x] = out[y];
-        }
-    }
-
-    // NEON add to destination
-    neon_add_to_dst_8bpc(dst, dst_base, dst_stride, &tmp, 64, 64, 12);
-
-    // Clear coefficients
-    coeff.fill(0);
+    // Bit-exact DCT_DCT 2-D transform (issue #400): the previous scalar 1-D
+    // DCTs omitted the spec's intermediate clipping/round-shift and diverged
+    // from the reference. `shift = 2` is the spec's 64x64 intermediate shift.
+    neon_dct_dct_2d_8bpc(dst, dst_base, dst_stride, coeff, 64, 64, 2);
 }
 
 /// NEON implementation of 64x64 DCT_DCT for 16bpc.
@@ -895,30 +949,8 @@ pub(crate) fn inv_txfm_add_dct_dct_64x32_8bpc_neon_inner(
         return;
     }
 
-    let mut tmp = vec![0i32; 2048];
-    for y in 0..32 {
-        let mut input = [0i32; 64];
-        for x in 0..64 {
-            input[x] = coeff_or_zero(coeff, y + x * 32);
-        }
-        let out = scalar_dct64_1d(&input);
-        for x in 0..64 {
-            tmp[y * 64 + x] = out[x];
-        }
-    }
-    for x in 0..64 {
-        let mut input = [0i32; 32];
-        for y in 0..32 {
-            input[y] = tmp[y * 64 + x];
-        }
-        let out = scalar_dct32_1d(&input);
-        for y in 0..32 {
-            tmp[y * 64 + x] = out[y];
-        }
-    }
-
-    neon_add_to_dst_8bpc(dst, dst_base, dst_stride, &tmp, 64, 32, 11);
-    coeff.fill(0);
+    // Bit-exact via the shared helper (issue #400); spec intermediate shift = 1.
+    neon_dct_dct_2d_8bpc(dst, dst_base, dst_stride, coeff, 64, 32, 1);
 }
 
 /// NEON implementation of 64x32 DCT_DCT for 16bpc.
@@ -985,30 +1017,8 @@ pub(crate) fn inv_txfm_add_dct_dct_32x64_8bpc_neon_inner(
         return;
     }
 
-    let mut tmp = vec![0i32; 2048];
-    for y in 0..64 {
-        let mut input = [0i32; 32];
-        for x in 0..32 {
-            input[x] = coeff_or_zero(coeff, y + x * 64);
-        }
-        let out = scalar_dct32_1d(&input);
-        for x in 0..32 {
-            tmp[y * 32 + x] = out[x];
-        }
-    }
-    for x in 0..32 {
-        let mut input = [0i32; 64];
-        for y in 0..64 {
-            input[y] = tmp[y * 32 + x];
-        }
-        let out = scalar_dct64_1d(&input);
-        for y in 0..64 {
-            tmp[y * 32 + x] = out[y];
-        }
-    }
-
-    neon_add_to_dst_8bpc(dst, dst_base, dst_stride, &tmp, 32, 64, 11);
-    coeff.fill(0);
+    // Bit-exact via the shared helper (issue #400); spec intermediate shift = 1.
+    neon_dct_dct_2d_8bpc(dst, dst_base, dst_stride, coeff, 32, 64, 1);
 }
 
 /// NEON implementation of 32x64 DCT_DCT for 16bpc.
@@ -1075,35 +1085,9 @@ pub(crate) fn inv_txfm_add_dct_dct_16x64_8bpc_neon_inner(
         return;
     }
 
-    let mut tmp = vec![0i32; 1024];
-    for y in 0..64 {
-        let mut input = [0i32; 16];
-        for x in 0..16 {
-            input[x] = coeff_or_zero(coeff, y + x * 64);
-        }
-        // rect2 scaling
-        let scale = 2896i64 * 8;
-        for val in input.iter_mut() {
-            *val = ((*val as i64 * scale + 16384) >> 15) as i32;
-        }
-        let out = scalar_dct16_1d(&input);
-        for x in 0..16 {
-            tmp[y * 16 + x] = (out[x] + 1) >> 1;
-        }
-    }
-    for x in 0..16 {
-        let mut input = [0i32; 64];
-        for y in 0..64 {
-            input[y] = tmp[y * 16 + x];
-        }
-        let out = scalar_dct64_1d(&input);
-        for y in 0..64 {
-            tmp[y * 16 + x] = out[y];
-        }
-    }
-
-    neon_add_to_dst_8bpc(dst, dst_base, dst_stride, &tmp, 16, 64, 4);
-    coeff.fill(0);
+    // Bit-exact via the shared helper (issue #400); spec intermediate shift = 2.
+    // 16x64 is NOT rect2 (4:1), so the previous `*2896` input scaling was wrong.
+    neon_dct_dct_2d_8bpc(dst, dst_base, dst_stride, coeff, 16, 64, 2);
 }
 
 /// NEON implementation of 16x64 DCT_DCT for 16bpc.
@@ -1170,34 +1154,9 @@ pub(crate) fn inv_txfm_add_dct_dct_64x16_8bpc_neon_inner(
         return;
     }
 
-    let mut tmp = vec![0i32; 1024];
-    for y in 0..16 {
-        let mut input = [0i32; 64];
-        for x in 0..64 {
-            input[x] = coeff_or_zero(coeff, y + x * 16);
-        }
-        let scale = 2896i64 * 8;
-        for val in input.iter_mut() {
-            *val = ((*val as i64 * scale + 16384) >> 15) as i32;
-        }
-        let out = scalar_dct64_1d(&input);
-        for x in 0..64 {
-            tmp[y * 64 + x] = (out[x] + 1) >> 1;
-        }
-    }
-    for x in 0..64 {
-        let mut input = [0i32; 16];
-        for y in 0..16 {
-            input[y] = tmp[y * 64 + x];
-        }
-        let out = scalar_dct16_1d(&input);
-        for y in 0..16 {
-            tmp[y * 64 + x] = out[y];
-        }
-    }
-
-    neon_add_to_dst_8bpc(dst, dst_base, dst_stride, &tmp, 64, 16, 4);
-    coeff.fill(0);
+    // Bit-exact via the shared helper (issue #400); spec intermediate shift = 2.
+    // 64x16 is NOT rect2 (4:1), so the previous `*2896` input scaling was wrong.
+    neon_dct_dct_2d_8bpc(dst, dst_base, dst_stride, coeff, 64, 16, 2);
 }
 
 /// NEON implementation of 64x16 DCT_DCT for 16bpc.
