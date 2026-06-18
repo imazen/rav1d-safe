@@ -2105,8 +2105,9 @@ fn prep_bilin_8bpc_inner(
 ) {
     let mut tmp = tmp.flex_mut();
     let src = src.flex();
-    // PREP_BIAS for intermediate format
-    const PREP_BIAS: i16 = 8192;
+    // PREP_BIAS is 0 for 8bpc; the 8192 intermediate-format bias is 16bpc-only
+    // (BitDepth8::PREP_BIAS == 0). Subtracting 8192 here biased every prep pixel.
+    const PREP_BIAS: i16 = 0;
 
     match (mx, my) {
         (0, 0) => {
@@ -2271,9 +2272,11 @@ fn prep_bilin_8bpc_inner(
                     let sum_lo = vaddq_s32(vmulq_s32(r0_lo, c0), vmulq_s32(r1_lo, c1));
                     let sum_hi = vaddq_s32(vmulq_s32(r0_hi, c0), vmulq_s32(r1_hi, c1));
 
-                    // Shift by 4 for prep format
-                    let result_lo = vshrq_n_s32::<4>(sum_lo);
-                    let result_hi = vshrq_n_s32::<4>(sum_hi);
+                    // V pass is .rnd(4) = (sum + 8) >> 4 (the scalar rounds; the
+                    // old code truncated, hence the off-by-one over the bias error).
+                    let rnd = vdupq_n_s32(8);
+                    let result_lo = vshrq_n_s32::<4>(vaddq_s32(sum_lo, rnd));
+                    let result_hi = vshrq_n_s32::<4>(vaddq_s32(sum_hi, rnd));
 
                     // Narrow to 16-bit
                     let narrow_lo = vmovn_s32(result_lo);
@@ -2293,7 +2296,7 @@ fn prep_bilin_8bpc_inner(
                     let r0 = mid_row0[x] as i32;
                     let r1 = mid_row1[x] as i32;
                     let pixel = v_coeff0 as i32 * r0 + v_coeff1 as i32 * r1;
-                    tmp_row[x] = ((pixel >> 4) - PREP_BIAS as i32) as i16;
+                    tmp_row[x] = (((pixel + 8) >> 4) - PREP_BIAS as i32) as i16;
                     x += 1;
                 }
             }
@@ -3062,8 +3065,10 @@ fn h_filter_8tap_8bpc_put_neon(
         sum = vmlaq_n_s16(sum, s6_16, c6);
         sum = vmlaq_n_s16(sum, s7_16, c7);
 
-        // Round and shift for direct output: (sum + 32) >> 6
-        let rnd_vec = vdupq_n_s16(32);
+        // Round and shift for direct H-only put: (sum + 34) >> 6. The +2 over the
+        // default +32 is dav1d's intermediate_rnd = 32 + (1<<(6-ib)>>1) with ib=4
+        // (8bpc), matching scalar put_8tap_rust's H-only .rnd2(6, 34) (mc.rs:185).
+        let rnd_vec = vdupq_n_s16(34);
         let result = vshrq_n_s16::<6>(vaddq_s16(sum, rnd_vec));
 
         let result_8 = vqmovun_s16(result);
@@ -3078,7 +3083,7 @@ fn h_filter_8tap_8bpc_put_neon(
         for i in 0..8 {
             sum += filter[i] as i32 * src[col + i] as i32;
         }
-        dst[col] = ((sum + 32) >> 6).clamp(0, 255) as u8;
+        dst[col] = ((sum + 34) >> 6).clamp(0, 255) as u8;
         col += 1;
     }
 }
@@ -3439,6 +3444,7 @@ fn put_8tap_8bpc_inner(
     dst: &mut [u8],
     dst_stride: usize,
     src: &[u8],
+    src_base: usize,
     src_stride: usize,
     w: usize,
     h: usize,
@@ -3461,12 +3467,12 @@ fn put_8tap_8bpc_inner(
             let mut mid = [[0i16; MID_STRIDE]; 135];
 
             for y in 0..tmp_h {
-                let src_offset = if y >= 3 {
-                    (y - 3) * src_stride
-                } else {
-                    0usize.wrapping_sub((3 - y) * src_stride)
-                };
-                let src_row = &src[src_offset..];
+                // H pre-pass produces mid[y] from source row (y-3); the
+                // forward-reading NEON h-filter wants its leftmost tap at [0],
+                // so start 3 columns left of the block. (full buffer + src_base.)
+                let src_off =
+                    src_base.wrapping_add_signed((y as isize - 3) * src_stride as isize - 3);
+                let src_row = &src[src_off..];
                 dispatch_h_filter_8tap_8bpc(
                     token,
                     &mut mid[y][..w],
@@ -3493,7 +3499,9 @@ fn put_8tap_8bpc_inner(
         (Some(fh), None) => {
             // Case 2: H-only filtering
             for y in 0..h {
-                let src_row = &src[y * src_stride..];
+                // Row y, 3 cols left for the forward-reading h-filter.
+                let src_off = src_base.wrapping_add_signed(y as isize * src_stride as isize - 3);
+                let src_row = &src[src_off..];
                 let dst_row = &mut dst[y * dst_stride..][..w];
                 h_filter_8tap_8bpc_put_neon(token, dst_row, src_row, w, fh);
             }
@@ -3501,12 +3509,10 @@ fn put_8tap_8bpc_inner(
         (None, Some(fv)) => {
             // Case 3: V-only filtering
             for y in 0..h {
-                let src_offset = if y >= 3 {
-                    (y - 3) * src_stride
-                } else {
-                    0usize.wrapping_sub((3 - y) * src_stride)
-                };
-                let src_row = &src[src_offset..];
+                // src_row at row (y-3); the NEON v-filter reads 8 rows forward
+                // from there. Column 0 — no horizontal taps.
+                let src_off = src_base.wrapping_add_signed((y as isize - 3) * src_stride as isize);
+                let src_row = &src[src_off..];
                 let dst_row = &mut dst[y * dst_stride..][..w];
                 v_filter_8tap_8bpc_direct_neon(token, dst_row, src_row, src_stride, w, fv);
             }
@@ -3514,7 +3520,7 @@ fn put_8tap_8bpc_inner(
         (None, None) => {
             // Case 4: Simple copy
             for y in 0..h {
-                let src_row = &src[y * src_stride..][..w];
+                let src_row = &src[src_base + y * src_stride..][..w];
                 let dst_row = &mut dst[y * dst_stride..][..w];
                 dst_row.copy_from_slice(src_row);
             }
@@ -3595,14 +3601,14 @@ macro_rules! define_put_8tap_8bpc {
             let dst_len = h * dst_stride_u + w;
             let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, dst_len);
 
-            // Adjust source slice to account for the -3,-3 offset we added
-            let src_adjusted = &src[3 * src_stride_u + 3..];
-
+            // Block origin sits at offset 3*stride+3 within this -3,-3 window;
+            // pass the full window + that base (the inner adds signed tap offsets).
             put_8tap_8bpc_inner(
                 token,
                 dst,
                 dst_stride_u,
-                src_adjusted,
+                src,
+                3 * src_stride_u + 3,
                 src_stride_u,
                 w,
                 h,
@@ -3692,7 +3698,10 @@ fn v_filter_8tap_to_i16_neon(
         sum = vmlaq_n_s32(sum, r7_32, c7);
 
         let rnd_vec = vdupq_n_s32(rnd);
-        sum = vshrq_n_s32::<10>(vaddq_s32(sum, rnd_vec));
+        // Dynamic arithmetic right shift by `sh` (NEON vshl with a negative count).
+        // The shift was hardcoded `::<10>` while `rnd` tracked `sh` — so any sh != 10
+        // (prep uses sh=6) gave the wrong scale vs the scalar tail's `>> sh`.
+        sum = vshlq_s32(vaddq_s32(sum, rnd_vec), vdupq_n_s32(-(sh as i32)));
 
         // Narrow to i16
         let result = vqmovn_s32(sum);
@@ -3720,6 +3729,7 @@ fn prep_8tap_8bpc_inner(
     token: Arm64,
     tmp: &mut [i16],
     src: &[u8],
+    src_base: usize,
     src_stride: usize,
     w: usize,
     h: usize,
@@ -3742,12 +3752,10 @@ fn prep_8tap_8bpc_inner(
             let mut mid = [[0i16; MID_STRIDE]; 135];
 
             for y in 0..tmp_h {
-                let src_offset = if y >= 3 {
-                    (y - 3) * src_stride
-                } else {
-                    0usize.wrapping_sub((3 - y) * src_stride)
-                };
-                let src_row = &src[src_offset..];
+                // H pre-pass row (y-3), 3 cols left for the forward h-filter.
+                let src_off =
+                    src_base.wrapping_add_signed((y as isize - 3) * src_stride as isize - 3);
+                let src_row = &src[src_off..];
                 dispatch_h_filter_8tap_8bpc(
                     token,
                     &mut mid[y][..w],
@@ -3760,69 +3768,22 @@ fn prep_8tap_8bpc_inner(
 
             for y in 0..h {
                 let out_row = &mut tmp[y * w..][..w];
-                v_filter_8tap_to_i16_neon(token, out_row, &mid[y..], w, fv, 6 + intermediate_bits);
+                // prep keeps intermediate_bits of extra precision: V pass is rnd(6),
+                // NOT rnd(6 + intermediate_bits) (that's the *put* final-output shift).
+                v_filter_8tap_to_i16_neon(token, out_row, &mid[y..], w, fv, 6);
             }
         }
         (Some(fh), None) => {
-            // Case 2: H-only filtering
+            // Case 2: H-only — reuse the correct i16 H kernel, the same one the
+            // H+V pre-pass uses, at the prep shift rnd(6 - intermediate_bits).
+            // The old inline kernel shifted by `intermediate_bits` (4) instead of
+            // `6 - intermediate_bits` (2), dropping 2 bits of prep precision.
             for y in 0..h {
-                let src_row = &src[y * src_stride..];
+                // Row y, 3 cols left for the forward-reading h-filter.
+                let src_off = src_base.wrapping_add_signed(y as isize * src_stride as isize - 3);
+                let src_row = &src[src_off..];
                 let out_row = &mut tmp[y * w..][..w];
-                // Output to i16 with intermediate_bits shift
-                let mut col = 0;
-                while col + 8 <= w {
-                    let c0 = fh[0] as i16;
-                    let c1 = fh[1] as i16;
-                    let c2 = fh[2] as i16;
-                    let c3 = fh[3] as i16;
-                    let c4 = fh[4] as i16;
-                    let c5 = fh[5] as i16;
-                    let c6 = fh[6] as i16;
-                    let c7 = fh[7] as i16;
-
-                    let s0 = safe_simd::vld1_u8(src_row[col..][..8].try_into().unwrap());
-                    let s1 = safe_simd::vld1_u8(src_row[col + 1..][..8].try_into().unwrap());
-                    let s2 = safe_simd::vld1_u8(src_row[col + 2..][..8].try_into().unwrap());
-                    let s3 = safe_simd::vld1_u8(src_row[col + 3..][..8].try_into().unwrap());
-                    let s4 = safe_simd::vld1_u8(src_row[col + 4..][..8].try_into().unwrap());
-                    let s5 = safe_simd::vld1_u8(src_row[col + 5..][..8].try_into().unwrap());
-                    let s6 = safe_simd::vld1_u8(src_row[col + 6..][..8].try_into().unwrap());
-                    let s7 = safe_simd::vld1_u8(src_row[col + 7..][..8].try_into().unwrap());
-
-                    let s0_16 = vreinterpretq_s16_u16(vmovl_u8(s0));
-                    let s1_16 = vreinterpretq_s16_u16(vmovl_u8(s1));
-                    let s2_16 = vreinterpretq_s16_u16(vmovl_u8(s2));
-                    let s3_16 = vreinterpretq_s16_u16(vmovl_u8(s3));
-                    let s4_16 = vreinterpretq_s16_u16(vmovl_u8(s4));
-                    let s5_16 = vreinterpretq_s16_u16(vmovl_u8(s5));
-                    let s6_16 = vreinterpretq_s16_u16(vmovl_u8(s6));
-                    let s7_16 = vreinterpretq_s16_u16(vmovl_u8(s7));
-
-                    let mut sum = vmulq_n_s16(s0_16, c0);
-                    sum = vmlaq_n_s16(sum, s1_16, c1);
-                    sum = vmlaq_n_s16(sum, s2_16, c2);
-                    sum = vmlaq_n_s16(sum, s3_16, c3);
-                    sum = vmlaq_n_s16(sum, s4_16, c4);
-                    sum = vmlaq_n_s16(sum, s5_16, c5);
-                    sum = vmlaq_n_s16(sum, s6_16, c6);
-                    sum = vmlaq_n_s16(sum, s7_16, c7);
-
-                    // Shift for intermediate: (sum + 8) >> 4
-                    let rnd_vec = vdupq_n_s16(8);
-                    let result = vshrq_n_s16::<4>(vaddq_s16(sum, rnd_vec));
-
-                    let out_arr: &mut [i16; 8] = (&mut out_row[col..col + 8]).try_into().unwrap();
-                    safe_simd::vst1q_s16(out_arr, result);
-                    col += 8;
-                }
-                while col < w {
-                    let mut sum = 0i32;
-                    for i in 0..8 {
-                        sum += fh[i] as i32 * src_row[col + i] as i32;
-                    }
-                    out_row[col] = ((sum + 8) >> intermediate_bits) as i16;
-                    col += 1;
-                }
+                dispatch_h_filter_8tap_8bpc(token, out_row, src_row, w, fh, 6 - intermediate_bits);
             }
         }
         (None, Some(fv)) => {
@@ -3832,13 +3793,11 @@ fn prep_8tap_8bpc_inner(
 
                 let mut mid = [[0i16; MID_STRIDE]; 8];
                 for i in 0..8 {
-                    let src_offset = if y + i >= 3 {
-                        (y + i - 3) * src_stride
-                    } else {
-                        0usize.wrapping_sub((3 - y - i) * src_stride)
-                    };
+                    // Raw pixels from row (y+i-3), column 0 — no horizontal taps.
+                    let src_off = src_base
+                        .wrapping_add_signed((y as isize + i as isize - 3) * src_stride as isize);
                     for x in 0..w {
-                        mid[i][x] = (src[src_offset + x] as i16) << intermediate_bits;
+                        mid[i][x] = (src[src_off + x] as i16) << intermediate_bits;
                     }
                 }
 
@@ -3848,7 +3807,7 @@ fn prep_8tap_8bpc_inner(
         (None, None) => {
             // Case 4: Simple copy with intermediate scaling
             for y in 0..h {
-                let src_row = &src[y * src_stride..][..w];
+                let src_row = &src[src_base + y * src_stride..][..w];
                 let out_row = &mut tmp[y * w..][..w];
                 for x in 0..w {
                     out_row[x] = (src_row[x] as i16) << intermediate_bits;
@@ -3889,12 +3848,13 @@ macro_rules! define_prep_8tap_8bpc {
             let tmp_len = h * w;
             let tmp_slice = std::slice::from_raw_parts_mut(tmp, tmp_len);
 
-            let src_adjusted = &src[3 * src_stride_u + 3..];
-
+            // Block origin sits at 3*stride+3 within this -3,-3 window; pass the
+            // full window + that base (the inner adds signed tap offsets).
             prep_8tap_8bpc_inner(
                 token,
                 tmp_slice,
-                src_adjusted,
+                src,
+                3 * src_stride_u + 3,
                 src_stride_u,
                 w,
                 h,
@@ -4254,6 +4214,7 @@ fn put_8tap_16bpc_inner(
     dst: &mut [u16],
     dst_stride: usize,
     src: &[u16],
+    src_base: usize,
     src_stride: usize,
     w: usize,
     h: usize,
@@ -4276,12 +4237,10 @@ fn put_8tap_16bpc_inner(
             let mut mid = [[0i32; MID_STRIDE]; 135];
 
             for y in 0..tmp_h {
-                let src_offset = if y >= 3 {
-                    (y - 3) * src_stride
-                } else {
-                    0usize.wrapping_sub((3 - y) * src_stride)
-                };
-                let src_row = &src[src_offset..];
+                // H pre-pass row (y-3), 3 cols left for the forward h-filter.
+                let src_off =
+                    src_base.wrapping_add_signed((y as isize - 3) * src_stride as isize - 3);
+                let src_row = &src[src_off..];
                 h_filter_8tap_16bpc_neon(
                     token,
                     &mut mid[y][..w],
@@ -4307,19 +4266,19 @@ fn put_8tap_16bpc_inner(
         }
         (Some(fh), None) => {
             for y in 0..h {
-                let src_row = &src[y * src_stride..];
+                // Row y, 3 cols left for the forward-reading h-filter.
+                let src_off = src_base.wrapping_add_signed(y as isize * src_stride as isize - 3);
+                let src_row = &src[src_off..];
                 let dst_row = &mut dst[y * dst_stride..][..w];
                 h_filter_8tap_16bpc_put_neon(token, dst_row, src_row, w, fh, bitdepth_max);
             }
         }
         (None, Some(fv)) => {
             for y in 0..h {
-                let src_offset = if y >= 3 {
-                    (y - 3) * src_stride
-                } else {
-                    0usize.wrapping_sub((3 - y) * src_stride)
-                };
-                let src_row = &src[src_offset..];
+                // src_row at row (y-3); the NEON v-filter reads 8 rows forward.
+                // Column 0 — no horizontal taps.
+                let src_off = src_base.wrapping_add_signed((y as isize - 3) * src_stride as isize);
+                let src_row = &src[src_off..];
                 let dst_row = &mut dst[y * dst_stride..][..w];
                 v_filter_8tap_16bpc_direct_neon(
                     token,
@@ -4334,7 +4293,7 @@ fn put_8tap_16bpc_inner(
         }
         (None, None) => {
             for y in 0..h {
-                let src_row = &src[y * src_stride..][..w];
+                let src_row = &src[src_base + y * src_stride..][..w];
                 let dst_row = &mut dst[y * dst_stride..][..w];
                 dst_row.copy_from_slice(src_row);
             }
@@ -4375,13 +4334,14 @@ macro_rules! define_put_8tap_16bpc {
             let dst_len = h * dst_stride_u16 + w;
             let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, dst_len);
 
-            let src_adjusted = &src[3 * src_stride_u16 + 3..];
-
+            // Block origin sits at 3*stride+3 within this -3,-3 window; pass the
+            // full window + that base (the inner adds signed tap offsets).
             put_8tap_16bpc_inner(
                 token,
                 dst,
                 dst_stride_u16,
-                src_adjusted,
+                src,
+                3 * src_stride_u16 + 3,
                 src_stride_u16,
                 w,
                 h,
@@ -4494,6 +4454,7 @@ fn prep_8tap_16bpc_inner(
     token: Arm64,
     tmp: &mut [i16],
     src: &[u16],
+    src_base: usize,
     src_stride: usize,
     w: usize,
     h: usize,
@@ -4515,12 +4476,10 @@ fn prep_8tap_16bpc_inner(
             let mut mid = [[0i32; MID_STRIDE]; 135];
 
             for y in 0..tmp_h {
-                let src_offset = if y >= 3 {
-                    (y - 3) * src_stride
-                } else {
-                    0usize.wrapping_sub((3 - y) * src_stride)
-                };
-                let src_row = &src[src_offset..];
+                // H pre-pass row (y-3), 3 cols left for the forward h-filter.
+                let src_off =
+                    src_base.wrapping_add_signed((y as isize - 3) * src_stride as isize - 3);
+                let src_row = &src[src_off..];
                 h_filter_8tap_16bpc_neon(
                     token,
                     &mut mid[y][..w],
@@ -4545,7 +4504,9 @@ fn prep_8tap_16bpc_inner(
         }
         (Some(fh), None) => {
             for y in 0..h {
-                let src_row = &src[y * src_stride..];
+                // Row y, 3 cols left for the forward-reading h-filter.
+                let src_off = src_base.wrapping_add_signed(y as isize * src_stride as isize - 3);
+                let src_row = &src[src_off..];
                 let out_row = &mut tmp[y * w..][..w];
                 let mut col = 0;
                 while col + 4 <= w {
@@ -4610,13 +4571,11 @@ fn prep_8tap_16bpc_inner(
 
                 let mut mid = [[0i32; MID_STRIDE]; 8];
                 for i in 0..8 {
-                    let src_offset = if y + i >= 3 {
-                        (y + i - 3) * src_stride
-                    } else {
-                        0usize.wrapping_sub((3 - y - i) * src_stride)
-                    };
+                    // Raw pixels from row (y+i-3), column 0 — no horizontal taps.
+                    let src_off = src_base
+                        .wrapping_add_signed((y as isize + i as isize - 3) * src_stride as isize);
                     for x in 0..w {
-                        mid[i][x] = (src[src_offset + x] as i32) << intermediate_bits;
+                        mid[i][x] = (src[src_off + x] as i32) << intermediate_bits;
                     }
                 }
 
@@ -4625,7 +4584,7 @@ fn prep_8tap_16bpc_inner(
         }
         (None, None) => {
             for y in 0..h {
-                let src_row = &src[y * src_stride..][..w];
+                let src_row = &src[src_base + y * src_stride..][..w];
                 let out_row = &mut tmp[y * w..][..w];
                 for x in 0..w {
                     out_row[x] = (src_row[x] as i32 >> (10 - intermediate_bits)) as i16;
@@ -4665,12 +4624,13 @@ macro_rules! define_prep_8tap_16bpc {
             let tmp_len = h * w;
             let tmp_slice = std::slice::from_raw_parts_mut(tmp, tmp_len);
 
-            let src_adjusted = &src[3 * src_stride_u16 + 3..];
-
+            // Block origin sits at 3*stride+3 within this -3,-3 window; pass the
+            // full window + that base (the inner adds signed tap offsets).
             prep_8tap_16bpc_inner(
                 token,
                 tmp_slice,
-                src_adjusted,
+                src,
+                3 * src_stride_u16 + 3,
                 src_stride_u16,
                 w,
                 h,
@@ -5900,15 +5860,15 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
                         my,
                     );
                 } else {
-                    let src_start = src_base.wrapping_sub(3 * src_stride_u + 3);
-                    let src_len = (h_u + 7) * src_stride_u + w_u + 7;
-                    let src_full = &src_bytes[src_start..][..src_len];
-                    let src_adj = &src_full[3 * src_stride_u + 3..];
+                    // x86 contract: full buffer + base offset; the inner adds
+                    // signed tap offsets (interior blocks have margin, edge blocks
+                    // are emu_edge'd) so reads stay in bounds without sub-slicing.
                     put_8tap_8bpc_inner(
                         token,
                         dst_slice,
                         dst_stride_u,
-                        src_adj,
+                        src_bytes,
+                        src_base,
                         src_stride_u,
                         w_u,
                         h_u,
@@ -5953,19 +5913,15 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
                         bd.into_c(),
                     );
                 } else {
-                    let src_start_u16 = src_base.wrapping_sub(3 * src_stride_u16 + 3);
-                    let src_start = src_start_u16 * 2;
-                    let src_len = (h_u + 7) * src_stride_u16 + w_u + 7;
-                    let src_byte_len = src_len * 2;
-                    let src_full: &[u16] =
-                        FromBytes::ref_from_bytes(&src_bytes[src_start..src_start + src_byte_len])
-                            .unwrap();
-                    let src_adj = &src_full[3 * src_stride_u16 + 3..];
+                    // x86 contract: full u16 buffer + base offset (pixel units);
+                    // the inner adds signed tap offsets, no sub-slicing needed.
+                    let src_u16: &[u16] = FromBytes::ref_from_bytes(src_bytes).unwrap();
                     put_8tap_16bpc_inner(
                         token,
                         dst_u16,
                         dst_stride_u16,
-                        src_adj,
+                        src_u16,
+                        src_base,
                         src_stride_u16,
                         w_u,
                         h_u,
@@ -6104,14 +6060,13 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                         my,
                     );
                 } else {
-                    let src_start = src_base.wrapping_sub(3 * src_stride_u + 3);
-                    let src_len = (h_u + 7) * src_stride_u + w_u + 7;
-                    let src_full = &src_bytes[src_start..][..src_len];
-                    let src_adj = &src_full[3 * src_stride_u + 3..];
+                    // x86 contract: full buffer + base offset; the inner adds
+                    // signed tap offsets so reads stay in bounds without slicing.
                     prep_8tap_8bpc_inner(
                         token,
                         tmp_slice,
-                        src_adj,
+                        src_bytes,
+                        src_base,
                         src_stride_u,
                         w_u,
                         h_u,
@@ -6144,18 +6099,14 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                         my,
                     );
                 } else {
-                    let src_start_u16 = src_base.wrapping_sub(3 * src_stride_u16 + 3);
-                    let src_start = src_start_u16 * 2;
-                    let src_len = (h_u + 7) * src_stride_u16 + w_u + 7;
-                    let src_byte_len = src_len * 2;
-                    let src_full: &[u16] =
-                        FromBytes::ref_from_bytes(&src_bytes[src_start..src_start + src_byte_len])
-                            .unwrap();
-                    let src_adj = &src_full[3 * src_stride_u16 + 3..];
+                    // x86 contract: full u16 buffer + base offset (pixel units);
+                    // the inner adds signed tap offsets, no sub-slicing needed.
+                    let src_u16: &[u16] = FromBytes::ref_from_bytes(src_bytes).unwrap();
                     prep_8tap_16bpc_inner(
                         token,
                         tmp_slice,
-                        src_adj,
+                        src_u16,
+                        src_base,
                         src_stride_u16,
                         w_u,
                         h_u,

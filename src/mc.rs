@@ -720,7 +720,50 @@ fn mc_put_direct<BD: BitDepth>(
     if crate::src::safe_simd::mc::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
         return;
     }
-    #[cfg(target_arch = "aarch64")]
+    // aarch64 + `simd_test`: dual-compute the NEON output against the generic
+    // scalar reference and report any divergence (issue #414 MC bit-exactness).
+    // The scalar `put_*_rust` fully overwrites the w×h block, so we snapshot the
+    // NEON output, let the scalar overwrite, compare, then restore the NEON pixels.
+    #[cfg(all(target_arch = "aarch64", feature = "simd_test"))]
+    if crate::src::safe_simd::mc_arm::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
+        let wu = w as usize;
+        let hu = h as usize;
+        let pxstride = dst.pixel_stride::<BD>().unsigned_abs();
+        let (g, _) = dst.strided_slice::<BD>(wu, hu);
+        let simd_out = g.to_vec();
+        drop(g);
+        match filter {
+            Filter2d::Bilinear => put_bilin_rust(dst, src, wu, hu, mx as usize, my as usize, bd),
+            _ => put_8tap_rust(dst, src, wu, hu, mx as usize, my as usize, filter.hv(), bd),
+        }
+        let (g, _) = dst.strided_slice::<BD>(wu, hu);
+        let scalar_out = g.to_vec();
+        drop(g);
+        let mut nbad = 0usize;
+        let mut max_diff = 0i32;
+        for y in 0..hu {
+            for x in 0..wu {
+                let idx = y * pxstride + x;
+                let d = (simd_out[idx].as_::<i32>() - scalar_out[idx].as_::<i32>()).abs();
+                if d != 0 {
+                    nbad += 1;
+                    max_diff = max_diff.max(d);
+                }
+            }
+        }
+        if nbad != 0 {
+            let (hf, vf) = filter.hv();
+            eprintln!(
+                "MC_PUT_MISMATCH w={wu} h={hu} mx={mx} my={my} hf={hf:?} vf={vf:?} nbad={nbad} max_diff={max_diff}"
+            );
+        }
+        {
+            let (mut g, _) = dst.strided_slice_mut::<BD>(wu, hu);
+            g.copy_from_slice(&simd_out);
+        }
+        return;
+    }
+    #[cfg(all(target_arch = "aarch64", not(feature = "simd_test")))]
     if crate::src::safe_simd::mc_arm::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
         return;
     }
@@ -753,7 +796,40 @@ fn mct_prep_direct<BD: BitDepth>(
     if crate::src::safe_simd::mc::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
         return;
     }
-    #[cfg(target_arch = "aarch64")]
+    // aarch64 + `simd_test`: dual-compute NEON prep output vs scalar (issue #414).
+    // `prep_*_rust` fully overwrites tmp[..w*h], so snapshot NEON, let scalar
+    // overwrite, compare, restore NEON.
+    #[cfg(all(target_arch = "aarch64", feature = "simd_test"))]
+    if crate::src::safe_simd::mc_arm::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
+        let wu = w as usize;
+        let hu = h as usize;
+        let n = wu * hu;
+        let simd_out: Vec<i16> = tmp[..n].to_vec();
+        match filter {
+            Filter2d::Bilinear => {
+                prep_bilin_rust(&mut tmp[..n], src, wu, hu, mx as usize, my as usize, bd)
+            }
+            _ => prep_8tap_rust(&mut tmp[..n], src, wu, hu, mx as usize, my as usize, filter.hv(), bd),
+        }
+        let mut nbad = 0usize;
+        let mut max_diff = 0i32;
+        for i in 0..n {
+            let d = (simd_out[i] as i32 - tmp[i] as i32).abs();
+            if d != 0 {
+                nbad += 1;
+                max_diff = max_diff.max(d);
+            }
+        }
+        if nbad != 0 {
+            let (hf, vf) = filter.hv();
+            eprintln!(
+                "MC_PREP_MISMATCH w={wu} h={hu} mx={mx} my={my} hf={hf:?} vf={vf:?} nbad={nbad} max_diff={max_diff}"
+            );
+        }
+        tmp[..n].copy_from_slice(&simd_out);
+        return;
+    }
+    #[cfg(all(target_arch = "aarch64", not(feature = "simd_test")))]
     if crate::src::safe_simd::mc_arm::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
         return;
     }
