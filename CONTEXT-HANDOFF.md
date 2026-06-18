@@ -40,13 +40,20 @@ and continue → ONE decode pass = full cross-module inventory.
 
 ## 3. REMAINING (measured 2026-06-18, full corpus)
 
-### ITX: ~3985 mismatches — type9 (ADST) @ 8x32/32x8/32x16/16x32, type11 @ 16x16, type0 (DCT) @ 64x16/16x64/16x32
-Inter-frame transform configs the prior itx session never reached. Each (size,type)
-is likely a distinct shift/scale/rect2/eob-group/DC-wiring bug around correct 1-D
-cores — same recipe as the prior itx fix (see memory `feedback-fix-simd-not-scalar-fallback`).
-Diagnose with `SIMD_TEST_LOG=1` → `ITX_MISMATCH size= type= eob= max_diff=`; the
-`simd_test` harness in `src/itx.rs` dual-computes vs `inv_txfm_add_rust`. Files:
-`src/safe_simd/itx_arm.rs` + `itx_arm_neon_64.rs` + `itx_arm_neon_large_rect.rs`.
+### ITX (type9=IDTX, type11=H_DCT, type0=DCT_DCT) — inter-frame configs the prior itx session never reached
+**DONE (`518bde8a`):** IDTX 8x32 + 32x8 (non-rect2 identity-rect).
+**Remaining:** IDTX 16x32/32x16 (rect2 — need the `scale_input` ×1/√2 the NEON
+omits), H_DCT @ 16x16 (type11), DCT_DCT @ 64x16/16x64 (type0).
+Recipe (worked for 8x32/32x8): the scalar `inv_txfm_add` chains
+row-1d → intermediate `round2(·,shift)` → col-1d → final `round2(·,4)`, which does
+NOT collapse to one shift (the two rounding points matter). Identity scales: id8
+×2, id16 ×2√2, id32 ×4; rect2 √2 iff log2(w)+log2(h) is odd. Also drop the `eob`
+row-group early-break for identity (it can skip a non-zero row past a scan-order
+threshold; identity of the zeroed tail adds nothing). Diagnose with
+`SIMD_TEST_LOG=1` → `ITX_MISMATCH size= type= eob= max_diff=` (harness in
+`src/itx.rs` vs `inv_txfm_add_rust`). Files: `src/safe_simd/itx_arm.rs` +
+`itx_arm_neon_64.rs` + `itx_arm_neon_large_rect.rs`. Per-size shift math in memory
+`arm64-neon-full-inventory`.
 
 ### CDEF: ~745 mismatches
 Root finding: arm `padding_8bpc`/`16bpc` (cdef_arm.rs:53) use a **u16** tmp with
