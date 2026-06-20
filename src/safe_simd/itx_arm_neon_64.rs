@@ -134,11 +134,19 @@ fn dc_only_rect64_8bpc(
     let dc = coeff[0];
     coeff[0] = 0;
 
+    // Matches dav1d's NEON `idct_dc` macro: the extra sqrt2 (`*2896`) input
+    // scaling is applied ONLY for true rect2 (1:2) blocks (`w==2*h || h==2*w`).
+    // 16x64 / 64x16 are 4:1 and must NOT get it (issue #400). 32x64 / 64x32 are
+    // 2:1 and do.
+    let is_rect2 = w == 2 * h || h == 2 * w;
     let scale = vdupq_n_s16((2896 * 8) as i16);
     let v = vdupq_n_s16(dc);
     let v = vqrdmulhq_s16(v, scale);
-    // rect2 extra scaling
-    let v = vqrdmulhq_s16(v, scale);
+    let v = if is_rect2 {
+        vqrdmulhq_s16(v, scale)
+    } else {
+        v
+    };
     let v = match shift {
         1 => vrshrq_n_s16::<1>(v),
         2 => vrshrq_n_s16::<2>(v),
@@ -178,9 +186,16 @@ fn dc_only_rect64_16bpc(
     let dc_val = coeff[0];
     coeff[0] = 0;
 
+    // Matches dav1d's NEON `idct_dc` macro: the extra sqrt2 (`*2896`) input
+    // scaling is applied ONLY for true rect2 (1:2) blocks (`w==2*h || h==2*w`).
+    // 16x64 / 64x16 are 4:1 and must NOT get it (issue #400). 32x64 / 64x32 are
+    // 2:1 and do.
+    let is_rect2 = w == 2 * h || h == 2 * w;
     let scale = 2896i64 * 8;
     let mut dc = ((dc_val as i64 * scale + 16384) >> 15) as i32;
-    dc = ((dc as i64 * scale + 16384) >> 15) as i32;
+    if is_rect2 {
+        dc = ((dc as i64 * scale + 16384) >> 15) as i32;
+    }
     dc = match shift {
         1 => (dc + 1) >> 1,
         2 => (dc + 2) >> 2,
@@ -1081,7 +1096,7 @@ pub(crate) fn inv_txfm_add_dct_dct_16x64_8bpc_neon_inner(
     _bitdepth_max: i32,
 ) {
     if eob == 0 {
-        dc_only_rect64_8bpc(dst, dst_base, dst_stride, coeff, 16, 64, 1);
+        dc_only_rect64_8bpc(dst, dst_base, dst_stride, coeff, 16, 64, 2);
         return;
     }
 
@@ -1103,7 +1118,7 @@ pub(crate) fn inv_txfm_add_dct_dct_16x64_16bpc_neon_inner(
     bitdepth_max: i32,
 ) {
     if eob == 0 {
-        dc_only_rect64_16bpc(dst, dst_base, dst_stride, coeff, 16, 64, 1, bitdepth_max);
+        dc_only_rect64_16bpc(dst, dst_base, dst_stride, coeff, 16, 64, 2, bitdepth_max);
         return;
     }
 
@@ -1150,7 +1165,7 @@ pub(crate) fn inv_txfm_add_dct_dct_64x16_8bpc_neon_inner(
     _bitdepth_max: i32,
 ) {
     if eob == 0 {
-        dc_only_rect64_8bpc(dst, dst_base, dst_stride, coeff, 64, 16, 1);
+        dc_only_rect64_8bpc(dst, dst_base, dst_stride, coeff, 64, 16, 2);
         return;
     }
 
@@ -1172,7 +1187,7 @@ pub(crate) fn inv_txfm_add_dct_dct_64x16_16bpc_neon_inner(
     bitdepth_max: i32,
 ) {
     if eob == 0 {
-        dc_only_rect64_16bpc(dst, dst_base, dst_stride, coeff, 64, 16, 1, bitdepth_max);
+        dc_only_rect64_16bpc(dst, dst_base, dst_stride, coeff, 64, 16, 2, bitdepth_max);
         return;
     }
 

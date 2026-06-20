@@ -171,6 +171,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "enough"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8e1bd41ecce82c300d0c84fa35b080fa6db50a5398b18f1abf0357bb067549e"
+
+[[package]]
 name = "equator"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -416,6 +422,7 @@ dependencies = [
  "bitflags",
  "cc",
  "cfg-if",
+ "enough",
  "nasm-rs",
  "parking_lot",
  "paste",
@@ -424,6 +431,7 @@ dependencies = [
  "safe_unaligned_simd",
  "strum",
  "to_method",
+ "whereat",
  "zerocopy",
 ]
 
@@ -635,6 +643,12 @@ checksum = "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487"
 dependencies = [
  "wit-bindgen",
 ]
+
+[[package]]
+name = "whereat"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab90f361db038ba3135da12c938c328fb43a012992101879e3d6ebccb4d7eba8"
 
 [[package]]
 name = "winarm-cpufeatures"

@@ -100,6 +100,16 @@ const VECTORS: &[(&str, &[u8], &str)] = &[
         include_bytes!("crash_vectors/circle_custom_properties.obu"),
         "bd06968f3606982bb9c398ad6f7f41c2",
     ),
+    // Issue #400: 121x33 I400 stream whose top-left uses a 16x64 DCT_DCT DC-only
+    // block. The aarch64 NEON `dc_only_rect64` helper applied the rect2 sqrt2
+    // scaling unconditionally and used shift=1 instead of 2, biasing the DC by 1
+    // (NEON decoded 126 where dav1d/scalar give 127). With __simd_test enabled
+    // this vector also runs the per-transform NEON-vs-scalar bit-exactness gate.
+    (
+        "arm_itx_16x64_dc_rect2",
+        include_bytes!("crash_vectors/arm_itx_16x64_dc_rect2.obu"),
+        "ecc2a091a9f40fb0d126e5bb087e2c49",
+    ),
 ];
 
 #[test]
