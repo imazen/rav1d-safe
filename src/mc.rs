@@ -814,7 +814,16 @@ fn mct_prep_direct<BD: BitDepth>(
             Filter2d::Bilinear => {
                 prep_bilin_rust(&mut tmp[..n], src, wu, hu, mx as usize, my as usize, bd)
             }
-            _ => prep_8tap_rust(&mut tmp[..n], src, wu, hu, mx as usize, my as usize, filter.hv(), bd),
+            _ => prep_8tap_rust(
+                &mut tmp[..n],
+                src,
+                wu,
+                hu,
+                mx as usize,
+                my as usize,
+                filter.hv(),
+                bd,
+            ),
         }
         let mut nbad = 0usize;
         let mut max_diff = 0i32;
