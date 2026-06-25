@@ -396,6 +396,31 @@ fn test_zerocopy_cast_disjoint() {
     assert_eq!(g2[0], [5, 6, 7, 8]);
 }
 
+/// Test: borrowed mutable slice backing with zerocopy typed guards.
+///
+/// This exercises the borrowed-slice `as_mut_slice` metadata path while
+/// typed mutable guards are alive.
+#[cfg(feature = "zerocopy")]
+#[test]
+fn test_borrowed_slice_zerocopy_cast_disjoint() {
+    let mut buf = [0u8; 16];
+    let dm = DisjointMut::new(&mut buf[..]);
+
+    let mut g1 = dm.mut_slice_as::<_, [u8; 4]>(0..2);
+    let mut g2 = dm.mut_slice_as::<_, [u8; 4]>(2..4);
+    assert_eq!(dm.len(), 16);
+
+    g1[0] = [1, 2, 3, 4];
+    g2[1] = [13, 14, 15, 16];
+    assert_eq!(g1[0], [1, 2, 3, 4]);
+    assert_eq!(g2[1], [13, 14, 15, 16]);
+
+    drop((g1, g2));
+    drop(dm);
+    assert_eq!(buf[0..4], [1, 2, 3, 4]);
+    assert_eq!(buf[12..16], [13, 14, 15, 16]);
+}
+
 /// Test: More than 64 concurrent borrows spill to overflow Vec without panicking.
 #[test]
 fn test_overflow_beyond_64_borrows() {
