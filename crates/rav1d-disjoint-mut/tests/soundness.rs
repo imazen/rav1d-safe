@@ -285,6 +285,72 @@ fn test_concurrent_disjoint_box_slice() {
     }
 }
 
+/// Test: borrowed mutable slice backing.
+#[test]
+fn test_borrowed_slice_two_disjoint_mut_guards() {
+    let mut buf = [0u8; 64];
+    let mutable_slice = &mut buf[..];
+    let dm = DisjointMut::new(mutable_slice);
+    let mut g1 = dm.index_mut(0..32);
+    let mut g2 = dm.index_mut(32..64);
+    // mutable_slice[0] = 1; // can't do this while guards are alive
+    g1[0] = 1;
+    g2[0] = 2;
+    assert_eq!(g1[0], 1);
+    assert_eq!(g2[0], 2);
+    drop((g1, g2));
+    drop(dm);
+    assert_eq!(buf[0], 1);
+    assert_eq!(buf[32], 2);
+}
+
+/// Test: borrowed mutable slice backing with immutable and mutable guards.
+#[test]
+fn test_borrowed_slice_immut_and_mut_disjoint() {
+    let mut buf = [0u8; 64];
+    let mutable_slice = &mut buf[..];
+    let dm = DisjointMut::new(mutable_slice);
+    let g1 = dm.index(0..32);
+    let mut g2 = dm.index_mut(32..64);
+    // mutable_slice[0] = 42; // can't do this while guards are alive
+    g2[0] = 42;
+    assert_eq!(g1[0], 0);
+    assert_eq!(g2[0], 42);
+}
+
+/// Test: borrowed mutable slice can be shared across scoped threads.
+#[test]
+fn test_borrowed_slice_scoped_threads() {
+    let mut buf = [0u8; 100];
+    let mutable_slice = &mut buf[..];
+    let dm = DisjointMut::new(mutable_slice);
+
+    thread::scope(|scope| {
+        let dm = &dm;
+
+        let t1 = scope.spawn(move || {
+            let mut guard = dm.index_mut(0..50);
+            for i in 0..50 {
+                guard[i] = 1;
+            }
+        });
+
+        let t2 = scope.spawn(move || {
+            let mut guard = dm.index_mut(50..100);
+            for i in 0..50 {
+                guard[i] = 2;
+            }
+        });
+
+        t1.join().unwrap();
+        t2.join().unwrap();
+    });
+
+    drop(dm);
+    assert_eq!(buf[49], 1);
+    assert_eq!(buf[50], 2);
+}
+
 /// Test: concurrent disjoint access with array backing.
 #[test]
 fn test_concurrent_disjoint_array() {

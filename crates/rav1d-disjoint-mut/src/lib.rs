@@ -323,6 +323,7 @@ mod sealed {
     pub trait Sealed {}
 
     impl<V: Copy> Sealed for Vec<V> {}
+    impl<V: Copy> Sealed for &mut [V] {}
     impl<V: Copy, const N: usize> Sealed for [V; N] {}
     impl<V: Copy> Sealed for [V] {}
     impl<V: Copy> Sealed for Box<[V]> {}
@@ -1539,6 +1540,32 @@ unsafe impl<V: Copy> AsMutPtr for Vec<V> {
 
     fn len(&self) -> usize {
         self.len()
+    }
+}
+
+/// SAFETY: Copies the stored mutable slice reference as a raw slice pointer
+/// without materializing a reference to the full slice. The data is borrowed
+/// from the caller, so creating `&[V]` or `&mut [V]` for metadata lookup would
+/// conflict with outstanding guards under Stacked Borrows.
+unsafe impl<V: Copy> AsMutPtr for &mut [V] {
+    type Target = V;
+
+    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
+        // SAFETY: `&mut [V]` and `*mut [V]` have the same pointer layout.
+        // Reading the raw pointer value avoids reborrowing the full slice.
+        unsafe { ptr.cast::<*mut [V]>().read() }
+    }
+
+    unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut V {
+        // SAFETY: Same as `as_mut_slice`; casting the raw slice pointer to its
+        // data pointer does not create an intermediate reference.
+        unsafe { Self::as_mut_slice(ptr).cast() }
+    }
+
+    fn len(&self) -> usize {
+        // SAFETY: `self` is a reference to the stored slice reference, not to
+        // the slice data. Copy the raw slice pointer value and read its metadata.
+        unsafe { ptr::from_ref(self).cast::<*const [V]>().read().len() }
     }
 }
 
