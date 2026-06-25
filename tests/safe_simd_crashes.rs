@@ -149,3 +149,50 @@ fn arm_mc16_overshoot() {
     let data = include_bytes!("crash_vectors/arm_mc16_overshoot.obu");
     let _ = decode_obu(data);
 }
+
+// The 16bpc dst-slice overshoot above (mc_put) had the same off-by-one-stride in
+// the sibling NEON blend dispatchers (avg / w_avg / mask / blend / blend_dir /
+// w_mask): each sliced `h*stride + w` while narrow_guard_mut sizes the guard to
+// `(h-1)*stride + w`, overshooting by `stride - w`. Fixed the same way (issues
+// #417-#421). These tiny OBU repros are from the parse_seq_header fuzz target on
+// aarch64; they only panic in the default (non-asm) safe-Rust SIMD path.
+
+/// mc_arm.rs:4772 - 16bpc `avg` dst slice overshoot (issue #417).
+/// "range end index 4112 out of range for slice of length 3856"
+#[test]
+fn arm_mc16_avg_overshoot() {
+    let data = include_bytes!("crash_vectors/arm_mc16_avg_overshoot.obu");
+    let _ = decode_obu(data);
+}
+
+/// mc_arm.rs:5003 - 16bpc `mask` dst slice overshoot (issue #420).
+/// "range end index 2064 out of range for slice of length 1808"
+#[test]
+fn arm_mc16_mask_overshoot() {
+    let data = include_bytes!("crash_vectors/arm_mc16_mask_overshoot.obu");
+    let _ = decode_obu(data);
+}
+
+/// mc_arm.rs:5112 - 16bpc `blend` dst slice overshoot (issue #418).
+/// "range end index 2064 out of range for slice of length 1808"
+#[test]
+fn arm_mc16_blend_overshoot() {
+    let data = include_bytes!("crash_vectors/arm_mc16_blend_overshoot.obu");
+    let _ = decode_obu(data);
+}
+
+/// mc_arm.rs:5235 - 16bpc `blend_dir` (vertical) dst slice overshoot (issue #421).
+/// "range end index 2056 out of range for slice of length 1800"
+#[test]
+fn arm_mc16_blend_dir_overshoot() {
+    let data = include_bytes!("crash_vectors/arm_mc16_blend_dir_overshoot.obu");
+    let _ = decode_obu(data);
+}
+
+/// mc_arm.rs:5465 - 16bpc `w_mask` dst slice overshoot (issue #419).
+/// "range end index 2064 out of range for slice of length 1808"
+#[test]
+fn arm_mc16_w_mask_overshoot() {
+    let data = include_bytes!("crash_vectors/arm_mc16_w_mask_overshoot.obu");
+    let _ = decode_obu(data);
+}

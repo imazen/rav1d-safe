@@ -4767,7 +4767,11 @@ pub(crate) fn avg_dispatch_inner<BD: BitDepth>(
                 use zerocopy::FromBytes;
                 let stride_u16 = dst_stride_u / 2;
                 let start = dst_offset;
-                let byte_len = (h_u * stride_u16 + w_u) * 2;
+                // narrow_guard_mut sizes the dst guard to (h-1)*stride + w (the
+                // last row needs only w pixels, not a full stride), so h*stride + w
+                // overshoots the slice. Drop the last row's stride padding to match,
+                // exactly as the put/resize BPC16 branch below already does.
+                let byte_len = (h_u.saturating_sub(1) * stride_u16 + w_u) * 2;
                 let dst_u16: &mut [u16] =
                     FromBytes::mut_from_bytes(&mut dst_bytes[start..start + byte_len]).unwrap();
                 avg_16bpc_inner(
@@ -4881,7 +4885,11 @@ pub(crate) fn w_avg_dispatch_inner<BD: BitDepth>(
                 use zerocopy::FromBytes;
                 let stride_u16 = dst_stride_u / 2;
                 let start = dst_offset;
-                let byte_len = (h_u * stride_u16 + w_u) * 2;
+                // narrow_guard_mut sizes the dst guard to (h-1)*stride + w (the
+                // last row needs only w pixels, not a full stride), so h*stride + w
+                // overshoots the slice. Drop the last row's stride padding to match,
+                // exactly as the put/resize BPC16 branch below already does.
+                let byte_len = (h_u.saturating_sub(1) * stride_u16 + w_u) * 2;
                 let dst_u16: &mut [u16] =
                     FromBytes::mut_from_bytes(&mut dst_bytes[start..start + byte_len]).unwrap();
                 w_avg_16bpc_inner(
@@ -4998,7 +5006,11 @@ pub(crate) fn mask_dispatch_inner<BD: BitDepth>(
                 use zerocopy::FromBytes;
                 let stride_u16 = dst_stride_u / 2;
                 let start = dst_offset;
-                let byte_len = (h_u * stride_u16 + w_u) * 2;
+                // narrow_guard_mut sizes the dst guard to (h-1)*stride + w (the
+                // last row needs only w pixels, not a full stride), so h*stride + w
+                // overshoots the slice. Drop the last row's stride padding to match,
+                // exactly as the put/resize BPC16 branch below already does.
+                let byte_len = (h_u.saturating_sub(1) * stride_u16 + w_u) * 2;
                 let dst_u16: &mut [u16] =
                     FromBytes::mut_from_bytes(&mut dst_bytes[start..start + byte_len]).unwrap();
                 mask_16bpc_inner(
@@ -5107,7 +5119,11 @@ pub(crate) fn blend_dispatch_inner<BD: BitDepth>(
                 use zerocopy::{FromBytes, IntoBytes};
                 let stride_u16 = dst_stride_u / 2;
                 let start = dst_offset;
-                let dst_byte_len = (h_u * stride_u16 + w_u) * 2;
+                // narrow_guard_mut sizes the dst guard to (h-1)*stride + w (the
+                // last row needs only w pixels, not a full stride), so h*stride + w
+                // overshoots the slice. Drop the last row's stride padding to match,
+                // exactly as the put/resize BPC16 branch below already does.
+                let dst_byte_len = (h_u.saturating_sub(1) * stride_u16 + w_u) * 2;
                 let dst_u16: &mut [u16] =
                     FromBytes::mut_from_bytes(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::IntoBytes::as_bytes(tmp.as_slice());
@@ -5230,7 +5246,11 @@ pub(crate) fn blend_dir_dispatch_inner<BD: BitDepth>(
                 use zerocopy::{FromBytes, IntoBytes};
                 let stride_u16 = dst_stride_u / 2;
                 let start = dst_offset;
-                let dst_byte_len = (h_u * stride_u16 + w_u) * 2;
+                // narrow_guard_mut sizes the dst guard to (h-1)*stride + w (the
+                // last row needs only w pixels, not a full stride), so h*stride + w
+                // overshoots the slice. Drop the last row's stride padding to match,
+                // exactly as the put/resize BPC16 branch below already does.
+                let dst_byte_len = (h_u.saturating_sub(1) * stride_u16 + w_u) * 2;
                 let dst_u16: &mut [u16] =
                     FromBytes::mut_from_bytes(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::IntoBytes::as_bytes(tmp.as_slice());
@@ -5256,7 +5276,10 @@ pub(crate) fn blend_dir_dispatch_inner<BD: BitDepth>(
                 let start = dst_offset;
                 let mask = &dav1d_obmc_masks[h_u..];
                 let h_effective = h_u * 3 >> 2;
-                let dst_byte_len = (h_effective * stride_u16 + w_u) * 2;
+                // narrow_guard_mut sizes the dst guard to (h-1)*stride + w; this
+                // horizontal pass writes h_effective rows, so use h_effective-1 to
+                // drop the last row's stride padding and stay within the guard.
+                let dst_byte_len = (h_effective.saturating_sub(1) * stride_u16 + w_u) * 2;
                 let dst_u16: &mut [u16] =
                     FromBytes::mut_from_bytes(&mut dst_bytes[start..start + dst_byte_len]).unwrap();
                 let tmp_bytes: &[u8] = zerocopy::IntoBytes::as_bytes(tmp.as_slice());
@@ -5460,7 +5483,11 @@ pub(crate) fn w_mask_dispatch_inner<BD: BitDepth>(
                 use zerocopy::FromBytes;
                 let stride_u16 = dst_stride_u / 2;
                 let start = dst_offset;
-                let byte_len = (h_u * stride_u16 + w_u) * 2;
+                // narrow_guard_mut sizes the dst guard to (h-1)*stride + w (the
+                // last row needs only w pixels, not a full stride), so h*stride + w
+                // overshoots the slice. Drop the last row's stride padding to match,
+                // exactly as the put/resize BPC16 branch below already does.
+                let byte_len = (h_u.saturating_sub(1) * stride_u16 + w_u) * 2;
                 let dst_u16: &mut [u16] =
                     FromBytes::mut_from_bytes(&mut dst_bytes[start..start + byte_len]).unwrap();
                 let bd_c = bd.into_c();
