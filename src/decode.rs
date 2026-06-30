@@ -1395,11 +1395,15 @@ fn decode_b(
                     &mut ts_c.cdf.m.seg_id[seg_ctx as usize],
                     SegmentId::COUNT as u8 - 1,
                 );
-                let last_active_seg_id_plus1 =
-                    (frame_hdr.segmentation.seg_data.last_active_segid + 1) as u8;
+                let last_active_segid = frame_hdr.segmentation.seg_data.last_active_segid;
+                let last_active_seg_id_plus1 = (last_active_segid + 1) as u8;
                 let mut seg_id =
                     neg_deinterleave(diff as u8, pred_seg_id, last_active_seg_id_plus1);
-                if seg_id >= last_active_seg_id_plus1 {
+                // See the matching note in the post-skip path below: dav1d widens
+                // `last_active_segid` to `unsigned`, so `-1` (no active segment)
+                // never clamps. For `last_active_segid >= 0` this is identical to
+                // the previous `seg_id >= last_active_segid + 1` test.
+                if last_active_segid >= 0 && seg_id > last_active_segid as u8 {
                     seg_id = 0; // error?
                 }
                 b.seg_id = SegmentId::new(seg_id).unwrap_or_default(); // error?
@@ -1483,11 +1487,17 @@ fn decode_b(
                     &mut ts_c.cdf.m.seg_id[seg_ctx as usize],
                     SegmentId::COUNT as u8 - 1,
                 );
-                let last_active_seg_id_plus1 =
-                    (frame_hdr.segmentation.seg_data.last_active_segid + 1) as u8;
+                let last_active_segid = frame_hdr.segmentation.seg_data.last_active_segid;
+                let last_active_seg_id_plus1 = (last_active_segid + 1) as u8;
                 let mut seg_id =
                     neg_deinterleave(diff as u8, pred_seg_id, last_active_seg_id_plus1);
-                if seg_id >= last_active_seg_id_plus1 {
+                // dav1d compares the decoded id against `last_active_segid` widened
+                // to `unsigned`, so the `last_active_segid == -1` case (segmentation
+                // enabled but no segment carries an active feature) wraps to a huge
+                // bound and never clamps. Mirror that exactly: clamp only when there
+                // is at least one active segment. For `last_active_segid >= 0` this is
+                // identical to the previous `seg_id >= last_active_segid + 1` test.
+                if last_active_segid >= 0 && seg_id > last_active_segid as u8 {
                     seg_id = 0; // error?
                 }
                 SegmentId::new(seg_id).unwrap_or_default() // error?
