@@ -7,6 +7,16 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ### QUEUED BREAKING CHANGES
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
+
+## [0.6.0] - 2026-07-04
+
+Staged release: the batched 0.x-breaking changes below ship together with the
+issue-#14 aarch64 loop-restoration closure. `cargo semver-checks
+--baseline-version 0.5.7 --default-features` confirms the break (new
+`Error::Cancelled` variant on a non-`#[non_exhaustive]` enum; `simd_test`
+feature renamed to `__simd_test`), hence 0.6.0 rather than a 0.5.x patch.
+
+### Breaking
 - **`managed::Result` is now `Result<T, whereat::At<Error>>`** (was
   `Result<T, Error>`), so the safe `Decoder` API (`new`/`with_settings`/
   `decode`/`get_frame`/`flush`) attaches a source location to errors for
@@ -15,6 +25,13 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   managed boundary, never in an inner loop, and decode output is byte-identical.
   Callers matching the error unwrap first: `err.error()` (`&Error`),
   `err.decompose().0` (owned).
+- **New `Error::Cancelled` variant** on the (non-`#[non_exhaustive]`)
+  `managed::Error` enum, returned when a decode is aborted through the new
+  cooperative cancellation token (see Added below). Exhaustive matches on
+  `Error` need a new arm.
+- **Testing-only feature `simd_test` renamed to `__simd_test`** (with the new
+  `__simd_test_log` inventory variant). The old feature name no longer exists;
+  it was never meant for downstream use.
 
 ### Added
 - **Cooperative in-flight decode cancellation** (issue #412). `Decoder::set_stop(Some(Arc<dyn Stop>))` installs an [`enough`](https://github.com/imazen/enough) `Stop` token that the decode loop polls at superblock-row granularity; when it fires, the in-flight frame is aborted and the `decode`/`get_frame`/`flush` call returns the new `Error::Cancelled` instead of running a crafted-but-spec-legal stream to completion. Both decode paths honor it: the single-threaded loop checks per sbrow (`src/decode.rs`), and tile-threaded workers check per task and abort via the same per-frame error path the internal flush uses (`src/thread_task.rs`). `None` (default) means never check — zero overhead (`enough::Stop::may_stop` short-circuits). Re-exports `Stop`/`StopReason`/`Unstoppable` from `managed`; adds internal `Rav1dError::ECANCELED`. Lets an untrusted-AV1 server bound a slow decode without abandoning the worker thread. Tested in `tests/cancellation.rs` (single-threaded + tile-threaded). Pure safe Rust; default `forbid(unsafe_code)` build unaffected.
