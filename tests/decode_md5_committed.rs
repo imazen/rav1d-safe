@@ -59,10 +59,12 @@ fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
     }
 }
 
-/// Decode `data` single-threaded and return the YUV MD5 of all decoded frames.
-fn decode_md5(data: &[u8]) -> String {
+/// Decode `data` with `threads` worker threads and return the YUV MD5 of all
+/// decoded frames. Output must not depend on the thread count — AV1 decode is
+/// deterministic — so every caller asserts against the same reference MD5.
+fn decode_md5_with_threads(data: &[u8], threads: u32) -> String {
     let mut settings = Settings::default();
-    settings.threads = 1;
+    settings.threads = threads;
     settings.frame_size_limit = 8192 * 8192;
     let mut d = Decoder::with_settings(settings).expect("decoder");
     let mut ctx = md5::Context::new();
@@ -75,6 +77,11 @@ fn decode_md5(data: &[u8]) -> String {
         }
     }
     format!("{:x}", ctx.finalize())
+}
+
+/// Decode `data` single-threaded and return the YUV MD5 of all decoded frames.
+fn decode_md5(data: &[u8]) -> String {
+    decode_md5_with_threads(data, 1)
 }
 
 /// `(label, committed OBU, reference YUV MD5)`. Reference MD5s captured from the
@@ -129,6 +136,124 @@ fn committed_vectors_match_reference_md5() {
     assert!(
         failures.is_empty(),
         "decode diverged from the reference (arch-specific non-bit-exact kernel?):\n{}",
+        failures.join("\n")
+    );
+}
+
+// ----------------------------------------------------------------------------
+// Issue #14: aarch64 loop-restoration (SGR/wiener) regression vectors.
+//
+// Conformant still-picture streams whose loop-restoration selection exercises
+// every looprestoration_arm code path that was broken in releases <= 0.5.7.
+// Generated with zenrav1e @ ac8c4ef3 (still_picture, threads(1), 256x256 or
+// 640x256 synthetic content — the exact encoder + content shape of zenrav1e's
+// `intrabc_fires_and_roundtrips_both_samplings` CI test that first hit the
+// panic in CI). Reference MD5s are the x86_64 decode, byte-identical to
+// `aomdec --rawvideo` output for every vector (verified 2026-07-04 on a
+// Neoverse-N1 vs x86_64: see rav1d-safe#14 for the full matrix).
+//
+// What each vector proved against registry 0.5.7 on native aarch64:
+//   * lr_sgr_8bpc_glyph_s2 / lr_sgr_444_8bpc_glyph_s2 (SGR 3x3+5x5, 8bpc):
+//     debug builds panic `attempt to multiply with overflow` at
+//     looprestoration_arm.rs:465:30 (selfguided aa_base underflow — the
+//     zenrav1e ARM CI failure); release builds panic `index out of bounds:
+//     the len is 26520 but the index is 26520` at :399:13 (boxsum3_8bpc).
+//   * lr_sgr_10bpc_glyph_nocdef / lr_sgr_10bpc_wide_nocdef (SGR 3x3, 10-bit):
+//     the 16bpc twins — :999:30 (debug) / :935:13 (release, the exact panic
+//     reported in issue #14 from Apple-Silicon AVIF decodes).
+//   * lr_wiener5_8bpc_intrabc_s2 (wiener5): decoded WITHOUT error on 0.5.7
+//     but with wrong pixels (mis-centered 5-tap window) — the MD5 pin is what
+//     catches it.
+//   * lr_sgr_10bpc_noisy_nocdef (SGR 5x5-only, 10-bit): also silently wrong
+//     on 0.5.7 (untruncated-vs-rounded coefficient scaling), no panic.
+//
+// The 10-bit vectors are encoded with CDEF disabled so their whole-frame MD5
+// isolates loop restoration: the aarch64 16bpc CDEF divergence tracked in
+// issue #414 is still open and would otherwise mask/fail these pins on arm64.
+// ----------------------------------------------------------------------------
+const LR_SGR_VECTORS: &[(&str, &[u8], &str)] = &[
+    (
+        "lr_sgr_8bpc_glyph_s2",
+        include_bytes!("crash_vectors/lr_sgr_8bpc_glyph_s2.obu"),
+        "cb6f47fede190e68f39bbb688281d6a1",
+    ),
+    (
+        "lr_wiener5_8bpc_intrabc_s2",
+        include_bytes!("crash_vectors/lr_wiener5_8bpc_intrabc_s2.obu"),
+        "c34a47ad7fc9795cb0145d68c69d586a",
+    ),
+    (
+        "lr_sgr_444_8bpc_glyph_s2",
+        include_bytes!("crash_vectors/lr_sgr_444_8bpc_glyph_s2.obu"),
+        "d5373e2a15659807e7c11f15978b51ca",
+    ),
+    (
+        "lr_sgr_10bpc_glyph_nocdef",
+        include_bytes!("crash_vectors/lr_sgr_10bpc_glyph_nocdef.obu"),
+        "18ded6a8434cbece969316339fb58c50",
+    ),
+    (
+        "lr_sgr_10bpc_noisy_nocdef",
+        include_bytes!("crash_vectors/lr_sgr_10bpc_noisy_nocdef.obu"),
+        "bafc939f19adc1451c122baa7a8c828d",
+    ),
+    (
+        "lr_sgr_10bpc_wide_nocdef",
+        include_bytes!("crash_vectors/lr_sgr_10bpc_wide_nocdef.obu"),
+        "f4b701d7130860b210f3448002fe466b",
+    ),
+];
+
+/// Issue #14 (single-threaded): the LR vectors decode without panicking and
+/// bit-identical to the x86/aomdec reference on every arch.
+#[test]
+fn lr_sgr_vectors_match_reference_md5() {
+    let arch = std::env::consts::ARCH;
+    let mut failures = Vec::new();
+    for (label, data, expected) in LR_SGR_VECTORS {
+        let actual = decode_md5(data);
+        if actual != *expected {
+            failures.push(format!(
+                "{label} on {arch}: expected {expected}, got {actual}"
+            ));
+        } else {
+            eprintln!("{label} on {arch}: md5={actual} OK");
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "LR decode diverged from the reference (issue #14 regression):\n{}",
+        failures.join("\n")
+    );
+}
+
+/// Issue #14 (worker-threaded): same streams through an 8-worker decode — the
+/// exact shape of the original report (`rav1d-worker-N` threads panicking in
+/// `selfguided_filter_16bpc` on a threaded AVIF decode). Output must be
+/// bit-identical to the single-threaded/x86/aomdec reference.
+///
+/// Not compiled under `__simd_test`: the dual-compute harness takes a
+/// full-plane guard around each filter call, which (correctly) trips the
+/// DisjointMut overlap detector against concurrent worker writes — the
+/// harness is single-thread-only by design.
+#[cfg(not(feature = "__simd_test"))]
+#[test]
+fn lr_sgr_vectors_threaded_match_reference_md5() {
+    let arch = std::env::consts::ARCH;
+    let mut failures = Vec::new();
+    for (label, data, expected) in LR_SGR_VECTORS {
+        let actual = decode_md5_with_threads(data, 8);
+        if actual != *expected {
+            failures.push(format!(
+                "{label} threaded on {arch}: expected {expected}, got {actual}"
+            ));
+        } else {
+            eprintln!("{label} threaded on {arch}: md5={actual} OK");
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "threaded LR decode diverged from the reference (issue #14 regression):\n{}",
         failures.join("\n")
     );
 }

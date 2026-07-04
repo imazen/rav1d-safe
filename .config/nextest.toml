@@ -39,9 +39,9 @@ slow-timeout = { period = "300s", terminate-after = 10 }
 heavy-threading = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'binary(reproduce_overlap) | binary(reproduce_overlap_scalar) | binary(tile_threading_overlap) | binary(mt_stress) | binary(thread_cleanup_test)'
+filter = 'binary(reproduce_overlap) | binary(reproduce_overlap_scalar) | binary(tile_threading_overlap) | binary(mt_stress) | binary(thread_cleanup_test) | binary(decode_md5_committed)'
 test-group = 'heavy-threading'
 
 [[profile.ci.overrides]]
-filter = 'binary(reproduce_overlap) | binary(reproduce_overlap_scalar) | binary(tile_threading_overlap) | binary(mt_stress) | binary(thread_cleanup_test)'
+filter = 'binary(reproduce_overlap) | binary(reproduce_overlap_scalar) | binary(tile_threading_overlap) | binary(mt_stress) | binary(thread_cleanup_test) | binary(decode_md5_committed)'
 test-group = 'heavy-threading'
