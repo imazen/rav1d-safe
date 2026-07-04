@@ -31,6 +31,14 @@ download-vectors:
 test-integration: download-vectors
     cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" --test integration_decode --run-ignored ignored-only
 
+# Threading-race regression gates (zenavif#30 + the original overlap class):
+# the ignored tile_threading_overlap tests (incl. multi_threaded_cdef_lpf_race,
+# needs in-process parallel decode pressure) + the induced-worker-panic
+# error-not-hang tests (private __test_induce_worker_panic feature).
+test-threading-races:
+    cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16" --test tile_threading_overlap -- --ignored --test-threads 1
+    cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16,__test_induce_worker_panic" --test worker_panic_recovery -- --ignored --test-threads 1
+
 # Run clippy lints
 clippy:
     cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
