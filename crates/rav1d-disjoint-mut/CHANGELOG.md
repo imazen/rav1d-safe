@@ -2,6 +2,19 @@
 
 All notable changes to `rav1d-disjoint-mut` are documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/). Versions before `0.3.1` were not changelogged; see git history.
 
+## [Unreleased]
+
+### Added
+- **Overlap panics now report the EXISTING borrow's registration site.**
+  `BorrowSlots` records `&'static Location` per active borrow, and
+  `overlap_panic` prints it: `existing: &mut _[a..b] at src/file.rs:L:C`.
+  With `debug_assertions` the callers propagate `#[track_caller]`, so the
+  location names the true borrow site; in release it names the `DisjointMut`
+  wrapper method. This is how zenavif#30's racing pair (rav1d-safe CDEF
+  padding vs the loop filter's compact write-back) was identified — the old
+  message named only the panicking side. One pointer store per borrow
+  registration.
+
 ## [0.3.1] - 2026-05-26
 
 ### Fixed

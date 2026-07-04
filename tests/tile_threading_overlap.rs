@@ -154,3 +154,94 @@ fn multi_threaded_tile_overlap() {
          concurrent reconstruction and loop filter V-pass on the same pixel rows"
     );
 }
+
+// ============================================================================
+// zenavif#30: CDEF padding vs loop-filter compact-COW guards
+// ============================================================================
+
+/// Trigger stream for the second overlap class (found 2026-07-03, zenavif#30):
+/// a rav1e-encoded 1024×1024 4:2:0 still whose tile-threaded decode raced the
+/// loop filter's compact-buffer guards against CDEF.
+const CDEF_LPF_OBU: &[u8] = include_bytes!("crash_vectors/tile_threading_cdef_lpf_race.obu");
+
+/// Loop-filter compact-COW guards must not touch pixels dav1d never writes.
+///
+/// Two defects composed (both fixed in the same change):
+/// 1. `compact_write_back_per_row` rewrote — and mutably guarded — every
+///    pixel of the loop filter's read window, including the 7 tap rows/cols
+///    the filter only READS. dav1d's CDEF task legitimately reads (bottom-edge
+///    padding) and writes (its own blocks) inside that zone concurrently:
+///    dav1d's CDEF lag ahead of deblock is exactly 2 pad rows + max modified
+///    rows. Fixed by diffing against a pristine copy and writing back only
+///    modified spans (`compact_write_back_per_row_diff`).
+/// 2. The read window used the LUMA tap reach (7) for chroma too; chroma
+///    deblock reads at most 3 rows/cols beyond the edge (wd6), and rows 4..=7
+///    above a chroma edge belong to the previous sbrow's CDEF writes
+///    (4-chroma-row lag). Fixed by plane-accurate `tap_before`.
+///
+/// Either defect makes a worker panic with `overlapping DisjointMut`
+/// (`cdef.rs` padding / block IO vs `loopfilter.rs` compact guards); in
+/// `unchecked` builds the write-back variant could instead silently clobber
+/// concurrent CDEF output with stale bytes. Pre-fix the panic also wedged the
+/// decode wait forever — see `tests/worker_panic_recovery.rs` for that half.
+///
+/// The race needs scheduling pressure: several concurrent tile-threaded
+/// decoders in-process. Pre-fix this configuration fires within the first few
+/// iterations (~100% of runs); post-fix it must stay silent.
+#[test]
+#[ignore]
+fn multi_threaded_cdef_lpf_race() {
+    const PAR: usize = 6;
+    const ITERS: usize = 25;
+
+    let workers: Vec<_> = (0..PAR)
+        .map(|w| {
+            std::thread::spawn(move || {
+                for i in 0..ITERS {
+                    let mut settings = Settings::default();
+                    settings.threads = 8;
+                    let mut decoder = Decoder::with_settings(settings).expect("create decoder");
+                    match decoder.decode(CDEF_LPF_OBU) {
+                        Ok(Some(_frame)) => {}
+                        Ok(None) => {
+                            let frames = decoder.flush().expect("flush");
+                            assert!(!frames.is_empty(), "no frame decoded");
+                        }
+                        // With the worker panic guard, a racing worker panic
+                        // surfaces as a decode error here (not a hang).
+                        Err(e) => panic!("worker {w} iter {i}: decode failed: {e:?}"),
+                    }
+                }
+            })
+        })
+        .collect();
+
+    // Join with a global timeout so any residual wedge fails loudly instead
+    // of hanging the test runner.
+    let start = std::time::Instant::now();
+    let timeout = Duration::from_secs(240);
+    let mut workers: Vec<_> = workers.into_iter().map(Some).collect();
+    loop {
+        let mut all_done = true;
+        for slot in workers.iter_mut() {
+            if let Some(h) = slot {
+                if h.is_finished() {
+                    slot.take()
+                        .unwrap()
+                        .join()
+                        .expect("decode loop hit the CDEF/LPF race (worker panicked)");
+                } else {
+                    all_done = false;
+                }
+            }
+        }
+        if all_done {
+            break;
+        }
+        assert!(
+            start.elapsed() < timeout,
+            "decode loops wedged (>240s): the zenavif#30 hang is back"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}

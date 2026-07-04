@@ -59,6 +59,7 @@ use crate::src::env::get_partition_ctx;
 use crate::src::env::get_poc_diff;
 use crate::src::env::get_tx_ctx;
 use crate::src::error::Rav1dError::ECANCELED;
+use crate::src::error::Rav1dError::EGeneric;
 use crate::src::error::Rav1dError::EINVAL;
 use crate::src::error::Rav1dError::ENOMEM;
 use crate::src::error::Rav1dError::ENOPROTOOPT;
@@ -4940,17 +4941,46 @@ pub(crate) fn rav1d_decode_frame(c: &Rav1dContext, fc: &Rav1dFrameContext) -> Ra
             if c.tc.len() > 1 {
                 res = rav1d_task_create_tile_sbrow(fc, &f, 0, 1);
                 drop(f); // release the frame data before waiting for the other threads
-                let mut task_thread_lock = (*fc.task_thread.ttd).lock.lock();
-                (*fc.task_thread.ttd).cond.notify_one();
+                let ttd = &*fc.task_thread.ttd;
+                let mut task_thread_lock = ttd.lock.lock();
+                ttd.cond.notify_one();
                 if res.is_ok() {
                     while fc.task_thread.done[0].load(Ordering::SeqCst) == 0
                         || fc.task_thread.task_counter.load(Ordering::SeqCst) > 0
                     {
+                        // A worker died by panic: its claimed task can never
+                        // complete, so this wait would block forever
+                        // (zenavif#30). Abandon the frame the way rav1d_flush
+                        // does: park the live workers (in-flight tasks may
+                        // still hold frame state — tearing it down under them
+                        // panics on unwrapped headers), clear the queue, and
+                        // fail the frame. The dead worker was already marked
+                        // `flushed` by its panic guard, so the drain below
+                        // never waits on it.
+                        if ttd.panicked.load(Ordering::SeqCst) {
+                            c.flush.store(true, Ordering::SeqCst);
+                            ttd.cond.notify_all();
+                            for tc in c.tc.iter() {
+                                while !tc.flushed() {
+                                    tc.thread_data.cond.wait(&mut task_thread_lock);
+                                }
+                            }
+                            fc.task_thread.tasks.clear();
+                            ttd.first.store(0, Ordering::SeqCst);
+                            ttd.cur.set(c.fc.len() as u32);
+                            ttd.reset_task_cur.store(u32::MAX, Ordering::SeqCst);
+                            ttd.cond_signaled.store(0, Ordering::SeqCst);
+                            c.flush.store(false, Ordering::SeqCst);
+                            res = Err(EGeneric);
+                            break;
+                        }
                         fc.task_thread.cond.wait(&mut task_thread_lock);
                     }
                 }
                 drop(task_thread_lock);
-                res = fc.task_thread.retval.try_lock().unwrap().err_or(());
+                if res.is_ok() {
+                    res = fc.task_thread.retval.try_lock().unwrap().err_or(());
+                }
             } else {
                 res = rav1d_decode_frame_main(c, &mut f);
                 let frame_hdr = &***f.frame_hdr.as_ref().ok_or(EINVAL)?;
@@ -4987,6 +5017,11 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
 
         let fc = &c.fc[next as usize];
         while !fc.task_thread.finished.load(Ordering::SeqCst) {
+            // A worker died by panic: the in-flight frame can never finish
+            // (zenavif#30) — fail instead of waiting forever.
+            if c.task_thread.panicked.load(Ordering::SeqCst) {
+                return Err(EGeneric);
+            }
             fc.task_thread.cond.wait(&mut task_thread_lock);
         }
         let out_delayed = &mut state.frame_thread.out_delayed[next as usize];

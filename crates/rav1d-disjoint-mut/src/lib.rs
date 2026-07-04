@@ -1049,11 +1049,22 @@ mod checked {
         starts: [usize; INLINE_SLOTS],
         ends: [usize; INLINE_SLOTS],
         mutable: [bool; INLINE_SLOTS],
+        /// Registration site of each inline borrow (diagnostics for overlap
+        /// panics). With `debug_assertions` the callers propagate
+        /// `#[track_caller]`, so this names the true borrow site; in release
+        /// it names the `DisjointMut` wrapper method. One pointer store per
+        /// borrow — kept unconditionally so release overlap panics still say
+        /// *which* wrapper registered the existing side.
+        locs: [Option<&'static Location<'static>>; INLINE_SLOTS],
         /// Bitmask of occupied inline slots. Bit `i` set iff slot `i` is active.
         occupied: u64,
         /// Overflow storage, allocated only when >64 concurrent borrows.
-        overflow: Vec<(usize, usize, bool)>,
+        overflow: Vec<(usize, usize, bool, Option<&'static Location<'static>>)>,
     }
+
+    /// An existing-borrow record returned by the overlap finders:
+    /// `(start, end, mutable, registration_site)`.
+    type OverlapHit = (usize, usize, bool, Option<&'static Location<'static>>);
 
     impl BorrowSlots {
         /// Sentinel slot index for empty-range borrows (no real slot allocated).
@@ -1064,6 +1075,7 @@ mod checked {
                 starts: [0; INLINE_SLOTS],
                 ends: [0; INLINE_SLOTS],
                 mutable: [false; INLINE_SLOTS],
+                locs: [None; INLINE_SLOTS],
                 occupied: 0,
                 overflow: Vec::new(),
             }
@@ -1071,7 +1083,13 @@ mod checked {
 
         /// Allocate a slot and return its BorrowId encoding.
         #[inline(always)]
-        fn alloc(&mut self, start: usize, end: usize, is_mutable: bool) -> u8 {
+        fn alloc(
+            &mut self,
+            start: usize,
+            end: usize,
+            is_mutable: bool,
+            loc: &'static Location<'static>,
+        ) -> u8 {
             if start >= end {
                 return Self::EMPTY_SLOT;
             }
@@ -1081,23 +1099,30 @@ mod checked {
                 self.starts[free] = start;
                 self.ends[free] = end;
                 self.mutable[free] = is_mutable;
+                self.locs[free] = Some(loc);
                 self.occupied |= 1u64 << free;
                 free as u8
             } else {
                 // Slow path: spill to Vec.
-                self.alloc_overflow(start, end, is_mutable)
+                self.alloc_overflow(start, end, is_mutable, loc)
             }
         }
 
         /// Overflow allocation — cold path, never inlined.
         #[cold]
         #[inline(never)]
-        fn alloc_overflow(&mut self, start: usize, end: usize, is_mutable: bool) -> u8 {
+        fn alloc_overflow(
+            &mut self,
+            start: usize,
+            end: usize,
+            is_mutable: bool,
+            loc: &'static Location<'static>,
+        ) -> u8 {
             // Find a free slot in the overflow Vec (tombstoned entries have start >= end).
             for (i, entry) in self.overflow.iter_mut().enumerate() {
                 if entry.0 >= entry.1 {
                     // Reuse tombstoned slot.
-                    *entry = (start, end, is_mutable);
+                    *entry = (start, end, is_mutable, Some(loc));
                     return (INLINE_SLOTS + i) as u8;
                 }
             }
@@ -1109,7 +1134,7 @@ mod checked {
                 "DisjointMut: too many concurrent borrows (max {})",
                 Self::EMPTY_SLOT as usize
             );
-            self.overflow.push((start, end, is_mutable));
+            self.overflow.push((start, end, is_mutable, Some(loc)));
             (INLINE_SLOTS + idx) as u8
         }
 
@@ -1130,13 +1155,13 @@ mod checked {
                 // Overflow slot — tombstone it (set start >= end).
                 let ov_idx = idx - INLINE_SLOTS;
                 debug_assert!(ov_idx < self.overflow.len(), "overflow index out of range");
-                self.overflow[ov_idx] = (1, 0, false); // tombstone
+                self.overflow[ov_idx] = (1, 0, false, None); // tombstone
             }
         }
 
         /// Check if the range [start, end) overlaps any active borrow.
         #[inline(always)]
-        fn find_overlap_any(&self, start: usize, end: usize) -> Option<(usize, usize, bool)> {
+        fn find_overlap_any(&self, start: usize, end: usize) -> Option<OverlapHit> {
             if start >= end {
                 return None;
             }
@@ -1145,7 +1170,7 @@ mod checked {
             while mask != 0 {
                 let i = mask.trailing_zeros() as usize;
                 if self.starts[i] < end && start < self.ends[i] {
-                    return Some((self.starts[i], self.ends[i], self.mutable[i]));
+                    return Some((self.starts[i], self.ends[i], self.mutable[i], self.locs[i]));
                 }
                 mask &= mask - 1;
             }
@@ -1158,14 +1183,10 @@ mod checked {
 
         #[cold]
         #[inline(never)]
-        fn find_overlap_any_overflow(
-            &self,
-            start: usize,
-            end: usize,
-        ) -> Option<(usize, usize, bool)> {
-            for &(s, e, m) in &self.overflow {
+        fn find_overlap_any_overflow(&self, start: usize, end: usize) -> Option<OverlapHit> {
+            for &(s, e, m, l) in &self.overflow {
                 if s < e && s < end && start < e {
-                    return Some((s, e, m));
+                    return Some((s, e, m, l));
                 }
             }
             None
@@ -1173,7 +1194,7 @@ mod checked {
 
         /// Check if the range [start, end) overlaps any active MUTABLE borrow.
         #[inline(always)]
-        fn find_overlap_mut(&self, start: usize, end: usize) -> Option<(usize, usize, bool)> {
+        fn find_overlap_mut(&self, start: usize, end: usize) -> Option<OverlapHit> {
             if start >= end {
                 return None;
             }
@@ -1181,7 +1202,7 @@ mod checked {
             while mask != 0 {
                 let i = mask.trailing_zeros() as usize;
                 if self.mutable[i] && self.starts[i] < end && start < self.ends[i] {
-                    return Some((self.starts[i], self.ends[i], true));
+                    return Some((self.starts[i], self.ends[i], true, self.locs[i]));
                 }
                 mask &= mask - 1;
             }
@@ -1193,14 +1214,10 @@ mod checked {
 
         #[cold]
         #[inline(never)]
-        fn find_overlap_mut_overflow(
-            &self,
-            start: usize,
-            end: usize,
-        ) -> Option<(usize, usize, bool)> {
-            for &(s, e, m) in &self.overflow {
+        fn find_overlap_mut_overflow(&self, start: usize, end: usize) -> Option<OverlapHit> {
+            for &(s, e, m, l) in &self.overflow {
                 if m && s < e && s < end && start < e {
-                    return Some((s, e, true));
+                    return Some((s, e, true, l));
                 }
             }
             None
@@ -1269,25 +1286,34 @@ mod checked {
             new_start: usize,
             new_end: usize,
             new_mutable: bool,
-            existing_start: usize,
-            existing_end: usize,
-            existing_mutable: bool,
+            existing: OverlapHit,
         ) -> ! {
+            let (existing_start, existing_end, existing_mutable, existing_loc) = existing;
             let new_mut_str = if new_mutable { "&mut" } else { "   &" };
             let existing_mut_str = if existing_mutable { "&mut" } else { "   &" };
             let caller = Location::caller();
+            struct MaybeLoc(Option<&'static Location<'static>>);
+            impl core::fmt::Display for MaybeLoc {
+                fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                    match self.0 {
+                        Some(loc) => write!(f, " at {loc}"),
+                        None => Ok(()),
+                    }
+                }
+            }
+            let existing_loc = MaybeLoc(existing_loc);
             #[cfg(feature = "std")]
             {
                 let thread = std::thread::current().id();
                 panic!(
                     "\toverlapping DisjointMut:\n current: {new_mut_str} _[{new_start}..{new_end}] \
-                     on {thread:?} at {caller}\nexisting: {existing_mut_str} _[{existing_start}..{existing_end}]",
+                     on {thread:?} at {caller}\nexisting: {existing_mut_str} _[{existing_start}..{existing_end}]{existing_loc}",
                 );
             }
             #[cfg(not(feature = "std"))]
             panic!(
                 "\toverlapping DisjointMut:\n current: {new_mut_str} _[{new_start}..{new_end}] \
-                 at {caller}\nexisting: {existing_mut_str} _[{existing_start}..{existing_end}]",
+                 at {caller}\nexisting: {existing_mut_str} _[{existing_start}..{existing_end}]{existing_loc}",
             );
         }
 
@@ -1304,10 +1330,10 @@ mod checked {
             let _guard = self.lock.lock();
             // SAFETY: TinyLock is held, so we have exclusive access to slots.
             let slots = unsafe { &mut *self.slots.get() };
-            if let Some((es, ee, em)) = slots.find_overlap_any(start, end) {
-                Self::overlap_panic(start, end, true, es, ee, em);
+            if let Some(existing) = slots.find_overlap_any(start, end) {
+                Self::overlap_panic(start, end, true, existing);
             }
-            BorrowId(slots.alloc(start, end, true))
+            BorrowId(slots.alloc(start, end, true, Location::caller()))
         }
 
         /// Register an immutable borrow. Only checks against mutable borrows.
@@ -1323,10 +1349,10 @@ mod checked {
             let _guard = self.lock.lock();
             // SAFETY: TinyLock is held, so we have exclusive access to slots.
             let slots = unsafe { &mut *self.slots.get() };
-            if let Some((es, ee, em)) = slots.find_overlap_mut(start, end) {
-                Self::overlap_panic(start, end, false, es, ee, em);
+            if let Some(existing) = slots.find_overlap_mut(start, end) {
+                Self::overlap_panic(start, end, false, existing);
             }
-            BorrowId(slots.alloc(start, end, false))
+            BorrowId(slots.alloc(start, end, false, Location::caller()))
         }
 
         /// Remove a borrow by slot index. O(1).

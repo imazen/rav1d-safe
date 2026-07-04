@@ -350,6 +350,11 @@ fn drain_picture(c: &Rav1dContext, state: &mut Rav1dState, out: &mut Rav1dPictur
         let fc = &c.fc[next as usize];
         let mut task_thread_lock = c.task_thread.lock.lock();
         while !fc.task_thread.finished.load(Ordering::SeqCst) {
+            // A worker died by panic: the in-flight frame can never finish
+            // (zenavif#30) — fail instead of waiting forever.
+            if c.task_thread.panicked.load(Ordering::SeqCst) {
+                return Err(EGeneric);
+            }
             fc.task_thread.cond.wait(&mut task_thread_lock);
         }
         let out_delayed = &mut state.frame_thread.out_delayed[next as usize];
@@ -479,6 +484,12 @@ pub(crate) fn rav1d_apply_grain(
     } else {
         if c.tc.len() > 1 {
             rav1d_task_delayed_fg(c, out, in_0);
+            // A worker died by panic mid-grain: the output rows are
+            // incomplete — discard rather than return partial pixels.
+            if c.task_thread.panicked.load(Ordering::SeqCst) {
+                let _ = mem::take(out);
+                return Err(EGeneric);
+            }
         } else {
             let bpc = out.p.bpc;
             let dsp = Rav1dBitDepthDSPContext::get(bpc).unwrap();

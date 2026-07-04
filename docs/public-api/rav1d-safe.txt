@@ -6,7 +6,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: rav1d-safe.txt 1193 lines (supported surface) | rav1d-safe.features.txt 116 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,simd_test,unchecked) | rav1d-safe.internal.txt 63 lines (64 hidden + 0 excluded-feature)
+# files: rav1d-safe.txt 1193 lines (supported surface) | rav1d-safe.features.txt 116 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,unchecked) | rav1d-safe.internal.txt 96 lines (66 hidden + 57 excluded-feature)
 
 ## summary
 #

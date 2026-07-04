@@ -78,6 +78,12 @@ default = ["bitdepth_8", "bitdepth_16"]
 # instances (PicBuf, ArcSlice) via dangerously_unchecked().
 unchecked = []
 
+# Test-only (double-underscore = private, never enable in production): arms a
+# one-shot worker-thread panic so tests can prove a worker death surfaces as a
+# decode error instead of wedging every completion wait (zenavif#30). See
+# `thread_task::TEST_INDUCE_WORKER_PANIC` and tests/worker_panic_recovery.rs.
+__test_induce_worker_panic = []
+
 # C FFI API compatibility (unsafe extern "C" functions)
 # Enables: dav1d_* C API, FFISafe, c_arc, c_box
 c-ffi = ["unchecked", "dav1d-compat", "libc"]

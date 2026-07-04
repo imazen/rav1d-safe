@@ -19,7 +19,8 @@ pub fn tile_threading_active() -> bool {
 }
 
 thread_local! {
-    /// Reusable scratch buffer backing [`WithOffset::compact_read_per_row`].
+    /// Reusable scratch buffers backing [`WithOffset::compact_read_per_row`]
+    /// (and the pristine copy kept by the loopfilter's diff write-back).
     /// Pulled on read, returned via [`recycle_compact_scratch`] after the
     /// compact buffer has been written back / consumed.
     ///
@@ -27,10 +28,23 @@ thread_local! {
     /// paths materialize a per-edge / per-block compact buffer; allocating one
     /// `Vec` per call produced ~3M alloc+free pairs decoding a single 8K frame
     /// (issue #17) — cheap on glibc, pathological on the Windows allocator.
-    /// Reusing one buffer per thread eliminates that churn. It is per-thread,
-    /// so each tile thread owns its own buffer with no cross-tile aliasing —
-    /// tile threading stays enabled.
-    static COMPACT_SCRATCH: Cell<Option<Vec<u8>>> = const { Cell::new(None) };
+    /// Reusing buffers per thread eliminates that churn. It is per-thread,
+    /// so each tile thread owns its own buffers with no cross-tile aliasing —
+    /// tile threading stays enabled. Two slots because the loopfilter's
+    /// tile-threading path holds a working copy and a pristine copy at once.
+    static COMPACT_SCRATCH: Cell<[Option<Vec<u8>>; 2]> = const { Cell::new([None, None]) };
+}
+
+/// Take a scratch buffer from the thread-local pool (empty `Vec` if the pool
+/// is dry). Pair with [`recycle_compact_scratch`].
+#[inline]
+pub(crate) fn take_compact_scratch() -> Vec<u8> {
+    COMPACT_SCRATCH.with(|c| {
+        let mut slots = c.take();
+        let buf = slots[0].take().or_else(|| slots[1].take());
+        c.set(slots);
+        buf.unwrap_or_default()
+    })
 }
 
 /// Return a compact scratch buffer to the thread-local pool so the next
@@ -45,11 +59,24 @@ thread_local! {
 /// Crate-internal: this is decoder plumbing, not part of the public API.
 #[inline]
 pub(crate) fn recycle_compact_scratch(buf: Vec<u8>) {
-    // Keep whichever buffer has the larger capacity so re-entrant reads (a read
-    // nested inside a `with_pixel_guard_*` closure) don't shrink the pool.
-    COMPACT_SCRATCH.with(|c| match c.take() {
-        Some(existing) if existing.capacity() >= buf.capacity() => c.set(Some(existing)),
-        _ => c.set(Some(buf)),
+    // Keep the larger buffers so re-entrant reads (a read nested inside a
+    // `with_pixel_guard_*` closure) don't shrink the pool.
+    COMPACT_SCRATCH.with(|c| {
+        let mut slots = c.take();
+        // Fill an empty slot, else replace the smallest slot if `buf` is larger.
+        let smallest = if slots[0].is_none()
+            || slots[1].is_some()
+                && slots[0].as_ref().map(Vec::capacity) < slots[1].as_ref().map(Vec::capacity)
+        {
+            0
+        } else {
+            1
+        };
+        match &slots[smallest] {
+            Some(existing) if existing.capacity() >= buf.capacity() => {}
+            _ => slots[smallest] = Some(buf),
+        }
+        c.set(slots);
     });
 }
 
@@ -173,6 +200,7 @@ use std::array;
 use std::ffi::c_int;
 #[cfg(feature = "c-ffi")]
 use std::ffi::c_void;
+use std::iter;
 use std::mem;
 #[cfg(feature = "c-ffi")]
 use std::ptr::NonNull;
@@ -840,7 +868,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         // only zero-fills when growing past the previous high-water mark; the
         // per-row copy below fully overwrites `buf[..needed]` regardless, so the
         // returned `Vec` is byte-identical to the former `vec![0u8; needed]`.
-        let mut buf = COMPACT_SCRATCH.with(|c| c.take()).unwrap_or_default();
+        let mut buf = take_compact_scratch();
         buf.resize(needed, 0);
         for row in 0..h {
             let row_off = if pxstride >= 0 {
@@ -908,6 +936,68 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             let mut guard = self.data.slice_mut::<BD, _>((row_off.., ..w));
             guard.as_mut_bytes()[..byte_stride]
                 .copy_from_slice(&buf[row * byte_stride..][..byte_stride]);
+        }
+    }
+
+    /// Per-row write-back that stores ONLY the pixels the caller actually
+    /// modified, by diffing `work` against the `pristine` copy taken before
+    /// filtering. Rows (and row spans) that are byte-identical are neither
+    /// written nor mutably guarded.
+    ///
+    /// This is the tile-threading-correct write-back for filters whose
+    /// *read* region is wider than their *write* region (the loop filter
+    /// reads 7 tap rows/cols beyond the ≤6 it can modify): a plain
+    /// [`Self::compact_write_back_per_row`] would rewrite — and take `&mut`
+    /// guards on — tap-input pixels it never changed, which (a) collides
+    /// with concurrent readers that dav1d's task schedule legitimately
+    /// allows (CDEF bottom-edge padding reads the 2 rows the deblock task
+    /// of the next sbrow only ever *reads*; dav1d's 8-row CDEF lag is
+    /// exactly 2 pad rows + 6 modified rows), and (b) risks clobbering a
+    /// concurrent writer's output with stale copied bytes. Diffing makes the
+    /// write-set equal dav1d's by construction. Found via zenavif#30: the
+    /// `overlapping DisjointMut` worker panic (`cdef.rs` padding read vs
+    /// this write-back's 7th tap row) wedged the decode wait forever.
+    ///
+    /// `work` and `pristine` must both use the compact layout produced by
+    /// [`Self::compact_read_per_row`] (stride = `w * pixel_size`).
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn compact_write_back_per_row_diff<BD: BitDepth>(
+        &self,
+        w: usize,
+        h: usize,
+        work: &[u8],
+        pristine: &[u8],
+    ) {
+        use crate::src::strided::Strided as _;
+        use zerocopy::IntoBytes;
+        let pixel_size = core::mem::size_of::<BD::Pixel>();
+        let byte_stride = w * pixel_size;
+        let pxstride = self.data.pixel_stride::<BD>();
+        let abs_stride = pxstride.unsigned_abs();
+        for row in 0..h {
+            let work_row = &work[row * byte_stride..][..byte_stride];
+            let pristine_row = &pristine[row * byte_stride..][..byte_stride];
+            // Find the modified byte span of this row (usually empty or
+            // small — the loop filter touches ≤6 pixels around each edge).
+            let Some(first) = iter::zip(work_row, pristine_row).position(|(a, b)| a != b) else {
+                continue; // row untouched: no write, no mutable guard
+            };
+            let last = iter::zip(work_row, pristine_row)
+                .rposition(|(a, b)| a != b)
+                .expect("a differing byte exists, so rposition finds one");
+            // Widen the differing byte span [first..=last] to whole pixels.
+            let first_px = first / pixel_size;
+            let end_px = last / pixel_size + 1;
+            let row_off = if pxstride >= 0 {
+                self.offset + row * abs_stride
+            } else {
+                self.offset - row * abs_stride
+            };
+            let mut guard = self
+                .data
+                .slice_mut::<BD, _>((row_off + first_px.., ..end_px - first_px));
+            guard.as_mut_bytes()[..(end_px - first_px) * pixel_size]
+                .copy_from_slice(&work_row[first_px * pixel_size..end_px * pixel_size]);
         }
     }
 

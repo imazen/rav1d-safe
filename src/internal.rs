@@ -323,6 +323,15 @@ pub(crate) struct TaskThreadData {
     pub delayed_fg_cond: Condvar,
     pub delayed_fg_progress: [AtomicI32; 2], /* [0]=started, [1]=completed */
     pub delayed_fg: RwLock<TaskThreadDataDelayedFg>,
+    /// Set (under [`Self::lock`]) when a worker thread dies by panic. A dead
+    /// worker can never complete its task, so `task_counter` never reaches 0
+    /// and every frame-completion wait would otherwise block forever — the
+    /// zenavif#30 wedge: decode callers sat 76-90 minutes in `futex_` while
+    /// the panic message went unread. Every completion wait checks this flag
+    /// and fails the frame with an error instead; the panic guard in
+    /// [`crate::src::thread_task::rav1d_worker_task`] wakes all waiter
+    /// classes after setting it.
+    pub panicked: AtomicBool,
 }
 
 #[derive(Default)]

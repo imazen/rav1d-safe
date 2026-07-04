@@ -488,6 +488,14 @@ pub(crate) fn rav1d_task_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) {
     fc.task_thread.insert_task(c, init_task, 1);
 }
 
+/// Test-only: when armed (set to `true`), the next worker thread to claim a
+/// task panics while owning it — the exact shape of a real worker bug (e.g. a
+/// `DisjointMut` overlap panic). Lets tests prove a worker death surfaces as a
+/// decode error rather than the zenavif#30 forever-wedge. Private feature; not
+/// part of the public API.
+#[cfg(feature = "__test_induce_worker_panic")]
+pub static TEST_INDUCE_WORKER_PANIC: AtomicBool = AtomicBool::new(false);
+
 pub(crate) fn rav1d_task_delayed_fg(c: &Rav1dContext, out: &mut Rav1dPicture, in_0: &Rav1dPicture) {
     let ttd = &*c.task_thread;
     {
@@ -513,7 +521,12 @@ pub(crate) fn rav1d_task_delayed_fg(c: &Rav1dContext, out: &mut Rav1dPicture, in
     let mut task_thread_lock = ttd.lock.lock();
     ttd.delayed_fg_exec.set(1);
     ttd.cond.notify_one();
-    ttd.delayed_fg_cond.wait(&mut task_thread_lock);
+    // A worker death by panic means the film-grain rows may never complete;
+    // the panic guard wakes this condvar and the caller (rav1d_apply_grain)
+    // checks `panicked` and discards the output (zenavif#30).
+    if !ttd.panicked.load(Ordering::SeqCst) {
+        ttd.delayed_fg_cond.wait(&mut task_thread_lock);
+    }
     drop(task_thread_lock);
     ttd.delayed_fg_progress[0].store(0, Ordering::SeqCst);
     ttd.delayed_fg_progress[1].store(0, Ordering::SeqCst);
@@ -800,10 +813,63 @@ fn delayed_fg_task<'l, 'ttd: 'l>(
     }
 }
 
+/// Unwind guard for a worker thread: if the worker dies by panic, no task it
+/// owned can ever complete, so `fc.task_thread.task_counter` never reaches 0
+/// and every completion wait ([`rav1d_decode_frame`], `rav1d_submit_frame` /
+/// `drain_picture`, [`crate::src::lib::rav1d_flush`], the delayed-fg wait)
+/// blocks forever — an unkillable in-process `futex_` wedge (zenavif#30: 4
+/// conformance cells hung 76-90 minutes on a `DisjointMut` overlap panic in
+/// a tile worker). This guard converts that wedge into a decode error: it
+/// flags [`TaskThreadData::panicked`], marks the dead worker `flushed` (so
+/// `rav1d_flush` never waits on it), and wakes every waiter class; the wait
+/// loops check the flag and fail the frame with [`EGeneric`].
+///
+/// Declared FIRST in the worker body so it drops LAST during unwind — every
+/// lock guard the panicking code held (including `ttd.lock`) is released
+/// before this fires, so taking `ttd.lock` here cannot self-deadlock.
+struct WorkerPanicGuard<'a> {
+    c: &'a Rav1dContext,
+    thread_data: Arc<Rav1dTaskContextTaskThread>,
+}
+
+impl Drop for WorkerPanicGuard<'_> {
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            return;
+        }
+        let ttd = &*self.thread_data.ttd;
+        // Publish under the scheduler lock so a waiter can't check the flag,
+        // miss it, and enter its wait after our notifies (lost-wakeup).
+        let _task_thread_lock = ttd.lock.lock();
+        ttd.panicked.store(true, Ordering::SeqCst);
+        // A dead worker can never park again; without this, rav1d_flush would
+        // wait forever for it to report flushed.
+        self.thread_data.flushed.set(true);
+        for fc in self.c.fc.iter() {
+            // Frame-completion waits (decode / submit / drain).
+            fc.task_thread.cond.notify_one();
+        }
+        for tc in self.c.tc.iter() {
+            // rav1d_flush's per-worker flushed waits.
+            tc.thread_data.cond.notify_one();
+        }
+        // Sibling workers re-check state; the delayed-fg waiter re-checks the
+        // panicked flag (see rav1d_task_delayed_fg).
+        ttd.cond.notify_all();
+        ttd.delayed_fg_cond.notify_all();
+    }
+}
+
 pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
     // The main thread will unpark us once `task_thread.c` is set.
     thread::park();
     let c = &*task_thread.c.lock().take().unwrap();
+    // Declared before `tc` (and before any lock guard) so it drops LAST
+    // during unwind; owns its own Arc so `&mut tc` stays available below.
+    let _panic_guard = WorkerPanicGuard {
+        c,
+        thread_data: Arc::clone(&task_thread),
+    };
     let mut tc = Rav1dTaskContext::new(task_thread);
 
     // We clone the Arc here for the lifetime of this function to avoid an
@@ -1038,6 +1104,16 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
         ttd.cond_signaled.store(1, Ordering::SeqCst);
         ttd.cond.notify_one();
         drop(task_thread_lock.take().expect("thread lock was not held"));
+
+        // Test-only hook: die by panic while owning a claimed task, exactly
+        // the shape of a real worker bug (e.g. a DisjointMut overlap panic).
+        // Validates that a worker death fails the frame with an error instead
+        // of wedging every completion wait forever (zenavif#30). Gated behind
+        // a private feature so it cannot exist in production builds.
+        #[cfg(feature = "__test_induce_worker_panic")]
+        if TEST_INDUCE_WORKER_PANIC.swap(false, Ordering::SeqCst) {
+            panic!("test-induced worker panic");
+        }
 
         'found_unlocked: loop {
             // Cooperative cancellation (issue #412): a fired stop token aborts the

@@ -5021,16 +5021,27 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             // Compute reach based on filter direction and actual vmask extent.
             // H filter (is_v=false): iterates rows (stridea=stride), pixel access (strideb=1)
             //   forward: last group at (max_iter-1)*4*stride, +3 lines, +16 pixels
-            //   backward: 7 pixels horizontally
+            //   backward: 7 (luma) / 3 (chroma) pixels horizontally
             // V filter (is_v=true): iterates columns (stridea=1), row access (strideb=stride)
             //   forward: (max_iter*4-1) columns + 16*stride rows
-            //   backward: 7*stride rows
+            //   backward: 7 (luma) / 3 (chroma) rows
+            //
+            // The backward reach must match the plane's true tap span (luma
+            // wd16 reads p6 at -7; chroma wd6 reads p2 at -3): dav1d's CDEF
+            // lag ahead of the deblock task is 8 luma / 4 chroma rows, so a
+            // uniform 7-row window over-reads rows 4..=7 above a chroma edge
+            // — rows the previous sbrow's CDEF task is still legitimately
+            // writing. Guarding them races that task (zenavif#30).
+            let tap_before = if is_y { 7 } else { 3 };
             let (reach_before, reach_after) = if !is_v {
                 // H filter: iterates through row groups
-                (7, (max_iter * 4 - 1) * byte_stride + 16)
+                (tap_before, (max_iter * 4 - 1) * byte_stride + 16)
             } else {
                 // V filter: iterates through column groups
-                (7 * byte_stride, max_iter * 4 - 1 + 16 * byte_stride)
+                (
+                    tap_before * byte_stride,
+                    max_iter * 4 - 1 + 16 * byte_stride,
+                )
             };
 
             // Guard: fall back to scalar if buffer bounds are insufficient.
@@ -5048,14 +5059,19 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             if use_compact {
                 let (cw, ch, cstart, cbase) = if !is_v {
-                    (7 + 16, max_iter * 4, dst.offset - 7, 7usize)
+                    (
+                        tap_before + 16,
+                        max_iter * 4,
+                        dst.offset - tap_before,
+                        tap_before,
+                    )
                 } else {
                     let cw = max_iter * 4;
                     (
                         cw,
-                        7 + 16, // 23 rows: 7 above + 16 below
-                        dst.offset.saturating_sub(7 * byte_stride),
-                        7 * cw,
+                        tap_before + 16, // rows: tap_before above + 16 below
+                        dst.offset.saturating_sub(tap_before * byte_stride),
+                        tap_before * cw,
                     )
                 };
                 let lpf_pic = crate::src::with_offset::WithOffset {
@@ -5063,6 +5079,13 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     offset: cstart,
                 };
                 let (mut cb, cs) = lpf_pic.compact_read_per_row::<BitDepth8>(cw, ch);
+                // Pristine copy for the diff write-back: the filter READS 7
+                // tap rows/cols beyond the ≤6 it can modify, and only the
+                // modified pixels may be written (or mutably guarded) back —
+                // see `compact_write_back_per_row_diff` (zenavif#30).
+                let mut pristine = crate::include::dav1d::picture::take_compact_scratch();
+                pristine.clear();
+                pristine.extend_from_slice(&cb);
                 let buf: &mut [u8] = &mut cb;
                 let base = cbase;
                 let stride_i = cs as isize;
@@ -5124,8 +5147,9 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                         bitdepth_max,
                     ),
                 }
-                lpf_pic.compact_write_back_per_row::<BitDepth8>(cw, ch, &cb);
+                lpf_pic.compact_write_back_per_row_diff::<BitDepth8>(cw, ch, &cb, &pristine);
                 crate::include::dav1d::picture::recycle_compact_scratch(cb);
+                crate::include::dav1d::picture::recycle_compact_scratch(pristine);
             } else {
                 let mut guard = dst
                     .data
@@ -5198,13 +5222,17 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             let u16_stride = (stride / 2).unsigned_abs() as usize;
 
-            // Compute reach based on filter direction and actual vmask extent
+            // Compute reach based on filter direction and actual vmask extent.
+            // Backward reach matches the plane's true tap span — see the
+            // 8bpc path (zenavif#30): a uniform 7 over-reads chroma rows the
+            // previous sbrow's CDEF task is still writing.
+            let tap_before = if is_y { 7 } else { 3 };
             let (reach_before, reach_after) = if !is_v {
                 // H filter: iterates through row groups
-                (7, (max_iter * 4 - 1) * u16_stride + 16)
+                (tap_before, (max_iter * 4 - 1) * u16_stride + 16)
             } else {
                 // V filter: iterates through column groups
-                (7 * u16_stride, max_iter * 4 - 1 + 16 * u16_stride)
+                (tap_before * u16_stride, max_iter * 4 - 1 + 16 * u16_stride)
             };
 
             // Guard: fall back to scalar if buffer bounds are insufficient.
@@ -5219,17 +5247,17 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             if use_compact {
                 let (compact_w, compact_h, start_pixel, base) = if !is_v {
-                    // H filter: 23 pixels wide (-7 to +15), max_iter*4 rows tall
-                    let w = 7 + 16; // 23
+                    // H filter: tap_before + 16 pixels wide, max_iter*4 rows tall
+                    let w = tap_before + 16;
                     let h = max_iter * 4;
-                    let start = dst.offset - 7;
-                    (w, h, start, 7usize)
+                    let start = dst.offset - tap_before;
+                    (w, h, start, tap_before)
                 } else {
-                    // V filter: max_iter*4 + 16 pixels wide, 23 rows tall
+                    // V filter: max_iter*4 pixels wide, tap_before + 16 rows tall
                     let w = max_iter * 4;
-                    let h = 7 + 16; // 23
-                    let start = dst.offset.saturating_sub(7 * u16_stride);
-                    (w, h, start, 7 * w)
+                    let h = tap_before + 16;
+                    let start = dst.offset.saturating_sub(tap_before * u16_stride);
+                    (w, h, start, tap_before * w)
                 };
                 let lpf_pic = crate::src::with_offset::WithOffset {
                     data: dst.data,
@@ -5237,6 +5265,11 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                 };
                 let (mut compact, compact_stride) =
                     lpf_pic.compact_read_per_row::<BitDepth16>(compact_w, compact_h);
+                // Pristine copy for the diff write-back — see the 8bpc path
+                // and `compact_write_back_per_row_diff` (zenavif#30).
+                let mut pristine = crate::include::dav1d::picture::take_compact_scratch();
+                pristine.clear();
+                pristine.extend_from_slice(&compact);
                 let buf: &mut [u16] =
                     zerocopy::FromBytes::mut_from_bytes(&mut compact[..]).unwrap();
                 let stride_i = (compact_stride / 2) as isize;
@@ -5295,8 +5328,11 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                         bitdepth_max,
                     ),
                 }
-                lpf_pic.compact_write_back_per_row::<BitDepth16>(compact_w, compact_h, &compact);
+                lpf_pic.compact_write_back_per_row_diff::<BitDepth16>(
+                    compact_w, compact_h, &compact, &pristine,
+                );
                 crate::include::dav1d::picture::recycle_compact_scratch(compact);
+                crate::include::dav1d::picture::recycle_compact_scratch(pristine);
             } else {
                 let start_pixel = dst.offset - reach_before;
                 let total_pixels = (reach_before + reach_after).min(buf_pixel_len - start_pixel);

@@ -6,26 +6,26 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: rav1d-disjoint-mut.txt 107 lines (supported surface) | rav1d-disjoint-mut.features.txt 79 added (features: aligned,instrument,pic-buf,std,zerocopy) | rav1d-disjoint-mut.internal.txt 16 lines (24 hidden + 0 excluded-feature)
+# files: rav1d-disjoint-mut.txt 113 lines (supported surface) | rav1d-disjoint-mut.features.txt 79 added (features: aligned,instrument,pic-buf,std,zerocopy) | rav1d-disjoint-mut.internal.txt 16 lines (24 hidden + 0 excluded-feature)
 
 ## summary
 #
 #   pub modules                                 1
-#   pub types (struct/enum/trait/alias)        22
+#   pub types (struct/enum/trait/alias)        23
 #   pub consts/statics                          2
-#   free functions                              6
+#   free functions                              8
 #   inherent methods                           31
-#   enum variants                              21
-#   trait roster entries (type × trait)        45
+#   enum variants                              23
+#   trait roster entries (type × trait)        46
 #   conditional trait impls (verbatim)          1
 #   auto-trait-complete types                   1
 #   auto-trait exceptions                       4
 #
 # per-module pub lines:
-#   (root)                           79
+#   (root)                           84
 #   alloc                             4
 
-## items (83 lines)
+## items (88 lines)
 
 pub mod rav1d_disjoint_mut
 pub struct Bounds
@@ -66,6 +66,11 @@ pub unsafe fn [V; N]::as_mut_ptr(*mut Self) -> *mut V
 pub unsafe fn [V; N]::as_mut_slice(*mut Self) -> *mut [Self::Target]
 pub fn [V; N]::is_empty(&self) -> bool
 pub fn [V; N]::len(&self) -> usize
+pub type &mut [V]::Target = V
+pub unsafe fn &mut [V]::as_mut_ptr(*mut Self) -> *mut V
+pub unsafe fn &mut [V]::as_mut_slice(*mut Self) -> *mut [Self::Target]
+pub fn &mut [V]::is_empty(&self) -> bool
+pub fn &mut [V]::len(&self) -> usize
 pub unsafe fn [V]::as_mut_ptr(*mut Self) -> *mut Self::Target
 pub unsafe fn [V]::as_mut_slice(*mut Self) -> *mut [Self::Target]
 pub fn [V]::is_empty(&self) -> bool
@@ -111,8 +116,9 @@ pub type TryResizableWith::Item
 pub fn TryResizableWith::try_resize_with<F: core::ops::function::FnMut() -> Self::Item>(&mut self, usize, F) -> core::result::Result<(), alloc::collections::TryReserveError>
 pub type DisjointMutSlice<T> = DisjointMut<alloc::boxed::Box<[T]>>
 
-## trait impls (18 types)
+## trait impls (19 types)
 
+&mut [V]: AsMutPtr
 (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>): SliceBounds, TranslateRange
 Bounds: Clone, Debug, Default, Display, Eq, From<T>, From<usize>, PartialEq
 DisjointImmutGuard<'a, T, V>: Deref, Drop
