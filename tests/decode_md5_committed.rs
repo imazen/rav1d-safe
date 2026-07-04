@@ -62,19 +62,28 @@ fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
 /// Decode `data` with `threads` worker threads and return the YUV MD5 of all
 /// decoded frames. Output must not depend on the thread count — AV1 decode is
 /// deterministic — so every caller asserts against the same reference MD5.
+///
+/// `max_frame_delay = 1` pins `n_fc = 1` (pure tile threading, synchronous
+/// decode) like every other threaded test in this suite: with frame threading
+/// enabled instead, `decode()` may legitimately return `None` with the frame
+/// still in flight, and the managed `flush()` — which has `rav1d_flush`
+/// reset-and-discard semantics — then DROPS that frame rather than draining
+/// it (observed on the `asm` CI flavor: 0 frames hashed). That drain footgun
+/// is tracked separately; these committed-vector tests must not depend on it.
+/// Decode errors panic — a committed conformant vector failing to decode is a
+/// bug, never something to hash around.
 fn decode_md5_with_threads(data: &[u8], threads: u32) -> String {
     let mut settings = Settings::default();
     settings.threads = threads;
+    settings.max_frame_delay = 1;
     settings.frame_size_limit = 8192 * 8192;
     let mut d = Decoder::with_settings(settings).expect("decoder");
     let mut ctx = md5::Context::new();
-    if let Ok(Some(f)) = d.decode(data) {
+    if let Some(f) = d.decode(data).expect("decode error on committed vector") {
         hash_frame(&f, &mut ctx);
     }
-    if let Ok(rem) = d.flush() {
-        for f in &rem {
-            hash_frame(f, &mut ctx);
-        }
+    for f in &d.flush().expect("flush error on committed vector") {
+        hash_frame(f, &mut ctx);
     }
     format!("{:x}", ctx.finalize())
 }
