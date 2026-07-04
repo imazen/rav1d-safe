@@ -1043,20 +1043,41 @@ fn selfguided_filter_16bpc(
         for i in 0..(w + 2) {
             let idx = aa_base + i;
             let a_val = sumsq.get(idx).copied().unwrap_or(0);
-            let b_val = sum.get(idx).copied().unwrap_or(0) as i64;
+            let b_val = sum.get(idx).copied().unwrap_or(0);
 
-            // Scale for bitdepth
-            let a_scaled = (a_val >> (2 * bitdepth_min_8)) as i64;
-            let b_scaled = b_val >> bitdepth_min_8;
+            // Scale for bitdepth with ROUNDING, exactly like the generic scalar
+            // (`selfguided_filter` in src/looprestoration.rs):
+            //     a = (aa + (1 << 2*bmin8 >> 1)) >> 2*bmin8
+            //     b = (bb + (1 <<   bmin8 >> 1)) >>   bmin8
+            // The previous form truncated (no rounding addend). At 8bpc the
+            // addend is 0 so the 8bpc twin was unaffected, but at 10/12bpc the
+            // truncation skewed z -> x -> both coefficients: the last LR
+            // bit-exactness gap on aarch64 16bpc (issue #14 verification found
+            // sgr_3x3 units with up to ~78% of pixels wrong vs the
+            // scalar/x86/aomdec reference, sgr_5x5 units with a few).
+            //
+            // The arithmetic below deliberately mirrors the scalar's integer
+            // widths (c_int / c_uint = i32 / u32). None of it can overflow for
+            // bitdepth-clipped pixels: p = max(a*n - b*b, 0) tops out at
+            // n^2*M^2/4 / 2^(2*bmin8) (M = bitdepth max), and AV1's SGR
+            // constants are sized so p*s + 2^19 < 2^32 with ~0.06% margin even
+            // at 12bpc / s = 3236 -- same in-range-by-design contract the
+            // scalar relies on.
+            let a_scaled =
+                ((a_val + ((1i64 << (2 * bitdepth_min_8)) >> 1)) >> (2 * bitdepth_min_8)) as i32;
+            let b_scaled =
+                ((b_val as i64 + ((1i64 << bitdepth_min_8) >> 1)) >> bitdepth_min_8) as i32;
 
-            let p = cmp::max(a_scaled * (n as i64) - b_scaled * b_scaled, 0) as u64;
-            let z = ((p * (s as u64) + (1 << 19)) >> 20) as u32;
+            let p = cmp::max(a_scaled * n - b_scaled * b_scaled, 0) as u32;
+            let z = (p * s + (1 << 19)) >> 20;
             let x = dav1d_sgr_x_by_x[cmp::min(z, 255) as usize] as u32;
 
-            // Store coefficients
+            // Store coefficients: a = x * b * sgr_one_by_x (UNSCALED b), b = x.
+            // x <= 255, b <= 25*4095 (reconstructed pixels are bitdepth-clipped),
+            // sgr_one_by_x <= 455, so the u32 product below tops out at ~4.28e9
+            // < 2^32 -- in-range by AV1's constant design, same as the scalar.
             if let Some(aa) = sumsq.get_mut(idx) {
-                *aa =
-                    ((x as u64 * (b_val as u64) * (sgr_one_by_x as u64) + (1 << 11)) >> 12) as i64;
+                *aa = ((x * (b_val as u32) * sgr_one_by_x + (1 << 11)) >> 12) as i64;
             }
             if let Some(bb) = sum.get_mut(idx) {
                 *bb = x as i32;

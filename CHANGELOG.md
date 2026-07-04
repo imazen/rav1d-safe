@@ -150,6 +150,57 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   verified fixed on real aarch64 under qemu (the `arm_boxsum3_oob_16bpc` /
   16bpc-HDR crash vectors decode cleanly, and `decode_md5_committed` confirms the
   16bpc output matches x86), and exercised in CI on the native arm64 runner.
+- **Issue #14, full closure — verified on native aarch64 with conformant
+  streams; last SGR bit-exactness gap fixed** (2026-07-04). The da53bfa3 fix
+  family above was re-verified end-to-end on a Neoverse-N1 against real
+  encodes (not just fuzz repros), which (a) reproduced every pre-fix failure
+  mode of registry 0.5.7 and (b) surfaced one REMAINING 16bpc correctness bug,
+  fixed here:
+  * Registry 0.5.7 negative control (native arm64, conformant zenrav1e
+    still-picture encodes): 8bpc SGR streams panic at
+    `looprestoration_arm.rs:465:30` (`attempt to multiply with overflow`,
+    overflow-checked builds — the exact failure that turned zenrav1e's ARM CI
+    red on Windows/macOS/Linux arm64 via its `intrabc_fires_and_roundtrips…`
+    test) and at `:399:13` (`len is 26520 but the index is 26520`, release
+    bounds check); 10-bit SGR-3x3 streams panic at `:999:30` / `:935:13` (the
+    exact issue-#14 report). Streams that avoid the panicking paths (wiener5,
+    SGR-5x5-only) decoded **without error but with wrong pixels** on 0.5.7 —
+    silent corruption, caught only by MD5 comparison.
+  * **New fix: `selfguided_filter_16bpc` scaled its box sums with truncating
+    shifts; the scalar (and dav1d) round** (`a + (1 << 2*bmin8 >> 1) >>
+    2*bmin8`, same for `b`). The rounding addend is 0 at 8bpc — the 8bpc twin
+    was unaffected, which is exactly why the port slip survived — but at
+    10/12-bit the truncation skewed `z → x →` both SGR coefficients: the
+    `__simd_test` census showed 421 LR mismatches over a 20-vector SGR/wiener
+    suite (sgr_3x3 units up to ~78% wrong pixels, sgr_5x5 a few per unit),
+    now **0**. The coefficient loop also now mirrors the scalar's exact
+    integer widths (i32/u32 rather than i64/u64) so its overflow semantics
+    can never diverge again.
+  * Bit-identity matrix after the fix (native Neoverse-N1 NEON vs x86_64 vs
+    `aomdec --rawvideo`, 23 conformant vectors: 8bpc/10bpc, 4:2:0/4:4:4,
+    SGR-3x3/SGR-5x5/mix/wiener5, 256×256 + 640×256 max-width LR units):
+    byte-identical everywhere LR is isolatable — all 8bpc vectors and all
+    CDEF-off 10-bit vectors; `threads=1 == threads=8`, deterministic across
+    repeat runs, debug == release. CDEF-on 16bpc frames still differ on
+    aarch64 through the open CDEF divergence tracked in issue #414 (LR's own
+    census is 0 there too).
+  * Regression coverage: 6 committed conformant vectors +
+    `lr_sgr_vectors_match_reference_md5` /
+    `lr_sgr_vectors_threaded_match_reference_md5` (8-worker decode — the
+    issue's `rav1d-worker-N` shape) in `tests/decode_md5_committed.rs`, MD5s
+    pinned to the aomdec-verified x86 reference, hard-gated in CI on every
+    platform including native arm64.
+- **aarch64 wiener5 loop restoration produced wrong pixels for every 5-tap
+  block** (issue #414 inventory, fixed by 710537f8 — entry backfilled): the
+  NEON-path wiener5 special-cased `(center_tap=2, tap_count=5, tap_start=1)`
+  and read `tmp[x+0..5]`, mis-centering the window by one column/row;
+  `wiener_rust` always applies the 7-tap window centered at +3 with zero outer
+  coefficients. Max pixel diff up to 119, ~13k mismatches across the dav1d
+  corpus, silent (no panic). Also corrected the 16bpc inner's rounding
+  (`round_bits_h = 3 + 2·(12bpc)`, no unconditional `+128` center tap,
+  `round_bits_v = 11 − 2·(12bpc)`). Wiener5/wiener7 verified bit-exact on
+  native arm64; the committed `lr_wiener5_8bpc_intrabc_s2` vector pins it in
+  CI.
 - **`compact_read_per_row` no longer allocates a `Vec` per filtered edge /
   predicted block under tile threading** (issue #17): decoding one 4K AVIF with
   `threads = 4` dropped from **517,414 heap allocations to 204** (heaptrack;
