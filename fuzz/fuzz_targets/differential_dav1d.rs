@@ -104,6 +104,38 @@ fn compare_plane_u8(
     }
 }
 
+/// Compare one 10/12-bit plane bit-exactly. dav1d stores high-bit-depth
+/// samples as native-endian `u16` exposed through the byte plane, so we
+/// reinterpret two bytes per pixel; the dav1d stride is in bytes and rav1d's
+/// `row()` yields `&[u16]` of `width` samples.
+fn compare_plane_u16(
+    label: &str,
+    rav1d_view: &rav1d_safe::src::managed::PlaneView16<'_>,
+    dav1d_plane_bytes: &[u8],
+    dav1d_stride_bytes: usize,
+    dav1d_height: u32,
+) {
+    let r_height = rav1d_view.height();
+    let r_width = rav1d_view.width();
+    if r_height as u32 != dav1d_height {
+        panic!("DIVERGENCE {label}: row count rav1d={r_height} dav1d={dav1d_height}");
+    }
+    for y in 0..r_height {
+        let r_row = rav1d_view.row(y);
+        let start = y * dav1d_stride_bytes;
+        let d_row = &dav1d_plane_bytes[start..start + r_width * 2];
+        for x in 0..r_width {
+            let d = u16::from_ne_bytes([d_row[2 * x], d_row[2 * x + 1]]);
+            if r_row[x] != d {
+                panic!(
+                    "DIVERGENCE {label} row {y} col {x}: rav1d={} dav1d={}",
+                    r_row[x], d
+                );
+            }
+        }
+    }
+}
+
 fn compare_pictures(
     rav1d_frame: &rav1d_safe::src::managed::Frame,
     dav1d_picture: &dav1d::Picture,
@@ -128,13 +160,8 @@ fn compare_pictures(
         panic!("DIVERGENCE pixel_layout: rav1d={rlayout:?} dav1d={dlayout:?}");
     }
 
-    // 10/12-bit comparison adds a u16 reinterpretation step. v1 of this
-    // harness only bit-exact-compares 8-bit; 10/12-bit pass the metadata
-    // check above but skip the pixel diff.
-    if rbd != 8 {
-        return;
-    }
-
+    // Both 8-bit and 10/12-bit planes are bit-exact-compared below (the u16
+    // path reinterprets dav1d's native-endian high-bit-depth bytes).
     match rav1d_frame.planes() {
         Planes::Depth8(p8) => {
             let y_view = p8.y();
@@ -160,8 +187,29 @@ fn compare_pictures(
                 }
             }
         }
-        Planes::Depth16(_) => {
-            // Filtered above by `rbd != 8`; unreachable here.
+        Planes::Depth16(p16) => {
+            let y_view = p16.y();
+            let y_stride = dav1d_picture.stride(PlanarImageComponent::Y) as usize;
+            let y_plane = dav1d_picture.plane(PlanarImageComponent::Y);
+            compare_plane_u16("Y", &y_view, y_plane.as_ref(), y_stride, dh);
+
+            // 4:0:0 has no chroma. For 4:2:0/4:2:2/4:4:4, compare U + V.
+            if !matches!(dlayout, Dav1dPixelLayout::I400) {
+                if let Some(u_view) = p16.u() {
+                    let u_stride = dav1d_picture.stride(PlanarImageComponent::U) as usize;
+                    let u_plane = dav1d_picture.plane(PlanarImageComponent::U);
+                    let (_, u_height) =
+                        dav1d_picture.plane_data_geometry(PlanarImageComponent::U);
+                    compare_plane_u16("U", &u_view, u_plane.as_ref(), u_stride, u_height);
+                }
+                if let Some(v_view) = p16.v() {
+                    let v_stride = dav1d_picture.stride(PlanarImageComponent::V) as usize;
+                    let v_plane = dav1d_picture.plane(PlanarImageComponent::V);
+                    let (_, v_height) =
+                        dav1d_picture.plane_data_geometry(PlanarImageComponent::V);
+                    compare_plane_u16("V", &v_view, v_plane.as_ref(), v_stride, v_height);
+                }
+            }
         }
     }
 }
