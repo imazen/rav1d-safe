@@ -449,9 +449,19 @@ fn padding<BD: BitDepth>(
 
     for (i, y) in (y_start..2).enumerate() {
         let top = top + i as isize * stride;
-        let top = top.data.slice_as::<_, BD::Pixel>((top.offset.., ..x_end));
+        // Guard exactly the columns read (`x_start..x_end`). Starting the
+        // guard at `top.offset` (which already includes the -2 left-padding
+        // columns) when `HAVE_LEFT` is absent covers 2 pixels this loop never
+        // reads — and those bytes can belong to the tail of a neighboring
+        // line-buffer row that a concurrent tile worker is legitimately
+        // backing up (`backup2lines`), tripping a false `DisjointMut` overlap
+        // panic (2-byte overlap, reproduced on i686 where the 32-byte buffer
+        // alignment lets the windows abut).
+        let top = top
+            .data
+            .slice_as::<_, BD::Pixel>((top.offset + x_start.., ..x_end - x_start));
         for x in x_start..x_end {
-            tmp[x + y * TMP_STRIDE] = top[x].as_::<i16>();
+            tmp[x + y * TMP_STRIDE] = top[x - x_start].as_::<i16>();
         }
     }
     for y in 0..h {
@@ -472,12 +482,14 @@ fn padding<BD: BitDepth>(
         let bottom = bottom + i as isize * stride;
         // This is a fallback `fn`, so perf is not as important here, so an extra branch
         // here should be okay.
+        // Same exact-window discipline as the top loop above: never guard the
+        // skipped left-padding columns.
         let bottom = match bottom.data {
-            PicOrBuf::Pic(pic) => &*pic.slice::<BD, _>((bottom.offset.., ..x_end)),
-            PicOrBuf::Buf(buf) => &*buf.slice_as((bottom.offset.., ..x_end)),
+            PicOrBuf::Pic(pic) => &*pic.slice::<BD, _>((bottom.offset + x_start.., ..x_end - x_start)),
+            PicOrBuf::Buf(buf) => &*buf.slice_as((bottom.offset + x_start.., ..x_end - x_start)),
         };
         for x in x_start..x_end {
-            tmp[x] = bottom[x].as_::<i16>();
+            tmp[x] = bottom[x - x_start].as_::<i16>();
         }
     }
 }
