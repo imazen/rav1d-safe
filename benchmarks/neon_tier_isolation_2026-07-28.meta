@@ -1,0 +1,65 @@
+# rav1d-safe SIMD tier isolation — NOT MEASURABLE on aarch64, and that is correct
+date: 2026-07-28
+host: Apple M4 Pro (12 core), macOS, aarch64
+
+## Finding
+
+benches/tier_isolation.rs was added to compare the native SIMD tier against a
+forced-scalar run, the same way it was added to garb / linear-srgb / zenwebp /
+butteraugli / zenresize / fast-ssim2 / zensim. On aarch64 it CANNOT produce a
+comparison, for a structural reason worth recording.
+
+`archmage::Arm64` is a type alias for `NeonToken` (archmage
+src/tokens/generated/arm.rs:1467). AArch64 mandates NEON, so it can never be
+absent on real hardware — and this decoder relies on that: nine sites in
+src/safe_simd/mc_arm.rs (6) and src/safe_simd/filmgrain_arm.rs (3) call
+`Arm64::summon().unwrap()` unconditionally, with no scalar branch behind them.
+
+Disabling the token via testable_dispatch therefore does not select a slower
+path — there is no other path, and the decoder panics:
+
+  thread 'main' panicked at src/safe_simd/mc_arm.rs:5869:37:
+  called `Option::unwrap()` on a `None` value
+
+## This is NOT a production bug
+
+The unwrap is sound where it runs: every AArch64 CPU has NEON, so
+`NeonToken::summon()` cannot return None outside a test harness that
+deliberately forces it. Nothing needs fixing in the decoder.
+
+## What it means for "optimize for NEON"
+
+The ARM build is already 100% NEON by construction — there is no scalar code
+left to convert, and no runtime tier below NEON to lose to. That is the ceiling
+for this crate on ARM, so "how much is NEON worth here" has no answer of the
+form the other crates gave; the answer is "it is the only path".
+
+The bench is kept and is meaningful on x86_64, where AVX2 IS optional and a
+scalar path genuinely exists. On aarch64 it prints the explanation above and
+skips rather than panicking or — worse — silently reporting the NEON path under
+both labels.
+
+## Separate PRE-EXISTING finding surfaced while setting this up (NOT a NEON issue)
+
+Running `scripts/download-test-vectors.sh` to get vectors for this bench also
+un-skipped `tests/decode_cpu_levels.rs::test_vq_suite_standalone`, which had
+been silently passing by having nothing to test. It fails: 13 distinct
+conformance vectors decode to the wrong MD5, at ALL THREE cpu levels
+(native / neon / scalar — 13 each), so this is NOT SIMD-related:
+
+  Syntax_AV1_mainb8ss420_432x240_002_vq_aom_ctest_4.2_reference
+  Syntax_AV1_mainb8ss420_432x240_018_vq_aom_ctest_4.2
+  Syntax_AV1_mainb8ss420_432x240_020_vq_aom_ctest_4.2_{op0..op9,all}
+
+The `_opN` family are AV1 operating points (scalability layers), which points
+at operating-point selection rather than any pixel kernel.
+
+ATTRIBUTION: pre-existing, not introduced here. The only change in this commit
+is a new bench file plus a `[[bench]]` entry in Cargo.toml — `git status` shows
+no src/ or tests/ file touched, and a bench registration cannot alter library
+behaviour. The failures were invisible only because the test skips when
+target/test-vectors/ is empty, which it is on a fresh checkout.
+
+A test that silently passes when its data is missing is the "graceful skip"
+anti-pattern: it reports green while testing nothing. Worth making the vector
+absence loud (or gating it in CI on a download step) so this cannot hide again.
