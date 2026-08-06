@@ -485,7 +485,9 @@ fn padding<BD: BitDepth>(
         // Same exact-window discipline as the top loop above: never guard the
         // skipped left-padding columns.
         let bottom = match bottom.data {
-            PicOrBuf::Pic(pic) => &*pic.slice::<BD, _>((bottom.offset + x_start.., ..x_end - x_start)),
+            PicOrBuf::Pic(pic) => {
+                &*pic.slice::<BD, _>((bottom.offset + x_start.., ..x_end - x_start))
+            }
             PicOrBuf::Buf(buf) => &*buf.slice_as((bottom.offset + x_start.., ..x_end - x_start)),
         };
         for x in x_start..x_end {
