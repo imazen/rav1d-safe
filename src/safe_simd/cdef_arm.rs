@@ -533,7 +533,16 @@ fn cdef_filter_block_16bpc_inner(
     let stride = dst.pixel_stride::<BitDepth16>();
 
     if pri_strength != 0 {
-        let pri_tap = 4 - (pri_strength & 1);
+        // The caller scaled the CDEF level by `bitdepth_min_8` before it got
+        // here (`y_pri_lvl = (y_lvl >> 2) << bitdepth_min_8` in cdef_apply),
+        // so the tap-selecting parity bit is bit `bitdepth_min_8`, not bit 0.
+        // dav1d does the same shift in its NEON path (`src/arm/64/cdef_tmpl.S`
+        // `lsr w9, w3, w9` / `and w9, w9, #1` under `.if \bpc == 16`), and the
+        // scalar path in `src/cdef.rs` and the x86/wasm ports already did.
+        // Reading bit 0 here made every high-bit-depth CDEF block with an odd
+        // `pri_strength >> bitdepth_min_8` filter with pri_tap 4 instead of 3.
+        let bitdepth_min_8 = ((bitdepth_max + 1) as u32).ilog2() as c_int - 8;
+        let pri_tap = 4 - (pri_strength >> bitdepth_min_8 & 1);
         let pri_shift = cmp::max(0, damping - pri_strength.ilog2() as c_int);
 
         if sec_strength != 0 {
