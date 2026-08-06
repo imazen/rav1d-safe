@@ -29,7 +29,7 @@ use archmage::{Arm64, arcane, rite};
 use safe_unaligned_simd::aarch64 as safe_simd;
 
 use super::itx_arm_neon_8x8::{
-    iadst_8_q, idct_8_q, smull_smlal_q, smull_smlsl_q, sqrshrn_pair, transpose_8x8h,
+    idct_8_q, smull_smlal_q, smull_smlsl_q, sqrshrn_pair, transpose_8x8h,
 };
 use super::itx_arm_neon_common::IDCT_COEFFS;
 

@@ -7,6 +7,23 @@
 #![allow(clippy::too_many_arguments)]
 #![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
 #![cfg_attr(feature = "unchecked", deny(unsafe_code))]
+// This module pairs every NEON kernel with the scalar reference implementation it
+// was derived from (`*_inner` functions, the DCT/ADST coefficient tables, the
+// generic `resolve_1d`/`shift_for` engine). Those references have exactly two
+// callers: the `extern "C"` dispatch wrappers, which are
+// `#[cfg(all(feature = "asm", target_arch = "aarch64"))]`, and the
+// `#[cfg(all(test, target_arch = "aarch64"))]` autoversioned-vs-NEON benchmark
+// module. In every other configuration ~96 items lose their last caller at once
+// and `dead_code` fires on all of them.
+//
+// They are kept deliberately: they are the readable specification the NEON code
+// is checked against, and the bench module A/Bs them against it. The allow is
+// therefore conditional on the configuration where the callers are compiled out,
+// so the lint stays live in the configurations where these items DO have callers.
+#![cfg_attr(
+    not(all(target_arch = "aarch64", any(feature = "asm", test))),
+    allow(dead_code)
+)]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -7670,7 +7687,7 @@ fn inv_txfm_add_generic_8bpc(
             let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
             for x in 0..w {
                 let p = dst[row_off + x] as i32 + dc;
-                dst[row_off + x] = p.max(0).min(255) as u8;
+                dst[row_off + x] = p.clamp(0, 255) as u8;
             }
         }
         return;
@@ -7730,7 +7747,7 @@ fn inv_txfm_add_generic_8bpc(
         let row_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         for x in 0..w {
             let p = dst[row_off + x] as i32 + ((tmp[y * w + x] + 8) >> 4);
-            dst[row_off + x] = p.max(0).min(255) as u8;
+            dst[row_off + x] = p.clamp(0, 255) as u8;
         }
     }
 }

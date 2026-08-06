@@ -16,11 +16,19 @@ use archmage::{Arm64, SimdToken, arcane};
 use safe_unaligned_simd::aarch64 as safe_simd;
 
 use crate::include::common::bitdepth::BitDepth;
+#[cfg_attr(
+    not(all(feature = "asm", target_arch = "aarch64")),
+    allow(unused_imports)
+)]
 use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::headers::Rav1dFilterMode;
 #[cfg(target_arch = "aarch64")]
 use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::PicOffset;
+#[cfg_attr(
+    not(all(feature = "asm", target_arch = "aarch64")),
+    allow(unused_imports)
+)]
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::COMPINTER_LEN;
 use crate::src::internal::SCRATCH_INTER_INTRA_BUF_LEN;
@@ -5120,7 +5128,7 @@ pub(crate) fn blend_dispatch_inner<BD: BitDepth>(
                 }
             }
             BPC::BPC16 => {
-                use zerocopy::{FromBytes, IntoBytes};
+                use zerocopy::FromBytes;
                 let stride_u16 = dst_stride_u / 2;
                 let start = dst_offset;
                 // narrow_guard_mut sizes the dst guard to (h-1)*stride + w (the
@@ -5248,7 +5256,7 @@ pub(crate) fn blend_dir_dispatch_inner<BD: BitDepth>(
                 }
             }
             (BPC::BPC16, false) => {
-                use zerocopy::{FromBytes, IntoBytes};
+                use zerocopy::FromBytes;
                 let stride_u16 = dst_stride_u / 2;
                 let start = dst_offset;
                 // narrow_guard_mut sizes the dst guard to (h-1)*stride + w (the
@@ -5276,7 +5284,7 @@ pub(crate) fn blend_dir_dispatch_inner<BD: BitDepth>(
                 }
             }
             (BPC::BPC16, true) => {
-                use zerocopy::{FromBytes, IntoBytes};
+                use zerocopy::FromBytes;
                 let stride_u16 = dst_stride_u / 2;
                 let start = dst_offset;
                 let mask = &dav1d_obmc_masks[h_u..];

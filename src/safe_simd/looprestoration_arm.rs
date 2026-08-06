@@ -30,6 +30,8 @@ use crate::src::looprestoration::{LooprestorationParams, LrEdgeFlags, padding};
 use crate::src::pixels::Pixels;
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_sgr_x_by_x;
+// Used only by the `extern "C"` dispatch wrappers, which are asm-gated.
+#[cfg_attr(not(all(feature = "asm", target_arch = "aarch64")), allow(dead_code))]
 #[allow(non_camel_case_types)]
 type ptrdiff_t = isize;
 

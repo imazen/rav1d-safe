@@ -20,6 +20,9 @@ use crate::src::lf_mask::Av1FilterLUT;
 use crate::src::with_offset::WithOffset;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering::Relaxed;
+// Used by the asm-gated `extern "C"` wrappers and by `loopfilter_sb_dispatch`,
+// both of which are aarch64-only.
+#[cfg(target_arch = "aarch64")]
 #[allow(non_camel_case_types)]
 type ptrdiff_t = isize;
 use std::cmp;
@@ -29,6 +32,11 @@ use std::ffi::c_int;
 // HELPER FUNCTIONS
 // ============================================================================
 
+// Scalar reference used only by the `extern "C"` dispatch wrappers below,
+// which are `#[cfg(all(feature = "asm", target_arch = "aarch64"))]`. Kept as
+// the readable reference for the NEON path; allow is conditional so the lint
+// stays live in the configuration that does have callers.
+#[cfg_attr(not(all(feature = "asm", target_arch = "aarch64")), allow(dead_code))]
 #[inline(always)]
 fn iclip_diff(v: i32, bitdepth_min_8: u8) -> i32 {
     iclip(
@@ -43,12 +51,22 @@ fn iclip_diff(v: i32, bitdepth_min_8: u8) -> i32 {
 // ============================================================================
 
 /// Compute a buffer index from a base index and signed offset.
+// Scalar reference used only by the `extern "C"` dispatch wrappers below,
+// which are `#[cfg(all(feature = "asm", target_arch = "aarch64"))]`. Kept as
+// the readable reference for the NEON path; allow is conditional so the lint
+// stays live in the configuration that does have callers.
+#[cfg_attr(not(all(feature = "asm", target_arch = "aarch64")), allow(dead_code))]
 #[inline(always)]
 fn signed_idx(base: usize, offset: isize) -> usize {
     base.wrapping_add_signed(offset)
 }
 
 /// Apply loop filter to an edge (scalar version, safe slice-based)
+// Scalar reference used only by the `extern "C"` dispatch wrappers below,
+// which are `#[cfg(all(feature = "asm", target_arch = "aarch64"))]`. Kept as
+// the readable reference for the NEON path; allow is conditional so the lint
+// stays live in the configuration that does have callers.
+#[cfg_attr(not(all(feature = "asm", target_arch = "aarch64")), allow(dead_code))]
 #[inline]
 fn loop_filter_core<BD: BitDepth>(
     buf: &mut [BD::Pixel],
@@ -224,6 +242,11 @@ fn loop_filter_core<BD: BitDepth>(
 // SUPERBLOCK FILTER IMPLEMENTATIONS
 // ============================================================================
 
+// Scalar reference used only by the `extern "C"` dispatch wrappers below,
+// which are `#[cfg(all(feature = "asm", target_arch = "aarch64"))]`. Kept as
+// the readable reference for the NEON path; allow is conditional so the lint
+// stays live in the configuration that does have callers.
+#[cfg_attr(not(all(feature = "asm", target_arch = "aarch64")), allow(dead_code))]
 fn lpf_h_sb_inner<BD: BitDepth, const YUV: usize>(
     buf: &mut [BD::Pixel],
     dst_base: usize,
@@ -261,13 +284,13 @@ fn lpf_h_sb_inner<BD: BitDepth, const YUV: usize>(
             match vm {
                 1 => 4,
                 2 => 6,
-                3 | 4 | 5 | 6 | 7 => 8,
+                3..=7 => 8,
                 _ => 4,
             }
         } else {
             match vm {
                 1 => 4,
-                2 | 3 | 4 | 5 | 6 | 7 => 6,
+                2..=7 => 6,
                 _ => 4,
             }
         };
@@ -278,6 +301,11 @@ fn lpf_h_sb_inner<BD: BitDepth, const YUV: usize>(
     }
 }
 
+// Scalar reference used only by the `extern "C"` dispatch wrappers below,
+// which are `#[cfg(all(feature = "asm", target_arch = "aarch64"))]`. Kept as
+// the readable reference for the NEON path; allow is conditional so the lint
+// stays live in the configuration that does have callers.
+#[cfg_attr(not(all(feature = "asm", target_arch = "aarch64")), allow(dead_code))]
 fn lpf_v_sb_inner<BD: BitDepth, const YUV: usize>(
     buf: &mut [BD::Pixel],
     dst_base: usize,
@@ -325,13 +353,13 @@ fn lpf_v_sb_inner<BD: BitDepth, const YUV: usize>(
             match vm {
                 1 => 4,
                 2 => 6,
-                3 | 4 | 5 | 6 | 7 => 8,
+                3..=7 => 8,
                 _ => 4,
             }
         } else {
             match vm {
                 1 => 4,
-                2 | 3 | 4 | 5 | 6 | 7 => 6,
+                2..=7 => 6,
                 _ => 4,
             }
         };

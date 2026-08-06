@@ -21,14 +21,34 @@ use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
 
+// Used only by the `extern "C"` dispatch wrappers, which are asm-gated.
+#[cfg_attr(not(all(feature = "asm", target_arch = "aarch64")), allow(dead_code))]
 #[allow(non_camel_case_types)]
 type intptr_t = isize;
+#[cfg_attr(not(all(feature = "asm", target_arch = "aarch64")), allow(dead_code))]
 #[allow(non_camel_case_types)]
 type ptrdiff_t = isize;
 
+#[cfg_attr(
+    not(all(feature = "asm", target_arch = "aarch64")),
+    allow(unused_imports)
+)]
 use crate::include::common::bitdepth::{DynEntry, DynPixel, DynScaling};
-use crate::include::dav1d::headers::{Dav1dFilmGrainData, Rav1dFilmGrainData};
+#[cfg_attr(
+    not(all(feature = "asm", target_arch = "aarch64")),
+    allow(unused_imports)
+)]
+use crate::include::dav1d::headers::Dav1dFilmGrainData;
+use crate::include::dav1d::headers::Rav1dFilmGrainData;
+#[cfg_attr(
+    not(all(feature = "asm", target_arch = "aarch64")),
+    allow(unused_imports)
+)]
 use crate::include::dav1d::picture::PicOffset;
+#[cfg_attr(
+    not(all(feature = "asm", target_arch = "aarch64")),
+    allow(unused_imports)
+)]
 use crate::src::ffi_safe::FFISafe;
 use crate::src::filmgrain::{FG_BLOCK_SIZE, GRAIN_HEIGHT, GRAIN_WIDTH};
 use crate::src::internal::GrainLut;
