@@ -489,8 +489,6 @@ fn scalar_idct64_odd(input: &[i32; 32]) -> [i32; 32] {
     // For correctness, use the direct matrix computation approach:
     // Each output is a linear combination of inputs with known coefficients.
     // This is slower but guaranteed correct.
-    let mut out = [0i32; 32];
-
     // Use the AV1 type-II DCT definition for the odd part:
     // The 64-point IDCT odd part takes 32 odd-indexed frequency coefficients
     // and produces 32 spatial outputs.
@@ -561,13 +559,11 @@ fn scalar_idct64_odd(input: &[i32; 32]) -> [i32; 32] {
         e[idx + 3] = (v2 * c16[i].1 + v3 * c16[i].0 + 2048) >> 12;
         let v4 = d[idx + 4];
         let v5 = d[idx + 5];
-        if i < 2 {
-            e[idx + 4] = -((v4 * c16[3 - i].1 + v5 * c16[3 - i].0 + 2048) >> 12);
-            e[idx + 5] = (v4 * c16[3 - i].0 - v5 * c16[3 - i].1 + 2048) >> 12;
-        } else {
-            e[idx + 4] = -((v4 * c16[3 - i].1 + v5 * c16[3 - i].0 + 2048) >> 12);
-            e[idx + 5] = (v4 * c16[3 - i].0 - v5 * c16[3 - i].1 + 2048) >> 12;
-        }
+        // NOTE: this was written as `if i < 2 { .. } else { .. }` with byte-identical
+        // arms. Collapsed here (behaviour-identical); flagged as a possible latent
+        // copy-paste — if the two halves were meant to differ, that is a separate fix.
+        e[idx + 4] = -((v4 * c16[3 - i].1 + v5 * c16[3 - i].0 + 2048) >> 12);
+        e[idx + 5] = (v4 * c16[3 - i].0 - v5 * c16[3 - i].1 + 2048) >> 12;
     }
 
     // Step 6: Butterfly across groups of 8
@@ -636,8 +632,7 @@ fn scalar_idct64_odd(input: &[i32; 32]) -> [i32; 32] {
         result[23 - j] = (b_val * 2896 + a_val * 2896 + 2048) >> 12;
     }
 
-    out = result;
-    out
+    result
 }
 
 /// Scalar 32-point DCT (reused from large_rect).

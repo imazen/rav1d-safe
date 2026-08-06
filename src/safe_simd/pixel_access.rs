@@ -800,6 +800,11 @@ pub(crate) use storei64;
 /// let v: uint8x16_t = neon_ld1q_u8!(&arr);  // arr: [u8; 16]
 /// ```
 #[cfg(target_arch = "aarch64")]
+// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// directly. Kept as the NEON half of this module's documented load/store macro
+// family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
+// two arches keep a symmetric API. Narrow allow rather than deletion.
+#[allow(unused_macros)]
 macro_rules! neon_ld1q_u8 {
     ($src:expr) => {{
         #[cfg(not(feature = "unchecked"))]
@@ -816,9 +821,15 @@ macro_rules! neon_ld1q_u8 {
     }};
 }
 #[cfg(target_arch = "aarch64")]
+#[allow(unused_imports)]
 pub(crate) use neon_ld1q_u8;
 
 #[cfg(target_arch = "aarch64")]
+// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// directly. Kept as the NEON half of this module's documented load/store macro
+// family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
+// two arches keep a symmetric API. Narrow allow rather than deletion.
+#[allow(unused_macros)]
 macro_rules! neon_ld1q_u16 {
     ($src:expr) => {{
         #[cfg(not(feature = "unchecked"))]
@@ -835,9 +846,15 @@ macro_rules! neon_ld1q_u16 {
     }};
 }
 #[cfg(target_arch = "aarch64")]
+#[allow(unused_imports)]
 pub(crate) use neon_ld1q_u16;
 
 #[cfg(target_arch = "aarch64")]
+// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// directly. Kept as the NEON half of this module's documented load/store macro
+// family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
+// two arches keep a symmetric API. Narrow allow rather than deletion.
+#[allow(unused_macros)]
 macro_rules! neon_ld1q_s16 {
     ($src:expr) => {{
         #[cfg(not(feature = "unchecked"))]
@@ -854,9 +871,15 @@ macro_rules! neon_ld1q_s16 {
     }};
 }
 #[cfg(target_arch = "aarch64")]
+#[allow(unused_imports)]
 pub(crate) use neon_ld1q_s16;
 
 #[cfg(target_arch = "aarch64")]
+// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// directly. Kept as the NEON half of this module's documented load/store macro
+// family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
+// two arches keep a symmetric API. Narrow allow rather than deletion.
+#[allow(unused_macros)]
 macro_rules! neon_st1q_u8 {
     ($dst:expr, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
@@ -873,9 +896,15 @@ macro_rules! neon_st1q_u8 {
     }};
 }
 #[cfg(target_arch = "aarch64")]
+#[allow(unused_imports)]
 pub(crate) use neon_st1q_u8;
 
 #[cfg(target_arch = "aarch64")]
+// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// directly. Kept as the NEON half of this module's documented load/store macro
+// family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
+// two arches keep a symmetric API. Narrow allow rather than deletion.
+#[allow(unused_macros)]
 macro_rules! neon_st1q_u16 {
     ($dst:expr, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
@@ -892,6 +921,7 @@ macro_rules! neon_st1q_u16 {
     }};
 }
 #[cfg(target_arch = "aarch64")]
+#[allow(unused_imports)]
 pub(crate) use neon_st1q_u16;
 
 // --- wasm32 SIMD128 macros ---
@@ -1055,6 +1085,11 @@ macro_rules! wasm_storei64 {
 pub(crate) use wasm_storei64;
 
 #[cfg(target_arch = "aarch64")]
+// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// directly. Kept as the NEON half of this module's documented load/store macro
+// family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
+// two arches keep a symmetric API. Narrow allow rather than deletion.
+#[allow(unused_macros)]
 macro_rules! neon_st1q_s16 {
     ($dst:expr, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
@@ -1071,4 +1106,5 @@ macro_rules! neon_st1q_s16 {
     }};
 }
 #[cfg(target_arch = "aarch64")]
+#[allow(unused_imports)]
 pub(crate) use neon_st1q_s16;

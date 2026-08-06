@@ -75,7 +75,6 @@ fn cdef_filter_block_simd_8bpc(
     tmp: &[u16],
     tmp_offset: usize,
     dst: PicOffset,
-    stride: isize,
     w: usize,
     h: usize,
     dir: usize,
@@ -88,8 +87,17 @@ fn cdef_filter_block_simd_8bpc(
 
     let zero = i16x8_splat(0);
 
-    // Single guard for entire output region
-    let (mut p_guard, p_base) = dst.strided_slice_mut::<BitDepth8>(w, h);
+    // Tile-threading-safe block view: contiguous when threading is off, a
+    // compact per-row copy when it is on. See `WithOffset::block_mut`.
+    // Taps are read from the padded `tmp` copy, so only the w×h output region
+    // is touched here.
+    let mut block = dst.block_mut::<BitDepth8>(w, h);
+    // The block has its own stride (compact when tile threading is on), so it
+    // supersedes the caller-supplied picture stride. 8bpc: 1 byte per pixel,
+    // so the byte stride is the pixel stride.
+    let stride = block.byte_stride();
+    let p_base = block.base();
+    let p_guard = block.as_mut_bytes();
 
     if pri_strength != 0 {
         let pri_tap = 4 - (pri_strength & 1);
@@ -275,7 +283,6 @@ fn cdef_filter_block_simd_16bpc(
     tmp: &[u16],
     tmp_offset: usize,
     dst: PicOffset,
-    stride: isize,
     w: usize,
     h: usize,
     dir: usize,
@@ -291,8 +298,18 @@ fn cdef_filter_block_simd_16bpc(
     let bd_max = i16x8_splat(bitdepth_max as i16);
     let bitdepth_min_8 = ((bitdepth_max + 1) as u32).ilog2() as c_int - 8;
 
-    // Single guard for entire output region
-    let (mut p_guard, p_base) = dst.strided_slice_mut::<BitDepth16>(w, h);
+    // Tile-threading-safe block view: contiguous when threading is off, a
+    // compact per-row copy when it is on. See `WithOffset::block_mut`.
+    // Taps are read from the padded `tmp` copy, so only the w×h output region
+    // is touched here.
+    let mut block = dst.block_mut::<BitDepth16>(w, h);
+    // The block has its own stride (compact when tile threading is on), so it
+    // supersedes the caller-supplied picture stride. `p_guard` is indexed in
+    // pixels, so halve the byte stride.
+    let stride = block.byte_stride() / 2;
+    let p_base = block.base();
+    let p_guard: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(block.as_mut_bytes())
+        .expect("dst alignment/size mismatch for u16 reinterpretation");
 
     if pri_strength != 0 {
         let pri_tap = 4 - (pri_strength >> bitdepth_min_8 & 1);
@@ -475,6 +492,8 @@ fn cdef_filter_8x8_8bpc_wasm_inner(
     padding_8bpc(&mut tmp, dst, left, top, bottom, 8, 8, edges);
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
+    // Still needed by the scalar fallback below, which writes through the
+    // picture's own stride.
     let stride = dst.pixel_stride::<BitDepth8>();
 
     if let Some(token) = crate::src::cpu::summon_wasm128() {
@@ -483,7 +502,6 @@ fn cdef_filter_8x8_8bpc_wasm_inner(
             &tmp,
             tmp_offset,
             dst,
-            stride,
             8,
             8,
             dir as usize,
@@ -525,6 +543,8 @@ fn cdef_filter_4x8_8bpc_wasm_inner(
     padding_8bpc(&mut tmp, dst, left, top, bottom, 4, 8, edges);
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
+    // Still needed by the scalar fallback below, which writes through the
+    // picture's own stride.
     let stride = dst.pixel_stride::<BitDepth8>();
 
     if let Some(token) = crate::src::cpu::summon_wasm128() {
@@ -533,7 +553,6 @@ fn cdef_filter_4x8_8bpc_wasm_inner(
             &tmp,
             tmp_offset,
             dst,
-            stride,
             4,
             8,
             dir as usize,
@@ -575,6 +594,8 @@ fn cdef_filter_4x4_8bpc_wasm_inner(
     padding_8bpc(&mut tmp, dst, left, top, bottom, 4, 4, edges);
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
+    // Still needed by the scalar fallback below, which writes through the
+    // picture's own stride.
     let stride = dst.pixel_stride::<BitDepth8>();
 
     if let Some(token) = crate::src::cpu::summon_wasm128() {
@@ -583,7 +604,6 @@ fn cdef_filter_4x4_8bpc_wasm_inner(
             &tmp,
             tmp_offset,
             dst,
-            stride,
             4,
             4,
             dir as usize,
@@ -626,6 +646,8 @@ fn cdef_filter_8x8_16bpc_wasm_inner(
     padding_16bpc(&mut tmp, dst, left, top, bottom, 8, 8, edges, bitdepth_max);
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
+    // Still needed by the scalar fallback below, which writes through the
+    // picture's own stride.
     let stride = dst.pixel_stride::<BitDepth16>();
 
     if let Some(token) = crate::src::cpu::summon_wasm128() {
@@ -634,7 +656,6 @@ fn cdef_filter_8x8_16bpc_wasm_inner(
             &tmp,
             tmp_offset,
             dst,
-            stride,
             8,
             8,
             dir as usize,
@@ -679,6 +700,8 @@ fn cdef_filter_4x8_16bpc_wasm_inner(
     padding_16bpc(&mut tmp, dst, left, top, bottom, 4, 8, edges, bitdepth_max);
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
+    // Still needed by the scalar fallback below, which writes through the
+    // picture's own stride.
     let stride = dst.pixel_stride::<BitDepth16>();
 
     if let Some(token) = crate::src::cpu::summon_wasm128() {
@@ -687,7 +710,6 @@ fn cdef_filter_4x8_16bpc_wasm_inner(
             &tmp,
             tmp_offset,
             dst,
-            stride,
             4,
             8,
             dir as usize,
@@ -732,6 +754,8 @@ fn cdef_filter_4x4_16bpc_wasm_inner(
     padding_16bpc(&mut tmp, dst, left, top, bottom, 4, 4, edges, bitdepth_max);
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
+    // Still needed by the scalar fallback below, which writes through the
+    // picture's own stride.
     let stride = dst.pixel_stride::<BitDepth16>();
 
     if let Some(token) = crate::src::cpu::summon_wasm128() {
@@ -740,7 +764,6 @@ fn cdef_filter_4x4_16bpc_wasm_inner(
             &tmp,
             tmp_offset,
             dst,
-            stride,
             4,
             4,
             dir as usize,
