@@ -8407,11 +8407,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
 
             // Only 4x4 8bpc transforms are ported to NEON so far
             if w == 4 && h == 4 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");
@@ -8583,11 +8587,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
 
             // 16x16 8bpc transforms via NEON
             if w == 16 && h == 16 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");
@@ -8748,11 +8756,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
 
             // 32x32 8bpc transforms via NEON (DCT_DCT and IDTX only)
             if w == 32 && h == 32 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");
@@ -8785,11 +8797,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
 
             // 8x32, 32x8 8bpc transforms via NEON (DCT_DCT and IDTX only)
             if w == 8 && h == 32 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");
@@ -8821,11 +8837,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             }
 
             if w == 32 && h == 8 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");
@@ -8858,11 +8878,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
 
             // 16x32, 32x16 8bpc transforms via NEON (DCT_DCT and IDTX only)
             if w == 16 && h == 32 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");
@@ -8894,11 +8918,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             }
 
             if w == 32 && h == 16 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");
@@ -8936,11 +8964,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             // which handles the zero-fill correctly.
             // See: https://github.com/imazen/rav1d-safe/issues/1
             if w == 64 && h == 64 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");
@@ -8972,11 +9004,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             }
 
             if w == 64 && h == 32 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");
@@ -9008,11 +9044,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             }
 
             if w == 32 && h == 64 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");
@@ -9044,11 +9084,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             }
 
             if w == 16 && h == 64 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");
@@ -9080,11 +9124,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             }
 
             if w == 64 && h == 16 && BD::BPC == BPC::BPC8 {
-                let byte_stride_i = dst.stride();
                 let bd_c = bd.into_c();
 
-                let (mut guard, base) = dst.strided_slice_mut::<BD>(w, h);
-                let dst_u8: &mut [u8] = guard.as_mut_bytes();
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
                 let coeff_i16: &mut [i16] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i16 reinterpretation");

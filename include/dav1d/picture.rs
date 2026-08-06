@@ -767,6 +767,65 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         self.narrow_guard_mut::<BD>(w, h)
     }
 
+    /// A mutable w×h pixel block that is safe to write while OTHER threads
+    /// write other blocks on the same rows.
+    ///
+    /// # Why this exists
+    ///
+    /// [`Self::strided_slice_mut`] reserves ONE contiguous range covering the
+    /// whole strided span, `(h - 1) * stride + w` pixels — everything from the
+    /// block's first pixel to its last, INCLUDING the inter-row gaps, which
+    /// belong to other blocks. That is correct single-threaded and wrong under
+    /// tile threading: AV1 tiles partition a frame by columns, so two tile
+    /// workers routinely write the SAME rows at different columns. The second
+    /// one lands in the first one's reserved gap and `DisjointMut` panics —
+    /// a false positive, since the two writes are genuinely disjoint.
+    ///
+    /// Concretely, on a 3840-wide frame a 16×16 block reserves 57,616 bytes in
+    /// order to write 256, and a neighbouring 16-byte intra-prediction write
+    /// anywhere in those rows trips it. (zenavif#30; the same defect class the
+    /// loopfilter and `ipred` compact paths already fixed for themselves.)
+    ///
+    /// # What it does
+    ///
+    /// * Tile threading OFF — hands back exactly what `strided_slice_mut`
+    ///   does: one contiguous guard, the picture's own stride, no copying.
+    ///   Byte-identical behavior and identical cost to before.
+    /// * Tile threading ON — copies the block into a compact `w × h` scratch
+    ///   buffer through PER-ROW guards (each reserving only the `w` pixels
+    ///   actually touched), lets the caller work on that, and writes it back
+    ///   per row on drop. No gap is ever reserved, so disjoint neighbours
+    ///   cannot collide.
+    ///
+    /// Callers must take the stride from [`BlockMut::byte_stride`] rather than
+    /// from the picture, because the compact buffer has its own stride.
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn block_mut<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
+        if tile_threading_active() {
+            let (buf, byte_stride) = self.compact_read_per_row::<BD>(w, h);
+            BlockMut {
+                storage: BlockMutStorage::Compact { buf },
+                dst: *self,
+                w,
+                h,
+                base: 0,
+                byte_stride: byte_stride as isize,
+            }
+        } else {
+            use crate::src::strided::Strided as _;
+            let byte_stride = self.stride();
+            let (guard, base) = self.narrow_guard_mut::<BD>(w, h);
+            BlockMut {
+                storage: BlockMutStorage::Direct { guard },
+                dst: *self,
+                w,
+                h,
+                base,
+                byte_stride,
+            }
+        }
+    }
+
     /// Create a tracked immutable guard covering a strided w×h pixel region.
     #[inline]
     #[cfg_attr(debug_assertions, track_caller)]
@@ -1627,3 +1686,72 @@ impl Rav1dPicAllocator {
     }
 }
 pub type PicOffset<'a> = Rav1dPictureDataComponentOffset<'a>;
+
+/// Backing storage for [`BlockMut`] — see [`WithOffset::block_mut`].
+enum BlockMutStorage<'a, BD: BitDepth> {
+    /// Tile threading off: the picture's own memory, one contiguous guard.
+    Direct {
+        guard: DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
+    },
+    /// Tile threading on: a detached compact copy, written back on drop.
+    Compact { buf: Vec<u8> },
+}
+
+/// A writable w×h pixel block. Obtain one with [`WithOffset::block_mut`], which
+/// documents why the compact variant exists.
+///
+/// On drop, a compact block is written back to the picture through per-row
+/// guards. A direct block has nothing to do — the caller wrote the picture in
+/// place.
+pub struct BlockMut<'a, BD: BitDepth> {
+    storage: BlockMutStorage<'a, BD>,
+    dst: WithOffset<&'a Rav1dPictureDataComponent>,
+    w: usize,
+    h: usize,
+    base: usize,
+    byte_stride: isize,
+}
+
+impl<'a, BD: BitDepth> BlockMut<'a, BD> {
+    /// Byte stride of the buffer returned by [`Self::as_mut_bytes`].
+    ///
+    /// NOT necessarily the picture's stride: a compact block is tightly packed
+    /// at `w * size_of::<BD::Pixel>()`. Always positive in the compact case;
+    /// may be negative in the direct case, exactly as the picture's is.
+    #[inline]
+    pub fn byte_stride(&self) -> isize {
+        self.byte_stride
+    }
+
+    /// Index within [`Self::as_mut_bytes`] of the block's first pixel.
+    ///
+    /// Zero for a compact block; for a direct block with negative stride it is
+    /// the last row's offset, matching `strided_slice_mut`'s second return value.
+    #[inline]
+    pub fn base(&self) -> usize {
+        self.base
+    }
+
+    /// The writable bytes.
+    #[inline]
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        match &mut self.storage {
+            BlockMutStorage::Direct { guard } => guard.as_mut_bytes(),
+            BlockMutStorage::Compact { buf } => buf.as_mut_slice(),
+        }
+    }
+}
+
+impl<BD: BitDepth> Drop for BlockMut<'_, BD> {
+    fn drop(&mut self) {
+        if let BlockMutStorage::Compact { buf } = &mut self.storage {
+            // Unconditional per-row write-back rather than the loopfilter's
+            // diff variant: an inverse transform adds residual across the whole
+            // block, so a diff would compare every byte only to discover that
+            // every byte changed. Per-row is what keeps the reservations narrow.
+            self.dst
+                .compact_write_back_per_row::<BD>(self.w, self.h, buf);
+            recycle_compact_scratch(core::mem::take(buf));
+        }
+    }
+}
