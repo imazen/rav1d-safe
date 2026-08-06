@@ -4689,12 +4689,13 @@ pub fn avg_dispatch<BD: BitDepth>(
     h: i32,
     bd: BD,
 ) -> bool {
-    use zerocopy::IntoBytes;
     let pixel_size = std::mem::size_of::<BD::Pixel>();
-    let (mut dst_guard, dst_base) = dst.narrow_guard_mut::<BD>(w as usize, h as usize);
-    let dst_bytes = dst_guard.as_mut_bytes();
-    let dst_offset = dst_base * pixel_size;
-    let dst_stride = dst.stride();
+    // Tile-threading-safe block view: contiguous when threading is off, a
+    // compact per-row copy when it is on. See `WithOffset::block_mut`.
+    let mut block = dst.block_mut::<BD>(w as usize, h as usize);
+    let dst_stride = block.byte_stride();
+    let dst_offset = block.base() * pixel_size;
+    let dst_bytes = block.as_mut_bytes();
     avg_dispatch_inner::<BD>(dst_bytes, dst_offset, dst_stride, tmp1, tmp2, w, h, bd)
 }
 
@@ -4801,12 +4802,13 @@ pub fn w_avg_dispatch<BD: BitDepth>(
     weight: i32,
     bd: BD,
 ) -> bool {
-    use zerocopy::IntoBytes;
     let pixel_size = std::mem::size_of::<BD::Pixel>();
-    let (mut dst_guard, dst_base) = dst.narrow_guard_mut::<BD>(w as usize, h as usize);
-    let dst_bytes = dst_guard.as_mut_bytes();
-    let dst_offset = dst_base * pixel_size;
-    let dst_stride = dst.stride();
+    // Tile-threading-safe block view: contiguous when threading is off, a
+    // compact per-row copy when it is on. See `WithOffset::block_mut`.
+    let mut block = dst.block_mut::<BD>(w as usize, h as usize);
+    let dst_stride = block.byte_stride();
+    let dst_offset = block.base() * pixel_size;
+    let dst_bytes = block.as_mut_bytes();
     w_avg_dispatch_inner::<BD>(
         dst_bytes, dst_offset, dst_stride, tmp1, tmp2, w, h, weight, bd,
     )
@@ -4920,12 +4922,13 @@ pub fn mask_dispatch<BD: BitDepth>(
     mask: &[u8],
     bd: BD,
 ) -> bool {
-    use zerocopy::IntoBytes;
     let pixel_size = std::mem::size_of::<BD::Pixel>();
-    let (mut dst_guard, dst_base) = dst.narrow_guard_mut::<BD>(w as usize, h as usize);
-    let dst_bytes = dst_guard.as_mut_bytes();
-    let dst_offset = dst_base * pixel_size;
-    let dst_stride = dst.stride();
+    // Tile-threading-safe block view: contiguous when threading is off, a
+    // compact per-row copy when it is on. See `WithOffset::block_mut`.
+    let mut block = dst.block_mut::<BD>(w as usize, h as usize);
+    let dst_stride = block.byte_stride();
+    let dst_offset = block.base() * pixel_size;
+    let dst_bytes = block.as_mut_bytes();
     mask_dispatch_inner::<BD>(
         dst_bytes, dst_offset, dst_stride, tmp1, tmp2, w, h, mask, bd,
     )
@@ -5039,12 +5042,13 @@ pub fn blend_dispatch<BD: BitDepth>(
     h: i32,
     mask: &[u8],
 ) -> bool {
-    use zerocopy::IntoBytes;
     let pixel_size = std::mem::size_of::<BD::Pixel>();
-    let (mut dst_guard, dst_base) = dst.narrow_guard_mut::<BD>(w as usize, h as usize);
-    let dst_bytes = dst_guard.as_mut_bytes();
-    let dst_offset = dst_base * pixel_size;
-    let dst_stride = dst.stride();
+    // Tile-threading-safe block view: contiguous when threading is off, a
+    // compact per-row copy when it is on. See `WithOffset::block_mut`.
+    let mut block = dst.block_mut::<BD>(w as usize, h as usize);
+    let dst_stride = block.byte_stride();
+    let dst_offset = block.base() * pixel_size;
+    let dst_bytes = block.as_mut_bytes();
     blend_dispatch_inner::<BD>(dst_bytes, dst_offset, dst_stride, tmp, w, h, mask)
 }
 
@@ -5156,12 +5160,13 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
     w: i32,
     h: i32,
 ) -> bool {
-    use zerocopy::IntoBytes;
     let pixel_size = std::mem::size_of::<BD::Pixel>();
-    let (mut dst_guard, dst_base) = dst.narrow_guard_mut::<BD>(w as usize, h as usize);
-    let dst_bytes = dst_guard.as_mut_bytes();
-    let dst_offset = dst_base * pixel_size;
-    let dst_stride = dst.stride();
+    // Tile-threading-safe block view: contiguous when threading is off, a
+    // compact per-row copy when it is on. See `WithOffset::block_mut`.
+    let mut block = dst.block_mut::<BD>(w as usize, h as usize);
+    let dst_stride = block.byte_stride();
+    let dst_offset = block.base() * pixel_size;
+    let dst_bytes = block.as_mut_bytes();
     blend_dir_dispatch_inner::<BD>(is_h, dst_bytes, dst_offset, dst_stride, tmp, w, h)
 }
 
@@ -5315,12 +5320,13 @@ pub fn w_mask_dispatch<BD: BitDepth>(
     sign: i32,
     bd: BD,
 ) -> bool {
-    use zerocopy::IntoBytes;
     let pixel_size = std::mem::size_of::<BD::Pixel>();
-    let (mut dst_guard, dst_base) = dst.narrow_guard_mut::<BD>(w as usize, h as usize);
-    let dst_bytes = dst_guard.as_mut_bytes();
-    let dst_offset = dst_base * pixel_size;
-    let dst_stride = dst.stride();
+    // Tile-threading-safe block view: contiguous when threading is off, a
+    // compact per-row copy when it is on. See `WithOffset::block_mut`.
+    let mut block = dst.block_mut::<BD>(w as usize, h as usize);
+    let dst_stride = block.byte_stride();
+    let dst_offset = block.base() * pixel_size;
+    let dst_bytes = block.as_mut_bytes();
     w_mask_dispatch_inner::<BD>(
         layout, dst_bytes, dst_offset, dst_stride, tmp1, tmp2, w, h, mask, sign, bd,
     )
@@ -5557,12 +5563,13 @@ pub fn mc_put_dispatch<BD: BitDepth>(
         return false;
     }
 
-    use zerocopy::IntoBytes;
     let pixel_size = std::mem::size_of::<BD::Pixel>();
-    let (mut dst_guard, dst_base) = dst.narrow_guard_mut::<BD>(w as usize, h as usize);
-    let dst_bytes = dst_guard.as_mut_bytes();
-    let dst_offset = dst_base * pixel_size;
-    let dst_stride = dst.stride();
+    // Tile-threading-safe block view: contiguous when threading is off, a
+    // compact per-row copy when it is on. See `WithOffset::block_mut`.
+    let mut block = dst.block_mut::<BD>(w as usize, h as usize);
+    let dst_stride = block.byte_stride();
+    let dst_offset = block.base() * pixel_size;
+    let dst_bytes = block.as_mut_bytes();
     mc_put_dispatch_inner::<BD>(
         filter, dst_bytes, dst_offset, dst_stride, src, w, h, mx, my, bd,
     )

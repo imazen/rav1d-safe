@@ -15,7 +15,6 @@ use crate::include::common::bitdepth::BitDepth;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::levels::TxfmSize;
 use crate::src::safe_simd::pixel_access::{wasm_loadi32, wasm_storei32};
-use crate::src::strided::Strided as _;
 use zerocopy::IntoBytes;
 
 use crate::src::levels::DCT_DCT;
@@ -761,7 +760,6 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
         None => return false,
     };
     let (w, h) = txfm.to_wh();
-    let byte_stride_u = dst.stride().unsigned_abs() as usize;
     let bd_c = bd.into_c();
 
     // Only handle DCT_DCT for now
@@ -775,8 +773,12 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             let coeff_i16: &mut [i16] = zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                 .expect("coeff alignment/size mismatch for i16 reinterpretation");
 
-            let (mut guard, _base) = dst.strided_slice_mut::<BD>(w, h);
-            let dst_u8: &mut [u8] = guard.as_mut_bytes();
+            // Tile-threading-safe block view: contiguous when threading is
+            // off, a compact per-row copy when it is on. See
+            // `WithOffset::block_mut`.
+            let mut block = dst.block_mut::<BD>(w, h);
+            let byte_stride_u = block.byte_stride().unsigned_abs();
+            let dst_u8: &mut [u8] = block.as_mut_bytes();
 
             match txfm {
                 TxfmSize::S4x4 => {
@@ -794,8 +796,12 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             let coeff_i32: &mut [i32] = zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                 .expect("coeff alignment/size mismatch for i32 reinterpretation");
 
-            let (mut guard, _base) = dst.strided_slice_mut::<BD>(w, h);
-            let dst_bytes: &mut [u8] = guard.as_mut_bytes();
+            // Tile-threading-safe block view: contiguous when threading is
+            // off, a compact per-row copy when it is on. See
+            // `WithOffset::block_mut`.
+            let mut block = dst.block_mut::<BD>(w, h);
+            let byte_stride_u = block.byte_stride().unsigned_abs();
+            let dst_bytes: &mut [u8] = block.as_mut_bytes();
             let dst_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_bytes)
                 .expect("dst alignment/size mismatch for u16 reinterpretation");
             let stride_u16 = byte_stride_u / 2;
