@@ -84,11 +84,17 @@ use crate::include::common::bitdepth::BitDepth;
 
 /// Execute a closure with mutable byte access to a w×h pixel block.
 ///
-/// In single-threaded mode: zero-copy via `narrow_guard_mut`.
-/// In multi-threaded mode: copies to/from a compact buffer with per-row guards.
+/// The closure receives `(bytes, offset, stride)` — a mutable byte slice, the
+/// BYTE offset to the first pixel, and the byte stride between rows.
 ///
-/// The closure receives `(bytes, offset, stride)` — a mutable byte slice,
-/// the byte offset to the first pixel, and the byte stride between rows.
+/// This is a closure-shaped front end for [`WithOffset::block_mut`], which owns
+/// the single-threaded-vs-tile-threaded policy. The two exist because call sites
+/// come in two shapes — a closure suits the x86-64 and generic dispatchers, an
+/// RAII guard suits the aarch64/wasm ones that need the slice to outlive a
+/// borrow — but there must be exactly ONE implementation of the policy behind
+/// them. When there were two, the aarch64 half silently kept reserving inter-row
+/// gaps long after the x86-64 half stopped, which is the bug this whole change
+/// exists to fix.
 #[inline]
 pub fn with_pixel_guard_mut<BD: BitDepth, R>(
     pic: &crate::src::with_offset::WithOffset<&Rav1dPictureDataComponent>,
@@ -96,21 +102,17 @@ pub fn with_pixel_guard_mut<BD: BitDepth, R>(
     h: usize,
     f: impl FnOnce(&mut [u8], usize, isize) -> R,
 ) -> R {
-    use crate::src::strided::Strided as _;
-    let pixel_size = core::mem::size_of::<BD::Pixel>();
-    if tile_threading_active() {
-        let (mut buf, byte_stride) = pic.compact_read_per_row::<BD>(w, h);
-        let result = f(&mut buf, 0, byte_stride as isize);
-        pic.compact_write_back_per_row::<BD>(w, h, &buf);
-        recycle_compact_scratch(buf);
-        result
-    } else {
-        let (mut guard, base) = pic.narrow_guard_mut::<BD>(w, h);
-        let bytes = guard.as_mut_bytes();
-        let offset = base * pixel_size;
-        let stride = pic.stride();
-        f(bytes, offset, stride)
-    }
+    let mut block = pic.block_mut::<BD>(w, h);
+    // `BlockMut::base()` is a PIXEL index — 0 for a compact block, and the
+    // last row's index for a direct block on a negative-stride picture. This
+    // closure's contract is a BYTE offset, so the scaling happens here rather
+    // than inside `BlockMut`, whose own users index the byte slice directly.
+    let offset = block.base() * core::mem::size_of::<BD::Pixel>();
+    let stride = block.byte_stride();
+    // `block` is dropped at the end of this expression, i.e. after `f` has run:
+    // a compact block therefore writes back before the caller observes `R`,
+    // exactly as the previous open-coded version did.
+    f(block.as_mut_bytes(), offset, stride)
 }
 
 /// Execute a closure with read-only byte access to a w×h pixel block.
