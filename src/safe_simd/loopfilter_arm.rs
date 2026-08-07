@@ -1074,18 +1074,14 @@ fn lf_core<const WD: c_int>(
         o[11] = vbslq_u16(m_wide, rnd(s), o[11]);
     }
 
-    // Only the taps this width can write are stored back. Writing a wider
-    // span would be harmless in the scratch but would break the
-    // `debug_assert` contract that a `wd` never touches outside +-reach.
-    let (lo, hi) = if WD >= 16 {
-        (0usize, 12usize)
-    } else if WD >= 8 {
-        (3, 9)
-    } else {
-        (4, 8)
-    };
+    // Only the taps this width can write are stored back — the SAME range the
+    // run kernels store to the scratch, from the same `written_taps`, so the
+    // two can never drift apart. Writing wider would be harmless in the
+    // scratch but would break the contract that a `wd` never touches outside
+    // `+-reach`, which is what bounds the run kernels' indexing.
+    let (lo, hi) = written_taps(WD);
     for n in lo..hi {
-        t[n + 1] = o[n];
+        t[n] = o[n - 1];
     }
 }
 

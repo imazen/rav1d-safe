@@ -47,7 +47,7 @@ Dispatch pattern: `incant!` for multi-tier, or `if let Some(t) = X64V4xToken::su
 | X5 | itx/cdef/loopfilter 16bpc AVX-512 | X64V4 | (after X1–X3) | — | TODO | |
 | R1 | mc 8tap dotprod + i8mm | Arm64V2/V3 | `safe_simd/mc_arm.rs`, `cpu.rs`, `build.rs` | merged | SCAFFOLDED, cfg-gated OFF (nightly intrinsics — see note). Default build = NEON | 75f044c |
 | R2 | itx NEON tier (rdm sqrdmulh) | Arm64V2 | `safe_simd/itx_arm*.rs` | — | TODO | |
-| R3 | loopfilter/cdef ARM tier | NEON (baseline) | `safe_simd/{loopfilter,cdef}_arm.rs` | p2-kernels | CDEF 8bpc DONE (bit-exact, 71.7 -> ~13 ms/frame at 4K t=1). CDEF 16bpc + loopfilter still scalar — see note below | 70c1a70 |
+| R3 | loopfilter/cdef ARM tier | NEON (baseline) | `safe_simd/{loopfilter,cdef}_arm.rs` | p2-kernels, lf-neon-port | CDEF 8bpc DONE (bit-exact, 71.7 -> ~13 ms/frame at 4K t=1). LOOP FILTER DONE (all 4 widths x both directions x 8/10/12 bpc, bit-exact). CDEF 16bpc still scalar — see note below | 70c1a70, 3b44f6d, d751493 |
 
 ## Cross-cutting findings (2026-05-26 AVX-512/ARM wave — all merged to main)
 - **Zen4 double-pumps AVX-512** (256-bit execution units) → every AVX-512 kernel benches FLAT on this dev box. Bit-exactness (14/14 MD5 on this Zen4, which executes the V4 path) is the validation; wall-clock payoff is on native-512 hardware (Intel Ice Lake server / Sapphire Rapids, Zen5). Do NOT chase Zen4 speedups for AVX-512.
@@ -74,11 +74,30 @@ dav1d's 4.1 (17.3x), loop filter 34.2 against 3.0 (11.3x).
   CDEF_MISMATCH, all +-1 (e.g. simd=525 scalar=524). That is PR #448's subject
   (`fix/446-arm-cdef-highbd-pri-tap`), not this row's; port the 16bpc vector
   path only after that lands, or you will be chasing its rounding bug.
-- **Loop filter: still scalar**, but the profile moved. After the P1 compaction
-  work and `perf(loopfilter)` commits 51f76a7 + 2fc646e, most of the family's
-  cost is guard/copy overhead around the filter (`LfBlock::open` + `close`),
-  not the filter arithmetic — vectorising `loop_filter` alone would leave that
-  untouched. Read `benchmarks/p2_kernels_2026-08-07.meta` before starting.
+- **Loop filter: PORTED** (3b44f6d + d751493, `benchmarks/lf_neon_2026-08-07.meta`).
+  All four widths (`wd` 4 / 6 / 8 / 16 = the spec's filter4 / filter6 / filter8 /
+  filter14), both edge directions, at 8, 10 and 12 bits, over fused runs of 1..4
+  groups. One `u16`-lane kernel serves every bit depth. The seam is the compact
+  scratch rectangle the scalar driver already opens, so no DisjointMut guard
+  changed extent or count.
+
+  **The warning this bullet used to carry was right, and it is the main finding.**
+  Vectorising the filter arithmetic alone would have bought ~10 ms of the ~45:
+  `loop_filter` itself was only 341 of 9,123 t=1 sample leaves (3.74%), while
+  `LfBlock::close`'s write-back diff scan was 286 and `open`'s guards and row
+  copies were another ~400. So the port had to take the surrounding machinery
+  too — the diff scan is now one `vceqq` + nibble movemask (286 -> 67 leaves) and
+  the row copies are monomorphized on `w` instead of a `memmove` call per row.
+  Composed: t=1 v4k_8tile 417.6 -> 390.7 ms/frame.
+
+  **What is left in this family is DisjointMut, not arithmetic.** `open` takes
+  one immutable guard per picture row, and at up to 16 rows per fused run that
+  is ~230 of the ~400 remaining leaves. Do NOT "fix" it by widening to a single
+  rectangle guard — that is the shape this codebase documents as unsound under
+  tile threading, and the x86 dispatch only takes it behind
+  `tile_threading_active()`. The sound version is a tracker API that registers N
+  DISJOINT ranges in one operation (`add_multi` already does 2), which is R2/R4
+  work, not a kernel port.
 - **Loop restoration: still scalar**, 1,527 lines, and measured **0.0 ms/frame**
   on the 4K vectors used here because loop restoration is off in those
   bitstreams. Do not port it on the strength of its line count; find a vector

@@ -9,10 +9,19 @@ BIN=${BIN:-$HOME/tmp/rav1d-p2k/bin}
 VEC=${VEC:-$HOME/tmp/rav1d-perf/vec}
 IFS=' ' read -r -a ARMS <<< "${ARMS:-base itx8 cdef lfmask lfbatch}"
 IFS=' ' read -r -a CELLS <<< "${CELLS:-v4k_8tile:1 v4k_8tile:2 v4k_8tile:4 v4k_8tile:8 v4k_8tile_10b:1 v4k_8tile_10b:8}"
-# Foreign = anything but the agent and OUR OWN arm binaries; the arm under
-# test is the measurement, and macOS `ps` keeps a decaying %cpu for a process
-# that has only just exited, so counting `bench_*` discards every t>1 cell.
-busy_count() { ps -A -o %cpu,comm -r | awk 'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\/|rav1d-p2k\/bin\/bench_/ {c++} END {print c+0}'; }
+# Foreign = anything but the agent and OUR OWN arm binaries. macOS `ps -o comm`
+# prints the FULL PATH, and the exclusion is built from `$BIN` so it follows
+# wherever the arms were staged — the pattern used to be the literal
+# `rav1d-p2k/bin/bench_`, which silently stopped excluding anything the moment a
+# later campaign staged its arms elsewhere, and every t>1 cell then discarded
+# forever against macOS's decaying post-exit %cpu.
+#
+# Do NOT "simplify" this to a basename match on `bench_`: another agent running
+# its own `bench_*` on this box is exactly the contention this guard exists to
+# catch, and a basename match would wave it through. (Caught 2026-08-07 with a
+# concurrent CDEF sweep live in `~/tmp/rav1d-cdef/bin/`.)
+BIN_RE=$(printf '%s' "$BIN" | sed 's/[][\.*^$/(){}?+|]/\\&/g')
+busy_count() { ps -A -o %cpu,comm -r | awk -v me="$BIN_RE" 'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\// && $2 !~ me {c++} END {print c+0}'; }
 wait_quiet() { local w=0; while [ "$(busy_count)" -gt 0 ]; do sleep 5; w=$((w+5)); [ $w -ge 900 ] && { echo busy >&2; exit 4; }; done; }
 : > "$OUT"
 n=${#ARMS[@]}
