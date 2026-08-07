@@ -89,15 +89,9 @@ probe-shardsim = ["probe-count", "rav1d-disjoint-mut/__probe_shardsim"]
 probe-tasktime = []
 # probe-tasktime composed with the tracker removed: the ceiling's task profile.
 probe-tasktime-untracked = ["probe-tasktime", "probe-untracked"]
-# THROWAWAY: removes the rav1d-safe-only recon-vs-deblock barrier in
-# `check_tile`. RACY BY CONSTRUCTION — measurement of the achievable schedule
-# only. Always composed with `probe-untracked`.
-probe-nodeblockgate = []
-probe-tasktime-nogate = ["probe-tasktime", "probe-untracked", "probe-nodeblockgate"]
-# Barrier off but the SHARDED TRACKER STILL ON: what a barrier fix would be
-# worth on the build we actually ship. May trip a real overlap panic — that
-# outcome is itself the measurement.
-probe-tasktime-nogate-tracked = ["probe-tasktime", "probe-nodeblockgate"]
+# (The `probe-nodeblockgate` family that ablated the `check_tile` deblock
+# barrier is gone with the barrier itself — 054e2ed. Its measurements are in
+# benchmarks/p1_scaling_2026-08-07.meta and p1_barrier_2026-08-07.meta.)
 
 # Sharded-tracker A/B knobs. Compile-time only; the defaults are the measured
 # winners (benchmarks/shard_tracker_2026-08-07.meta).
