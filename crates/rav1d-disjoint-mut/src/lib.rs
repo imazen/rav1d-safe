@@ -94,7 +94,10 @@ use zerocopy::KnownLayout;
 /// For audited hot paths, use
 /// [`DisjointMut::dangerously_unchecked`] to skip tracking.
 pub struct DisjointMut<T: ?Sized + AsMutPtr> {
-    tracker: Option<checked::BorrowTracker>,
+    /// Boxed so that `DisjointMut` stays pointer-sized regardless of how many
+    /// shards the tracker carries: `Rav1dTaskContext` embeds ~20 of these and
+    /// has a 48 KiB stack-weight gate.
+    tracker: Option<Box<checked::BorrowTracker>>,
 
     inner: UnsafeCell<T>,
 }
@@ -156,17 +159,22 @@ impl<T: AsMutPtr> DisjointMut<T> {
     ///
     /// Every `.index()` and `.index_mut()` call will validate that the
     /// requested range doesn't overlap with any outstanding borrow.
-    pub const fn new(value: T) -> Self {
+    ///
+    /// Not `const`: the tracker sizes its shard array from the container's
+    /// length, so that a picture plane gets many independently locked shards
+    /// while a 32-byte scratch buffer gets one cache line. If the container is
+    /// later grown with [`Self::resize`], the shard array is re-sized with it.
+    pub fn new(value: T) -> Self {
+        let len = AsMutPtr::len(&value);
         Self {
-            inner: UnsafeCell::new(value),
-            // THROWAWAY probe: `__probe_untracked` turns EVERY instance into an
-            // untracked one, so a build measures the decoder with the borrow
-            // tracker entirely absent (the performance ceiling this work chases).
-            // Unsound by construction — measurement only, never merge.
             #[cfg(not(feature = "__probe_untracked"))]
-            tracker: Some(checked::BorrowTracker::new()),
+            tracker: Some(Box::new(checked::BorrowTracker::new(len))),
             #[cfg(feature = "__probe_untracked")]
-            tracker: None,
+            tracker: {
+                let _ = len;
+                None
+            },
+            inner: UnsafeCell::new(value),
         }
     }
 
@@ -1085,7 +1093,24 @@ impl<V: Clone> Resizable for Vec<V> {
 
 impl<T: AsMutPtr + Resizable> DisjointMut<T> {
     pub fn resize(&mut self, new_len: usize, value: T::Value) {
-        self.inner.get_mut().resize(new_len, value)
+        self.inner.get_mut().resize(new_len, value);
+        self.retrack();
+    }
+}
+
+impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
+    /// Re-size the tracker for the container's current length.
+    ///
+    /// `&mut self` means no borrow can be outstanding, which is what makes
+    /// re-provisioning the shard array safe. Callers that grow the container
+    /// through a `&mut` path must call this, or a buffer that started tiny
+    /// keeps a single shard forever.
+    #[inline]
+    fn retrack(&mut self) {
+        let len = self.as_mut_slice().len();
+        if let Some(tracker) = self.tracker.as_mut() {
+            tracker.reprovision(len);
+        }
     }
 }
 
@@ -1120,7 +1145,9 @@ impl<T: AsMutPtr + TryResizable> DisjointMut<T> {
         new_len: usize,
         value: T::Value,
     ) -> Result<(), alloc::collections::TryReserveError> {
-        self.inner.get_mut().try_resize(new_len, value)
+        self.inner.get_mut().try_resize(new_len, value)?;
+        self.retrack();
+        Ok(())
     }
 }
 
@@ -1159,7 +1186,9 @@ impl<T: AsMutPtr + TryResizableWith> DisjointMut<T> {
         F: FnMut() -> T::Item,
         T: TryResizableWith,
     {
-        self.inner.get_mut().try_resize_with(new_len, f)
+        self.inner.get_mut().try_resize_with(new_len, f)?;
+        self.retrack();
+        Ok(())
     }
 }
 
@@ -1176,7 +1205,8 @@ impl<V> Clearable for Vec<V> {
 
 impl<T: AsMutPtr + Clearable> DisjointMut<T> {
     pub fn clear(&mut self) {
-        self.inner.get_mut().clear()
+        self.inner.get_mut().clear();
+        self.retrack();
     }
 }
 
@@ -1199,7 +1229,8 @@ impl<T: AsMutPtr + ResizableWith> DisjointMut<T> {
         F: FnMut() -> T::Item,
         T: ResizableWith,
     {
-        self.inner.get_mut().resize_with(new_len, f)
+        self.inner.get_mut().resize_with(new_len, f);
+        self.retrack();
     }
 }
 

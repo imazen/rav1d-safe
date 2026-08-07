@@ -301,14 +301,8 @@ pub(super) struct BorrowTracker {
 unsafe impl Send for BorrowTracker {}
 unsafe impl Sync for BorrowTracker {}
 
-impl Default for BorrowTracker {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl BorrowTracker {
-    pub const fn new() -> Self {
+    pub fn new(_len: usize) -> Self {
         Self {
             lock: TinyLock::new(),
             slots: UnsafeCell::new(BorrowSlots::new()),
@@ -317,6 +311,9 @@ impl BorrowTracker {
             probe_slot: core::sync::atomic::AtomicU32::new(u32::MAX),
         }
     }
+
+    /// No-op: the legacy tracker's table does not depend on the length.
+    pub fn reprovision(&mut self, _len: usize) {}
 
     /// Mark this tracker as poisoned. All future borrow attempts will panic.
     pub fn poison(&self) {

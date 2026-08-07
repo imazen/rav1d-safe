@@ -424,12 +424,9 @@ impl BorrowId {
     /// the shard array and shift by the slot without a bounds or overflow
     /// check.
     #[inline(always)]
-    fn pair(self, i: usize) -> (usize, u8) {
+    fn pair(self, i: usize, mask: usize) -> (usize, u8) {
         let f = (self.0 >> (PAIR_SHIFT + PAIR_BITS * i as u32)) & ((1 << PAIR_BITS) - 1);
-        (
-            ((f >> 3) & (N_SHARDS as u64 - 1)) as usize,
-            (f & SLOT_MASK) as u8,
-        )
+        (((f >> 3) as usize) & mask, (f & SLOT_MASK) as u8)
     }
 
     #[inline(always)]
@@ -463,7 +460,7 @@ impl Debug for BorrowId {
             _ => {
                 write!(f, "BorrowId(")?;
                 for i in 0..self.pairs() {
-                    let (sh, sl) = self.pair(i);
+                    let (sh, sl) = self.pair(i, usize::MAX);
                     write!(f, "{}s{sh}/{sl}", if i == 0 { "" } else { " " })?;
                 }
                 write!(f, ")")
@@ -487,6 +484,17 @@ type WideRec = (usize, usize, bool, Option<&'static Location<'static>>);
 /// fails.
 pub(super) struct BorrowTracker {
     shards: [Shard; N_SHARDS],
+    /// Which of the shards this instance actually uses: `N_SHARDS - 1` for a
+    /// buffer big enough to be worth spreading, `0` for a small one, whose
+    /// borrows then all land on shard 0 and stay on one cache line.
+    ///
+    /// The whole tracker lives behind a `Box` (see [`DisjointMut`]'s field) —
+    /// inline it is 4 KiB, and `Rav1dTaskContext` embeds ~20 `DisjointMut`s,
+    /// which pushed it from under 48 KiB to 97 KiB and tripped its
+    /// stack-weight gate. Boxing the tracker rather than the shard array keeps
+    /// the array a fixed-size field, so a masked index needs no fat-pointer
+    /// load and no bounds check.
+    mask: usize,
     /// Live wide records. Read while holding **any** shard lock; written only
     /// while holding **every** shard lock.
     wide: UnsafeCell<Vec<WideRec>>,
@@ -504,27 +512,52 @@ const POISON_BIT: u32 = 1 << 31;
 unsafe impl Send for BorrowTracker {}
 unsafe impl Sync for BorrowTracker {}
 
-impl Default for BorrowTracker {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// Instances below this many elements get a single shard.
+///
+/// Sharding only pays when concurrent workers touch *different* addresses of
+/// the same instance; a buffer smaller than this cannot spread far enough to
+/// matter, and giving it one shard keeps its tracker to a single cache line.
+/// Measured: 12 instances (the picture planes, 8.3 MB each) carry 89.8% of all
+/// borrows and 100% of the contention, while 1,027 smaller ones see zero
+/// contended acquisitions.
+const SHARD_MIN_LEN: usize = 64 * 1024;
 
 /// Fibonacci hashing: the multiplicative constant is `2^64 / phi`. Taking the
 /// *high* bits mixes the low block bits (the x position within a picture row)
 /// into the shard index, which is what separates concurrent tile columns.
 #[inline(always)]
-fn shard_of(block: usize) -> usize {
-    (((block as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)) >> 40) as usize & (N_SHARDS - 1)
+fn shard_of(block: usize, mask: usize) -> usize {
+    // The second `&` is with a constant, which is what lets LLVM prove the
+    // result indexes `[Shard; N_SHARDS]` in bounds. `mask` alone is a runtime
+    // value it cannot bound.
+    ((((block as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)) >> 40) as usize & mask)
+        & (N_SHARDS - 1)
+}
+
+/// `N_SHARDS - 1` when the buffer is worth spreading, else `0`.
+#[inline]
+fn mask_for(len: usize) -> usize {
+    if len >= SHARD_MIN_LEN { N_SHARDS - 1 } else { 0 }
 }
 
 impl BorrowTracker {
-    pub const fn new() -> Self {
+    pub fn new(len: usize) -> Self {
         Self {
             shards: [const { Shard::new() }; N_SHARDS],
+            mask: mask_for(len),
             wide: UnsafeCell::new(Vec::new()),
             state: AtomicU32::new(0),
         }
+    }
+
+    /// Re-size the shard array after the container's length changed.
+    ///
+    /// `&mut self` is the whole safety argument: the caller holds `&mut
+    /// DisjointMut`, so no borrow can be outstanding and no record can be lost.
+    pub fn reprovision(&mut self, len: usize) {
+        // Only the mask moves; the shards are already there, and `&mut self`
+        // guarantees every one of them is empty.
+        self.mask = mask_for(len);
     }
 
     /// Mark this tracker as poisoned. All future borrow attempts will panic.
@@ -609,7 +642,7 @@ impl BorrowTracker {
 
         // Fast path: the borrow lives in one block, so one shard. 99.875% of
         // hot-plane borrows at BLOCK_SHIFT = 8.
-        let si = shard_of(b0);
+        let si = shard_of(b0, self.mask);
         let shard = &self.shards[si];
         shard.lock.lock();
         let g = ShardGuard(&shard.lock);
@@ -648,7 +681,7 @@ impl BorrowTracker {
         if b0 == b1 {
             // Single block, but there is at least one live wide record, so the
             // wide list has to be consulted too.
-            let si = shard_of(b0);
+            let si = shard_of(b0, self.mask);
             let shard = &self.shards[si];
             shard.lock.lock();
             let g = ShardGuard(&shard.lock);
@@ -694,7 +727,7 @@ impl BorrowTracker {
         let mut set = [0u16; MAX_SHARDS_PER_BORROW];
         let mut n = 0usize;
         for b in b0..=b1 {
-            let s = shard_of(b) as u16;
+            let s = shard_of(b, self.mask) as u16;
             if set[..n].contains(&s) {
                 continue;
             }
@@ -707,13 +740,13 @@ impl BorrowTracker {
         set[..n].sort_unstable();
 
         for &s in &set[..n] {
-            self.shards[s as usize].lock.lock();
+            self.shards[(s as usize) & (N_SHARDS - 1)].lock.lock();
         }
         // Check every held shard, plus the wide list.
         let mut hit = None;
         for &s in &set[..n] {
             // SAFETY: shard `s`'s lock is held.
-            let recs = unsafe { &*self.shards[s as usize].recs.get() };
+            let recs = unsafe { &*self.shards[(s as usize) & (N_SHARDS - 1)].recs.get() };
             if let Some(h) = recs.find::<IS_MUT>(start, end) {
                 hit = Some(h);
                 break;
@@ -733,7 +766,7 @@ impl BorrowTracker {
         let mut done = 0usize;
         while done < n {
             // SAFETY: the shard's lock is held.
-            let recs = unsafe { &mut *self.shards[set[done] as usize].recs.get() };
+            let recs = unsafe { &mut *self.shards[(set[done] as usize) & (N_SHARDS - 1)].recs.get() };
             match recs.alloc::<IS_MUT>(start, end, here()) {
                 Some(slot) => {
                     slots[done] = slot;
@@ -745,7 +778,7 @@ impl BorrowTracker {
         if done < n {
             for i in 0..done {
                 // SAFETY: the shard's lock is held.
-                let recs = unsafe { &mut *self.shards[set[i] as usize].recs.get() };
+                let recs = unsafe { &mut *self.shards[(set[i] as usize) & (N_SHARDS - 1)].recs.get() };
                 recs.free(slots[i]);
             }
             Self::unlock_all(&self.shards, &set[..n]);
@@ -820,7 +853,7 @@ impl BorrowTracker {
     #[inline(always)]
     fn unlock_all(shards: &[Shard; N_SHARDS], set: &[u16]) {
         for &s in set.iter().rev() {
-            shards[s as usize].lock.unlock();
+            shards[(s as usize) & (N_SHARDS - 1)].lock.unlock();
         }
     }
 
@@ -843,7 +876,7 @@ impl BorrowTracker {
         if id.pairs() != 1 {
             return self.remove_multi(id);
         }
-        let (si, slot) = id.pair(0);
+        let (si, slot) = id.pair(0, self.mask);
         let shard = &self.shards[si];
         shard.lock.lock();
         let _g = ShardGuard(&shard.lock);
@@ -860,15 +893,15 @@ impl BorrowTracker {
         let n = id.pairs();
         // `add_multi` stored the pairs ascending, so this order is safe.
         for i in 0..n {
-            self.shards[id.pair(i).0].lock.lock();
+            self.shards[id.pair(i, self.mask).0].lock.lock();
         }
         for i in 0..n {
-            let (si, slot) = id.pair(i);
+            let (si, slot) = id.pair(i, self.mask);
             // SAFETY: the shard's lock is held.
             unsafe { &mut *self.shards[si].recs.get() }.free(slot);
         }
         for i in (0..n).rev() {
-            self.shards[id.pair(i).0].lock.unlock();
+            self.shards[id.pair(i, self.mask).0].lock.unlock();
         }
     }
 
@@ -909,7 +942,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "overlapping DisjointMut")]
     fn same_block_overlap_is_caught() {
-        let t = BorrowTracker::new();
+        let t = BorrowTracker::new(1 << 20);
         let _a = t.add_mut(&b(0..16));
         let _c = t.add_mut(&b(8..24));
     }
@@ -920,7 +953,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "overlapping DisjointMut")]
     fn overlap_in_a_later_block_is_caught() {
-        let t = BorrowTracker::new();
+        let t = BorrowTracker::new(1 << 20);
         let bs = 1usize << BLOCK_SHIFT;
         // a covers blocks 0..=2, c covers blocks 2..=4; they share block 2.
         let _a = t.add_mut(&b(0..2 * bs + 1));
@@ -931,7 +964,7 @@ mod tests {
     /// collide, even though hashing may put them in the same shard.
     #[test]
     fn block_boundary_neighbours_do_not_collide() {
-        let t = BorrowTracker::new();
+        let t = BorrowTracker::new(1 << 20);
         let bs = 1usize << BLOCK_SHIFT;
         for k in 0..256usize {
             let a = t.add_mut(&b(k * bs..(k + 1) * bs));
@@ -948,7 +981,7 @@ mod tests {
     fn cross_shard_overlaps_are_all_caught() {
         let bs = 1usize << BLOCK_SHIFT;
         for k in 0..64usize {
-            let t = BorrowTracker::new();
+            let t = BorrowTracker::new(1 << 20);
             let _a = t.add_mut(&b(k * bs..k * bs + 4));
             let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _c = t.add_mut(&b(k * bs + 2..k * bs + 6));
@@ -964,7 +997,7 @@ mod tests {
     /// Immutable borrows may share; a mutable one may not join them.
     #[test]
     fn immutable_sharing_then_mutable_conflict() {
-        let t = BorrowTracker::new();
+        let t = BorrowTracker::new(1 << 20);
         let a = t.add_immut(&b(0..64));
         let c = t.add_immut(&b(32..96));
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -983,7 +1016,7 @@ mod tests {
     /// path; narrow borrows must still see it.
     #[test]
     fn wide_borrow_is_visible_to_narrow_registrants() {
-        let t = BorrowTracker::new();
+        let t = BorrowTracker::new(1 << 20);
         let bs = 1usize << BLOCK_SHIFT;
         let wide = t.add_mut(&b(0..MAX_BLOCKS_SCAN * bs * 4));
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1000,7 +1033,7 @@ mod tests {
     /// ...and the reverse: a narrow record must be found by a wide registrant.
     #[test]
     fn narrow_borrow_is_visible_to_wide_registrant() {
-        let t = BorrowTracker::new();
+        let t = BorrowTracker::new(1 << 20);
         let bs = 1usize << BLOCK_SHIFT;
         let n = t.add_mut(&b(5 * bs..5 * bs + 4));
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1015,7 +1048,7 @@ mod tests {
     /// record.
     #[test]
     fn shard_overflow_promotes_and_still_detects() {
-        let t = BorrowTracker::new();
+        let t = BorrowTracker::new(1 << 20);
         // All in block 0, hence all in one shard: SLOTS + 3 live at once.
         let mut ids = Vec::new();
         for i in 0..(SLOTS + 3) {
@@ -1039,7 +1072,7 @@ mod tests {
 
     #[test]
     fn poison_blocks_everything() {
-        let t = BorrowTracker::new();
+        let t = BorrowTracker::new(1 << 20);
         t.poison();
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _x = t.add_immut(&b(0..1));
@@ -1053,7 +1086,7 @@ mod tests {
     #[test]
     fn threaded_disjoint_is_clean() {
         use std::sync::Arc;
-        let t = Arc::new(BorrowTracker::new());
+        let t = Arc::new(BorrowTracker::new(1 << 20));
         let mut hs = Vec::new();
         for th in 0..8usize {
             let t = Arc::clone(&t);
