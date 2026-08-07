@@ -290,19 +290,31 @@ impl<BD: BitDepth> LfTaps<BD> for DirectTaps<'_> {
 }
 
 /// Taps in a compact scratch buffer — no borrow tracking at all in here.
+///
+/// The buffer is a fixed-size array, not a slice, and `at` masks the index:
+/// that is what lets LLVM prove every access in-range and drop the bounds
+/// check. `loop_filter` reads and writes ~26 taps per column x 4 columns, so
+/// the checks are not incidental. The mask cannot hide a real out-of-range
+/// index — `open` sizes the rectangle from `lf_reach(wd)` and `loop_filter`
+/// never reads outside `+-reach`, which the `debug_assert` below pins.
 struct CompactTaps<'a, BD: BitDepth> {
-    buf: &'a mut [BD::Pixel],
+    buf: &'a mut [BD::Pixel; LF_BLOCK_LEN],
     /// Index of `(idx, k) = (0, 0)` within `buf`.
     base: usize,
     stridea: isize,
     strideb: isize,
+    /// Live prefix of `buf`; the `debug_assert` bound, not a runtime limit.
+    len: usize,
 }
 
 impl<BD: BitDepth> CompactTaps<'_, BD> {
     #[inline(always)]
     fn at(&self, idx: isize, k: isize) -> usize {
-        self.base
-            .wrapping_add_signed(self.stridea * idx + self.strideb * k)
+        let raw = self
+            .base
+            .wrapping_add_signed(self.stridea * idx + self.strideb * k);
+        debug_assert!(raw < self.len, "tap ({idx},{k}) outside the opened block");
+        raw & (LF_BLOCK_LEN - 1)
     }
 }
 
@@ -324,6 +336,10 @@ const LF_TAP_REACH: isize = 7;
 /// Widest `2 * reach x 4` (or `4 x 2 * reach`) tap block.
 const LF_BLOCK_MAX: usize = 4 * 2 * LF_TAP_REACH as usize;
 
+/// Allocation for that block, rounded up to a power of two so `& (LEN - 1)`
+/// proves every [`CompactTaps`] index in-range to LLVM.
+const LF_BLOCK_LEN: usize = LF_BLOCK_MAX.next_power_of_two();
+
 /// Exactly what one `loop_filter` call can read, expressed as a rectangle.
 ///
 /// `wd` fixes the tap window before any pixel is touched: `+-7` at 16, `+-4` at
@@ -344,8 +360,8 @@ struct LfBlock<'a, BD: BitDepth> {
     stride: isize,
     w: usize,
     h: usize,
-    buf: [BD::Pixel; LF_BLOCK_MAX],
-    pristine: [BD::Pixel; LF_BLOCK_MAX],
+    buf: [BD::Pixel; LF_BLOCK_LEN],
+    pristine: [BD::Pixel; LF_BLOCK_LEN],
     /// `buf` index of `(idx, k) = (0, 0)`.
     base: usize,
     stridea: isize,
@@ -401,7 +417,7 @@ impl<'a, BD: BitDepth> LfBlock<'a, BD> {
             data: dst.data,
             offset: first as usize,
         };
-        let mut buf = [BD::Pixel::from(0u8); LF_BLOCK_MAX];
+        let mut buf = [BD::Pixel::from(0u8); LF_BLOCK_LEN];
         for row in 0..h {
             let off = origin.offset.wrapping_add_signed(row as isize * stride);
             let guard = PicOffset {
@@ -427,7 +443,8 @@ impl<'a, BD: BitDepth> LfBlock<'a, BD> {
     #[inline]
     fn taps(&mut self) -> CompactTaps<'_, BD> {
         CompactTaps {
-            buf: &mut self.buf[..self.w * self.h],
+            len: self.w * self.h,
+            buf: &mut self.buf,
             base: self.base,
             stridea: self.stridea,
             strideb: self.strideb,
