@@ -342,7 +342,7 @@ const LF_BLOCK_MAX: usize = 4 * 2 * LF_TAP_REACH as usize;
 /// pixels wide and `2 * reach` rows tall, so an unfused call takes up to 14
 /// guards to cover 4 pixels each. Fusing `n` groups keeps the same rows but
 /// makes them `4 * n` wide — same pixels, `n`x fewer guards.
-const LF_BATCH_MAX: usize = 4;
+pub(crate) const LF_BATCH_MAX: usize = 4;
 
 /// Allocation for a fused block: `4 * LF_BATCH_MAX` columns x `2 * reach`
 /// taps, rounded up to a power of two so `& (LEN - 1)` proves every

@@ -13,6 +13,24 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   in-repo caller constructed a `DisjointMut` in const context.
 
 ### Changed
+- **The aarch64 deblocking loop filter has a real NEON tier**
+  (`src/safe_simd/loopfilter_arm.rs`). That file previously imported
+  `core::arch::aarch64::*` and contained no intrinsic call, and its
+  `loopfilter_sb_dispatch` returned `false` unconditionally — so on aarch64 the
+  "NEON" loop filter was the scalar reference. Ported bit-exactly: all four tap
+  widths (`wd` 4 / 6 / 8 / 16 = the spec's filter4 / filter6 / filter8 /
+  filter14), both edge directions (vertical edges transpose 8x8 tiles in
+  registers; horizontal edges are tap-major and need none), at 8, 10 and 12
+  bits, over fused runs of 1..4 groups. One `u16`-lane kernel serves every bit
+  depth. Two neighbours of the filter that the profile showed cost MORE than
+  the arithmetic went with it: `LfBlock::close`'s write-back diff scan is now
+  one `vceqq` plus a nibble movemask, and `LfBlock::open`'s per-row copy is
+  monomorphized on the six widths it can take instead of a `memmove` call per
+  row. No `DisjointMut` guard changed extent or count, and no `unsafe` was
+  added. Bit-identical decode output: the whole-corpus MISMATCH set (4,945
+  lines, 2,845 distinct triples across 5 CPU tiers x 989 vectors) is unchanged,
+  and frame md5 matches on all 7 local vectors at every thread count.
+  `benchmarks/lf_neon_2026-08-07.meta` (3b44f6d, d751493, a5606dc).
 - **The `DisjointMut` borrow tracker is address-block sharded, and tile
   threading now scales** (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`). Each
   instance's tracker is split into 32 independently locked, cache-line-isolated

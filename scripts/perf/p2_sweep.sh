@@ -5,6 +5,15 @@
 # NO `nice` ON A TIMED RUN (Darwin background QoS distorts wall clock ~40x).
 set -u
 OUT=${1:?out.tsv}; ROUNDS=${2:-3}; REPS=${3:-3}; ITERS=${4:-4}
+# STRICT=1 (default): a cell that saw foreign load is DISCARDED and re-run —
+# the right policy on a box you own.
+# STRICT=0: the cell is kept and its rows are tagged `busy=1` in the last
+# column. For a box shared with other agents, where "idle" may never happen:
+# the arms still run back to back inside a cell with the order rotating, so
+# steady foreign load lands on both arms alike and the PAIRED RATIO stays
+# sound — but the absolute ms/frame is inflated and must be reported as such.
+# Never report a busy=1 absolute number as a clean one.
+STRICT=${STRICT:-1}
 BIN=${BIN:-$HOME/tmp/rav1d-p2k/bin}
 VEC=${VEC:-$HOME/tmp/rav1d-perf/vec}
 IFS=' ' read -r -a ARMS <<< "${ARMS:-base itx8 cdef lfmask lfbatch}"
@@ -22,7 +31,10 @@ IFS=' ' read -r -a CELLS <<< "${CELLS:-v4k_8tile:1 v4k_8tile:2 v4k_8tile:4 v4k_8
 # concurrent CDEF sweep live in `~/tmp/rav1d-cdef/bin/`.)
 BIN_RE=$(printf '%s' "$BIN" | sed 's/[][\.*^$/(){}?+|]/\\&/g')
 busy_count() { ps -A -o %cpu,comm -r | awk -v me="$BIN_RE" 'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\// && $2 !~ me {c++} END {print c+0}'; }
-wait_quiet() { local w=0; while [ "$(busy_count)" -gt 0 ]; do sleep 5; w=$((w+5)); [ $w -ge 900 ] && { echo busy >&2; exit 4; }; done; }
+# STRICT=0 also skips the pre-cell wait: on a shared box there is nothing to
+# wait FOR, and blocking here just times the campaign out at 900s having
+# measured nothing.
+wait_quiet() { local w=0; [ "$STRICT" = 0 ] && return 0; while [ "$(busy_count)" -gt 0 ]; do sleep 5; w=$((w+5)); [ $w -ge 900 ] && { echo busy >&2; exit 4; }; done; }
 : > "$OUT"
 n=${#ARMS[@]}
 for round in $(seq 0 $((ROUNDS-1))); do
@@ -39,9 +51,9 @@ for round in $(seq 0 $((ROUNDS-1))); do
         done < <(echo "$out" | awk -F'\t' '/^RESULT/{print $8}')
         [ "$(busy_count)" -gt 0 ] && dirty=1
       done
-      if [ $dirty -eq 0 ]; then
-        printf "$stage" >> "$OUT"
-        echo "[$(date +%H:%M:%S)] r$round $vec t=$t committed" >&2
+      if [ $dirty -eq 0 ] || [ "$STRICT" = 0 ]; then
+        printf "$stage" | sed "s/\$/\t$dirty/" >> "$OUT"
+        echo "[$(date +%H:%M:%S)] r$round $vec t=$t committed busy=$dirty" >&2
         break
       fi
       echo "[$(date +%H:%M:%S)] r$round $vec t=$t DISCARDED (contended)" >&2
