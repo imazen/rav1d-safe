@@ -8,12 +8,18 @@ BIN=${BIN:-$HOME/tmp/rav1d-p2k/bin}
 AVIF=$HOME/tmp/rav1d-perf/vec
 IVF=$HOME/tmp/recon-yard/vec
 CELLS=("v4k_8tile:2:20" "v4k_8tile_10b:2:20")
-THREADS=(1 8)
+IFS=" " read -r -a THREADS <<< "${THREADS:-1 8}"
 IFS=' ' read -r -a ARMS <<< "${ARMS:-base head dav1d_fd1}"
-# Exclude the arms under test by BASENAME (see the note in p2_sweep.sh): macOS
+# Exclude the arms under test by the staged BIN dir plus dav1d itself: macOS
 # keeps a decaying %cpu for a just-exited process, so counting our own
 # bench_*/dav1d discards every t>1 cell forever.
-busy_count() { ps -A -o %cpu,comm -r | awk 'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\/|bench_|probe_|dav1d/ {c++} END {print c+0}'; }
+#
+# TOLERATED: extra regex of processes present for the whole campaign, which
+# therefore load every arm equally and are cancelled by the back-to-back
+# interleave rather than invalidating the cell. See p2_sweep.sh.
+TOLERATED=${TOLERATED:-}
+busy_count() { ps -A -o %cpu,comm -r | awk -v tol="$TOLERATED" \
+  'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\/|bench_|probe_|dav1d/ && (tol == "" || $2 !~ tol) {c++} END {print c+0}'; }
 wait_quiet() { local w=0; while [ "$(busy_count)" -gt 0 ]; do sleep 5; w=$((w+5)); [ $w -ge 900 ] && exit 4; done; }
 now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
 time_one() {

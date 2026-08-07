@@ -29,8 +29,17 @@ IFS=' ' read -r -a CELLS <<< "${CELLS:-v4k_8tile:1 v4k_8tile:2 v4k_8tile:4 v4k_8
 # its own `bench_*` on this box is exactly the contention this guard exists to
 # catch, and a basename match would wave it through. (Caught 2026-08-07 with a
 # concurrent CDEF sweep live in `~/tmp/rav1d-cdef/bin/`.)
-BIN_RE=$(printf '%s' "$BIN" | sed 's/[][\.*^$/(){}?+|]/\\&/g')
-busy_count() { ps -A -o %cpu,comm -r | awk -v me="$BIN_RE" 'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\// && $2 !~ me {c++} END {print c+0}'; }
+#
+# TOLERATED is an extra regex of processes present for the WHOLE campaign, which
+# therefore load every arm equally and are cancelled by the back-to-back
+# interleave rather than invalidating the cell. Leave it empty for the strict
+# guard. `load_count` records what was actually running regardless, so a reader
+# can see how contended each cell was.
+TOLERATED=${TOLERATED:-}
+BIN_RE=$(printf '%s' "$BIN" | sed 's/[][\.*^$/(){}?+|]/\&/g')
+busy_count() { ps -A -o %cpu,comm -r | awk -v me="$BIN_RE" -v tol="$TOLERATED" 'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\// && $2 !~ me && (tol == "" || $2 !~ tol) {c++} END {print c+0}'; }
+# Load actually present during the cell, tolerated processes included.
+load_count() { ps -A -o %cpu,comm -r | awk -v me="$BIN_RE" 'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\// && $2 !~ me {c++} END {print c+0}'; }
 # STRICT=0 also skips the pre-cell wait: on a shared box there is nothing to
 # wait FOR, and blocking here just times the campaign out at 900s having
 # measured nothing.
@@ -41,19 +50,20 @@ for round in $(seq 0 $((ROUNDS-1))); do
   for cell in "${CELLS[@]}"; do
     IFS=: read -r vec t <<< "$cell"
     while :; do
-      wait_quiet; stage=""; dirty=0
+      wait_quiet; stage=""; dirty=0; load=$(load_count)
       for k in $(seq 0 $((n-1))); do
         arm=${ARMS[$(( (k + round) % n ))]}
         out=$("$BIN/bench_$arm" "$VEC/$vec.avif" "$t" "$ITERS" "$REPS" "$arm" 2>&1)
         md5=$(echo "$out" | awk -F'\t' '/^CHECKSUM/{print $5}')
         while IFS= read -r ms; do
-          stage="${stage}${round}\t${vec}\t${t}\t${arm}\t${ms}\t${md5}\n"
+          stage="${stage}${round}\t${vec}\t${t}\t${arm}\t${ms}\t${md5}\t${load}\n"
         done < <(echo "$out" | awk -F'\t' '/^RESULT/{print $8}')
         [ "$(busy_count)" -gt 0 ] && dirty=1
+        l2=$(load_count); [ "$l2" -gt "$load" ] && load=$l2
       done
       if [ $dirty -eq 0 ] || [ "$STRICT" = 0 ]; then
-        printf "$stage" | sed "s/\$/\t$dirty/" >> "$OUT"
-        echo "[$(date +%H:%M:%S)] r$round $vec t=$t committed busy=$dirty" >&2
+        printf "$stage" | sed "s/\$/	$dirty/" >> "$OUT"
+        echo "[$(date +%H:%M:%S)] r$round $vec t=$t committed busy=$dirty load=$load" >&2
         break
       fi
       echo "[$(date +%H:%M:%S)] r$round $vec t=$t DISCARDED (contended)" >&2

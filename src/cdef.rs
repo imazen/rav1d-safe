@@ -350,13 +350,38 @@ wrap_fn_ptr!(pub unsafe extern "C" fn cdef_dir(
 /// Selects optimal SIMD implementation at runtime based on CPU features.
 #[cfg(not(feature = "asm"))]
 fn cdef_dir_direct<BD: BitDepth>(dst: PicOffset, variance: &mut c_uint, bd: BD) -> c_int {
+    // The direction search reads `dst` and writes nothing, so unlike the filter
+    // oracle below it needs no save/restore: run both and compare. Without this
+    // the drift inventory is structurally silent about `cdef_dir`, and a wrong
+    // direction on flat content (where the argmax tie-break decides) produces a
+    // different-but-plausible picture rather than a visible failure.
+    #[cfg(feature = "__simd_test")]
+    let check = |dir: c_int, variance: c_uint| {
+        let mut ref_variance = 0;
+        let ref_dir = cdef_find_dir_rust(dst, &mut ref_variance, bd);
+        if dir != ref_dir || variance != ref_variance {
+            let msg = format!(
+                "CDEF_DIR_MISMATCH simd=({dir},{variance}) scalar=({ref_dir},{ref_variance})"
+            );
+            if cfg!(feature = "__simd_test_log") {
+                eprintln!("{msg}");
+            } else {
+                panic!("{msg}");
+            }
+        }
+    };
+
     #[cfg(target_arch = "x86_64")]
     if let Some(dir) = crate::src::safe_simd::cdef::cdef_dir_dispatch::<BD>(dst, variance, bd) {
+        #[cfg(feature = "__simd_test")]
+        check(dir, *variance);
         return dir;
     }
 
     #[cfg(target_arch = "aarch64")]
     if let Some(dir) = crate::src::safe_simd::cdef_arm::cdef_dir_dispatch::<BD>(dst, variance, bd) {
+        #[cfg(feature = "__simd_test")]
+        check(dir, *variance);
         return dir;
     }
 
