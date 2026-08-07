@@ -212,13 +212,19 @@ on 10bpc at t=8) for 3% more at t=1 on 8bpc and 4% on 10bpc, plus 7 MB of RSS.
   arm) and after (sharded default). Every `MISMATCH [tier]: <id> expected= actual=`
   triple extracted from both: **4945 lines / 2845 unique triples each,
   2845 compared, 0 differed.** The triples are the known aarch64 safe_simd drift
-  class (569 vector IDs x 5 CPU tiers).
+  class (569 vector IDs x 5 CPU tiers). Re-run against the final code after the
+  post-sweep edits: same 4945/2845, 0 differed.
 * **Failing-test set did not grow.** 34 failing tests before, 34 after, sets
   IDENTICAL by name. (One earlier iteration DID add a 35th —
   `task_context_stays_stack_light`, from the inline shard array — which is what
   sent the tracker behind a `Box`.)
 * **`mt_stress_4k` passes**, covering threads 1 / 2 / 4 / 8 / 16, five trials
   each.
+* **The threading-race gates pass** (`just test-threading-races`, the ignored
+  tests): `multi_threaded_tile_overlap` on the committed
+  `crash_vectors/disjoint_mut_tile_overlap.obu`, `multi_threaded_cdef_lpf_race`
+  on `tile_threading_cdef_lpf_race.obu` (6 concurrent decoders x 25 iterations
+  each), and `single_threaded_no_panic`. 3/3.
 * **Soundness, and it is proven live.** `crates/rav1d-disjoint-mut/tests/
   shard_liveness.rs` checks **331,776 borrow pairs** — starts chosen to straddle
   256 B / 1 KiB / 4 KiB block boundaries, lengths from 1 byte to past the
@@ -227,7 +233,12 @@ on 10bpc at t=8) for 3% more at t=1 on 8bpc and 4% on 10bpc, plus 7 MB of RSS.
   concurrent overlap/disjoint tests, whole-buffer wide borrows, and open-ended
   `index(..)`. Liveness: rebuilt with `__probe_untracked` (tracking removed),
   **4 of its 5 tests fail**, so the gate is not vacuous. The crate's pre-existing
-  `soundness.rs` (27 tests) and the in-module tracker tests also pass.
+  `soundness.rs` (27 tests) and the in-module tracker tests also pass. The
+  concurrent half is deterministic, not scheduler-dependent: one thread provably
+  still holds a 16 KiB mutable borrow while seven others try distinct
+  overlapping windows inside it, and all seven must be refused. (The first
+  version DID depend on the scheduler and flaked — a soundness gate that can
+  pass on a tracker which checks nothing is worse than no gate.)
 * **`#![forbid(unsafe_code)]` holds in the safe build.** No unsafe was added
   outside `rav1d-disjoint-mut`, and none of its existing unsafe was widened: the
   new tracker uses exactly the constructs the old one did — `UnsafeCell::get()`
