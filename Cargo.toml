@@ -90,9 +90,12 @@ probe-shardsim = ["probe-count", "rav1d-disjoint-mut/__probe_shardsim"]
 # winners (benchmarks/shard_tracker_2026-08-07.meta).
 # A/B baseline: the pre-sharding single-lock tracker, no probe hooks.
 tracker-legacy = ["rav1d-disjoint-mut/__tracker_legacy"]
+shards-1 = ["rav1d-disjoint-mut/__shards_1"]
+shards-4 = ["rav1d-disjoint-mut/__shards_4"]
 shards-8 = ["rav1d-disjoint-mut/__shards_8"]
-shards-32 = ["rav1d-disjoint-mut/__shards_32"]
+shards-16 = ["rav1d-disjoint-mut/__shards_16"]
 shards-64 = ["rav1d-disjoint-mut/__shards_64"]
+shards-128 = ["rav1d-disjoint-mut/__shards_128"]
 blockshift-10 = ["rav1d-disjoint-mut/__blockshift_10"]
 blockshift-12 = ["rav1d-disjoint-mut/__blockshift_12"]
 

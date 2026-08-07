@@ -60,18 +60,49 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 ///
 /// Trades collision probability against the tracker's cache footprint: every
 /// shard is one 128-byte line (the M-series line size), so an instance costs
-/// `N_SHARDS * 128` bytes and the 12 hot picture planes cost 12x that. Bigger
-/// is better for contention and worse for L1 residency, and the borrow stream
-/// walks the whole table (a 128x128 superblock touches ~120 distinct blocks),
-/// so the table is *not* effectively smaller than its size.
-#[cfg(not(any(feature = "__shards_8", feature = "__shards_32", feature = "__shards_64")))]
-pub(super) const N_SHARDS: usize = 16;
+/// `N_SHARDS * 128` bytes and the 12 hot picture planes cost 12x that. The
+/// borrow stream walks the whole table (a 128x128 superblock touches ~120
+/// distinct blocks), so the table is not effectively smaller than its size.
+///
+/// Measured, v4k_8tile 8bpc, M4 Pro, ms/frame (`benchmarks/
+/// shard_tracker_2026-08-07.meta`, screening pass):
+///
+/// ```text
+///   shards     t=1     t=8
+///   legacy    583.9  1120.8
+///        1    624.0  1318.3
+///       16    567.6   386.4
+///       32    578.0   333.7   <- default
+///       64    603.7   304.2
+///      128    675.9   286.8
+///      256    743.4   (stack overflow in a worker)
+/// ```
+///
+/// 32 is the largest count that costs nothing single-threaded. 64 buys another
+/// 9% at t=8 for 4% at t=1 and is available as `shards-64`. 256 is not offered:
+/// at 32 KiB the tracker makes `DisjointMut` too large to build on a worker
+/// stack, which is the hard ceiling on this inline-array design.
+#[cfg(not(any(
+    feature = "__shards_1",
+    feature = "__shards_4",
+    feature = "__shards_8",
+    feature = "__shards_16",
+    feature = "__shards_64",
+    feature = "__shards_128"
+)))]
+pub(super) const N_SHARDS: usize = 32;
+#[cfg(feature = "__shards_1")]
+pub(super) const N_SHARDS: usize = 1;
+#[cfg(feature = "__shards_4")]
+pub(super) const N_SHARDS: usize = 4;
 #[cfg(feature = "__shards_8")]
 pub(super) const N_SHARDS: usize = 8;
-#[cfg(feature = "__shards_32")]
-pub(super) const N_SHARDS: usize = 32;
+#[cfg(feature = "__shards_16")]
+pub(super) const N_SHARDS: usize = 16;
 #[cfg(feature = "__shards_64")]
 pub(super) const N_SHARDS: usize = 64;
+#[cfg(feature = "__shards_128")]
+pub(super) const N_SHARDS: usize = 128;
 
 /// `log2` of the block size in elements.
 ///
@@ -95,6 +126,29 @@ const BLOCK_SHIFT: u32 = 12;
 /// that fills up anyway promotes the borrow to the wide list; correctness does
 /// not depend on this number.
 const SLOTS: usize = 7;
+
+/// Bits 0..SLOTS of the occupancy masks.
+const SLOTS_MASK: u8 = ((1u16 << SLOTS) - 1) as u8;
+
+/// The registration site carried into `alloc`. Debug builds propagate
+/// `#[track_caller]` all the way from the borrow site and store it; release
+/// builds do not (the wrapper's own line is not a useful diagnostic), so this
+/// degrades to a zero-sized value and the store disappears.
+#[cfg(debug_assertions)]
+type Loc = &'static Location<'static>;
+#[cfg(not(debug_assertions))]
+type Loc = ();
+
+/// Cheap in release, the real site in debug. See [`Loc`].
+#[cfg(debug_assertions)]
+#[inline(always)]
+#[track_caller]
+fn here() -> Loc {
+    Location::caller()
+}
+#[cfg(not(debug_assertions))]
+#[inline(always)]
+fn here() -> Loc {}
 
 /// A borrow touching more distinct shards than this goes to the wide list
 /// instead. Measured 0.009% of hot borrows at `BLOCK_SHIFT == 8`.
@@ -201,6 +255,9 @@ impl ShardRecs {
 
     #[inline(always)]
     fn hit(&self, i: usize) -> OverlapHit {
+        // `min` rather than a bounds check: it is a `umin`, and it lets LLVM
+        // drop the panic path from the hottest loop in the decoder.
+        let i = i.min(SLOTS - 1);
         (
             self.starts[i],
             self.ends[i],
@@ -212,17 +269,22 @@ impl ShardRecs {
         )
     }
 
-    /// First live record overlapping `[start, end)`, restricted to mutable
-    /// records when `mut_only`.
+    /// First live record overlapping `[start, end)`.
+    ///
+    /// `IS_MUT` is the *registrant's* mutability: a mutable borrow conflicts
+    /// with every live record, an immutable one only with mutable records. A
+    /// const parameter, so each call site compiles to one loop with the mask
+    /// folded in — the way the legacy tracker's two separate `find_overlap_*`
+    /// functions did.
     #[inline(always)]
-    fn find(&self, start: usize, end: usize, mut_only: bool) -> Option<OverlapHit> {
-        let mut mask = if mut_only {
-            self.occupied & self.mutable
-        } else {
+    fn find<const IS_MUT: bool>(&self, start: usize, end: usize) -> Option<OverlapHit> {
+        let mut mask = if IS_MUT {
             self.occupied
-        } as u32;
+        } else {
+            self.occupied & self.mutable
+        };
         while mask != 0 {
-            let i = mask.trailing_zeros() as usize;
+            let i = (mask.trailing_zeros() as usize).min(SLOTS - 1);
             if self.starts[i] < end && start < self.ends[i] {
                 return Some(self.hit(i));
             }
@@ -233,21 +295,17 @@ impl ShardRecs {
 
     /// Claim a slot for `[start, end)`. `None` when the shard is full.
     #[inline(always)]
-    fn alloc(
-        &mut self,
-        start: usize,
-        end: usize,
-        is_mut: bool,
-        loc: &'static Location<'static>,
-    ) -> Option<u8> {
-        let free = (self.occupied as u32 | !((1u32 << SLOTS) - 1)).trailing_ones() as usize;
-        if free >= SLOTS {
+    fn alloc<const IS_MUT: bool>(&mut self, start: usize, end: usize, loc: Loc) -> Option<u8> {
+        // `!SLOTS_MASK` pre-fills the unusable high bits, so `trailing_ones`
+        // reaches SLOTS exactly when the shard is full.
+        let free = ((self.occupied | !SLOTS_MASK).trailing_ones() as usize).min(SLOTS);
+        if free == SLOTS {
             return None;
         }
         self.starts[free] = start;
         self.ends[free] = end;
         self.occupied |= 1 << free;
-        if is_mut {
+        if IS_MUT {
             self.mutable |= 1 << free;
         } else {
             self.mutable &= !(1 << free);
@@ -263,11 +321,9 @@ impl ShardRecs {
 
     #[inline(always)]
     fn free(&mut self, slot: u8) {
-        debug_assert!(
-            self.occupied & (1 << slot) != 0,
-            "freeing an unoccupied shard slot"
-        );
-        self.occupied &= !(1 << slot);
+        let bit = 1u8 << (slot as usize).min(SLOTS - 1);
+        debug_assert!(self.occupied & bit != 0, "freeing an unoccupied shard slot");
+        self.occupied &= !bit;
     }
 }
 
@@ -300,55 +356,119 @@ const _: () = assert!(
 // BorrowId
 // =============================================================================
 
-const KIND_EMPTY: u8 = 0;
-const KIND_NARROW: u8 = 1;
-const KIND_WIDE: u8 = 2;
-const KIND_UNCHECKED: u8 = 3;
-
 /// Handle returned by a registration, used to release it.
 ///
-/// A borrow can occupy a slot in up to [`MAX_SHARDS_PER_BORROW`] shards, so this
-/// is no longer a single index. It is a plain `Copy` value living in the guard.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) struct BorrowId {
-    kind: u8,
-    /// Number of `(shard, slot)` pairs for `KIND_NARROW`; unused otherwise.
-    n: u8,
-    /// `KIND_NARROW`: shard indices. `KIND_WIDE`: `[0]` is the wide-list index.
-    shards: [u16; MAX_SHARDS_PER_BORROW],
-    slots: [u8; MAX_SHARDS_PER_BORROW],
-}
+/// A borrow can hold a slot in up to [`MAX_SHARDS_PER_BORROW`] shards, so this
+/// is no longer a bare slot index — but it stays a single register-sized word,
+/// because it is created and destroyed ~50 million times per 4K frame and it
+/// travels inside every guard.
+///
+/// ```text
+///   bits  0..2   kind
+///   bits  2..4   narrow: number of (shard, slot) pairs, minus one
+///   bits  4..40  narrow: four 9-bit (slot:3, shard:6) pairs
+///   bits  4..20  wide:   index into the wide list
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) struct BorrowId(u64);
+
+const KIND_EMPTY: u64 = 0;
+const KIND_NARROW: u64 = 1;
+const KIND_WIDE: u64 = 2;
+const KIND_UNCHECKED: u64 = 3;
+
+const KIND_BITS: u32 = 2;
+const KIND_MASK: u64 = (1 << KIND_BITS) - 1;
+const N_BITS: u32 = 2;
+const PAIR_SHIFT: u32 = KIND_BITS + N_BITS;
+/// 3 bits of slot + 9 bits of shard.
+const PAIR_BITS: u32 = 12;
+const SLOT_MASK: u64 = 0b111;
+const SHARD_MASK_BITS: u64 = 0b1_1111_1111;
+
+const _: () = assert!(SLOTS <= (SLOT_MASK as usize) + 1);
+const _: () = assert!(N_SHARDS <= (SHARD_MASK_BITS as usize) + 1);
+const _: () = assert!(N_SHARDS.is_power_of_two());
+const _: () = assert!(MAX_SHARDS_PER_BORROW <= 4);
 
 impl BorrowId {
-    pub const UNCHECKED: Self = Self {
-        kind: KIND_UNCHECKED,
-        n: 0,
-        shards: [0; MAX_SHARDS_PER_BORROW],
-        slots: [0; MAX_SHARDS_PER_BORROW],
-    };
+    pub const UNCHECKED: Self = Self(KIND_UNCHECKED);
 
-    const EMPTY: Self = Self {
-        kind: KIND_EMPTY,
-        n: 0,
-        shards: [0; MAX_SHARDS_PER_BORROW],
-        slots: [0; MAX_SHARDS_PER_BORROW],
-    };
+    const EMPTY: Self = Self(KIND_EMPTY);
 
+    #[inline(always)]
+    const fn narrow1(shard: usize, slot: u8) -> Self {
+        Self(
+            KIND_NARROW
+                | ((((shard as u64) << 3) | (slot as u64 & SLOT_MASK)) << PAIR_SHIFT),
+        )
+    }
+
+    #[inline(always)]
     const fn wide(idx: u16) -> Self {
-        let mut shards = [0u16; MAX_SHARDS_PER_BORROW];
-        shards[0] = idx;
-        Self {
-            kind: KIND_WIDE,
-            n: 1,
-            shards,
-            slots: [0; MAX_SHARDS_PER_BORROW],
+        Self(KIND_WIDE | ((idx as u64) << PAIR_SHIFT))
+    }
+
+    #[inline(always)]
+    fn kind(self) -> u64 {
+        self.0 & KIND_MASK
+    }
+
+    /// Number of `(shard, slot)` pairs. Only meaningful for `KIND_NARROW`.
+    #[inline(always)]
+    fn pairs(self) -> usize {
+        (((self.0 >> KIND_BITS) & 0b11) as usize) + 1
+    }
+
+    /// `(shard, slot)` of pair `i`. Both are masked, so the caller can index
+    /// the shard array and shift by the slot without a bounds or overflow
+    /// check.
+    #[inline(always)]
+    fn pair(self, i: usize) -> (usize, u8) {
+        let f = (self.0 >> (PAIR_SHIFT + PAIR_BITS * i as u32)) & ((1 << PAIR_BITS) - 1);
+        (
+            ((f >> 3) & (N_SHARDS as u64 - 1)) as usize,
+            (f & SLOT_MASK) as u8,
+        )
+    }
+
+    #[inline(always)]
+    fn wide_idx(self) -> usize {
+        ((self.0 >> PAIR_SHIFT) & 0xFFFF) as usize
+    }
+
+    fn from_pairs(shards: &[u16], slots: &[u8]) -> Self {
+        debug_assert!(!shards.is_empty() && shards.len() <= MAX_SHARDS_PER_BORROW);
+        let mut v = KIND_NARROW | (((shards.len() - 1) as u64) << KIND_BITS);
+        for i in 0..shards.len() {
+            let f = ((shards[i] as u64) << 3) | (slots[i] as u64 & SLOT_MASK);
+            v |= f << (PAIR_SHIFT + PAIR_BITS * i as u32);
         }
+        Self(v)
     }
 }
 
 impl Default for BorrowId {
     fn default() -> Self {
         Self::EMPTY
+    }
+}
+
+impl Debug for BorrowId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self.kind() {
+            KIND_EMPTY => write!(f, "BorrowId(empty)"),
+            KIND_UNCHECKED => write!(f, "BorrowId(unchecked)"),
+            KIND_WIDE => write!(f, "BorrowId(wide #{})", self.wide_idx()),
+            _ => {
+                write!(f, "BorrowId(")?;
+                for i in 0..self.pairs() {
+                    let (sh, sl) = self.pair(i);
+                    write!(f, "{}s{sh}/{sl}", if i == 0 { "" } else { " " })?;
+                }
+                write!(f, ")")
+            }
+        }
     }
 }
 
@@ -370,11 +490,14 @@ pub(super) struct BorrowTracker {
     /// Live wide records. Read while holding **any** shard lock; written only
     /// while holding **every** shard lock.
     wide: UnsafeCell<Vec<WideRec>>,
-    /// Number of live wide records. Read-mostly and almost always zero, so the
-    /// per-borrow load stays on a Shared line.
-    wide_count: AtomicU32,
-    poisoned: AtomicBool,
+    /// Poison flag (bit 31) and live wide-record count (bits 0..31), in one
+    /// word so the hot path tests both with a single load and one branch:
+    /// `state == 0` means "not poisoned, no wide records", which is the case
+    /// essentially always.
+    state: AtomicU32,
 }
+
+const POISON_BIT: u32 = 1 << 31;
 
 // SAFETY: `wide` and every `Shard::recs` are only accessed under the relevant
 // `TinyLock`(s), per the module-level rules.
@@ -400,21 +523,13 @@ impl BorrowTracker {
         Self {
             shards: [const { Shard::new() }; N_SHARDS],
             wide: UnsafeCell::new(Vec::new()),
-            wide_count: AtomicU32::new(0),
-            poisoned: AtomicBool::new(false),
+            state: AtomicU32::new(0),
         }
     }
 
     /// Mark this tracker as poisoned. All future borrow attempts will panic.
     pub fn poison(&self) {
-        self.poisoned.store(true, Ordering::Release);
-    }
-
-    #[inline(always)]
-    fn check_poisoned(&self) {
-        if self.poisoned.load(Ordering::Acquire) {
-            Self::poisoned_panic();
-        }
+        self.state.fetch_or(POISON_BIT, Ordering::Release);
     }
 
     #[cold]
@@ -466,69 +581,98 @@ impl BorrowTracker {
     #[inline]
     #[track_caller]
     pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
-        self.add(bounds, true)
+        self.add::<true>(bounds)
     }
 
     /// Register an immutable borrow. Only checks against mutable borrows.
     #[inline]
     #[track_caller]
     pub fn add_immut(&self, bounds: &Bounds) -> BorrowId {
-        self.add(bounds, false)
+        self.add::<false>(bounds)
     }
 
     #[inline]
     #[track_caller]
-    fn add(&self, bounds: &Bounds, is_mut: bool) -> BorrowId {
+    fn add<const IS_MUT: bool>(&self, bounds: &Bounds) -> BorrowId {
         let start = bounds.range.start;
         let end = bounds.range.end;
         if start >= end {
             return BorrowId::EMPTY;
         }
-        self.check_poisoned();
-        let loc = Location::caller();
-        // `mut_only`: a mutable borrow conflicts with everything, an immutable
-        // one only with mutable borrows.
-        let mut_only = !is_mut;
-
         let b0 = start >> BLOCK_SHIFT;
         let b1 = (end - 1) >> BLOCK_SHIFT;
+        // One load and one branch covers poisoning, live wide records, and
+        // multi-block borrows. All three are cold.
+        if b0 != b1 || self.state.load(Ordering::Acquire) != 0 {
+            return self.add_slow::<IS_MUT>(start, end, b0, b1);
+        }
+
+        // Fast path: the borrow lives in one block, so one shard. 99.875% of
+        // hot-plane borrows at BLOCK_SHIFT = 8.
+        let si = shard_of(b0);
+        let shard = &self.shards[si];
+        shard.lock.lock();
+        let g = ShardGuard(&shard.lock);
+        // SAFETY: this shard's lock is held.
+        let recs = unsafe { &mut *shard.recs.get() };
+        if let Some(existing) = recs.find::<IS_MUT>(start, end) {
+            drop(g);
+            Self::overlap_panic(start, end, IS_MUT, existing);
+        }
+        match recs.alloc::<IS_MUT>(start, end, here()) {
+            Some(slot) => BorrowId::narrow1(si, slot),
+            None => {
+                // Shard full — release and retry on the wide path, which is
+                // atomic against everything.
+                drop(g);
+                self.add_wide::<IS_MUT>(start, end)
+            }
+        }
+    }
+
+    /// Everything the fast path bailed out of: poisoned, a live wide record, or
+    /// a borrow spanning more than one block.
+    #[cold]
+    #[inline(never)]
+    #[track_caller]
+    fn add_slow<const IS_MUT: bool>(
+        &self,
+        start: usize,
+        end: usize,
+        b0: usize,
+        b1: usize,
+    ) -> BorrowId {
+        if self.state.load(Ordering::Acquire) & POISON_BIT != 0 {
+            Self::poisoned_panic();
+        }
         if b0 == b1 {
-            // Fast path: the whole borrow lives in one block, so one shard.
-            // 99.875% of hot-plane borrows at BLOCK_SHIFT = 8.
+            // Single block, but there is at least one live wide record, so the
+            // wide list has to be consulted too.
             let si = shard_of(b0);
             let shard = &self.shards[si];
             shard.lock.lock();
             let g = ShardGuard(&shard.lock);
             // SAFETY: this shard's lock is held.
             let recs = unsafe { &mut *shard.recs.get() };
-            if let Some(existing) = recs.find(start, end, mut_only) {
-                drop(g);
-                Self::overlap_panic(start, end, is_mut, existing);
-            }
-            if self.wide_count.load(Ordering::Relaxed) != 0 {
+            let mut hit = recs.find::<IS_MUT>(start, end);
+            if hit.is_none() {
                 // SAFETY: a shard lock is held, and wide records are only
                 // written while every shard lock is held.
-                if let Some(existing) = Self::find_wide(unsafe { &*self.wide.get() }, start, end, mut_only)
-                {
+                hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end);
+            }
+            if let Some(existing) = hit {
+                drop(g);
+                Self::overlap_panic(start, end, IS_MUT, existing);
+            }
+            return match recs.alloc::<IS_MUT>(start, end, here()) {
+                Some(slot) => BorrowId::narrow1(si, slot),
+                None => {
                     drop(g);
-                    Self::overlap_panic(start, end, is_mut, existing);
+                    self.add_wide::<IS_MUT>(start, end)
                 }
-            }
-            if let Some(slot) = recs.alloc(start, end, is_mut, loc) {
-                let mut id = BorrowId::EMPTY;
-                id.kind = KIND_NARROW;
-                id.n = 1;
-                id.shards[0] = si as u16;
-                id.slots[0] = slot;
-                return id;
-            }
-            // Shard full — release and retry on the wide path, which is
-            // atomic against everything.
-            drop(g);
-            return self.add_wide(start, end, is_mut, mut_only, loc);
+            };
         }
-
-        self.add_multi(start, end, is_mut, mut_only, loc, b0, b1)
+        self.add_multi::<IS_MUT>(start, end, b0, b1)
     }
 
     /// Borrow spanning several blocks. Registers the same exact interval in
@@ -536,19 +680,16 @@ impl BorrowTracker {
     #[cold]
     #[inline(never)]
     #[track_caller]
-    fn add_multi(
+    fn add_multi<const IS_MUT: bool>(
         &self,
         start: usize,
         end: usize,
-        is_mut: bool,
-        mut_only: bool,
-        loc: &'static Location<'static>,
         b0: usize,
         b1: usize,
     ) -> BorrowId {
         let nblocks = b1 - b0 + 1;
         if nblocks > MAX_BLOCKS_SCAN {
-            return self.add_wide(start, end, is_mut, mut_only, loc);
+            return self.add_wide::<IS_MUT>(start, end);
         }
         let mut set = [0u16; MAX_SHARDS_PER_BORROW];
         let mut n = 0usize;
@@ -558,7 +699,7 @@ impl BorrowTracker {
                 continue;
             }
             if n == MAX_SHARDS_PER_BORROW {
-                return self.add_wide(start, end, is_mut, mut_only, loc);
+                return self.add_wide::<IS_MUT>(start, end);
             }
             set[n] = s;
             n += 1;
@@ -573,27 +714,27 @@ impl BorrowTracker {
         for &s in &set[..n] {
             // SAFETY: shard `s`'s lock is held.
             let recs = unsafe { &*self.shards[s as usize].recs.get() };
-            if let Some(h) = recs.find(start, end, mut_only) {
+            if let Some(h) = recs.find::<IS_MUT>(start, end) {
                 hit = Some(h);
                 break;
             }
         }
-        if hit.is_none() && self.wide_count.load(Ordering::Relaxed) != 0 {
+        if hit.is_none() && self.state.load(Ordering::Relaxed) & !POISON_BIT != 0 {
             // SAFETY: shard locks are held.
-            hit = Self::find_wide(unsafe { &*self.wide.get() }, start, end, mut_only);
+            hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end);
         }
         if let Some(existing) = hit {
             Self::unlock_all(&self.shards, &set[..n]);
-            Self::overlap_panic(start, end, is_mut, existing);
+            Self::overlap_panic(start, end, IS_MUT, existing);
         }
         // Claim a slot in each. If any shard is full, roll the whole thing back
         // and go wide — a partial registration would be unsound.
         let mut slots = [0u8; MAX_SHARDS_PER_BORROW];
         let mut done = 0usize;
         while done < n {
-            // SAFETY: shard's lock is held.
+            // SAFETY: the shard's lock is held.
             let recs = unsafe { &mut *self.shards[set[done] as usize].recs.get() };
-            match recs.alloc(start, end, is_mut, loc) {
+            match recs.alloc::<IS_MUT>(start, end, here()) {
                 Some(slot) => {
                     slots[done] = slot;
                     done += 1;
@@ -603,20 +744,15 @@ impl BorrowTracker {
         }
         if done < n {
             for i in 0..done {
-                // SAFETY: shard's lock is held.
+                // SAFETY: the shard's lock is held.
                 let recs = unsafe { &mut *self.shards[set[i] as usize].recs.get() };
                 recs.free(slots[i]);
             }
             Self::unlock_all(&self.shards, &set[..n]);
-            return self.add_wide(start, end, is_mut, mut_only, loc);
+            return self.add_wide::<IS_MUT>(start, end);
         }
         Self::unlock_all(&self.shards, &set[..n]);
-        BorrowId {
-            kind: KIND_NARROW,
-            n: n as u8,
-            shards: set,
-            slots,
-        }
+        BorrowId::from_pairs(&set[..n], &slots[..n])
     }
 
     /// Last-resort registration: hold **every** shard, so the record is atomic
@@ -625,14 +761,7 @@ impl BorrowTracker {
     #[cold]
     #[inline(never)]
     #[track_caller]
-    fn add_wide(
-        &self,
-        start: usize,
-        end: usize,
-        is_mut: bool,
-        mut_only: bool,
-        loc: &'static Location<'static>,
-    ) -> BorrowId {
+    fn add_wide<const IS_MUT: bool>(&self, start: usize, end: usize) -> BorrowId {
         for shard in &self.shards {
             shard.lock.lock();
         }
@@ -640,7 +769,7 @@ impl BorrowTracker {
         for shard in &self.shards {
             // SAFETY: every shard lock is held.
             let recs = unsafe { &*shard.recs.get() };
-            if let Some(h) = recs.find(start, end, mut_only) {
+            if let Some(h) = recs.find::<IS_MUT>(start, end) {
                 hit = Some(h);
                 break;
             }
@@ -648,13 +777,13 @@ impl BorrowTracker {
         // SAFETY: every shard lock is held.
         let wide = unsafe { &mut *self.wide.get() };
         if hit.is_none() {
-            hit = Self::find_wide(wide, start, end, mut_only);
+            hit = Self::find_wide::<IS_MUT>(wide, start, end);
         }
         if let Some(existing) = hit {
             Self::unlock_every(&self.shards);
-            Self::overlap_panic(start, end, is_mut, existing);
+            Self::overlap_panic(start, end, IS_MUT, existing);
         }
-        let rec = (start, end, is_mut, Some(loc));
+        let rec = (start, end, IS_MUT, wide_loc());
         let idx = match wide.iter().position(|r| r.0 >= r.1) {
             Some(i) => {
                 wide[i] = rec;
@@ -669,20 +798,19 @@ impl BorrowTracker {
             idx <= u16::MAX as usize,
             "DisjointMut: too many concurrent wide borrows"
         );
-        self.wide_count.fetch_add(1, Ordering::Relaxed);
+        self.state.fetch_add(1, Ordering::Relaxed);
         Self::unlock_every(&self.shards);
         BorrowId::wide(idx as u16)
     }
 
     #[inline(always)]
-    fn find_wide(
+    fn find_wide<const IS_MUT: bool>(
         wide: &[WideRec],
         start: usize,
         end: usize,
-        mut_only: bool,
     ) -> Option<OverlapHit> {
         for &(s, e, m, l) in wide {
-            if s < e && (!mut_only || m) && s < end && start < e {
+            if s < e && (IS_MUT || m) && s < end && start < e {
                 return Some((s, e, m, l));
             }
         }
@@ -706,40 +834,42 @@ impl BorrowTracker {
     /// Release a borrow.
     #[inline]
     pub fn remove(&self, id: BorrowId) {
-        match id.kind {
-            KIND_NARROW => {
-                if id.n == 1 {
-                    // Fast path, mirror of `add`'s.
-                    let shard = &self.shards[id.shards[0] as usize];
-                    shard.lock.lock();
-                    let _g = ShardGuard(&shard.lock);
-                    // SAFETY: this shard's lock is held.
-                    unsafe { &mut *shard.recs.get() }.free(id.slots[0]);
-                } else {
-                    self.remove_multi(id);
-                }
+        if id.kind() != KIND_NARROW {
+            if id.kind() == KIND_WIDE {
+                self.remove_wide(id);
             }
-            KIND_WIDE => self.remove_wide(id),
-            _ => {}
+            return;
         }
+        if id.pairs() != 1 {
+            return self.remove_multi(id);
+        }
+        let (si, slot) = id.pair(0);
+        let shard = &self.shards[si];
+        shard.lock.lock();
+        let _g = ShardGuard(&shard.lock);
+        // SAFETY: this shard's lock is held.
+        unsafe { &mut *shard.recs.get() }.free(slot);
     }
 
     /// Releasing a multi-shard borrow must be atomic: dropping the record from
-    /// shard A before shard B would leave a window where a genuinely disjoint
-    /// neighbour still sees the dead record and panics.
+    /// shard A before shard B would leave a window in which a genuinely
+    /// disjoint neighbour still sees the dead record and panics.
     #[cold]
     #[inline(never)]
     fn remove_multi(&self, id: BorrowId) {
-        let n = id.n as usize;
-        // `add_multi` stored them ascending, so this order is already safe.
-        for &s in &id.shards[..n] {
-            self.shards[s as usize].lock.lock();
+        let n = id.pairs();
+        // `add_multi` stored the pairs ascending, so this order is safe.
+        for i in 0..n {
+            self.shards[id.pair(i).0].lock.lock();
         }
         for i in 0..n {
+            let (si, slot) = id.pair(i);
             // SAFETY: the shard's lock is held.
-            unsafe { &mut *self.shards[id.shards[i] as usize].recs.get() }.free(id.slots[i]);
+            unsafe { &mut *self.shards[si].recs.get() }.free(slot);
         }
-        Self::unlock_all(&self.shards, &id.shards[..n]);
+        for i in (0..n).rev() {
+            self.shards[id.pair(i).0].lock.unlock();
+        }
     }
 
     #[cold]
@@ -750,10 +880,21 @@ impl BorrowTracker {
         }
         // SAFETY: every shard lock is held.
         let wide = unsafe { &mut *self.wide.get() };
-        wide[id.shards[0] as usize] = (1, 0, false, None); // tombstone
-        self.wide_count.fetch_sub(1, Ordering::Relaxed);
+        let i = id.wide_idx();
+        if i < wide.len() {
+            wide[i] = (1, 0, false, None); // tombstone
+        }
+        self.state.fetch_sub(1, Ordering::Relaxed);
         Self::unlock_every(&self.shards);
     }
+}
+
+/// The wide list keeps the site unconditionally — it is cold, and a wide record
+/// is exactly the kind an overlap panic most needs to name.
+#[inline(always)]
+#[track_caller]
+fn wide_loc() -> Option<&'static Location<'static>> {
+    Some(Location::caller())
 }
 
 #[cfg(test)]

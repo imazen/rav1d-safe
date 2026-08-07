@@ -40,9 +40,12 @@ __probe_shardsim = ["__probe_count"]
 # Sharded-tracker A/B knobs (perf/shard-tracker). Compile-time only; the
 # defaults are the measured winners, see benchmarks/shard_tracker_*.meta.
 __tracker_legacy = []
+__shards_1 = []
+__shards_4 = []
 __shards_8 = []
-__shards_32 = []
+__shards_16 = []
 __shards_64 = []
+__shards_128 = []
 __blockshift_10 = []
 __blockshift_12 = []
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
