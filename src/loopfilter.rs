@@ -256,31 +256,223 @@ pub struct Rav1dLoopFilterDSPContext {
     pub loop_filter_sb: LoopFilterYUVDSPContext,
 }
 
-#[inline(never)]
-fn loop_filter<BD: BitDepth>(
-    dst: PicOffset,
-    e: u8,
-    i: u8,
-    h: u8,
+/// How the filter reaches the pixels of one tap line.
+///
+/// Two implementations, and the difference is the point of
+/// [`LF_TAP_REACH`]: [`DirectTaps`] registers a fresh one-pixel `DisjointMut`
+/// borrow for *every* tap read and write — ~26 of them per column at `wd = 16`,
+/// which measured as 44.6% of all borrow-tracker CPU at 8 threads — while
+/// [`CompactTaps`] works on a scratch copy of the whole superblock edge that
+/// was read in under one guard per row.
+trait LfTaps<BD: BitDepth> {
+    /// Tap `k` of column `idx`. `k` is in `-LF_TAP_REACH ..= LF_TAP_REACH - 1`
+    /// and `idx` in `0..4`.
+    fn get(&self, idx: isize, k: isize) -> i32;
+    fn set(&mut self, idx: isize, k: isize, px: BD::Pixel);
+}
+
+/// Taps read straight from the picture, one tracked borrow each.
+struct DirectTaps<'a> {
+    dst: PicOffset<'a>,
     stridea: ptrdiff_t,
     strideb: ptrdiff_t,
-    wd: c_int,
-    bd: BD,
-) {
+}
+
+impl<BD: BitDepth> LfTaps<BD> for DirectTaps<'_> {
+    #[inline(always)]
+    fn get(&self, idx: isize, k: isize) -> i32 {
+        (*(self.dst + (self.stridea * idx + self.strideb * k)).index_mut::<BD>()).as_::<i32>()
+    }
+    #[inline(always)]
+    fn set(&mut self, idx: isize, k: isize, px: BD::Pixel) {
+        *(self.dst + (self.stridea * idx + self.strideb * k)).index_mut::<BD>() = px;
+    }
+}
+
+/// Taps in a compact scratch buffer — no borrow tracking at all in here.
+struct CompactTaps<'a, BD: BitDepth> {
+    buf: &'a mut [BD::Pixel],
+    /// Index of `(idx, k) = (0, 0)` within `buf`.
+    base: usize,
+    stridea: isize,
+    strideb: isize,
+}
+
+impl<BD: BitDepth> CompactTaps<'_, BD> {
+    #[inline(always)]
+    fn at(&self, idx: isize, k: isize) -> usize {
+        self.base
+            .wrapping_add_signed(self.stridea * idx + self.strideb * k)
+    }
+}
+
+impl<BD: BitDepth> LfTaps<BD> for CompactTaps<'_, BD> {
+    #[inline(always)]
+    fn get(&self, idx: isize, k: isize) -> i32 {
+        self.buf[self.at(idx, k)].as_::<i32>()
+    }
+    #[inline(always)]
+    fn set(&mut self, idx: isize, k: isize, px: BD::Pixel) {
+        let i = self.at(idx, k);
+        self.buf[i] = px;
+    }
+}
+
+/// Widest tap window any `wd` reads: `p6` at `-7` through `q6` at `+6`.
+const LF_TAP_REACH: isize = 7;
+
+/// Widest `2 * reach x 4` (or `4 x 2 * reach`) tap block.
+const LF_BLOCK_MAX: usize = 4 * 2 * LF_TAP_REACH as usize;
+
+/// Exactly what one `loop_filter` call can read, expressed as a rectangle.
+///
+/// `wd` fixes the tap window before any pixel is touched: `+-7` at 16, `+-4` at
+/// 8, `+-3` at 6, `+-2` at 4. Four columns share that window, so the call's
+/// whole read set is a `2*reach x 4` rectangle (H) or `4 x 2*reach` (V) — read
+/// in with ONE guard per picture row instead of [`DirectTaps`]'s fresh
+/// one-pixel borrow per tap, of which there are up to 26 per column.
+///
+/// The rectangle is never wider than the direct path's own read set for the
+/// same `wd`, which is what keeps this from inventing false overlaps: any
+/// concurrent writer inside it would already be tripping the direct path.
+/// The write-back goes further and only touches pixels that actually changed,
+/// so it never takes a mutable guard on a tap the filter merely read — the
+/// rule `compact_write_back_per_row_diff` exists for (zenavif#30).
+struct LfBlock<'a, BD: BitDepth> {
+    /// Top-left of the rectangle in picture coordinates.
+    origin: PicOffset<'a>,
+    stride: isize,
+    w: usize,
+    h: usize,
+    buf: [BD::Pixel; LF_BLOCK_MAX],
+    pristine: [BD::Pixel; LF_BLOCK_MAX],
+    /// `buf` index of `(idx, k) = (0, 0)`.
+    base: usize,
+    stridea: isize,
+    strideb: isize,
+}
+
+/// Tap reach of a filter width. Mirrors the `wd > 4` / `wd > 6` / `wd >= 16`
+/// ladder in [`loop_filter`]; keep the two in step.
+#[inline(always)]
+fn lf_reach(wd: c_int) -> isize {
+    if wd >= 16 {
+        7
+    } else if wd > 6 {
+        4
+    } else if wd > 4 {
+        3
+    } else {
+        2
+    }
+}
+
+impl<'a, BD: BitDepth> LfBlock<'a, BD> {
+    /// `None` when the rectangle would leave the plane; the caller then falls
+    /// back to [`DirectTaps`], which is what this replaced.
+    #[inline]
+    fn open(dst: PicOffset<'a>, is_v: bool, stride: isize, wd: c_int) -> Option<Self> {
+        let reach = lf_reach(wd);
+        let (w, h, origin_delta, stridea, strideb, base) = if is_v {
+            // Taps run down the picture; the four columns run along x.
+            let w = 4usize;
+            (
+                w,
+                2 * reach as usize,
+                -reach * stride,
+                1isize,
+                w as isize,
+                reach as usize * w,
+            )
+        } else {
+            // Taps run along x; the four columns run down the picture.
+            let w = 2 * reach as usize;
+            (w, 4usize, -reach, w as isize, 1isize, reach as usize)
+        };
+        let first = dst.offset as isize + origin_delta;
+        let last = first + (h as isize - 1) * stride;
+        if first < 0 || last < 0 {
+            return None;
+        }
+        if first.max(last) as usize + w > dst.data.pixel_len::<BD>() {
+            return None;
+        }
+        let origin = PicOffset {
+            data: dst.data,
+            offset: first as usize,
+        };
+        let mut buf = [BD::Pixel::from(0u8); LF_BLOCK_MAX];
+        for row in 0..h {
+            let off = origin.offset.wrapping_add_signed(row as isize * stride);
+            let guard = PicOffset {
+                data: origin.data,
+                offset: off,
+            }
+            .slice::<BD>(w);
+            buf[row * w..][..w].copy_from_slice(&guard);
+        }
+        Some(Self {
+            origin,
+            stride,
+            w,
+            h,
+            pristine: buf,
+            buf,
+            base,
+            stridea,
+            strideb,
+        })
+    }
+
+    #[inline]
+    fn taps(&mut self) -> CompactTaps<'_, BD> {
+        CompactTaps {
+            buf: &mut self.buf[..self.w * self.h],
+            base: self.base,
+            stridea: self.stridea,
+            strideb: self.strideb,
+        }
+    }
+
+    /// Write back only the pixels that changed, one row at a time.
+    #[inline]
+    fn close(self) {
+        for row in 0..self.h {
+            let work = &self.buf[row * self.w..][..self.w];
+            let orig = &self.pristine[row * self.w..][..self.w];
+            let Some(first) = work.iter().zip(orig).position(|(a, b)| a != b) else {
+                continue; // row untouched: no write, no mutable guard
+            };
+            let last = work
+                .iter()
+                .zip(orig)
+                .rposition(|(a, b)| a != b)
+                .expect("a differing pixel exists, so rposition finds one");
+            let off = self
+                .origin
+                .offset
+                .wrapping_add_signed(row as isize * self.stride)
+                + first;
+            let mut guard = PicOffset {
+                data: self.origin.data,
+                offset: off,
+            }
+            .slice_mut::<BD>(last + 1 - first);
+            guard.copy_from_slice(&work[first..=last]);
+        }
+    }
+}
+
+#[inline(never)]
+fn loop_filter<BD: BitDepth, T: LfTaps<BD>>(taps: &mut T, e: u8, i: u8, h: u8, wd: c_int, bd: BD) {
     let bitdepth_min_8 = bd.bitdepth() - 8;
     let [f, e, i, h] = [1, e, i, h].map(|n| (n as i32) << bitdepth_min_8);
 
     for idx in 0..4 {
-        let dst = dst + (idx * stridea);
-        let dst = |stride_index: isize| (dst + (strideb * stride_index)).index_mut::<BD>();
-
-        let get_dst = |stride_index| (*dst(stride_index)).as_::<i32>();
-        let set_dst = |stride_index, pixel: i32| {
-            *dst(stride_index) = pixel.as_::<BD::Pixel>();
-        };
-        let set_dst_clipped = |stride_index, pixel: i32| {
-            *dst(stride_index) = bd.iclip_pixel(pixel);
-        };
+        // Every read happens before every write, so the shared borrow this
+        // closure holds on `taps` has ended by the time the writers below are
+        // created. (NLL, not a coincidence — keep it that way.)
+        let get_dst = |stride_index: isize| T::get(&*taps, idx, stride_index);
 
         let mut p6 = 0;
         let mut p5 = 0;
@@ -347,67 +539,81 @@ fn loop_filter<BD: BitDepth>(
             flat8in &= (p3 - p0).abs() <= f && (q3 - q0).abs() <= f;
         }
 
+        // Last read is above; the writers may take `dst` mutably from here on.
+        // Macros rather than closures only because two closures cannot both
+        // hold `&mut dst`.
+        macro_rules! set_dst {
+            ($k:expr, $v:expr $(,)?) => {
+                T::set(&mut *taps, idx, $k, ($v).as_::<BD::Pixel>())
+            };
+        }
+        macro_rules! set_dst_clipped {
+            ($k:expr, $v:expr $(,)?) => {
+                T::set(&mut *taps, idx, $k, bd.iclip_pixel($v))
+            };
+        }
+
         if wd >= 16 && flat8out && flat8in {
-            set_dst(
+            set_dst!(
                 -6,
                 p6 + p6 + p6 + p6 + p6 + p6 * 2 + p5 * 2 + p4 * 2 + p3 + p2 + p1 + p0 + q0 + 8 >> 4,
             );
-            set_dst(
+            set_dst!(
                 -5,
                 p6 + p6 + p6 + p6 + p6 + p5 * 2 + p4 * 2 + p3 * 2 + p2 + p1 + p0 + q0 + q1 + 8 >> 4,
             );
-            set_dst(
+            set_dst!(
                 -4,
                 p6 + p6 + p6 + p6 + p5 + p4 * 2 + p3 * 2 + p2 * 2 + p1 + p0 + q0 + q1 + q2 + 8 >> 4,
             );
-            set_dst(
+            set_dst!(
                 -3,
                 p6 + p6 + p6 + p5 + p4 + p3 * 2 + p2 * 2 + p1 * 2 + p0 + q0 + q1 + q2 + q3 + 8 >> 4,
             );
-            set_dst(
+            set_dst!(
                 -2,
                 p6 + p6 + p5 + p4 + p3 + p2 * 2 + p1 * 2 + p0 * 2 + q0 + q1 + q2 + q3 + q4 + 8 >> 4,
             );
-            set_dst(
+            set_dst!(
                 -1,
                 p6 + p5 + p4 + p3 + p2 + p1 * 2 + p0 * 2 + q0 * 2 + q1 + q2 + q3 + q4 + q5 + 8 >> 4,
             );
-            set_dst(
+            set_dst!(
                 0,
                 p5 + p4 + p3 + p2 + p1 + p0 * 2 + q0 * 2 + q1 * 2 + q2 + q3 + q4 + q5 + q6 + 8 >> 4,
             );
-            set_dst(
+            set_dst!(
                 1,
                 p4 + p3 + p2 + p1 + p0 + q0 * 2 + q1 * 2 + q2 * 2 + q3 + q4 + q5 + q6 + q6 + 8 >> 4,
             );
-            set_dst(
+            set_dst!(
                 2,
                 p3 + p2 + p1 + p0 + q0 + q1 * 2 + q2 * 2 + q3 * 2 + q4 + q5 + q6 + q6 + q6 + 8 >> 4,
             );
-            set_dst(
+            set_dst!(
                 3,
                 p2 + p1 + p0 + q0 + q1 + q2 * 2 + q3 * 2 + q4 * 2 + q5 + q6 + q6 + q6 + q6 + 8 >> 4,
             );
-            set_dst(
+            set_dst!(
                 4,
                 p1 + p0 + q0 + q1 + q2 + q3 * 2 + q4 * 2 + q5 * 2 + q6 + q6 + q6 + q6 + q6 + 8 >> 4,
             );
-            set_dst(
+            set_dst!(
                 5,
                 p0 + q0 + q1 + q2 + q3 + q4 * 2 + q5 * 2 + q6 * 2 + q6 + q6 + q6 + q6 + q6 + 8 >> 4,
             );
         } else if wd >= 8 && flat8in {
-            set_dst(-3, p3 + p3 + p3 + 2 * p2 + p1 + p0 + q0 + 4 >> 3);
-            set_dst(-2, p3 + p3 + p2 + 2 * p1 + p0 + q0 + q1 + 4 >> 3);
-            set_dst(-1, p3 + p2 + p1 + 2 * p0 + q0 + q1 + q2 + 4 >> 3);
-            set_dst(0, p2 + p1 + p0 + 2 * q0 + q1 + q2 + q3 + 4 >> 3);
-            set_dst(1, p1 + p0 + q0 + 2 * q1 + q2 + q3 + q3 + 4 >> 3);
-            set_dst(2, p0 + q0 + q1 + 2 * q2 + q3 + q3 + q3 + 4 >> 3);
+            set_dst!(-3, p3 + p3 + p3 + 2 * p2 + p1 + p0 + q0 + 4 >> 3);
+            set_dst!(-2, p3 + p3 + p2 + 2 * p1 + p0 + q0 + q1 + 4 >> 3);
+            set_dst!(-1, p3 + p2 + p1 + 2 * p0 + q0 + q1 + q2 + 4 >> 3);
+            set_dst!(0, p2 + p1 + p0 + 2 * q0 + q1 + q2 + q3 + 4 >> 3);
+            set_dst!(1, p1 + p0 + q0 + 2 * q1 + q2 + q3 + q3 + 4 >> 3);
+            set_dst!(2, p0 + q0 + q1 + 2 * q2 + q3 + q3 + q3 + 4 >> 3);
         } else if wd == 6 && flat8in {
-            set_dst(-2, p2 + 2 * p2 + 2 * p1 + 2 * p0 + q0 + 4 >> 3);
-            set_dst(-1, p2 + 2 * p1 + 2 * p0 + 2 * q0 + q1 + 4 >> 3);
-            set_dst(0, p1 + 2 * p0 + 2 * q0 + 2 * q1 + q2 + 4 >> 3);
-            set_dst(1, p0 + 2 * q0 + 2 * q1 + 2 * q2 + q2 + 4 >> 3);
+            set_dst!(-2, p2 + 2 * p2 + 2 * p1 + 2 * p0 + q0 + 4 >> 3);
+            set_dst!(-1, p2 + 2 * p1 + 2 * p0 + 2 * q0 + q1 + 4 >> 3);
+            set_dst!(0, p1 + 2 * p0 + 2 * q0 + 2 * q1 + q2 + 4 >> 3);
+            set_dst!(1, p0 + 2 * q0 + 2 * q1 + 2 * q2 + q2 + 4 >> 3);
         } else {
             let hev = (p1 - p0).abs() > h || (q1 - q0).abs() > h;
 
@@ -426,20 +632,20 @@ fn loop_filter<BD: BitDepth>(
                 let f1 = cmp::min(f + 4, (128 << bitdepth_min_8) - 1) >> 3;
                 let f2 = cmp::min(f + 3, (128 << bitdepth_min_8) - 1) >> 3;
 
-                set_dst_clipped(-1, p0 + f2);
-                set_dst_clipped(0, q0 - f1);
+                set_dst_clipped!(-1, p0 + f2);
+                set_dst_clipped!(0, q0 - f1);
             } else {
                 let f = iclip_diff(3 * (q0 - p0), bitdepth_min_8);
 
                 let f1 = cmp::min(f + 4, (128 << bitdepth_min_8) - 1) >> 3;
                 let f2 = cmp::min(f + 3, (128 << bitdepth_min_8) - 1) >> 3;
 
-                set_dst_clipped(-1, p0 + f2);
-                set_dst_clipped(0, q0 - f1);
+                set_dst_clipped!(-1, p0 + f2);
+                set_dst_clipped!(0, q0 - f1);
 
                 let f = (f1 + 1) >> 1;
-                set_dst_clipped(-2, p1 + f);
-                set_dst_clipped(1, q1 - f);
+                set_dst_clipped!(-2, p1 + f);
+                set_dst_clipped!(1, q1 - f);
             }
         }
     }
@@ -483,6 +689,7 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
         YUV::Y => vmask[0] | vmask[1] | vmask[2],
         YUV::UV => vmask[0] | vmask[1],
     };
+    let is_v = matches!(hv, HV::V);
     let mut xy = 1u32;
     while vm & !xy.wrapping_sub(1) != 0 {
         'block: {
@@ -516,7 +723,22 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
                     4 + 2 * idx
                 }
             };
-            loop_filter(dst, e, i, h, stridea, strideb, idx, bd);
+            // One guard per picture row over this call's tap rectangle, rather
+            // than one per tap. See `LfBlock`.
+            match LfBlock::<BD>::open(dst, is_v, stride, idx) {
+                Some(mut block) => {
+                    loop_filter::<BD, _>(&mut block.taps(), e, i, h, idx, bd);
+                    block.close();
+                }
+                None => {
+                    let mut taps = DirectTaps {
+                        dst,
+                        stridea,
+                        strideb,
+                    };
+                    loop_filter::<BD, _>(&mut taps, e, i, h, idx, bd);
+                }
+            }
         }
         xy <<= 1;
         dst += 4 * stridea;
