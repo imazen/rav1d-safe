@@ -347,11 +347,33 @@ const LF_BATCH_MAX: usize = 4;
 /// Allocation for a fused block: `4 * LF_BATCH_MAX` columns x `2 * reach`
 /// taps, rounded up to a power of two so `& (LEN - 1)` proves every
 /// [`CompactTaps`] index in-range to LLVM.
-const LF_BLOCK_LEN: usize = (LF_BLOCK_MAX * LF_BATCH_MAX).next_power_of_two();
+pub(crate) const LF_BLOCK_LEN: usize = (LF_BLOCK_MAX * LF_BATCH_MAX).next_power_of_two();
+
+/// Row stride of the scratch rectangle, in pixels.
+///
+/// The rectangle read from the picture is `w x h` with `w, h <= 16`, but the
+/// scratch stores each row at a FIXED stride so a vector kernel can address
+/// tap `k` of lane `j` without a runtime multiply and — for the H direction —
+/// so a whole row is one aligned 16-lane load. `w` (what is guarded and
+/// written back) is unchanged by the padding; the pad columns are never read
+/// by `close` and never reach the picture.
+pub(crate) const LF_BW: usize = 16;
+
+/// The padded rectangle is exactly `LF_BW x LF_BW`, and `LF_BLOCK_LEN` is a
+/// power of two, so `& (LF_BLOCK_LEN - 1)` in [`CompactTaps::at`] cannot hide
+/// an out-of-range tap.
+const _: () = assert!(LF_BW * LF_BW == LF_BLOCK_LEN);
 
 /// Reusable scratch for [`LfBlock`], owned by one `loop_filter_sb128_rust`
 /// call so the zero-init is paid once per superblock edge instead of once per
 /// 4-pixel group.
+///
+/// Stored at the PICTURE's pixel width, so `open` and `close` stay plain
+/// `copy_from_slice`. A `u16`-at-both-depths scratch was tried and measured
+/// WORSE: it turns those two memcpys into element-wise widen/narrow loops over
+/// a runtime-variable length, which cost more (+146 `sample` leaves at t=1,
+/// 8bpc, v4k_8tile) than making one kernel serve both depths saved. The kernel
+/// splits by bit depth at its own seam instead.
 struct LfScratch<BD: BitDepth> {
     buf: [BD::Pixel; LF_BLOCK_LEN],
     pristine: [BD::Pixel; LF_BLOCK_LEN],
@@ -391,6 +413,9 @@ struct LfBlock<'a, 'b, BD: BitDepth> {
     base: usize,
     stridea: isize,
     strideb: isize,
+    /// `true` for `HV::V` — taps run down the picture and the scratch is
+    /// tap-major, which is what lets the vector kernel skip the transpose.
+    is_v: bool,
 }
 
 /// Tap reach of a filter width. Mirrors the `wd > 4` / `wd > 6` / `wd >= 16`
@@ -433,21 +458,29 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         groups: usize,
     ) -> Option<Self> {
         let reach = lf_reach(wd);
+        // `w`/`h` are the PICTURE rectangle — what gets guarded and written
+        // back. The scratch row stride is `LF_BW` regardless, so `w` may be
+        // narrower than a scratch row; see [`LF_BW`].
         let (w, h, origin_delta, stridea, strideb, base) = if is_v {
             // Taps run down the picture; each group's four columns run along x.
-            let w = 4 * groups;
             (
-                w,
+                4 * groups,
                 2 * reach as usize,
                 -reach * stride,
                 1isize,
-                w as isize,
-                reach as usize * w,
+                LF_BW as isize,
+                reach as usize * LF_BW,
             )
         } else {
             // Taps run along x; each group's four columns run down the picture.
-            let w = 2 * reach as usize;
-            (w, 4 * groups, -reach, w as isize, 1isize, reach as usize)
+            (
+                2 * reach as usize,
+                4 * groups,
+                -reach,
+                LF_BW as isize,
+                1isize,
+                reach as usize,
+            )
         };
         let first = dst.offset as isize + origin_delta;
         let last = first + (h as isize - 1) * stride;
@@ -461,16 +494,31 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             data: dst.data,
             offset: first as usize,
         };
-        for row in 0..h {
-            let off = origin.offset.wrapping_add_signed(row as isize * stride);
-            let guard = PicOffset {
-                data: origin.data,
-                offset: off,
+        // `w` is one of six values, so the row copy is monomorphized on it:
+        // `copy_from_slice` at a RUNTIME length is a `memmove` CALL per row,
+        // and at up to 16 rows per open that call overhead measured as ~1.5%
+        // of a t=1 8bpc frame. Filling `pristine` in the same pass also
+        // retires the separate whole-rectangle memcpy.
+        match w {
+            4 => Self::fill::<4>(scratch, origin, stride, h),
+            6 => Self::fill::<6>(scratch, origin, stride, h),
+            8 => Self::fill::<8>(scratch, origin, stride, h),
+            12 => Self::fill::<12>(scratch, origin, stride, h),
+            14 => Self::fill::<14>(scratch, origin, stride, h),
+            16 => Self::fill::<16>(scratch, origin, stride, h),
+            _ => {
+                for row in 0..h {
+                    let off = origin.offset.wrapping_add_signed(row as isize * stride);
+                    let guard = PicOffset {
+                        data: origin.data,
+                        offset: off,
+                    }
+                    .slice::<BD>(w);
+                    scratch.buf[row * LF_BW..][..w].copy_from_slice(&guard);
+                    scratch.pristine[row * LF_BW..][..w].copy_from_slice(&guard);
+                }
             }
-            .slice::<BD>(w);
-            scratch.buf[row * w..][..w].copy_from_slice(&guard);
         }
-        scratch.pristine[..w * h].copy_from_slice(&scratch.buf[..w * h]);
         Some(Self {
             scratch,
             origin,
@@ -480,7 +528,39 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             base,
             stridea,
             strideb,
+            is_v,
         })
+    }
+
+    /// Read `h` picture rows of exactly `W` pixels into the scratch and its
+    /// pristine copy.
+    ///
+    /// ONE immutable guard per picture row, exactly as before — the constant
+    /// `W` changes only the copy's codegen, never the guard's extent.
+    #[inline(always)]
+    fn fill<const W: usize>(
+        scratch: &mut LfScratch<BD>,
+        origin: PicOffset,
+        stride: isize,
+        h: usize,
+    ) {
+        for row in 0..h {
+            let off = origin.offset.wrapping_add_signed(row as isize * stride);
+            let guard = PicOffset {
+                data: origin.data,
+                offset: off,
+            }
+            .slice::<BD>(W);
+            let src: &[BD::Pixel; W] = (&guard[..W]).try_into().expect("guard is W long");
+            let dst: &mut [BD::Pixel; W] = (&mut scratch.buf[row * LF_BW..][..W])
+                .try_into()
+                .expect("scratch row is LF_BW >= W long");
+            *dst = *src;
+            let pri: &mut [BD::Pixel; W] = (&mut scratch.pristine[row * LF_BW..][..W])
+                .try_into()
+                .expect("scratch row is LF_BW >= W long");
+            *pri = *src;
+        }
     }
 
     /// Taps of fused group `g`. Group `g` sits `4 * g` columns (V) or rows (H)
@@ -490,7 +570,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     #[inline]
     fn taps(&mut self, g: usize) -> CompactTaps<'_, BD> {
         CompactTaps {
-            len: self.w * self.h,
+            len: (self.h - 1) * LF_BW + self.w,
             buf: &mut self.scratch.buf,
             base: self
                 .base
@@ -500,20 +580,75 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         }
     }
 
+    /// Filter every group of the fused run.
+    ///
+    /// The vector kernel and the scalar reference operate on the SAME scratch
+    /// rectangle with the same layout, so this seam changes nothing about
+    /// which picture pixels are guarded or written — [`Self::open`] and
+    /// [`Self::close`] are untouched by the choice.
+    #[inline]
+    fn filter_run(&mut self, params: &[(u8, u8, u8, c_int)], wd: c_int, bd: BD) {
+        #[cfg(target_arch = "aarch64")]
+        {
+            use zerocopy::IntoBytes as _;
+            if crate::src::safe_simd::loopfilter_arm::lf_compact_run_neon(
+                BD::BPC,
+                self.scratch.buf.as_mut_bytes(),
+                self.base,
+                self.is_v,
+                4 * params.len(),
+                params,
+                wd,
+                bd.bitdepth() - 8,
+                bd.bitdepth_max().into(),
+            ) {
+                return;
+            }
+        }
+        for (j, &(e, i, h, _)) in params.iter().enumerate() {
+            loop_filter::<BD, _>(&mut self.taps(j), e, i, h, wd, bd);
+        }
+    }
+
+    /// The changed span of scratch row `row`, or `None` if it is untouched.
+    ///
+    /// This is what keeps `close` from taking a mutable guard on a tap the
+    /// filter only READ (zenavif#30), so it must stay exact — the vector form
+    /// answers the same question, not a looser one.
+    #[inline(always)]
+    fn changed_span(&self, row: usize) -> Option<(usize, usize)> {
+        #[cfg(target_arch = "aarch64")]
+        {
+            use zerocopy::IntoBytes as _;
+            if let Some(span) = crate::src::safe_simd::loopfilter_arm::lf_diff_span(
+                BD::BPC,
+                self.scratch.buf.as_bytes(),
+                self.scratch.pristine.as_bytes(),
+                row,
+                self.w,
+            ) {
+                return span;
+            }
+        }
+        let work = &self.scratch.buf[row * LF_BW..][..self.w];
+        let orig = &self.scratch.pristine[row * LF_BW..][..self.w];
+        let first = work.iter().zip(orig).position(|(a, b)| a != b)?;
+        let last = work
+            .iter()
+            .zip(orig)
+            .rposition(|(a, b)| a != b)
+            .expect("a differing pixel exists, so rposition finds one");
+        Some((first, last))
+    }
+
     /// Write back only the pixels that changed, one row at a time.
     #[inline]
     fn close(self) {
         for row in 0..self.h {
-            let work = &self.scratch.buf[row * self.w..][..self.w];
-            let orig = &self.scratch.pristine[row * self.w..][..self.w];
-            let Some(first) = work.iter().zip(orig).position(|(a, b)| a != b) else {
+            let Some((first, last)) = self.changed_span(row) else {
                 continue; // row untouched: no write, no mutable guard
             };
-            let last = work
-                .iter()
-                .zip(orig)
-                .rposition(|(a, b)| a != b)
-                .expect("a differing pixel exists, so rposition finds one");
+            let work = &self.scratch.buf[row * LF_BW..][..self.w];
             let off = self
                 .origin
                 .offset
@@ -800,7 +935,7 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
         }
     }
 
-    let mut scratch = LfScratch::<BD>::new();
+    let mut scratch = LfScratch::new();
     let group_step = 4 * stridea;
     let mut g = 0usize;
     while g < n_groups {
@@ -819,10 +954,7 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
         let run_dst = dst + group_step * g as isize;
         match LfBlock::<BD>::open(&mut scratch, run_dst, is_v, stride, wd, n) {
             Some(mut block) => {
-                for j in 0..n {
-                    let (e, i, h, _) = params[g + j];
-                    loop_filter::<BD, _>(&mut block.taps(j), e, i, h, wd, bd);
-                }
+                block.filter_run(&params[g..g + n], wd, bd);
                 block.close();
             }
             None => {
@@ -833,7 +965,7 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
                     let one_dst = dst + group_step * (g + j) as isize;
                     match LfBlock::<BD>::open(&mut scratch, one_dst, is_v, stride, wd, 1) {
                         Some(mut block) => {
-                            loop_filter::<BD, _>(&mut block.taps(0), e, i, h, wd, bd);
+                            block.filter_run(&params[g + j..g + j + 1], wd, bd);
                             block.close();
                         }
                         None => {
@@ -1001,5 +1133,321 @@ impl Rav1dLoopFilterDSPContext {
 
     pub const fn new<BD: BitDepth>(flags: CpuFlags) -> Self {
         Self::default::<BD>().init::<BD>(flags)
+    }
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+/// Per-variant bit-identity gate for the aarch64 NEON deblocking kernels.
+///
+/// The kernels and the scalar `loop_filter` are driven over the SAME scratch
+/// rectangle with the same layout, so a mismatch here is an arithmetic
+/// divergence and nothing else. Every (direction x width x bit depth x fused
+/// group count) cell is covered, and the pixel generator sweeps noise
+/// amplitude so each cell exercises the no-filter, narrow, hev, flat and wide
+/// branches rather than only whichever one random data happens to hit.
+#[cfg(all(test, target_arch = "aarch64"))]
+mod neon_parity {
+    use super::*;
+    use crate::include::common::bitdepth::BitDepth16;
+    use crate::include::common::bitdepth::BitDepth8;
+
+    /// xorshift; a fixed generator keeps a failure reproducible from its seed.
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u32 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            self.0 = x;
+            (x >> 32) as u32
+        }
+        fn below(&mut self, n: u32) -> u32 {
+            self.next() % n
+        }
+    }
+
+    /// Which branch of the ladder a lane took, so the test can prove it
+    /// actually reached each one instead of silently testing only `!fm`.
+    #[derive(Default, Debug)]
+    struct Coverage {
+        nofilter: u32,
+        narrow_hev: u32,
+        narrow_flat: u32,
+        flat6: u32,
+        flat8: u32,
+        wide: u32,
+    }
+
+    fn classify<BD: BitDepth>(
+        buf: &[BD::Pixel; LF_BLOCK_LEN],
+        base: usize,
+        stridea: isize,
+        strideb: isize,
+        lane: usize,
+        e: u8,
+        i: u8,
+        h: u8,
+        wd: c_int,
+        bd: BD,
+        cov: &mut Coverage,
+    ) {
+        let bd8 = bd.bitdepth() - 8;
+        let [f, e, i, h] = [1, e, i, h].map(|n| (n as i32) << bd8);
+        let at = |k: isize| -> i32 {
+            buf[base
+                .wrapping_add_signed(stridea * lane as isize + strideb * k)
+                & (LF_BLOCK_LEN - 1)]
+                .as_::<i32>()
+        };
+        let (p6, p5, p4, p3, p2, p1, p0) = (at(-7), at(-6), at(-5), at(-4), at(-3), at(-2), at(-1));
+        let (q0, q1, q2, q3, q4, q5, q6) = (at(0), at(1), at(2), at(3), at(4), at(5), at(6));
+        let mut fm = (p1 - p0).abs() <= i
+            && (q1 - q0).abs() <= i
+            && (p0 - q0).abs() * 2 + ((p1 - q1).abs() >> 1) <= e;
+        if wd > 4 {
+            fm &= (p2 - p1).abs() <= i && (q2 - q1).abs() <= i;
+            if wd > 6 {
+                fm &= (p3 - p2).abs() <= i && (q3 - q2).abs() <= i;
+            }
+        }
+        if !fm {
+            cov.nofilter += 1;
+            return;
+        }
+        let mut flat8in = false;
+        if wd >= 6 {
+            flat8in = (p2 - p0).abs() <= f
+                && (p1 - p0).abs() <= f
+                && (q1 - q0).abs() <= f
+                && (q2 - q0).abs() <= f;
+        }
+        if wd >= 8 {
+            flat8in &= (p3 - p0).abs() <= f && (q3 - q0).abs() <= f;
+        }
+        let flat8out = wd >= 16
+            && (p6 - p0).abs() <= f
+            && (p5 - p0).abs() <= f
+            && (p4 - p0).abs() <= f
+            && (q4 - q0).abs() <= f
+            && (q5 - q0).abs() <= f
+            && (q6 - q0).abs() <= f;
+        if wd >= 16 && flat8out && flat8in {
+            cov.wide += 1;
+        } else if wd >= 8 && flat8in {
+            cov.flat8 += 1;
+        } else if wd == 6 && flat8in {
+            cov.flat6 += 1;
+        } else if (p1 - p0).abs() > h || (q1 - q0).abs() > h {
+            cov.narrow_hev += 1;
+        } else {
+            cov.narrow_flat += 1;
+        }
+    }
+
+    fn one_cell<BD: BitDepth>(bd: BD, wd: c_int, is_v: bool, groups: usize, cov: &mut Coverage) {
+        let bd_max: u16 = bd.bitdepth_max().into();
+        let reach = lf_reach(wd) as usize;
+        let (w, h, stridea, strideb, base) = if is_v {
+            (
+                4 * groups,
+                2 * reach,
+                1isize,
+                LF_BW as isize,
+                reach * LF_BW,
+            )
+        } else {
+            (2 * reach, 4 * groups, LF_BW as isize, 1isize, reach)
+        };
+
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15 ^ ((wd as u64) << 40) ^ ((groups as u64) << 20)
+            ^ (is_v as u64)
+            ^ ((bd_max as u64) << 8));
+
+        for trial in 0..3000u32 {
+            // Sweep the noise amplitude so flat/wide branches are reachable:
+            // a plateau plus +-amp noise, with amp from 0 (perfectly flat) up
+            // past the largest threshold.
+            let amp = 1u32 + (trial % 24) * (bd_max as u32 + 1) / 24;
+            let plateau = rng.below(bd_max as u32 + 1);
+            let mut buf = [BD::Pixel::from(0u8); LF_BLOCK_LEN];
+            for (idx, px) in buf.iter_mut().enumerate() {
+                // Every 8th trial is fully random, to hit the mask edges the
+                // plateau generator never reaches.
+                let _ = idx;
+                let v: u16 = if trial % 8 == 7 {
+                    rng.below(bd_max as u32 + 1) as u16
+                } else {
+                    (plateau as i64 + rng.below(2 * amp + 1) as i64 - amp as i64)
+                        .clamp(0, bd_max as i64) as u16
+                };
+                *px = v.as_::<BD::Pixel>();
+            }
+
+            let mut params = [(0u8, 0u8, 0u8, wd); LF_BATCH_MAX];
+            for p in params.iter_mut().take(groups) {
+                // The LUT's `e` runs to 255 and `i`/`h` to 63/15 in practice,
+                // but nothing downstream relies on that, so sweep wider.
+                *p = (
+                    rng.below(256) as u8,
+                    rng.below(64) as u8,
+                    rng.below(16) as u8,
+                    wd,
+                );
+            }
+
+            for lane in 0..4 * groups {
+                let (e, i, h, _) = params[lane / 4];
+                classify::<BD>(&buf, base, stridea, strideb, lane, e, i, h, wd, bd, cov);
+            }
+
+            let mut simd = buf;
+            use zerocopy::IntoBytes as _;
+            let ok = crate::src::safe_simd::loopfilter_arm::lf_compact_run_neon(
+                BD::BPC,
+                simd.as_mut_bytes(),
+                base,
+                is_v,
+                4 * groups,
+                &params[..groups],
+                wd,
+                bd.bitdepth() - 8,
+                bd_max,
+            );
+            assert!(ok, "kernel refused wd={wd} is_v={is_v} groups={groups}");
+
+            let mut reference = buf;
+            for (g, &(e, i, hh, _)) in params[..groups].iter().enumerate() {
+                let mut taps = CompactTaps {
+                    len: (h - 1) * LF_BW + w,
+                    buf: &mut reference,
+                    base: base.wrapping_add_signed(4 * g as isize * stridea),
+                    stridea,
+                    strideb,
+                };
+                loop_filter::<BD, _>(&mut taps, e, i, hh, wd, bd);
+            }
+
+            for row in 0..h {
+                for col in 0..w {
+                    let idx = row * LF_BW + col;
+                    assert_eq!(
+                        simd[idx].as_::<i32>(),
+                        reference[idx].as_::<i32>(),
+                        "bd={} wd={wd} is_v={is_v} groups={groups} trial={trial} \
+                         row={row} col={col} params={:?}",
+                        bd.bitdepth(),
+                        &params[..groups],
+                    );
+                }
+            }
+        }
+    }
+
+    fn sweep<BD: BitDepth>(bd: BD, widths: &[c_int]) {
+        for &wd in widths {
+            for &is_v in &[false, true] {
+                for groups in 1..=LF_BATCH_MAX {
+                    let mut cov = Coverage::default();
+                    one_cell::<BD>(bd, wd, is_v, groups, &mut cov);
+                    // Liveness: a cell that never filters proves nothing.
+                    assert!(
+                        cov.narrow_hev > 0 && cov.narrow_flat > 0,
+                        "wd={wd} is_v={is_v} groups={groups} never took a narrow branch: {cov:?}"
+                    );
+                    match wd {
+                        6 => assert!(cov.flat6 > 0, "wd=6 never flat: {cov:?}"),
+                        8 => assert!(cov.flat8 > 0, "wd=8 never flat: {cov:?}"),
+                        16 => assert!(
+                            cov.wide > 0 && cov.flat8 > 0,
+                            "wd=16 missed a flat branch: {cov:?}"
+                        ),
+                        _ => {}
+                    }
+                    assert!(cov.nofilter > 0, "wd={wd} never skipped a lane: {cov:?}");
+                }
+            }
+        }
+    }
+
+    // Luma reaches wd 4/8/16, chroma 4/6 — but the kernels are indexed by `wd`
+    // alone, so every width is swept against both.
+    const ALL_WD: [c_int; 4] = [4, 6, 8, 16];
+
+    /// `close`'s vector diff scan must answer EXACTLY the scalar
+    /// `position`/`rposition` pair, including ignoring the pad columns beyond
+    /// `w` — a looser answer would widen a mutable guard onto a merely-read
+    /// tap, which is the zenavif#30 conflict.
+    fn diff_span_cell<BD: BitDepth>(bd: BD) {
+        use zerocopy::IntoBytes as _;
+        let bd_max: u16 = bd.bitdepth_max().into();
+        let mut rng = Rng(0xDEAD_BEEF_1234_5678 ^ bd_max as u64);
+        let mut fired = 0u32;
+        let mut empty = 0u32;
+        for _ in 0..20000u32 {
+            let mut work = [BD::Pixel::from(0u8); LF_BLOCK_LEN];
+            let mut pristine = [BD::Pixel::from(0u8); LF_BLOCK_LEN];
+            for (a, b) in work.iter_mut().zip(pristine.iter_mut()) {
+                let v = rng.below(bd_max as u32 + 1) as u16;
+                *b = v.as_::<BD::Pixel>();
+                // Mostly equal, so the "row untouched" early-out is exercised.
+                *a = if rng.below(4) == 0 {
+                    (rng.below(bd_max as u32 + 1) as u16).as_::<BD::Pixel>()
+                } else {
+                    v.as_::<BD::Pixel>()
+                };
+            }
+            let w = 1 + rng.below(LF_BW as u32) as usize;
+            let row = rng.below(LF_BW as u32) as usize;
+
+            let a = &work[row * LF_BW..][..w];
+            let b = &pristine[row * LF_BW..][..w];
+            let want = a.iter().zip(b).position(|(x, y)| x != y).map(|first| {
+                (
+                    first,
+                    a.iter().zip(b).rposition(|(x, y)| x != y).unwrap(),
+                )
+            });
+            let got = crate::src::safe_simd::loopfilter_arm::lf_diff_span(
+                BD::BPC,
+                work.as_bytes(),
+                pristine.as_bytes(),
+                row,
+                w,
+            )
+            .expect("aarch64 always has NEON");
+            assert_eq!(got, want, "bd={} row={row} w={w}", bd.bitdepth());
+            if want.is_some() {
+                fired += 1;
+            } else {
+                empty += 1;
+            }
+        }
+        assert!(fired > 100 && empty > 100, "diff span not exercised both ways");
+    }
+
+    #[test]
+    fn neon_diff_span_matches_scalar() {
+        diff_span_cell::<BitDepth8>(BitDepth8::new(()));
+        diff_span_cell::<BitDepth16>(BitDepth16::new(1023));
+        diff_span_cell::<BitDepth16>(BitDepth16::new(4095));
+    }
+
+    #[test]
+    fn neon_matches_scalar_8bpc() {
+        sweep::<BitDepth8>(BitDepth8::new(()), &ALL_WD);
+    }
+
+    #[test]
+    fn neon_matches_scalar_10bpc() {
+        sweep::<BitDepth16>(BitDepth16::new(1023), &ALL_WD);
+    }
+
+    #[test]
+    fn neon_matches_scalar_12bpc() {
+        sweep::<BitDepth16>(BitDepth16::new(4095), &ALL_WD);
     }
 }
