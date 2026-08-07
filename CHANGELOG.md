@@ -4,6 +4,20 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Fixed
+- **10/12-bit CDEF on aarch64 decoded to the wrong pixels** (issue #446).
+  `src/safe_simd/cdef_arm.rs`'s 16bpc filter computed `pri_tap` as
+  `4 - (pri_strength & 1)` where the spec, `src/cdef.rs`'s scalar reference and
+  both x86 16bpc kernels use `4 - (pri_strength >> bitdepth_min_8 & 1)`.
+  `bitdepth_min_8` is 0 at 8 bpc, which is why only high-bit-depth ARM output was
+  affected and why no 8-bit hash ever moved. Carried in with `perf/cdef-neon`
+  (whose 16bpc vector kernel cannot be bit-exact without it) and independently
+  confirmed: frame MD5 now matches dav1d 1.5.4 on 7/7 local vectors at t=1/2/4/8,
+  and `cargo test --release --test decode_md5_verify` over dav1d-test-data goes
+  from 556 mismatching vectors to 464 — 92 newly matching, **0 regressions**
+  (10-bit/quantizer 3 -> 64 passing, 10-bit/data 0 -> 26, 10-bit/film_grain
+  1 -> 6, every other suite unchanged to the vector).
+
 ### QUEUED BREAKING CHANGES
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
@@ -13,6 +27,20 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   in-repo caller constructed a `DisjointMut` in const context.
 
 ### Changed
+- **VERIFIED COMPOSE (2026-08-07, `verify/compose`).** `perf/lf-neon-port`,
+  `perf/cdef-neon` and `perf/p3-t8-inversion` merged onto `perf/p2-kernels` and
+  independently re-measured; nothing was left out. Record:
+  `benchmarks/verify_compose_2026-08-07.meta`, raw
+  `benchmarks/verify_gap_2026-08-07.tsv`, harness `scripts/perf/verify_gap.sh`.
+  The composed tree is **not** bit-identical to its baseline at 10 bpc, and the
+  divergence is a fix (see Fixed). Idle-box, median of 7, one instrument on both
+  sides: v4k_8tile ms/frame 412.1/260.6/175.9/187.8 -> 400.3/223.8/131.1/116.5 at
+  t=1/2/4/8, i.e. 1.67/2.08/2.68/5.02x -> 1.62/1.79/2.00/3.12x of dav1d 1.5.4
+  `--framedelay 1`; 10 bpc 2.39/2.80/3.37/5.65x -> 2.01/2.16/2.37/3.76x. The
+  t=4 -> t=8 inversion is gone (t=8/t=4 1.068 -> 0.889 at 8 bpc, 0.951 -> 0.899
+  at 10 bpc) and t=8 is the best thread count again. Still 3.1-3.8x off dav1d at
+  t=8; its t=1 -> t=8 scaling is 6.59x against our 3.44x.
+
 - **The aarch64 deblocking loop filter has a real NEON tier**
   (`src/safe_simd/loopfilter_arm.rs`). That file previously imported
   `core::arch::aarch64::*` and contained no intrinsic call, and its

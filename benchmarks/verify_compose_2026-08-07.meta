@@ -204,3 +204,77 @@ kernels without it would have made the inversion worse, not better.
 
 t=8 is now the best thread count on the composed tree at both depths, as it
 should be. It is still 5.4x off dav1d's own t=1 -> t=8 scaling (3.44x vs 6.59x).
+
+## Attribution: which branch bought what, and is the tracker change worth keeping
+
+Second sweep, same harness, 8 arms interleaved, 5 rounds, IDLE-BOX, ZERO cells
+discarded. Raw: `benchmarks/verify_attrib_2026-08-07.tsv`.
+
+  arms:  vlf = base + lf-neon-port only     vcd = base + cdef-neon only
+         kern = both kernels, 32 shards     s32/s64 = composed + shards-32/-64
+         all = composed (128 shards, the shipped default)
+
+  ms/frame           base    vlf    vcd   kern    s32    s64    all   dav1d_fd1
+  8bpc  t=1         412.5  384.1  404.7  381.7  385.7  388.1  400.5      246.6
+  8bpc  t=8         187.2  185.3  182.8  181.3  179.5  151.2  117.2       36.2
+  10bpc t=1         601.0  571.8  519.7  489.9  493.6  496.8  505.7      251.6
+  10bpc t=8         213.2  209.8  199.9  194.6  193.9  160.9  137.8       38.1
+
+  isolated speedup vs base    8bpc t=1   8bpc t=8   10bpc t=1   10bpc t=8
+  loop filter (vlf)             1.074x     1.010x      1.051x      1.016x
+  CDEF (vcd)                    1.019x     1.024x      1.156x      1.067x
+
+**Both kernel branches are LIVE and both self-reported speedups reproduce.** The
+LF branch claimed 1.074x at 8bpc t=1 and this measures 1.074x. The CDEF branch
+claimed 1.019x at 8bpc t=1 and 1.154x at 10bpc t=1; this measures 1.019x and
+1.156x. Those were the two claims most at risk of being a dispatch that never
+fires, and they are not.
+
+**The shard count decomposes cleanly, and 128 is the right pick.**
+
+  from kern (32 shards, no P3)     8bpc t=1        8bpc t=8
+  + wide-path narrowing + latch     +1.0%  385.7    -1.0%  179.5   (= s32)
+  + 64 shards                       +1.7%  388.1   -16.6%  151.2
+  + 128 shards (shipped)            +4.9%  400.5   -35.4%  117.2
+
+  s64 buys 47% of the t=8 win for 34% of the t=1 cost — strictly worse than 128
+  on both counts of the trade. There is no gating question: keep 128.
+
+**The P3 branch's admitted +4.2% single-thread regression is real, is +4.9% once
+composed on the faster kernels, and it does NOT make the composed tree net
+negative anywhere.** `all` at t=1 is 400.5 against base's 412.5 (2.9% FASTER) at
+8 bpc and 505.7 against 601.0 (1.19x faster) at 10 bpc. The regression is only
+visible against `kern`, an arm nobody proposes to ship.
+
+## MEMORY: a cost the P3 branch did not report
+
+`/usr/bin/time -l` max RSS, one 4K decode, 3 iterations, v4k_8tile 8bpc:
+
+  arm     t=1        t=8
+  base    79.4 MiB   83.7 MiB
+  kern    79.5 MiB   83.8 MiB
+  s32     79.5 MiB   83.7 MiB
+  s64     86.3 MiB   91.5 MiB
+  all     99.3 MiB  106.1 MiB
+
+**The 128-shard default costs +19.8 MiB at t=1 and +22.3 MiB at t=8 — about
++25% of peak RSS for a single 4K decode.** That follows straight from 16 KiB per
+`BorrowTracker` instead of 4 KiB, times the number of live `DisjointMut`s
+(`Rav1dTaskContext` embeds ~20 of them per worker). It is not a reason to
+withhold the change, but it is a real trade and the P3 record does not mention
+memory at all. An embedder running many concurrent decoders should know.
+
+## What was NOT verified
+
+* `TinyLock` spin backoff measured null — NOT re-measured here; the
+  `probe-lock-backoff` arm was not built. Taken on the P3 record's word.
+* The "28 -> 20 borrows per CDEF block" count was checked by READING the guard
+  sites (two per-row immutable guards folded into one of the same maximum
+  extent), not by running a `probe-count` build.
+* 12 bpc has no end-to-end local vector, as the LF branch admits. The
+  dav1d-test-data 12-bit suites DO exercise it end to end, and their pass/fail
+  sets are identical on base and composed (12-bit/data 1 passed / 45 failed on
+  both), so the port introduced no 12-bit change — but "no change" is not
+  "correct", and 45 of those 46 vectors were already failing.
+* No x86_64 build or run. Everything here is aarch64.
+* `cargo clippy` and `cargo fmt` were not run on the composed tree.
