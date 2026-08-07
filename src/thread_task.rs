@@ -564,9 +564,6 @@ fn check_tile(
     task_thread: &Rav1dFrameContextTaskThread,
     t: &Rav1dTask,
     frame_mt: c_int,
-    #[cfg_attr(feature = "probe-nodeblockgate", allow(unused_variables))] deblock_progress: Option<
-        &AtomicI32,
-    >,
 ) -> c_int {
     let tp = t.type_0 == TaskType::TileEntropy;
     let tile_idx = t.tile_idx as usize;
@@ -589,35 +586,32 @@ fn check_tile(
         error = (p2 == TILE_ERROR) as c_int;
         error |= task_thread.error.fetch_or(error, Ordering::SeqCst);
     }
-    // Prevent reconstruction of sbrow N from starting until DeblockRows for
-    // sbrow N-1 is complete. The loop filter V-pass at the bottom of sbrow N-1
-    // reads/writes pixels that extend into the top rows of sbrow N (up to 8
-    // rows past the boundary). Without this barrier, concurrent reconstruction
-    // of sbrow N would create overlapping mutable/shared borrows on the pixel
-    // buffer, which DisjointMut correctly detects as a violation.
+    // NOTE: there is deliberately no frame-global deblock barrier here.
     //
-    // In C dav1d this race is benign (raw pointers, no borrow checker), but in
-    // rav1d-safe we must serialize to maintain safe concurrency. This only
-    // applies to reconstruction tasks (not entropy) and only when deblocking is
-    // enabled (loopfilter level_y != [0; 2]).
-    // THROWAWAY ABLATION (`probe-nodeblockgate`): removing this barrier makes
-    // the decode racy — it exists precisely because the recon/loop-filter
-    // overlap is real. It is compiled out only to measure what the barrier
-    // costs in achievable schedule, and only ever composed with
-    // `probe-untracked` so the tracker cannot fire on the race it permits.
-    #[cfg(not(feature = "probe-nodeblockgate"))]
-    if !tp {
-        if let Some(deblock) = deblock_progress {
-            let dp = deblock.load(Ordering::SeqCst);
-            if dp < t.sby {
-                #[cfg(feature = "probe-tasktime")]
-                crate::src::probe_tasktime::defer(2);
-                return 1;
-            }
-            error |= (dp == TILE_ERROR) as c_int;
-            task_thread.error.fetch_or(error, Ordering::SeqCst);
-        }
-    }
+    // 06160a6 added one — reconstruction of sbrow N in ANY tile waited on
+    // `fc.frame_thread_progress.deblock` (a monotone, frame-wide counter
+    // advanced by the single serial deblock chain) reaching N-1 — to stop a
+    // `DisjointMut` overlap panic. dav1d has no such rule, and it is the wrong
+    // remedy on both counts:
+    //
+    //  * There is no write hazard. `rav1d_loopfilter_sbrow_rows(N)` walks the
+    //    horizontal edges at 4-row units inside sbrow N; the taps at an edge
+    //    reach at most 6 rows either side and the filter length is bounded by
+    //    the transform heights on both sides, which cannot cross a superblock
+    //    boundary. Its writes therefore stay inside sbrow N and the tail of
+    //    sbrow N-1 (already reconstructed) — never into sbrow N+1, which is
+    //    all that concurrent reconstruction touches. That is also why dav1d is
+    //    bit-exact at every thread count without an equivalent rule.
+    //  * The overlap it was suppressing was a guard-width artefact in the CDEF
+    //    padding loops, fixed in fdd6a35 (and f9458f4 before it): a top/bottom
+    //    line-buffer window guarded from `offset - 2` when `HAVE_LEFT` is
+    //    absent locks 2 never-read pixels that belong to the previous row.
+    //
+    // Cost of the barrier when it was here: 2.19x at 8 threads on a 4K 8-tile
+    // vector, because it serialised the two independent tile rows against one
+    // counter — 86% of all `check_tile` deferrals, 5.7 rejected dispatches per
+    // admitted one, and achieved worker concurrency pinned at 2.86 of 8.
+    // Record: benchmarks/p1_barrier_2026-08-07.meta.
     let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
     if error == 0 && frame_mt != 0 && !frame_hdr.frame_type.is_key_or_intra() {
         // check reference state
@@ -998,32 +992,9 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
                             // haven't separated out these fields.
                             let f = fc.data.read();
 
-                            // When deblocking is enabled, pass the deblock progress
-                            // so that reconstruction of sbrow N waits until
-                            // DeblockRows for sbrow N-1 completes (the V-filter at
-                            // the bottom of sbrow N-1 extends into sbrow N's pixel
-                            // rows).
-                            let deblock_dep = if c.tc.len() > 1 {
-                                let fh = &***f.frame_hdr.as_ref().unwrap();
-                                if fh.loopfilter.level_y != [0; 2] {
-                                    Some(&fc.frame_thread_progress.deblock)
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            };
-
                             // if not bottom sbrow of tile, this task will be re-added
                             // after it's finished
-                            if check_tile(
-                                &f,
-                                &fc.task_thread,
-                                &t,
-                                (c.fc.len() > 1) as c_int,
-                                deblock_dep,
-                            ) == 0
-                            {
+                            if check_tile(&f, &fc.task_thread, &t, (c.fc.len() > 1) as c_int) == 0 {
                                 break 'found (fc, t_idx, prev_t);
                             }
                         } else if t.recon_progress != 0 {
@@ -1293,17 +1264,7 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
                         if (sby + 1) << f.sb_shift < ts.tiling.row_end {
                             t.sby += 1;
                             t.deps_skip = 0.into();
-                            let deblock_dep = if c.tc.len() > 1 {
-                                let fh = &***f.frame_hdr.as_ref().unwrap();
-                                if fh.loopfilter.level_y != [0; 2] {
-                                    Some(&fc.frame_thread_progress.deblock)
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            };
-                            if check_tile(&f, &fc.task_thread, &t, uses_2pass, deblock_dep) == 0 {
+                            if check_tile(&f, &fc.task_thread, &t, uses_2pass) == 0 {
                                 ts.progress[p_1 as usize].store(progress, Ordering::SeqCst);
                                 reset_task_cur_async(ttd, t.frame_idx, c.fc.len() as u32);
                                 if ttd.cond_signaled.fetch_or(1, Ordering::SeqCst) == 0 {
