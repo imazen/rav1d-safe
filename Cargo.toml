@@ -86,6 +86,16 @@ probe-lockonly = ["rav1d-disjoint-mut/__probe_lockonly"]
 probe-untracked = ["rav1d-disjoint-mut/__probe_untracked"]
 probe-shardsim = ["probe-count", "rav1d-disjoint-mut/__probe_shardsim"]
 
+# Sharded-tracker A/B knobs. Compile-time only; the defaults are the measured
+# winners (benchmarks/shard_tracker_2026-08-07.meta).
+# A/B baseline: the pre-sharding single-lock tracker, no probe hooks.
+tracker-legacy = ["rav1d-disjoint-mut/__tracker_legacy"]
+shards-8 = ["rav1d-disjoint-mut/__shards_8"]
+shards-32 = ["rav1d-disjoint-mut/__shards_32"]
+shards-64 = ["rav1d-disjoint-mut/__shards_64"]
+blockshift-10 = ["rav1d-disjoint-mut/__blockshift_10"]
+blockshift-12 = ["rav1d-disjoint-mut/__blockshift_12"]
+
 # Test-only (double-underscore = private, never enable in production): arms a
 # one-shot worker-thread panic so tests can prove a worker death surfaces as a
 # decode error instead of wedging every completion wait (zenavif#30). See
