@@ -14,7 +14,7 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::Relaxed;
 use std::string::String;
 
-pub const MAX_SLOTS: usize = 1024;
+pub const MAX_SLOTS: usize = 16384;
 pub const MAX_THREADS: usize = 64;
 
 pub struct Slot {
@@ -257,7 +257,7 @@ pub fn report(iters: u64) -> String {
         out,
         "SLOT\trank\tadds\tremoves\tadds_pct\tcont_add\tcont_rem\tcont_pct\twait_ns\tocc_mean\tocc_max\tspill\tmax_end\tthreads\tloc"
     );
-    for (rank, &i) in idx.iter().enumerate().take(24) {
+    for (rank, &i) in idx.iter().enumerate().take(20) {
         let s = &SLOTS[i];
         let adds = s.total();
         if adds == 0 {
