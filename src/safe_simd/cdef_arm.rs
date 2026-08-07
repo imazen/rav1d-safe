@@ -457,7 +457,14 @@ fn cdef_filter_block_8bpc_neon(
 
     let pri_v = vdupq_n_s16(pri_strength as i16);
     let sec_v = vdupq_n_s16(sec_strength as i16);
-    let pri_shift = cmp::max(0, damping - pri_strength.ilog2() as c_int);
+    // `ilog2` panics on 0, and the scalar only reaches these two lines inside
+    // its `!= 0` branches — a secondary-only block really does arrive here
+    // with `pri_strength == 0` (caught by `tile_threading_parity`).
+    let pri_shift = if pri_strength != 0 {
+        cmp::max(0, damping - pri_strength.ilog2() as c_int)
+    } else {
+        0
+    };
     let pri_neg = vdupq_n_s16(-(pri_shift as i16));
     // `damping - ilog2(sec_strength)` is non-negative for every strength the
     // spec can signal; the scalar `>>` would panic in debug if it were not.

@@ -3,14 +3,40 @@
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Global flag: true when tile threading is active (n_tc > 1).
-/// When true, compact_read/compact_write_back use per-row guards to avoid
-/// stride-padding overlap. When false, they use a single fast guard.
+/// Global latch: true once any decoder in this process has used tile threading
+/// (n_tc > 1). When true, compact_read/compact_write_back and
+/// `with_pixel_guard_*` use per-row guards to avoid stride-padding overlap.
+/// When false, they use a single wide guard, which is only sound with no
+/// concurrent tile workers.
 static TILE_THREADING: AtomicBool = AtomicBool::new(false);
 
-/// Set whether tile threading is active. Called from decoder initialization.
+/// Latch tile threading on. Called from decoder initialization.
+///
+/// MONOTONE ON PURPOSE — never stores `false`. This is process-global state
+/// but decoders are per-instance, so a store of `false` from a
+/// single-threaded `rav1d_open` used to clobber the flag for every
+/// CONCURRENTLY LIVE multi-threaded decoder: their tile workers then took the
+/// wide `narrow_guard` path, whose extent is `(h-1) * stride + w` — a 1x16
+/// intra left-edge column claims 16,321 pixels to read 16 — and any
+/// concurrent row write inside that span is a real conflict. In a checked
+/// build that surfaced as a spurious `overlapping DisjointMut` panic in
+/// `rav1d_prepare_intra_edges`; in an `unchecked` build it is an undetected
+/// data race on picture memory.
+///
+/// Measured on this branch before the latch: 6 concurrent
+/// `tile_threading_overlap --ignored` processes (whose
+/// `single_threaded_no_panic` case opens an `n_tc == 1` decoder alongside
+/// `multi_threaded_cdef_lpf_race`'s threaded ones) panicked in 8-9 of 24
+/// runs. After: 0 of 24. See `benchmarks/p2_kernels_2026-08-07.meta`.
+///
+/// The cost of latching instead of tracking per decoder is that a process
+/// which has ever opened a threaded decoder keeps the per-row path for its
+/// single-threaded ones too. That is the correct direction to be wrong in,
+/// and a purely single-threaded process never sets the latch at all.
 pub fn set_tile_threading(active: bool) {
-    TILE_THREADING.store(active, Ordering::Relaxed);
+    if active {
+        TILE_THREADING.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Check if tile threading is active.
