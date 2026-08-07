@@ -60,7 +60,10 @@ fn main() {
     }
     let ms = t0.elapsed().as_secs_f64() * 1e3;
 
-    println!("RUN\t{file}\t{w}x{h}\t{bpc}bpc\tthreads={threads}\titers={iters}\tms_total={ms:.2}\tms_per_frame={:.3}", ms / iters as f64);
+    println!(
+        "RUN\t{file}\t{w}x{h}\t{bpc}bpc\tthreads={threads}\titers={iters}\tms_total={ms:.2}\tms_per_frame={:.3}",
+        ms / iters as f64
+    );
 
     #[cfg(feature = "probe-count")]
     {

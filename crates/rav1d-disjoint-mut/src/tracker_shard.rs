@@ -78,10 +78,52 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 ///      256    743.4   (stack overflow in a worker)
 /// ```
 ///
-/// 32 is the largest count that costs nothing single-threaded. 64 buys another
-/// 9% at t=8 for 4% at t=1 and is available as `shards-64`. 256 is not offered:
-/// at 32 KiB the tracker makes `DisjointMut` too large to build on a worker
-/// stack, which is the hard ceiling on this inline-array design.
+/// In the final interleaved sweep (median of 9, tracker boxed) 32 shards costs
+/// nothing single-threaded on 8-bit content — 600.7 ms against the legacy
+/// tracker's 602.3 — while running 5.1x faster at t=8. 64 is 1-5% better again
+/// at t=4/t=8 for ~3% at t=1 and ~7 MB of RSS, and is available as
+/// `shards-64`. 256 is not offered: at 32 KiB per instance it overflowed a
+/// worker stack while constructing a `DisjointMut` back when the array was
+/// inline, and even boxed it was already past the point of diminishing returns.
+//
+// The cascade is priority-ordered rather than a set of independent `cfg`s, so
+// enabling two knobs at once (`--all-features`) still compiles instead of
+// defining the constant twice.
+#[cfg(feature = "__shards_1")]
+pub(super) const N_SHARDS: usize = 1;
+#[cfg(all(feature = "__shards_4", not(feature = "__shards_1")))]
+pub(super) const N_SHARDS: usize = 4;
+#[cfg(all(
+    feature = "__shards_8",
+    not(any(feature = "__shards_1", feature = "__shards_4"))
+))]
+pub(super) const N_SHARDS: usize = 8;
+#[cfg(all(
+    feature = "__shards_16",
+    not(any(feature = "__shards_1", feature = "__shards_4", feature = "__shards_8"))
+))]
+pub(super) const N_SHARDS: usize = 16;
+#[cfg(all(
+    feature = "__shards_64",
+    not(any(
+        feature = "__shards_1",
+        feature = "__shards_4",
+        feature = "__shards_8",
+        feature = "__shards_16"
+    ))
+))]
+pub(super) const N_SHARDS: usize = 64;
+#[cfg(all(
+    feature = "__shards_128",
+    not(any(
+        feature = "__shards_1",
+        feature = "__shards_4",
+        feature = "__shards_8",
+        feature = "__shards_16",
+        feature = "__shards_64"
+    ))
+))]
+pub(super) const N_SHARDS: usize = 128;
 #[cfg(not(any(
     feature = "__shards_1",
     feature = "__shards_4",
@@ -91,18 +133,6 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     feature = "__shards_128"
 )))]
 pub(super) const N_SHARDS: usize = 32;
-#[cfg(feature = "__shards_1")]
-pub(super) const N_SHARDS: usize = 1;
-#[cfg(feature = "__shards_4")]
-pub(super) const N_SHARDS: usize = 4;
-#[cfg(feature = "__shards_8")]
-pub(super) const N_SHARDS: usize = 8;
-#[cfg(feature = "__shards_16")]
-pub(super) const N_SHARDS: usize = 16;
-#[cfg(feature = "__shards_64")]
-pub(super) const N_SHARDS: usize = 64;
-#[cfg(feature = "__shards_128")]
-pub(super) const N_SHARDS: usize = 128;
 
 /// `log2` of the block size in elements.
 ///
@@ -136,12 +166,12 @@ pub(super) const N_SHARDS: usize = 128;
 /// So: chosen by measurement, not by the tile-geometry argument, which the
 /// measurement does not support. Shift 8 and 10 remain available as
 /// `blockshift-8` / `blockshift-10` if a different tiling ever inverts this.
-#[cfg(not(any(feature = "__blockshift_8", feature = "__blockshift_10")))]
-const BLOCK_SHIFT: u32 = 12;
 #[cfg(feature = "__blockshift_8")]
 const BLOCK_SHIFT: u32 = 8;
-#[cfg(feature = "__blockshift_10")]
+#[cfg(all(feature = "__blockshift_10", not(feature = "__blockshift_8")))]
 const BLOCK_SHIFT: u32 = 10;
+#[cfg(not(any(feature = "__blockshift_8", feature = "__blockshift_10")))]
+const BLOCK_SHIFT: u32 = 12;
 
 /// Records per shard. Sized so a shard is exactly one 128-byte cache line.
 ///
@@ -154,25 +184,19 @@ const SLOTS: usize = 7;
 /// Bits 0..SLOTS of the occupancy masks.
 const SLOTS_MASK: u8 = ((1u16 << SLOTS) - 1) as u8;
 
-/// The registration site carried into `alloc`. Debug builds propagate
-/// `#[track_caller]` all the way from the borrow site and store it; release
-/// builds do not (the wrapper's own line is not a useful diagnostic), so this
-/// degrades to a zero-sized value and the store disappears.
-#[cfg(debug_assertions)]
+/// The registration site handed to `alloc`.
+///
+/// Only debug builds keep it: in release the wrapper methods do not propagate
+/// `#[track_caller]` from the borrow site, so the stored value was the
+/// wrapper's own line — no diagnostic worth one store per borrow on the
+/// hottest path in the decoder. See [`ShardRecs::locs`].
 type Loc = &'static Location<'static>;
-#[cfg(not(debug_assertions))]
-type Loc = ();
 
-/// Cheap in release, the real site in debug. See [`Loc`].
-#[cfg(debug_assertions)]
 #[inline(always)]
 #[track_caller]
 fn here() -> Loc {
     Location::caller()
 }
-#[cfg(not(debug_assertions))]
-#[inline(always)]
-fn here() -> Loc {}
 
 /// A borrow touching more distinct shards than this goes to the wide list
 /// instead. Measured 0.000% of hot borrows at the shipped BLOCK_SHIFT
@@ -423,10 +447,7 @@ impl BorrowId {
 
     #[inline(always)]
     const fn narrow1(shard: usize, slot: u8) -> Self {
-        Self(
-            KIND_NARROW
-                | ((((shard as u64) << 3) | (slot as u64 & SLOT_MASK)) << PAIR_SHIFT),
-        )
+        Self(KIND_NARROW | ((((shard as u64) << 3) | (slot as u64 & SLOT_MASK)) << PAIR_SHIFT))
     }
 
     #[inline(always)]
@@ -561,14 +582,17 @@ fn shard_of(block: usize, mask: usize) -> usize {
     // The second `&` is with a constant, which is what lets LLVM prove the
     // result indexes `[Shard; N_SHARDS]` in bounds. `mask` alone is a runtime
     // value it cannot bound.
-    ((((block as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)) >> 40) as usize & mask)
-        & (N_SHARDS - 1)
+    ((((block as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)) >> 40) as usize & mask) & (N_SHARDS - 1)
 }
 
 /// `N_SHARDS - 1` when the buffer is worth spreading, else `0`.
 #[inline]
 fn mask_for(len: usize) -> usize {
-    if len >= SHARD_MIN_LEN { N_SHARDS - 1 } else { 0 }
+    if len >= SHARD_MIN_LEN {
+        N_SHARDS - 1
+    } else {
+        0
+    }
 }
 
 impl BorrowTracker {
@@ -797,7 +821,11 @@ impl BorrowTracker {
         let mut done = 0usize;
         while done < n {
             // SAFETY: the shard's lock is held.
-            let recs = unsafe { &mut *self.shards[(set[done] as usize) & (N_SHARDS - 1)].recs.get() };
+            let recs = unsafe {
+                &mut *self.shards[(set[done] as usize) & (N_SHARDS - 1)]
+                    .recs
+                    .get()
+            };
             match recs.alloc::<IS_MUT>(start, end, here()) {
                 Some(slot) => {
                     slots[done] = slot;
@@ -809,7 +837,8 @@ impl BorrowTracker {
         if done < n {
             for i in 0..done {
                 // SAFETY: the shard's lock is held.
-                let recs = unsafe { &mut *self.shards[(set[i] as usize) & (N_SHARDS - 1)].recs.get() };
+                let recs =
+                    unsafe { &mut *self.shards[(set[i] as usize) & (N_SHARDS - 1)].recs.get() };
                 recs.free(slots[i]);
             }
             Self::unlock_all(&self.shards, &set[..n]);
@@ -1043,7 +1072,10 @@ mod tests {
             let _d = t.add_mut(&b(40..48));
         }))
         .is_err();
-        assert!(caught, "mutable borrow overlapping two immutables not caught");
+        assert!(
+            caught,
+            "mutable borrow overlapping two immutables not caught"
+        );
         t.remove(a);
         t.remove(c);
         // With them gone the mutable borrow is fine.

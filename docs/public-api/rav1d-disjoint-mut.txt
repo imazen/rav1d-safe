@@ -46,7 +46,7 @@ pub fn DisjointMut<T>::try_resize(&mut self, usize, <T as TryResizable>::Value) 
 pub fn DisjointMut<T>::try_resize_with<F>(&mut self, usize, F) -> core::result::Result<(), alloc::collections::TryReserveError> where F: core::ops::function::FnMut() -> <T as TryResizableWith>::Item, T: TryResizableWith
 pub unsafe const fn DisjointMut<T>::dangerously_unchecked(T) -> Self
 pub fn DisjointMut<T>::into_inner(self) -> T
-pub const fn DisjointMut<T>::new(T) -> Self
+pub fn DisjointMut<T>::new(T) -> Self
 pub struct DisjointMutArcSlice<T: core::marker::Copy>
 pub fn DisjointMutArcSlice<T>::try_new(usize, T) -> core::result::Result<Self, alloc::collections::TryReserveError>
 pub unsafe fn DisjointMutArcSlice<T>::try_new_unchecked(usize, T) -> core::result::Result<Self, alloc::collections::TryReserveError>

@@ -17,17 +17,22 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   threading now scales** (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`). Each
   instance's tracker is split into 32 independently locked, cache-line-isolated
   shards chosen by a hash of the borrow's address block, instead of one spin
-  lock plus one 64-slot table that every tile worker serialised on. A borrow
+  lock plus one 64-slot table that every tile worker funnelled through. A borrow
   registers its exact interval in every shard its blocks map to and checks
   exactly those, so overlaps are still caught (two overlapping borrows share a
   byte, hence a block, hence a shard) and disjoint borrows are still never
-  refused (records are whole intervals, never clipped). Measured on 3840x2160
-  8-tile 8bpc, M4 Pro, median ms/frame: t=1 588 -> 597, t=2 499 -> 436,
-  t=4 709 -> 345, t=8 1129 -> 338. Decode had been getting *slower* with more
-  threads (0.52x at t=8); it now gets faster (1.77x), and the best configuration
-  the decoder can ship is 1.74x faster than before. Bit-identical output at
-  every thread count. `benchmarks/shard_tracker_2026-08-07.meta` (91169df,
-  e1a3e85, 1401cb3).
+  refused (records are whole intervals, never clipped). Decode had been getting
+  *slower* with more threads; it now gets faster at every step. Measured on
+  3840x2160 8-tile 8bpc, M4 Pro, median of 9, ms/frame (speedup vs that arm's
+  own t=1): t=1 602 (1.00x) -> 601 (1.00x), t=2 513 (1.17x) -> 423 (1.42x),
+  t=4 688 (0.88x) -> 365 (1.65x), t=8 1679 (0.36x) -> 332 (1.81x) — 5.1x faster
+  at t=8, and 1.55x faster than the best thread count the old tracker could
+  ship. Single-tile content gains too (1024x576 8bpc: no scaling at all before,
+  1.36x now). Costs, measured and not yet diagnosed: 10-bit content is 6-11%
+  slower single-threaded, and 256x144 is 4.5-6.8% slower at every thread count.
+  Bit-identical output at every thread count and every arm.
+  `benchmarks/shard_tracker_2026-08-07.meta` (91169df, e1a3e85, 1401cb3,
+  f01ada8).
 - `DisjointMut::tracker` is boxed, so the wrapper is pointer-sized: this drops
   `Rav1dTaskContext` well under its 48 KiB stack-weight gate.
 

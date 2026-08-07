@@ -15,8 +15,8 @@
 
 use rav1d_disjoint_mut::DisjointMut;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const LEN: usize = 24 * 1024;
 
@@ -62,20 +62,7 @@ fn conflicts(
     a_mut: bool,
     b_mut: bool,
 ) -> bool {
-    // Hold `a`, then try `b`. Both guards must be dropped before returning so
-    // the next pair starts clean; the `catch_unwind` is only around `b`.
-    let hit = if a_mut {
-        let _ga = dm.index_mut(a.0..a.1);
-        panic::catch_unwind(AssertUnwindSafe(|| {
-            if b_mut {
-                drop(dm.index_mut(b.0..b.1));
-            } else {
-                drop(dm.index(b.0..b.1));
-            }
-        }))
-        .is_err()
-    } else {
-        let _ga = dm.index(a.0..a.1);
+    let try_b = || {
         panic::catch_unwind(AssertUnwindSafe(|| {
             if b_mut {
                 drop(dm.index_mut(b.0..b.1));
@@ -85,7 +72,15 @@ fn conflicts(
         }))
         .is_err()
     };
-    hit
+    // Hold `a`, then try `b`. `a`'s guard must be dropped before returning so
+    // the next pair starts clean; the `catch_unwind` is only around `b`.
+    if a_mut {
+        let _ga = dm.index_mut(a.0..a.1);
+        try_b()
+    } else {
+        let _ga = dm.index(a.0..a.1);
+        try_b()
+    }
 }
 
 /// The gate: for every pair, the tracker's verdict must equal the interval
@@ -111,7 +106,8 @@ fn exhaustive_pairs_match_the_interval_predicate() {
                     let Some(b) = clipped(b_start, b_len) else {
                         continue;
                     };
-                    for (a_mut, b_mut) in [(true, true), (true, false), (false, true), (false, false)]
+                    for (a_mut, b_mut) in
+                        [(true, true), (true, false), (false, true), (false, false)]
                     {
                         let dm = DisjointMut::new(vec![0u8; LEN]);
                         let overlaps = a.0 < b.1 && b.0 < a.1;
@@ -144,48 +140,79 @@ fn exhaustive_pairs_match_the_interval_predicate() {
     eprintln!("checked {checked} borrow pairs");
 }
 
-/// The liveness half, under real concurrency: every thread hammers the SAME
-/// small window, so overlaps are constant. Some registrations must be refused.
+/// The liveness half, under real concurrency, and DETERMINISTIC about it.
+///
+/// One thread takes a mutable borrow and provably still holds it while all the
+/// others try to take an overlapping one, so every contender must be refused —
+/// no reliance on the scheduler making threads collide. (An earlier version did
+/// rely on that and was flaky, which is the worst thing a soundness gate can
+/// be: it can pass on a tracker that never checks anything.)
+///
+/// Each contender uses a DIFFERENT overlapping range so the holder's record has
+/// to be found from several different shards, not just the one it hashes to.
 #[test]
 fn concurrent_overlaps_are_caught() {
+    const CONTENDERS: usize = 7;
+
     let prev = panic::take_hook();
     panic::set_hook(Box::new(|_| {}));
 
     let dm = Arc::new(DisjointMut::new(vec![0u8; LEN]));
+    // The holder's region spans several blocks at every supported block size,
+    // so contenders overlapping different parts of it exercise different shards.
+    let held = 0usize..16 * 1024;
+    let holder_ready = Arc::new(AtomicUsize::new(0));
+    let attempts_done = Arc::new(AtomicUsize::new(0));
     let caught = Arc::new(AtomicUsize::new(0));
+
     let mut hs = Vec::new();
-    for t in 0..8usize {
+    for t in 0..CONTENDERS {
         let dm = Arc::clone(&dm);
+        let holder_ready = Arc::clone(&holder_ready);
+        let attempts_done = Arc::clone(&attempts_done);
         let caught = Arc::clone(&caught);
         hs.push(std::thread::spawn(move || {
-            for i in 0..4_000usize {
-                // A window every thread wants a piece of.
-                let start = (i * 17 + t) % 512;
-                let r = panic::catch_unwind(AssertUnwindSafe(|| {
-                    let mut g = dm.index_mut(start..start + 64);
-                    g[0] = t as u8;
-                    // Hold it long enough to overlap someone.
-                    std::hint::black_box(&mut g);
-                }));
-                if r.is_err() {
-                    caught.fetch_add(1, Ordering::Relaxed);
-                    // A panic while a mutable guard is live poisons the
-                    // instance; from here on every borrow fails, which is
-                    // correct behaviour, so stop this thread.
-                    return;
-                }
+            while holder_ready.load(Ordering::Acquire) == 0 {
+                std::hint::spin_loop();
             }
+            // Distinct 64-byte windows scattered through the held region.
+            let start = t * 2048 + 17;
+            let hit = panic::catch_unwind(AssertUnwindSafe(|| {
+                drop(dm.index_mut(start..start + 64));
+            }))
+            .is_err();
+            if hit {
+                caught.fetch_add(1, Ordering::Relaxed);
+            }
+            attempts_done.fetch_add(1, Ordering::Release);
         }));
+    }
+
+    {
+        let _g = dm.index_mut(held.clone());
+        holder_ready.store(1, Ordering::Release);
+        // Hold until every contender has had its answer.
+        while attempts_done.load(Ordering::Acquire) < CONTENDERS {
+            std::hint::spin_loop();
+        }
     }
     for h in hs {
         h.join().unwrap();
     }
     panic::set_hook(prev);
-    assert!(
-        caught.load(Ordering::Relaxed) > 0,
-        "8 threads fought over one 64-byte window and the tracker never objected \
-         — the overlap check is not live"
+    assert_eq!(
+        caught.load(Ordering::Relaxed),
+        CONTENDERS,
+        "{CONTENDERS} threads borrowed inside a region another thread provably \
+         still held, and the tracker objected to only {} of them",
+        caught.load(Ordering::Relaxed)
     );
+    // Released: the same windows are borrowable again, so the holder's records
+    // were actually cleaned up rather than leaked into a permanent conflict.
+    for t in 0..CONTENDERS {
+        let start = t * 2048 + 17;
+        drop(dm.index_mut(start..start + 64));
+    }
 }
 
 /// The precision half, under real concurrency: strictly disjoint per-thread
@@ -226,9 +253,12 @@ fn wide_and_narrow_see_each_other() {
     {
         let _wide = dm.index_mut(0..LEN);
         for probe in [0usize, 1, 255, 4096, LEN - 1] {
-            let hit = panic::catch_unwind(AssertUnwindSafe(|| drop(dm.index(probe..probe + 1))))
-                .is_err();
-            assert!(hit, "byte {probe} inside a whole-buffer mutable borrow was allowed");
+            let hit =
+                panic::catch_unwind(AssertUnwindSafe(|| drop(dm.index(probe..probe + 1)))).is_err();
+            assert!(
+                hit,
+                "byte {probe} inside a whole-buffer mutable borrow was allowed"
+            );
         }
     }
     panic::set_hook(prev);
@@ -247,8 +277,7 @@ fn open_ended_ranges_are_still_tracked() {
     let dm = DisjointMut::new(vec![0u8; LEN]);
     {
         let _g = dm.index_mut(..);
-        let hit =
-            panic::catch_unwind(AssertUnwindSafe(|| drop(dm.index(LEN - 1..LEN)))).is_err();
+        let hit = panic::catch_unwind(AssertUnwindSafe(|| drop(dm.index(LEN - 1..LEN)))).is_err();
         assert!(hit, "index(..) did not reserve the last byte");
     }
     {

@@ -1,0 +1,280 @@
+# Address-block sharded borrow tracker: tile threading stops anti-scaling
+
+date: 2026-08-07
+host: Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64,
+      `hw.cachelinesize` = 128, L1D = 128 KiB per P-core
+rustc: stable, release profile (lto = "fat", codegen-units = 1), default
+       features (bitdepth_8 + bitdepth_16 — the CHECKED DisjointMut build).
+       No `-C target-cpu=native`.
+branch: perf/shard-tracker, off `probe/shard-sizing` (= main a6a7e23 plus the
+        2026-08-07 recon's benchmark records and its inert `__probe_*`
+        instrumentation).
+tracker commit measured: f01ada8 (32 shards, BLOCK_SHIFT 12)
+NOT composed with the open #450 (`perf/audit-445`) row-batching branch — see
+"Relationship to #450".
+
+## nice level — read this before reproducing
+
+NO `nice` WAS APPLIED TO ANY TIMED RUN. On Darwin a positive nice value maps the
+process to background QoS (efficiency cores) and distorts wall clock by well
+over an order of magnitude. `nice -n 19` was used for BUILDS only.
+
+Arms are interleaved back to back within each (vector, threads) cell and their
+order is rotated every round; every number below is a MEDIAN OF 9 (3 rounds x 3
+reps). `scripts/perf/ab_sweep.sh` refuses to start while any process is above
+25% CPU and records the 1-minute load average with every cell. Final run:
+252/252 cells, ZERO FAIL rows, load 1.01 / 2.16 / 4.58 (min / median / max).
+
+## The three arms
+
+All three are the SAME commit; only the tracker differs, selected by a cargo
+feature. A cross-commit A/B would also carry every other difference between the
+trees.
+
+  legacy   `--features tracker-legacy` — the pre-sharding tracker
+           (`crates/rav1d-disjoint-mut/src/tracker_legacy.rs`): one `TinyLock`
+           plus one 64-slot table per `DisjointMut`. This file is main's
+           `mod checked` VERBATIM — verified by diffing the dedented module
+           against `git show a6a7e23:.../lib.rs`; the only differences are the
+           probe-feature-gated additions (inert here) and the constructor
+           signature.
+  shard32  default — 32 shards (`N_SHARDS`), 4 KiB blocks (`BLOCK_SHIFT` 12).
+  shard64  `--features shards-64`.
+
+Two changes are common to all three arms and so cancel out of the A/B, but do
+mean `legacy` is not byte-identical to main: `DisjointMut::tracker` is boxed,
+and open-ended `Bounds` (`index(..)` / `index(n..)`, which encode their end as
+`usize::MAX`) are clamped to the container length. For orientation against main
+itself, `benchmarks/tracker_decomp_2026-08-07.meta` measured main at 586.5 ms
+(t=1) and 1264.4 ms (t=8) on v4k_8tile 8bpc; `legacy` here lands at 602.3 and
+1678.9. The t=8 convoy cell is intrinsically noisy — that meta records main
+spanning 1264-1343 ms across builds and this sweep saw 1679-1718 across two
+runs — so treat the t=8 baseline as "somewhere between 1.3 and 1.7 s", not as a
+precise number. Every conclusion below is about a factor of 4-5, not 20%.
+
+## Result 1 — the anti-scaling is gone
+
+ms/frame, median of 9. `x` is speedup against that arm's OWN t=1.
+
+  3840x2160 8bpc, 8 tiles (4 cols x 2 rows)
+
+    t     legacy          shard32         shard64
+    1    602.3  1.00x     600.7  1.00x    620.6  1.00x
+    2    513.0  1.17x     423.2  1.42x    421.6  1.47x
+    4    688.3  0.88x     364.7  1.65x    339.6  1.83x
+    8   1678.9  0.36x     331.6  1.81x    329.5  1.88x
+
+  3840x2160 10bpc, 8 tiles
+
+    t     legacy          shard32         shard64
+    1    675.8  1.00x     722.1  1.00x    749.0  1.00x
+    2    557.6  1.21x     516.8  1.40x    511.9  1.46x
+    4    700.0  0.97x     452.4  1.60x    407.6  1.84x
+    8   1679.6  0.40x     421.5  1.71x    401.2  1.87x
+
+* Decode used to get SLOWER with more threads — 0.36x at t=8, i.e. 2.8x slower
+  than single-threaded. It now gets faster at every step: 1.42x, 1.65x, 1.81x.
+* At t=8 the sharded tracker is **5.06x faster** than the legacy one (331.6 vs
+  1678.9 ms), and **1.55x faster than the best configuration the legacy tracker
+  could ship at any thread count** (513.0 ms at t=2).
+* Byte-identical output: every cell `md5 all-agree` across arms, and no arm's
+  checksum varies with thread count.
+
+Scaling on the non-8-tile vectors, which is where the surprise is:
+
+    vector           arm       t=1    t=2    t=4    t=8
+    v4k_1tile 8bpc   legacy   1.00x  1.01x  1.00x  1.00x
+    v4k_1tile 8bpc   shard32  1.00x  1.12x  1.12x  1.11x
+    v1024     8bpc   legacy   1.00x  0.95x  0.96x  0.95x
+    v1024     8bpc   shard32  1.00x  1.36x  1.36x  1.36x
+
+Single-TILE content had no thread scaling at all under the legacy tracker (and
+`v1024` actually went backwards). It has some now — 1.36x on `v1024`, 28% off
+its wall time. There is post-filter and task-level parallelism there that the
+one shared lock was eating even without tile parallelism.
+
+## Result 2 — what it costs, honestly
+
+Ratio to `legacy`, same sweep. Below 1.0 is faster.
+
+    vector              geom            t=1     t=2     t=4     t=8
+    v4k_8tile           2160p  8bpc   0.997   0.825   0.530   0.198
+    v4k_8tile_10b       2160p 10bpc   1.069   0.927   0.646   0.251
+    v4k_1tile           2160p  8bpc   0.981   0.883   0.870   0.883
+    v4k_1tile_10b       2160p 10bpc   1.062   0.959   0.956   0.957
+    v1024               576p   8bpc   1.022   0.718   0.723   0.717
+    v1024_10b           576p  10bpc   1.106   0.872   0.865   0.871
+    v256                144p   8bpc   1.045   1.054   1.058   1.068
+
+Two real regressions, both single-thread-shaped:
+
+* **10-bit costs 6-11% at t=1** (`v1024_10b` +10.6%, `v4k_8tile_10b` +6.9%,
+  `v4k_1tile_10b` +6.2%), while the 8-bit vectors of the same size are neutral
+  to 1.9% FASTER. NOT DIAGNOSED. It is not the block shift — an interleaved
+  shift-8-vs-shift-12 A/B on the 10-bit vectors is 1.0015 and 1.0004 at t=1, i.e.
+  flat. Cutting to 16 shards only halves it (+4.4% instead of +6.4% on
+  `v4k_8tile_10b`), so footprint is part of it but not the whole. The next step
+  is to re-run `--features probe-shardsim` on a 10bpc vector: the sizing data
+  behind every constant here was taken on 8bpc only.
+* **256x144 costs 4.5-6.8% at every thread count.** At that size the whole frame
+  is ~1 ms, so per-borrow fixed cost dominates and the extra block/shard
+  arithmetic shows up undiluted. Beyond 512p it is invisible.
+
+Peak RSS (`/usr/bin/time -l`, v4k_8tile 8bpc, 2 iterations):
+
+    arm       t=1      t=8
+    legacy   75.5 MB  79.4 MB
+    shard32  79.5 MB  83.8 MB   +4.0 / +4.4 MB
+    shard64  86.2 MB  91.3 MB  +10.7 / +11.9 MB
+
+32 shards x 128 B = 4 KiB per instance that crosses `SHARD_MIN_LEN` (64 KiB);
+everything smaller keeps one 128-byte shard.
+
+## Result 3 — against the C reference
+
+dav1d 1.5.4 numbers are QUOTED from `benchmarks/yardstick_dav1d_2026-08-07.meta`
+(same host, same vectors, same day, measured by another agent in a separate
+sweep). The rav1d-safe column is this sweep. Cross-sweep ratio — treat as
+approximate, and note the two sweeps disagree by ~2% on the shared t=1 cells.
+
+  v4k_8tile 8bpc, ms/frame
+
+    t    dav1d1 (tile-threaded)   legacy    shard32   shard32/dav1d1
+    1                    246.5     602.3      600.7        2.44x
+    2                    125.2     513.0      423.2        3.38x
+    4                     65.6     688.3      364.7        5.56x
+    8                     34.3    1678.9      331.6        9.67x
+
+    scaling t=1 -> t=8   7.18x     0.36x      1.81x
+
+* The multi-thread gap closes from ~49x to ~9.7x, but it does not close. dav1d
+  scales 7.18x on the same eight tiles; we now scale 1.81x.
+* The single-thread gap is UNCHANGED at ~2.4x, as expected — the tracker was
+  never the single-thread story, and a tracker fix cannot touch it. That gap is
+  kernel/codegen, and `benchmarks/neon_tier_isolation_2026-07-28.meta` plus the
+  yardstick's Result 4 (zero SIMD-tier spread on aarch64) are where it lives.
+* Goal "near rav1d performance" is NOT met and this change was never going to
+  meet it. What it does is remove the tracker from the list of reasons.
+
+Against the tracker's own ceiling, which is the fair scoreboard for this work:
+`tracker_decomp_2026-08-07.meta` measured an `untracked` build (no tracker at
+all, unsound by construction) at 462.2 ms t=1 and 147.5 ms t=8 on this vector.
+The sharded tracker lands at 600.7 / 331.6 — so it closes the t=8 gap from
+1116.9 ms of tracker overhead to 184.1 ms, about 84%, while the t=1 overhead is
+unchanged at ~138 ms. Anti-scaling was the tracker's fault and is fixed; the
+flat ~20% per-thread tracker tax is not, and needs a different lever (fewer
+borrows, not cheaper ones — the decoder registers ~50 million per 4K frame).
+
+## Result 4 — the shard-count and block-size curves
+
+Screening pass, v4k_8tile 8bpc, 3 reps, before the tracker was boxed (so the
+absolute values are ~3% below the final sweep; the shape is what matters):
+
+    shards     t=1     t=8
+    legacy    583.9  1120.8
+         1    624.0  1318.3     one shard is worse than none of this machinery
+        16    567.6   386.4
+        32    578.0   333.7     <- default
+        64    603.7   304.2
+       128    675.9   286.8
+       256    743.4   stack overflow in a worker thread
+
+256 shards is 32 KiB of tracker, which overflowed a worker stack while
+constructing a `DisjointMut` — that is what forced the tracker behind a `Box`,
+and boxing it also dropped `Rav1dTaskContext` from 97 KiB (inline 32-shard
+array) to 8.5 KiB, comfortably under its 48 KiB gate.
+
+Block size, at 32 shards, interleaved, median of 3 rounds x 3 reps:
+
+    vector              t    shift 8   shift 12
+    v4k_8tile 8bpc      1      605.0      602.4
+    v4k_8tile 8bpc      8      349.7      333.9   -4.5%
+    v4k_8tile 10bpc     8      433.8      421.2   -2.9%
+    v4k_1tile 10bpc     8      640.5      636.9
+
+Shift 12 wins, which contradicts the tile-geometry argument for small blocks (at
+4K with 4 tile columns two workers on the same row are 960 bytes apart, so a
+4 KiB block puts them in the same shard). The sizing probe explains why: the
+peer-collision rate is nearly flat from shift 6 to 12 (0.031-0.040 colliding
+peers per add, against 2.07 unsharded), because tile workers are rarely on the
+same picture row at the same instant — while the fraction of borrows fitting in
+ONE block, and so needing one lock instead of an ordered multi-shard
+acquisition, goes 99.875% -> 99.985%. Chosen by measurement, not by the
+argument.
+
+64 shards is a real option: it is 1-5% better than 32 at t=4/t=8 (and 5% better
+on 10bpc at t=8) for 3% more at t=1 on 8bpc and 4% on 10bpc, plus 7 MB of RSS.
+32 is the default because it costs nothing single-threaded on 8-bit content.
+
+## Gates
+
+* **Bit identity.** Full `cargo test --release --no-fail-fast` before (legacy
+  arm) and after (sharded default). Every `MISMATCH [tier]: <id> expected= actual=`
+  triple extracted from both: **4945 lines / 2845 unique triples each,
+  2845 compared, 0 differed.** The triples are the known aarch64 safe_simd drift
+  class (569 vector IDs x 5 CPU tiers).
+* **Failing-test set did not grow.** 34 failing tests before, 34 after, sets
+  IDENTICAL by name. (One earlier iteration DID add a 35th —
+  `task_context_stays_stack_light`, from the inline shard array — which is what
+  sent the tracker behind a `Box`.)
+* **`mt_stress_4k` passes**, covering threads 1 / 2 / 4 / 8 / 16, five trials
+  each.
+* **Soundness, and it is proven live.** `crates/rav1d-disjoint-mut/tests/
+  shard_liveness.rs` checks **331,776 borrow pairs** — starts chosen to straddle
+  256 B / 1 KiB / 4 KiB block boundaries, lengths from 1 byte to past the
+  wide-path threshold, all four mutability combinations — against the plain
+  interval predicate, so a MISSED overlap and a FALSE POSITIVE both fail. Plus
+  concurrent overlap/disjoint tests, whole-buffer wide borrows, and open-ended
+  `index(..)`. Liveness: rebuilt with `__probe_untracked` (tracking removed),
+  **4 of its 5 tests fail**, so the gate is not vacuous. The crate's pre-existing
+  `soundness.rs` (27 tests) and the in-module tracker tests also pass.
+* **`#![forbid(unsafe_code)]` holds in the safe build.** No unsafe was added
+  outside `rav1d-disjoint-mut`, and none of its existing unsafe was widened: the
+  new tracker uses exactly the constructs the old one did — `UnsafeCell::get()`
+  dereferenced while the relevant lock is held, plus `unsafe impl Send/Sync`.
+
+## Relationship to #450
+
+Not composed. #450 (`perf/audit-445`, open) batches four per-row registrations
+under one lock acquisition, recovering the 4-8% #445 cost by cutting lock COUNT.
+Sharding attacks a different term — what each lock and record touch costs on a
+line shared between tile workers — so they are complementary in principle. They
+are NOT measured together here, and the batching's value should be re-measured
+on top of sharding before assuming it survives: its win came from amortising
+acquisitions of ONE contended lock, and after sharding those acquisitions are
+mostly private and mostly uncontended.
+
+## Harness change made here
+
+`scripts/perf/ab_sweep.sh`'s "another sweep is running" guard was a
+`pgrep -f '[a]b_sweep.sh'`, which also matches any shell whose command line
+merely MENTIONS the script — including `until ! pgrep -f "ab_sweep.sh"` waiter
+loops, which match themselves and never exit. Three strays left by another
+session were enough to refuse a sweep that had nothing to contend with. It is
+now a PID lockfile with stale-holder detection.
+
+## Reproducing
+
+  # arms
+  for f in tracker-legacy "" shards-64; do
+    CARGO_TARGET_DIR=... RUSTC_WRAPPER=sccache nice -n 19 \
+      cargo build --release --example bench_ab_decode ${f:+--features $f} -j 4
+  done
+  # sweep (vectors: see benchmarks/tile_threading_guard_2026-08-06.meta)
+  scripts/perf/shard_sweep.sh <bindir> <vecdir> out.tsv 3
+  python3 scripts/perf/ab_report.py out.tsv --baseline legacy
+
+  # sizing probe (throwaway instrumentation, commit a4ebf02)
+  cargo build --release --example probe_tracker --features probe-shardsim -j 4
+  ./probe_tracker <vec>/v4k_8tile.avif 8 4
+
+## Data files
+
+  shard_tracker_2026-08-07.tsv.zst       the shipped-config 3-arm sweep
+                                         (32 shards / shift 12), 252 cells
+  shard_tracker_bs8_2026-08-07.tsv.zst   the same three arms at shift 8, kept
+                                         because it is the other half of the
+                                         block-size decision
+  shard_sizing_2026-08-07.txt            borrow-length / shards-spanned /
+                                         peer-collision distribution that sized
+                                         BLOCK_SHIFT and N_SHARDS

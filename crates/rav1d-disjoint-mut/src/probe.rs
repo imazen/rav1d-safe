@@ -161,7 +161,8 @@ pub fn record_add(
         s.max_end.store(end, Relaxed);
     }
     if s.loc.load(Relaxed) == 0 {
-        s.loc.store(loc as *const Location<'static> as usize, Relaxed);
+        s.loc
+            .store(loc as *const Location<'static> as usize, Relaxed);
     }
     let tid = thread_index();
     s.thread_mask.fetch_or(1u64 << tid, Relaxed);
@@ -242,11 +243,7 @@ pub fn report(iters: u64) -> String {
         100.0 * tot_cont as f64 / (tot_add + tot_rem).max(1) as f64
     );
     let _ = writeln!(out, "PROBE\ttotal_spin_wait_ns\t{tot_wait}");
-    let _ = writeln!(
-        out,
-        "PROBE\tspin_wait_ns_per_frame\t{}",
-        tot_wait / iters
-    );
+    let _ = writeln!(out, "PROBE\tspin_wait_ns_per_frame\t{}", tot_wait / iters);
     let _ = writeln!(
         out,
         "PROBE\tmean_wait_ns_per_contended\t{:.1}",
@@ -273,8 +270,7 @@ pub fn report(iters: u64) -> String {
             std::borrow::Cow::Borrowed("?")
         } else {
             // SAFETY-equivalent: the pointer came from a `&'static Location`.
-            let l: &'static Location<'static> =
-                unsafe { &*(loc_ptr as *const Location<'static>) };
+            let l: &'static Location<'static> = unsafe { &*(loc_ptr as *const Location<'static>) };
             std::borrow::Cow::Owned(std::format!("{}:{}", l.file(), l.line()))
         };
         let _ = writeln!(

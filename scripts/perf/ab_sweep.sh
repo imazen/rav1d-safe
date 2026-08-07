@@ -24,11 +24,24 @@ set -u
 # Refuse to run alongside another instance. Two sweeps sharing the box (or,
 # worse, the same output file) silently doubles every measurement — an
 # orphaned background run cost this harness one entire invalidated dataset.
-others=$(pgrep -f '[a]b_sweep.sh' | grep -v "^$$\$" | wc -l | tr -d ' ')
-if [ "$others" -gt 1 ]; then
-  echo "another ab_sweep.sh is already running ($others procs); refusing" >&2
-  exit 3
+#
+# A PID lockfile, not `pgrep -f ab_sweep.sh`: that pattern also matches any
+# shell whose command line merely MENTIONS this script — including the
+# `until ! pgrep -f "ab_sweep.sh"` waiter loops an agent leaves behind, which
+# match themselves and so never exit. Three such strays were enough to wedge a
+# sweep that had nothing to contend with.
+LOCK=${AB_SWEEP_LOCK:-${TMPDIR:-$HOME/tmp}/ab_sweep.lock}
+if [ -e "$LOCK" ]; then
+  holder=$(cat "$LOCK" 2>/dev/null)
+  if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+    echo "another ab_sweep.sh is already running (pid $holder); refusing" >&2
+    exit 3
+  fi
+  echo "clearing stale lock from dead pid ${holder:-?}" >&2
+  rm -f "$LOCK"
 fi
+echo $$ > "$LOCK" || { echo "cannot write lock $LOCK" >&2; exit 3; }
+trap 'rm -f "$LOCK"' EXIT INT TERM
 
 # Wait for the box to go quiet before timing anything. An editor's background
 # `cargo check` can take 800% CPU and will happily invalidate an entire sweep;
