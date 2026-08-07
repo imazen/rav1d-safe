@@ -212,3 +212,25 @@ Also still scalar, deliberately: the picture-edge fallback. When `LfBlock::open`
 cannot fit even a single group's rectangle inside the plane the filter drops to
 `DirectTaps` and the scalar `loop_filter`. It does not appear in the profile at
 all, so it was not worth a second kernel entry point.
+
+## A test trap this port walked into (fixed here, but it will bite again)
+
+`neon_parity` failed roughly a quarter of full `cargo test --lib` runs with
+"kernel refused wd=4 is_v=false groups=1" — random cells, random bit depths —
+while passing 20/20 filtered to itself. The kernel was never wrong.
+
+`archmage`'s `testable_dispatch` dev-feature lets a test disable compile-time
+SIMD tokens so the fallback paths get exercised, and the switch is
+PROCESS-GLOBAL. `mc_arm::tests::test_arm_token_permutations` flips it; libtest
+runs tests in parallel; so a concurrent `Arm64::summon()` — including the one in
+`lf_compact_run_neon` — can come back `None`, and the kernel correctly declines.
+
+Fixed with `safe_simd::token_test_lock()`, held by the permuting test AND by
+every test that depends on a token being available. Measured both ways: locks
+removed, 1/15 full-suite runs failed; locks in place, 0/40.
+
+The generalisation matters more than the fix: **on a `testable_dispatch` build a
+transient `summon()` miss silently drops a kernel to its scalar fallback.** That
+is correct — every `summon()` site has a fallback — but it means a SIMD tier can
+appear to vanish under a parallel test run. Any future test that asserts a
+kernel actually RAN (rather than that its output is right) has to take that lock.
