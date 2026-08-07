@@ -336,9 +336,35 @@ const LF_TAP_REACH: isize = 7;
 /// Widest `2 * reach x 4` (or `4 x 2 * reach`) tap block.
 const LF_BLOCK_MAX: usize = 4 * 2 * LF_TAP_REACH as usize;
 
-/// Allocation for that block, rounded up to a power of two so `& (LEN - 1)`
-/// proves every [`CompactTaps`] index in-range to LLVM.
-const LF_BLOCK_LEN: usize = LF_BLOCK_MAX.next_power_of_two();
+/// Consecutive 4-pixel groups fused into one [`LfBlock`].
+///
+/// Fusing is what makes the guard count drop: a `V` edge's rectangle is 4
+/// pixels wide and `2 * reach` rows tall, so an unfused call takes up to 14
+/// guards to cover 4 pixels each. Fusing `n` groups keeps the same rows but
+/// makes them `4 * n` wide — same pixels, `n`x fewer guards.
+const LF_BATCH_MAX: usize = 4;
+
+/// Allocation for a fused block: `4 * LF_BATCH_MAX` columns x `2 * reach`
+/// taps, rounded up to a power of two so `& (LEN - 1)` proves every
+/// [`CompactTaps`] index in-range to LLVM.
+const LF_BLOCK_LEN: usize = (LF_BLOCK_MAX * LF_BATCH_MAX).next_power_of_two();
+
+/// Reusable scratch for [`LfBlock`], owned by one `loop_filter_sb128_rust`
+/// call so the zero-init is paid once per superblock edge instead of once per
+/// 4-pixel group.
+struct LfScratch<BD: BitDepth> {
+    buf: [BD::Pixel; LF_BLOCK_LEN],
+    pristine: [BD::Pixel; LF_BLOCK_LEN],
+}
+
+impl<BD: BitDepth> LfScratch<BD> {
+    fn new() -> Self {
+        Self {
+            buf: [BD::Pixel::from(0u8); LF_BLOCK_LEN],
+            pristine: [BD::Pixel::from(0u8); LF_BLOCK_LEN],
+        }
+    }
+}
 
 /// Exactly what one `loop_filter` call can read, expressed as a rectangle.
 ///
@@ -354,15 +380,14 @@ const LF_BLOCK_LEN: usize = LF_BLOCK_MAX.next_power_of_two();
 /// The write-back goes further and only touches pixels that actually changed,
 /// so it never takes a mutable guard on a tap the filter merely read — the
 /// rule `compact_write_back_per_row_diff` exists for (zenavif#30).
-struct LfBlock<'a, BD: BitDepth> {
+struct LfBlock<'a, 'b, BD: BitDepth> {
+    scratch: &'b mut LfScratch<BD>,
     /// Top-left of the rectangle in picture coordinates.
     origin: PicOffset<'a>,
     stride: isize,
     w: usize,
     h: usize,
-    buf: [BD::Pixel; LF_BLOCK_LEN],
-    pristine: [BD::Pixel; LF_BLOCK_LEN],
-    /// `buf` index of `(idx, k) = (0, 0)`.
+    /// `buf` index of group 0's `(idx, k) = (0, 0)`.
     base: usize,
     stridea: isize,
     strideb: isize,
@@ -383,15 +408,34 @@ fn lf_reach(wd: c_int) -> isize {
     }
 }
 
-impl<'a, BD: BitDepth> LfBlock<'a, BD> {
-    /// `None` when the rectangle would leave the plane; the caller then falls
-    /// back to [`DirectTaps`], which is what this replaced.
+impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
+    /// Open the rectangle covering `groups` CONSECUTIVE 4-pixel groups that
+    /// all filter with the same `wd`.
+    ///
+    /// The fused rectangle is exactly the union of the rectangles the
+    /// `groups` individual calls would have read — the groups are adjacent
+    /// and each contributes its own 4 columns (V) or 4 rows (H), so no pixel
+    /// enters the guard that an unfused pass would not have guarded. That is
+    /// the whole soundness argument, and it is why a group that does NOT
+    /// filter must break the run rather than be spanned: spanning it would
+    /// guard columns no call reads, which is what collides with a concurrent
+    /// tile worker.
+    ///
+    /// `None` when the rectangle would leave the plane; the caller then
+    /// retries per group and finally falls back to [`DirectTaps`].
     #[inline]
-    fn open(dst: PicOffset<'a>, is_v: bool, stride: isize, wd: c_int) -> Option<Self> {
+    fn open(
+        scratch: &'b mut LfScratch<BD>,
+        dst: PicOffset<'a>,
+        is_v: bool,
+        stride: isize,
+        wd: c_int,
+        groups: usize,
+    ) -> Option<Self> {
         let reach = lf_reach(wd);
         let (w, h, origin_delta, stridea, strideb, base) = if is_v {
-            // Taps run down the picture; the four columns run along x.
-            let w = 4usize;
+            // Taps run down the picture; each group's four columns run along x.
+            let w = 4 * groups;
             (
                 w,
                 2 * reach as usize,
@@ -401,9 +445,9 @@ impl<'a, BD: BitDepth> LfBlock<'a, BD> {
                 reach as usize * w,
             )
         } else {
-            // Taps run along x; the four columns run down the picture.
+            // Taps run along x; each group's four columns run down the picture.
             let w = 2 * reach as usize;
-            (w, 4usize, -reach, w as isize, 1isize, reach as usize)
+            (w, 4 * groups, -reach, w as isize, 1isize, reach as usize)
         };
         let first = dst.offset as isize + origin_delta;
         let last = first + (h as isize - 1) * stride;
@@ -417,7 +461,6 @@ impl<'a, BD: BitDepth> LfBlock<'a, BD> {
             data: dst.data,
             offset: first as usize,
         };
-        let mut buf = [BD::Pixel::from(0u8); LF_BLOCK_LEN];
         for row in 0..h {
             let off = origin.offset.wrapping_add_signed(row as isize * stride);
             let guard = PicOffset {
@@ -425,27 +468,33 @@ impl<'a, BD: BitDepth> LfBlock<'a, BD> {
                 offset: off,
             }
             .slice::<BD>(w);
-            buf[row * w..][..w].copy_from_slice(&guard);
+            scratch.buf[row * w..][..w].copy_from_slice(&guard);
         }
+        scratch.pristine[..w * h].copy_from_slice(&scratch.buf[..w * h]);
         Some(Self {
+            scratch,
             origin,
             stride,
             w,
             h,
-            pristine: buf,
-            buf,
             base,
             stridea,
             strideb,
         })
     }
 
+    /// Taps of fused group `g`. Group `g` sits `4 * g` columns (V) or rows (H)
+    /// along, i.e. `4 * g * stridea` into the buffer either way, and the
+    /// groups' tap windows are disjoint — which is why filtering them all
+    /// before any write-back is bit-identical to interleaving.
     #[inline]
-    fn taps(&mut self) -> CompactTaps<'_, BD> {
+    fn taps(&mut self, g: usize) -> CompactTaps<'_, BD> {
         CompactTaps {
             len: self.w * self.h,
-            buf: &mut self.buf,
-            base: self.base,
+            buf: &mut self.scratch.buf,
+            base: self
+                .base
+                .wrapping_add_signed(4 * g as isize * self.stridea),
             stridea: self.stridea,
             strideb: self.strideb,
         }
@@ -455,8 +504,8 @@ impl<'a, BD: BitDepth> LfBlock<'a, BD> {
     #[inline]
     fn close(self) {
         for row in 0..self.h {
-            let work = &self.buf[row * self.w..][..self.w];
-            let orig = &self.pristine[row * self.w..][..self.w];
+            let work = &self.scratch.buf[row * self.w..][..self.w];
+            let orig = &self.scratch.pristine[row * self.w..][..self.w];
             let Some(first) = work.iter().zip(orig).position(|(a, b)| a != b) else {
                 continue; // row untouched: no write, no mutable guard
             };
@@ -681,9 +730,9 @@ enum YUV {
 }
 
 fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
-    mut dst: PicOffset,
+    dst: PicOffset,
     vmask: &[u32; 3],
-    mut lvl: WithOffset<&[AtomicU8]>,
+    lvl: WithOffset<&[AtomicU8]>,
     b4_stride: usize,
     lut: &Align16<Av1FilterLUT>,
     _wh: c_int,
@@ -707,60 +756,110 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
         YUV::UV => vmask[0] | vmask[1],
     };
     let is_v = matches!(hv, HV::V);
-    let mut xy = 1u32;
-    while vm & !xy.wrapping_sub(1) != 0 {
-        'block: {
-            if vm & xy == 0 {
-                break 'block;
-            }
-            let l = lvl.data[lvl.offset].load(Relaxed);
-            let l = if l != 0 {
-                l
-            } else {
-                let lvl = lvl - 4 * b4_strideb;
-                lvl.data[lvl.offset].load(Relaxed)
-            };
-            if l == 0 {
-                break 'block;
-            }
-            let h = l >> 4;
-            let e = lut.e[l as usize];
-            let i = lut.i[l as usize];
-            let idx = match yuv {
-                YUV::Y => {
-                    let idx = if vmask[2] & xy != 0 {
-                        2
-                    } else {
-                        (vmask[1] & xy != 0) as c_int
+
+    // Resolve every 4-pixel group's filter parameters before touching a pixel,
+    // so consecutive groups that actually filter can be fused into one
+    // `LfBlock` (see its `open`). `vm` is a `u32`, so there are at most 32.
+    let mut params = [(0u8, 0u8, 0u8, 0 as c_int); 32];
+    let mut filters = [false; 32];
+    let mut n_groups = 0usize;
+    {
+        let mut xy = 1u32;
+        let mut lvl = lvl;
+        while vm & !xy.wrapping_sub(1) != 0 {
+            if vm & xy != 0 {
+                let l = lvl.data[lvl.offset].load(Relaxed);
+                let l = if l != 0 {
+                    l
+                } else {
+                    let lvl = lvl - 4 * b4_strideb;
+                    lvl.data[lvl.offset].load(Relaxed)
+                };
+                if l != 0 {
+                    let idx = match yuv {
+                        YUV::Y => {
+                            let idx = if vmask[2] & xy != 0 {
+                                2
+                            } else {
+                                (vmask[1] & xy != 0) as c_int
+                            };
+                            4 << idx
+                        }
+                        YUV::UV => {
+                            let idx = (vmask[1] & xy != 0) as c_int;
+                            4 + 2 * idx
+                        }
                     };
-                    4 << idx
+                    params[n_groups] = (e_of(lut, l), i_of(lut, l), l >> 4, idx);
+                    filters[n_groups] = true;
                 }
-                YUV::UV => {
-                    let idx = (vmask[1] & xy != 0) as c_int;
-                    4 + 2 * idx
+            }
+            n_groups += 1;
+            xy <<= 1;
+            lvl += 4 * b4_stridea;
+        }
+    }
+
+    let mut scratch = LfScratch::<BD>::new();
+    let group_step = 4 * stridea;
+    let mut g = 0usize;
+    while g < n_groups {
+        if !filters[g] {
+            g += 1;
+            continue;
+        }
+        let wd = params[g].3;
+        // Extend the run over consecutive groups that also filter and share
+        // `wd` — a non-filtering group or a different tap reach ends it, so
+        // the fused rectangle never covers a column no call would read.
+        let mut n = 1;
+        while n < LF_BATCH_MAX && g + n < n_groups && filters[g + n] && params[g + n].3 == wd {
+            n += 1;
+        }
+        let run_dst = dst + group_step * g as isize;
+        match LfBlock::<BD>::open(&mut scratch, run_dst, is_v, stride, wd, n) {
+            Some(mut block) => {
+                for j in 0..n {
+                    let (e, i, h, _) = params[g + j];
+                    loop_filter::<BD, _>(&mut block.taps(j), e, i, h, wd, bd);
                 }
-            };
-            // One guard per picture row over this call's tap rectangle, rather
-            // than one per tap. See `LfBlock`.
-            match LfBlock::<BD>::open(dst, is_v, stride, idx) {
-                Some(mut block) => {
-                    loop_filter::<BD, _>(&mut block.taps(), e, i, h, idx, bd);
-                    block.close();
-                }
-                None => {
-                    let mut taps = DirectTaps {
-                        dst,
-                        stridea,
-                        strideb,
-                    };
-                    loop_filter::<BD, _>(&mut taps, e, i, h, idx, bd);
+                block.close();
+            }
+            None => {
+                // The fused rectangle left the plane. Retry each group on its
+                // own, then fall back to the per-tap direct path.
+                for j in 0..n {
+                    let (e, i, h, _) = params[g + j];
+                    let one_dst = dst + group_step * (g + j) as isize;
+                    match LfBlock::<BD>::open(&mut scratch, one_dst, is_v, stride, wd, 1) {
+                        Some(mut block) => {
+                            loop_filter::<BD, _>(&mut block.taps(0), e, i, h, wd, bd);
+                            block.close();
+                        }
+                        None => {
+                            let mut taps = DirectTaps {
+                                dst: one_dst,
+                                stridea,
+                                strideb,
+                            };
+                            loop_filter::<BD, _>(&mut taps, e, i, h, wd, bd);
+                        }
+                    }
                 }
             }
         }
-        xy <<= 1;
-        dst += 4 * stridea;
-        lvl += 4 * b4_stridea;
+        g += n;
     }
+}
+
+#[inline(always)]
+fn e_of(lut: &Align16<Av1FilterLUT>, l: u8) -> u8 {
+    lut.e[l as usize]
+}
+
+#[inline(always)]
+fn i_of(lut: &Align16<Av1FilterLUT>, l: u8) -> u8 {
+    lut.i[l as usize]
 }
 
 /// # Safety
