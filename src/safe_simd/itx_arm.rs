@@ -8426,6 +8426,22 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             // shape that falls through every arm returns false and the caller
             // runs the scalar reference. Adding a kernel file is NOT enough —
             // the arm below is what makes it reachable from the safe build.
+            //
+            // Every arm is BPC8 ON PURPOSE. `itx_arm_neon_{16x16,32,64,
+            // large_rect}` also define 16bpc kernels (16x16 all sixteen types,
+            // 32x32 DCT+IDTX, and DCT_DCT for 8x32/32x8/16x32/32x16/64x64/
+            // 64x32/32x64/16x64/64x16) and the `asm`-feature FFI wrappers call
+            // them — but they are NOT bit-exact, so wiring them here would ship
+            // wrong pixels. Measured 2026-08-07 by adding the arms and running
+            // a `__simd_test_log` decode: v4k_8tile_10b 5,038 ITX_MISMATCH
+            // (16x16), v4k_1tile_10b 5,028 (16x16 + 32x16), v1024_10b 126
+            // (16x16 + 32x32). Not rounding drift — nbad=256 (every pixel of
+            // the block) on 3,814 of the 5,038, max_diff up to 354. eob=0
+            // DC-only blocks are clean, so the wiring/units are right and the
+            // transform math is wrong; fixing them is the same per-transform
+            // work issue #400 did for 8bpc (missing intermediate clipping,
+            // rect2 scaling, shifts). Record:
+            // benchmarks/p2_kernels_2026-08-07.meta.
             if w == 4 && h == 4 && BD::BPC == BPC::BPC8 {
                 let bd_c = bd.into_c();
 

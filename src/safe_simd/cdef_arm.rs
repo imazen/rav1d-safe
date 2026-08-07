@@ -25,6 +25,11 @@
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
+#[cfg(target_arch = "aarch64")]
+use archmage::{Arm64, arcane, rite};
+#[cfg(target_arch = "aarch64")]
+use safe_unaligned_simd::aarch64 as safe_simd;
+
 use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
@@ -209,6 +214,28 @@ fn cdef_filter_block_8bpc_inner(
     let mut tmp = [0u16; TMP_STRIDE * 12];
     padding_8bpc(&mut tmp, dst, left, top, bottom, w, h, edges);
 
+    #[cfg(target_arch = "aarch64")]
+    // With both strengths zero the scalar takes no row guard and writes
+    // nothing; the vector path must not either (it would be a no-op write plus
+    // `h` extra borrows).
+    if pri_strength != 0 || sec_strength != 0 {
+        use archmage::SimdToken as _;
+        if let Some(token) = archmage::Arm64::summon() {
+            cdef_filter_block_8bpc_neon(
+                token,
+                dst,
+                &tmp,
+                pri_strength,
+                sec_strength,
+                dir,
+                damping,
+                w,
+                h,
+            );
+            return;
+        }
+    }
+
     let tmp_offset = 2 * TMP_STRIDE + 2;
     let stride = dst.pixel_stride::<BitDepth8>();
 
@@ -325,6 +352,183 @@ fn cdef_filter_block_8bpc_inner(
                 dst_row[x] = iclip(px + (sum - (sum < 0) as i32 + 8 >> 4), min, max) as u8;
             }
         }
+    }
+}
+
+// ============================================================================
+// 8BPC NEON FILTER
+// ============================================================================
+//
+// One vector per destination ROW. Every tap the scalar loop reads at
+// `tmp[base + x + off]` for x in 0..w is a contiguous run, so a whole row's
+// worth of one tap is a single 8-lane load; the twelve taps (2 primary
+// offsets and 4 secondary, each used with + and -) become twelve loads
+// instead of twelve loads PER PIXEL.
+//
+// Everything fits in i16 and is computed exactly as `constrain_scalar` and
+// the scalar loop do — no reassociation, no rounding-shift substitution:
+//   * `tmp` holds pixels 0..=255 and the CDEF_VERY_LARGE sentinel 8191, so a
+//     tap, a difference (-255..=8191) and `|diff|` all fit i16.
+//   * `sum` is bounded by 4 primary taps x tap-weight 4 x threshold 15 plus
+//     8 secondary taps x weight 2 x threshold 4, i.e. |sum| < 512.
+//   * the final `px + (sum - (sum < 0) + 8 >> 4)` can leave 0..=255 (px up to
+//     255 plus a delta of up to ~19), and the scalar stores it with a
+//     truncating `as u8`, so the narrow here is `vmovn_u16` (truncating), NOT
+//     `vqmovun_s16` (saturating).
+//
+// `w` is 4 or 8; a 4-wide block still computes 8 lanes and stores 4. The
+// spare lanes read real `tmp` values against a zeroed `px`, which makes every
+// `constrain` term 0 (the sentinel-sized difference drives `max(0, threshold -
+// (adiff >> shift))` to 0) — they cannot overflow, and they are discarded.
+//
+// Index bounds, so the fixed-size-array loads below can never fail: `base`
+// is `26 + y * 12` with y <= 7 (h <= 8), so base <= 110; the direction table's
+// offsets run -22..=26; and a load reads 8 lanes, so the extremes are
+// 26 - 22 = 4 and 110 + 26 + 7 = 143, exactly inside `tmp`'s 144 entries.
+
+/// One 8-lane tap load from the padded scratch buffer.
+#[cfg(target_arch = "aarch64")]
+#[rite(neon)]
+fn cdef_tap_8(tmp: &[u16; TMP_STRIDE * 12], idx: usize) -> int16x8_t {
+    vreinterpretq_s16_u16(safe_simd::vld1q_u16(
+        <&[u16; 8]>::try_from(&tmp[idx..idx + 8]).unwrap(),
+    ))
+}
+
+/// Lane-wise [`constrain_scalar`].
+///
+/// `neg_shift` is `-shift`: NEON has no variable right shift, so a negative
+/// `vshlq_s16` count is the right shift. `adiff` is non-negative, so the
+/// arithmetic shift equals the scalar's logical one.
+#[cfg(target_arch = "aarch64")]
+#[rite(neon)]
+fn cdef_constrain_8(diff: int16x8_t, threshold: int16x8_t, neg_shift: int16x8_t) -> int16x8_t {
+    let zero = vdupq_n_s16(0);
+    let adiff = vabsq_s16(diff);
+    let term = vsubq_s16(threshold, vshlq_s16(adiff, neg_shift));
+    let result = vminq_s16(adiff, vmaxq_s16(term, zero));
+    vbslq_s16(vcltq_s16(diff, zero), vnegq_s16(result), result)
+}
+
+/// `px + (sum - (sum < 0) + 8 >> 4)`, exactly as the scalar writes it.
+#[cfg(target_arch = "aarch64")]
+#[rite(neon)]
+fn cdef_apply_8(px: int16x8_t, sum: int16x8_t) -> int16x8_t {
+    let neg = vreinterpretq_s16_u16(vcltq_s16(sum, vdupq_n_s16(0)));
+    let biased = vaddq_s16(vaddq_s16(sum, neg), vdupq_n_s16(8));
+    vaddq_s16(px, vshrq_n_s16::<4>(biased))
+}
+
+/// Read `w` pixels of a row into the low lanes of a vector; upper lanes zero.
+#[cfg(target_arch = "aarch64")]
+#[rite(neon)]
+fn cdef_load_px(row: &[u8], w: usize) -> int16x8_t {
+    let mut buf = [0u8; 8];
+    buf[..w].copy_from_slice(&row[..w]);
+    vreinterpretq_s16_u16(vmovl_u8(safe_simd::vld1_u8(&buf)))
+}
+
+/// Truncating-narrow the low `w` lanes back into a row.
+#[cfg(target_arch = "aarch64")]
+#[rite(neon)]
+fn cdef_store_px(row: &mut [u8], w: usize, v: int16x8_t) {
+    let mut buf = [0u8; 8];
+    safe_simd::vst1_u8(&mut buf, vmovn_u16(vreinterpretq_u16_s16(v)));
+    row[..w].copy_from_slice(&buf[..w]);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn cdef_filter_block_8bpc_neon(
+    _token: Arm64,
+    dst: PicOffset,
+    tmp: &[u16; TMP_STRIDE * 12],
+    pri_strength: c_int,
+    sec_strength: c_int,
+    dir: usize,
+    damping: c_int,
+    w: usize,
+    h: usize,
+) {
+    use crate::include::common::bitdepth::BitDepth8;
+
+    let tmp_offset = 2 * TMP_STRIDE + 2;
+    let stride = dst.pixel_stride::<BitDepth8>();
+
+    let pri_v = vdupq_n_s16(pri_strength as i16);
+    let sec_v = vdupq_n_s16(sec_strength as i16);
+    let pri_shift = cmp::max(0, damping - pri_strength.ilog2() as c_int);
+    let pri_neg = vdupq_n_s16(-(pri_shift as i16));
+    // `damping - ilog2(sec_strength)` is non-negative for every strength the
+    // spec can signal; the scalar `>>` would panic in debug if it were not.
+    let sec_shift = if sec_strength != 0 {
+        damping - sec_strength.ilog2() as c_int
+    } else {
+        0
+    };
+    debug_assert!(sec_shift >= 0);
+    let sec_neg = vdupq_n_s16(-(sec_shift.max(0) as i16));
+
+    let pri_tap = (4 - (pri_strength & 1)) as i16;
+
+    for y in 0..h {
+        let base = tmp_offset + y * TMP_STRIDE;
+        let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth8>(w);
+
+        let px = cdef_load_px(&dst_row, w);
+        let mut sum = vdupq_n_s16(0);
+        let mut lo = px;
+        let mut hi = px;
+        let mut pri_tap_k = pri_tap;
+
+        for k in 0..2 {
+            if pri_strength != 0 {
+                let off = dav1d_cdef_directions[dir + 2][k] as isize;
+                let p0 = cdef_tap_8(tmp, (base as isize + off) as usize);
+                let p1 = cdef_tap_8(tmp, (base as isize - off) as usize);
+                sum = vmlaq_n_s16(
+                    sum,
+                    cdef_constrain_8(vsubq_s16(p0, px), pri_v, pri_neg),
+                    pri_tap_k,
+                );
+                sum = vmlaq_n_s16(
+                    sum,
+                    cdef_constrain_8(vsubq_s16(p1, px), pri_v, pri_neg),
+                    pri_tap_k,
+                );
+                pri_tap_k = pri_tap_k & 3 | 2;
+                if sec_strength != 0 {
+                    lo = vminq_s16(lo, vminq_s16(p0, p1));
+                    hi = vmaxq_s16(hi, vmaxq_s16(p0, p1));
+                }
+            }
+
+            if sec_strength != 0 {
+                let off2 = dav1d_cdef_directions[dir + 4][k] as isize;
+                let off3 = dav1d_cdef_directions[dir][k] as isize;
+                let s0 = cdef_tap_8(tmp, (base as isize + off2) as usize);
+                let s1 = cdef_tap_8(tmp, (base as isize - off2) as usize);
+                let s2 = cdef_tap_8(tmp, (base as isize + off3) as usize);
+                let s3 = cdef_tap_8(tmp, (base as isize - off3) as usize);
+
+                let sec_tap = 2 - k as i16;
+                sum = vmlaq_n_s16(sum, cdef_constrain_8(vsubq_s16(s0, px), sec_v, sec_neg), sec_tap);
+                sum = vmlaq_n_s16(sum, cdef_constrain_8(vsubq_s16(s1, px), sec_v, sec_neg), sec_tap);
+                sum = vmlaq_n_s16(sum, cdef_constrain_8(vsubq_s16(s2, px), sec_v, sec_neg), sec_tap);
+                sum = vmlaq_n_s16(sum, cdef_constrain_8(vsubq_s16(s3, px), sec_v, sec_neg), sec_tap);
+
+                lo = vminq_s16(lo, vminq_s16(vminq_s16(s0, s1), vminq_s16(s2, s3)));
+                hi = vmaxq_s16(hi, vmaxq_s16(vmaxq_s16(s0, s1), vmaxq_s16(s2, s3)));
+            }
+        }
+
+        let mut out = cdef_apply_8(px, sum);
+        // The scalar clips only when a secondary strength contributed a
+        // min/max; the primary-only branch stores the raw value.
+        if sec_strength != 0 {
+            out = vminq_s16(vmaxq_s16(out, lo), hi);
+        }
+        cdef_store_px(&mut dst_row, w, out);
     }
 }
 
