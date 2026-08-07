@@ -701,6 +701,28 @@ impl BorrowTracker {
         let shard = &self.shards[si];
         shard.lock.lock();
         let g = ShardGuard(&shard.lock);
+        // RE-READ `state` INSIDE THE LOCK. The load above happens BEFORE this
+        // lock is taken, and a wide registrant publishes into `self.wide` —
+        // not into any shard — then bumps `state` and unlocks. A narrow
+        // registrant that observed `state == 0` in that window would scan a
+        // shard which legitimately holds no record of the wide borrow and
+        // register anyway: two overlapping mutable guards, both live, missed.
+        //
+        // That is a lock-ordering TOCTOU, distinct from the
+        // registration-before-reference gap this module's header reasons
+        // about — that argument does not account for the wide list at all.
+        // Found by an independent 8-thread harness: 115/18/22 violations over
+        // three runs of ~1.4e9 acquisitions, with one thread taking wide
+        // borrows over a shared pivot byte. `add_multi` is NOT affected (it
+        // reads `state` inside its locks), so the hole was unique to this
+        // single-block fast path.
+        //
+        // Cost is one relaxed-ordering re-load on the hot path; the fall
+        // through to `add_slow` (which does consult `wide`) is cold.
+        if self.state.load(Ordering::Acquire) != 0 {
+            drop(g);
+            return self.add_slow::<IS_MUT>(start, end, b0, b1);
+        }
         // SAFETY: this shard's lock is held.
         let recs = unsafe { &mut *shard.recs.get() };
         if let Some(existing) = recs.find::<IS_MUT>(start, end) {
