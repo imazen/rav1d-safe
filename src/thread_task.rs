@@ -1277,7 +1277,8 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
                         };
                         if error_0 == 0 {
                             #[cfg(feature = "probe-tasktime")]
-                            let __p = crate::src::probe_tasktime::stage_begin_of(if p_1 { 0 } else { 1 });
+                            let __p =
+                                crate::src::probe_tasktime::stage_begin_of(if p_1 { 0 } else { 1 });
                             error_0 = match rav1d_decode_tile_sbrow(c, &mut tc, &f) {
                                 Ok(()) => 0,
                                 Err(()) => 1,

@@ -2,6 +2,20 @@
 //!
 //! CDEF applies direction-dependent filtering to remove coding artifacts
 //! while preserving edges.
+//!
+//! # Exact-window padding guards
+//!
+//! The top/bottom padding loops read `x_start..x_end` of a row that sits two
+//! rows outside the block. `x_start` is 2 when `HAVE_LEFT` is absent, i.e. the
+//! block is at the left edge of the frame, so the two left-padding columns are
+//! *skipped* — but they live at `offset - 2`, which is the **tail of the
+//! previous row**. Guarding from `offset` instead of `offset + x_start` would
+//! therefore lock 2 pixels this code never reads, in a row a concurrent tile
+//! worker may legitimately be writing (`backup2lines` saves whole rows of
+//! `cdef_line_buf`), producing a false `DisjointMut` overlap panic. So every
+//! guard here starts at `offset + x_start` and is `x_end - x_start` long.
+//! `src/cdef.rs`'s scalar reference has carried this discipline since the
+//! i686 report; these kernels are held to the same rule.
 
 #![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
 #![cfg_attr(feature = "unchecked", deny(unsafe_code))]
@@ -121,9 +135,13 @@ fn padding_8bpc(
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * stride),
             };
-            let slice = top_row.data.slice_as::<_, u8>((top_row.offset.., ..x_end));
+            // Guard exactly the columns read (`x_start..x_end`) — see the
+            // module note on exact-window padding guards.
+            let slice = top_row
+                .data
+                .slice_as::<_, u8>((top_row.offset + x_start.., ..x_end - x_start));
             for x in x_start..x_end {
-                tmp[row_offset + x - 2] = slice[x] as u16;
+                tmp[row_offset + x - 2] = slice[x - x_start] as u16;
             }
         }
     }
@@ -149,18 +167,22 @@ fn padding_8bpc(
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * stride),
             };
+            // Same exact-window discipline as the top loop above.
             let slice = match bottom_row.data {
                 PicOrBuf::Pic(pic) => {
-                    let guard = pic.slice::<BitDepth8, _>((bottom_row.offset.., ..x_end));
+                    let guard = pic
+                        .slice::<BitDepth8, _>((bottom_row.offset + x_start.., ..x_end - x_start));
                     for x in x_start..x_end {
-                        tmp[row_offset + x - 2] = guard[x] as u16;
+                        tmp[row_offset + x - 2] = guard[x - x_start] as u16;
                     }
                     continue;
                 }
-                PicOrBuf::Buf(buf) => buf.slice_as::<_, u8>((bottom_row.offset.., ..x_end)),
+                PicOrBuf::Buf(buf) => {
+                    buf.slice_as::<_, u8>((bottom_row.offset + x_start.., ..x_end - x_start))
+                }
             };
             for x in x_start..x_end {
-                tmp[row_offset + x - 2] = slice[x] as u16;
+                tmp[row_offset + x - 2] = slice[x - x_start] as u16;
             }
         }
     }
@@ -461,9 +483,13 @@ fn padding_16bpc(
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * pixel_stride),
             };
-            let slice = top_row.data.slice_as::<_, u16>((top_row.offset.., ..x_end));
+            // Guard exactly the columns read (`x_start..x_end`) — see the
+            // module note on exact-window padding guards.
+            let slice = top_row
+                .data
+                .slice_as::<_, u16>((top_row.offset + x_start.., ..x_end - x_start));
             for x in x_start..x_end {
-                tmp[row_offset + x - 2] = slice[x];
+                tmp[row_offset + x - 2] = slice[x - x_start];
             }
         }
     }
@@ -490,18 +516,22 @@ fn padding_16bpc(
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * pixel_stride),
             };
+            // Same exact-window discipline as the top loop above.
             let slice = match bottom_row.data {
                 PicOrBuf::Pic(pic) => {
-                    let guard = pic.slice::<BitDepth16, _>((bottom_row.offset.., ..x_end));
+                    let guard = pic
+                        .slice::<BitDepth16, _>((bottom_row.offset + x_start.., ..x_end - x_start));
                     for x in x_start..x_end {
-                        tmp[row_offset + x - 2] = guard[x];
+                        tmp[row_offset + x - 2] = guard[x - x_start];
                     }
                     continue;
                 }
-                PicOrBuf::Buf(buf) => buf.slice_as::<_, u16>((bottom_row.offset.., ..x_end)),
+                PicOrBuf::Buf(buf) => {
+                    buf.slice_as::<_, u16>((bottom_row.offset + x_start.., ..x_end - x_start))
+                }
             };
             for x in x_start..x_end {
-                tmp[row_offset + x - 2] = slice[x];
+                tmp[row_offset + x - 2] = slice[x - x_start];
             }
         }
     }
