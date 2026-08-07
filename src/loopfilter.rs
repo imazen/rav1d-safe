@@ -1348,6 +1348,10 @@ mod neon_parity {
     }
 
     fn sweep<BD: BitDepth>(bd: BD, widths: &[c_int]) {
+        // `archmage::testing`'s token switch is process-global and another
+        // test flips it; without this the kernel gets refused a summon
+        // mid-sweep. See `safe_simd::token_test_lock`.
+        let _guard = crate::src::safe_simd::token_test_lock();
         for &wd in widths {
             for &is_v in &[false, true] {
                 for groups in 1..=LF_BATCH_MAX {
@@ -1383,6 +1387,7 @@ mod neon_parity {
     /// tap, which is the zenavif#30 conflict.
     fn diff_span_cell<BD: BitDepth>(bd: BD) {
         use zerocopy::IntoBytes as _;
+        let _guard = crate::src::safe_simd::token_test_lock();
         let bd_max: u16 = bd.bitdepth_max().into();
         let mut rng = Rng(0xDEAD_BEEF_1234_5678 ^ bd_max as u64);
         let mut fired = 0u32;

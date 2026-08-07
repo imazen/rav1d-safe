@@ -15,6 +15,26 @@
 pub mod partial_simd;
 pub mod pixel_access;
 
+/// Serializes tests against `archmage::testing`'s PROCESS-GLOBAL token switch.
+///
+/// The `testable_dispatch` dev-feature lets a test disable compile-time SIMD
+/// tokens so it can exercise the fallback paths — but the switch is global, so
+/// while `for_each_token_permutation` is running, ANY concurrently-running test
+/// that calls `Arm64::summon()` can get `None` back. `cargo test --lib` runs
+/// tests in parallel, so this is not hypothetical: it made
+/// `loopfilter::neon_parity` fail with "kernel refused" in roughly a quarter of
+/// full-suite runs, at random cells, while passing 20/20 when filtered to
+/// itself.
+///
+/// Any test that either PERMUTES tokens or DEPENDS on a token being available
+/// must hold this lock. Poisoning is ignored: a panicking test has already
+/// failed, and the lock exists to order the survivors, not to protect data.
+#[cfg(test)]
+pub(crate) fn token_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 pub mod mc;
 
 #[cfg(target_arch = "aarch64")]

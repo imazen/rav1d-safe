@@ -962,6 +962,10 @@ mod tests {
         use archmage::testing::{CompileTimePolicy, for_each_token_permutation};
         use archmage::{Arm64, SimdToken};
 
+        // The permutation switch is process-global; hold the lock so no other
+        // test observes a token that is momentarily turned off.
+        let _guard = crate::src::safe_simd::token_test_lock();
+
         let mut had_enabled = false;
         let mut had_disabled = false;
 
