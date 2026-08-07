@@ -31,6 +31,30 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   lines, 2,845 distinct triples across 5 CPU tiers x 989 vectors) is unchanged,
   and frame md5 matches on all 7 local vectors at every thread count.
   `benchmarks/lf_neon_2026-08-07.meta` (3b44f6d, d751493, a5606dc).
+- **The borrow tracker's shard set is sized from the declared decode
+  parallelism, and 8-bit decode no longer gets slower past 4 threads**
+  (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`, `set_parallelism`). On a
+  3840x2160 8-tile 8bpc stream the decoder had been running 175.8 ms/frame at
+  t=4 and 187.0 at t=8 — the best configuration was 4 threads. Worker occupancy
+  was not the problem (7.55 of 8 busy); the same 136 tile-recon and 3x34 filter
+  tasks simply cost 62% more CPU at t=8 than at t=4, and a build with the
+  tracker compiled out did not slow down at all. The default shard count per big
+  instance moves 32 -> 128 for a threaded decode and stays at 32 for a serial
+  one, because the two want opposite things: more shards cut the cross-core
+  contention that caused the inversion, while a serial decode is dominated by
+  the wide-borrow path, whose cost is proportional to the shard count and which
+  is common exactly when tile threading is off. That path now holds only the
+  shards an instance can actually reach (`0..=mask`) rather than the whole
+  array, which is what makes the larger array affordable — for a sub-64-KiB
+  instance it is one lock instead of 128. Measured, M4 Pro, median of 9,
+  ms/frame: 8bpc t=1 413.3 -> 430.5, t=4 175.8 -> 139.7, t=8 187.0 -> 125.3,
+  t=16 208.8 -> 135.6; 10bpc t=8 213.7 -> 161.7. Best shippable configuration
+  175.8 -> 125.3 (1.40x), and the gap to dav1d 1.5.4 at 8 threads goes 5.23x ->
+  3.44x (8bpc) and 5.65x -> 4.18x (10bpc). The 4.2% single-thread cost is the
+  larger shard array itself and is not recovered. Bit-identical output at every
+  arm and thread count; `tests/wide_exclusion.rs` gates the wide path's
+  exclusion with a race that fails on a deliberately shortened prefix.
+  `benchmarks/p3_inversion_2026-08-07.meta` (14873a6).
 - **The `DisjointMut` borrow tracker is address-block sharded, and tile
   threading now scales** (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`). Each
   instance's tracker is split into 32 independently locked, cache-line-isolated

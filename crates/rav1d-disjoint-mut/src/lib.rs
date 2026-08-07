@@ -1045,6 +1045,26 @@ mod tracker_legacy;
 ))]
 use tracker_legacy as checked;
 
+/// Declare the decode parallelism to the borrow tracker.
+///
+/// The tracker shards each big buffer's records by address so that concurrent
+/// tile workers stop serialising on one lock and one cache line, and the number
+/// of shards is a real trade: a serial decode is *slower* with more of them
+/// (its wide-borrow path holds every active shard), a concurrent one is much
+/// faster. Call this before creating the buffers a threaded decode will use.
+///
+/// Monotone: a later single-threaded declaration never shrinks the shard count
+/// out from under a concurrently live multi-threaded decoder.
+///
+/// A no-op when the tracker is compiled out.
+#[inline]
+pub fn set_parallelism(n: usize) {
+    #[cfg(feature = "__probe_untracked")]
+    let _ = n;
+    #[cfg(not(feature = "__probe_untracked"))]
+    checked::set_parallelism(n);
+}
+
 // =============================================================================
 // Guard Drop impls — deregister borrow on drop
 // =============================================================================

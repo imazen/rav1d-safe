@@ -50,7 +50,7 @@
 
 use super::*;
 use core::panic::Location;
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 // =============================================================================
 // Tunables (compile-time A/B knobs — see benchmarks/shard_tracker_*.meta)
@@ -85,6 +85,26 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 /// `shards-64`. 256 is not offered: at 32 KiB per instance it overflowed a
 /// worker stack while constructing a `DisjointMut` back when the array was
 /// inline, and even boxed it was already past the point of diminishing returns.
+///
+/// **Re-measured 2026-08-07, and the default moved 32 -> 128**
+/// (`benchmarks/p3_inversion_2026-08-07.meta`). The table above was taken
+/// before the P2 kernel work; with the kernels cheaper, the tracker is a much
+/// larger share of the multi-thread wall and the shard count matters far more
+/// than it did. Same host, same vector, median of 9, interleaved:
+///
+/// ```text
+///   shards     t=1     t=4     t=8    t=16
+///       32    412.5   175.3   190.5   209.9   <- the old default: INVERTS at t>4
+///       64    447.1   163.7   162.0   172.3
+///      128    522.5   139.1   123.5   135.6
+///   tracker
+///   removed   336.5    95.5    57.7    65.2
+/// ```
+///
+/// The t=1 column is not a cache effect — a 128-shard array with only 32 of
+/// them ACTIVE measured 528.0 ms, indistinguishable from using all 128 — it is
+/// the wide path holding every shard it is given. `SHARDS_SERIAL` and
+/// [`BorrowTracker::active`] are what make the two columns independent.
 //
 // The cascade is priority-ordered rather than a set of independent `cfg`s, so
 // enabling two knobs at once (`--all-features`) still compiles instead of
@@ -104,12 +124,23 @@ pub(super) const N_SHARDS: usize = 8;
 ))]
 pub(super) const N_SHARDS: usize = 16;
 #[cfg(all(
-    feature = "__shards_64",
+    feature = "__shards_32",
     not(any(
         feature = "__shards_1",
         feature = "__shards_4",
         feature = "__shards_8",
         feature = "__shards_16"
+    ))
+))]
+pub(super) const N_SHARDS: usize = 32;
+#[cfg(all(
+    feature = "__shards_64",
+    not(any(
+        feature = "__shards_1",
+        feature = "__shards_4",
+        feature = "__shards_8",
+        feature = "__shards_16",
+        feature = "__shards_32"
     ))
 ))]
 pub(super) const N_SHARDS: usize = 64;
@@ -120,6 +151,7 @@ pub(super) const N_SHARDS: usize = 64;
         feature = "__shards_4",
         feature = "__shards_8",
         feature = "__shards_16",
+        feature = "__shards_32",
         feature = "__shards_64"
     ))
 ))]
@@ -129,10 +161,11 @@ pub(super) const N_SHARDS: usize = 128;
     feature = "__shards_4",
     feature = "__shards_8",
     feature = "__shards_16",
+    feature = "__shards_32",
     feature = "__shards_64",
     feature = "__shards_128"
 )))]
-pub(super) const N_SHARDS: usize = 32;
+pub(super) const N_SHARDS: usize = 128;
 
 /// `log2` of the block size in elements.
 ///
@@ -234,11 +267,21 @@ impl TinyLock {
     #[cold]
     #[inline(never)]
     fn lock_slow(&self) {
+        #[cfg(feature = "__probe_lock_backoff")]
+        let mut spins = 0u32;
         loop {
             // Spin on a load, not a swap: a read-only spin keeps the line in
             // Shared instead of ping-ponging it Exclusive between waiters.
             while self.0.load(Ordering::Relaxed) {
                 core::hint::spin_loop();
+                #[cfg(feature = "__probe_lock_backoff")]
+                {
+                    spins += 1;
+                    if spins >= 64 {
+                        spins = 0;
+                        std::thread::yield_now();
+                    }
+                }
             }
             if !self.0.swap(true, Ordering::Acquire) {
                 return;
@@ -438,6 +481,7 @@ const SHARD_MASK_BITS: u64 = 0b1_1111_1111;
 const _: () = assert!(SLOTS <= (SLOT_MASK as usize) + 1);
 const _: () = assert!(N_SHARDS <= (SHARD_MASK_BITS as usize) + 1);
 const _: () = assert!(N_SHARDS.is_power_of_two());
+const _: () = assert!(SHARDS_SERIAL.is_power_of_two() && SHARDS_SERIAL <= N_SHARDS);
 const _: () = assert!(MAX_SHARDS_PER_BORROW <= 4);
 
 impl BorrowId {
@@ -585,14 +629,69 @@ fn shard_of(block: usize, mask: usize) -> usize {
     ((((block as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)) >> 40) as usize & mask) & (N_SHARDS - 1)
 }
 
-/// `N_SHARDS - 1` when the buffer is worth spreading, else `0`.
+/// `active_shards() - 1` when the buffer is worth spreading, else `0`.
+///
+/// Read once per [`BorrowTracker::new`] and then immutable for that tracker's
+/// life, so two instances built either side of a [`set_parallelism`] call
+/// simply get different masks — they share no records, and every index an
+/// instance produces is masked with its OWN value on both registration and
+/// release.
 #[inline]
 fn mask_for(len: usize) -> usize {
     if len >= SHARD_MIN_LEN {
-        N_SHARDS - 1
+        active_shards() - 1
     } else {
         0
     }
+}
+
+/// Shards a *concurrent* instance gets. The compile-time array size, i.e. the
+/// most this build can ever hand out.
+const SHARDS_CONCURRENT: usize = N_SHARDS;
+
+/// Shards a big instance gets when the process has declared no parallelism.
+///
+/// Sharding buys nothing without concurrent registrants, and it is not free:
+/// the wide path holds every ACTIVE shard (see [`BorrowTracker::active`]), and
+/// the single-threaded decode path is exactly where wide borrows are common —
+/// with tile threading off, `WithOffset::block_mut` reserves the whole strided
+/// span `(h - 1) * stride + w`, which is 15 blocks for a 16x16 block on a 4K
+/// row and therefore over `MAX_SHARDS_PER_BORROW`. Measured on v4k_8tile 8bpc
+/// at t=1 (`benchmarks/p3_inversion_2026-08-07.meta`): raising the shard count
+/// from 32 to 128 with the wide path holding all of them costs 413.7 -> 531.3
+/// ms/frame, and narrowing the wide path to the active prefix takes 100 of
+/// those 118 ms back — the residual 17 ms is the bigger array itself.
+const SHARDS_SERIAL: usize = if N_SHARDS < 32 { N_SHARDS } else { 32 };
+
+/// Declared decode parallelism, as a shard count. Monotone.
+static ACTIVE_SHARDS: AtomicUsize = AtomicUsize::new(SHARDS_SERIAL);
+
+/// Declare that up to `n` threads will register borrows concurrently.
+///
+/// One process-global, like the tile-threading flag it is set beside, and
+/// **monotone** for the same reason that one had to become monotone: opening a
+/// single-threaded decoder must not reconfigure a concurrently live
+/// multi-threaded one. Unlike that flag, a stale value here is only ever a
+/// performance question — the mask is read once per [`BorrowTracker::new`] and
+/// is immutable for the tracker's life, and every shard index it produces is
+/// masked with the SAME value on registration and release.
+///
+/// Measured, v4k_8tile 8bpc, ms/frame (`benchmarks/p3_inversion_2026-08-07.meta`):
+/// 32 shards is 176.1 at t=4 and 189.3 at t=8 — SLOWER with twice the threads —
+/// while 128 shards is 139.3 and 124.5. The crossover is entirely at t=1, which
+/// is why this is a function of the declared parallelism rather than a constant.
+pub fn set_parallelism(n: usize) {
+    let want = if n > 1 {
+        SHARDS_CONCURRENT
+    } else {
+        SHARDS_SERIAL
+    };
+    ACTIVE_SHARDS.fetch_max(want, Ordering::Relaxed);
+}
+
+#[inline(always)]
+fn active_shards() -> usize {
+    ACTIVE_SHARDS.load(Ordering::Relaxed).clamp(1, N_SHARDS)
 }
 
 impl BorrowTracker {
@@ -613,6 +712,33 @@ impl BorrowTracker {
         // Only the mask moves; the shards are already there, and `&mut self`
         // guarantees every one of them is empty.
         self.mask = mask_for(len);
+    }
+
+    /// The prefix of [`Self::shards`] this instance can actually reach.
+    ///
+    /// [`shard_of`] ends in `& self.mask`, and `mask` is always `2^k - 1`, so
+    /// every index this instance ever produces — in [`Self::add`],
+    /// [`Self::add_slow`], [`Self::add_multi`], [`Self::remove`] and
+    /// [`Self::remove_multi`] — lies in `0..=mask`. No record of this instance
+    /// can exist above that, and no narrow registrant of this instance can
+    /// take a lock above it either.
+    ///
+    /// So the wide path's "hold **every** shard" only has to mean "hold every
+    /// shard this instance uses": the exclusion it needs is against this
+    /// instance's own narrow registrants, and they are all inside the prefix.
+    /// Shards above `mask` are dead weight for this instance, and locking them
+    /// costs `N_SHARDS - mask - 1` atomic RMWs per wide borrow — which is the
+    /// whole of the wide path for a small instance (`mask == 0`: 1 lock
+    /// instead of 32).
+    ///
+    /// `mask` only moves in [`Self::reprovision`], which takes `&mut self` and
+    /// therefore runs with no borrow outstanding, so a record can never be
+    /// stranded above a shrunken mask.
+    #[inline(always)]
+    fn active(&self) -> &[Shard] {
+        // `min` keeps the slice in bounds for LLVM without a panic path; the
+        // mask is always `<= N_SHARDS - 1` by construction.
+        &self.shards[..(self.mask & (N_SHARDS - 1)) + 1]
     }
 
     /// Mark this tracker as poisoned. All future borrow attempts will panic.
@@ -877,11 +1003,12 @@ impl BorrowTracker {
     #[inline(never)]
     #[track_caller]
     fn add_wide<const IS_MUT: bool>(&self, start: usize, end: usize) -> BorrowId {
-        for shard in &self.shards {
+        let active = self.active();
+        for shard in active {
             shard.lock.lock();
         }
         let mut hit = None;
-        for shard in &self.shards {
+        for shard in active {
             // SAFETY: every shard lock is held.
             let recs = unsafe { &*shard.recs.get() };
             if let Some(h) = recs.find::<IS_MUT>(start, end) {
@@ -896,7 +1023,7 @@ impl BorrowTracker {
             hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end);
         }
         if let Some(existing) = hit {
-            Self::unlock_every(&self.shards);
+            Self::unlock_every(active);
             Self::overlap_panic(start, end, IS_MUT, existing);
         }
         let idx = {
@@ -919,7 +1046,7 @@ impl BorrowTracker {
             "DisjointMut: too many concurrent wide borrows"
         );
         self.state.fetch_add(1, Ordering::Relaxed);
-        Self::unlock_every(&self.shards);
+        Self::unlock_every(active);
         BorrowId::wide(idx as u16)
     }
 
@@ -938,14 +1065,14 @@ impl BorrowTracker {
     }
 
     #[inline(always)]
-    fn unlock_all(shards: &[Shard; N_SHARDS], set: &[u16]) {
+    fn unlock_all(shards: &[Shard], set: &[u16]) {
         for &s in set.iter().rev() {
             shards[(s as usize) & (N_SHARDS - 1)].lock.unlock();
         }
     }
 
     #[inline(always)]
-    fn unlock_every(shards: &[Shard; N_SHARDS]) {
+    fn unlock_every(shards: &[Shard]) {
         for shard in shards.iter().rev() {
             shard.lock.unlock();
         }
@@ -995,7 +1122,8 @@ impl BorrowTracker {
     #[cold]
     #[inline(never)]
     fn remove_wide(&self, id: BorrowId) {
-        for shard in &self.shards {
+        let active = self.active();
+        for shard in active {
             shard.lock.lock();
         }
         {
@@ -1008,7 +1136,7 @@ impl BorrowTracker {
             }
         }
         self.state.fetch_sub(1, Ordering::Relaxed);
-        Self::unlock_every(&self.shards);
+        Self::unlock_every(active);
     }
 }
 
@@ -1135,6 +1263,74 @@ mod tests {
         .is_err();
         assert!(caught, "wide registrant missed a live narrow record");
         t.remove(n);
+    }
+
+    /// The wide path holds only `0..=mask` (see [`BorrowTracker::active`]).
+    /// For a SMALL instance that prefix is a single shard, which is the case
+    /// where the narrowing is most aggressive — so this is the case that must
+    /// still detect. Overflowing the one shard is what forces the promotion.
+    #[test]
+    fn wide_and_narrow_still_see_each_other_on_a_one_shard_instance() {
+        let t = BorrowTracker::new(SHARD_MIN_LEN - 1);
+        assert_eq!(t.mask, 0, "a sub-SHARD_MIN_LEN instance must get one shard");
+        // Fill the single shard, so the next registration is promoted to wide.
+        let mut ids = Vec::new();
+        for i in 0..SLOTS {
+            ids.push(t.add_mut(&b(i * 2..i * 2 + 1)));
+        }
+        let wide = t.add_mut(&b(1000..1004));
+        // A narrow registrant must still see the promoted record...
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _n = t.add_mut(&b(1002..1006));
+        }))
+        .is_err();
+        assert!(caught, "narrow borrow missed a wide record on a 1-shard instance");
+        t.remove(wide);
+        // ...and stop seeing it once released.
+        let n = t.add_mut(&b(1002..1006));
+        t.remove(n);
+        for id in ids {
+            t.remove(id);
+        }
+    }
+
+    /// The same, on an instance sized for the FULL shard set. Guards against a
+    /// future `shard_of` that stops masking with `self.mask`, which would put
+    /// records outside the prefix the wide path holds.
+    #[test]
+    fn wide_and_narrow_still_see_each_other_at_full_width() {
+        set_parallelism(64);
+        let t = BorrowTracker::new(1 << 24);
+        assert_eq!(t.mask, N_SHARDS - 1, "declared parallelism must widen the mask");
+        let bs = 1usize << BLOCK_SHIFT;
+        // A borrow spanning far more blocks than MAX_SHARDS_PER_BORROW, so it
+        // is promoted; the narrow probe sits in a block deep inside it, whose
+        // shard is nowhere near the wide registrant's first.
+        let wide = t.add_mut(&b(0..MAX_BLOCKS_SCAN * bs * 4));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _n = t.add_mut(&b(200 * bs..200 * bs + 4));
+        }))
+        .is_err();
+        assert!(caught, "narrow borrow missed a live wide record at full width");
+        t.remove(wide);
+        let n = t.add_mut(&b(200 * bs..200 * bs + 4));
+        t.remove(n);
+    }
+
+    /// A single-threaded open must never shrink the shard set out from under a
+    /// concurrently live multi-threaded decoder — the same hazard that forced
+    /// the tile-threading flag to become monotone.
+    #[test]
+    fn set_parallelism_is_monotone() {
+        set_parallelism(64);
+        let raised = active_shards();
+        assert!(raised >= SHARDS_SERIAL);
+        set_parallelism(1);
+        assert_eq!(
+            active_shards(),
+            raised,
+            "a 1-thread open must not lower the shard count"
+        );
     }
 
     /// Filling a shard past `SLOTS` must promote to the wide list, not drop the
