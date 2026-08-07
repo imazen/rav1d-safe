@@ -36,6 +36,7 @@ __probe_count = ["std"]
 __probe_noscan = []
 __probe_lockonly = []
 __probe_untracked = []
+__probe_shardsim = ["__probe_count"]
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
 aligned = ["dep:aligned", "dep:aligned-vec"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).

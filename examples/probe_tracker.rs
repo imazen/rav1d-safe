@@ -49,6 +49,8 @@ fn main() {
 
     #[cfg(feature = "probe-count")]
     rav1d_disjoint_mut::probe::reset();
+    #[cfg(feature = "probe-shardsim")]
+    rav1d_disjoint_mut::probe::shard_reset();
 
     let t0 = Instant::now();
     for _ in 0..iters {
@@ -63,6 +65,10 @@ fn main() {
     #[cfg(feature = "probe-count")]
     {
         print!("{}", rav1d_disjoint_mut::probe::report(iters));
+    }
+    #[cfg(feature = "probe-shardsim")]
+    {
+        print!("{}", rav1d_disjoint_mut::probe::shard_report());
     }
     #[cfg(not(feature = "probe-count"))]
     eprintln!("(built without --features probe-count; no counters)");

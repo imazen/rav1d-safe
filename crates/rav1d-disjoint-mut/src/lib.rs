@@ -1471,6 +1471,15 @@ mod checked {
                         contended,
                         Location::caller(),
                     );
+                    #[cfg(feature = "__probe_shardsim")]
+                    crate::probe::record_shard(
+                        slot,
+                        start,
+                        end,
+                        crate::probe::SLOTS[slot]
+                            .max_end
+                            .load(core::sync::atomic::Ordering::Relaxed),
+                    );
                     return BorrowId(id);
                 }
 

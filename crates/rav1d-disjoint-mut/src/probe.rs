@@ -13,6 +13,7 @@ use core::sync::atomic::AtomicU64;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::Relaxed;
 use std::string::String;
+use std::vec::Vec;
 
 pub const MAX_SLOTS: usize = 16384;
 pub const MAX_THREADS: usize = 64;
@@ -330,4 +331,183 @@ pub fn reset() {
         t.wait_ns.store(0, Relaxed);
     }
     SLOT_EXHAUSTED.store(0, Relaxed);
+}
+
+// =============================================================================
+// THROWAWAY shard-sizing probe (`__probe_shardsim`)
+// =============================================================================
+//
+// Answers three questions for a *hypothetical* address-sharded tracker, using
+// counts only (no timing, so it is immune to a busy box):
+//
+//  1. How long are borrows?  -> log2 length histogram.
+//  2. How many shards would a borrow span at a given block shift?  -> k.
+//     k is the multiplier on lock round trips for the sound multi-shard design.
+//  3. Do concurrently-running tile workers actually land on DIFFERENT shards?
+//     -> for each add, how many of the other live threads' most recent borrow
+//     was on the same (instance, shard) pair. N=1 reproduces today's design and
+//     is the calibration point; the ideal for N shards is (threads-1)/N.
+//
+// Restricted to instances whose observed max_end is >= 1 MiB, i.e. the 12
+// picture planes that carry 89.8% of borrows and 100% of contention.
+
+/// (block_shift, n_shards, mixed)
+pub const SHARD_CFGS: [(u32, u32, bool); 8] = [
+    (0, 1, false),  // 0: status quo — one lock per instance
+    (6, 64, true),  // 1: 64 B blocks
+    (7, 64, true),  // 2: 128 B
+    (8, 64, true),  // 3: 256 B
+    (10, 64, true), // 4: 1 KiB
+    (12, 64, true), // 5: 4 KiB
+    (8, 64, false), // 6: 256 B, linear (no mixing) — alignment-sensitivity check
+    (8, 256, true), // 7: 256 B, 256 shards
+];
+pub const N_CFG: usize = SHARD_CFGS.len();
+
+/// Log2 length histogram, 0..=20 plus overflow.
+pub static LEN_HIST: [AtomicU64; 24] = [const { AtomicU64::new(0) }; 24];
+/// k (shards spanned) histogram per config: 1, 2, 3, 4, 5..8, 9..16, 17..64, >64
+pub static K_HIST: [[AtomicU64; 8]; N_CFG] = [const { [const { AtomicU64::new(0) }; 8] }; N_CFG];
+/// Sum of k, per config (exact lock-op multiplier).
+pub static K_SUM: [AtomicU64; N_CFG] = [const { AtomicU64::new(0) }; N_CFG];
+/// Adds observed by the shard sim (hot instances only).
+pub static SHARD_ADDS: AtomicU64 = AtomicU64::new(0);
+/// Sum over adds of "how many other threads' most recent borrow was on the
+/// same (instance, shard)".  Divided by SHARD_ADDS this is the expected number
+/// of colliding peers per registration.
+pub static COLLIDE_SUM: [AtomicU64; N_CFG] = [const { AtomicU64::new(0) }; N_CFG];
+/// Adds where at least one other thread collided.
+pub static COLLIDE_ANY: [AtomicU64; N_CFG] = [const { AtomicU64::new(0) }; N_CFG];
+/// Per (config, thread): packed (slot << 24) | shard of that thread's most
+/// recent hot-instance borrow.  u64::MAX = never borrowed.
+pub static LAST: [[AtomicU64; MAX_THREADS]; N_CFG] =
+    [const { [const { AtomicU64::new(u64::MAX) }; MAX_THREADS] }; N_CFG];
+/// Per-shard add counts for cfg index 3 (256 B / 64 shards) — uniformity check.
+pub static SHARD_SPREAD: [AtomicU64; 64] = [const { AtomicU64::new(0) }; 64];
+
+#[inline]
+fn shard_of(block: u64, n: u32, mixed: bool) -> u32 {
+    if n == 1 {
+        return 0;
+    }
+    if mixed {
+        (((block.wrapping_mul(0x9E37_79B9_7F4A_7C15)) >> 40) as u32) & (n - 1)
+    } else {
+        (block as u32) & (n - 1)
+    }
+}
+
+/// Called from `add_probed` while NOT holding the tracker lock.
+/// `slot` is the probe slot for the instance, `start`/`end` the byte range.
+pub fn record_shard(slot: usize, start: usize, end: usize, max_end: usize) {
+    // Hot instances only: the picture planes.
+    if max_end < (1 << 20) {
+        return;
+    }
+    let len = end - start;
+    let lz = (usize::BITS - 1 - len.leading_zeros()) as usize;
+    LEN_HIST[lz.min(23)].fetch_add(1, Relaxed);
+    SHARD_ADDS.fetch_add(1, Relaxed);
+    let tid = thread_index();
+    for (c, &(shift, n, mixed)) in SHARD_CFGS.iter().enumerate() {
+        let b0 = (start as u64) >> shift;
+        let b1 = ((end - 1) as u64) >> shift;
+        let k = (b1 - b0 + 1).min(1 << 20);
+        K_SUM[c].fetch_add(k, Relaxed);
+        let bucket = match k {
+            1 => 0,
+            2 => 1,
+            3 => 2,
+            4 => 3,
+            5..=8 => 4,
+            9..=16 => 5,
+            17..=64 => 6,
+            _ => 7,
+        };
+        K_HIST[c][bucket].fetch_add(1, Relaxed);
+
+        let s = shard_of(b0, n, mixed);
+        if c == 3 {
+            SHARD_SPREAD[(s & 63) as usize].fetch_add(1, Relaxed);
+        }
+        let packed = ((slot as u64) << 24) | s as u64;
+        let mut hits = 0u64;
+        let active = (NEXT_THREAD.load(Relaxed) as usize).min(MAX_THREADS);
+        for t in 0..active {
+            if t == tid {
+                continue;
+            }
+            if LAST[c][t].load(Relaxed) == packed {
+                hits += 1;
+            }
+        }
+        if hits > 0 {
+            COLLIDE_SUM[c].fetch_add(hits, Relaxed);
+            COLLIDE_ANY[c].fetch_add(1, Relaxed);
+        }
+        LAST[c][tid].store(packed, Relaxed);
+    }
+}
+
+pub fn shard_report() -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    let adds = SHARD_ADDS.load(Relaxed).max(1);
+    let _ = writeln!(out, "SHARD\thot_adds\t{}", SHARD_ADDS.load(Relaxed));
+    for (i, h) in LEN_HIST.iter().enumerate() {
+        let v = h.load(Relaxed);
+        if v > 0 {
+            let _ = writeln!(
+                out,
+                "LEN\t{}\t{}\t{:.4}",
+                1usize << i,
+                v,
+                v as f64 * 100.0 / adds as f64
+            );
+        }
+    }
+    let _ = writeln!(
+        out,
+        "CFGHDR\tcfg\tshift\tn\tmixed\tk_mean\tk1_pct\tk2_pct\tk3_4_pct\tk_gt4_pct\tcollide_per_add\tcollide_any_pct"
+    );
+    for (c, &(shift, n, mixed)) in SHARD_CFGS.iter().enumerate() {
+        let ks: Vec<u64> = K_HIST[c].iter().map(|a| a.load(Relaxed)).collect();
+        let k_mean = K_SUM[c].load(Relaxed) as f64 / adds as f64;
+        let p = |v: u64| v as f64 * 100.0 / adds as f64;
+        let _ = writeln!(
+            out,
+            "CFG\t{c}\t{shift}\t{n}\t{mixed}\t{k_mean:.4}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.5}\t{:.4}",
+            p(ks[0]),
+            p(ks[1]),
+            p(ks[2] + ks[3]),
+            p(ks[4] + ks[5] + ks[6] + ks[7]),
+            COLLIDE_SUM[c].load(Relaxed) as f64 / adds as f64,
+            p(COLLIDE_ANY[c].load(Relaxed)),
+        );
+    }
+    for (i, s) in SHARD_SPREAD.iter().enumerate() {
+        let _ = writeln!(out, "SPREAD\t{i}\t{}", s.load(Relaxed));
+    }
+    out
+}
+
+pub fn shard_reset() {
+    for a in LEN_HIST.iter() {
+        a.store(0, Relaxed);
+    }
+    for c in 0..N_CFG {
+        K_SUM[c].store(0, Relaxed);
+        COLLIDE_SUM[c].store(0, Relaxed);
+        COLLIDE_ANY[c].store(0, Relaxed);
+        for b in 0..8 {
+            K_HIST[c][b].store(0, Relaxed);
+        }
+        for t in 0..MAX_THREADS {
+            LAST[c][t].store(u64::MAX, Relaxed);
+        }
+    }
+    for a in SHARD_SPREAD.iter() {
+        a.store(0, Relaxed);
+    }
+    SHARD_ADDS.store(0, Relaxed);
 }
