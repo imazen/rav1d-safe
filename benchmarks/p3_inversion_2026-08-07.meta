@@ -101,9 +101,9 @@ at t=8 the tracker is ~70% of our wall.** More shards fixes it; it costs at
 t=1.
 
 **This supersedes the leading hypothesis in the P3 brief.** The brief expected
-an un-backed-off `TinyLock` to be most of the win. It is a symptom: see
-"Measured negatives" below, where backoff is re-tested at head and is again
-inside noise, exactly as the P1 campaign found.
+an un-backed-off `TinyLock` to be most of the win. It is a symptom, not the
+cause: backoff re-tested on top of the shard fix is again inside noise
+(see "Idle-box confirmation"), exactly as the P1 campaign found.
 
 ### 4. The t=1 cost of more shards is NOT cache footprint
 
@@ -209,6 +209,41 @@ Reading it:
   agree** — one md5 per vector (`a00c11f4...` 8bpc, `840d4364...` 10bpc), which
   are the same two hashes the P1 and P2 campaigns recorded.
 
+## Idle-box confirmation, and the `TinyLock` backoff arm
+
+The campaign above was run under sibling load, so the headline cells were
+re-run with the STRICT guard — 7 cells discarded and re-run before committing —
+on the same three-arm interleave. IDLE-BOX, median of 9, 135 rows. Raw:
+`benchmarks/p3_confirm_idle_2026-08-07.tsv`.
+
+  ms/frame            8bpc t=1     t=4     t=8    t=16   10bpc t=8
+  head                   413.3   175.8   187.0   208.8       213.7
+  adapt                  430.5   139.7   125.3   135.6       161.7
+  adapt + backoff        428.8   139.0   124.9   132.4       162.2
+  adapt vs head          +4.2%  -20.5%  -33.0%  -35.1%      -24.3%
+
+This reproduces the contended campaign to within 0.5% on every `head` and
+`adapt` cell except 10bpc t=8, so the two are consistent and the contended
+table can be read at face value.
+
+**Best shippable configuration: 175.8 ms (head, t=4) -> 125.3 ms (adapt, t=8),
+1.40x, with t=8 restored to being the best thread count.**
+
+**MEASURED NEGATIVE — `TinyLock` spin backoff (yield to the scheduler after 64
+spins) is inside noise, again.** This was the P3 brief's leading hypothesis and
+its first candidate fix. On top of the shard change: -0.4% at t=1, -0.5% at
+t=4, -0.3% at t=8, +0.3% at 10bpc t=8. The only cell outside noise is t=16
+(-2.4%), which is oversubscribed on a 12-logical-core box and is one cell — not
+grounds for a spin-policy change. The P1 campaign reached the same verdict on
+the 32-shard base (`benchmarks/p1_barrier_lock_ab_2026-08-07.tsv`: t=8 276.8 ->
+274.7). Kept as `--features probe-lock-backoff` so the next person can re-test
+without rebuilding the argument; NOT enabled.
+
+The reason it keeps measuring null is visible in the diagnosis above: at t=8 on
+the OLD shard count, `add`'s uncontended fast path was itself 3x its
+single-thread cost. That is cache-line ownership traffic, which a waiter's
+politeness does not touch. Spreading the borrows over 4x the lines does.
+
 ## What is still open / not done
 
 * **The +4.2% single-thread residual is real and unexplained beyond "the array
@@ -239,12 +274,7 @@ Reading it:
 ## Measured negatives
 
 * **`TinyLock` backoff — the brief's leading hypothesis — is again inside
-  noise.** See the table under "Confirmation campaign". The P1 campaign
-  reached the same verdict on a different base
-  (`benchmarks/p1_barrier_lock_ab_2026-08-07.tsv`: t=8 276.8 -> 274.7). The
-  spin share is high because the borrow VOLUME per contended shard is high;
-  changing what a waiter does while it waits does not change how often it
-  waits. Reducing the number of shards a borrow can collide on does.
+  noise.** Numbers under "Idle-box confirmation".
 * **A 128-shard array with a 32-shard active set** gets the single-thread cost
   and none of the multi-thread win (528.0 / 178.3 / 193.0). Included because it
   is the experiment that falsified the cache-footprint explanation.
