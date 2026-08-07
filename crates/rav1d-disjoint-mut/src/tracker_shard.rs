@@ -426,7 +426,13 @@ impl BorrowId {
     #[inline(always)]
     fn pair(self, i: usize, mask: usize) -> (usize, u8) {
         let f = (self.0 >> (PAIR_SHIFT + PAIR_BITS * i as u32)) & ((1 << PAIR_BITS) - 1);
-        (((f >> 3) as usize) & mask, (f & SLOT_MASK) as u8)
+        // Two masks: the runtime one restores what `shard_of` produced, the
+        // constant one is what lets LLVM index `[Shard; N_SHARDS]` without a
+        // bounds check.
+        (
+            ((f >> 3) as usize) & mask & (N_SHARDS - 1),
+            (f & SLOT_MASK) as u8,
+        )
     }
 
     #[inline(always)]

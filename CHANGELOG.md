@@ -7,6 +7,29 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ### QUEUED BREAKING CHANGES
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
+- `rav1d-disjoint-mut`: **`DisjointMut::new` is no longer `const`**. The borrow
+  tracker now sizes itself from the container's length at construction, which
+  needs a call to `AsMutPtr::len`. `dangerously_unchecked` stays `const`. No
+  in-repo caller constructed a `DisjointMut` in const context.
+
+### Changed
+- **The `DisjointMut` borrow tracker is address-block sharded, and tile
+  threading now scales** (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`). Each
+  instance's tracker is split into 32 independently locked, cache-line-isolated
+  shards chosen by a hash of the borrow's address block, instead of one spin
+  lock plus one 64-slot table that every tile worker serialised on. A borrow
+  registers its exact interval in every shard its blocks map to and checks
+  exactly those, so overlaps are still caught (two overlapping borrows share a
+  byte, hence a block, hence a shard) and disjoint borrows are still never
+  refused (records are whole intervals, never clipped). Measured on 3840x2160
+  8-tile 8bpc, M4 Pro, median ms/frame: t=1 588 -> 597, t=2 499 -> 436,
+  t=4 709 -> 345, t=8 1129 -> 338. Decode had been getting *slower* with more
+  threads (0.52x at t=8); it now gets faster (1.77x), and the best configuration
+  the decoder can ship is 1.74x faster than before. Bit-identical output at
+  every thread count. `benchmarks/shard_tracker_2026-08-07.meta` (91169df,
+  e1a3e85, 1401cb3).
+- `DisjointMut::tracker` is boxed, so the wrapper is pointer-sized: this drops
+  `Rav1dTaskContext` well under its 48 KiB stack-weight gate.
 
 ## [0.6.0] - 2026-07-04
 
