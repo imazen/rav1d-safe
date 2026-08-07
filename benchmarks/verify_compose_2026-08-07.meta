@@ -1,0 +1,206 @@
+# Independent verification of the three-branch compose onto perf/p2-kernels
+
+date: 2026-08-07
+host: Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64
+rustc: stable, release, DEFAULT features (bitdepth_8 + bitdepth_16, CHECKED
+       DisjointMut, tracker armed). No `-C target-cpu=native`. No `nice` on any
+       timed run.
+tree:  verify/compose = perf/p2-kernels @ 0624dfd
+         + perf/lf-neon-port  @ 9c5093e  (fast-forward)
+         + perf/cdef-neon     @ ad52dcd  (3 doc/script conflicts, resolved)
+         + perf/p3-t8-inversion @ 761366e (1 CHANGELOG conflict, resolved)
+       All three merged. Nothing was left out.
+vectors: ~/tmp/rav1d-perf/vec/v4k_8tile{,_10b}.avif (3840x2160, 4x2 tiles) and
+         their IVF twins in ~/tmp/recon-yard/vec, plus the 766-vector
+         dav1d-test-data corpus.
+harness: scripts/perf/verify_gap.sh + scripts/perf/verify_gap_report.py (new,
+         this campaign). Raw: benchmarks/verify_gap_2026-08-07.tsv.
+
+This file records what an INDEPENDENT re-measurement found, not what the three
+branch reports claimed. Where the two differ, the difference is stated.
+
+## HEADLINE: the composed tree is NOT bit-identical to its baseline, and that is a FIX
+
+The task framed any divergence from `perf/p2-kernels` as a hard stop. There is
+one, at every 10-bit vector and every thread count, and it goes the right way.
+
+Frame MD5, visible planes, 7 local vectors x t=1/2/4/8, against dav1d 1.5.4's
+own `--muxer md5`:
+
+  vector           dav1d      main      p2base    lf_only   cdef_only  composed
+  v4k_8tile        a00c11f4   a00c11f4  a00c11f4  a00c11f4  a00c11f4   a00c11f4
+  v4k_8tile_10b    4f218411   840d4364  840d4364  840d4364  4f218411   4f218411
+  v4k_1tile_10b    9ed1be40   a913b26b  a913b26b  a913b26b  9ed1be40   9ed1be40
+  v1024_10b        a3e14e71   da847dfb  da847dfb  da847dfb  a3e14e71   a3e14e71
+  v1024            0a17a5eb   0a17a5eb  0a17a5eb  0a17a5eb  0a17a5eb   0a17a5eb
+  v256             c5e7bbf1   c5e7bbf1  c5e7bbf1  c5e7bbf1  c5e7bbf1   c5e7bbf1
+  v4k_1tile        472c34f6   472c34f6  472c34f6  472c34f6  472c34f6   472c34f6
+
+`main` and `perf/p2-kernels` produce WRONG 10-bit pixels on aarch64. Root cause,
+read from source and confirmed by the isolation arms above:
+
+  src/cdef.rs:557                (scalar reference)  pri_strength >> bitdepth_min_8 & 1
+  src/safe_simd/cdef.rs:1903/2116 (x86 16bpc)        pri_strength >> bitdepth_min_8 & 1
+  src/safe_simd/cdef_arm.rs:777  (ARM 16bpc, main)   pri_strength & 1        <-- WRONG
+
+`bitdepth_min_8` is 0 at 8bpc, which is why only the high-bit-depth ARM path is
+affected and why the 8-bit hashes never moved. `perf/cdef-neon` carries the
+one-line fix (issue #446 / PR #448) because its 16bpc vector kernel cannot be
+bit-exact without it.
+
+Independently reproduced on the full dav1d-test-data corpus
+(`cargo test --release --test decode_md5_verify`, 766 vectors, same host, same
+corpus, run on both trees back to back):
+
+  distinct mismatching vectors      p2-kernels 556  ->  composed 464
+  newly matching                                        92
+  NEWLY FAILING (regressions)                            0
+
+  per-suite deltas, all of them positive:
+    10-bit/quantizer     3 passed -> 64 passed
+    10-bit/data          0 passed -> 26 passed
+    10-bit/film_grain    1 passed ->  6 passed
+    every other suite    unchanged, to the vector
+
+So the composed tree is not bit-identical to its baseline; it is bit-identical
+to **dav1d** on 7/7 local vectors at 4 thread counts, where the baseline was
+bit-identical to dav1d on only the 3 eight-bit ones. This is the single most
+valuable thing in the compose and it is a correctness result, not a perf one.
+
+(The `perf/cdef-neon` record already claims exactly 556 -> 464 / 0 / 92. That
+claim is CONFIRMED by independent re-measurement.)
+
+## Bit-inertness of the other two branches
+
+* `perf/lf-neon-port` is byte-identical to the baseline on all 7 vectors at
+  t=1/2/4/8 and at 8/10/12 bpc — its bit-identity claim holds. Note this means
+  it is bit-identical to a baseline that is WRONG at 10 bpc; it neither fixes
+  nor worsens that.
+* `perf/p3-t8-inversion` is bit-inert: `kern` (LF+CDEF) and `all` (LF+CDEF+P3)
+  produce identical hashes in all 28 grid cells. A tracker change should be
+  bit-inert and this one is.
+
+## Soundness, re-proved on the composed tree
+
+* **`#![forbid(unsafe_code)]` is intact.** The default build has no `asm` /
+  `c-ffi` / `partial_asm`, so the crate-root `cfg_attr` forbid is active, and it
+  compiles. The only `unsafe` tokens the three-branch diff ADDS are two
+  `feature = "asm"`-gated `extern "C"` FFI wrappers being RENAMED
+  (`cdef_find_dir_{8,16}bpc_neon` -> `..._ffi`, because the new safe function
+  took the old name). Net new `unsafe`: zero.
+* **Threading suite, all green** (`--include-ignored`, release, this tree):
+  `mt_stress_4k` at 1/2/4/8/16 threads; `tile_threading_overlap`
+  (single_threaded_no_panic, multi_threaded_cdef_lpf_race,
+  multi_threaded_tile_overlap); `tile_threading_parity` 3/3;
+  `reproduce_overlap` 6/6 + `reproduce_overlap_scalar`; `panic_safety_test` 4/4;
+  `worker_panic_recovery` 6/6; `thread_cleanup_test` 2/2; `cancellation` 6/6;
+  `integration_decode` 9/9; lib unit tests 48/48.
+* **Deliberate-overlap detection is still LIVE — proved by planting mutations,
+  not by reading the passing test.** Two mutations were planted in
+  `tracker_shard.rs` on the composed tree and both were caught by
+  `crates/rav1d-disjoint-mut/tests/wide_exclusion.rs`:
+  - **M1**, `active()` shortened to `&self.shards[..1]` (the exact hazard the
+    P3 branch's narrowing introduces): FAILED with "a narrow mutable borrow was
+    granted inside a wide mutable borrow that was provably still held".
+  - **M2**, the 4af62ae TOCTOU re-read of `state` INSIDE the shard lock deleted
+    from `add`: FAILED with the same assertion.
+  Restored, re-ran, green. So the gate detects both the new hazard and the old
+  one, and the TOCTOU shape has NOT been reintroduced — `add` still re-reads
+  `state` under the lock (`tracker_shard.rs:848`).
+* **Concurrent-decoder pressure, no overlap panic.**
+  - `scripts/perf/p2_concurrent_overlap.sh` on this tree's
+    `tile_threading_overlap` binary, 4 rounds x 6 processes: **0/24 FAILED**.
+  - 36 simultaneous 4K decoders at t=8 (3 rounds x 6 8bpc + 6 10bpc): 0 nonzero
+    exits, 0 occurrences of "overlapping"/"panic"/"DisjointMut" in any log, and
+    all 18 8bpc runs agree on `a00c11f4...` while all 18 10bpc runs agree on
+    `4f218411...` — i.e. the dav1d-matching hashes, under load.
+* **Guard extents were not widened.** Read at every changed site:
+  - CDEF `padding_8bpc`/`padding_16bpc` fold two per-row immutable guards
+    (`[0,w)` then `[0,w+2)` in the HAVE_RIGHT loop) into one over
+    `read_w = w + 2*HAVE_RIGHT`. Same maximum instantaneous extent, one fewer
+    guard per row. Write guards are still `slice_mut(w)`.
+  - Loop filter `LfBlock::fill::<W>` takes ONE immutable guard per picture row
+    of exactly `W == w` pixels — the const only changes the copy's codegen.
+    `LfBlock::close` still takes its mutable guard over the exact changed span
+    from `changed_span`, which is what the P1 barrier removal depends on.
+* **`set_parallelism` is monotone and instance-local.** `ACTIVE_SHARDS` only
+  moves by `fetch_max` over {32, 128}, both powers of two; `mask_for` is read
+  once in `BorrowTracker::new` and is immutable for that tracker's life;
+  `shard_of` ends in `& self.mask`, so every index an instance produces is
+  inside `0..=mask` — which is exactly the prefix `active()` holds. Sound.
+
+## Pre-existing failures, unchanged by the compose (verified by A/B, not asserted)
+
+* `decode_permutations`: 16/19 FAIL on BOTH `perf/p2-kernels` and the composed
+  tree, same 16 test names, same panic sites — 14x
+  `Arm64::summon().unwrap()` on `None` in `src/safe_simd/mc_arm.rs`, 2x the
+  same in `filmgrain_arm.rs`. Those unwraps are pre-existing at 6 sites on
+  `perf/p2-kernels`. This is a real panic-freedom defect on the aarch64
+  MC/filmgrain fallback paths and it belongs to NEITHER of the three branches.
+  (Note the test needs `--test-threads=1`; running it in parallel produces the
+  same failures for an additional reason.)
+* `decode_md5_verify`'s remaining 464 mismatching vectors — the documented
+  pre-existing aarch64 set, owned by other kernels.
+* `mt_stress` needs `test-vectors/bench/photo_4k.avif`, which is not in the
+  worktree unless you symlink it; it FAILS LOUD rather than skipping. Good.
+
+## The gap to dav1d, re-measured on an IDLE box in one session
+
+`scripts/perf/verify_gap.sh`, 7 rounds, arms interleaved back to back with the
+order rotating each round, STRICT idle guard (6 cells discarded and re-run; every
+committed cell has foreign-process count 0). Wall clock at 2 and 20 frames with
+`total = alpha + beta*frames` fitted, SAME instrument on dav1d and on us.
+dav1d 1.5.4 (homebrew), measured BOTH at `--framedelay 1` (the tile-threading-only
+model we implement) and at its shipping default. MEDIAN OF 7.
+
+  arms:  base = perf/p2-kernels @ 0624dfd
+         kern = base + lf-neon-port + cdef-neon (no tracker change)
+         all  = base + all three (the composed tree)
+
+  ms/frame          t     all     base    kern   dav1d_def  dav1d_fd1
+  v4k_8tile         1   400.3    412.1   382.2      246.5      246.5
+  v4k_8tile         2   223.8    260.6   242.8      125.7      125.2
+  v4k_8tile         4   131.1    175.9   166.1       63.9       65.6
+  v4k_8tile         8   116.5    187.8   179.2       34.7       37.4
+  v4k_8tile_10b     1   504.8    600.4   490.0      251.3      251.5
+  v4k_8tile_10b     2   275.0    357.1   296.0      128.8      127.6
+  v4k_8tile_10b     4   158.4    225.2   188.8       65.4       66.8
+  v4k_8tile_10b     8   142.4    214.2   195.0       35.8       37.9
+
+  ratio to dav1d --framedelay 1
+  v4k_8tile         1    1.62     1.67    1.55
+  v4k_8tile         2    1.79     2.08    1.94
+  v4k_8tile         4    2.00     2.68    2.53
+  v4k_8tile         8    3.12     5.02    4.79
+  v4k_8tile_10b     1    2.01     2.39    1.95
+  v4k_8tile_10b     2    2.16     2.80    2.32
+  v4k_8tile_10b     4    2.37     3.37    2.83
+  v4k_8tile_10b     8    3.76     5.65    5.15
+
+  t=1 -> t=8 scaling   all 3.44x / 3.54x   base 2.19x / 2.80x   dav1d_fd1 6.59x / 6.64x
+  dav1d's own default is within 7% of its --framedelay 1 figure at every cell
+  (0.93-1.01x), so the like-for-like restriction is not what the 3-5x is made of.
+
+**Instrument cross-check.** This harness re-measures `base` at 412.1 / 260.6 /
+175.9 / 187.8 against the 412.5 / 261.1 / 175.7 / 188.4 on record from the P2
+campaign's different instrument (max deviation 0.32%), and dav1d at 246.5 /
+125.2 / 65.6 / 37.4 against 246.7 / 125.1 / 65.6 / 36.0 (max 3.9%, at the t=8
+cell where the absolute is 36 ms and the fit is most sensitive). The two
+campaigns are directly comparable.
+
+## The t=4 -> t=8 inversion is GONE, and the kernels alone did NOT fix it
+
+  t=8 / t=4 (>1.0 means more threads made it slower)
+                    all     base    kern    dav1d_fd1
+  v4k_8tile       0.889    1.068   1.079        0.570
+  v4k_8tile_10b   0.899    0.951   1.033        0.567
+
+`kern` — the two kernel branches with the ORIGINAL 32-shard tracker — still
+inverts at 8bpc (1.079) and now inverts at 10bpc too (1.033) where the baseline
+did not (0.951). That is the expected direction: making the kernels cheaper
+raises the tracker's share of the multi-thread wall. The P3 branch's claim that
+"the tracker was the whole of the inversion" is CONFIRMED, and composing the
+kernels without it would have made the inversion worse, not better.
+
+t=8 is now the best thread count on the composed tree at both depths, as it
+should be. It is still 5.4x off dav1d's own t=1 -> t=8 scaling (3.44x vs 6.59x).
