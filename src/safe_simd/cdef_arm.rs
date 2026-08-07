@@ -129,6 +129,39 @@ fn tmp_at(tmp: &[u16; TMP_LEN], idx: usize) -> i32 {
 // PADDING (shared shape, per-bit-depth pixel loads)
 // ============================================================================
 
+/// `dst[..N] = src[..N] as u16`, with a compile-time trip count.
+///
+/// The fixed-size array is the point: with a runtime length LLVM emits a
+/// byte-at-a-time loop, and with `[u8; N]` it recognises the structured widen
+/// and issues `ushll` (see the fixed-size-array note in the project's
+/// performance guidance).
+#[inline(always)]
+fn widen_n<const N: usize>(dst: &mut [u16], src: &[u8]) {
+    let a = <&[u8; N]>::try_from(&src[..N]).unwrap();
+    for i in 0..N {
+        dst[i] = a[i] as u16;
+    }
+}
+
+/// Dispatch [`widen_n`] over the handful of lengths CDEF padding can ask for:
+/// a block row is `w` or `w + 2` wide and a context row is `x_end - x_start`,
+/// with `w` in {4, 8}, so `n` is one of 4, 6, 8, 10, 12.
+#[inline(always)]
+fn widen_row(dst: &mut [u16], src: &[u8], n: usize) {
+    match n {
+        4 => widen_n::<4>(dst, src),
+        6 => widen_n::<6>(dst, src),
+        8 => widen_n::<8>(dst, src),
+        10 => widen_n::<10>(dst, src),
+        12 => widen_n::<12>(dst, src),
+        _ => {
+            for i in 0..n {
+                dst[i] = src[i] as u16;
+            }
+        }
+    }
+}
+
 /// Padding function for 8bpc — copies the block and its available context into
 /// the scratch window; everything else keeps the [`CDEF_VERY_LARGE`] sentinel.
 fn padding_8bpc(
@@ -145,13 +178,21 @@ fn padding_8bpc(
 
     let stride = dst.pixel_stride::<BitDepth8>();
 
-    // Copy source pixels.
+    // Copy source pixels, and the two right-context pixels in the SAME borrow.
+    // Two guards over `[0, w)` and `[0, w + 2)` of one row cover exactly the
+    // same bytes one guard over `[0, w + 2)` does, so folding them is a strict
+    // reduction in borrow COUNT with no widening — and CDEF's remaining cost is
+    // borrow count (profiled 2026-08-07: tracker add + guard drop was 1.60% of
+    // an 8bpc t=1 decode against 0.22% for the filter arithmetic itself).
+    let read_w = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
+        w + 2
+    } else {
+        w
+    };
     for y in 0..h {
         let row_offset = TMP_OFFSET + y * TMP_STRIDE;
-        let src = (dst + (y as isize * stride)).slice::<BitDepth8>(w);
-        for x in 0..w {
-            tmp[row_offset + x] = src[x] as u16;
-        }
+        let src = (dst + (y as isize * stride)).slice::<BitDepth8>(read_w);
+        widen_row(&mut tmp[row_offset..], &src, read_w);
     }
 
     // Handle left edge
@@ -160,16 +201,6 @@ fn padding_8bpc(
             let row_offset = TMP_OFFSET + y * TMP_STRIDE;
             tmp[row_offset - 2] = left[y][0] as u16;
             tmp[row_offset - 1] = left[y][1] as u16;
-        }
-    }
-
-    // Handle right edge
-    if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
-        for y in 0..h {
-            let row_offset = TMP_OFFSET + y * TMP_STRIDE;
-            let src = (dst + (y as isize * stride)).slice::<BitDepth8>(w + 2);
-            tmp[row_offset + w] = src[w] as u16;
-            tmp[row_offset + w + 1] = src[w + 1] as u16;
         }
     }
 
@@ -191,9 +222,11 @@ fn padding_8bpc(
             let slice = top_row
                 .data
                 .slice_as::<_, u8>((top_row.offset + x_start.., ..x_end - x_start));
-            for x in x_start..x_end {
-                tmp[row_offset + x - 2] = slice[x - x_start] as u16;
-            }
+            widen_row(
+                &mut tmp[row_offset + x_start - 2..],
+                &slice,
+                x_end - x_start,
+            );
         }
     }
 
@@ -213,18 +246,22 @@ fn padding_8bpc(
                 PicOrBuf::Pic(pic) => {
                     let guard = pic
                         .slice::<BitDepth8, _>((bottom_row.offset + x_start.., ..x_end - x_start));
-                    for x in x_start..x_end {
-                        tmp[row_offset + x - 2] = guard[x - x_start] as u16;
-                    }
+                    widen_row(
+                        &mut tmp[row_offset + x_start - 2..],
+                        &guard,
+                        x_end - x_start,
+                    );
                     continue;
                 }
                 PicOrBuf::Buf(buf) => {
                     buf.slice_as::<_, u8>((bottom_row.offset + x_start.., ..x_end - x_start))
                 }
             };
-            for x in x_start..x_end {
-                tmp[row_offset + x - 2] = slice[x - x_start] as u16;
-            }
+            widen_row(
+                &mut tmp[row_offset + x_start - 2..],
+                &slice,
+                x_end - x_start,
+            );
         }
     }
 }
@@ -261,11 +298,17 @@ fn padding_16bpc(
 
     let stride = dst.pixel_stride::<BitDepth16>();
 
-    // Copy source pixels
+    // Copy source pixels + the two right-context pixels in ONE borrow per row;
+    // see the note in `padding_8bpc`.
+    let read_w = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
+        w + 2
+    } else {
+        w
+    };
     for y in 0..h {
         let row_offset = TMP_OFFSET + y * TMP_STRIDE;
-        let src = (dst + (y as isize * stride)).slice::<BitDepth16>(w);
-        tmp[row_offset..row_offset + w].copy_from_slice(&src[..w]);
+        let src = (dst + (y as isize * stride)).slice::<BitDepth16>(read_w);
+        tmp[row_offset..row_offset + read_w].copy_from_slice(&src[..read_w]);
     }
 
     // Handle left edge
@@ -274,16 +317,6 @@ fn padding_16bpc(
             let row_offset = TMP_OFFSET + y * TMP_STRIDE;
             tmp[row_offset - 2] = left[y][0];
             tmp[row_offset - 1] = left[y][1];
-        }
-    }
-
-    // Handle right edge
-    if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
-        for y in 0..h {
-            let row_offset = TMP_OFFSET + y * TMP_STRIDE;
-            let src = (dst + (y as isize * stride)).slice::<BitDepth16>(w + 2);
-            tmp[row_offset + w] = src[w];
-            tmp[row_offset + w + 1] = src[w + 1];
         }
     }
 
@@ -587,11 +620,14 @@ fn cdef_filter_block_8bpc_neon<const W: usize, const H: usize, const PRI: bool, 
 
     for y in 0..H {
         let base = TMP_OFFSET + y * TMP_STRIDE;
-        let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth8>(W);
-
-        let mut buf = [0u8; 8];
-        buf[..W].copy_from_slice(&dst_row[..W]);
-        let px = vmovl_u8(safe_simd::vld1_u8(&buf));
+        // `px` comes from `tmp`, not from a second read of `dst`: `padding_*`
+        // already copied this row's pixels there and nothing has written the
+        // row since, so the values are identical and this saves a read through
+        // the guard. For W == 4 the upper four lanes pick up whatever `tmp`
+        // holds beyond the block (a right-context pixel or the sentinel); the
+        // kernel is lane-independent and bounded for both, and those lanes are
+        // discarded by the W-wide store.
+        let px = cdef_tap(tmp, base);
 
         let out = cdef_filter_row::<PRI, SEC>(
             tmp,
@@ -604,9 +640,17 @@ fn cdef_filter_block_8bpc_neon<const W: usize, const H: usize, const PRI: bool, 
             sec_neg_shift,
             p.pri_tap,
         );
+        let packed = vmovn_u16(vreinterpretq_u16_s16(out));
 
-        safe_simd::vst1_u8(&mut buf, vmovn_u16(vreinterpretq_u16_s16(out)));
-        dst_row[..W].copy_from_slice(&buf[..W]);
+        // One guard per destination row, exactly W pixels wide.
+        let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth8>(W);
+        if W == 8 {
+            safe_simd::vst1_u8(<&mut [u8; 8]>::try_from(&mut dst_row[..8]).unwrap(), packed);
+        } else {
+            let mut buf = [0u8; 8];
+            safe_simd::vst1_u8(&mut buf, packed);
+            dst_row[..W].copy_from_slice(&buf[..W]);
+        }
     }
 }
 
@@ -711,7 +755,12 @@ fn cdef_filter_block_8bpc_inner(
 
 #[cfg(target_arch = "aarch64")]
 #[arcane]
-fn cdef_filter_block_16bpc_neon<const W: usize, const H: usize, const PRI: bool, const SEC: bool>(
+fn cdef_filter_block_16bpc_neon<
+    const W: usize,
+    const H: usize,
+    const PRI: bool,
+    const SEC: bool,
+>(
     _token: Arm64,
     dst: PicOffset,
     tmp: &[u16; TMP_LEN],
@@ -728,11 +777,8 @@ fn cdef_filter_block_16bpc_neon<const W: usize, const H: usize, const PRI: bool,
 
     for y in 0..H {
         let base = TMP_OFFSET + y * TMP_STRIDE;
-        let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth16>(W);
-
-        let mut buf = [0u16; 8];
-        buf[..W].copy_from_slice(&dst_row[..W]);
-        let px = safe_simd::vld1q_u16(&buf);
+        // `px` from `tmp` — see the note in the 8bpc kernel.
+        let px = cdef_tap(tmp, base);
 
         let out = cdef_filter_row::<PRI, SEC>(
             tmp,
@@ -745,9 +791,20 @@ fn cdef_filter_block_16bpc_neon<const W: usize, const H: usize, const PRI: bool,
             sec_neg_shift,
             p.pri_tap,
         );
+        let packed = vreinterpretq_u16_s16(out);
 
-        safe_simd::vst1q_u16(&mut buf, vreinterpretq_u16_s16(out));
-        dst_row[..W].copy_from_slice(&buf[..W]);
+        // One guard per destination row, exactly W pixels wide.
+        let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth16>(W);
+        if W == 8 {
+            safe_simd::vst1q_u16(
+                <&mut [u16; 8]>::try_from(&mut dst_row[..8]).unwrap(),
+                packed,
+            );
+        } else {
+            let mut buf = [0u16; 8];
+            safe_simd::vst1q_u16(&mut buf, packed);
+            dst_row[..W].copy_from_slice(&buf[..W]);
+        }
     }
 }
 
@@ -916,8 +973,8 @@ fn cdef_filter_block_scalar<BD: BitDepth>(
                         min = cmp::min(s3 as c_uint, min as c_uint) as c_int;
                         max = cmp::max(s3, max);
                     }
-                    dst_row[x] =
-                        iclip(px + (sum - (sum < 0) as c_int + 8 >> 4), min, max).as_::<BD::Pixel>();
+                    dst_row[x] = iclip(px + (sum - (sum < 0) as c_int + 8 >> 4), min, max)
+                        .as_::<BD::Pixel>();
                 }
             }
         } else {
@@ -1084,7 +1141,14 @@ fn cdef_dir_core(rows: &[int16x8_t; 8], variance: &mut c_uint) -> c_int {
     let mut hv1 = [0i16; 8];
     safe_simd::vst1q_s16(&mut hv1, hv1v);
 
-    cdef_dir_cost(&diag0, &diag1, [&alt0, &alt1, &alt2, &alt3], &hv0, &hv1, variance)
+    cdef_dir_cost(
+        &diag0,
+        &diag1,
+        [&alt0, &alt1, &alt2, &alt3],
+        &hv0,
+        &hv1,
+        variance,
+    )
 }
 
 /// Cost + argmax, byte-identical to `cdef_find_dir_rust`'s tail.
@@ -1157,14 +1221,11 @@ fn cdef_find_dir_8bpc_neon(_token: Arm64, img: PicOffset, variance: &mut c_uint)
     let mut rows = [vdupq_n_s16(0); 8];
     for y in 0..8usize {
         let row = img + (y as isize * stride);
+        // One guard per row, exactly the 8 pixels the search reads.
         let guard = row.slice::<BitDepth8>(8);
-        let mut buf = [0u8; 8];
-        buf.copy_from_slice(&guard[..8]);
+        let v = safe_simd::vld1_u8(<&[u8; 8]>::try_from(&guard[..8]).unwrap());
         drop(guard);
-        rows[y] = vsubq_s16(
-            vreinterpretq_s16_u16(vmovl_u8(safe_simd::vld1_u8(&buf))),
-            c128,
-        );
+        rows[y] = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(v)), c128);
     }
     cdef_dir_core(&rows, variance)
 }
@@ -1185,15 +1246,11 @@ fn cdef_find_dir_16bpc_neon(
     let mut rows = [vdupq_n_s16(0); 8];
     for y in 0..8usize {
         let row = img + (y as isize * stride);
+        // One guard per row, exactly the 8 pixels the search reads.
         let guard = row.slice::<BitDepth16>(8);
-        let mut buf = [0u16; 8];
-        buf.copy_from_slice(&guard[..8]);
+        let px = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&guard[..8]).unwrap());
         drop(guard);
-        let px = safe_simd::vld1q_u16(&buf);
-        rows[y] = vsubq_s16(
-            vreinterpretq_s16_u16(vshlq_u16(px, neg_shift)),
-            c128,
-        );
+        rows[y] = vsubq_s16(vreinterpretq_s16_u16(vshlq_u16(px, neg_shift)), c128);
     }
     cdef_dir_core(&rows, variance)
 }
@@ -1737,15 +1794,15 @@ mod tests {
         let st = vdupq_n_u16(p.sec_threshold);
         let sn = vdupq_n_s16(p.sec_neg_shift);
         let out = match (pri, sec) {
-            (true, true) => cdef_filter_row::<true, true>(
-                tmp, base, pxv, dir, pt, pn, st, sn, p.pri_tap,
-            ),
-            (true, false) => cdef_filter_row::<true, false>(
-                tmp, base, pxv, dir, pt, pn, st, sn, p.pri_tap,
-            ),
-            (false, true) => cdef_filter_row::<false, true>(
-                tmp, base, pxv, dir, pt, pn, st, sn, p.pri_tap,
-            ),
+            (true, true) => {
+                cdef_filter_row::<true, true>(tmp, base, pxv, dir, pt, pn, st, sn, p.pri_tap)
+            }
+            (true, false) => {
+                cdef_filter_row::<true, false>(tmp, base, pxv, dir, pt, pn, st, sn, p.pri_tap)
+            }
+            (false, true) => {
+                cdef_filter_row::<false, true>(tmp, base, pxv, dir, pt, pn, st, sn, p.pri_tap)
+            }
             (false, false) => vreinterpretq_s16_u16(pxv),
         };
         let mut o = [0i16; 8];
@@ -1874,9 +1931,7 @@ mod tests {
                 }
                 let neon = neon_filter(&tmp, &dst, y, pri, sec, dir, damping, bd_min_8);
                 let mut expect = dst;
-                oracle_filter(
-                    &tmp, &mut expect, w, y, pri, sec, dir, damping, bd_min_8,
-                );
+                oracle_filter(&tmp, &mut expect, w, y, pri, sec, dir, damping, bd_min_8);
                 for x in 0..w {
                     let got = if bd_min_8 == 0 {
                         neon[x] as u16 as u8 as i32
@@ -2051,8 +2106,7 @@ mod tests {
                 oracle_filter_old_sentinel(&tmp, &mut old, w, y, pri, sec, dir, damping);
                 for x in 0..w {
                     assert_eq!(
-                        neon[x] as u16 as u8 as i32,
-                        expect[x] as u8 as i32,
+                        neon[x] as u16 as u8 as i32, expect[x] as u8 as i32,
                         "sentinel raised max at y={y} x={x} pri={pri} sec={sec} \
                          dir={dir} damping={damping}"
                     );
@@ -2247,9 +2301,6 @@ mod tests {
                 best_dir = n;
             }
         }
-        (
-            best_dir as c_int,
-            (best_cost - cost[best_dir ^ 4]) >> 10,
-        )
+        (best_dir as c_int, (best_cost - cost[best_dir ^ 4]) >> 10)
     }
 }
