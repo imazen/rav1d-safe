@@ -1,0 +1,201 @@
+# Where the t=1 single-thread deficit vs dav1d actually lives (P2 diagnosis)
+
+date: 2026-08-07
+host: Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64
+rustc: stable, release (lto="fat", codegen-units=1), DEFAULT features
+       (bitdepth_8 + bitdepth_16, CHECKED DisjointMut). No -C target-cpu=native.
+branch/commit measured: perf/shard-tracker @ 4af62ae
+reference: dav1d 1.5.4 (homebrew, /opt/homebrew/bin/dav1d)
+vector: 3840x2160 8bpc, 4 tile cols x 2 tile rows.
+        rav1d-safe decodes ~/tmp/bisect-vec/v4k_8tile.avif (one still, N iters);
+        dav1d decodes ~/tmp/recon-yard/vec/v4k_8tile.ivf, verified to be the SAME
+        key frame repeated 40x (40 frames, all exactly 4,429,713 bytes) — so both
+        sides do identical work per frame.
+
+## nice level
+
+NO `nice` ON ANY TIMED OR PROFILED RUN. On Darwin a positive nice value maps the
+process to background QoS and distorts wall clock by ~40x. `nice -n 19` for
+BUILDS only.
+
+## Instrument
+
+`/usr/bin/sample <pid> 60 1` on both binaries, then self-time computed from the
+call graph (`scripts/perf/sample_selftime.py`): a node's SELF samples = its count
+minus the sum of its immediate children's counts; tree depth is decoded from the
+prefix WIDTH (two columns per level), not from the marker glyphs.
+
+dav1d's homebrew dylib is stripped of *exported* asm names and `sample` collapses
+identical-code-folded functions to `<deduplicated_symbol>` (34% of its samples).
+Those are resolved here against the dylib's own local symbol table (`nm -n`,
+2461 entries) using the address `sample` recorded, which recovers every one of
+them: the resolved total equals the thread total exactly (5601/5601). So the
+dav1d column is a real per-kernel measurement, not an estimate.
+
+Wall clock (separate from the profiled runs, interleaved, arm order rotated,
+9 rounds, box-quiet gate >25% CPU excluding the agent processes):
+  rav1d-safe  605.82 ms/frame  (median of 9: 604.2 .. 622.3)
+  dav1d       246.3  ms/frame  (median of 9 two-point fits (t20-t2)/18: 245.5 .. 253.2)
+  ratio 2.46x — independently reproduces the 2.41x on record.
+
+## Result 1 — the whole 359.5 ms gap, accounted for
+
+Self time bucketed by subsystem, converted to ms/frame with the wall clock above.
+
+  subsystem                          rav1d-safe     dav1d    deficit      x
+  entropy/coefficient decode           212.4 ms   215.4 ms    -3.0 ms   1.0x
+  TRACKER (DisjointMut bookkeeping)    169.5 ms     0.0 ms  +169.5 ms    inf
+  CDEF                                  71.7 ms     4.1 ms   +67.6 ms  17.3x
+  inverse transform (itx)               67.2 ms     4.7 ms   +62.5 ms  14.3x
+  loop filter (deblock)                 34.2 ms     3.0 ms   +31.1 ms  11.3x
+  intra prediction / CfL                28.2 ms     4.7 ms   +23.6 ms   6.1x
+  recon driver                          11.0 ms     4.7 ms    +6.3 ms   2.3x
+  block/superblock driver                8.4 ms     5.2 ms    +3.2 ms   1.6x
+  other                                  3.2 ms     4.3 ms    -1.1 ms   0.7x
+  TOTAL                                605.8 ms   246.3 ms  +359.7 ms
+                                                   (measured gap +359.5 ms)
+
+The deficits sum to within 0.2 ms of the measured gap. Nothing material is
+hiding outside these buckets.
+
+* ENTROPY DECODE IS AT PARITY. This is the single most important line and it
+  is counter to the assumption the P2 brief starts from. dav1d spends 87.45% of
+  its 246 ms in MSAC + decode_coefs (msac_decode_symbol_adapt4_neon alone is
+  39.42%); we spend 35.06% of 605 ms there — 212.4 vs 215.4 ms. Our MSAC is
+  inlined into decode_coefs, which is why it does not appear as its own symbol.
+  There is no win available on the coefficient path; a 4K still at this rate is
+  entropy-bound and we already match the asm there.
+* The remaining 359 ms is ALL pixel kernels plus the borrow tracker.
+
+## Result 2 — three "safe_simd" ARM modules contain zero SIMD
+
+Actual aarch64 intrinsic CALL counts (`\bv[a-z0-9_]+q?_[a-z0-9]+\(`):
+
+  src/safe_simd/cdef_arm.rs             1067 lines      0 intrinsic calls
+  src/safe_simd/loopfilter_arm.rs        707 lines      0
+  src/safe_simd/looprestoration_arm.rs  1527 lines      0
+  src/safe_simd/ipred_arm.rs            1383 lines     38  (partial)
+  src/safe_simd/mc_arm.rs               6268 lines    731  (real)
+  src/safe_simd/itx_arm_neon_8x8.rs     1946 lines    126  (real, see Result 3)
+
+Each of the three zero-count files opens with `//! Safe ARM NEON implementations
+for ...` and imports `core::arch::aarch64::*`, but the bodies are scalar
+per-pixel loops. The x86 counterparts are genuinely vectorised — cdef.rs 205,
+loopfilter.rs 862, looprestoration.rs 734, ipred.rs 444 `_mm*` calls — and even
+cdef_wasm.rs has 115 wasm128 ops. aarch64 is the odd one out.
+
+`ROADMAP_SIMD_PORTING.md` row R3 (`loopfilter/cdef ARM tier`) already says
+**TODO**. This measurement is what that row costs: 67.6 + 31.1 ms/frame.
+
+Consequence for the known aarch64 drift class: `CDEF_MISMATCH` can never fire,
+because the "NEON" cdef IS the scalar reference. `ITX_MISMATCH` can only fire
+for the sizes actually wired to NEON (Result 3), and `MC_PREP_MISMATCH` for
+mc_arm — so the drift inventory points at mc and the live itx sizes only, and is
+structurally silent about cdef, loopfilter, looprestoration and itx 8x8.
+
+## Result 3 — itx: the 8x8 NEON kernels exist but are never dispatched
+
+`safe_simd/itx_arm::itxfm_add_dispatch` (src/safe_simd/itx_arm.rs:8385) routes
+to NEON for 4x4, 16x16, 32x32, 8x32, 32x8, 16x32, 32x16, 64x64, 64x32, 32x64,
+16x64, 64x16 — every one gated on `BD::BPC == BPC::BPC8` — and returns false for
+everything else. There is no `w == 8 && h == 8` arm (nor 8x4/4x8/8x16/16x8/
+4x16/16x4).
+
+`safe_simd/itx_arm_neon_8x8.rs` nevertheless contains all sixteen
+`inv_txfm_add_<type>_8x8_8bpc_neon_inner` kernels, and itx_arm.rs references
+them from its `asm`-feature extern "C" wrappers and its test table — just not
+from the safe dispatch.
+
+Measured on this vector (call-graph inclusive time):
+
+  itx::inv_txfm_add_rust::<8, 8, ..>   11.10% of decode  (= 67.2 ms/frame)
+  all of safe_simd::itx_arm_neon_*      0.32% of decode  (=  1.9 ms/frame)
+
+8x8 is the ONLY scalar size that accumulated samples here; the transform mix of
+this frame is 8x8-dominated. dav1d does its ENTIRE itx in 4.7 ms/frame.
+
+10bpc makes it worse, exactly as the BPC8 gate predicts. Same vector at 10 bit
+(756.8 ms/frame, `sample_rs_10b.txt`): itx rises to 13.40% and now THREE sizes
+run scalar — 8x8 9.24%, 16x16 4.92%, 4x4 1.03% — because no 16bpc size has a
+NEON tier at all. That is a concrete mechanism for the worse 10bpc ratios.
+
+## Result 4 — half the tracker cost is one function taking a borrow per pixel
+
+Tracker samples attributed to the caller that took the borrow (call-graph
+parent of every BorrowTracker / DisjointMutGuard / DisjointImmutGuard frame,
+skipping tracker-inside-tracker so nothing is double counted):
+
+  13.99%  loopfilter::loop_filter                    <- 84.8 ms/frame
+   1.99%  recon::rav1d_filter_sbrow_deblock_rows
+   1.45%  WithOffset<&Rav1dPictureDataComponent>::..
+   1.06%  ipred_prepare::rav1d_prepare_intra_edges
+   1.05%  recon::rav1d_recon_b_intra
+   1.03%  loopfilter::loopfilter_sb_direct
+   0.98%  recon::rav1d_filter_sbrow_deblock_cols
+   0.94%  decode::decode_b
+   0.90%  cdef::cdef_direct
+   0.73%  itx::inv_txfm_add
+  ------
+  27.98%  total tracker (= 169.5 ms/frame)
+
+`loop_filter` alone is 50.0% of all tracker time, and the deblocking family
+(loop_filter + sbrow_deblock_rows/cols + loopfilter_sb_direct) is 17.99% of
+decode = 109 ms/frame.
+
+The mechanism is visible at src/loopfilter.rs:275 —
+
+    let dst = |stride_index: isize| (dst + (strideb * stride_index)).index_mut::<BD>();
+
+— one whole DisjointMut borrow (tracker add + guard drop) PER PIXEL ACCESS, and
+the function body has 42 `get_dst`/`set_dst`/`set_dst_clipped` call sites inside
+a `for idx in 0..4`. This is a borrow-COUNT problem, not a borrow-COST problem:
+`benchmarks/tracker_counts_2026-08-07.txt.zst` records 47,219,427 adds per 4K
+frame, and the shard sweep's own conclusion was "fewer borrows, not cheaper
+ones". This is the site.
+
+Note `loop_filter`'s SELF time is only 4.83% (34.2 ms) while its INCLUSIVE time
+is 18.82% — the other 14% is its own borrow traffic. Vectorising the loop filter
+(Result 2) and hoisting its borrows (Result 4) are the same edit: a NEON filter
+necessarily loads a row/vector at a time instead of a pixel at a time.
+
+Cross-check on the tracker total: the `untracked` ceiling arm in
+`tracker_decomp_2026-08-07.meta` put t=1 tracker overhead at 600.7 - 462.2 =
+138 ms (23%); this profile says 169.5 ms (28%). Same order; the `untracked` arm
+also removes some guard-construction work the profiler attributes elsewhere.
+Treat the tracker as "roughly a quarter of single-thread time", not as 28.0%.
+
+## What this does NOT say
+
+* No dav1d source build was made; the dav1d column is symbol-resolved sampling of
+  the shipped homebrew dylib. Its bucketing depends on dav1d's own naming.
+* Only one vector was profiled (plus its 10bpc twin). A 4K intra still at this
+  bitrate is entropy-heavy; on inter content the mc kernels (which ARE real NEON)
+  would matter far more and these shares would move.
+* The gains in the opportunity list are bounded by the measured deficits above.
+  None of them has been implemented or measured post-fix. No estimate here is
+  extrapolated from a different size, bit depth or thread count.
+
+## Raw data
+
+The three `sample` outputs (8bpc, 10bpc, dav1d) are ~100 KB each compressed and
+are therefore NOT committed (>30 KB rule). They live at
+`~/tmp/rav1d-p2/sample_{rs_8b,rs_10b,dav1d_8b}.txt` and are regenerated in ~2
+minutes each by the commands below. The wall-clock cells ARE committed
+(`benchmarks/p2_wall_t1_2026-08-07.tsv`: round, arm, then either ms/frame for
+rav1d-safe or the 2-frame and 20-frame totals for the dav1d two-point fit).
+
+The two analysis tools are committed as `scripts/perf/sample_selftime.py`
+(self time per symbol, with ICF/`???` address resolution via `nm`) and
+`scripts/perf/sample_tree.py` (inclusive time + child breakdown for named
+symbols) so this is reproducible without rebuilding them.
+
+## Reproducing
+
+  CARGO_TARGET_DIR=~/tmp/rav1d-p2/target RUSTC_WRAPPER=sccache nice -n 19 \
+    cargo build --release --example bench_ab_decode -j 4
+  ~/tmp/rav1d-p2/prof_rs.sh    <vec.avif> 60 sample_rs_8b.txt 140
+  ~/tmp/rav1d-p2/prof_dav1d.sh <vec.ivf>  60 sample_dav1d_8b.txt 300
+  python3 scripts/perf/sample_selftime.py sample_dav1d_8b.txt
+  python3 scripts/perf/sample_selftime.py sample_rs_8b.txt --demangle
+  python3 scripts/perf/sample_tree.py sample_rs_8b.txt "loopfilter::loop_filter" ...
+  ~/tmp/rav1d-p2/wall_t1.sh     # the 9-round interleaved wall clock
