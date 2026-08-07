@@ -47,12 +47,42 @@ Dispatch pattern: `incant!` for multi-tier, or `if let Some(t) = X64V4xToken::su
 | X5 | itx/cdef/loopfilter 16bpc AVX-512 | X64V4 | (after X1–X3) | — | TODO | |
 | R1 | mc 8tap dotprod + i8mm | Arm64V2/V3 | `safe_simd/mc_arm.rs`, `cpu.rs`, `build.rs` | merged | SCAFFOLDED, cfg-gated OFF (nightly intrinsics — see note). Default build = NEON | 75f044c |
 | R2 | itx NEON tier (rdm sqrdmulh) | Arm64V2 | `safe_simd/itx_arm*.rs` | — | TODO | |
-| R3 | loopfilter/cdef ARM tier | Arm64V2 | `safe_simd/{loopfilter,cdef}_arm.rs` | — | TODO | |
+| R3 | loopfilter/cdef ARM tier | NEON (baseline) | `safe_simd/{loopfilter,cdef}_arm.rs` | p2-kernels | CDEF 8bpc DONE (bit-exact, 71.7 -> ~13 ms/frame at 4K t=1). CDEF 16bpc + loopfilter still scalar — see note below | 70c1a70 |
 
 ## Cross-cutting findings (2026-05-26 AVX-512/ARM wave — all merged to main)
 - **Zen4 double-pumps AVX-512** (256-bit execution units) → every AVX-512 kernel benches FLAT on this dev box. Bit-exactness (14/14 MD5 on this Zen4, which executes the V4 path) is the validation; wall-clock payoff is on native-512 hardware (Intel Ice Lake server / Sapphire Rapids, Zen5). Do NOT chase Zen4 speedups for AVX-512.
 - **ARM dotprod/i8mm are nightly-only std intrinsics** — the modern-ARM track is blocked on stable until #117223/#117224 stabilize, OR until a safe `sdot`/`usmmla` primitive is shipped to magetypes via inline-asm-in-audited-unsafe (the `safe_unaligned_simd` pattern). `rdm`/sqrdmulh stability for R2 still to be verified.
 - Merged result: 14/14 MD5, 30/30 lib tests, 4 build combos + aarch64 cross-check clean, 0 clippy. Pure safe Rust — zero new `#[allow(unsafe_code)]`.
+
+## R3 status (measured 2026-08-07)
+
+The three aarch64 files this row covers opened with `//! Safe ARM NEON
+implementations for ...` and imported `core::arch::aarch64::*` but contained
+**zero aarch64 intrinsic calls** — the bodies were scalar per-pixel loops, so on
+aarch64 the "NEON" tier for CDEF, the loop filter and loop restoration WAS the
+scalar reference. Measured cost on a 4K 8bpc still at t=1
+(`benchmarks/p2_kernel_profile_2026-08-07.meta`): CDEF 71.7 ms/frame against
+dav1d's 4.1 (17.3x), loop filter 34.2 against 3.0 (11.3x).
+
+- **CDEF 8bpc: ported** (`cdef_filter_block_8bpc_neon`, commit 70c1a70). One
+  vector per destination row; twelve tap loads per ROW instead of per PIXEL.
+  Bit-exact against `cdef_filter_block_rust` (zero CDEF_MISMATCH under
+  `__simd_test_log` on three vectors) and the full conformance corpus is
+  unchanged. Worth 1.143x of whole-decode t=1 wall on v4k_8tile.
+- **CDEF 16bpc: still scalar**, and separately NOT bit-exact with the scalar
+  reference — a `__simd_test_log` decode of the 10bpc 4K vector logs ~147k
+  CDEF_MISMATCH, all +-1 (e.g. simd=525 scalar=524). That is PR #448's subject
+  (`fix/446-arm-cdef-highbd-pri-tap`), not this row's; port the 16bpc vector
+  path only after that lands, or you will be chasing its rounding bug.
+- **Loop filter: still scalar**, but the profile moved. After the P1 compaction
+  work and `perf(loopfilter)` commits 51f76a7 + 2fc646e, most of the family's
+  cost is guard/copy overhead around the filter (`LfBlock::open` + `close`),
+  not the filter arithmetic — vectorising `loop_filter` alone would leave that
+  untouched. Read `benchmarks/p2_kernels_2026-08-07.meta` before starting.
+- **Loop restoration: still scalar**, 1,527 lines, and measured **0.0 ms/frame**
+  on the 4K vectors used here because loop restoration is off in those
+  bitstreams. Do not port it on the strength of its line count; find a vector
+  that exercises it first.
 
 ## Notes
 - **R1 BLOCKER (verified 2026-05-26):** the ARM DotProd/I8MM compute intrinsics
