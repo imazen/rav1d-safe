@@ -106,18 +106,42 @@ pub(super) const N_SHARDS: usize = 128;
 
 /// `log2` of the block size in elements.
 ///
-/// Small enough that two tile columns working the same picture row land in
-/// different blocks (at 4K/4 columns they are 960 bytes apart), large enough
-/// that essentially every borrow fits in one block. Measured borrow-length
-/// distribution on the hot planes (v4k_8tile 8bpc, `benchmarks/
-/// shard_sizing_2026-08-07.txt`): 77.3% are a single byte, 99.94% are <= 31
-/// bytes, and at this shift 99.875% span exactly one block.
-#[cfg(not(any(feature = "__blockshift_10", feature = "__blockshift_12")))]
+/// Two forces pull opposite ways. Small blocks separate concurrent tile columns
+/// better — at 4K with 4 tile columns two workers on the same picture row are
+/// only 960 bytes apart, so a 4 KiB block puts them in the same shard. Large
+/// blocks keep more borrows inside ONE block, and a borrow that spans several
+/// takes the multi-shard path: two or more ordered lock acquisitions plus a
+/// sort, instead of one.
+///
+/// Measured, the second force wins, and not marginally. Borrow lengths on the
+/// hot planes (`benchmarks/shard_sizing_2026-08-07.txt`, v4k_8tile 8bpc): 77.3%
+/// are a single byte and 99.94% are <= 31 bytes. Fraction spanning exactly one
+/// block: 99.875% at shift 8, 99.985% at shift 12 — 8x fewer multi-shard
+/// registrations. The same probe shows the peer-collision rate is nearly flat
+/// from shift 6 to shift 12 (0.031-0.040 colliding peers per add against the
+/// unsharded 2.07), i.e. the tile-column argument barely shows up, because
+/// workers are rarely on the same row at the same instant.
+///
+/// A/B at 32 shards, ms/frame, median of 9, interleaved
+/// (`benchmarks/shard_tracker_2026-08-07.meta`, shift screening):
+///
+/// ```text
+///   vector              t    shift 8   shift 12
+///   v4k_8tile 8bpc      1      605.0      602.4
+///   v4k_8tile 8bpc      8      349.7      333.9   -4.5%
+///   v4k_8tile 10bpc     8      433.8      421.2   -2.9%
+///   v4k_1tile 10bpc     8      640.5      636.9
+/// ```
+///
+/// So: chosen by measurement, not by the tile-geometry argument, which the
+/// measurement does not support. Shift 8 and 10 remain available as
+/// `blockshift-8` / `blockshift-10` if a different tiling ever inverts this.
+#[cfg(not(any(feature = "__blockshift_8", feature = "__blockshift_10")))]
+const BLOCK_SHIFT: u32 = 12;
+#[cfg(feature = "__blockshift_8")]
 const BLOCK_SHIFT: u32 = 8;
 #[cfg(feature = "__blockshift_10")]
 const BLOCK_SHIFT: u32 = 10;
-#[cfg(feature = "__blockshift_12")]
-const BLOCK_SHIFT: u32 = 12;
 
 /// Records per shard. Sized so a shard is exactly one 128-byte cache line.
 ///
@@ -151,7 +175,8 @@ fn here() -> Loc {
 fn here() -> Loc {}
 
 /// A borrow touching more distinct shards than this goes to the wide list
-/// instead. Measured 0.009% of hot borrows at `BLOCK_SHIFT == 8`.
+/// instead. Measured 0.000% of hot borrows at the shipped BLOCK_SHIFT
+/// (0.009% at shift 8).
 const MAX_SHARDS_PER_BORROW: usize = 4;
 
 /// Blocks scanned before giving up and going wide. Bounds the fast path's work

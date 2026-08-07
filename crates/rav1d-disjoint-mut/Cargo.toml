@@ -46,8 +46,8 @@ __shards_8 = []
 __shards_16 = []
 __shards_64 = []
 __shards_128 = []
+__blockshift_8 = []
 __blockshift_10 = []
-__blockshift_12 = []
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
 aligned = ["dep:aligned", "dep:aligned-vec"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).

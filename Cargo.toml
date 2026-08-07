@@ -96,8 +96,8 @@ shards-8 = ["rav1d-disjoint-mut/__shards_8"]
 shards-16 = ["rav1d-disjoint-mut/__shards_16"]
 shards-64 = ["rav1d-disjoint-mut/__shards_64"]
 shards-128 = ["rav1d-disjoint-mut/__shards_128"]
+blockshift-8 = ["rav1d-disjoint-mut/__blockshift_8"]
 blockshift-10 = ["rav1d-disjoint-mut/__blockshift_10"]
-blockshift-12 = ["rav1d-disjoint-mut/__blockshift_12"]
 
 # Test-only (double-underscore = private, never enable in production): arms a
 # one-shot worker-thread panic so tests can prove a worker death surfaces as a
