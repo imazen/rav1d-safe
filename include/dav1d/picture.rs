@@ -1783,3 +1783,30 @@ impl<BD: BitDepth> Drop for BlockMut<'_, BD> {
         }
     }
 }
+
+#[cfg(test)]
+mod tile_threading_latch_tests {
+    /// `set_tile_threading` must never be able to turn the flag back off.
+    ///
+    /// It is one process-global bool shared by every decoder, so a
+    /// single-threaded `rav1d_open` storing `false` used to push concurrently
+    /// live multi-threaded decoders back onto the wide-guard path — whose
+    /// borrow extent is `(h-1) * stride + w`, e.g. 16,321 pixels for a 1x16
+    /// intra left-edge column — while their tile workers were running. That
+    /// showed up as spurious `overlapping DisjointMut` panics under load (8-9
+    /// of 24 concurrent runs) and would be an undetected data race in an
+    /// `unchecked` build.
+    #[test]
+    fn set_tile_threading_is_monotone() {
+        use super::{set_tile_threading, tile_threading_active};
+        // Whatever another test in this binary has already done, `true` sticks.
+        set_tile_threading(true);
+        assert!(tile_threading_active());
+        set_tile_threading(false);
+        assert!(
+            tile_threading_active(),
+            "a single-threaded open must not clear tile threading for \
+             concurrently live multi-threaded decoders"
+        );
+    }
+}
