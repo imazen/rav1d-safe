@@ -583,3 +583,8 @@ impl BorrowTracker {
         crate::probe::record_remove(slot, wait_ns, contended);
     }
 }
+
+/// The legacy tracker is a single lock per instance and has no shards, so the
+/// parallelism hint has nothing to size. Present only so the `__probe_*` /
+/// `__tracker_legacy` arms still compile against the same crate surface.
+pub fn set_parallelism(_n: usize) {}
