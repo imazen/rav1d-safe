@@ -78,6 +78,13 @@ default = ["bitdepth_8", "bitdepth_16"]
 # instances (PicBuf, ArcSlice) via dangerously_unchecked().
 unchecked = []
 
+# THROWAWAY measurement probes (recon/tracker-profile branch). Never merge.
+probe-count = ["rav1d-disjoint-mut/__probe_count"]
+probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]
+probe-lockonly = ["rav1d-disjoint-mut/__probe_lockonly"]
+# Tracking off, bounds checks untouched (isolates the tracker from `unchecked`).
+probe-untracked = ["rav1d-disjoint-mut/__probe_untracked"]
+
 # Test-only (double-underscore = private, never enable in production): arms a
 # one-shot worker-thread panic so tests can prove a worker death surfaces as a
 # decode error instead of wedging every completion wait (zenavif#30). See
