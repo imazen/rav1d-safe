@@ -267,11 +267,21 @@ impl TinyLock {
     #[cold]
     #[inline(never)]
     fn lock_slow(&self) {
+        #[cfg(feature = "__probe_lock_backoff")]
+        let mut spins = 0u32;
         loop {
             // Spin on a load, not a swap: a read-only spin keeps the line in
             // Shared instead of ping-ponging it Exclusive between waiters.
             while self.0.load(Ordering::Relaxed) {
                 core::hint::spin_loop();
+                #[cfg(feature = "__probe_lock_backoff")]
+                {
+                    spins += 1;
+                    if spins >= 64 {
+                        spins = 0;
+                        std::thread::yield_now();
+                    }
+                }
             }
             if !self.0.swap(true, Ordering::Acquire) {
                 return;

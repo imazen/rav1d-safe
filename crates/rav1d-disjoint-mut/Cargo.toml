@@ -37,6 +37,9 @@ __probe_noscan = []
 __probe_lockonly = []
 __probe_untracked = []
 __probe_shardsim = ["__probe_count"]
+# THROWAWAY: TinyLock spin backoff + scheduler yield, re-tested on the adaptive
+# shard set (the P1 campaign measured it null on the 32-shard base).
+__probe_lock_backoff = ["std"]
 # Sharded-tracker A/B knobs (perf/shard-tracker). Compile-time only; the
 # defaults are the measured winners, see benchmarks/shard_tracker_*.meta.
 __tracker_legacy = []

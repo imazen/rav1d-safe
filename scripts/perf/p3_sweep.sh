@@ -11,7 +11,16 @@ BIN=${BIN:-$HOME/tmp/rav1d-p3/bin}
 VEC=${VEC:-$HOME/tmp/rav1d-perf/vec}
 IFS=' ' read -r -a ARMS <<< "${ARMS:-head}"
 IFS=' ' read -r -a CELLS <<< "${CELLS:-v4k_8tile:1 v4k_8tile:2 v4k_8tile:4 v4k_8tile:8}"
-busy_count() { ps -A -o %cpu,comm -r | awk 'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\/|rav1d-p3\/bin\/bench_/ {c++} END {print c+0}'; }
+# ALLOW is an extra awk regex of process paths to treat as non-foreign. It
+# exists only because this box is shared with sibling agents running their own
+# `bench_*` sweeps continuously; a run that uses it is a CONTENDED-BOX
+# measurement and must be labelled as one, because the guard is no longer
+# enforcing an idle box. Arms are still interleaved back to back with a
+# rotating order inside each cell, which is what makes an A/B survive a
+# roughly stationary background load — it does NOT make the absolute
+# ms/frame comparable to an idle-box run.
+ALLOW=${ALLOW:-__never_matches__}
+busy_count() { ALLOW="$ALLOW" ps -A -o %cpu,comm -r | awk -v allow="$ALLOW" 'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\/|rav1d-p3\/bin\/bench_/ && $2 !~ allow {c++} END {print c+0}'; }
 wait_quiet() { local w=0; while [ "$(busy_count)" -gt 0 ]; do sleep 5; w=$((w+5)); [ $w -ge 5400 ] && { echo busy >&2; exit 4; }; done; }
 : > "$OUT"
 n=${#ARMS[@]}
