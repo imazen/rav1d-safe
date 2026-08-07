@@ -47,7 +47,7 @@ Dispatch pattern: `incant!` for multi-tier, or `if let Some(t) = X64V4xToken::su
 | X5 | itx/cdef/loopfilter 16bpc AVX-512 | X64V4 | (after X1–X3) | — | TODO | |
 | R1 | mc 8tap dotprod + i8mm | Arm64V2/V3 | `safe_simd/mc_arm.rs`, `cpu.rs`, `build.rs` | merged | SCAFFOLDED, cfg-gated OFF (nightly intrinsics — see note). Default build = NEON | 75f044c |
 | R2 | itx NEON tier (rdm sqrdmulh) | Arm64V2 | `safe_simd/itx_arm*.rs` | — | TODO | |
-| R3 | loopfilter/cdef ARM tier | NEON (baseline) | `safe_simd/{loopfilter,cdef}_arm.rs` | p2-kernels | CDEF 8bpc DONE (bit-exact, 71.7 -> ~13 ms/frame at 4K t=1). CDEF 16bpc + loopfilter still scalar — see note below | 70c1a70 |
+| R3 | loopfilter/cdef ARM tier | NEON (baseline) | `safe_simd/{loopfilter,cdef}_arm.rs` | p2-kernels, cdef-neon | **CDEF DONE** — filter 8bpc+16bpc, all 3 shapes, all 3 strength branches, and the direction search, all bit-exact against the full 783-vector corpus. Loop filter still scalar. See the R3 note below | 70c1a70, 8c1fa2d, 998d743 |
 
 ## Cross-cutting findings (2026-05-26 AVX-512/ARM wave — all merged to main)
 - **Zen4 double-pumps AVX-512** (256-bit execution units) → every AVX-512 kernel benches FLAT on this dev box. Bit-exactness (14/14 MD5 on this Zen4, which executes the V4 path) is the validation; wall-clock payoff is on native-512 hardware (Intel Ice Lake server / Sapphire Rapids, Zen5). Do NOT chase Zen4 speedups for AVX-512.
@@ -64,16 +64,30 @@ scalar reference. Measured cost on a 4K 8bpc still at t=1
 (`benchmarks/p2_kernel_profile_2026-08-07.meta`): CDEF 71.7 ms/frame against
 dav1d's 4.1 (17.3x), loop filter 34.2 against 3.0 (11.3x).
 
-- **CDEF 8bpc: ported** (`cdef_filter_block_8bpc_neon`, commit 70c1a70). One
+- **CDEF: DONE** (2026-08-07, `perf/cdef-neon` 8c1fa2d + 998d743; record
+  `benchmarks/cdef_neon_2026-08-07.meta`). Filter at 8bpc and 16bpc, all three
+  block shapes, all three strength branches, plus the direction search. One
   vector per destination row; twelve tap loads per ROW instead of per PIXEL.
-  Bit-exact against `cdef_filter_block_rust` (zero CDEF_MISMATCH under
-  `__simd_test_log` on three vectors) and the full conformance corpus is
-  unchanged. Worth 1.143x of whole-decode t=1 wall on v4k_8tile.
-- **CDEF 16bpc: still scalar**, and separately NOT bit-exact with the scalar
-  reference — a `__simd_test_log` decode of the 10bpc 4K vector logs ~147k
-  CDEF_MISMATCH, all +-1 (e.g. simd=525 scalar=524). That is PR #448's subject
-  (`fix/446-arm-cdef-highbd-pri-tap`), not this row's; port the 16bpc vector
-  path only after that lands, or you will be chasing its rounding bug.
+  Measured paired base->head: 8bpc 1.019x at t=1/2/4/8, 10bpc 1.154x / 1.140x /
+  1.120x / 1.077x. Per-kernel: 10bpc CDEF 17.32% of decode (104 ms/frame) ->
+  4.50% (23.6 ms/frame); 8bpc 4.86% (20.3 ms) -> 4.21% (17.3 ms).
+- **Do not repeat the three-vector bit-identity check.** 70c1a70's 8bpc kernel
+  passed `__simd_test_log` on three vectors and was still NOT bit-exact: it used
+  8191 as the padding sentinel and folded it into `max`, disabling the upper half
+  of the reference's `iclip` on edge blocks. The FULL dav1d-test-data corpus (783
+  vectors, `scripts/perf/cdef_oracle_sweep.sh`) caught it — 5 mismatching blocks
+  across 4 8-bit vectors. Use `0x8000` (== `i16::MIN`, dav1d's own convention)
+  with unsigned `min` / signed `max` and the sentinel is inert everywhere.
+- **CDEF 16bpc's `pri_tap` fix** (#446, PR #448 `fix/446-arm-cdef-highbd-pri-tap`)
+  is carried on `perf/cdef-neon` because the 16bpc vector path cannot be bit-exact
+  without it. The same corpus sweep measured its blast radius at the branch point:
+  139 10-bit vectors / 401,567 blocks and 46 12-bit vectors / 43,456 blocks.
+- **CDEF's remaining cost is borrow COUNT, not arithmetic.** At t=1 the filter row
+  is 0.22% of decode and DisjointMut traffic around it is 1.60%. The per-block
+  guard count is down 28 -> 20 (folding the block-row copy and the two
+  right-context pixels into one same-extent guard); 20 is the floor without
+  either a wide guard (banned under tile threading) or dav1d's `edges == 0xf`
+  path that reads the 12x12 window straight out of `dst`.
 - **Loop filter: still scalar**, but the profile moved. After the P1 compaction
   work and `perf(loopfilter)` commits 51f76a7 + 2fc646e, most of the family's
   cost is guard/copy overhead around the filter (`LfBlock::open` + `close`),

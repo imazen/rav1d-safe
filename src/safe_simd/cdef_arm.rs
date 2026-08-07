@@ -397,9 +397,13 @@ fn padding_16bpc(
 //     (truncating), NOT `vqmovun_s16` (saturating), and the 16bpc store is the
 //     raw i16 lane reinterpreted.
 //
-// `w` is 4 or 8; a 4-wide block still computes 8 lanes and stores 4. The
-// spare lanes read real `tmp` values against real `tmp` pixels, which cannot
-// overflow the bounds above, and they are discarded.
+// `w` is 4 or 8; a 4-wide block still computes 8 lanes and stores 4. Both the
+// taps AND `px` of the spare lanes come from `tmp`, so a spare `px` lane can
+// itself be the `0x8000` sentinel. That is harmless: every NEON op here is
+// lane-independent, a sentinel `px` drives `clip` to 0 against any tap (so
+// `sum` stays 0 in that lane), and `min`/`max` keep it out of the clip bounds
+// for the same reason they keep out a sentinel tap. Those lanes are discarded
+// by the `w`-wide store.
 //
 // Index bounds, so the fixed-size-array loads below can never fail: `base`
 // is `26 + y * 12` with y <= 7 (h <= 8), so base <= 110; the direction table's
@@ -1923,12 +1927,12 @@ mod tests {
                 for x in 0..8 {
                     dst[x] = tmp[(y + 2) * TMP_STRIDE + 2 + x] as i32;
                 }
-                // Lanes outside `w` are discarded; keep them in range anyway.
-                for x in 0..8 {
-                    if dst[x] < 0 {
-                        dst[x] = 0;
-                    }
-                }
+                // Lanes at and beyond `w` are left exactly as `tmp` holds them,
+                // sentinel included — that is what the kernel really sees,
+                // because it now takes `px` from `tmp` rather than re-reading
+                // `dst`. They are discarded by the `w`-wide store; the point is
+                // that a `0x8000` pixel lane must not perturb the lanes that
+                // are kept.
                 let neon = neon_filter(&tmp, &dst, y, pri, sec, dir, damping, bd_min_8);
                 let mut expect = dst;
                 oracle_filter(&tmp, &mut expect, w, y, pri, sec, dir, damping, bd_min_8);
