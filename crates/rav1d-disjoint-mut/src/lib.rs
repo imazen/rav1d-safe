@@ -208,6 +208,89 @@ impl<T: ?Sized + AsMutPtr> Drop for BorrowCleanup<'_, T> {
     }
 }
 
+/// Rows of a strided region are registered this many at a time. Each in-flight
+/// batch occupies that many inline slots, so this trades lock acquisitions
+/// against slot pressure: too large and several threads copying at once spill
+/// into the overflow `Vec`, which never shrinks and makes every later borrow
+/// pay a linear scan of it. Four keeps 8 concurrent copies inside half the
+/// 64-slot inline table while still cutting lock traffic 4x.
+const ROW_BATCH: usize = 4;
+
+/// Direction of a [`DisjointMut::copy_rows_out`] / `copy_rows_in` transfer,
+/// carrying the compact buffer. An enum rather than a `&mut [u8]` plus a flag
+/// because forging a `&mut` from the read-only side would be UB even if it
+/// were never written through.
+enum RowsBuf<'a> {
+    /// Read the tracked buffer, write this.
+    Out(&'a mut [u8]),
+    /// Read this, write the tracked buffer.
+    In(&'a [u8]),
+}
+
+impl RowsBuf<'_> {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        match self {
+            RowsBuf::Out(b) => b.len(),
+            RowsBuf::In(b) => b.len(),
+        }
+    }
+
+    /// Whether the transfer writes the TRACKED buffer (and so needs mutable
+    /// borrows of it).
+    #[inline(always)]
+    fn writing(&self) -> bool {
+        matches!(self, RowsBuf::In(_))
+    }
+}
+
+/// Releases a whole batch of row registrations. See [`RowsBuf`]; the copy
+/// helpers register, copy, and release within one call rather than handing a
+/// reference to the caller, so they need a release that is not a guard.
+///
+/// Mirrors `DisjointMutGuard`'s drop semantics: a mutable borrow released
+/// while the thread is panicking poisons the structure, because the region may
+/// have been left half-written.
+struct BatchRelease<'a, T: ?Sized + AsMutPtr> {
+    parent: Option<&'a DisjointMut<T>>,
+    id: checked::BatchId,
+    mutable: bool,
+}
+
+impl<T: ?Sized + AsMutPtr> Drop for BatchRelease<'_, T> {
+    fn drop(&mut self) {
+        if let Some(parent) = self.parent {
+            let tracker = parent.tracker.as_ref().unwrap();
+            #[cfg(feature = "std")]
+            if self.mutable && std::thread::panicking() {
+                tracker.poison();
+            }
+            tracker.remove_batch(self.id);
+        }
+    }
+}
+
+/// Single-row counterpart of [`BatchRelease`], used on the slot-table-full
+/// fallback path.
+struct SingleRelease<'a, T: ?Sized + AsMutPtr> {
+    parent: Option<&'a DisjointMut<T>>,
+    id: checked::BorrowId,
+    mutable: bool,
+}
+
+impl<T: ?Sized + AsMutPtr> Drop for SingleRelease<'_, T> {
+    fn drop(&mut self) {
+        if let Some(parent) = self.parent {
+            let tracker = parent.tracker.as_ref().unwrap();
+            #[cfg(feature = "std")]
+            if self.mutable && std::thread::panicking() {
+                tracker.poison();
+            }
+            tracker.remove(self.id);
+        }
+    }
+}
+
 pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
     slice: &'a mut V,
 
@@ -594,6 +677,221 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
             parent,
             borrow_id,
             phantom: PhantomData,
+        }
+    }
+
+    /// Copy a strided (2-D) region OUT into a compact `rows * row_len` buffer.
+    ///
+    /// Rows start at byte `first_row` and step by `row_stride`, which may be
+    /// negative (bottom-up pictures). `dst` receives them in that order,
+    /// densely packed.
+    ///
+    /// # Why this exists
+    ///
+    /// A caller that wants a strided region has three options:
+    ///
+    /// * One dense guard over the whole span — reserves the inter-row gaps,
+    ///   which belong to other threads' regions, so a genuinely disjoint
+    ///   neighbour is reported as an overlap (and, worse, the `&mut` handed
+    ///   out really does alias theirs).
+    /// * One guard per row — exact and sound, but pays a tracker lock
+    ///   round-trip per row. Measured at 4-8% of whole-frame decode.
+    /// * This: the same per-row reservations, registered a chunk at a time
+    ///   under ONE lock acquisition, with the copy done in here so no
+    ///   reference ever spans a gap.
+    ///
+    /// Every stored record is still a plain interval, so the hot overlap scan
+    /// is untouched — that is the whole point of the design. Registering the
+    /// 2-D shape as one record instead measured *worse* than the per-row
+    /// guards it replaced, because the scan then needs 2-D math and the scan
+    /// is ~13% of decode.
+    ///
+    /// # Panics
+    ///
+    /// If the region is out of bounds, if `dst` is too small, or if any row
+    /// overlaps an outstanding mutable borrow.
+    #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn copy_rows_out(
+        &self,
+        first_row: usize,
+        row_len: usize,
+        row_stride: isize,
+        rows: usize,
+        dst: &mut [u8],
+    ) where
+        T: AsMutPtr<Target = u8>,
+    {
+        self.copy_rows(first_row, row_len, row_stride, rows, RowsBuf::Out(dst));
+    }
+
+    /// Copy a compact `rows * row_len` buffer INTO a strided (2-D) region.
+    /// Write-back counterpart of [`Self::copy_rows_out`]; see there for why
+    /// this shape exists.
+    ///
+    /// # Panics
+    ///
+    /// If the region is out of bounds, if `src` is too small, or if any row
+    /// overlaps an outstanding borrow.
+    #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
+    pub fn copy_rows_in(
+        &self,
+        first_row: usize,
+        row_len: usize,
+        row_stride: isize,
+        rows: usize,
+        src: &[u8],
+    ) where
+        T: AsMutPtr<Target = u8>,
+    {
+        self.copy_rows(first_row, row_len, row_stride, rows, RowsBuf::In(src));
+    }
+
+    /// Shared body of [`Self::copy_rows_out`] / [`Self::copy_rows_in`].
+    #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
+    fn copy_rows(
+        &self,
+        first_row: usize,
+        row_len: usize,
+        row_stride: isize,
+        rows: usize,
+        mut compact: RowsBuf<'_>,
+    ) where
+        T: AsMutPtr<Target = u8>,
+    {
+        let writing = compact.writing();
+        if rows == 0 || row_len == 0 {
+            return;
+        }
+        assert!(
+            compact.len() >= rows * row_len,
+            "copy_rows: compact buffer holds {} bytes, need {}",
+            compact.len(),
+            rows * row_len
+        );
+        // Rows of one region must not overlap each other, or a batch would
+        // register overlapping ranges without reporting it. Every picture
+        // block satisfies this (`w <= |stride|`); the assert documents the
+        // contract for future callers. Debug-only: it is a caller bug, not
+        // untrusted input.
+        debug_assert!(
+            rows == 1 || row_len <= row_stride.unsigned_abs(),
+            "copy_rows: row_len {row_len} exceeds |row_stride| {}, so rows overlap each other",
+            row_stride.unsigned_abs()
+        );
+        // Bounds-check the whole region up front so the per-chunk loop cannot
+        // walk off the buffer.
+        let span = (rows - 1)
+            .checked_mul(row_stride.unsigned_abs())
+            .expect("strided span overflow");
+        let (lo, hi) = if row_stride >= 0 {
+            (
+                first_row,
+                first_row
+                    .checked_add(span + row_len)
+                    .expect("strided span overflow"),
+            )
+        } else {
+            (
+                first_row
+                    .checked_sub(span)
+                    .expect("strided region starts before the buffer"),
+                first_row + row_len,
+            )
+        };
+        let len = self.len();
+        assert!(
+            hi <= len,
+            "strided region {lo}..{hi} out of bounds: the len is {len}"
+        );
+
+        let base = self.as_mut_ptr();
+        let mut row = 0usize;
+        while row < rows {
+            let n = ROW_BATCH.min(rows - row);
+            let mut ranges = [(0usize, 0usize); ROW_BATCH];
+            for (k, range) in ranges[..n].iter_mut().enumerate() {
+                let off = first_row.wrapping_add_signed((row + k) as isize * row_stride);
+                *range = (off, off + row_len);
+            }
+            let batch = self
+                .tracker
+                .as_ref()
+                .map(|t| t.add_batch(&ranges[..n], writing));
+            match batch {
+                // Registered as a batch, or unchecked: do the whole chunk.
+                Some(Some(id)) => {
+                    let _release = BatchRelease {
+                        parent: Some(self),
+                        id,
+                        mutable: writing,
+                    };
+                    for (k, &(off, _)) in ranges[..n].iter().enumerate() {
+                        // SAFETY: bounds-checked above; this chunk's rows are
+                        // registered, so no other live borrow includes them.
+                        // Each reference spans one row — never a gap.
+                        Self::move_row(base, off, row_len, &mut compact, row + k);
+                    }
+                }
+                None => {
+                    for (k, &(off, _)) in ranges[..n].iter().enumerate() {
+                        // SAFETY: as above; unchecked instances track nothing.
+                        Self::move_row(base, off, row_len, &mut compact, row + k);
+                    }
+                }
+                // Inline slot table full: fall back to one guard per row.
+                Some(None) => {
+                    for (k, &(start, end)) in ranges[..n].iter().enumerate() {
+                        let tracker = self.tracker.as_ref().unwrap();
+                        let bounds = Bounds::from(start..end);
+                        let id = if writing {
+                            tracker.add_mut(&bounds)
+                        } else {
+                            tracker.add_immut(&bounds)
+                        };
+                        let _release = SingleRelease {
+                            parent: Some(self),
+                            id,
+                            mutable: writing,
+                        };
+                        // SAFETY: as above, for this one registered row.
+                        Self::move_row(base, start, row_len, &mut compact, row + k);
+                    }
+                }
+            }
+            row += n;
+        }
+    }
+
+    /// Move one row between the tracked buffer and the compact buffer.
+    ///
+    /// # Safety
+    ///
+    /// `off .. off + row_len` must be in bounds and covered by a borrow the
+    /// caller holds.
+    #[inline(always)]
+    fn move_row(
+        base: *mut u8,
+        off: usize,
+        row_len: usize,
+        compact: &mut RowsBuf<'_>,
+        compact_row: usize,
+    ) {
+        let lo = compact_row * row_len;
+        match compact {
+            RowsBuf::Out(dst) => {
+                // SAFETY: see the caller's SAFETY comment.
+                let src =
+                    unsafe { core::slice::from_raw_parts(base.add(off).cast_const(), row_len) };
+                dst[lo..][..row_len].copy_from_slice(src);
+            }
+            RowsBuf::In(src) => {
+                // SAFETY: see the caller's SAFETY comment.
+                let dst = unsafe { core::slice::from_raw_parts_mut(base.add(off), row_len) };
+                dst.copy_from_slice(&src[lo..][..row_len]);
+            }
         }
     }
 
@@ -1023,6 +1321,12 @@ mod checked {
     /// Inline capacity: 64 slots with a u64 bitmask for O(1) free-slot finding.
     const INLINE_SLOTS: usize = 64;
 
+    /// Identifies a set of borrows registered together by
+    /// [`BorrowTracker::add_batch`]: the bitmask of the inline slots they
+    /// occupy. `0` means nothing was registered.
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub struct BatchId(pub(super) u64);
+
     /// A unique identifier for a borrow registration.
     ///
     /// Encoding:
@@ -1106,6 +1410,40 @@ mod checked {
                 // Slow path: spill to Vec.
                 self.alloc_overflow(start, end, is_mutable, loc)
             }
+        }
+
+        /// Allocate `n` inline slots at once, all sharing one registration
+        /// site. Returns the bitmask of the slots taken, or `None` if fewer
+        /// than `n` inline slots are free.
+        ///
+        /// Deliberately refuses to spill to overflow: once the overflow `Vec`
+        /// is non-empty it never shrinks, and every later borrow then pays a
+        /// linear scan of it forever. A caller that cannot get its whole batch
+        /// falls back to one-at-a-time guards, which is merely slower.
+        #[inline]
+        fn alloc_batch(
+            &mut self,
+            rows: &[(usize, usize)],
+            is_mutable: bool,
+            loc: &'static Location<'static>,
+        ) -> Option<u64> {
+            let mut free_mask = !self.occupied;
+            if (free_mask.count_ones() as usize) < rows.len() {
+                return None;
+            }
+            let mut taken = 0u64;
+            for &(start, end) in rows {
+                let i = free_mask.trailing_zeros() as usize;
+                debug_assert!(i < INLINE_SLOTS);
+                free_mask &= free_mask - 1;
+                self.starts[i] = start;
+                self.ends[i] = end;
+                self.mutable[i] = is_mutable;
+                self.locs[i] = Some(loc);
+                taken |= 1u64 << i;
+            }
+            self.occupied |= taken;
+            Some(taken)
         }
 
         /// Overflow allocation — cold path, never inlined.
@@ -1353,6 +1691,57 @@ mod checked {
                 Self::overlap_panic(start, end, false, existing);
             }
             BorrowId(slots.alloc(start, end, false, Location::caller()))
+        }
+
+        /// Register several disjoint ranges under ONE lock acquisition.
+        ///
+        /// The ranges must be pairwise disjoint (the caller's rows of a
+        /// strided region always are); they are each checked against every
+        /// active borrow exactly as [`Self::add_mut`] / [`Self::add_immut`]
+        /// would, so the stored records stay plain intervals and the hot
+        /// overlap scan is completely unchanged.
+        ///
+        /// Returns `None` if the inline table cannot hold the whole batch —
+        /// the caller must then fall back to individual guards.
+        #[inline]
+        #[track_caller]
+        pub fn add_batch(&self, rows: &[(usize, usize)], is_mutable: bool) -> Option<BatchId> {
+            if rows.is_empty() {
+                return Some(BatchId(0));
+            }
+            self.check_poisoned();
+            let _guard = self.lock.lock();
+            // SAFETY: TinyLock is held, so we have exclusive access to slots.
+            let slots = unsafe { &mut *self.slots.get() };
+            for &(start, end) in rows {
+                if start >= end {
+                    continue;
+                }
+                let hit = if is_mutable {
+                    slots.find_overlap_any(start, end)
+                } else {
+                    slots.find_overlap_mut(start, end)
+                };
+                if let Some(existing) = hit {
+                    Self::overlap_panic(start, end, is_mutable, existing);
+                }
+            }
+            slots
+                .alloc_batch(rows, is_mutable, Location::caller())
+                .map(BatchId)
+        }
+
+        /// Release every borrow of a batch in ONE lock acquisition.
+        #[inline]
+        pub fn remove_batch(&self, id: BatchId) {
+            if id.0 == 0 {
+                return;
+            }
+            let _guard = self.lock.lock();
+            // SAFETY: TinyLock is held, so we have exclusive access to slots.
+            let slots = unsafe { &mut *self.slots.get() };
+            debug_assert_eq!(slots.occupied & id.0, id.0, "batch slots not all occupied");
+            slots.occupied &= !id.0;
         }
 
         /// Remove a borrow by slot index. O(1).
@@ -1996,3 +2385,146 @@ fn test_range_to_inclusive_mul() {
 }
 
 // NOTE: Tests for aligned/aligned-vec integration are in align.rs
+
+// -----------------------------------------------------------------------------
+// Batched strided row copies
+// -----------------------------------------------------------------------------
+
+#[test]
+fn copy_rows_round_trips_and_skips_gaps() {
+    let mut v: DisjointMut<Vec<u8>> = Default::default();
+    v.resize(140, 0u8);
+    for i in 0..140usize {
+        v.index_mut(i..i + 1)[0] = i as u8;
+    }
+    // 4 rows of 3 bytes, stride 10, first row at byte 2 — inside one batch.
+    let mut out = [0u8; 12];
+    v.copy_rows_out(2, 3, 10, 4, &mut out);
+    assert_eq!(out, [2, 3, 4, 12, 13, 14, 22, 23, 24, 32, 33, 34]);
+
+    v.copy_rows_in(
+        2,
+        3,
+        10,
+        4,
+        &[100, 101, 102, 110, 111, 112, 120, 121, 122, 130, 131, 132],
+    );
+    let all = v.index(..);
+    assert_eq!(&all[0..6], &[0, 1, 100, 101, 102, 5]);
+    assert_eq!(&all[10..16], &[10, 11, 110, 111, 112, 15]);
+    assert_eq!(&all[30..36], &[30, 31, 130, 131, 132, 35]);
+    // The gaps are untouched.
+    assert_eq!(&all[5..10], &[5, 6, 7, 8, 9]);
+}
+
+/// More rows than `ROW_BATCH`, so the chunk loop runs several times and the
+/// row→compact mapping has to stay right across chunk boundaries.
+#[test]
+fn copy_rows_spans_multiple_batches() {
+    let rows = ROW_BATCH * 3 + 1;
+    let stride = 7usize;
+    let row_len = 2usize;
+    let mut v: DisjointMut<Vec<u8>> = Default::default();
+    v.resize(rows * stride + 16, 0u8);
+    for i in 0..v.len() {
+        v.index_mut(i..i + 1)[0] = (i % 251) as u8;
+    }
+    let mut out = alloc::vec![0u8; rows * row_len];
+    v.copy_rows_out(3, row_len, stride as isize, rows, &mut out);
+    for r in 0..rows {
+        let base = 3 + r * stride;
+        assert_eq!(
+            &out[r * row_len..][..row_len],
+            &[(base % 251) as u8, ((base + 1) % 251) as u8],
+            "row {r}"
+        );
+    }
+}
+
+#[test]
+fn copy_rows_negative_stride_walks_backward() {
+    let mut v: DisjointMut<Vec<u8>> = Default::default();
+    v.resize(40, 0u8);
+    for i in 0..40usize {
+        v.index_mut(i..i + 1)[0] = i as u8;
+    }
+    // Bottom-up picture: first row at byte 32, stepping back by 10.
+    let mut out = [0u8; 12];
+    v.copy_rows_out(32, 3, -10, 4, &mut out);
+    assert_eq!(out, [32, 33, 34, 22, 23, 24, 12, 13, 14, 2, 3, 4]);
+}
+
+/// A conflicting borrow inside one of the rows must still be reported —
+/// batching must not weaken the check.
+#[test]
+fn copy_rows_sees_a_real_conflicting_borrow() {
+    let mut v: DisjointMut<Vec<u8>> = Default::default();
+    v.resize(40, 0u8);
+    let _held = v.index_mut(12..14);
+    let mut out = [0u8; 12];
+    let hit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        v.copy_rows_out(2, 3, 10, 4, &mut out);
+    }));
+    assert!(hit.is_err(), "conflicting borrow was not reported");
+}
+
+/// The whole point: a borrow living only in the inter-row gaps is NOT a
+/// conflict. Registering the span densely would report one.
+#[test]
+fn copy_rows_ignores_a_borrow_that_only_sits_in_the_gaps() {
+    let mut v: DisjointMut<Vec<u8>> = Default::default();
+    v.resize(40, 0u8);
+    // Bytes 5..10 are the gap after row 0.
+    let _held = v.index_mut(5..10);
+    let mut out = [0u8; 12];
+    v.copy_rows_out(2, 3, 10, 4, &mut out);
+}
+
+/// Two "tiles" copying the same rows at different columns must not collide —
+/// the shape #445 exists for, exercised concurrently.
+#[test]
+fn copy_rows_adjacent_columns_are_concurrent() {
+    use std::sync::Arc;
+    let stride = 256usize;
+    let rows = 16usize;
+    let v: DisjointMut<Vec<u8>> = Default::default();
+    let mut v = v;
+    v.resize(stride * rows, 0u8);
+    let v = Arc::new(v);
+    let mut handles = Vec::new();
+    for tile in 0..4usize {
+        let v = Arc::clone(&v);
+        handles.push(std::thread::spawn(move || {
+            let col = tile * 64;
+            let mut buf = alloc::vec![tile as u8; rows * 16];
+            for _ in 0..2000 {
+                v.copy_rows_out(col, 16, stride as isize, rows, &mut buf);
+                v.copy_rows_in(col, 16, stride as isize, rows, &buf);
+            }
+        }));
+    }
+    for h in handles {
+        h.join().expect("a tile thread reported an overlap");
+    }
+}
+
+/// With the inline table exhausted, the copy must fall back to per-row
+/// registrations rather than skipping the check or spilling to overflow.
+#[test]
+fn copy_rows_falls_back_when_the_slot_table_is_full() {
+    let mut v: DisjointMut<Vec<u8>> = Default::default();
+    v.resize(4096, 0u8);
+    for i in 0..v.len() {
+        v.index_mut(i..i + 1)[0] = (i % 251) as u8;
+    }
+    // Hold enough guards that no batch of ROW_BATCH can be allocated, but
+    // none of them touches the region being copied.
+    let mut held = Vec::new();
+    for i in 0..(64 - ROW_BATCH + 1) {
+        held.push(v.index(2000 + i..2000 + i + 1));
+    }
+    let mut out = [0u8; 12];
+    v.copy_rows_out(2, 3, 10, 4, &mut out);
+    assert_eq!(out, [2, 3, 4, 12, 13, 14, 22, 23, 24, 32, 33, 34]);
+    drop(held);
+}

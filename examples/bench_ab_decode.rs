@@ -80,7 +80,10 @@ fn frame_md5(frame: &Frame) -> String {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 6 {
-        eprintln!("Usage: {} <input.avif> <threads> <iters> <reps> <label>", args[0]);
+        eprintln!(
+            "Usage: {} <input.avif> <threads> <iters> <reps> <label>",
+            args[0]
+        );
         std::process::exit(2);
     }
     let path = &args[1];

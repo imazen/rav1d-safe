@@ -911,19 +911,23 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         (guard.as_bytes().to_vec(), byte_stride)
     }
 
-    /// Per-row path: each row guard covers exactly `w` pixels.
+    /// Per-row path: each row reservation covers exactly `w` pixels.
     /// Always returns compact stride = w * pixel_size.
     /// Used by the loopfilter (needs compact layout for 2D decomposition)
-    /// and by tile threading (needs per-row guards to avoid stride overlap).
+    /// and by tile threading (must not reserve the inter-row gaps, which
+    /// belong to whichever tile owns those columns).
+    ///
+    /// The reservations are made in batches under one tracker lock rather than
+    /// one lock round-trip per row. Same reservations, same overlap reports,
+    /// ~4x less lock traffic: the per-row form cost 4-8% of whole-frame decode
+    /// under tile threading (`benchmarks/tile_threading_guard_ab_2026-08-06.tsv`).
     #[cfg_attr(debug_assertions, track_caller)]
     pub fn compact_read_per_row<BD: BitDepth>(&self, w: usize, h: usize) -> (Vec<u8>, usize) {
         use crate::src::strided::Strided as _;
-        use zerocopy::IntoBytes;
         let pixel_size = core::mem::size_of::<BD::Pixel>();
         let byte_stride = w * pixel_size;
         let needed = h * byte_stride;
         let pxstride = self.data.pixel_stride::<BD>();
-        let abs_stride = pxstride.unsigned_abs();
         // Reuse a thread-local scratch buffer instead of allocating per call
         // (issue #17). `resize` keeps the existing capacity across reuse and
         // only zero-fills when growing past the previous high-water mark; the
@@ -931,16 +935,13 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         // returned `Vec` is byte-identical to the former `vec![0u8; needed]`.
         let mut buf = take_compact_scratch();
         buf.resize(needed, 0);
-        for row in 0..h {
-            let row_off = if pxstride >= 0 {
-                self.offset + row * abs_stride
-            } else {
-                self.offset - row * abs_stride
-            };
-            let guard = self.data.slice::<BD, _>((row_off.., ..w));
-            buf[row * byte_stride..][..byte_stride]
-                .copy_from_slice(&guard.as_bytes()[..byte_stride]);
-        }
+        self.data.dm().copy_rows_out(
+            self.offset * pixel_size,
+            byte_stride,
+            pxstride * pixel_size as isize,
+            h,
+            &mut buf[..needed],
+        );
         (buf, byte_stride)
     }
 
@@ -979,25 +980,21 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         dst[..len].copy_from_slice(&buf[..len]);
     }
 
-    /// Per-row write-back: compact stride = w * pixel_size.
+    /// Per-row write-back: compact stride = w * pixel_size. Counterpart to
+    /// [`Self::compact_read_per_row`], and batched the same way.
     #[cfg_attr(debug_assertions, track_caller)]
     pub fn compact_write_back_per_row<BD: BitDepth>(&self, w: usize, h: usize, buf: &[u8]) {
         use crate::src::strided::Strided as _;
-        use zerocopy::IntoBytes;
         let pixel_size = core::mem::size_of::<BD::Pixel>();
         let byte_stride = w * pixel_size;
         let pxstride = self.data.pixel_stride::<BD>();
-        let abs_stride = pxstride.unsigned_abs();
-        for row in 0..h {
-            let row_off = if pxstride >= 0 {
-                self.offset + row * abs_stride
-            } else {
-                self.offset - row * abs_stride
-            };
-            let mut guard = self.data.slice_mut::<BD, _>((row_off.., ..w));
-            guard.as_mut_bytes()[..byte_stride]
-                .copy_from_slice(&buf[row * byte_stride..][..byte_stride]);
-        }
+        self.data.dm().copy_rows_in(
+            self.offset * pixel_size,
+            byte_stride,
+            pxstride * pixel_size as isize,
+            h,
+            &buf[..h * byte_stride],
+        );
     }
 
     /// Per-row write-back that stores ONLY the pixels the caller actually

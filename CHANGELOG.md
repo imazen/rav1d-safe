@@ -8,6 +8,36 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
 
+### Fixed
+- Tile-threaded decode is 4-8% faster on 8-bit content, undoing a throughput
+  regression introduced with the #445 correctness fix. `#445` made every block
+  write under tile threading reserve its rows one at a time, which is exact but
+  costs a borrow-tracker lock round-trip per row; the rows are now registered a
+  batch at a time under one lock. Same reservations, same overlap reports,
+  bit-identical output. Several cells land below the pre-#445 baseline because
+  the loopfilter and ipred compact paths — which predate #445 — are batched too.
+  Measurement, methodology, and a rejected alternative: `benchmarks/tile_threading_guard_2026-08-06.meta`.
+
+### Added
+- `DisjointMut::copy_rows_out` / `copy_rows_in` (rav1d-disjoint-mut): copy a
+  strided 2-D region to/from a compact buffer, reserving only the row bytes and
+  never the inter-row gaps, with the reservations batched under one tracker
+  lock. Additive; the dense borrow path is byte-for-byte unchanged.
+- `examples/bench_ab_decode.rs` + `scripts/perf/ab_sweep.sh` + `scripts/perf/ab_report.py`:
+  a single-config-per-process decode-throughput harness and an interleaved,
+  arm-rotating cross-commit sweep driver. The sweep refuses to run alongside
+  another instance or while the box is busy, and records the load average with
+  every cell — both guards after contaminated runs cost real time.
+
+### Known issues
+- Tile threading anti-scales beyond 2 threads and this predates #445: on a
+  3840x2160 8-tile AVIF, decode peaks at 2 threads (~1.25x) and 8 threads is
+  ~1.85x SLOWER than 1 thread, because every picture-plane borrow serialises on
+  that plane's borrow-tracker spinlock. `managed::Settings::default()` already
+  uses `threads: 1`, so the default is unaffected; the "set threads=0 for better
+  performance" note on that field is not supported by measurement. Numbers in
+  `benchmarks/tile_threading_guard_2026-08-06.meta`.
+
 ## [0.6.0] - 2026-07-04
 
 Staged release: the batched 0.x-breaking changes below ship together with the
