@@ -752,22 +752,30 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 // modular, every partial sum is congruent to the true value mod 2^16, and the
 // true value is back under 65520 at each point the accumulator is read.
 
-/// Per-lane thresholds for one fused run.
+/// Thresholds for one fused run.
 ///
 /// `e`/`i`/`h` come from the filter LUT and CHANGE PER GROUP inside a fused
-/// run — the run only fuses on matching `wd` — so they are per-lane arrays,
-/// not splats.
+/// run — the run only fuses on matching `wd` — so they are PER GROUP, not
+/// splats. Held as four-entry arrays (one per fused group, `LF_BATCH_MAX`)
+/// rather than sixteen-entry per-lane ones: a group is four adjacent lanes, so
+/// [`lane_thr`] expands two groups into an 8-lane vector in two instructions
+/// and the run never touches memory for them.
 #[cfg(target_arch = "aarch64")]
 pub(crate) struct LfLaneThresholds {
-    e: [u16; LF_BW],
-    i: [u16; LF_BW],
-    h: [u16; LF_BW],
+    e: [u16; LF_GROUPS],
+    i: [u16; LF_GROUPS],
+    h: [u16; LF_GROUPS],
     /// `1 << bitdepth_min_8`, the flatness threshold.
     f: u16,
     bd_max: u16,
     /// `(128 << bitdepth_min_8) - 1`; the low clip is `-(hi + 1)`.
     clip_hi: i16,
 }
+
+/// Fused groups per run. Mirrors `src::loopfilter::LF_BATCH_MAX`; the const
+/// assert in `lf_compact_run_neon` pins them together.
+#[cfg(target_arch = "aarch64")]
+const LF_GROUPS: usize = LF_BW / 4;
 
 /// Tap reach of a filter width. MUST mirror `src::loopfilter::lf_reach`.
 #[cfg(target_arch = "aarch64")]
@@ -1110,9 +1118,10 @@ macro_rules! lf_runs {
             debug_assert!(base >= reach * LF_BW);
             let mut lane = 0usize;
             while lane < n_lanes {
-                let e = ldthr(&thr.e, lane);
-                let i = ldthr(&thr.i, lane);
-                let h = ldthr(&thr.h, lane);
+                let c = lane / 8;
+                let e = lane_thr(&thr.e, c);
+                let i = lane_thr(&thr.i, c);
+                let h = lane_thr(&thr.h, c);
 
                 // Slot `n` (0..2*reach) is tap `n - reach`.
                 let slot0 = base - reach * LF_BW + lane;
@@ -1155,9 +1164,10 @@ macro_rules! lf_runs {
 
             let mut lane = 0usize;
             while lane < n_lanes {
-                let e = ldthr(&thr.e, lane);
-                let i = ldthr(&thr.i, lane);
-                let h = ldthr(&thr.h, lane);
+                let c = lane / 8;
+                let e = lane_thr(&thr.e, c);
+                let i = lane_thr(&thr.i, c);
+                let h = lane_thr(&thr.h, c);
 
                 let mut rows = [vdupq_n_u16(0); 8];
                 for (j, r) in rows.iter_mut().enumerate() {
@@ -1224,11 +1234,12 @@ const fn written_taps(wd: c_int) -> (usize, usize) {
     }
 }
 
-/// 8 per-lane thresholds starting at `lane`.
+/// The 8-lane threshold vector for chunk `c`: groups `2c` and `2c + 1`, four
+/// lanes each.
 #[cfg(target_arch = "aarch64")]
 #[rite(neon)]
-fn ldthr(v: &[u16; LF_BW], lane: usize) -> uint16x8_t {
-    safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&v[lane..lane + 8]).unwrap())
+fn lane_thr(v: &[u16; LF_GROUPS], c: usize) -> uint16x8_t {
+    vcombine_u16(vdup_n_u16(v[2 * c]), vdup_n_u16(v[2 * c + 1]))
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1312,20 +1323,24 @@ pub(crate) fn lf_compact_run_neon(
         return false;
     };
 
+    // Unfilled groups keep zero thresholds. Those lanes are pad columns (V) or
+    // pad rows (H) of the scratch that `close` never compares, so whatever the
+    // kernel does with them is inert.
     let mut thr = LfLaneThresholds {
-        e: [0; LF_BW],
-        i: [0; LF_BW],
-        h: [0; LF_BW],
+        e: [0; LF_GROUPS],
+        i: [0; LF_GROUPS],
+        h: [0; LF_GROUPS],
         f: 1 << bitdepth_min_8,
         bd_max,
         clip_hi: (128i16 << bitdepth_min_8) - 1,
     };
+    if params.len() > LF_GROUPS {
+        return false;
+    }
     for (g, &(e, i, h, _)) in params.iter().enumerate() {
-        for lane in 4 * g..4 * g + 4 {
-            thr.e[lane] = (e as u16) << bitdepth_min_8;
-            thr.i[lane] = (i as u16) << bitdepth_min_8;
-            thr.h[lane] = (h as u16) << bitdepth_min_8;
-        }
+        thr.e[g] = (e as u16) << bitdepth_min_8;
+        thr.i[g] = (i as u16) << bitdepth_min_8;
+        thr.h[g] = (h as u16) << bitdepth_min_8;
     }
 
     match bpc {
