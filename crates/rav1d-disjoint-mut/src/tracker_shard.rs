@@ -807,24 +807,29 @@ impl BorrowTracker {
                 break;
             }
         }
-        // SAFETY: every shard lock is held.
-        let wide = unsafe { &mut *self.wide.get() };
+        // SAFETY: every shard lock is held. Scoped so the `&mut` is dead
+        // before the locks drop — otherwise another thread's `&` read of the
+        // same list would alias a live `&mut`.
         if hit.is_none() {
-            hit = Self::find_wide::<IS_MUT>(wide, start, end);
+            hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end);
         }
         if let Some(existing) = hit {
             Self::unlock_every(&self.shards);
             Self::overlap_panic(start, end, IS_MUT, existing);
         }
-        let rec = (start, end, IS_MUT, wide_loc());
-        let idx = match wide.iter().position(|r| r.0 >= r.1) {
-            Some(i) => {
-                wide[i] = rec;
-                i
-            }
-            None => {
-                wide.push(rec);
-                wide.len() - 1
+        let idx = {
+            // SAFETY: every shard lock is held.
+            let wide = unsafe { &mut *self.wide.get() };
+            let rec = (start, end, IS_MUT, wide_loc());
+            match wide.iter().position(|r| r.0 >= r.1) {
+                Some(i) => {
+                    wide[i] = rec;
+                    i
+                }
+                None => {
+                    wide.push(rec);
+                    wide.len() - 1
+                }
             }
         };
         assert!(
@@ -911,11 +916,14 @@ impl BorrowTracker {
         for shard in &self.shards {
             shard.lock.lock();
         }
-        // SAFETY: every shard lock is held.
-        let wide = unsafe { &mut *self.wide.get() };
-        let i = id.wide_idx();
-        if i < wide.len() {
-            wide[i] = (1, 0, false, None); // tombstone
+        {
+            // SAFETY: every shard lock is held; scoped so the `&mut` is dead
+            // before the locks drop.
+            let wide = unsafe { &mut *self.wide.get() };
+            let i = id.wide_idx();
+            if i < wide.len() {
+                wide[i] = (1, 0, false, None); // tombstone
+            }
         }
         self.state.fetch_sub(1, Ordering::Relaxed);
         Self::unlock_every(&self.shards);
