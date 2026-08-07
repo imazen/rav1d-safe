@@ -1,0 +1,258 @@
+# P1: what still serialises between t=4 and t=8 (diagnosis, not a fix)
+
+date: 2026-08-07
+host: Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64
+rustc: stable, release profile (lto = "fat", codegen-units = 1), default
+       features (bitdepth_8 + bitdepth_16 — the CHECKED DisjointMut build).
+       No `-C target-cpu=native`.
+branch: probe/p1-scaling, off perf/shard-tracker @ 4af62ae. NO production
+        change: every edit here is behind a `probe-*` cargo feature that is
+        not in `default`. Verified: a default build after these edits decodes
+        v4k_8tile to the same md5 at the same wall time (333.6 vs 334.6 ms,
+        t=8) as the build taken before them.
+
+## nice level — read this before reproducing
+
+NO `nice` WAS APPLIED TO ANY TIMED RUN. On Darwin a positive nice value maps
+the process to background QoS and distorts wall clock by well over an order of
+magnitude. `nice -n 19` was used for BUILDS only.
+
+Arms are interleaved back to back within each (vector, threads) cell and the
+arm order rotates every round. Every rav1d-safe number is a MEDIAN OF 9
+(3 rounds x 3 reps x 4 iters). `sweep.sh` refuses to start, and discards the
+cell, while any non-agent process is above 25% CPU. 270/270 committed rows,
+load 1.45-3.47 (1-minute average) at commit time.
+
+Box sharing: a sibling agent was profiling in this same checkout during the
+sweep and landed `34b0505` at 05:06:48, mid-run. The guard caught it — FIVE
+cells were discarded and re-run (05:02-05:06, exactly its active window) and
+only clean repeats were kept. `34b0505` touches `benchmarks/` and two analysis
+scripts and no decoder source, so every arm here was built from identical
+decoder source; the default build re-taken after it decodes to the same md5 at
+the same wall time. That agent also deleted this session's `.workongoing`
+marker while it was still live.
+
+## The arms
+
+All five are the same commit; only cargo features differ.
+
+  base   default — 32-shard tracker, barrier present. What ships today.
+  tt     `probe-tasktime` — base plus the timing probe. Costs +1.4% at t=8;
+         present in every probe arm, so it cancels out of the A/Bs.
+  ttu    `probe-tasktime-untracked` — tracker removed, barrier present.
+  ttg    `probe-tasktime-nogate` — tracker removed AND the `check_tile`
+         deblock barrier removed. RACY BY CONSTRUCTION (see "Soundness").
+  ttng   `probe-tasktime-nogate-tracked` — barrier removed, tracker KEPT.
+         This is the one that says what a barrier fix alone would be worth.
+
+`n_fc = 1` (tile threading only, no frame threading) is pinned TWICE and both
+pins were checked: `src/lib.rs:126` forces it in any build without the
+`unchecked` feature, and none of the probe features enable `unchecked`; and
+`examples/bench_ab_decode.rs` sets `settings.max_frame_delay = 1`, which forces
+it even under `unchecked`. The earlier concern that an `unchecked` ceiling arm
+silently gains frame threading does not apply to these arms.
+
+## Result 1 — the plateau is TWO ~2.2x terms that multiply
+
+3840x2160 8bpc, 8 tiles (4 cols x 2 rows), ms/frame, median of 9.
+`x` is that arm's own t=1 -> t=8 speedup.
+
+  arm                          t=1     t=2     t=4     t=8    t1->t8
+  base (shard32 + barrier)   604.4   432.1   344.3   333.3    1.81x
+  no tracker, barrier        491.9   302.7   210.8   153.9    3.20x
+  no tracker, NO barrier     491.6   252.0   128.0    70.3    7.00x
+  tracker, NO barrier        631.7   379.8   244.8   279.7    2.26x
+
+  dav1d 1.5.4 --framedelay 1 246.3       -       -    34.4    7.17x
+
+The dav1d row was re-measured here, not quoted: same host, same session, wall
+clock with a two-point (2 vs 20 frame) fit that removes process startup,
+median of 3, interleaved against our binaries. It reproduces the earlier
+yardstick (246.5 / 34.3 / 7.18x) to within 0.4%.
+
+**With both terms removed we scale 7.02x — dav1d scales 7.17x.** The scaling
+deficit is not intrinsic to this decoder's tile threading and it is not tile
+geometry. It is two specific, removable things.
+
+Factorisation of the t=8 gap, all measured, same instrument:
+
+  330.9 / 34.4  =  9.62x
+                =  2.19x  borrow tracker      (base / no-tracker)
+                x  2.19x  deblock barrier     (no-tracker / no-barrier)
+                x  2.03x  kernel + codegen    (no-barrier / dav1d)   <- this is P2
+
+10bpc, same vector, t=8: base 423.7, no-tracker 192.0, no-barrier 87.0,
+tracker+no-barrier 318.8 — barrier 2.21x, tracker 2.22x, both 4.89x. Same shape.
+
+Bit identity: all five arms, all six cells, all thread counts produce one md5
+per vector (`a00c11f4...` 8bpc, `840d4364...` 10bpc). 90/90 invocations agree.
+
+## Result 2 — NEITHER TERM PAYS ALONE. They have to be fixed together.
+
+  removing the barrier only (base -> ttng, t=8):   333.3 -> 279.7   = 1.19x
+  removing the tracker only (base -> ttu,  t=8):   333.3 -> 153.9   = 2.17x
+  removing both             (base -> ttg,  t=8):   333.3 ->  70.3   = 4.74x
+
+The barrier was HIDING the tracker. It capped real concurrency at ~3.2 workers,
+which capped tracker contention. Free the concurrency and the tracker eats the
+whole win — and brings anti-scaling back with it: `ttng` is 244.8 ms at t=4 and
+279.7 ms at t=8, i.e. it gets SLOWER from 4 to 8 threads. That is the same
+convoy the sharded tracker fixed, re-armed by the extra parallelism.
+
+Anyone measuring a barrier fix on the checked build in isolation will see 19%
+and conclude the barrier is not the problem. It is; the tracker is also the
+problem; the two are multiplicative.
+
+## Result 3 — the mechanism: a whole-frame barrier in `check_tile`
+
+`src/thread_task.rs`, `check_tile`, added by 06160a6 (2026-03-30, "fix: resolve
+DisjointMut overlap in tile threading loopfilter"). It is rav1d-safe-only —
+dav1d has no equivalent:
+
+    if !tp {
+        if let Some(deblock) = deblock_progress {
+            if deblock.load(SeqCst) < t.sby { return 1; }   // defer this tile
+        }
+    }
+
+`deblock_progress` is `fc.frame_thread_progress.deblock`, which is FRAME-GLOBAL
+and monotone. So reconstruction of frame-sbrow N — in ANY tile — waits until the
+single serial deblock chain has passed sbrow N-1. The two tile ROWS of this
+bitstream are independent in the bitstream but are not independent under this
+rule: tile row 1 covers sbrows 17-33 and cannot start until deblocking has
+walked rows 0-16, which needs all of tile row 0 reconstructed first.
+
+Measured consequences (sampled every 50 us; count of workers inside a stage
+body; v4k_8tile 8bpc t=8):
+
+  arm    mean active   histogram
+  tt          2.86     1:42%  2:10%  3:1%  4:15%  5:32%   never >= 6
+  ttu         3.24     1:32%  2: 9%  3:1%  4:21%  5:35%  6:2%
+  ttg         7.09     ...                                8:75%
+
+The `4` and `5` modes are exactly one tile ROW (4 tile columns) plus the filter
+task. Eight-way never happens with the barrier in. Remove it and 75% of samples
+have all eight workers inside a stage body.
+
+`check_tile` deferral causes per frame at t=8 (base): deblock barrier 771,
+own tile progress 128, second-pass gate 0, reference progress 0, against 136
+admissions. **The barrier is 86% of all deferrals and the only material one** —
+5.7 rejected dispatches per accepted one, each a re-queue plus a global-lock
+round trip.
+
+Not a straggler, not imbalance: per-worker busy time at t=8 is even to within
++-8% in every arm (untracked: 61/64/61/64/57/61/59/69 ms). The pool is starved,
+not skewed. Share of worker thread-time spent parked: 67.9% (base) ->
+31.7% (barrier off).
+
+## Result 4 — the tracker post-sharding: 37.6%, and the spin is deferred, not gone
+
+`sample`, 10 s, v4k_8tile 8bpc t=8, top-of-stack, `__psynch_cvwait` and
+`__semwait_signal` excluded from the denominator as idle:
+
+                            base (barrier on)      barrier off
+  decode work                62.4%                  38.5%
+  BorrowTracker::add         21.1%                  28.2%
+  guard drop glue            10.1%                  10.4%
+  TinyLock::lock_slow         6.4%                  22.9%
+  ---------------------------------------------------------
+  tracker total              37.6%                  61.5%
+  non-idle samples           21,293                 46,952
+  idle samples               44,956                 21,822
+
+Sharding did work: the tracker was 67% of non-idle CPU with the legacy tracker
+(`tracker_decomp_2026-08-07.meta` Result 6) and pure spinning alone was 37%.
+It is 37.6% and 6.4% now.
+
+But the 6.4% spin figure is an artefact of the barrier. The `TinyLock` comment
+("Contended — spin. This should essentially never happen in rav1d") is still
+wrong, it is just not yet expensive: the moment eight workers actually run
+concurrently, `lock_slow` goes to 22.9% of non-idle CPU and the tracker to
+61.5%. A bare `AtomicBool` spin with no backoff and no yield is the wrong
+primitive for the schedule this decoder will have once the barrier is fixed.
+
+## Result 5 — the post-filter chain is the NEXT constraint, and it is a P2 problem
+
+Per-frame CPU in the five filter stages (untracked, so this is kernel cost, not
+tracker cost), v4k_8tile 8bpc, stable across t=2/4/8 to within 0.5%:
+
+  deblock_cols  29.0 ms     cdef        77.0 ms
+  deblock_rows  28.4 ms     superres     0.0 ms (no resize)
+  loop_restore   0.0 ms (restore_planes empty on this vector)
+  -------------------------------------------
+  filter chain 134.5 ms/frame     tile decode 361.4 ms/frame
+
+The chain is NOT strictly one-at-a-time — `ensure_progress` lets deblock of
+sbrow N+1 overlap cdef of sbrow N. Measured filter-stage concurrency in `ttg`
+at t=8 averages 1.98. So the chain contributes ~134.5 / 1.98 = 68 ms of wall,
+against `ttg`'s measured 69.9 ms. **Once the barrier is gone the filter chain
+is essentially the entire remaining wall time at 8 threads.**
+
+That is a kernel problem, not a scheduling one: dav1d decodes the WHOLE frame
+in 34.4 ms at t=8, so its filter chain is under 34.4 ms — ours is at least
+3.9x more expensive. The overall single-thread gap is 2.0x; on the filter
+stages specifically it is at least 3.9x, and those stages sit on the critical
+path.
+
+The sibling P2 profile committed the same day (`34b0505`,
+`benchmarks/p2_kernel_profile_2026-08-07.meta`, measured independently by
+another agent) names the cause: `src/safe_simd/cdef_arm.rs`,
+`loopfilter_arm.rs` and `looprestoration_arm.rs` contain ZERO aarch64
+intrinsic calls — the "NEON" tier for exactly these three kernels is the
+scalar reference. Its t=1 self-time split puts CDEF at 71.7 vs dav1d's 4.1 ms
+(17.3x) and the loop filter at 34.2 vs 3.0 ms (11.3x), while entropy /
+coefficient decode is at parity. The two diagnoses join cleanly: porting the
+ARM filter tier (`ROADMAP_SIMD_PORTING.md` row R3, still TODO) is a P2
+single-thread win AND the removal of the constraint that binds P1 once the
+barrier is fixed.
+
+## Soundness — the barrier is LOAD-BEARING. Do not just delete it.
+
+The committed regression suite passes with the barrier removed:
+`tile_threading_overlap` (3 tests incl. `multi_threaded_tile_overlap` and
+`multi_threaded_cdef_lpf_race` on their crash vectors), `mt_stress_4k`,
+`reproduce_overlap` (6), `reproduce_overlap_scalar`, `tile_threading_parity`
+(3). 14/14 green. **That suite is therefore not a live gate for this barrier** —
+a future narrowing cannot be validated by it as it stands.
+
+Under real pressure it fails. Five concurrent 4K 8-tile decoder processes at
+t=8/t=12, barrier off, tracker armed: 2 of 5 panicked with
+
+  cdef_arm.rs:124  current: & _[107550..107562]   existing: &mut _[103712..107552]
+  cdef_arm.rs:464  current: & _[307228..307252]   existing: &mut _[299552..307232]
+
+The conflict is 2 bytes (8bpc) / 4 bytes (10bpc): a 12-pixel CDEF read that
+straddles a picture-row boundary against a whole-row mutable reconstruction
+borrow (3840 B at 8bpc, 7680 B at 10bpc — exactly one 4K luma row). The
+remedy currently in the tree for that 2-byte straddle is a frame-wide,
+sbrow-granularity ordering constraint that costs 2.19x at eight threads.
+
+Note what this data does and does not say. It says the overlap is real at
+BORROW-EXTENT granularity. It does not say the two accesses touch the same
+bytes: the writer's borrow spans a whole row while its actual writes are
+block-scoped, so part or all of the conflict may be borrow-width, not a true
+alias. Deciding that is fix-phase work and needs to be settled before either
+narrowing the barrier or narrowing the borrows.
+
+## Reproducing
+
+  for f in "" probe-tasktime probe-tasktime-untracked \
+           probe-tasktime-nogate probe-tasktime-nogate-tracked; do
+    CARGO_TARGET_DIR=... RUSTC_WRAPPER=sccache nice -n 19 \
+      cargo build --release --example bench_ab_decode ${f:+--features $f} -j 4
+  done
+  ./sweep.sh out.tsv 3 3 4            # scripts/perf/p1_sweep.sh
+
+  # concurrency / stage / deferral detail
+  ./bench_tt  <vec>/v4k_8tile.avif 8 4 3 tt     # grep PROBE
+  # soundness stress (expect panics)
+  for i in 1 2 3 4; do ./bench_ttng <vec>/v4k_8tile.avif 8 30 1 s$i & done; wait
+
+## Data files
+
+  p1_scaling_2026-08-07.tsv            the 5-arm sweep, 270 rows
+                                       (round, vector, threads, arm, ms/frame, md5)
+  p1_scaling_probe_2026-08-07.txt.zst  per-worker / per-stage / concurrency /
+                                       deferral dumps for tt, ttu, ttg at t=1..8
+  p1_sample_base_t8_2026-08-07.txt     `sample` top-of-stack, barrier on
+  p1_sample_ttng_t8_2026-08-07.txt     `sample` top-of-stack, barrier off
