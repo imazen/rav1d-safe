@@ -244,6 +244,32 @@ the OLD shard count, `add`'s uncontended fast path was itself 3x its
 single-thread cost. That is cache-line ownership traffic, which a waiter's
 politeness does not touch. Spreading the borrows over 4x the lines does.
 
+## Against dav1d
+
+Same instrument on both sides, measured here rather than quoted: each stream
+run at 2 and 20 frames and `total = alpha + beta*frames` fitted so process
+startup drops out. dav1d 1.5.4 (homebrew) driven with `--framedelay 1` so it
+runs the tile-threading-only model we do. IDLE-BOX guard, arms rotated. n is
+the completed round count per cell (2 or 3 — the campaign was cut short by
+sibling load; the raw file is `benchmarks/p3_dav1d_2026-08-07.tsv`).
+
+  ms/frame                 head    adapt    dav1d   head/dav1d   adapt/dav1d
+  v4k_8tile      t=1     412.7    434.1    246.7        1.67x         1.76x
+  v4k_8tile      t=8     187.7    123.6     35.9        5.23x         3.44x
+  v4k_8tile_10b  t=1     601.8    621.1    251.6        2.39x         2.47x
+  v4k_8tile_10b  t=8     212.4    158.6     38.2        5.65x         4.18x
+
+  t1 -> t8 scaling      head 2.20x   adapt 3.51x   dav1d 6.87x
+
+**The 8-thread gap goes 5.23x -> 3.44x at 8bpc and 5.65x -> 4.18x at 10bpc.**
+Single-thread moves the wrong way by the 4-5% the bigger shard array costs.
+
+This instrument reproduces the interleaved sweep to within 0.5% on all four of
+our cells (412.7 vs 413.3, 187.7 vs 187.0, 434.1 vs 430.5, 123.6 vs 125.3) and
+re-measures dav1d to within 0.04% of the 246.7 ms and 3.8% of the 34.6 ms on
+record from the P2 campaign — so this and the P1/P2 campaigns are directly
+comparable.
+
 ## What is still open / not done
 
 * **The +4.2% single-thread residual is real and unexplained beyond "the array
