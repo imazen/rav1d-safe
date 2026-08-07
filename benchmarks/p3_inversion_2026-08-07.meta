@@ -348,7 +348,19 @@ comparable.
   `cross_shard_overlaps_are_all_caught`, `wide_borrow_is_visible_to_narrow_registrants`
   and `narrow_borrow_is_visible_to_wide_registrant`; all 5
   `tests/shard_liveness.rs` tests pass, including `concurrent_overlaps_are_caught`.
+* **Cross-vector bit identity, adapt vs head:** all six local vectors
+  (v4k_8tile, v4k_8tile_10b, v4k_1tile, v4k_1tile_10b, v1024, v1024_10b,
+  v256) decode to the same md5 on both arms at t=1 and t=8, and v4k_8tile /
+  v4k_8tile_10b are identical at t=1/2/4/8/16 as well.
+* **The race gate under process pressure:** 6 concurrent `wide_exclusion`
+  processes x 4 rounds, 0/24 FAILED.
 * `set_parallelism` is monotone, pinned by `set_parallelism_is_monotone`.
+* clippy `--release --all-targets` reports 82 warnings against the 81 the P2
+  campaign recorded, and the extra one is not a lint — it is
+  `File system loop found: test-vectors/bench/bench points to an ancestor`,
+  from the symlink this worktree needs for `photo_4k.avif` (the primary
+  checkout has the same self-referential link). Zero lints in the touched
+  files.
 * `forbid(unsafe_code)` holds; no `unsafe` added. clippy clean on the touched
   crate, `--release --all-targets`.
 
