@@ -215,8 +215,15 @@ fn class_for_file(f: &str) -> u8 {
     match b {
         "recon.rs" | "ipred.rs" | "ipred_prepare.rs" | "itx.rs" | "mc.rs" | "pal.rs"
         | "ipred_arm.rs" | "mc_arm.rs" | "pal_arm.rs" | "itx_arm.rs" => RECON,
-        "loopfilter.rs" | "loopfilter_arm.rs" | "lf_apply.rs" | "lf_mask.rs" | "cdef.rs"
-        | "cdef_apply.rs" | "cdef_arm.rs" | "lr_apply.rs" | "looprestoration.rs"
+        "loopfilter.rs"
+        | "loopfilter_arm.rs"
+        | "lf_apply.rs"
+        | "lf_mask.rs"
+        | "cdef.rs"
+        | "cdef_apply.rs"
+        | "cdef_arm.rs"
+        | "lr_apply.rs"
+        | "looprestoration.rs"
         | "looprestoration_arm.rs" => FILTER,
         "decode.rs" => DECODE,
         // `itx_arm_neon_8x8.rs`, `itx_arm_neon_rect_large.rs`, ...

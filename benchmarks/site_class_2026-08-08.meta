@@ -141,6 +141,23 @@ Three facts fall straight out, before any timing:
    t=8) — it is the control plane. All of the t=1 -> t=8 registration growth
    (15.6 M -> 22.7 M) is picture-buffer traffic switching to per-row guards.
 
+## Design A's premise, checked against source (free, so it was checked)
+
+A's claim is that a tile worker never reads another tile's pixels during
+reconstruction, so per-tile row segments are provably disjoint. In this tree:
+
+* `src/ipred_prepare.rs:127-131` documents `start`/`w` as **the dependent tile's
+  boundary positions**, and `:229` clamps the top-right read to
+  `px_have = min(8*tw, 4*(w - x))` — the tile end, not the frame end.
+  `have_left` is false at a tile's left edge, so `dst - 1` never crosses it.
+* The rows a block reads above itself belong to the same tile column, so they
+  are in the same worker's segment set.
+* Against that: `src/lf_apply.rs:563` and `:608` are literally titled "fix lpf
+  strength at tile col boundaries" / "tile row boundaries" — the deblock filter
+  runs ACROSS the boundary with adjusted strength, using pixels from both
+  sides. That is the structural reason A stops at the filter chain, confirmed
+  in source rather than assumed.
+
 ## Decision rule, PRE-REGISTERED before the timing sweep produced a row
 
 Written while the box was still occupied by another agent's campaign, so the

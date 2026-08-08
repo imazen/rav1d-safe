@@ -16,28 +16,40 @@ pub struct WithOffset<T> {
 }
 
 impl<T> AddAssign<usize> for WithOffset<T> {
-    #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
+    #[cfg_attr(
+        any(debug_assertions, feature = "probe-sites", feature = "probe-class"),
+        track_caller
+    )]
     fn add_assign(&mut self, rhs: usize) {
         self.offset += rhs;
     }
 }
 
 impl<T> SubAssign<usize> for WithOffset<T> {
-    #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
+    #[cfg_attr(
+        any(debug_assertions, feature = "probe-sites", feature = "probe-class"),
+        track_caller
+    )]
     fn sub_assign(&mut self, rhs: usize) {
         self.offset -= rhs;
     }
 }
 
 impl<T> AddAssign<isize> for WithOffset<T> {
-    #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
+    #[cfg_attr(
+        any(debug_assertions, feature = "probe-sites", feature = "probe-class"),
+        track_caller
+    )]
     fn add_assign(&mut self, rhs: isize) {
         self.offset = self.offset.wrapping_add_signed(rhs);
     }
 }
 
 impl<T> SubAssign<isize> for WithOffset<T> {
-    #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
+    #[cfg_attr(
+        any(debug_assertions, feature = "probe-sites", feature = "probe-class"),
+        track_caller
+    )]
     fn sub_assign(&mut self, rhs: isize) {
         self.offset = self.offset.wrapping_add_signed(-rhs);
     }
@@ -46,7 +58,10 @@ impl<T> SubAssign<isize> for WithOffset<T> {
 impl<T> Add<usize> for WithOffset<T> {
     type Output = Self;
 
-    #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
+    #[cfg_attr(
+        any(debug_assertions, feature = "probe-sites", feature = "probe-class"),
+        track_caller
+    )]
     fn add(mut self, rhs: usize) -> Self::Output {
         self += rhs;
         self
@@ -56,7 +71,10 @@ impl<T> Add<usize> for WithOffset<T> {
 impl<T> Sub<usize> for WithOffset<T> {
     type Output = Self;
 
-    #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
+    #[cfg_attr(
+        any(debug_assertions, feature = "probe-sites", feature = "probe-class"),
+        track_caller
+    )]
     fn sub(mut self, rhs: usize) -> Self::Output {
         self -= rhs;
         self
@@ -66,7 +84,10 @@ impl<T> Sub<usize> for WithOffset<T> {
 impl<T> Add<isize> for WithOffset<T> {
     type Output = Self;
 
-    #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
+    #[cfg_attr(
+        any(debug_assertions, feature = "probe-sites", feature = "probe-class"),
+        track_caller
+    )]
     fn add(mut self, rhs: isize) -> Self::Output {
         self += rhs;
         self
@@ -76,7 +97,10 @@ impl<T> Add<isize> for WithOffset<T> {
 impl<T> Sub<isize> for WithOffset<T> {
     type Output = Self;
 
-    #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
+    #[cfg_attr(
+        any(debug_assertions, feature = "probe-sites", feature = "probe-class"),
+        track_caller
+    )]
     fn sub(mut self, rhs: isize) -> Self::Output {
         self -= rhs;
         self
@@ -86,13 +110,19 @@ impl<T> Sub<isize> for WithOffset<T> {
 #[cfg(asm_fn_ptrs)]
 impl<P: Pixels> WithOffset<P> {
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
+    #[cfg_attr(
+        any(debug_assertions, feature = "probe-sites", feature = "probe-class"),
+        track_caller
+    )]
     pub fn as_ptr<BD: BitDepth>(&self) -> *const BD::Pixel {
         self.data.as_ptr_at::<BD>(self.offset)
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
+    #[cfg_attr(
+        any(debug_assertions, feature = "probe-sites", feature = "probe-class"),
+        track_caller
+    )]
     pub fn as_mut_ptr<BD: BitDepth>(&self) -> *mut BD::Pixel {
         self.data.as_mut_ptr_at::<BD>(self.offset)
     }

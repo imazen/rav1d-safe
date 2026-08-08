@@ -15,8 +15,8 @@
 
 #![cfg(feature = "__probe_class")]
 
-use rav1d_disjoint_mut::site_class;
 use rav1d_disjoint_mut::DisjointMut;
+use rav1d_disjoint_mut::site_class;
 use std::panic::AssertUnwindSafe;
 
 /// This test file classifies as `other`; assert that rather than assume it, so
@@ -94,10 +94,22 @@ fn nulling_this_class_removes_the_check_and_not_nulling_keeps_it() {
         "nulling `recon` also disabled a borrow from an `other` site — the mask \
          is not selective"
     );
-    assert!(big_arm_small_inst, "`big` modifier nulled a sub-SHARD_MIN_LEN instance");
-    assert!(!big_arm_big_inst, "`big` modifier failed to null a large instance");
-    assert!(!small_arm_small_inst, "`small` modifier failed to null a small instance");
-    assert!(small_arm_big_inst, "`small` modifier nulled a large instance");
+    assert!(
+        big_arm_small_inst,
+        "`big` modifier nulled a sub-SHARD_MIN_LEN instance"
+    );
+    assert!(
+        !big_arm_big_inst,
+        "`big` modifier failed to null a large instance"
+    );
+    assert!(
+        !small_arm_small_inst,
+        "`small` modifier failed to null a small instance"
+    );
+    assert!(
+        small_arm_big_inst,
+        "`small` modifier nulled a large instance"
+    );
 }
 
 #[test]
