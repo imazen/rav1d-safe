@@ -1092,6 +1092,8 @@ mod tests {
         use super::{MID_STRIDE, h_filter_8tap_8bpc_neon};
         use archmage::{Arm64, SimdToken};
 
+        // Depends on the NEON token; see `safe_simd::token_test_lock`.
+        let _lock = crate::src::safe_simd::token_test_lock();
         let token = Arm64::summon().expect("NEON always available on aarch64");
         let filters: [[i8; 8]; 4] = [
             [0, 1, -3, 63, 4, -1, 0, 0],

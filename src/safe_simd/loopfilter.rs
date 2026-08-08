@@ -4159,6 +4159,27 @@ fn lpf_v_sb_uv_8bpc_inner(
 
 // ============================================================================
 // FFI WRAPPERS (8bpc) — only compiled with asm feature
+//
+// AUDITED 2026-08-08, during the `summon().unwrap()` sweep behind
+// `tests/decode_permutations.rs`. The four 8bpc wrappers below keep an
+// `expect` on the token — the only ones left in `src/safe_simd/` — and that is
+// deliberate, because they are NOT the mc_arm/filmgrain_arm defect class:
+//
+//   * They have NO callers. Under `asm` the loop-filter table is built by
+//     `bd_fn!` (include/common/bitdepth.rs), which resolves to the NASM symbol
+//     `dav1d_lpf_h_sb_y_8bpc_avx2`, not to this mangled Rust one. Without
+//     `asm` they are not compiled at all. The permutation gate cannot reach
+//     them either way.
+//   * There is no fallback to gate TO: an `extern "C"` shim must fill its
+//     destination or corrupt it, and silently doing nothing would be worse
+//     than the panic.
+//
+// The message they used to carry, "AVX2 implies Desktop64", was FALSE:
+// `Desktop64` is x86-64-v3 (AVX2 + FMA + BMI1/2 + LZCNT + MOVBE + F16C), a
+// strict superset of AVX2, so an AVX2-only CPU would have tripped it. It now
+// states the real precondition. If these ever gain a caller, gate them the way
+// the live x86 dispatch in this same file does — `crate::src::cpu::summon_avx2()`
+// plus a real fallback (see `lpf_dispatch`) — instead of asserting.
 // ============================================================================
 
 /// FFI wrapper for Y horizontal filter
@@ -4181,7 +4202,10 @@ pub unsafe extern "C" fn lpf_h_sb_y_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
-    let token = Desktop64::summon().expect("AVX2 implies Desktop64");
+    // See the AUDITED note on the FFI-wrapper banner above.
+    let token = Desktop64::summon().expect(
+        "x86-64-v3 (Desktop64) token required; #[target_feature(avx2)] alone does not imply it",
+    );
     lpf_h_sb_y_8bpc_inner(
         token,
         buf,
@@ -4217,7 +4241,10 @@ pub unsafe extern "C" fn lpf_v_sb_y_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
-    let token = Desktop64::summon().expect("AVX2 implies Desktop64");
+    // See the AUDITED note on the FFI-wrapper banner above.
+    let token = Desktop64::summon().expect(
+        "x86-64-v3 (Desktop64) token required; #[target_feature(avx2)] alone does not imply it",
+    );
     lpf_v_sb_y_8bpc_inner(
         token,
         buf,
@@ -4253,7 +4280,10 @@ pub unsafe extern "C" fn lpf_h_sb_uv_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
-    let token = Desktop64::summon().expect("AVX2 implies Desktop64");
+    // See the AUDITED note on the FFI-wrapper banner above.
+    let token = Desktop64::summon().expect(
+        "x86-64-v3 (Desktop64) token required; #[target_feature(avx2)] alone does not imply it",
+    );
     lpf_h_sb_uv_8bpc_inner(
         token,
         buf,
@@ -4289,7 +4319,10 @@ pub unsafe extern "C" fn lpf_v_sb_uv_8bpc_avx2(
     let buf = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let lvl_byte_len = compute_lvl_len(b4_stride as isize, w) * 4;
     let lvl = unsafe { std::slice::from_raw_parts(lvl_ptr as *const AtomicU8, lvl_byte_len) };
-    let token = Desktop64::summon().expect("AVX2 implies Desktop64");
+    // See the AUDITED note on the FFI-wrapper banner above.
+    let token = Desktop64::summon().expect(
+        "x86-64-v3 (Desktop64) token required; #[target_feature(avx2)] alone does not imply it",
+    );
     lpf_v_sb_uv_8bpc_inner(
         token,
         buf,

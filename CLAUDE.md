@@ -230,6 +230,30 @@ rav1d uses function pointer dispatch for SIMD:
 3. For non-asm: `call` method uses `cfg_if` to call `*_dispatch` directly (no fn ptrs)
 4. `*_dispatch` functions do `Desktop64::summon()` or `CpuFlags::AVX2` check, call inner SIMD
 
+**RULE: a dispatcher GATES on `summon()`, it never asserts it.** Write
+
+```rust
+let Some(token) = Arm64::summon() else { return false };   // -> scalar reference
+```
+
+never `summon().unwrap()` / `.expect("NEON is always available on aarch64")`.
+NEON is architecturally mandatory on aarch64; the *token* is not.
+`archmage`'s `testable_dispatch` feature (on for dev-dependencies) lets
+`for_each_token_permutation` disable it **process-wide**, and
+`tests/decode_permutations.rs` — the only gate on cross-tier bit-identity —
+does exactly that. An unwrapping dispatcher panics under that harness, so
+asserting the token does not "document an invariant", it deletes the gate.
+Canonical shapes already in tree: `loopfilter_arm::lpf_dispatch`,
+`looprestoration_arm::lr_filter_dispatch`, `cdef_arm` (`if let Some(token)`
+with an in-module scalar branch), `crate::src::cpu::summon_avx2()` on x86.
+Where there is no bool seam (e.g. `filmgrain_arm`'s row kernels) hold an
+`Option<Arm64>` and run a scalar twin.
+
+Tests are the other half of the same rule: any test that DEPENDS on a token
+being summonable must hold `crate::src::safe_simd::token_test_lock()`, because
+a permutation test running in parallel under plain `cargo test --lib` can
+disable it underneath. See the doc comment on `token_test_lock`.
+
 ### FFI Wrapper Pattern (asm only)
 
 FFI wrappers are gated behind `#[cfg(feature = "asm")]`:
@@ -834,6 +858,55 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 
 ## Known Bugs
+
+### `decode_permutations` was a DEAD GATE on aarch64 (2026-08-08) — FIXED
+The only gate on "every archmage token permutation decodes bit-identically"
+**failed 16 of its 19 tests on aarch64**, on unmodified `main`, under the exact
+CI invocation — while CI reported green, because `.github/workflows/ci.yml`
+pinned the job to `ubuntu-latest`, where every `src/safe_simd/*_arm.rs` file is
+compiled out. So the architecture this repo spent a week porting NEON kernels
+to was the one architecture the parity gate never ran on.
+
+**Root cause:** nine `Arm64::summon().unwrap()` calls *inside* dispatch bodies —
+six in `mc_arm.rs` (avg / w_avg / mask / w_mask / mc_put `_inner`,
+`mct_prep_dispatch`), three in `filmgrain_arm.rs` (`fgy_inner_8bpc`,
+`fgy_inner_16bpc`, `fguv_inner_8bpc`). The permutation harness disables the NEON
+token on purpose; those dispatchers panicked instead of falling back.
+`--test-threads=1` does NOT help — the file's old header blamed parallelism, and
+that was a red herring for this failure (nextest already gives process-per-test).
+
+**Before / after on aarch64** (Darwin 25.5.0, M-series), by NAME:
+- before — 3 pass: `test_permutations_smoke`, `test_permutations_8bit_intra`,
+  `test_permutations_10bit_features`; 16 fail:
+  `8bit_{data,features,issues,quantizer,size,film_grain,cdfupdate,mfmv,mv,resize}`,
+  `10bit_{data,quantizer,issues,film_grain}`, `12bit_{data,features}`.
+  Panic sites: `mc_arm.rs:5931` ×14, `filmgrain_arm.rs:458`, `filmgrain_arm.rs:695`.
+- after — 19/19 pass, 605 s wall. Corpus unchanged: `md5_inventory`
+  766 PASS / 0 mismatch / 0 error, set-diff by name+md5 against
+  `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` EMPTY (768 rows).
+
+**Fix:** gate, don't assert (see "Dispatch Pattern"); `filmgrain_arm`'s scalar
+row twins — previously dead `cfg(not(target_arch = "aarch64"))` blocks inside an
+aarch64-only module — are now the live fallback; CI `conformance` and
+`permutation-tests` both gained an `ubuntu-24.04-arm` leg; the gate asserts its
+own liveness (fails at <2 permutations, and when every vector was skipped).
+
+**Teeth proven, not assumed** (plant → FAIL → restore → green):
+1. NEON kernel divergence (`fgy_row_neon_8bpc` max-clamp −1) → 8bit_film_grain FAILS.
+2. NEON kernel divergence (`put_8tap_8bpc_inner` intermediate_bits 4→3) →
+   8bit_mv + 8bit_mfmv FAIL.
+3. Scalar-fallback divergence (`fgy_inner_8bpc` noise +1) → `decode_permutations`
+   FAILS while `decode_md5_verify` stays **14/14 green** — i.e. the fallback
+   paths are a surface no other gate in this repo covers.
+
+**Audit result:** zero `summon().unwrap()` remain in `src/`. Remaining
+`summon().expect()` are all either in `#[cfg(test)]` modules (all now hold
+`token_test_lock()`: `cdef_arm` ×3 sites, `itx_arm_neon_16x16` ×3, `itx_arm` ×1,
+`mc_arm` ×1) or in the four **unreferenced** 8bpc `extern "C"` AVX2 loop-filter
+shims in `safe_simd/loopfilter.rs` (the `asm` table resolves `bd_fn!` to the NASM
+symbol, never to those; documented in place). Their old message
+"AVX2 implies Desktop64" was false — `Desktop64` is x86-64-v3, a strict superset
+of AVX2 — and is corrected.
 
 ### z2_v4x order-dependent test failure (issue #16) — FIXED
 **Root cause (not what the symptom suggested):** the `z1/z2/z3_v4x_matches_avx2`

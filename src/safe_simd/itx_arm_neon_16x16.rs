@@ -1498,6 +1498,8 @@ mod tests {
 
     #[test]
     fn test_dct_dct_16x16_neon_vs_scalar() {
+        // Depends on the NEON token; see `safe_simd::token_test_lock`.
+        let _lock = crate::src::safe_simd::token_test_lock();
         let token = archmage::Arm64::summon().expect("NEON must be available");
 
         // Test with specific coefficient patterns
@@ -1564,6 +1566,8 @@ mod tests {
 
     #[test]
     fn test_identity_identity_16x16_neon_vs_scalar() {
+        // Depends on the NEON token; see `safe_simd::token_test_lock`.
+        let _lock = crate::src::safe_simd::token_test_lock();
         let token = archmage::Arm64::summon().expect("NEON must be available");
 
         for pattern in 0..3 {
@@ -1624,6 +1628,8 @@ mod tests {
 
     #[test]
     fn test_dc_only_16x16() {
+        // Depends on the NEON token; see `safe_simd::token_test_lock`.
+        let _lock = crate::src::safe_simd::token_test_lock();
         let token = archmage::Arm64::summon().expect("NEON must be available");
 
         let mut coeff = [0i16; 256];

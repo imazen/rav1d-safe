@@ -1889,6 +1889,11 @@ mod tests {
     /// Randomised differential test of the row kernel against the oracle, with
     /// sentinels placed in every padding shape CDEF can see.
     fn differential_rows(bd_min_8: c_int, seed: u64, iters: usize) {
+        // `neon_filter` below needs the NEON token to actually be summonable.
+        // Token state is process-wide, so a `for_each_token_permutation` test
+        // running in parallel under `cargo test --lib` can pull it out from
+        // under us. See `safe_simd::token_test_lock`.
+        let _lock = crate::src::safe_simd::token_test_lock();
         let bitdepth_max = (1i32 << (8 + bd_min_8)) - 1;
         let (pri_space, sec_space, damp_space) = param_space(bd_min_8);
         let mut rng = Rng(seed);
@@ -2070,6 +2075,8 @@ mod tests {
     /// theoretical) and that the current kernel matches the reference on it.
     #[test]
     fn sentinel_must_not_raise_max() {
+        // Depends on the NEON token; see `safe_simd::token_test_lock`.
+        let _lock = crate::src::safe_simd::token_test_lock();
         let mut rng = Rng(0xa5a5_0f0f_1234_9999);
         let mut divergences = 0usize;
         let mut first: Option<String> = None;
@@ -2161,6 +2168,8 @@ mod tests {
     /// the flat/tied content that stresses the strict-`>` tie-break.
     #[test]
     fn neon_dir_matches_scalar() {
+        // Depends on the NEON token; see `safe_simd::token_test_lock`.
+        let _lock = crate::src::safe_simd::token_test_lock();
         let token = Arm64::summon().expect("aarch64 always has NEON");
         let mut rng = Rng(0xfeed_face_0000_0001);
 

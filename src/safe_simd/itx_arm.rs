@@ -9540,6 +9540,8 @@ mod bench_autoversion_vs_neon {
             #[test]
             #[ignore]
             fn $test_name() {
+                // Depends on the NEON token; see `safe_simd::token_test_lock`.
+                let _lock = crate::src::safe_simd::token_test_lock();
                 let token = archmage::Arm64::summon().expect("NEON required");
 
                 let stride: isize = ($w + 16) as isize;
