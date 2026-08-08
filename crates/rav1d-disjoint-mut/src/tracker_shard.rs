@@ -1362,6 +1362,8 @@ impl BorrowTracker {
     fn add<const IS_MUT: bool>(&self, bounds: &Bounds) -> BorrowId {
         let start = bounds.range.start;
         let end = bounds.range.end;
+        #[cfg(feature = "__probe_sites")]
+        crate::site_probe::record(Location::caller(), IS_MUT, end.saturating_sub(start));
         if start >= end {
             return BorrowId::EMPTY;
         }

@@ -693,7 +693,7 @@ impl Rav1dPictureDataComponent {
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn index<'a, BD: BitDepth>(
         &'a self,
         index: usize,
@@ -702,7 +702,7 @@ impl Rav1dPictureDataComponent {
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn index_mut<'a, BD: BitDepth>(
         &'a self,
         index: usize,
@@ -711,7 +711,7 @@ impl Rav1dPictureDataComponent {
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn slice<'a, BD, I>(
         &'a self,
         index: I,
@@ -724,7 +724,7 @@ impl Rav1dPictureDataComponent {
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn slice_mut<'a, BD, I>(
         &'a self,
         index: I,
@@ -741,7 +741,7 @@ pub type Rav1dPictureDataComponentOffset<'a> = WithOffset<&'a Rav1dPictureDataCo
 
 impl<'a> Rav1dPictureDataComponentOffset<'a> {
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn index<BD: BitDepth>(
         &self,
     ) -> DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, BD::Pixel> {
@@ -749,7 +749,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn index_mut<BD: BitDepth>(
         &self,
     ) -> DisjointMutGuard<'a, Rav1dPictureDataComponentInner, BD::Pixel> {
@@ -757,7 +757,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn slice<BD: BitDepth>(
         &self,
         len: usize,
@@ -766,7 +766,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn slice_mut<BD: BitDepth>(
         &self,
         len: usize,
@@ -783,7 +783,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// Returns `(guard, base_offset_within_guard)` where `base_offset_within_guard`
     /// is the index within the guard's slice that corresponds to `self.offset`.
     #[inline]
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn strided_slice_mut<BD: BitDepth>(
         &self,
         w: usize,
@@ -827,7 +827,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     ///
     /// Callers must take the stride from [`BlockMut::byte_stride`] rather than
     /// from the picture, because the compact buffer has its own stride.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn block_mut<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
         if tile_threading_active() {
             #[cfg(feature = "held-row-guards")]
@@ -898,7 +898,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// transform height AV1 has; anything taller falls back to the two-pass
     /// path, which is always correct.
     #[cfg(feature = "held-row-guards")]
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     fn block_mut_held<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
         use crate::src::strided::Strided as _;
         use zerocopy::IntoBytes;
@@ -933,7 +933,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
 
     /// Create a tracked immutable guard covering a strided w×h pixel region.
     #[inline]
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn strided_slice<BD: BitDepth>(
         &self,
         w: usize,
@@ -947,7 +947,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
 
     /// Create a tracked immutable guard covering exactly a w×h pixel block.
     #[inline]
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn narrow_guard<BD: BitDepth>(
         &self,
         w: usize,
@@ -974,6 +974,115 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         }
     }
 
+    /// Visit `h` consecutive picture rows of `w` pixels each, IMMUTABLY, taking
+    /// ONE borrow registration instead of `h` when no tile worker can be alive.
+    ///
+    /// # The policy, and why it is the existing one
+    ///
+    /// A `w×h` strided block is either `h` registrations of exactly `w` pixels,
+    /// or one registration of `(h-1)*stride + w` — the hull, which additionally
+    /// reserves the inter-row gaps belonging to other columns of the same rows.
+    /// [`Rav1dPictureDataComponentOffset::block_mut`] already documents the
+    /// trade in full: the hull is "correct single-threaded and wrong under tile
+    /// threading", because AV1 tiles partition a frame by COLUMNS, so two tile
+    /// workers routinely write the same rows at different columns and the gap
+    /// reservation turns a genuinely disjoint pair into a false positive.
+    ///
+    /// So the choice is made by [`tile_threading_active`] — process-global,
+    /// monotone, and never storing `false` — exactly as it is in `block_mut`,
+    /// [`with_pixel_guard_immut`] and [`Self::compact_read`]. This helper adds
+    /// callers to that policy; it does not introduce one.
+    ///
+    /// Neither branch can MISS an overlap: the hull is a superset of the `h`
+    /// row ranges, and a superset registration conflicts with strictly more.
+    /// The only thing at stake is false positives, and the latch is what rules
+    /// those out.
+    ///
+    /// # Why it exists
+    ///
+    /// Per-row guards over small blocks are the decoder's borrow-count
+    /// distribution: measured with `--features probe-sites` on `v4k_8tile` 8bpc
+    /// at t=1, the per-row loops in `ipred`, `cdef` and the loopfilter were
+    /// 8.4 M of 15.6 M registrations per frame, at a mean extent of ~10 bytes.
+    #[inline]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
+    pub fn for_rows<BD: BitDepth, F: FnMut(usize, &[BD::Pixel])>(
+        &self,
+        w: usize,
+        h: usize,
+        mut f: F,
+    ) {
+        use crate::src::strided::Strided as _;
+        if w == 0 || h == 0 {
+            return;
+        }
+        let pxstride = self.data.pixel_stride::<BD>();
+        if tile_threading_active() {
+            for row in 0..h {
+                let off = self.offset.wrapping_add_signed(row as isize * pxstride);
+                let guard = self.data.slice::<BD, _>((off.., ..w));
+                f(row, &guard);
+            }
+            return;
+        }
+        let abs_stride = pxstride.unsigned_abs();
+        let total = (h - 1) * abs_stride + w;
+        let lo = if pxstride >= 0 {
+            self.offset
+        } else {
+            self.offset - (h - 1) * abs_stride
+        };
+        let guard = self.data.slice::<BD, _>((lo.., ..total));
+        for row in 0..h {
+            let idx = if pxstride >= 0 {
+                row * abs_stride
+            } else {
+                (h - 1 - row) * abs_stride
+            };
+            f(row, &guard[idx..][..w]);
+        }
+    }
+
+    /// [`Self::for_rows`], mutably. Same policy, same soundness argument.
+    #[inline]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
+    pub fn for_rows_mut<BD: BitDepth, F: FnMut(usize, &mut [BD::Pixel])>(
+        &self,
+        w: usize,
+        h: usize,
+        mut f: F,
+    ) {
+        use crate::src::strided::Strided as _;
+        if w == 0 || h == 0 {
+            return;
+        }
+        let pxstride = self.data.pixel_stride::<BD>();
+        if tile_threading_active() {
+            for row in 0..h {
+                let off = self.offset.wrapping_add_signed(row as isize * pxstride);
+                let mut guard = self.data.slice_mut::<BD, _>((off.., ..w));
+                f(row, &mut guard);
+            }
+            return;
+        }
+        let abs_stride = pxstride.unsigned_abs();
+        let total = (h - 1) * abs_stride + w;
+        let lo = if pxstride >= 0 {
+            self.offset
+        } else {
+            self.offset - (h - 1) * abs_stride
+        };
+        let mut guard = self.data.slice_mut::<BD, _>((lo.., ..total));
+        for row in 0..h {
+            let idx = if pxstride >= 0 {
+                row * abs_stride
+            } else {
+                (h - 1 - row) * abs_stride
+            };
+            f(row, &mut guard[idx..][..w]);
+        }
+    }
+
     /// Read a w×h pixel block into a compact Vec using per-row DisjointMut guards.
     ///
     /// When tile threading is active ([`set_tile_threading`]), each row guard covers
@@ -982,7 +1091,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     ///
     /// Returns `(buffer, byte_stride)` where `byte_stride` is `w * pixel_size` when
     /// threading (compact layout) or the original stride when single-threaded.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn compact_read<BD: BitDepth>(&self, w: usize, h: usize) -> (Vec<u8>, usize) {
         if tile_threading_active() {
             self.compact_read_per_row::<BD>(w, h)
@@ -992,7 +1101,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     }
 
     /// Fast path: single guard for the whole block, returns original stride layout.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     fn compact_read_fast<BD: BitDepth>(&self, w: usize, h: usize) -> (Vec<u8>, usize) {
         use crate::src::strided::Strided as _;
         use zerocopy::IntoBytes;
@@ -1018,7 +1127,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// Always returns compact stride = w * pixel_size.
     /// Used by the loopfilter (needs compact layout for 2D decomposition)
     /// and by tile threading (needs per-row guards to avoid stride overlap).
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn compact_read_per_row<BD: BitDepth>(&self, w: usize, h: usize) -> (Vec<u8>, usize) {
         use crate::src::strided::Strided as _;
         use zerocopy::IntoBytes;
@@ -1050,7 +1159,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// Write a compact buffer back to a w×h pixel block.
     ///
     /// Matches the layout produced by [`compact_read`].
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn compact_write_back<BD: BitDepth>(&self, w: usize, h: usize, buf: &[u8]) {
         if tile_threading_active() {
             self.compact_write_back_per_row::<BD>(w, h, buf);
@@ -1060,7 +1169,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     }
 
     /// Fast path write-back: single guard, original stride layout.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     fn compact_write_back_fast<BD: BitDepth>(&self, w: usize, h: usize, buf: &[u8]) {
         use crate::src::strided::Strided as _;
         use zerocopy::IntoBytes;
@@ -1083,7 +1192,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     }
 
     /// Per-row write-back: compact stride = w * pixel_size.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn compact_write_back_per_row<BD: BitDepth>(&self, w: usize, h: usize, buf: &[u8]) {
         use crate::src::strided::Strided as _;
         use zerocopy::IntoBytes;
@@ -1124,7 +1233,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     ///
     /// `work` and `pristine` must both use the compact layout produced by
     /// [`Self::compact_read_per_row`] (stride = `w * pixel_size`).
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn compact_write_back_per_row_diff<BD: BitDepth>(
         &self,
         w: usize,
@@ -1172,7 +1281,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// Use this when the access pattern is complex (e.g., loopfilter accessing
     /// negative offsets from the base pointer).
     #[inline]
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn full_guard_mut<BD: BitDepth>(
         &self,
     ) -> (
@@ -1192,7 +1301,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// For negative strides, covers the same span but starting `(h-1)*stride`
     /// pixels before self.offset.
     #[inline]
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn narrow_guard_mut<BD: BitDepth>(
         &self,
         w: usize,
@@ -1223,7 +1332,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
 
     /// Create a tracked immutable guard covering the entire picture component.
     #[inline]
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn full_guard<BD: BitDepth>(
         &self,
     ) -> (

@@ -36,10 +36,10 @@ pub trait Pixels {
     /// Absolute ptr to `BitDepth::Pixel`s starting at `pixel_offset`.
     ///
     /// Bounds checked, but not [`DisjointMut`]-checked.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     fn as_mut_ptr_at<BD: BitDepth>(&self, pixel_offset: usize) -> *mut BD::Pixel {
         #[inline(never)]
-        #[cfg_attr(debug_assertions, track_caller)]
+        #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
         fn out_of_bounds(pixel_offset: usize, pixel_len: usize) -> ! {
             panic!(
                 "pixel offset {pixel_offset} out of range for slice of pixel length {pixel_len}"
@@ -57,7 +57,7 @@ pub trait Pixels {
     /// Absolute ptr to `BitDepth::Pixel`s starting at `pixel_offset`.
     ///
     /// Bounds checked, but not [`DisjointMut`]-checked.
-    #[cfg_attr(debug_assertions, track_caller)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     fn as_ptr_at<BD: BitDepth>(&self, pixel_offset: usize) -> *const BD::Pixel {
         self.as_mut_ptr_at::<BD>(pixel_offset).cast_const()
     }

@@ -524,26 +524,22 @@ pub struct Rav1dIntraPredDSPContext {
 
 #[inline(never)]
 fn splat_dc<BD: BitDepth>(dst: PicOffset, width: c_int, height: c_int, dc: c_int, bd: BD) {
-    let height = height as isize;
+    let height = height as usize;
     let width = width as usize;
     assert!(dc <= bd.bitdepth_max().as_::<c_int>());
     let dc = dc.as_::<BD::Pixel>();
     if BD::BPC == BPC::BPC8 && width > 4 {
-        for y in 0..height {
-            let dst = dst + y * dst.pixel_stride::<BD>();
-            let dst = &mut *dst.slice_mut::<BD>(width);
-            let dst: &mut [[BD::Pixel; 8]] =
-                FromBytes::mut_from_bytes(IntoBytes::as_mut_bytes(dst)).unwrap();
-            dst.fill([dc; 8]);
-        }
+        dst.for_rows_mut::<BD, _>(width, height, |_, row| {
+            let row: &mut [[BD::Pixel; 8]] =
+                FromBytes::mut_from_bytes(IntoBytes::as_mut_bytes(row)).unwrap();
+            row.fill([dc; 8]);
+        });
     } else {
-        for y in 0..height {
-            let dst = dst + y * dst.pixel_stride::<BD>();
-            let dst = &mut *dst.slice_mut::<BD>(width);
-            let dst: &mut [[BD::Pixel; 4]] =
-                FromBytes::mut_from_bytes(IntoBytes::as_mut_bytes(dst)).unwrap();
-            dst.fill([dc; 4]);
-        }
+        dst.for_rows_mut::<BD, _>(width, height, |_, row| {
+            let row: &mut [[BD::Pixel; 4]] =
+                FromBytes::mut_from_bytes(IntoBytes::as_mut_bytes(row)).unwrap();
+            row.fill([dc; 4]);
+        });
     };
 }
 
@@ -575,16 +571,14 @@ fn cfl_pred<BD: BitDepth>(
 ) {
     let width = width as usize;
     let height = height as usize;
-    let mut ac = &ac[..width * height];
-    for y in 0..height {
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-        let dst = &mut *dst.slice_mut::<BD>(width);
+    let ac = &ac[..width * height];
+    dst.for_rows_mut::<BD, _>(width, height, |y, row| {
+        let ac = &ac[y * width..];
         for x in 0..width {
             let diff = alpha * ac[x] as c_int;
-            dst[x] = bd.iclip_pixel(dc + apply_sign(diff.abs() + 32 >> 6, diff));
+            row[x] = bd.iclip_pixel(dc + apply_sign(diff.abs() + 32 >> 6, diff));
         }
-        ac = &ac[width..];
-    }
+    });
 }
 
 fn dc_gen_top<BD: BitDepth>(
@@ -809,14 +803,9 @@ fn ipred_v_rust<BD: BitDepth>(
     let width = width as usize;
     let height = height as usize;
 
-    for y in 0..height {
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-        BD::pixel_copy(
-            &mut *dst.slice_mut::<BD>(width),
-            &topleft[topleft_off + 1..][..width],
-            width,
-        );
-    }
+    dst.for_rows_mut::<BD, _>(width, height, |_, row| {
+        BD::pixel_copy(row, &topleft[topleft_off + 1..][..width], width);
+    });
 }
 
 /// # Safety
@@ -854,14 +843,9 @@ fn ipred_h_rust<BD: BitDepth>(
     let width = width as usize;
     let height = height as usize;
 
-    for y in 0..height {
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-        BD::pixel_set(
-            &mut *dst.slice_mut::<BD>(width),
-            topleft[topleft_off - (1 + y)],
-            width,
-        );
-    }
+    dst.for_rows_mut::<BD, _>(width, height, |y, row| {
+        BD::pixel_set(row, topleft[topleft_off - (1 + y)], width);
+    });
 }
 
 /// # Safety
@@ -900,10 +884,8 @@ fn ipred_paeth_rust<BD: BitDepth>(
     let height = height as usize;
 
     let topleft = tl[tl_off].as_::<c_int>();
-    for y in 0..height {
+    dst.for_rows_mut::<BD, _>(width, height, |y, dst| {
         let left = tl[tl_off - (y + 1)].as_::<c_int>();
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-        let dst = &mut *dst.slice_mut::<BD>(width);
         for x in 0..width {
             let top = tl[tl_off + 1 + x].as_::<c_int>();
             let base = left + top - topleft;
@@ -920,7 +902,7 @@ fn ipred_paeth_rust<BD: BitDepth>(
             })
             .as_::<BD::Pixel>();
         }
-    }
+    });
 }
 
 /// # Safety
@@ -962,9 +944,7 @@ fn ipred_smooth_rust<BD: BitDepth>(
     let right = topleft[topleft_off + width].as_::<c_int>();
     let bottom = topleft[topleft_off - height].as_::<c_int>();
 
-    for y in 0..height {
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-        let dst = &mut *dst.slice_mut::<BD>(width);
+    dst.for_rows_mut::<BD, _>(width, height, |y, dst| {
         for x in 0..width {
             let pred = weights_ver[y] as c_int * topleft[topleft_off + 1 + x].as_::<c_int>()
                 + (256 - weights_ver[y] as c_int) * bottom
@@ -972,7 +952,7 @@ fn ipred_smooth_rust<BD: BitDepth>(
                 + (256 - weights_hor[x] as c_int) * right;
             dst[x] = (pred + 256 >> 9).as_::<BD::Pixel>();
         }
-    }
+    });
 }
 
 /// # Safety
@@ -1012,15 +992,13 @@ fn ipred_smooth_v_rust<BD: BitDepth>(
     let weights_ver = &dav1d_sm_weights[height..][..height];
     let bottom = topleft[topleft_off - height].as_::<c_int>();
 
-    for y in 0..height {
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-        let dst = &mut *dst.slice_mut::<BD>(width);
+    dst.for_rows_mut::<BD, _>(width, height, |y, dst| {
         for x in 0..width {
             let pred = weights_ver[y] as c_int * topleft[topleft_off + 1 + x].as_::<c_int>()
                 + (256 - weights_ver[y] as c_int) * bottom;
             dst[x] = (pred + 128 >> 8).as_::<BD::Pixel>();
         }
-    }
+    });
 }
 
 /// # Safety
@@ -1060,15 +1038,13 @@ fn ipred_smooth_h_rust<BD: BitDepth>(
     let weights_hor = &dav1d_sm_weights[width..][..width];
     let right = topleft[topleft_off + width].as_::<c_int>();
 
-    for y in 0..height {
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-        let dst = &mut *dst.slice_mut::<BD>(width);
+    dst.for_rows_mut::<BD, _>(width, height, |y, dst| {
         for x in 0..width {
             let pred = weights_hor[x] as c_int * topleft[topleft_off - (y + 1)].as_::<c_int>()
                 + (256 - weights_hor[x] as c_int) * right;
             dst[x] = (pred + 128 >> 8).as_::<BD::Pixel>();
         }
-    }
+    });
 }
 
 /// # Safety
@@ -1259,12 +1235,10 @@ fn ipred_z1_rust<BD: BitDepth>(
     let width = width as usize;
     let max_base_x = max_base_x as usize;
     let base_inc = 1 + upsample_above as usize;
-    for y in 0..height {
-        let xpos = (y + 1) * dx;
+    dst.for_rows_mut::<BD, _>(width, height as usize, |y, dst| {
+        let xpos = (y as c_int + 1) * dx;
         let frac = xpos & 0x3e;
 
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-        let dst = &mut *dst.slice_mut::<BD>(width);
         for x in 0..width {
             let base = (xpos >> 6) as usize + base_inc * x;
             if base < max_base_x {
@@ -1276,7 +1250,7 @@ fn ipred_z1_rust<BD: BitDepth>(
                 break;
             }
         }
-    }
+    });
 }
 
 fn ipred_z2_rust<BD: BitDepth>(
@@ -1390,13 +1364,12 @@ fn ipred_z2_rust<BD: BitDepth>(
     let base_inc_x = 1 + upsample_above as usize;
     let left = topleft - (1 + upsample_left as usize);
     let width = width as usize;
-    for y in 0..height {
+    dst.for_rows_mut::<BD, _>(width, height as usize, |y, dst| {
+        let y = y as c_int;
         let xpos = (1 + (upsample_above as c_int) << 6) - (dx * (y + 1));
         let base_x = xpos >> 6;
         let frac_x = xpos & 0x3e;
 
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
-        let dst = &mut *dst.slice_mut::<BD>(width);
         for x in 0..width {
             let ypos = (y << 6 + upsample_left as c_int) - (dy * (x + 1) as c_int);
             let base_x = base_x + (base_inc_x * x) as c_int;
@@ -1412,7 +1385,7 @@ fn ipred_z2_rust<BD: BitDepth>(
             };
             dst[x] = (v + 32 >> 6).as_::<BD::Pixel>();
         }
-    }
+    });
 }
 
 fn ipred_z3_rust<BD: BitDepth>(
@@ -1772,18 +1745,24 @@ fn pal_pred_rust<BD: BitDepth>(
     let h = h as usize;
     let idx = &idx[..w * h / 2];
 
-    let mut j = 0;
-    for y in 0..h {
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
+    // ONE GUARD PER ROW, not one per TWO PIXELS. The old shape took a fresh
+    // `slice_mut(2)` inside the x loop, i.e. `w/2` registrations per row and
+    // `w*h/2` for the block, to write pixels that a single row guard already
+    // covers exactly. Narrowing below a row buys no exclusion here — the row
+    // is written in full — so this is a strict reduction in registration count
+    // with no change of extent at ANY thread count (`for_rows_mut`'s
+    // tile-threaded branch is the same per-row `[off, off+w)` the write set
+    // already spanned).
+    dst.for_rows_mut::<BD, _>(w, h, |y, row| {
+        let mut j = y * (w / 2);
         for x in (0..w).step_by(2) {
             let i = idx[j];
             j += 1;
             assert!((i & 0x88) == 0);
-            let dst = &mut *(dst + x).slice_mut::<BD>(2);
-            dst[0] = pal[(i & 7) as usize];
-            dst[1] = pal[(i >> 4) as usize];
+            row[x] = pal[(i & 7) as usize];
+            row[x + 1] = pal[(i >> 4) as usize];
         }
-    }
+    });
 }
 
 /// # Safety

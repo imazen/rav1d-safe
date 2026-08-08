@@ -543,8 +543,10 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     /// Read `h` picture rows of exactly `W` pixels into the scratch and its
     /// pristine copy.
     ///
-    /// ONE immutable guard per picture row, exactly as before — the constant
-    /// `W` changes only the copy's codegen, never the guard's extent.
+    /// Under tile threading: ONE immutable guard per picture row, exactly as
+    /// before — the constant `W` changes only the copy's codegen, never the
+    /// guard's extent. Without tile threading: ONE guard over the strided hull
+    /// for the whole rectangle; see [`Self::fill_hull`].
     #[inline(always)]
     fn fill<const W: usize>(
         scratch: &mut LfScratch<BD>,
@@ -552,6 +554,9 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         stride: isize,
         h: usize,
     ) {
+        if !crate::include::dav1d::picture::tile_threading_active() {
+            return Self::fill_hull::<W>(scratch, origin, stride, h);
+        }
         for row in 0..h {
             let off = origin.offset.wrapping_add_signed(row as isize * stride);
             let guard = PicOffset {
@@ -560,6 +565,73 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             }
             .slice::<BD>(W);
             let src: &[BD::Pixel; W] = (&guard[..W]).try_into().expect("guard is W long");
+            let dst: &mut [BD::Pixel; W] = (&mut scratch.buf[row * LF_BW..][..W])
+                .try_into()
+                .expect("scratch row is LF_BW >= W long");
+            *dst = *src;
+            let pri: &mut [BD::Pixel; W] = (&mut scratch.pristine[row * LF_BW..][..W])
+                .try_into()
+                .expect("scratch row is LF_BW >= W long");
+            *pri = *src;
+        }
+    }
+
+    /// [`Self::fill`] with ONE registration instead of `h`.
+    ///
+    /// # Why the extent may widen here and nowhere else
+    ///
+    /// The hull is `[lo, lo + (h-1)*|stride| + W)` — the per-row set PLUS the
+    /// inter-row gaps, which belong to other columns of the same picture rows.
+    /// Reserving those gaps is what `block_mut`'s doc calls "correct
+    /// single-threaded and wrong under tile threading": two tile workers
+    /// routinely write the same rows at different columns, and the gap
+    /// reservation turns that genuinely-disjoint pair into a false positive.
+    ///
+    /// So this path is taken ONLY when `tile_threading_active()` is false,
+    /// which is the same latch — process-global, monotone, never stores
+    /// `false` — that already selects the identical wide-vs-per-row policy in
+    /// [`with_pixel_guard_immut`](crate::include::dav1d::picture::with_pixel_guard_immut),
+    /// `block_mut` and `compact_read`. This adds a fourth caller to an existing
+    /// policy; it does not invent one.
+    ///
+    /// Detection is never weakened in either direction: a superset reservation
+    /// cannot MISS an overlap the `h` narrow ones would have caught, and with
+    /// no tile worker alive there is no second writer for the gaps to collide
+    /// with.
+    ///
+    /// # Why it is worth a branch
+    ///
+    /// This is the single largest borrow-registration site in the decoder:
+    /// 3,835,042 of 15,646,727 registrations per frame (24.5%) on `v4k_8tile`
+    /// 8bpc at t=1, measured with `--features probe-sites`. Collapsing `h` rows
+    /// to one leaves ~0.47M.
+    #[inline(always)]
+    fn fill_hull<const W: usize>(
+        scratch: &mut LfScratch<BD>,
+        origin: PicOffset,
+        stride: isize,
+        h: usize,
+    ) {
+        debug_assert!(h > 0);
+        let astride = stride.unsigned_abs();
+        // `open` proved both endpoints are in the plane, so the hull between
+        // them is too.
+        let lo = if stride >= 0 {
+            origin.offset
+        } else {
+            origin.offset - (h - 1) * astride
+        };
+        let total = (h - 1) * astride + W;
+        let guard = origin.data.slice::<BD, _>((lo.., ..total));
+        for row in 0..h {
+            let idx = if stride >= 0 {
+                row * astride
+            } else {
+                (h - 1 - row) * astride
+            };
+            let src: &[BD::Pixel; W] = (&guard[idx..][..W])
+                .try_into()
+                .expect("the hull covers W pixels at every row offset");
             let dst: &mut [BD::Pixel; W] = (&mut scratch.buf[row * LF_BW..][..W])
                 .try_into()
                 .expect("scratch row is LF_BW >= W long");
