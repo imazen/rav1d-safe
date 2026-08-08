@@ -1,0 +1,304 @@
+# verify/compose-3 — independent verification of perf/st1-kernels + perf/lr-neon-tier
+
+host: Apple M4 Pro (8P+4E), macOS 26.5.2, 24 GB. Release (`lto=fat`), DEFAULT
+features, NO `-C target-cpu=native`, NO `nice` on any timed run. Builds niced.
+base: `verify/compose-2` @ 2e0ea4d.
+composed: `verify/compose-3` — 2e0ea4d + perf/st1-kernels (a5c50e5) +
+perf/lr-neon-tier (edb55a1) + f7bda07 (one fix, below) + dff0ef2 (harness).
+reference: dav1d 1.5.4 (homebrew), measured in the SAME interleaved sweep as
+both rav1d arms, at BOTH `--framedelay 1` and its shipping default.
+raw: `verify_compose3_gap_2026-08-08.tsv` (4K grid, 220 rows),
+`verify_compose3_lrgap_2026-08-08.tsv` (LR-active, 216 rows),
+`verify_compose3_scaling_2026-08-08.tsv` (thread-scaling map, 336 rows).
+Summariser: `scripts/perf/gap_summarize.py` — every table below re-derives
+from those TSVs by running it.
+
+
+## 1. BOTH BRANCHES MERGE AND VERIFY. Nothing was left out.
+
+`perf/st1-kernels` and `perf/lr-neon-tier` touch disjoint source (ipred vs
+looprestoration+tracker+decode) and merged with zero conflicts. Both are on
+`origin` at the SHAs their reports claim.
+
+One defect found by inspection and fixed in the compose (f7bda07):
+**`perf/st1-kernels` silently deleted `cfl_ac_rust`'s `#[inline(never)]`.** It
+inserted the test-only `cfl_ac_scalar_for_test` alias between the attribute and
+its function; attributes bind to the NEXT item, and that alias is
+`#[cfg(all(test, ...))]`, so in every non-test build the attribute was removed
+along with the item it had been re-parented onto. Correctness-neutral,
+profile-visible — and the same branch's own trap #5 is about using
+`#[inline(never)]` to make a scalar fallback attributable.
+
+
+## 2. GAP TO dav1d — the standing 4K grid
+
+ms/frame, median of 5 interleaved rounds, arm order rotated per round, every
+committed round had foreign>25%CPU count = 0. Two-point fit (2 and 20 frames).
+
+  vector          t     base     comp   dav1d_fd1  dav1d_def  comp/base  vs fd1
+  v4k_8tile       1   401.28   399.06     246.67     246.50      0.994    1.618
+  v4k_8tile       2   217.39   215.39     125.11     125.78      0.991    1.722
+  v4k_8tile       4   116.61   115.22      65.56      63.89      0.988    1.758
+  v4k_8tile       8    72.11    71.06      34.39      32.89      0.985    2.066
+  v4k_8tile_10b   1   439.06   435.72     251.39     251.78      0.992    1.733
+  v4k_8tile_10b   2   245.22   246.06     127.61     128.67      1.003    1.928
+  v4k_8tile_10b   4   129.61   129.50      66.78      65.39      0.999    1.939
+  v4k_8tile_10b   8    83.94    83.83      36.11      34.78      0.999    2.322
+
+The `base` column reproduces `verify_compose2_2026-08-08.meta`'s `composed`
+column to within 1.4% at every cell, so the two campaigns are comparable.
+
+**~1.3x is met at NO cell.** Best 1.62x, worst 2.32x. The compose buys
+0.6-1.5% on the multi-tile grid, and only the two t=1 cells have disjoint
+per-round ranges (8bpc base [400.89..406.22] vs comp [394.67..400.78]; 10bpc
+base [437.56..439.89] vs comp [431.78..437.00]). **Every t=2/4/8 cell here has
+overlapping ranges and is NOT resolvable at n=5** — including the 10bpc t=8
+cell that `perf/st1-kernels` printed as 88.0 -> 85.6 (2.29x -> 2.22x) without
+marking it unresolvable; its own raw TSV has base [85.50..91.11] and head
+[84.89..91.50], and its own trap #3 says between-run drift is 5x the win.
+
+
+## 3. THE SINGLE-TILE REGRESSION IS FIXED — at a smaller magnitude than claimed
+
+  vector          t     base     comp   dav1d_fd1  comp/base  ranges
+  v4k_1tile       4   369.28   353.44     240.28     0.957    disjoint
+  v4k_1tile       8   369.22   352.56     240.06     0.955    disjoint
+  v4k_1tile_10b   8   405.56   377.28     242.06     0.930    disjoint
+
+Confirmed, all three disjoint. But `perf/lr-neon-tier` reported v4k_1tile t=8
+as 383.72 -> 362.28 (0.944) and "1.59x -> 1.51x". My base measures **369.22,
+not 383.72** — 3.8% faster — so the fix is worth **4.5%, not 5.6%**, and the
+resulting ratio is **1.54x -> 1.47x, not 1.59x -> 1.51x**. Their `pre` arm was
+their own branch minus the gate commit; v4k_1tile does zero LR, so it should
+have equalled compose-2 and did not. Direction and rough size reproduce; the
+exact delta does not. (Better for them on the ratio, worse on the delta.)
+
+
+## 4. THE `--framedelay 1` REFERENCE FLATTERS US 3x ON SINGLE-TILE CONTENT
+
+`verify_compose2_2026-08-08.meta` states: "dav1d's own default is within 4% of
+its `--framedelay 1` figure at every cell (0.97-1.01x), so the like-for-like
+restriction is not what the remaining 2x is made of."
+
+**That is true on the multi-tile grid and false off it, and the compose-2 grid
+had no single-tile cell to notice.** Measured in the same sweep:
+
+  vector          t   dav1d_fd1  dav1d_def  def/fd1     comp vs def
+  v4k_8tile       8       34.39      32.89    0.956          2.160
+  v4k_1tile       4      240.28     115.33    0.480          3.065
+  v4k_1tile       8      240.06      77.89    0.324          4.526
+  v4k_1tile_10b   8      242.06      77.78    0.321          4.851
+
+dav1d's shipping answer to a single-tile frame is FRAME threading, which
+`--framedelay 1` switches off and the checked rav1d-safe build cannot do at all
+(n_fc is forced to 1). Against dav1d as it actually ships, single-tile 4K at
+t=8 is **4.53x (8bpc) / 4.85x (10bpc)**, not 1.47x/1.56x. Most AVIF stills are
+single-tile. The campaign's headline ratio is a tile-threading-only ratio and
+should say so.
+
+
+## 5. LOOP RESTORATION: first gap-to-dav1d numbers ever taken on it
+
+The standing grid does ZERO loop restoration, so no gap number has ever seen
+it. `scripts/perf/verify_gap_ivf.sh` + `examples/bench_ivf_limit` put both
+rav1d arms and dav1d on the same IVF with the same whole-process clock.
+Median of 9 rounds, foreign=0.
+
+  vector                      t    base    comp  dav1d_fd1  comp/base   vs fd1
+  8-bit/data/00001147         1  215.50  198.00      39.00      0.919    5.08x
+  8-bit/data/00001147         8  187.50  183.50      21.50      0.979    8.53x
+  10-bit/issues/318_tx_4x4    1    9.17    8.70       2.00      0.949    4.35x
+  10-bit/issues/318_tx_4x4    8   25.73   25.70       0.63      0.999   40.58x
+  8-bit/data/00000645         1    5.76    5.65       0.77      0.981    7.37x
+  8-bit/data/00000855         1   33.67   33.33       2.67      0.990   12.50x
+
+The NEON tier is real and reproduces: 00001147 t=1 base [214.00..218.50] vs
+comp [196.50..201.00], disjoint, -8.1%; 318_tx_4x4 t=1 -5.1%, disjoint. Those
+are comp-vs-compose-2, a different comparison from the branch's own
+neon-vs-ablated-scalar A/B (0.876 / 0.941), and land in the same place.
+
+**And the gap to dav1d on this content is 4.3x to 12.5x, two to six times worse
+than anything the 4K grid shows.** The campaign has been optimising against its
+easiest vector.
+
+
+## 6. TWO THREAD-SCALING INVERSIONS, BOTH PRE-EXISTING, BOTH UNREPORTED
+
+Median of 7, foreign=0. Same instrument as §5.
+
+  10-bit/issues/318_tx_4x4        base    comp   dav1d_fd1   comp step   vs fd1
+    t=1                           9.30    8.83        2.03       --       4.34x
+    t=2                           9.23    9.20        1.13     1.042      8.12x
+    t=4                          10.30    9.33        0.67     1.014     14.00x
+    t=8                          25.97   25.57        0.63     2.741     40.37x
+
+  8-bit/data/00000645
+    t=1                           5.79    5.68        0.78       --       7.33x
+    t=2                           6.70    6.61        0.69     1.164       9.55x
+    t=4                           6.67    6.56        0.70     0.992       9.37x
+    t=8                           6.73    6.59        0.69     1.005       9.53x
+
+* **318_tx_4x4 t=4 -> t=8 is a 2.74x SLOWDOWN.** comp [9.00..9.93] at t=4 vs
+  [25.17..26.57] at t=8 — not close to overlapping. Present identically in the
+  base, so the compose did not cause it. dav1d goes 0.67 -> 0.63 over the same
+  step.
+* **00000645 t=1 -> t=2 is a 16% slowdown** ([5.62..5.79] vs [6.40..6.71],
+  disjoint) that never recovers at 4 or 8.
+* The multi-tile 4K grid has NO inversion at either depth (every t=N -> t=2N
+  step < 1.0), which is exactly why one grid was not enough to find these.
+* 00001147 scales 1.08x from t=1 to t=8 — no inversion, no scaling either.
+
+The tile gate landed in §3 does not touch these: it makes the block shift
+CONSTANT for single-tile frames, and at t=8 comp/base is 0.985-0.999 on both.
+Whatever the t=8 cliff is, it is upstream of the shift choice.
+
+
+## 7. CORRECTNESS — 766/766, set-diffed BY NAME with the actual MD5 in the key
+
+`examples/md5_inventory` over all 768 dav1d-test-data vectors, joined on
+`group/name \t status \t actual_md5`, sorted, `comm`'d against
+`benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst`:
+
+  768 rows both sides | 0 only-in-ref | 0 only-in-new | 766 PASS / 2 SKIP
+
+Run FOUR times on this tree: plain; `--features __simd_test` (which re-runs the
+scalar loop-restoration reference after every call and PANICS on divergence —
+a stricter gate than the branch's `__simd_test_log`); `--features
+__simd_test,__lrvarcov`; and `--features __simd_test,__lrpoison`. All four
+identical. `__lrvarcov` printed all TEN (bit depth, variant) pairs, so no LR
+variant went unexercised.
+
+Both gates PROVEN LIVE BY MUTATION, not assumed:
+
+* **M4** — `+8` pre-shift (== +1 post-shift) in `wiener_hor_8bpc`'s VECTOR lane
+  only, scalar tail untouched: 48,673 `LR_MISMATCH` lines and 325 of 358
+  vectors flipped to MISMATCH on `8-bit/data` alone. Restored, green.
+* **M5** — the 8bpc `boxsum` loop shortened by one destination row, so the
+  neighbour pass reads a scratch cell the call never wrote: the `__lrpoison`
+  and non-poison builds produced DIFFERENT corpus digests
+  (`f7c5dc51a6888ef7d67b5858cc34a0b8` vs `0bb942d27e54c166ef3f53572730a4fe`,
+  both differing from the clean `7e88460c08f62540193a97b8ac2ff58d`). That is
+  what makes the clean poison run evidence: the fill genuinely reaches the
+  never-cleared per-thread scratch, so the reuse argument is checked.
+
+
+## 8. SOUNDNESS
+
+`#![forbid(unsafe_code)]` verified ACTIVE by planting an `unsafe { }` block in
+BOTH new SIMD modules (**M3**): the build failed with
+`error: usage of an unsafe block` pointing at
+`looprestoration_arm.rs:83` and `ipred_arm.rs:6`. Restored; zero `unsafe` and
+zero `allow(unsafe_code)` added by either branch.
+
+Tracker detection re-proved by mutation on the COMPOSED tree:
+
+* **M1** — the 4af62ae TOCTOU: delete the in-lock `state` re-read from `add`'s
+  single-block fast path. `wide_exclusion::a_wide_borrow_excludes_every_narrow_shard`
+  FAILED in 0.02 s with **115** violations.
+* **M2** — `BorrowTracker::active()` shortened to `&self.shards[..1]`. Same test
+  FAILED with **13** violations.
+* Both restored; `git diff --exit-code` clean against HEAD after each; full
+  tracker suite green (36 lib + soundness 27 + wide_exclusion + narrow_release
+  + shard_liveness + pic_buf_overflow + aligned_miri).
+
+Guard extents unchanged. `perf/lr-neon-tier`'s tracker edit is confined to
+shift SELECTION (`block_shift_rule` + a new monotone `OBSERVED_TILES` latch);
+no borrow-path code changed. `set_tile_concurrency` is called in
+`rav1d_submit_frame` at decode.rs:5131, before `rav1d_thread_picture_alloc` at
+5235 — the deadline is real and met, since the shift is read once in
+`BorrowTracker::new`.
+
+Stress, all on the composed tree:
+* `mt_stress_4k` at threads 1/2/4/8/16 x 5 trials — ok.
+* `tile_threading_parity` 3/3, `thread_cleanup_test` 2/2, `cancellation` 6/6.
+* **Concurrent multi-decoder pressure** (`scripts/perf/multi_decoder_pressure.sh`,
+  new): 16 then 3 x 24 concurrent decoder PROCESSES, thread counts cycling
+  1/2/4/8/16 over five vectors, hard wedge deadline. 4/4 rounds PASS, every md5
+  equal to the serial reference, no panic, no wedge.
+
+
+## 9. PRE-EXISTING TEST FAILURE, NOT CAUSED BY THIS COMPOSE
+
+`cargo test --release --test decode_permutations -- --test-threads=1`:
+**3 passed / 16 FAILED, byte-identical pass/fail sets on the base and on the
+composed tree** (`diff` of the two `^test test_` listings is empty).
+
+Cause: 23 `Arm64::summon().unwrap()` sites in `src/safe_simd/mc_arm.rs` (e.g.
+line 5931) and `src/safe_simd/filmgrain_arm.rs` (458, 695). The permutation
+harness disables archmage tokens process-globally to exercise the scalar
+fallbacks; those two modules unwrap instead of falling back, so they panic.
+**Not a production risk** — NEON is architecturally guaranteed on aarch64, so
+`summon()` cannot return `None` on real hardware. It IS a coverage hole: the
+test that claims to exercise "every dispatch gate in every SIMD module at every
+tier" cannot cover mc or filmgrain on this arch, and has not been able to for
+as long as those unwraps have existed. Everything else in
+`cargo test --release --workspace` passes.
+
+
+## 10. WHAT IS STILL OWED, RANKED BY ABSOLUTE ms AT THE WORST CELL
+
+Owed = composed minus dav1d in the same sweep.
+
+  v4k_1tile_10b  t=8  377.28 - 242.06(fd1) = 135.2   / - 77.78(def) = 299.5
+  v4k_1tile      t=8  352.56 - 240.06      = 112.5   / - 77.89      = 274.7
+  v4k_8tile_10b  t=1  435.72 - 251.39      = 184.3
+  v4k_8tile      t=1  399.06 - 246.67      = 152.4
+  00001147       t=1  198.00 -  39.00      = 159.0   (5.08x)
+  v4k_8tile_10b  t=8   83.83 -  36.11      =  47.7   (2.32x)
+  v4k_8tile      t=8   71.06 -  34.39      =  36.7   (2.07x)
+  318_tx_4x4     t=8   25.57 -   0.63      =  24.9   (40.4x)
+
+Where that 152.4 ms at v4k_8tile t=1 lives, per `st1_kernels_2026-08-08.meta`'s
+`sample` buckets (218.5 ms entropy / 96.8 ms tracker / 85.7 ms pixel kernels)
+— which I did not re-take, but whose dav1d entropy figure I DID trace to
+`p2_kernel_profile_2026-08-07.meta` (215.4 ms symbol-resolved, at a dav1d wall
+of 246.3 ms/frame, within 0.05% of the 246.67 I measure today, so the citation
+is sound and not stale):
+
+  **Correction to that branch's conclusion.** It writes "Zeroing EVERY pixel
+  kernel leaves 315 ms = 1.28x. Kernel work alone cannot reach the target at
+  t=1." 1.28x is INSIDE 1.3x, so the arithmetic contradicts the sentence. The
+  defensible version is the one that uses dav1d's own kernel cost rather than
+  zero: entropy 218.5 + tracker 96.8 + dav1d-parity kernels 31 = **346.3 ms =
+  1.41x**. Kernel parity is not sufficient; drop the tracker too and it is
+  249.5 ms = **1.01x**. The tracker is the binding constraint — that conclusion
+  survives; the argument for it did not.
+
+
+## 11. VERDICT
+
+**materially_closer.** The compose is a real improvement and it is sound and
+bit-exact, but ~1.3x is met at no thread count on any vector measured, and the
+two new instruments this verification added (LR-active content, single-tile
+content against shipping dav1d) BOTH show the gap is materially worse than the
+standing grid says: 4.3-12.5x on loop-restoration content, 4.5-4.9x on
+single-tile 4K against `dav1d` as it ships, and one 2.74x thread-scaling
+inversion at t=4 -> t=8 that predates both branches.
+
+
+## 12. TRAPS FOR THE NEXT SESSION
+
+1. **A whole-process comparison arm must not hash.** `bench_ivf_limit` started
+   with the md5 inside the timed region against `dav1d --muxer null`, which
+   hashes nothing. On 318_tx_4x4 that was 8.5 of 17.0 ms/frame — the gap read
+   8.5x when it is 4.3x. Found only because the number disagreed with the LR
+   A/B's 9.1 ms/frame on the same vector. Cross-check every new instrument
+   against an existing measurement of the same thing before believing it.
+2. **One vector family is not a grid.** `v4k_8tile{,_10b}` does no loop
+   restoration, has 8 tiles, and is one repeated key frame. Every one of §5,
+   §6 and §4 is invisible to it, and two of the three are severe.
+3. **`dav1d --framedelay 1` is the like-for-like arm, not the reference the
+   user is comparing against.** Always run `dav1d_def` beside it; on
+   multi-tile content they agree within 4% and on single-tile they differ by
+   3.1x.
+4. **Overlapping per-round ranges are not a result.** At n=5 on this box most
+   sub-2% deltas on the 4K grid are unresolvable. `gap_summarize.py` prints
+   min/max per arm per cell for exactly this reason; read it before writing a
+   ratio into prose.
+5. **`decode_permutations` is red on `main`'s lineage** and has been. Do not
+   spend an hour bisecting it into your own change — diff the pass/fail SET
+   against the base first (it takes 55 s per side).
+6. **Attributes bind to the next item, and `#[cfg(test)]` takes the attribute
+   with it.** Inserting a test-only helper directly under an `#[inline(never)]`
+   silently strips it from the release build. Neither `cargo build` nor clippy
+   says a word.

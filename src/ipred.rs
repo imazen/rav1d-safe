@@ -306,6 +306,19 @@ fn cfl_ac_direct<BD: BitDepth>(
     ) {
         return;
     }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::ipred_arm::cfl_ac_dispatch::<BD>(
+        ac,
+        y,
+        w_pad,
+        h_pad,
+        cw as usize,
+        ch as usize,
+        is_ss_hor,
+        is_ss_ver,
+    ) {
+        return;
+    }
     cfl_ac_rust::<BD>(
         ac,
         y,
@@ -1622,6 +1635,29 @@ unsafe extern "C" fn ipred_filter_c_erased<BD: BitDepth>(
     )
 }
 
+/// Test-only alias for the scalar `cfl_ac` oracle, so the aarch64 parity sweep
+/// in `safe_simd::ipred_arm` compares against the *real* reference rather than
+/// a transcription of it.
+#[cfg(all(test, target_arch = "aarch64", not(feature = "asm")))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cfl_ac_scalar_for_test<BD: BitDepth>(
+    ac: &mut [i16; SCRATCH_AC_TXTP_LEN],
+    y_src: PicOffset,
+    w_pad: c_int,
+    h_pad: c_int,
+    width: usize,
+    height: usize,
+    is_ss_hor: bool,
+    is_ss_ver: bool,
+) {
+    cfl_ac_rust::<BD>(ac, y_src, w_pad, h_pad, width, height, is_ss_hor, is_ss_ver)
+}
+
+// Kept out-of-line so the scalar fallback is attributable in a `sample`
+// profile. `perf/st1-kernels` inserted `cfl_ac_scalar_for_test` BETWEEN this
+// attribute and its function, which silently moved the attribute onto the
+// test-only alias — and, because that alias is `#[cfg(test)]`, deleted it
+// outright from every non-test build. Restored here; see the compose record.
 #[inline(never)]
 fn cfl_ac_rust<BD: BitDepth>(
     ac: &mut [i16; SCRATCH_AC_TXTP_LEN],

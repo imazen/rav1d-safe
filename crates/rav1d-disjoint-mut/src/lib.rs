@@ -1077,6 +1077,23 @@ pub fn set_parallelism(n: usize) {
     checked::set_parallelism(n);
 }
 
+/// Declare how many tiles the frame about to be decoded splits into.
+///
+/// The companion to [`set_parallelism`], and the other half of the gate on the
+/// adaptive block shift: thread count says whether anything is concurrent, the
+/// tile split says whether the concurrency is the kind a coarser block helps.
+/// Call it once the frame header is parsed and BEFORE that frame's picture is
+/// allocated, since the shift is fixed when a buffer's tracker is built.
+///
+/// Monotone, and a no-op when the tracker is compiled out.
+#[inline]
+pub fn set_tile_concurrency(n: usize) {
+    #[cfg(feature = "__probe_untracked")]
+    let _ = n;
+    #[cfg(not(feature = "__probe_untracked"))]
+    checked::set_tile_concurrency(n);
+}
+
 // =============================================================================
 // Guard Drop impls — deregister borrow on drop
 // =============================================================================

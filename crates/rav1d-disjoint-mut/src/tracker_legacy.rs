@@ -588,3 +588,7 @@ impl BorrowTracker {
 /// parallelism hint has nothing to size. Present only so the `__probe_*` /
 /// `__tracker_legacy` arms still compile against the same crate surface.
 pub fn set_parallelism(_n: usize) {}
+
+/// Likewise: with no shards and no block shift there is nothing for the tile
+/// split to select.
+pub fn set_tile_concurrency(_n: usize) {}
