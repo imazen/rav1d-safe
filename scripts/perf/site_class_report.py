@@ -134,7 +134,7 @@ print("\n== gap to dav1d if one class's tracker cost went to zero ==\n")
 print("projected = (base - attributable) / dav1d.  base and dav1d are the real")
 print("builds; the attributable ms comes from the instrumented family.\n")
 h3 = (
-    f"{'vector':16} {'t':>2} {'now':>6} " + "".join(f"{c:>8}" for c in CLASSES)
+    f"{'vector':16} {'t':>2} {'now':>6} " + "".join(f"{c:>11}" for c in CLASSES)
     + f"{'A=rbig+picwb':>13}{'all':>8}{'untracked':>10}"
 )
 print(h3)
@@ -148,7 +148,7 @@ for vec, t in cells:
     row = f"{vec:16} {t:>2} {b / d:>6.3f} "
     for c in CLASSES:
         a = attrib.get((vec, t, c))
-        row += f"{'-':>8}" if a is None else f"{(b - a) / d:>8.3f}"
+        row += f"{'-':>11}" if a is None else f"{(b - a) / d:>11.3f}"
     rp = attrib.get((vec, t, "recon+big"), attrib.get((vec, t, "recon"), 0)) + attrib.get(
         (vec, t, "picwb"), 0
     )

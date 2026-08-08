@@ -1,0 +1,168 @@
+# Where the borrow tracker's time is, by CALL-SITE CLASS — 2026-08-08
+
+Question this exists to answer, from the campaign brief:
+
+> How much of the tracker's cost is tile RECONSTRUCTION, and how much is the
+> FILTER CHAIN?
+
+It decides between two designs and the wrong answer wastes a large refactor:
+
+* **Design A — static per-tile row split, no tracker for tile recon.** AV1 tiles
+  reconstruct independently (intra pred, MV pred and entropy contexts all reset
+  at tile boundaries), rows are contiguous, so `chunks_mut(stride)` plus
+  `split_at_mut` at tile column boundaries yields provably disjoint per-tile row
+  segments in safe Rust, computed once at tile setup (~17 K pointer
+  computations/frame against 15.6 M tracked pairs). It **cannot** cover the
+  filter chain: deblocking filters ACROSS tile boundaries (`src/lf_apply.rs:563`
+  and `:608`) and CDEF reads 2 px beyond its block.
+* **Design B — non-atomic serial tracker.** At t=1 nothing interleaves, so the
+  sharded ATOMIC machinery is waste; a `Cell` bump plus a linear scan gated on
+  the existing monotone parallelism latch is much cheaper. Sound and small, but
+  helps **only t=1**, and the bar is ~1.30x at every thread count.
+
+## Host, tree, method
+
+* Apple M4 Pro, macOS 26.5.2. Base `main` @ 8568dbb; instrument on
+  `perf/site-class` (1db8013, d7d2a58).
+* Two-point wall fit: every arm run at 2 and 20 frames, `beta = (t20 - t2)/18`,
+  so process startup, AVIF parse and decoder construction drop out of the
+  reported ms/frame. Same instrument on both sides, dav1d 1.5.4 measured in the
+  SAME interleaved sweep at `--framedelay 1` (the tile-threading-only model
+  rav1d-safe implements).
+* Arms rotate inside every cell; a cell is DISCARDED and re-run if any foreign
+  process exceeded 25% CPU during it. No `nice` on a timed run (Darwin maps a
+  niced process onto E-cores; ~40x distortion). No `-C target-cpu=native`.
+* Harness: `scripts/perf/site_class_sweep.sh`, report
+  `scripts/perf/site_class_report.py`, raw `site_class_gap_2026-08-08.tsv`.
+
+### The instrument
+
+`--features probe-class` classifies each borrow by the SOURCE FILE of its call
+site (`Location::caller()` inside `add`, which is `#[track_caller]` end to end
+once the release-time `cfg_attr(debug_assertions, track_caller)` pass-through
+wrappers in `picture.rs` / `with_offset.rs` / `pixels.rs` / `recon.rs` are
+widened) and drops the registration when that class is selected. `add` returns
+`BorrowId::UNCHECKED`, which `remove` already treats as "nothing to retire", so
+the CALL on both sides survives and only the WORK goes — the same semantics as
+the global `__probe_addnop` arm, one class at a time.
+
+UNSOUND by construction: the selected class's overlap check is gone. `__`-gated,
+absent from `default` and from every published feature.
+
+Classes, and why these:
+
+| class | files | covered by Design A? |
+|---|---|---|
+| `recon` | recon, ipred, ipred_prepare, itx, mc, pal + their `_arm` twins | partly — only its `big` half |
+| `filter` | loopfilter, cdef, lf_apply, lf_mask, lr_apply, looprestoration + `_arm` | **no, structurally** |
+| `decode` | decode.rs — the block-level control plane | no |
+| `other` | ctx.rs, env.rs, CDFs, refmvs | no |
+| `picwb` | `BlockMut::drop`'s per-row write-back, inside picture.rs's own loop | yes |
+
+`picwb` is separate rather than guessed: the borrow is taken in picture.rs's
+loop body, so `#[track_caller]` cannot forward its creator's identity. In these
+vectors its count is EXACTLY the sum of the `itx_arm.rs` `block_mut` sites
+(2,662,876) and `mc_arm.rs` / `looprestoration*.rs` register nothing at all, so
+here it is 100% recon — but on an inter frame or with loop restoration on it
+would be mixed, and a hardcoded assignment would be silently wrong there.
+
+`big` / `small` modifiers select instances by `len >= SHARD_MIN_LEN` (64 KiB),
+i.e. the frame-sized-buffer population. `recon` is NOT homogeneous:
+`recon.rs`'s four hot sites are coefficient-context borrows and
+`ipred_prepare.rs:35/38/48` read `BlockContext::intra`, all on 32-byte
+instances that no picture row split can touch. `cls_recon+big` is therefore the
+arm that prices Design A's recon half; plain `cls_recon` overstates it.
+
+### Why the selector is a runtime env mask and not a `cfg`
+
+Every `cls_*` arm is **the same binary**, so an inter-arm delta cannot be a
+codegen or layout difference. Deliberately not a `const`: that would let LLVM
+prove the class lookup dead in the null-nothing arm and delete it, making the
+baseline cheaper than the arms it is the baseline for and inflating every
+class's attributed cost by the instrument's own overhead. `cls_none` minus
+`base` prices that overhead and is reported.
+
+Cost of that choice: the nulled class's `add` body is still present in the
+binary, just branched over, so these numbers are a **lower bound** on a design
+that deleted the tracker outright and recovered its I-cache footprint. The
+compile-time `addnop` arm bounds the same quantity from the other side.
+
+`base` differs from pristine `main` only in debug line tables and one
+`std::env::var_os` at startup — which lands in the fit's intercept and cancels
+out of `beta`.
+
+## Correctness of the instrument (proved, not assumed)
+
+* **Output identity.** 40 arm x mask x vector x thread combinations, all
+  byte-identical frame md5: `a00c11f454328023c58af14d55544cff` (8bpc),
+  `4f218411bc6ee4cc9c630fe827337fa2` (10bpc). addnop does not change output,
+  only checking — if an md5 had moved, the instrument would be wrong.
+* **Liveness, by count not by timing.** The census (`--features probe-sites`)
+  reports `nulled=` per class. Every arm nulls EXACTLY its class's registration
+  count and nothing else, at both thread counts. An arm that silently nulled
+  nothing would read as "this class costs 0 ms", which is the exact wrong answer
+  to the question asked.
+* **Teeth, by mutation.** `crates/rav1d-disjoint-mut/tests/site_class_teeth.rs`
+  plants an overlapping mutable borrow and asserts all three directions: caught
+  with nothing nulled, NOT caught with this file's class nulled, and STILL
+  caught with a different class nulled (otherwise the mask is a global
+  off-switch wearing a class label). Four more assertions cover the `big` /
+  `small` modifiers against both sides of the size split, and one asserts a
+  size modifier with no class is REJECTED.
+* **Population coverage.** 15,646,727 registrations/frame at t=1 and 22,700,725
+  at t=8 — both exact matches for the independently-counted totals in issue
+  #455 — across 69 sites, 0 lost, 72/75 memo misses against 69 distinct sites
+  (no slot thrashing; the class lookup is one load in the steady state).
+* **A misspelled or missing mask is fatal**, and a non-`probe-class` binary
+  panics if `RAV1D_CLS_NULL` is set, so an arm cannot silently be the baseline
+  under another name.
+
+## Registration census (v4k_8tile, per frame)
+
+`benchmarks/site_class_census_2026-08-08.tsv` (69 sites x 2 vectors x 2 thread
+counts).
+
+| class | t=1 big | t=1 small | t=8 big | t=8 small |
+|---|---|---|---|---|
+| recon | 4,309,973 | 1,218,078 | 8,702,283 | 1,218,078 |
+| filter | 6,390,730 | 1,920 | 6,389,542 | 1,920 |
+| decode | 0 | 752,792 | 0 | 752,792 |
+| other | 0 | 2,973,234 | 0 | 2,973,234 |
+| picwb | 0 | 0 | 2,662,876 | 0 |
+
+Three facts fall straight out, before any timing:
+
+1. **`decode` and `other` are 100% sub-64-KiB.** `decode.rs` never borrows the
+   picture buffer at all, so a picture row split provably cannot reach it — even
+   though `decode_b` runs inside tile reconstruction.
+2. **`filter` is 99.97% picture buffer** and is the class Design A structurally
+   cannot cover.
+3. **The small population is thread-count-invariant** (4,946,024 at both t=1 and
+   t=8) — it is the control plane. All of the t=1 -> t=8 registration growth
+   (15.6 M -> 22.7 M) is picture-buffer traffic switching to per-row guards.
+
+## Decision rule, PRE-REGISTERED before the timing sweep produced a row
+
+Written while the box was still occupied by another agent's campaign, so the
+thresholds cannot have been chosen to suit the answer.
+
+* **Design A's reach** = attributable(`recon+big`) + attributable(`picwb`).
+  NOT plain `recon` (that includes 1.22 M/frame of 32-byte BlockContext borrows
+  a picture row split cannot touch), NOT `decode` (100% sub-64-KiB, i.e. it
+  never borrows the picture buffer at all), and NOT `filter` (structurally
+  out of reach).
+* **Design B's ceiling** = the WHOLE tracker at t=1 (`base - untracked`), and
+  only at t=1. B replaces atomics with a `Cell`; it cannot beat deleting the
+  tracker outright. If `untracked/dav1d` already exceeds 1.30x at t=1, B cannot
+  reach the bar there and its value is only "some fraction of a cell".
+* **A is worth the refactor** if it clears 1.30x at >= 2 of the 8 cells, OR
+  removes >= 25% of the excess over the bar (`base - 1.30 * dav1d`) at >= 3
+  cells with the class's band disjoint from `cls_none`'s.
+* **A is not worth it** if its reach is < 10% of the excess at every cell with
+  t > 1 — at t=1 alone, B is the cheaper buy for the same cell.
+* Any cell where the class arm's band OVERLAPS `cls_none`'s is reported as a
+  null for that class, not as its median.
+
+## Results
+
+<!-- filled in from site_class_gap_2026-08-08.tsv -->
