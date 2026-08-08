@@ -5122,6 +5122,15 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
 
     let mut ref_coded_width = <[i32; 7]>::default();
     let frame_hdr = f.frame_hdr.as_ref().ok_or(EINVAL)?.clone();
+    // Tell the borrow tracker how many tiles this frame splits into, BEFORE
+    // `rav1d_thread_picture_alloc` below builds the picture's tracker (the
+    // block shift is read once, at construction). Thread count alone picks the
+    // coarse shift for single-tile frames, where it measured 3.08% slower at
+    // t=8 — see `rav1d_disjoint_mut::set_tile_concurrency`. Monotone, so an
+    // occasional single-tile frame in a multi-tile stream cannot undo it.
+    rav1d_disjoint_mut::set_tile_concurrency(
+        frame_hdr.tiling.cols as usize * frame_hdr.tiling.rows as usize,
+    );
     if frame_hdr.frame_type.is_inter_or_switch() {
         if frame_hdr.primary_ref_frame != RAV1D_PRIMARY_REF_NONE {
             let pri_ref = frame_hdr.refidx[frame_hdr.primary_ref_frame as usize] as usize;

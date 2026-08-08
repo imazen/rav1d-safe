@@ -867,18 +867,35 @@ const BLOCKS_PER_SHARD: usize = 2;
 /// and therefore runs with no borrow outstanding).
 #[inline]
 fn block_shift_for(len: usize) -> u32 {
+    block_shift_rule(len, active_shards(), tile_concurrency())
+}
+
+/// The shift decision as a pure function of `len` and the two declared
+/// concurrency facts, so the policy can be tested without touching the
+/// process-global monotone latches that feed it (they can only move one way,
+/// which makes an ordering-dependent test of the gate impossible).
+#[inline]
+fn block_shift_rule(len: usize, shards: usize, tiles: usize) -> u32 {
     // A fixed rung, if one was selected, wins everywhere.
     if FIXED_SHIFT_SELECTED {
         return BLOCK_SHIFT;
     }
-    // Serial decode keeps the old constant. The adaptive shift's whole benefit
-    // is cross-core shard-line traffic, which a single thread does not have,
-    // and the single-thread column of the ladder is flat-to-slightly-adverse.
-    // Same split, for the same reason, as SHARDS_SERIAL vs SHARDS_CONCURRENT —
-    // and read at the same moment, so an instance built before
-    // `set_parallelism` simply keeps the serial value, exactly like `mask`.
-    if !ADAPTIVE_WHEN_SERIAL && active_shards() < SHARDS_CONCURRENT {
-        return BLOCK_SHIFT;
+    if !ADAPTIVE_WHEN_SERIAL {
+        // Serial decode keeps the old constant. The adaptive shift's whole
+        // benefit is cross-core shard-line traffic, which a single thread does
+        // not have, and the single-thread column of the ladder is
+        // flat-to-slightly-adverse. Same split, for the same reason, as
+        // SHARDS_SERIAL vs SHARDS_CONCURRENT — and read at the same moment, so
+        // an instance built before `set_parallelism` simply keeps the serial
+        // value, exactly like `mask`.
+        //
+        // Threads are necessary but NOT sufficient: a single-tile frame on
+        // eight threads is concurrent, and the coarse shift measured 3.08%
+        // SLOWER there while measuring 39% faster on the eight-tile frame at
+        // the same thread count. See `set_tile_concurrency`.
+        if shards < SHARDS_CONCURRENT || tiles < 2 {
+            return BLOCK_SHIFT;
+        }
     }
     let target = (BLOCKS_PER_SHARD * N_SHARDS) as u64;
     let want = (len as u64 / target.max(1)).max(1);
@@ -1006,6 +1023,46 @@ pub fn set_parallelism(n: usize) {
 #[inline(always)]
 fn active_shards() -> usize {
     ACTIVE_SHARDS.load(Ordering::Relaxed).clamp(1, N_SHARDS)
+}
+
+/// Tiles the busiest frame seen so far could decode at once. Monotone.
+static OBSERVED_TILES: AtomicUsize = AtomicUsize::new(1);
+
+/// Declare how many tiles a frame about to be decoded splits into.
+///
+/// This is the second half of the adaptive block shift's gate, and it exists
+/// because [`set_parallelism`] alone gets it wrong in one measured direction.
+///
+/// The shift's benefit is that a STRIDED access stops paying one distinct
+/// shard line per row, which is worth paying shard collisions for only when
+/// there are concurrent tile workers to collide. With `tiling.cols * rows ==
+/// 1` the reconstruction of a frame is serial no matter how many threads are
+/// open — the remaining concurrency is post-filter sbrow tasks over the same
+/// planes — so the coarse block buys no locality and only widens each lock's
+/// footprint.
+///
+/// Measured on this box (Apple M4 Pro 8P+4E, `scripts/perf/verify_gap.sh`,
+/// median of 5, no `nice`, default features): v4k_1tile at t=8 cost **+3.08%**
+/// (362.7 -> 373.8 ms/frame) from the tracker branch with per-round ranges that
+/// do not overlap, while v4k_8tile at t=8 GAINED 39% (117.3 -> 71.3) from the
+/// same change. Same thread count, opposite sign, and the only difference is
+/// the tile split — which the tracker could not see, because it sizes itself
+/// from buffer length.
+///
+/// Monotone `fetch_max`, for the same reason [`set_parallelism`] is: a later
+/// single-tile frame must not reconfigure a decoder that is concurrently
+/// running multi-tile ones. And, exactly as there, a stale value is only ever
+/// a performance question — the shift is read once in [`BorrowTracker::new`],
+/// is immutable for that tracker's life, and SOUNDNESS needs only that both
+/// registrants of a shared byte agree on the block boundary, which they do
+/// because they share the instance.
+pub fn set_tile_concurrency(n: usize) {
+    OBSERVED_TILES.fetch_max(n.max(1), Ordering::Relaxed);
+}
+
+#[inline(always)]
+fn tile_concurrency() -> usize {
+    OBSERVED_TILES.load(Ordering::Relaxed)
 }
 
 impl BorrowTracker {
@@ -1768,9 +1825,11 @@ mod tests {
     )))]
     #[test]
     fn adaptive_shift_keeps_the_block_count_near_target() {
-        // The shift only adapts once parallelism is declared — see
-        // `block_shift_for`. This test is about the rule, not about the gate.
-        set_parallelism(64);
+        // This test is about the RULE, not about the gate, so it drives
+        // `block_shift_rule` with both concurrency facts declared rather than
+        // poking the monotone globals (which the gate test below must be able
+        // to see un-poked).
+        let sh = |len: usize| block_shift_rule(len, SHARDS_CONCURRENT, 8);
         let target = BLOCKS_PER_SHARD * N_SHARDS;
         for len in [
             64 * 1024,       // just at SHARD_MIN_LEN
@@ -1780,7 +1839,7 @@ mod tests {
             2 * 3840 * 2160, // 4K luma, 10/12-bit
             8 * 3840 * 2160, // a generous over-allocation
         ] {
-            let shift = block_shift_for(len);
+            let shift = sh(len);
             let nblocks = len >> shift;
             assert!(
                 nblocks >= target && nblocks < target * 2,
@@ -1789,31 +1848,74 @@ mod tests {
         }
         // The two 4K planes the fixed ladder was measured on must land on the
         // shift that ladder measured best for each...
-        assert_eq!(block_shift_for(3840 * 2160), 14);
-        assert_eq!(block_shift_for(2 * 3840 * 2160), 15);
+        assert_eq!(sh(3840 * 2160), 14);
+        assert_eq!(sh(2 * 3840 * 2160), 15);
         // ...at the SAME picture-rows-per-block, which is the quantity that
         // actually drives the win (4.3 rows either way).
-        assert_eq!((1usize << block_shift_for(3840 * 2160)) / 3840, 4);
-        assert_eq!((1usize << block_shift_for(2 * 3840 * 2160)) / 7680, 4);
+        assert_eq!((1usize << sh(3840 * 2160)) / 3840, 4);
+        assert_eq!((1usize << sh(2 * 3840 * 2160)) / 7680, 4);
         // ...and a small buffer must NOT be handed that shift, which would
         // collapse it onto one or two shards.
-        assert!(block_shift_for(64 * 1024) <= 9);
+        assert!(sh(64 * 1024) <= 9);
     }
 
     /// The other side of the gate: with a fixed rung compiled in, nothing
     /// adapts and every buffer gets the constant.
     #[test]
     fn a_fixed_rung_overrides_the_adaptive_rule() {
-        set_parallelism(64);
+        let sh = |len: usize| block_shift_rule(len, SHARDS_CONCURRENT, 8);
         if FIXED_SHIFT_SELECTED {
             for len in [64 * 1024, 1024 * 1024, 3840 * 2160, 2 * 3840 * 2160] {
-                assert_eq!(block_shift_for(len), BLOCK_SHIFT, "len {len}");
+                assert_eq!(sh(len), BLOCK_SHIFT, "len {len}");
             }
         } else {
             // No rung selected: the rule must actually be doing something, i.e.
             // two very different buffers must not get the same shift.
-            assert_ne!(block_shift_for(64 * 1024), block_shift_for(2 * 3840 * 2160));
+            assert_ne!(sh(64 * 1024), sh(2 * 3840 * 2160));
         }
+    }
+
+    /// A single-tile frame must NOT get the coarse shift, however many threads
+    /// are open.
+    ///
+    /// This is the measured regression the tile gate exists for: v4k_1tile at
+    /// t=8 cost +3.08% from the adaptive shift while v4k_8tile at t=8 gained
+    /// 39% from it, same thread count. Thread parallelism alone cannot tell
+    /// those two apart, so `block_shift_for` reads both latches.
+    #[cfg(not(any(
+        feature = "__blockshift_8",
+        feature = "__blockshift_10",
+        feature = "__blockshift_13",
+        feature = "__blockshift_14",
+        feature = "__blockshift_15",
+        feature = "__blockshift_16",
+        feature = "__blockshift_adaptive"
+    )))]
+    #[test]
+    fn one_tile_does_not_get_the_coarse_shift() {
+        const LEN: usize = 2 * 3840 * 2160;
+        // Threads but one tile: the constant.
+        assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 1), BLOCK_SHIFT);
+        // Tiles but one thread: still the constant (the pre-existing gate).
+        assert_eq!(block_shift_rule(LEN, SHARDS_SERIAL, 8), BLOCK_SHIFT);
+        // Both: adapt. And this must be a real change, or the test is vacuous.
+        let adapted = block_shift_rule(LEN, SHARDS_CONCURRENT, 8);
+        assert_ne!(adapted, BLOCK_SHIFT);
+        assert_eq!(adapted, 15);
+        // Two tiles is already "multi-tile"; the gate is a threshold, not a
+        // proportion.
+        assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 2), adapted);
+    }
+
+    /// A later single-tile frame must not undo a multi-tile declaration, for
+    /// the same reason `set_parallelism` is monotone.
+    #[test]
+    fn set_tile_concurrency_is_monotone() {
+        set_tile_concurrency(8);
+        let raised = tile_concurrency();
+        assert!(raised >= 8);
+        set_tile_concurrency(1);
+        assert_eq!(tile_concurrency(), raised);
     }
 
     /// Every record registered must be retired — no leaks — under maximal
