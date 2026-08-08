@@ -142,9 +142,9 @@ cell re-run until it commits with ZERO foreign processes over 25% CPU. Raw:
     v4k_1tile          8    364.6    373.9    1.03   <- COST
 
 Against dav1d 1.5.4 `--framedelay 1` on this host with this harness
-(`benchmarks/verify_compose_2026-08-07.meta`: 246.5 / 125.2 / 65.6 / 37.4 at
-t=1/2/4/8 8bpc, and 10bpc derivable from its ratio row as 251 / 127 / 66.8 /
-37.9):
+(`benchmarks/verify_compose_2026-08-07.meta`, its `dav1d_fd1` column:
+246.5 / 125.2 / 65.6 / 37.4 at t=1/2/4/8 8bpc and
+251.5 / 127.6 / 66.8 / 37.9 at 10bpc):
 
     v4k_8tile 8bpc     t=4  2.00x -> 1.83x     t=8  3.15x -> 2.04x
     v4k_8tile 10bpc    t=4  2.43x -> 2.32x     t=8  3.74x -> 2.56x
