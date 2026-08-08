@@ -208,7 +208,7 @@ QEMU aarch64 `cross test` path stay on `cargo test` (nextest can't host them).
 | mc_arm | `src/safe_simd/mc_arm.rs` | **Complete** - 8bpc+16bpc (all MC functions including 8tap) |
 | ipred_arm | `src/safe_simd/ipred_arm.rs` | **Complete** - DC/V/H/paeth/smooth modes (8bpc + 16bpc) |
 | cdef_arm | `src/safe_simd/cdef_arm.rs` | **Complete** - All filter sizes (8bpc + 16bpc) |
-| loopfilter_arm | `src/safe_simd/loopfilter_arm.rs` | **Complete** - Y/UV H/V filters (8bpc + 16bpc) |
+| loopfilter_arm | `src/safe_simd/loopfilter_arm.rs` | **Complete** - real NEON, all 4 widths x H/V x 8/10/12 bpc, bit-exact (2026-08-07). Was listed "Complete" while containing zero intrinsic calls; see `benchmarks/lf_neon_2026-08-07.meta` |
 | looprestoration_arm | `src/safe_simd/looprestoration_arm.rs` | **Complete** - Wiener + SGR (5x5, 3x3, mix) 8bpc + 16bpc |
 | itx_arm | `src/safe_simd/itx_arm.rs` | **Complete** - 334 FFI functions, 320 dispatch entries |
 | filmgrain_arm | `src/safe_simd/filmgrain_arm.rs` | **Complete** - 8bpc + 16bpc |
@@ -279,7 +279,7 @@ All unsafe is now confined to:
 - Fixed: wrapped all `forge_token_dangerously()` calls in `unsafe { }` blocks (Rust 2024 edition compliance)
 - Both `cargo check --features c-ffi` and `cargo test --features c-ffi` pass clean
 
-**FFI wrappers gated behind `feature = "asm"`** in: cdef, cdef_arm, loopfilter, loopfilter_arm, looprestoration, looprestoration_arm, filmgrain, filmgrain_arm, pal.
+**FFI wrappers gated behind `feature = "asm"`** in: cdef, cdef_arm, loopfilter, looprestoration, looprestoration_arm, filmgrain, filmgrain_arm, pal. (`loopfilter_arm`'s were deleted 2026-08-07 — nothing referenced them.)
 
 **Archmage conversions complete:** cdef constrain_avx2. msac SSE2 uses sse2!() macro (not archmage).
 
@@ -374,7 +374,7 @@ fn process(token: Desktop64, dst: &mut [u8], src: &[u8], w: usize) {
 - **mc.rs: ✅ FULLY SAFE when asm off** — 29 rite fns converted from raw pointers to slices, 0 unsafe outside FFI wrappers
 - mc_arm.rs: 10 allows (FFI gated, inner fns use NEON intrinsics)
 - filmgrain_arm.rs: 8 allows (FFI gated, inner fns use NEON)
-- loopfilter_arm.rs: 3 allows
+- loopfilter_arm.rs: ✅ 0 allows (the 3 were on the never-called asm-gated FFI wrappers, deleted 2026-08-07)
 - cdef.rs: 2 allows (test module calling #[target_feature] fns)
 - refmvs.rs/refmvs_arm.rs: 1 allow each
 - ipred_arm.rs: 1 allow
@@ -692,13 +692,21 @@ buffer). n_fc clamped to 1 without `unchecked`.
 
 Reproducer: `cargo test --release --test reproduce_overlap -- --ignored`
 
-### ARM loopfilter_arm.rs:69 — index out of bounds on aarch64
+### ARM loopfilter_arm.rs:69 — index out of bounds on aarch64 (RESOLVED 2026-08-07)
 
-Discovered during `just test-aarch64` (QEMU emulation). The scalar loopfilter fallback in
-`loopfilter_arm.rs:69` computes `signed_idx(base, strideb * -2)` which wraps to a huge index
-when `strideb` is negative. The `decode_cpu_levels` integration tests fail on aarch64 with:
-`index out of bounds: the len is 32768 but the index is 18446744073709550596`.
-Lib-only tests pass fine — issue is in the scalar loopfilter path exercised by full decode.
+`signed_idx(base, strideb * -2)` wrapping to a huge index lived in
+`loop_filter_core`, which was only reachable from the `feature = "asm"`
+`extern "C"` wrappers — and those were never referenced by anything (the `asm`
+build links `src/arm/64/loopfilter.S`, whose symbols carry the `dav1d_` prefix).
+The whole block is deleted; the panic is unreachable because the code is gone.
+
+`decode_cpu_levels` still fails on aarch64, but NOT for this reason and not
+newly: its failures are conformance-vector md5 mismatches
+(`MISMATCH [scalar]: <id> expected=... actual=...`), the documented
+pre-existing set. Verified 2026-08-07 by running the full suite at
+perf/p2-kernels and at perf/lf-neon-port and diffing the extracted MISMATCH
+triples: 4,945 lines and 2,845 distinct triples each side, diff = 0 lines,
+identical failing-test names.
 
 ## Technical Notes
 

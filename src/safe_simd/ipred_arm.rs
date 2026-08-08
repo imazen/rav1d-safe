@@ -1035,6 +1035,10 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     max_height: c_int,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::IntraPred) {
+        return false;
+    }
     use crate::include::common::bitdepth::BPC;
     use zerocopy::IntoBytes;
 
@@ -1380,4 +1384,321 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         }
     };
     handled
+}
+
+// ============================================================================
+// Chroma-from-luma prediction (CfL)
+// ============================================================================
+//
+// `src/ipred.rs::cfl_pred` was scalar on aarch64: there is an
+// `#[cfg(target_arch = "x86_64")]` dispatch in `cfl_pred_direct` and nothing
+// beside it. Measured at t=1 on `v4k_8tile` it is 3.37% of decode inclusive
+// (2.46% self) and on `v4k_8tile_10b` 1.79% self — with `cfl_ac_rust`, which
+// stays scalar, the pair is 5.87% / 3.55%.
+//
+// The kernel is four ops per pixel with no cross-lane dependence:
+//
+//     diff = alpha * ac[x];
+//     dst[x] = iclip_pixel(dc + apply_sign(diff.abs() + 32 >> 6, diff));
+//
+// `alpha * ac` needs 32 bits (`|ac|` reaches ~1<<13 at 8bpc and `|alpha|` is up
+// to 16), so the lanes are `int32x4_t` and the i16 input is widened on load.
+// `apply_sign(m, t)` for `m >= 0` is `(m ^ (t >> 31)) - (t >> 31)`, which is
+// three cheap ops and no select.
+
+/// `iclip_pixel(dc + apply_sign((|alpha*ac| + 32) >> 6, alpha*ac))` for 4 lanes.
+#[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
+fn cfl_lane4(ac: int32x4_t, alpha: int32x4_t, dcv: int32x4_t, pmax: int32x4_t) -> int32x4_t {
+    let t = vmulq_s32(ac, alpha);
+    let m = vshrq_n_s32::<6>(vaddq_s32(vabsq_s32(t), vdupq_n_s32(32)));
+    let s = vshrq_n_s32::<31>(t);
+    let signed = vsubq_s32(veorq_s32(m, s), s);
+    vminq_s32(vmaxq_s32(vaddq_s32(dcv, signed), vdupq_n_s32(0)), pmax)
+}
+
+/// CfL prediction for one row of 8bpc pixels. `w` is a multiple of 4.
+#[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
+fn cfl_row_8bpc(dst: &mut [u8], base: usize, ac: &[i16], w: usize, alpha: i32, dc: i32) {
+    let alphav = vdupq_n_s32(alpha);
+    let dcv = vdupq_n_s32(dc);
+    let pmax = vdupq_n_s32(255);
+    for x in (0..w).step_by(4) {
+        let a = <&[i16; 4]>::try_from(&ac[x..x + 4]).expect("4 ac");
+        let acv = vmovl_s16(safe_unaligned_simd::aarch64::vld1_s16(a));
+        let r = cfl_lane4(acv, alphav, dcv, pmax);
+        let narrow = vmovn_u32(vreinterpretq_u32_s32(r));
+        let bytes = vmovn_u16(vcombine_u16(narrow, narrow));
+        let mut tmp = [0u8; 8];
+        safe_unaligned_simd::aarch64::vst1_u8(&mut tmp, bytes);
+        dst[base + x..base + x + 4].copy_from_slice(&tmp[..4]);
+    }
+}
+
+/// CfL prediction for one row of 16bpc pixels. `w` is a multiple of 4.
+#[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
+fn cfl_row_16bpc(
+    dst: &mut [u16],
+    base: usize,
+    ac: &[i16],
+    w: usize,
+    alpha: i32,
+    dc: i32,
+    bitdepth_max: i32,
+) {
+    let alphav = vdupq_n_s32(alpha);
+    let dcv = vdupq_n_s32(dc);
+    let pmax = vdupq_n_s32(bitdepth_max);
+    for x in (0..w).step_by(4) {
+        let a = <&[i16; 4]>::try_from(&ac[x..x + 4]).expect("4 ac");
+        let acv = vmovl_s16(safe_unaligned_simd::aarch64::vld1_s16(a));
+        let r = cfl_lane4(acv, alphav, dcv, pmax);
+        let out = vmovn_u32(vreinterpretq_u32_s32(r));
+        let slot = <&mut [u16; 4]>::try_from(&mut dst[base + x..base + x + 4]).expect("4 px");
+        safe_unaligned_simd::aarch64::vst1_u16(slot, out);
+    }
+}
+
+/// Safe dispatch for `cfl_pred` on aarch64. Returns true if NEON ran it.
+///
+/// Every AV1 CfL block width is a multiple of 4 (4, 8, 16, 32), so there is no
+/// scalar tail; the `w % 4` guard is a belt-and-braces refusal rather than a
+/// live path.
+#[cfg(target_arch = "aarch64")]
+pub fn cfl_pred_dispatch<BD: crate::include::common::bitdepth::BitDepth>(
+    dst: PicOffset,
+    width: c_int,
+    height: c_int,
+    dc: c_int,
+    ac: &[i16],
+    alpha: c_int,
+    bd: BD,
+) -> bool {
+    use crate::include::common::bitdepth::{AsPrimitive, BPC};
+
+    if crate::src::ablate::is_off(crate::src::ablate::Family::IntraPred) {
+        return false;
+    }
+    let Some(_token) = Arm64::summon() else {
+        return false;
+    };
+    let (w, h) = (width as usize, height as usize);
+    if w % 4 != 0 || w == 0 || h == 0 {
+        return false;
+    }
+    let ac = &ac[..w * h];
+    let bitdepth_max = bd.bitdepth_max().as_::<c_int>();
+
+    // ONE NARROW GUARD PER ROW, not one wide guard over the block.
+    //
+    // The obvious shape here is `with_pixel_guard_mut::<BD>(&dst, w, h)`, which
+    // is what the x86 twin and the 8bpc itx arms use. Measured on `v4k_8tile`
+    // at t=1 it costs more than the kernel saves: replacing the scalar loop
+    // with this one behind a wide guard removed `ipred::cfl_pred`'s 2.46% of
+    // self time and added +0.79% `add_wide::<true>` and +0.73% `remove_wide`,
+    // netting 0.24% of whole-decode wall (396.77 vs 397.71 ms/frame, medians of
+    // 9 interleaved rounds on an idle box). The reference takes one
+    // `slice_mut(w)` per row and that is cheaper, so this does the same. It is
+    // also the narrower extent of the two, which is the safe direction to move
+    // under tile threading.
+    use crate::src::strided::Strided as _;
+    let pxstride = dst.pixel_stride::<BD>();
+    for y in 0..h {
+        let row = dst + (y as isize * pxstride);
+        let mut guard = row.slice_mut::<BD>(w);
+        let px: &mut [BD::Pixel] = &mut guard;
+        match BD::BPC {
+            BPC::BPC8 => {
+                let b: &mut [u8] = crate::src::safe_simd::pixel_access::reinterpret_slice_mut(px)
+                    .expect("BD::Pixel layout matches u8");
+                cfl_row_8bpc_neon(_token, b, &ac[y * w..], w, alpha, dc);
+            }
+            BPC::BPC16 => {
+                let b: &mut [u16] = crate::src::safe_simd::pixel_access::reinterpret_slice_mut(px)
+                    .expect("BD::Pixel layout matches u16");
+                cfl_row_16bpc_neon(_token, b, &ac[y * w..], w, alpha, dc, bitdepth_max);
+            }
+        }
+    }
+    true
+}
+
+/// `#[arcane]` boundary per row.
+///
+/// One boundary per block would be cheaper, but the block form needs a wide
+/// guard over all `h` rows, and that guard measured more expensive than the
+/// kernel saves (see `cfl_pred_dispatch`). The token summon itself is ~1 ns and
+/// `h <= 32`, so per-row is the cheaper of the two shapes here.
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn cfl_row_8bpc_neon(_token: Arm64, dst: &mut [u8], ac: &[i16], w: usize, alpha: c_int, dc: c_int) {
+    cfl_row_8bpc(dst, 0, ac, w, alpha, dc);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn cfl_row_16bpc_neon(
+    _token: Arm64,
+    dst: &mut [u16],
+    ac: &[i16],
+    w: usize,
+    alpha: c_int,
+    dc: c_int,
+    bitdepth_max: c_int,
+) {
+    cfl_row_16bpc(dst, 0, ac, w, alpha, dc, bitdepth_max);
+}
+
+#[cfg(all(test, target_arch = "aarch64", not(feature = "asm")))]
+mod cfl_parity {
+    //! Differential parity for `cfl_pred_dispatch` against the scalar
+    //! `src/ipred.rs::cfl_pred` it replaces.
+    //!
+    //! The scalar path is the conformance oracle, and unlike itx there is no
+    //! `__simd_test` dual-compute hook on this call — so this sweep is the
+    //! only per-parameter evidence, and the corpus MD5 is the only other one.
+    //!
+    //! The parameter space is the real one: `alpha` is signalled in
+    //! `[-16, 16]`, `ac` holds bitdepth-scaled AC residual, and every AV1 CfL
+    //! block is 4..32 on a side. All four are swept, at both bit depths, plus
+    //! the saturating extremes that decide whether the clip is right.
+
+    use crate::include::common::bitdepth::{BitDepth, BitDepth8, BitDepth16};
+    use crate::include::dav1d::picture::Rav1dPictureDataComponent;
+
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+        fn in_range(&mut self, lo: i32, hi: i32) -> i32 {
+            lo + (self.next() % ((hi - lo + 1) as u64)) as i32
+        }
+    }
+
+    /// Returns (neon, scalar) pixel buffers, and whether NEON claimed the cell.
+    fn run<BD: BitDepth>(
+        w: usize,
+        h: usize,
+        dc: i32,
+        alpha: i32,
+        ac: &[i16],
+        pixels: &[BD::Pixel],
+        stride: usize,
+        bd: BD,
+    ) -> (Vec<BD::Pixel>, Vec<BD::Pixel>, bool)
+    where
+        BD::Pixel: Copy + Default,
+    {
+        let go = |simd: bool| -> (Vec<BD::Pixel>, bool) {
+            let mut px = pixels.to_vec();
+            let mut out = vec![BD::Pixel::default(); px.len()];
+            let comp = Rav1dPictureDataComponent::wrap_buf::<BD>(&mut px, stride);
+            let dst = comp.with_offset::<BD>();
+            let handled = if simd {
+                super::cfl_pred_dispatch::<BD>(dst, w as i32, h as i32, dc, ac, alpha, bd)
+            } else {
+                let mut fixed = [0i16; crate::src::internal::SCRATCH_AC_TXTP_LEN];
+                fixed[..ac.len()].copy_from_slice(ac);
+                crate::src::ipred::cfl_pred_scalar_for_test::<BD>(
+                    dst, w as i32, h as i32, dc, &fixed, alpha, bd,
+                );
+                true
+            };
+            comp.copy_pixels_to::<BD>(&mut out);
+            (out, handled)
+        };
+        let (neon, handled) = go(true);
+        let (scalar, _) = go(false);
+        (neon, scalar, handled)
+    }
+
+    fn sweep<BD: BitDepth>(bd: BD, seed: u64, what: &str)
+    where
+        BD::Pixel: Copy + Default + PartialEq + std::fmt::Debug,
+    {
+        use crate::include::common::bitdepth::AsPrimitive;
+        let _lock = crate::src::safe_simd::token_test_lock();
+        let pmax = bd.bitdepth_max().as_::<i32>();
+        let mut cells = 0usize;
+        let mut live = 0usize;
+        let mut bad: Vec<String> = Vec::new();
+
+        for &w in &[4usize, 8, 16, 32] {
+            for &h in &[4usize, 8, 16, 32] {
+                let stride = (w + 16).next_multiple_of(16);
+                let mut rng = Rng(seed ^ ((w as u64) << 32) ^ (h as u64));
+                for &alpha in &[-16i32, -13, -8, -3, -1, 0, 1, 3, 8, 13, 16] {
+                    // `dc` and the AC magnitudes cover the ordinary case and
+                    // both saturating ends; a missing or wrong clamp shows up
+                    // only at the extremes.
+                    for &(dc, scale) in &[
+                        (pmax / 2, pmax / 4),
+                        (0, pmax),
+                        (pmax, pmax),
+                        (pmax / 2, 1 << 13),
+                        (1, 3),
+                    ] {
+                        let ac: Vec<i16> = (0..w * h)
+                            .map(|_| rng.in_range(-scale, scale).clamp(-32768, 32767) as i16)
+                            .collect();
+                        let pixels: Vec<BD::Pixel> = (0..stride * h)
+                            .map(|_| rng.in_range(0, pmax).as_())
+                            .collect();
+                        let (neon, scalar, ok) =
+                            run::<BD>(w, h, dc, alpha, &ac, &pixels, stride, bd);
+                        cells += 1;
+                        if ok {
+                            live += 1;
+                        }
+                        if let Some((x, y)) = (0..h)
+                            .flat_map(|y| (0..w).map(move |x| (x, y)))
+                            .find(|&(x, y)| neon[y * stride + x] != scalar[y * stride + x])
+                        {
+                            let msg = format!(
+                                "{w}x{h} alpha={alpha} dc={dc} scale={scale} at ({x},{y}): \
+                                 neon={:?} scalar={:?}",
+                                neon[y * stride + x],
+                                scalar[y * stride + x]
+                            );
+                            if bad.len() < 4 {
+                                bad.push(msg);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(cells >= 800, "{what}: only {cells} cells ran");
+        assert_eq!(
+            live,
+            cells,
+            "{what}: {} of {cells} cells did NOT take the NEON path — those \
+             compared the scalar reference against itself and proved nothing",
+            cells - live
+        );
+        assert!(bad.is_empty(), "{what}: divergence\n  {}", bad.join("\n  "));
+    }
+
+    #[test]
+    fn cfl_pred_8bpc_matches_scalar() {
+        sweep(BitDepth8::new(()), 0x51DE_0001_0000_0001, "cfl 8bpc");
+    }
+
+    #[test]
+    fn cfl_pred_10bpc_matches_scalar() {
+        sweep(BitDepth16::new(1023), 0x51DE_0002_0000_0001, "cfl 10bpc");
+    }
+
+    #[test]
+    fn cfl_pred_12bpc_matches_scalar() {
+        sweep(BitDepth16::new(4095), 0x51DE_0003_0000_0001, "cfl 12bpc");
+    }
 }

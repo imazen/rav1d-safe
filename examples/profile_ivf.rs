@@ -61,23 +61,55 @@ fn main() {
     eprintln!("Input: {} ({} IVF frames)", args[1], frames.len());
     eprintln!("Iterations: {}", iterations);
 
+    // `RAV1D_ABLATE=looprestoration,cdef` switches those families' dispatchers
+    // to the generic scalar reference. Needs `--features __ablate`; asserting
+    // that here is what stops an un-ablated build from quietly reporting two
+    // identical arms as an A/B result.
+    if let Ok(list) = std::env::var("RAV1D_ABLATE") {
+        assert!(
+            rav1d_safe::src::ablate::ENABLED,
+            "RAV1D_ABLATE set but built without --features __ablate"
+        );
+        let fams: Vec<_> = list
+            .split(',')
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                rav1d_safe::src::ablate::Family::from_name(s)
+                    .unwrap_or_else(|| panic!("unknown family {s}"))
+            })
+            .collect();
+        eprintln!(
+            "Ablated: {:?}",
+            fams.iter().map(|f| f.name()).collect::<Vec<_>>()
+        );
+        rav1d_safe::src::ablate::set_disabled(&fams);
+    }
+
+    // Per-iteration timing to stdout, so an external driver can take a median
+    // instead of trusting one mean.
+    let reps: usize = std::env::var("RAV1D_REPS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+
     // Warmup
     let decoded = decode_ivf_frames(&frames);
     eprintln!("Frames decoded per iteration: {}", decoded);
 
     // Timed runs
-    let start = Instant::now();
-    for _ in 0..iterations {
-        let d = decode_ivf_frames(black_box(&frames));
-        black_box(d);
+    let label = std::env::var("RAV1D_LABEL").unwrap_or_else(|_| "run".into());
+    let mut last = 0.0f64;
+    for rep in 0..reps {
+        let start = Instant::now();
+        for _ in 0..iterations {
+            let d = decode_ivf_frames(black_box(&frames));
+            black_box(d);
+        }
+        let elapsed = start.elapsed();
+        let per_frame =
+            elapsed.as_secs_f64() * 1000.0 / (iterations as f64 * decoded.max(1) as f64);
+        last = per_frame;
+        println!("RESULT\t{label}\t{rep}\t{iterations}\t{decoded}\t{per_frame:.6}");
     }
-    let elapsed = start.elapsed();
-
-    let per_iter = elapsed / iterations as u32;
-    eprintln!(
-        "Total: {:.3}s ({} iters, {:.3}ms/iter)",
-        elapsed.as_secs_f64(),
-        iterations,
-        per_iter.as_secs_f64() * 1000.0,
-    );
+    eprintln!("{label}: {last:.4} ms/frame");
 }

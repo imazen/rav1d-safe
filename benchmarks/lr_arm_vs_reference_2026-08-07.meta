@@ -1,0 +1,115 @@
+# The aarch64 "NEON" loop-restoration module was slower than the code it shadowed
+
+date: 2026-08-07
+host: Apple M4 Pro (8 P-core + 4 E-core), macOS 26.5.2, aarch64
+build: stable rustc, `--release`, DEFAULT features (bitdepth_8 + bitdepth_16,
+       CHECKED DisjointMut). No `-C target-cpu=native`. No `nice` on any timed
+       run (Darwin maps a niced process to background QoS; ~40x distortion).
+branch: perf/lr-itx-neon, base fix/aarch64-mc-itx @ 2c7c082
+
+## The question, and why it had not been answered
+
+`ROADMAP_SIMD_PORTING.md` row R3 recorded loop restoration as "still scalar,
+1,527 lines, and measured **0.0 ms/frame** on the 4K vectors used here because
+loop restoration is off in those bitstreams. Do not port it on the strength of
+its line count; find a vector that exercises it first."
+
+That warning is correct and it blocked the port, because a `sample` profile
+cannot distinguish "cheap" from "never called" — both are 0.0 ms.
+
+## Instrument 1 — a per-family activity counter
+
+`src/ablate.rs` gains `note()` / `activity_snapshot()` / `activity_reset()`,
+compile-gated on the existing measurement-only `__ablate` feature exactly like
+`is_off` (no atomic on a production hot path — the call folds away). Each
+family's dispatcher calls `note(family, pixels)` BEFORE its `is_off`
+early-return, so the count is what the bitstream asks for, not what SIMD
+handled. `md5_inventory --activity` (asserts `ablate::ENABLED`, so an
+un-ablated build cannot silently emit an all-zero column) writes one row per
+corpus vector.
+
+Result over all 768 dav1d-test-data vectors
+(`benchmarks/family_activity_2026-08-07.tsv.zst`):
+
+* loop restoration is ACTIVE in **696 of 768** vectors.
+* Highest absolute: `8-bit/data/00001147` — 33,368,064 LR pixels over 3 frames,
+  which is more than its itx (19.2 M) or CDEF (25.7 M).
+* Highest share: `10-bit/issues/318_tx_4x4` — LR is **76.1%** of all counted
+  kernel pixel work (14.58 M of 19.17 M), 35 frames.
+* `v4k_8tile` and `v4k_8tile_10b`, the vectors the gap-to-dav1d table uses,
+  do **zero** loop restoration. The 0.0 ms on record was a property of those
+  bitstreams, not of the kernel.
+
+## Instrument 2 — profile on a vector that runs it
+
+`/usr/bin/sample`, `examples/profile_ivf`, `10-bit/issues/318_tx_4x4`, t=1,
+self time via `scripts/perf/sample_selftime.py`:
+
+    9.51%  looprestoration_arm::selfguided_filter_16bpc      (9.83% inclusive)
+    2.03%  looprestoration_arm::wiener_filter_16bpc_inner    (2.59% inclusive)
+    6.73%  _platform_memset          <- the per-unit scratch, see below
+    9.01%  _platform_memmove
+
+So the kernel is worth roughly an eighth of decode on LR-heavy 10-bit content.
+
+## Instrument 3 — the A/B that decided it
+
+`safe_simd/looprestoration_arm.rs` was not SIMD. It was a second, hand-written
+scalar implementation of `src/looprestoration.rs`, and `lr_filter_dispatch`
+returned `true` unconditionally, so it always won. The `__ablate` switch makes
+that dispatcher return `false`, which drops the caller through to the generic
+reference — same binary, same vector, only the implementation differs.
+
+`examples/profile_ivf` gained `RAV1D_ABLATE` / `RAV1D_REPS` / `RAV1D_LABEL`.
+One process per cell, arm order rotated every round, 9 rounds, median.
+Raw cells: `benchmarks/lr_arm_vs_reference_2026-08-07.tsv`
+(round, arm, ms/frame, foreign-processes->25%-CPU, vector).
+
+    vector                       arm(duplicate)   scalar(reference)   ratio
+    8-bit/data/00001147          204.4233         192.8295            1.0601
+      (range)                    200.94..211.53   190.84..197.19
+    10-bit/issues/318_tx_4x4       9.7187           9.7243            0.9994
+      (range)                      9.61..9.97       9.48..10.18
+
+**The duplicate cost 6.0% of whole-frame decode at 8bpc** and was a wash at
+10bpc. The 8bpc ranges do not overlap.
+
+CAVEAT ON THESE TWO NUMBERS: a sibling agent's benchmark was resident on the
+box for part of the run, so the `foreign` column is 0..2 rather than 0
+throughout. These are interleaved same-binary ratios with rotated order, which
+is robust to a roughly constant background load, but they are NOT idle-box
+absolute numbers and should not be quoted as ms/frame for anything else.
+
+## What shipped
+
+`safe_simd/looprestoration_arm.rs` is now ~95 lines: the dispatcher returns
+`false` (plus the activity `note`), and the module header carries this record.
+1,436 lines of duplicate scalar deleted.
+
+Correctness gate: `examples/md5_inventory` over all 768 vectors, set-diffed BY
+NAME against `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` — 766 PASS
+/ 2 SKIP, and every single vector's *actual* MD5 byte-identical. That is also
+the proof the duplicate had been made bit-exact (issue #14) and therefore
+bought nothing at all.
+
+## What this does NOT say
+
+* It does not say loop restoration is fast. It says the aarch64-specific copy
+  of it was not faster than the reference. The reference is still scalar and
+  still ~12% of decode on LR-heavy 10-bit content.
+* No NEON loop-restoration tier was written. Two concrete starting points for
+  one, both from the profile above: `selfguided_filter`'s per-pixel
+  `.get(..).unwrap_or(0)` neighbour gather, and the ~300 KB of zero-initialised
+  stack scratch every restoration unit pays for on entry (`sumsq` at `i64`,
+  `sum`, `dst0`, `dst1`). `lr_filter_direct` already has a `__simd_test`
+  differential against the reference — that is the per-call oracle to gate on.
+* Only two vectors were A/B'd. They were chosen as the corpus extremes by
+  absolute LR pixels and by LR share; no claim is made about the median vector.
+
+## Reproducing
+
+    cargo build --release --features __ablate --example md5_inventory
+    ./target/release/examples/md5_inventory --activity > activity.tsv
+
+    cargo build --release --features __ablate --example profile_ivf
+    ~/tmp/lrneon/lr_ab.sh out.tsv <vec.ivf> <iters> 9      # rotating A/B

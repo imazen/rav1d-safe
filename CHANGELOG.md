@@ -4,9 +4,198 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Added
+- **10/12-bit inverse transforms now have an aarch64 NEON tier**
+  (`src/safe_simd/itx_arm_hbd.rs`). `itxfm_add_dispatch` had been 8bpc-only on
+  purpose: the `itx_arm_neon_*` kernels hold transform state in `int16x8_t`,
+  which is exactly the spec's 8bpc row/column clip and nothing wider, so their
+  `*_16bpc_*` entry points were never reachable from the safe build. The new
+  module vectorises the *generic* reference (`src/itx.rs` + `src/itx_1d.rs`)
+  in `int32x4_t` lanes instead — four independent 1-D transforms per vector,
+  each lane running the identical i32 op sequence the scalar reference runs.
+  Wired for every shape with `max(w, h) <= 16` and all 16 non-WHT types
+  (4x4, 8x8, 16x16, 4x8, 8x4, 4x16, 16x4, 8x16, 16x8); 32/64-point transforms
+  and WHT still run the reference. Measured idle-box at t=1 on a 4K 10-bit
+  still: **508.3 -> 455.8 ms/frame, 2.02x -> 1.81x of dav1d 1.5.4
+  `--framedelay 1`** (t=2 2.16 -> 2.04, t=4 2.43 -> 2.33); itx goes from 21.93%
+  to 12.79% of decode inclusive with no `itx_1d` sample left at all. 8bpc is
+  unchanged, as it must be. Record: `benchmarks/itx_hbd_neon_2026-08-07.meta`.
+- **NEON chroma-from-luma prediction on aarch64** (`cfl_pred_dispatch` in
+  `src/safe_simd/ipred_arm.rs`). `cfl_pred_direct` had an x86_64 dispatch and
+  nothing beside it; measured at t=1 the scalar loop was 2.46% of decode self
+  time at 8bpc (3.37% inclusive) and 1.79% at 10bpc.
+- **Per-family kernel activity counters** (`src/ablate.rs`
+  `note`/`activity_snapshot`/`activity_reset`, `__ablate`-gated exactly like
+  `is_off`) plus `md5_inventory --activity`, which emits them per corpus
+  vector. This is what a `sample` profile cannot tell you: whether a 0.0 ms
+  kernel is fast or simply never called. Record:
+  `benchmarks/family_activity_2026-08-07.tsv.zst`.
+- `examples/profile_ivf` gains `RAV1D_ABLATE` / `RAV1D_REPS` / `RAV1D_LABEL`,
+  so any kernel family can be A/B'd against its scalar reference from a single
+  binary; `scripts/perf/lr_ab.sh` is the rotating-order driver.
+
+### Removed
+- **`src/safe_simd/looprestoration_arm.rs`'s scalar duplicate (1,436 lines).**
+  The file claimed to be "Safe ARM NEON implementations for Loop Restoration",
+  contained zero aarch64 intrinsics, and `lr_filter_dispatch` returned `true`
+  unconditionally — so every loop restoration call on aarch64 ran a second
+  hand-written copy of `src/looprestoration.rs` rather than the reference.
+  Interleaved A/B (rotating order, median of 9): the copy was **6.01% slower
+  whole-decode at 8bpc** (204.42 vs 192.83 ms/frame on `8-bit/data/00001147`)
+  and a wash at 10bpc. Now the dispatcher returns `false` and the caller runs
+  the reference; 766/766 conformance with byte-identical per-vector MD5s, which
+  is also the proof the duplicate bought nothing. aarch64 loop restoration is
+  still scalar — a real NEON tier is named as remaining work in
+  `ROADMAP_SIMD_PORTING.md` R3 and `benchmarks/lr_arm_vs_reference_2026-08-07.meta`.
+### Changed
+- **`rav1d-disjoint-mut`: releasing a borrow no longer takes the shard lock**
+  (`1f09769`). The occupancy bitmap moved out of the lock-protected record
+  block into an `AtomicU8` on the shard, so `remove` is one `fetch_and` against
+  the `fetch_or` a registration publishes with. Registration is unchanged and
+  still re-reads `state` inside its lock (the wide-list TOCTOU fix in
+  `4af62ae`). New `threaded_churn_leaks_no_slots` test, mutation-proven against
+  the lost-update shape it guards. Isolated effect on decode: -0.9%.
+- **`rav1d-disjoint-mut`: the borrow-tracker block shift is re-openable, and can
+  size itself from the buffer** (`c003d2f`). Profiling by CALLER rather than by
+  symbol showed the tracker's cost is the shard cache line, not the
+  registration — a strided access pays one line per ROW, and the single largest
+  consumer is `rav1d_prepare_intra_edges`' 1-pixel-wide left-column read (9.19%
+  of a t=8 4K frame) at one registration per row per BYTE. New
+  `blockshift-13/14/15/16` rungs and a `blockshift-adaptive` rule
+  (`log2(len) - 8`, so a 4K 8-bit plane gets 14 and its 10-bit twin 15, both at
+  ~4.3 picture rows per block, while a 64 KiB buffer keeps 8). Sound for any
+  value — the no-missed-overlap argument constrains only that both registrants
+  agree, which the module header now states, and the premise is mutation-proven
+  (making consecutive registrations disagree by one bit fails
+  `cross_shard_overlaps_are_all_caught`).
+- **The adaptive shift is now the DEFAULT for a threaded decode** (`fd5239f`),
+  with serial decode left byte-for-byte on the old constant — the same split,
+  for the same reason, as `SHARDS_SERIAL` vs `SHARDS_CONCURRENT`. Idle box,
+  median of 5, zero foreign, ms/frame: v4k_8tile 131.3 -> 119.8 at t=4 and
+  117.9 -> 76.3 at t=8; 10bpc 162.0 -> 155.3 and 141.6 -> 97.1. Against
+  dav1d 1.5.4 `--framedelay 1` that is **t=8 3.15x -> 2.04x (8bpc) and
+  3.74x -> 2.56x (10bpc)**, t=4 2.00x -> 1.83x and 2.43x -> 2.32x. Cost,
+  measured and reproducible across all five rounds: single-tile 4K at t=8 is
+  **2.6% slower** (364.6 -> 373.9) — one tile means the concurrency is
+  post-filter tasks sharing planes, so a coarser block buys no strided-read
+  locality and only adds collisions; the tracker cannot detect that from the
+  buffer length. 1024x1024 is neutral. Output bit-identical on all 769 corpus
+  vectors; wide-path promotions zero.
+  Record: `benchmarks/tracker_blockshift_2026-08-08.meta`, raw
+  `benchmarks/tracker_blockshift_confirm_2026-08-08.tsv`.
+- **`held-row-guards` (default off), a measured negative kept on purpose**
+  (`94f1bdb`). `WithOffset::block_mut`'s compact path can hold its per-row
+  MUTABLE guards across the kernel instead of taking immutable ones to read and
+  mutable ones to write back, halving registrations from `2h` to `h` with
+  byte-identical extents and 766/766 correctness. It measures null, and
+  combined with a larger block shift it is a collapse (402-986 ms/frame against
+  a 120 ms base) because holding 64 guards overflows a shard's 7 slots onto the
+  all-shards wide path.
+- `examples/probe_tracker` gains `--features probe-wide`: wide-path promotion
+  counters that, unlike `probe-count`, keep the sharded tracker rather than
+  switching to the legacy one.
+
+### Fixed
+- **10/12-bit CDEF on aarch64 decoded to the wrong pixels** (issue #446).
+  `src/safe_simd/cdef_arm.rs`'s 16bpc filter computed `pri_tap` as
+  `4 - (pri_strength & 1)` where the spec, `src/cdef.rs`'s scalar reference and
+  both x86 16bpc kernels use `4 - (pri_strength >> bitdepth_min_8 & 1)`.
+  `bitdepth_min_8` is 0 at 8 bpc, which is why only high-bit-depth ARM output was
+  affected and why no 8-bit hash ever moved. Carried in with `perf/cdef-neon`
+  (whose 16bpc vector kernel cannot be bit-exact without it) and independently
+  confirmed: frame MD5 now matches dav1d 1.5.4 on 7/7 local vectors at t=1/2/4/8,
+  and `cargo test --release --test decode_md5_verify` over dav1d-test-data goes
+  from 556 mismatching vectors to 464 — 92 newly matching, **0 regressions**
+  (10-bit/quantizer 3 -> 64 passing, 10-bit/data 0 -> 26, 10-bit/film_grain
+  1 -> 6, every other suite unchanged to the vector).
+
 ### QUEUED BREAKING CHANGES
 <!-- Breaking changes that will ship together in the next major (or minor for 0.x) release.
      Add items here as you discover them. Do NOT ship these piecemeal — batch them. -->
+- `rav1d-disjoint-mut`: **`DisjointMut::new` is no longer `const`**. The borrow
+  tracker now sizes itself from the container's length at construction, which
+  needs a call to `AsMutPtr::len`. `dangerously_unchecked` stays `const`. No
+  in-repo caller constructed a `DisjointMut` in const context.
+
+### Changed
+- **VERIFIED COMPOSE (2026-08-07, `verify/compose`).** `perf/lf-neon-port`,
+  `perf/cdef-neon` and `perf/p3-t8-inversion` merged onto `perf/p2-kernels` and
+  independently re-measured; nothing was left out. Record:
+  `benchmarks/verify_compose_2026-08-07.meta`, raw
+  `benchmarks/verify_gap_2026-08-07.tsv`, harness `scripts/perf/verify_gap.sh`.
+  The composed tree is **not** bit-identical to its baseline at 10 bpc, and the
+  divergence is a fix (see Fixed). Idle-box, median of 7, one instrument on both
+  sides: v4k_8tile ms/frame 412.1/260.6/175.9/187.8 -> 400.3/223.8/131.1/116.5 at
+  t=1/2/4/8, i.e. 1.67/2.08/2.68/5.02x -> 1.62/1.79/2.00/3.12x of dav1d 1.5.4
+  `--framedelay 1`; 10 bpc 2.39/2.80/3.37/5.65x -> 2.01/2.16/2.37/3.76x. The
+  t=4 -> t=8 inversion is gone (t=8/t=4 1.068 -> 0.889 at 8 bpc, 0.951 -> 0.899
+  at 10 bpc) and t=8 is the best thread count again. Still 3.1-3.8x off dav1d at
+  t=8; its t=1 -> t=8 scaling is 6.59x against our 3.44x.
+
+- **The aarch64 deblocking loop filter has a real NEON tier**
+  (`src/safe_simd/loopfilter_arm.rs`). That file previously imported
+  `core::arch::aarch64::*` and contained no intrinsic call, and its
+  `loopfilter_sb_dispatch` returned `false` unconditionally — so on aarch64 the
+  "NEON" loop filter was the scalar reference. Ported bit-exactly: all four tap
+  widths (`wd` 4 / 6 / 8 / 16 = the spec's filter4 / filter6 / filter8 /
+  filter14), both edge directions (vertical edges transpose 8x8 tiles in
+  registers; horizontal edges are tap-major and need none), at 8, 10 and 12
+  bits, over fused runs of 1..4 groups. One `u16`-lane kernel serves every bit
+  depth. Two neighbours of the filter that the profile showed cost MORE than
+  the arithmetic went with it: `LfBlock::close`'s write-back diff scan is now
+  one `vceqq` plus a nibble movemask, and `LfBlock::open`'s per-row copy is
+  monomorphized on the six widths it can take instead of a `memmove` call per
+  row. No `DisjointMut` guard changed extent or count, and no `unsafe` was
+  added. Bit-identical decode output: the whole-corpus MISMATCH set (4,945
+  lines, 2,845 distinct triples across 5 CPU tiers x 989 vectors) is unchanged,
+  and frame md5 matches on all 7 local vectors at every thread count.
+  `benchmarks/lf_neon_2026-08-07.meta` (3b44f6d, d751493, a5606dc).
+- **The borrow tracker's shard set is sized from the declared decode
+  parallelism, and 8-bit decode no longer gets slower past 4 threads**
+  (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`, `set_parallelism`). On a
+  3840x2160 8-tile 8bpc stream the decoder had been running 175.8 ms/frame at
+  t=4 and 187.0 at t=8 — the best configuration was 4 threads. Worker occupancy
+  was not the problem (7.55 of 8 busy); the same 136 tile-recon and 3x34 filter
+  tasks simply cost 62% more CPU at t=8 than at t=4, and a build with the
+  tracker compiled out did not slow down at all. The default shard count per big
+  instance moves 32 -> 128 for a threaded decode and stays at 32 for a serial
+  one, because the two want opposite things: more shards cut the cross-core
+  contention that caused the inversion, while a serial decode is dominated by
+  the wide-borrow path, whose cost is proportional to the shard count and which
+  is common exactly when tile threading is off. That path now holds only the
+  shards an instance can actually reach (`0..=mask`) rather than the whole
+  array, which is what makes the larger array affordable — for a sub-64-KiB
+  instance it is one lock instead of 128. Measured, M4 Pro, median of 9,
+  ms/frame: 8bpc t=1 413.3 -> 430.5, t=4 175.8 -> 139.7, t=8 187.0 -> 125.3,
+  t=16 208.8 -> 135.6; 10bpc t=8 213.7 -> 161.7. Best shippable configuration
+  175.8 -> 125.3 (1.40x), and the gap to dav1d 1.5.4 at 8 threads goes 5.23x ->
+  3.44x (8bpc) and 5.65x -> 4.18x (10bpc). The 4.2% single-thread cost is the
+  larger shard array itself and is not recovered. Bit-identical output at every
+  arm and thread count; `tests/wide_exclusion.rs` gates the wide path's
+  exclusion with a race that fails on a deliberately shortened prefix.
+  `benchmarks/p3_inversion_2026-08-07.meta` (14873a6).
+- **The `DisjointMut` borrow tracker is address-block sharded, and tile
+  threading now scales** (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`). Each
+  instance's tracker is split into 32 independently locked, cache-line-isolated
+  shards chosen by a hash of the borrow's address block, instead of one spin
+  lock plus one 64-slot table that every tile worker funnelled through. A borrow
+  registers its exact interval in every shard its blocks map to and checks
+  exactly those, so overlaps are still caught (two overlapping borrows share a
+  byte, hence a block, hence a shard) and disjoint borrows are still never
+  refused (records are whole intervals, never clipped). Decode had been getting
+  *slower* with more threads; it now gets faster at every step. Measured on
+  3840x2160 8-tile 8bpc, M4 Pro, median of 9, ms/frame (speedup vs that arm's
+  own t=1): t=1 602 (1.00x) -> 601 (1.00x), t=2 513 (1.17x) -> 423 (1.42x),
+  t=4 688 (0.88x) -> 365 (1.65x), t=8 1679 (0.36x) -> 332 (1.81x) — 5.1x faster
+  at t=8, and 1.55x faster than the best thread count the old tracker could
+  ship. Single-tile content gains too (1024x576 8bpc: no scaling at all before,
+  1.36x now). Costs, measured and not yet diagnosed: 10-bit content is 6-11%
+  slower single-threaded, and 256x144 is 4.5-6.8% slower at every thread count.
+  Bit-identical output at every thread count and every arm.
+  `benchmarks/shard_tracker_2026-08-07.meta` (91169df, e1a3e85, 1401cb3,
+  f01ada8).
+- `DisjointMut::tracker` is boxed, so the wrapper is pointer-sized: this drops
+  `Rav1dTaskContext` well under its 48 KiB stack-weight gate.
 
 ## [0.6.0] - 2026-07-04
 

@@ -746,6 +746,29 @@ fn dc_only_16x16_16bpc(
 // Generic 16x16 inverse transform (assembly lines 1374-1464)
 // ============================================================================
 
+/// `eob` below which a 16x16 transform's rows 8..15 are guaranteed zero.
+///
+/// From `src/arm/64/itx.S`, `def_fn_16x16 <txfm1>, <txfm2>, <eob_half>`:
+/// 36 for every pairing of {dct, adst, flipadst} plus identity/identity, and
+/// **8** for `dct, identity` (H_DCT) and `identity, dct` (V_DCT).
+///
+/// Being too LOW is always safe — it just transforms an all-zero row group,
+/// which contributes nothing. Being too HIGH silently discards coefficients.
+/// So the four pairings AV1 does not permit at 16x16 (H_ADST, V_ADST,
+/// H_FLIPADST, V_FLIPADST — dav1d has no 16x16 kernel for them at all) take
+/// the conservative 8 rather than an invented value.
+#[cfg(target_arch = "aarch64")]
+fn eob_half_16x16(row_tx: TxType16, col_tx: TxType16) -> i32 {
+    use TxType16::Identity;
+    match (row_tx, col_tx) {
+        // IDTX is TX_CLASS_2D: it uses the same zigzag as the DTTs.
+        (Identity, Identity) => 36,
+        // Any other identity pairing is a 1-D scan class.
+        (Identity, _) | (_, Identity) => 8,
+        _ => 36,
+    }
+}
+
 /// NEON implementation of generic 16x16 inverse transform add for 8bpc.
 ///
 /// Mirrors `inv_txfm_add_16x16_neon` from itx.S lines 1433-1464.
@@ -791,8 +814,16 @@ pub(crate) fn inv_txfm_add_16x16_8bpc_neon(
     // row-transform output ready for the column transform.
     let mut tmp = [0i16; 256];
 
-    // The eob half threshold for skipping the second 8-row group
-    let eob_half = 36i32;
+    // The eob threshold below which the second 8-row group is all-zero and can
+    // be skipped. It is PER TRANSFORM TYPE, because the coefficient scan is:
+    // `dav1d_tx_type_class` puts H_DCT in TX_CLASS_H, whose `rc` is the scan
+    // index itself, so eob = 8 already lands on coefficient row 8 — while the
+    // 2-D zigzag needs eob = 36 to get there. Hardcoding 36 for every type
+    // dropped real coefficients on H_DCT for every eob in [8, 36).
+    //
+    // Mirrors `src/arm/64/itx.S`'s `def_fn_16x16 <txfm1>, <txfm2>, <eob_half>`
+    // table exactly for the twelve types AV1 permits at 16x16.
+    let eob_half = eob_half_16x16(row_tx, col_tx);
 
     // Row transform: process two groups of 8 rows each
     // Each group loads ALL 16 columns but only 8 rows.
@@ -920,7 +951,12 @@ pub(crate) fn inv_txfm_add_16x16_16bpc_neon(
     let is_identity_row = matches!(row_tx, TxType16::Identity);
 
     let mut tmp = [0i16; 256];
-    let eob_half = 36i32;
+    // Same per-type table as the 8bpc kernel above. This 16bpc variant is not
+    // wired into `itxfm_add_dispatch` (every arm there is BPC8 on purpose —
+    // the 16bpc transforms are not yet bit-exact), but the threshold is a
+    // property of the coefficient scan, not of the bit depth, so it is fixed
+    // here too rather than left as a second copy of the bug.
+    let eob_half = eob_half_16x16(row_tx, col_tx);
 
     // Row transform: two groups of 8 rows
     for half in 0..2usize {

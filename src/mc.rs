@@ -263,7 +263,7 @@ fn put_8tap_scaled_rust<BD: BitDepth>(
 }
 
 #[inline(never)]
-fn prep_8tap_rust<BD: BitDepth>(
+pub(crate) fn prep_8tap_rust<BD: BitDepth>(
     tmp: &mut [i16],
     src: PicOffset,
     w: usize,
@@ -502,7 +502,7 @@ fn put_bilin_scaled_rust<BD: BitDepth>(
     }
 }
 
-fn prep_bilin_rust<BD: BitDepth>(
+pub(crate) fn prep_bilin_rust<BD: BitDepth>(
     tmp: &mut [i16],
     src: PicOffset,
     w: usize,

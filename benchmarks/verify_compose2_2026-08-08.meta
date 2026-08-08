@@ -1,0 +1,305 @@
+# Independent verification of the two-branch compose onto fix/aarch64-mc-itx
+
+date:   2026-08-08
+host:   Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64
+rustc:  1.97.1 (8bab26f4f 2026-07-14), release, DEFAULT features
+        (bitdepth_8 + bitdepth_16, CHECKED DisjointMut, tracker armed).
+        No `-C target-cpu=native`. NO `nice` on any timed run.
+ref:    dav1d 1.5.4 (homebrew), measured in the SAME interleaved sweep, same
+        session, both at `--framedelay 1` and at its shipping default.
+tree:   verify/compose-2 = fix/aarch64-mc-itx @ 2c7c082
+          + perf/tracker-halve  @ 464c7bd  (merge 7e4f600, clean)
+          + perf/lr-itx-neon    @ 788d117  (merge 2718219, 2 conflicts, resolved)
+          + 2832454 (this campaign: one new soundness gate, one doc correction)
+        BOTH branches merged. Nothing was left out.
+raw:    benchmarks/verify_compose2_gap_2026-08-08.tsv   (main, 160 rows)
+        benchmarks/verify_compose2_attr_2026-08-08.tsv  (attribution, 125 rows)
+harness: scripts/perf/verify_gap.sh + verify_gap_report.py, unchanged.
+        One process per (arm, cell), run at 2 and 20 frames,
+        `beta = (ms20 - ms2)/18` so process startup drops out. Arm order
+        rotates per round. A round is DISCARDED and re-run whole if any
+        foreign process exceeds 25% CPU. **foreign = 0 on every committed
+        cell of both sweeps** (5 discards total, all re-run).
+
+This records what an INDEPENDENT re-measurement found, not what the two branch
+reports claimed. Where they differ, the difference is stated.
+
+
+## HEADLINE: materially closer, still not near. Best cell 1.63x, worst 2.42x.
+
+ms/frame, median of 5 rounds, foreign=0:
+
+  vector            t     base  composed  dav1d_fd1  dav1d_def  comp/base  vs fd1  vs def
+  v4k_8tile         1    401.2     401.0      246.4      246.3      1.000    1.63    1.63
+  v4k_8tile         2    222.9     216.6      125.0      125.7      0.972    1.73    1.72
+  v4k_8tile         4    130.4     116.3       65.6       63.9      0.892    1.77    1.82
+  v4k_8tile         8    116.7      73.1       34.7       33.6      0.627    2.11    2.18
+  v4k_8tile_10b     1    507.2     438.1      251.3      251.0      0.864    1.74    1.75
+  v4k_8tile_10b     2    274.8     245.5      127.5      128.7      0.893    1.93    1.91
+  v4k_8tile_10b     4    158.3     129.9       66.8       65.4      0.821    1.95    1.99
+  v4k_8tile_10b     8    137.6      85.1       36.3       35.1      0.618    2.34    2.42
+
+The ~1.3x bar is met at NO thread count on either depth. The gap did shrink at
+7 of 8 cells (t=1 8bpc is a dead heat) and the shrink is large where it was
+worst: t=8 goes 3.37x -> 2.11x (8bpc) and 3.79x -> 2.34x (10bpc).
+
+dav1d's own default is within 4% of its `--framedelay 1` figure at every cell
+(0.97-1.01x), so the like-for-like restriction is not what the remaining 2x is
+made of.
+
+
+## NO INVERSION ANYWHERE
+
+  vector                  arm   t1->t2   t2->t4   t4->t8   t1->t8 speedup
+  v4k_8tile              base    0.556    0.585    0.894            3.44x
+  v4k_8tile               all    0.540    0.537    0.628            5.48x
+  v4k_8tile         dav1d_fd1    0.507    0.524    0.529            7.11x
+  v4k_8tile         dav1d_def    0.510    0.508    0.525            7.34x
+  v4k_8tile_10b          base    0.542    0.576    0.869            3.69x
+  v4k_8tile_10b           all    0.560    0.529    0.655            5.15x
+  v4k_8tile_10b     dav1d_fd1    0.507    0.524    0.543            6.93x
+  v4k_8tile_10b     dav1d_def    0.513    0.508    0.537            7.15x
+
+Every step is < 1.000: no t=N -> t=2N cell is slower than its half. The base's
+near-inversion at t=4 -> t=8 (0.894 / 0.869) is gone (0.628 / 0.655).
+
+Scaling is now the SECOND problem, not the first: t=1 -> t=8 is 5.48x against
+dav1d's 7.11x, but the t=1 ratio is already 1.63x. Even perfect scaling from
+here would leave 1.63x.
+
+
+## ATTRIBUTION — which branch bought what (5 arms, median of 5, foreign=0)
+
+  vector            t     base      trk       lr  composed  dav1d_fd1  trk/base  lr/base  comp/base
+  v1024             8     27.0     26.8     26.7      26.7       14.4     0.994    0.990      0.990
+  v256              8      1.111    1.056    1.111     1.056      0.778    0.950    1.000      0.950
+  v4k_1tile         8    362.7    373.8    359.6     368.9      239.6     1.031    0.991      1.017
+  v4k_8tile         8    117.3     71.3    116.8      70.6       34.3     0.608    0.996      0.602
+  v4k_8tile_10b     1    508.0    511.8    438.1     437.9      251.1     1.008    0.862      0.862
+
+  trk = 2c7c082 + perf/tracker-halve only;  lr = perf/lr-itx-neon head only.
+
+The two branches are cleanly separable and they do not overlap:
+
+  * the whole of the t=8 multi-tile win is the TRACKER (0.608 alone, 0.602
+    composed; lr alone is 0.996 there — inert);
+  * the whole of the 10bpc t=1 win is the 16bpc ITX NEON PORT (0.862 alone,
+    0.862 composed; trk alone is 1.008 there — the adaptive shift is gated off
+    for a serial decode by construction).
+
+They compose without interference. Nothing in this grid shows the two changes
+fighting each other.
+
+
+## THE ONE REGRESSION: single-tile 4K at t=8
+
+  v4k_1tile t=8, ms/frame, per-round values (median of 5, spread < 0.9%):
+    base       362.667   [361.667 362.500 362.667 362.833 365.556]
+    trk        373.833   [371.500 373.333 373.833 373.889 374.000]   +3.08%
+    lr         359.556   [358.556 359.167 359.556 359.667 359.889]   -0.86%
+    composed   368.889   [368.500 368.833 368.889 369.167 370.444]   +1.72%
+    dav1d_fd1  239.611                                                composed/dav1d = 1.54x
+
+This is REAL, not noise — the arms' per-round ranges do not overlap. The
+tracker's adaptive block shift costs 3.08% here and the itx port gives 0.86%
+back, netting +1.72% on the composed tree. Mechanism (from the branch report,
+and consistent with the attribution above): one tile means the recon task is
+serial and the concurrency is post-filter tasks over the same planes, so a
+coarser block buys no strided-read locality and only adds shard collisions. The
+tracker sees buffer length, not tiling, so it cannot gate itself out.
+
+Worth stating plainly: 1.54x is the BEST t=8 ratio in the whole campaign, so
+the cell we made worse is also the cell we are closest on.
+
+  v1024 t=8 is a clean 1.0% WIN (26.72 vs 27.00, tight spreads).
+  v256 t=8 is AT THE INSTRUMENT'S RESOLUTION FLOOR and must not be quoted as a
+  delta: at ~1.1 ms/frame one millisecond of wall over 18 frames is 0.056
+  ms/frame, so the apparent 0.95 is a single quantum, and dav1d's own v256
+  column contains a -1.722 ms/frame round (the fit going negative on noise).
+
+
+## CORRECTNESS — 766/766 held, set-diffed BY NAME
+
+`examples/md5_inventory` over all 768 vectors -> `(group/name, status,
+actual_md5)`, sorted, `diff`ed against the committed baseline
+`benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` decompressed the same
+way. The key includes the ACTUAL hash, so a change that repaired N and broke N
+cannot hide in a count.
+
+  composed tree: 766 PASS, 2 SKIP (non-IVF), 0 mismatch, 0 error
+  set-diff vs baseline: ZERO LINES
+
+  cargo test --release --test decode_md5_verify   14/14 in 36.8 s
+  cargo test --release --lib                      66 passed, 8 ignored
+  bench_ab_decode CHECKSUM identical across base/trk/lr/composed on
+    v4k_8tile (a00c11f4...), v4k_8tile_10b (4f218411...), v4k_1tile, v1024, v256
+
+PRE-EXISTING, not caused by this compose: `decode_permutations` fails 16 of 19.
+Verified by NAME, not count — the 16 failing test names on the composed tree
+are byte-identical to the 16 on unmodified 2c7c082 (`diff` of the sorted
+failing-name lists is empty).
+
+
+## SOUNDNESS — re-proved by mutation, and one gate was MISSING
+
+`#![forbid(unsafe_code)]` proven ACTIVE, not assumed: an `unsafe` block planted
+in `src/safe_simd/itx_arm_hbd.rs` and in `include/dav1d/picture.rs` (each with
+`#[allow(unsafe_code)]`, which cannot override `forbid`) fails the build with
+E0453 + "usage of an `unsafe` block". Restored, green. The compose adds zero
+`unsafe` tokens to rav1d-safe and zero `allow(unsafe_code)` anywhere.
+
+Seven hazards planted in the tracker, each run and restored:
+
+  M1  in-lock `state` re-read deleted from `add`'s
+      single-block fast path (the 4af62ae TOCTOU)     DETECTED  wide_exclusion
+  M2  `active()` shortened to one shard               DETECTED  narrow_borrow_is_visible_to_wide_registrant
+  M3  `publish` does `store(load | bit)` (lost update) DETECTED threaded_churn_leaks_no_slots
+  M4  `find` fed an empty occupancy snapshot          DETECTED  7 tests
+  M5  consecutive registrants disagree about the
+      block boundary by one bit (the adaptive
+      shift's premise negated)                        DETECTED  cross_shard_overlaps_are_all_caught
+  M6  `retire` does `store(0)` — a release that
+      retires every record in the shard, live ones
+      included                                        *** NOT DETECTED ***
+  M7  registration never publishes its occupancy bit  DETECTED  7 tests
+
+M6 is the failure direction the LOCK-FREE RELEASE introduced and it had no
+gate: the whole existing suite (23 lib + 25 soundness + 5 shard_liveness + 1
+wide_exclusion) stayed green with live records being silently retired. Closed
+by `crates/rav1d-disjoint-mut/tests/narrow_release.rs` (commit 2832454), which
+puts every record in ONE shard (buffer below `SHARD_MIN_LEN`) and races an
+overlapping pair against seven threads of private release churn. It FAILS 3/3
+under M6 with 4.2M private grants / 1.15M shared grants / 252k refusals proving
+both sides ran, and is green 3/3 restored. With it, all seven mutations are
+detected.
+
+Guard EXTENTS: none widened, two narrowed.
+  * The block shift changes no extent at all — only which shard an interval
+    hashes to.
+  * `held-row-guards` (default OFF, measured null) reserves exactly
+    `[row_off, row_off + w)` per row, byte-for-byte what the immutable read
+    guard and the mutable write-back guard each covered; immutable -> mutable
+    only tightens exclusion.
+  * The two new per-row kernel guards are byte-identical to the scalar
+    references they replace — `src/itx.rs:100-101` and `src/ipred.rs::cfl_pred`
+    both already take `dst + y*pxstride` then `slice_mut::<BD>(w)`. They are
+    NARROWER than the `block_mut` wide guard the obvious port would have used.
+  * The P1 barrier / CDEF / loopfilter guards are untouched.
+
+The 16bpc ITX parity sweep is itself mutation-proven: changing the dct4
+constant 1567 -> 1568 fails 4 of the 8 parity arms (both 10bpc small- and
+large-coefficient, 12bpc large, and the every-eob arm). `Report::finish`
+asserts every cell took the NEON path, so it cannot degenerate into comparing
+the scalar reference with itself.
+
+Threading, all green on the composed tree:
+  mt_stress (t = 1/2/4/8/16), tile_threading_overlap (3 `--ignored` race
+  tests), tile_threading_parity, reproduce_overlap (6 `--ignored`),
+  reproduce_overlap_scalar, panic_safety_test, thread_cleanup_test,
+  cancellation, managed_api_test, integration_decode (8 `--ignored`),
+  worker_panic_recovery (2, under `__test_induce_worker_panic`).
+
+Concurrent multi-decoder pressure — the zenavif#30 wedge shape:
+  10 concurrent 4K decoders at t=8, 25 iters each, x 3 vectors x 3 rounds
+  = 90 process instances, 2,250 4K frame decodes at ~10x core
+  oversubscription. Zero wedges (hard 600 s deadline per group, never
+  approached; 14-17 s wall per group) and 90/90 byte-exact CHECKSUMs.
+  Harness: ~/tmp/vfy2/concurrent_pressure.sh.
+
+
+## WHERE THE TWO BRANCH REPORTS WERE WRONG
+
+1. `perf/lr-itx-neon` claims, in a COMMITTED doc header
+   (`crates/rav1d-disjoint-mut/examples/toctou_stress.rs`), that the 4af62ae
+   TOCTOU "has NO regression gate" and that `cargo test -p rav1d-disjoint-mut`
+   "still passes everything ... three runs out of three" with the in-lock
+   re-read deleted. FALSE at the suite level.
+   `wide_exclusion.rs::a_wide_borrow_excludes_every_narrow_shard` FAILS in
+   0.03 s — 5 of 5 runs on the composed tree and 3 of 3 on unmodified 2c7c082,
+   so it is neither flaky nor an artifact of the tracker change. What survives
+   is only the narrow half: the 25 `soundness.rs` tests do miss it, for the
+   structural reason that report gives. Header corrected in 2832454. The
+   harness is kept as a dev tool; its "needs an in-tracker query hook" close-out
+   was reasoning from the false premise and is downgraded to a nice-to-have.
+
+2. `perf/lr-itx-neon` reports "8bpc t=8 is 0.9% slower on the shipped config
+   and I did not root-cause it ... two independent sweeps agree on the
+   direction". DOES NOT REPRODUCE. Isolated on this box, `lr` alone measures
+   116.8 vs base 117.3 at v4k_8tile t=8 — 0.4% FASTER, not 0.9% slower — and in
+   the compose it is 70.6 vs the tracker's 71.3 alone, i.e. it takes another
+   1.0% OFF rather than adding any back.
+
+3. `perf/tracker-halve` reports its dav1d ratios against the
+   PREVIOUSLY-COMMITTED `verify_compose_2026-08-07.meta` dav1d column rather
+   than a dav1d arm run alongside its own rows (its report says so; its own
+   dav1d arm never produced data). That column's t=8 figures are slow: it cites
+   37.4 / 37.9 ms/frame at 8/10bpc where a same-session dav1d measures
+   34.7 / 36.3. Its headline "t=8 3.15x -> 2.04x (8bpc), 3.74x -> 2.56x (10bpc)"
+   is therefore optimistic; measured against a same-session dav1d the composed
+   tree is 2.11x and 2.34x. (The 10bpc figure moves the other way because the
+   compose also carries the itx port.) Its ms/frame values themselves reproduce
+   well: it claims base 117.9 / 141.6 and newdef 76.3 / 97.1 at t=8; I measure
+   116.7 / 137.6 and 73.1 / 85.1 — the 10bpc "newdef" difference is the itx
+   port, which its tree did not have.
+
+4. `perf/tracker-halve` reports the single-tile cost as 2.6% (364.6 -> 373.9).
+   I measure the tracker alone at +3.08% (362.7 -> 373.8) with non-overlapping
+   per-round ranges. Same sign, same mechanism, slightly larger.
+
+5. `perf/lr-itx-neon`'s 10bpc t=1 claim (508.3 -> 455.8 on its own tree; 507.4
+   -> 438.4 for its final config) reproduces almost exactly: 508.0 -> 438.1
+   isolated, 437.9 composed.
+
+
+## WHAT IS LEFT, RANKED BY THE SIZE OF THE REMAINING WIN
+
+Absolute ms/frame still owed to dav1d at each cell (composed - dav1d_fd1):
+
+  v4k_8tile_10b t=1   438.1 - 251.3 = 186.8   <- largest single number
+  v4k_8tile     t=1   401.0 - 246.4 = 154.6
+  v4k_8tile_10b t=2   245.5 - 127.5 = 118.0
+  v4k_1tile     t=8   368.9 - 239.6 = 129.3
+  v4k_8tile     t=2   216.6 - 125.0 =  91.6
+  v4k_8tile_10b t=4   129.9 -  66.8 =  63.1
+  v4k_8tile     t=4   116.3 -  65.6 =  50.7
+  v4k_8tile_10b t=8    85.1 -  36.3 =  48.8
+  v4k_8tile     t=8    73.1 -  34.7 =  38.4
+
+1. SINGLE-THREAD KERNEL THROUGHPUT. t=1 is 1.63x/1.74x and is now the binding
+   constraint: it is pure per-thread work with no tracker contention and no
+   scheduling, and it caps every other column. If t=1 reached 1.3x and the
+   measured 5.48x scaling held, t=8 would be 1.68x — still short, so this is
+   necessary but not sufficient. Nobody profiled t=1 on the composed tree; that
+   is the first thing the next session should do.
+
+2. THREAD SCALING PAST t=4. t=4 -> t=8 is 0.628/0.655 against dav1d's
+   0.529/0.543. Closing that alone is worth ~19% at t=8 (73.1 -> ~59). The
+   tracker is no longer the dominant term there (it was; the shift took
+   `add_slow` from 72,585 to 23,009 per 6-frame run per the branch's counters),
+   so the next contributor has to be re-profiled rather than assumed.
+
+3. LOOP RESTORATION HAS NO NEON TIER AND IS INVISIBLE ON THESE VECTORS. LR is
+   switched OFF in both 4K gap vectors, so none of the numbers above contain
+   any LR at all — yet the new `md5_inventory --activity` counter shows LR
+   active in 696 of 768 corpus vectors, and the branch measured it at 11.5% of
+   decode self-time on `10-bit/issues/318_tx_4x4`. This is the largest win that
+   the gap grid structurally cannot see. Named starting points are in
+   `benchmarks/lr_arm_vs_reference_2026-08-07.meta`.
+
+4. THE SINGLE-TILE REGRESSION (+1.72% composed, +3.08% tracker-alone). Small in
+   percent, but it is the only thing this compose made worse, and the fix is
+   known in shape: the tracker picks its block shift from buffer length and
+   cannot see tiling. Plumbing the tile count (or the observed concurrency
+   pattern) to `block_shift_for` would let the coarse shift apply only where it
+   pays. Cheap to try, bounded upside (~13 ms/frame).
+
+5. 16bpc ITX ABOVE 16x16 IS UNPORTED. 32- and 64-point transforms and WHT_WHT
+   still run the scalar reference. They take zero samples on both 4K gap
+   vectors, so this cannot be sized there — find content with the activity
+   counters first.
+
+6. `cfl_ac_rust` is still scalar (branch-measured 2.09% self at 8bpc t=1,
+   1.54% at 10bpc); the 8bpc small-rect NEON itx kernels
+   (`inv_txfm_add_{8x4,4x8,16x8,8x16,16x4,4x16}_8bpc_neon`) exist but are not
+   wired into `itxfm_add_dispatch`. Both are small on these vectors and
+   plausibly not on rect-heavy content.

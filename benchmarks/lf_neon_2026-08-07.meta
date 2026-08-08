@@ -1,0 +1,236 @@
+# The deblocking loop filter's NEON tier: what it cost, and where the rest went
+
+date: 2026-08-07
+host: Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64
+rustc: 1.97.1 stable, release (lto="fat", codegen-units=1), DEFAULT features
+       (bitdepth_8 + bitdepth_16, CHECKED DisjointMut). No -C target-cpu=native.
+branch: perf/lf-neon-port, off perf/p2-kernels @ 0624dfd.
+vectors: ~/tmp/rav1d-perf/vec/*.avif; v4k_8tile is 3840x2160, 4 tile cols x
+         2 tile rows, 8bpc, and v4k_8tile_10b is its 10-bit twin.
+
+NO `nice` ON ANY TIMED RUN (Darwin maps a positive nice to background QoS and
+distorts wall clock ~40x). `nice -n 19` is for BUILDS only.
+
+## What was there before
+
+`src/safe_simd/loopfilter_arm.rs` was 707 lines with ONE aarch64 intrinsic
+reference in the file (`use core::arch::aarch64::*`) and zero intrinsic CALLS.
+Its `loopfilter_sb_dispatch` returned `false` unconditionally, so none of it
+ran at all; the aarch64 loop filter WAS `src/loopfilter.rs`'s scalar reference,
+at 34.2 ms/frame against dav1d's 3.0 (`p2_kernel_profile_2026-08-07.meta`).
+
+## The finding that shaped the port
+
+`ROADMAP_SIMD_PORTING.md`'s R3 note warned that after the P1/P2 compaction work
+most of the family's cost was the machinery AROUND the filter. It was right,
+and it is the main result here. `sample` leaves, t=1 8bpc v4k_8tile, 9,123
+total, at the branch point:
+
+  loop_filter (the arithmetic)                       341   3.74%
+  LfBlock::close  (write-back diff scan)             286   3.13%
+  loopfilter_sb_direct (driver, inlined sb128_rust)  124   1.36%
+  LfBlock::open   (self)                              82   0.90%
+  ---- open's children, counted elsewhere in the flat profile ----
+  BorrowTracker::add::<false> from open               182
+  DisjointImmutGuard drop from open                    70
+  _platform_memmove / memcpy from open                140
+
+So vectorising `loop_filter` alone had a CEILING of ~341 leaves — under a
+quarter of the family. All three of the others are fixed here too.
+
+## What was ported
+
+Every variant, no exceptions:
+
+  width `wd`  spec filter   writes taps   reach   used by
+  4           filter4       -2..1         2       luma + chroma
+  6           filter6       -2..1         3       chroma only
+  8           filter8       -3..2         4       luma only
+  16          filter14      -6..5         7       luma only
+
+  x  2 directions:  H = vertical edges (`deblock_cols`), lane-major scratch,
+                        8x8 register transpose in and out
+                    V = horizontal edges (`deblock_rows`), tap-major scratch,
+                        no transpose
+  x  3 bit depths:  8, 10, 12
+  x  fused runs of 1, 2, 3, 4 groups (`LF_BATCH_MAX`)
+
+One `u16`-lane kernel serves all three bit depths. Every quantity fits: pixels
+<= 4095; the `e` test `2*|p0-q0| + |p1-q1|/2` <= 10237; the flat filters'
+weighted sums, weights totalling 16, peak at `16 * 4095 + 8 = 65528`. The wide
+filter accumulates by recurrence (`s += a + b - c - d`), which transiently
+exceeds `u16` — deliberately: `u16` add/sub are modular, every partial sum is
+congruent to the true value mod 2^16, and the true value is back under 65520 at
+each point the accumulator is read. The narrow 4-tap needs signs and runs `i16`
+on the same registers (`3*(q0-p0) + f` peaks at 14333).
+
+## The seam, and why it changes nothing about DisjointMut
+
+The kernel operates on `LfScratch::buf` — a plain `[BD::Pixel; 256]` array with
+no borrow tracking on it. `LfBlock::open` and `close` decide which PICTURE
+pixels are guarded, and neither the extent nor the count of any guard changed.
+The scratch row stride is padded to a fixed `LF_BW = 16` so a row is one vector
+load at every width; `w`, which is what is guarded and written back, is
+unchanged by the padding and `close` never looks at a pad column.
+
+`close` may only write — and only take a MUTABLE guard on — pixels that
+actually changed, because the tap window read is wider than the span written
+and a guard over a merely-read tap is a real conflict with a concurrent tile
+worker (zenavif#30). That rule is kept exactly; only the scan got faster.
+
+## Timed campaign
+
+`scripts/perf/p2_sweep.sh`, 2 arms interleaved back to back inside each cell
+with the order rotating every round, 5 rounds x 3 reps x 4 iters = MEDIAN OF 15
+per cell/arm. Raw: `benchmarks/lf_neon_2026-08-07.tsv`.
+
+  vector           t     base   lfneon   paired ratio (median [min..max] of 5)
+  v4k_8tile        1    423.5    394.0   1.074x  [1.063 .. 1.080]
+  v4k_8tile        2    271.0    252.8   1.054x  [1.049 .. 1.076]
+  v4k_8tile        4    234.6    222.4   1.047x  [1.019 .. 1.135]
+  v4k_8tile        8    203.1    207.7   1.022x  [0.861 .. 1.029]
+  v4k_8tile_10b    1    616.2    597.0   1.054x  [0.994 .. 1.084]
+  v4k_8tile_10b    2    369.7    367.9   1.038x  [0.927 .. 1.044]
+  v4k_8tile_10b    4    290.9    284.7   1.014x  [1.010 .. 1.029]
+  v4k_8tile_10b    8    243.3    240.2   1.016x  [0.995 .. 1.019]
+  v4k_1tile        1    423.9    393.3   1.072x  [1.050 .. 1.078]
+  v4k_1tile_10b    1    628.2    590.3   1.051x  [1.050 .. 1.064]
+  v1024            1     34.0     32.3   1.054x  [1.037 .. 1.058]
+  v256             1      1.1      1.0   1.043x  [1.033 .. 1.079]
+
+READ THE ABSOLUTE COLUMNS WITH CARE. Two other agents were running their own
+timed campaigns on this box for the whole session (`~/tmp/rav1d-cdef/bin/` and
+`~/tmp/rav1d-p3/bin/`, both at ~100% CPU from 10:49 onward), so 354 of the 360
+rows carry `busy=1` and their ms/frame is INFLATED. The campaign ran with
+`STRICT=0`, which keeps a contended cell and tags it, instead of discarding it
+forever against a box that was never going to go idle.
+
+The PAIRED RATIO is the sound quantity and it is what to quote: the two arms
+run back to back inside a cell, seconds apart, with the order rotating each
+round, so steady foreign load lands on both alike.
+
+The six clean rows are the calibration, and they line up:
+
+  v4k_8tile t=1, busy=0, median of 3:   base 412.1   lfneon 383.8   1.074x
+
+`base` there is commit 0624dfd, which `benchmarks/p2_kernels_2026-08-07.meta`
+independently measured at 412.5 ms/frame on an idle box — 0.1% apart. So the
+clean cell is trustworthy, its ratio equals the contended paired ratio to three
+digits, and the honest headline is:
+
+  v4k_8tile t=1: 412.1 -> 383.8 ms/frame, -28.3 ms, 1.074x
+
+Against the dav1d 1.5.4 numbers on record for this host and instrument
+(`benchmarks/p2_dav1d_2026-08-07.tsv`, 246.7 ms/frame at t=1): the gap goes
+1.67x -> 1.56x at t=1. That is a DERIVED figure — dav1d was not re-run in this
+campaign, because the box could not be made quiet enough for a new cross-decoder
+measurement to mean anything.
+
+t=8 is ~1.02x and that is expected, not a disappointment: the P2 record already
+established that the t=8 bottleneck is not kernel throughput. Making a kernel
+cheaper there moves the load onto whatever is next in line.
+
+## Correctness
+
+* **Per-variant unit gate**: `src/loopfilter.rs`'s `neon_parity` module drives
+  the kernel and the scalar `loop_filter` over the SAME scratch rectangle for
+  every (direction x width x bit depth x fused group count) cell — 96 cells,
+  3,000 randomized trials each, pixel generator sweeping noise amplitude from
+  perfectly flat to wider than any threshold plus a fully-random eighth. Each
+  cell asserts LIVENESS: it fails unless every branch of the ladder
+  (no-filter / narrow-hev / narrow / flat6 or flat8 / wide) was actually
+  reached, so a cell cannot pass by never filtering.
+* **The gate has teeth** — four planted mutations, each caught:
+  wide-filter rounding `+8` -> `+7`; `hev` `>` -> `>=`; one transpose level
+  crossed (`vtrn1q_u32(a0, a2)` -> `(a0, a3)`); the `e` mask's `>> 1` -> `>> 2`.
+* **`neon_diff_span_matches_scalar`** does the same for `close`'s write-back
+  scan, including that it IGNORES the pad columns beyond `w` — a looser answer
+  there would widen a mutable guard onto a merely-read tap. Two mutations
+  (dropping the valid-lane mask; `trailing_zeros()/4` -> `/8`) each fail it.
+* **Whole-corpus bit identity**: `cargo test --release --no-fail-fast --
+  --test-threads=1` run at 0624dfd AND at head, with every
+  `MISMATCH [tier]: <id> expected=<hex> actual=<hex>` extracted from both.
+  4,945 MISMATCH lines each side, 2,845 distinct triples each side,
+  **diff = 0 lines**, and the 35 failing-test names are identical. (Those
+  failures are the documented pre-existing set; `mt_stress_4k` additionally
+  needs `test-vectors/bench/photo_4k.avif`, which is gitignored — with it
+  present the test passes at threads 1/2/4/8/16.)
+* **Campaign md5**: 360/360 invocations across 12 (vector, threads) cells agree
+  between the arms; the report prints zero disagreements.
+* **Frame md5 vs base** on all 7 local vectors at t=1 and t=4: identical.
+* **Overlap detection**: `tile_threading_overlap` 3/3 including the two
+  `--ignored` race tests, `tile_threading_parity` 3/3, and
+  `scripts/perf/p2_concurrent_overlap.sh` 6-way x 4 rounds: **0/24 FAILED**.
+* **No `unsafe`**: `loopfilter_arm.rs` contains the string `unsafe` exactly
+  twice, both in its `forbid`/`deny` lint attributes. `git diff 0624dfd..HEAD --
+  src/loopfilter.rs` adds and removes zero lines containing `unsafe`.
+
+## Harness trap, fixed here
+
+`p2_sweep.sh`'s box-idle guard excluded the arms under test by the LITERAL path
+`rav1d-p2k/bin/bench_`. As soon as this campaign staged its arms in
+`~/tmp/rav1d-lfneon/bin/` the guard stopped excluding them, and macOS's decaying
+post-exit %cpu made every t>1 cell discard forever — exactly the livelock the P2
+record documents, back again because the pattern was a literal. It is built from
+`$BIN` now.
+
+It must stay a PATH match. A basename match on `bench_` looks like the obvious
+simplification and is WRONG: another agent running its own `bench_*` on this box
+is precisely the contention the guard exists to catch. That happened during this
+campaign — a concurrent CDEF sweep in `~/tmp/rav1d-cdef/bin/` was live at 100%
+CPU — and a basename-matching guard waved it straight through. The affected run
+was discarded and re-run against an idle box.
+
+## Where the loop filter's remaining time goes
+
+`sample` self-time leaves, t=1 8bpc v4k_8tile, before -> after:
+
+  loop_filter (scalar arithmetic)   341  ->    0   (kernel replaces it)
+  lf_compact_run_neon                 0  ->  131
+  LfBlock::close                    286  ->   67
+  loopfilter_sb_direct (driver)     124  ->  134
+  LfBlock::open (self)               82  ->   83
+  _platform_memmove (whole process) 149  ->   35
+  --------------------------------------------------
+  loopfilter_sb_direct INCLUSIVE    899  ->  715   (9.85% -> 7.80%)
+
+The kernel is now ~1.4% of a t=1 frame, which is about what dav1d spends on its
+whole loop filter. **What is left in this family is DisjointMut, not
+arithmetic**: `open` takes one immutable guard per picture row, and at up to 16
+rows per fused run that is ~230 of the ~400 remaining leaves
+(`BorrowTracker::add::<false>` 136 + `DisjointImmutGuard` drop 94, measured as
+`open`'s children).
+
+Do NOT close that by widening `open` to one rectangle guard. That is the shape
+this codebase documents as unsound under tile threading, and the x86 dispatch
+only takes it behind `tile_threading_active()`. The sound version is a tracker
+API that registers N DISJOINT ranges in one operation — `add_multi` already does
+two — which is tracker work (R2/R4), not a kernel port. Nothing in this change
+touched a borrow.
+
+Also still scalar, deliberately: the picture-edge fallback. When `LfBlock::open`
+cannot fit even a single group's rectangle inside the plane the filter drops to
+`DirectTaps` and the scalar `loop_filter`. It does not appear in the profile at
+all, so it was not worth a second kernel entry point.
+
+## A test trap this port walked into (fixed here, but it will bite again)
+
+`neon_parity` failed roughly a quarter of full `cargo test --lib` runs with
+"kernel refused wd=4 is_v=false groups=1" — random cells, random bit depths —
+while passing 20/20 filtered to itself. The kernel was never wrong.
+
+`archmage`'s `testable_dispatch` dev-feature lets a test disable compile-time
+SIMD tokens so the fallback paths get exercised, and the switch is
+PROCESS-GLOBAL. `mc_arm::tests::test_arm_token_permutations` flips it; libtest
+runs tests in parallel; so a concurrent `Arm64::summon()` — including the one in
+`lf_compact_run_neon` — can come back `None`, and the kernel correctly declines.
+
+Fixed with `safe_simd::token_test_lock()`, held by the permuting test AND by
+every test that depends on a token being available. Measured both ways: locks
+removed, 1/15 full-suite runs failed; locks in place, 0/40.
+
+The generalisation matters more than the fix: **on a `testable_dispatch` build a
+transient `summon()` miss silently drops a kernel to its scalar fallback.** That
+is correct — every `summon()` site has a fallback — but it means a SIMD tier can
+appear to vanish under a parallel test run. Any future test that asserts a
+kernel actually RAN (rather than that its output is right) has to take that lock.

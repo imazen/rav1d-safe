@@ -1,0 +1,155 @@
+# What the address-sharded borrow tracker was sized from.
+#
+# date: 2026-08-07
+# host: Apple M4 Pro, macOS 26.5.2, aarch64
+# build: examples/probe_tracker, release, --features probe-shardsim
+#        (throwaway instrumentation, commit a4ebf02 on probe/shard-sizing)
+# cmd:  ./probe_tracker <vec>/v4k_8tile.avif 8 4
+# counts only, no timings — immune to a busy box.
+#
+# LEN  <2^k>  <count>  <pct>       borrow length, log2 bucket, HOT INSTANCES ONLY
+#                                  (max_end >= 1 MiB: the 12 picture planes that
+#                                  carry 89.8% of all borrows and 100% of the
+#                                  contention).
+# CFG  <i> <block_shift> <n_shards> <mixed> <k_mean> <k1..k>4 pct>
+#      <collide_per_add> <collide_any_pct>
+#                                  k = distinct shards a borrow would span.
+#                                  collide_per_add = how many OTHER live threads'
+#                                  most recent borrow was on the same
+#                                  (instance, shard); cfg 0 (n=1) is the status
+#                                  quo calibration point.
+# SPREAD <shard> <count>           per-shard add counts at cfg 3, uniformity check.
+#
+# The three readings that fixed the design:
+#   * 77.3% of hot borrows are ONE BYTE and 99.94% are <= 31 bytes, so almost
+#     every borrow fits in a single block and needs a single shard.
+#   * cfg 0 (today) collides with 2.07 peers per add, 58.6% of adds. 64 shards
+#     drops that to 0.031 / 3.0% — and block shift barely matters between 6 and
+#     12, so BLOCK_SHIFT can be chosen for tile-column separation instead.
+#   * SPREAD is flat to within 1.5%, so the multiplicative hash is not clumping.
+#
+RUN	v4k_8tile.avif	3840x2160	8bpc	threads=8	iters=4	ms_total=25023.97	ms_per_frame=6255.992
+PROBE	tracker_instances_used	1039
+PROBE	slot_exhausted_events	0
+PROBE	total_adds	203107580
+PROBE	total_removes	203107580
+PROBE	adds_per_frame	50776895
+PROBE	lock_ops_per_frame	101553790
+PROBE	contended_acquisitions	10369194
+PROBE	contended_pct	2.5526
+PROBE	total_spin_wait_ns	2707055647
+PROBE	spin_wait_ns_per_frame	676763911
+PROBE	mean_wait_ns_per_contended	261.1
+PROBE	overflow_spills	0
+SLOT	rank	adds	removes	adds_pct	cont_add	cont_rem	cont_pct	wait_ns	occ_mean	occ_max	spill	max_end	threads	loc
+SLOT	0	18084286	18084286	8.90	720584	616165	3.696	358539350	0.47	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	1	18084286	18084286	8.90	711644	636482	3.727	370668052	0.47	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	2	18084286	18084286	8.90	698405	636989	3.692	411224161	0.46	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	3	18084286	18084286	8.90	694768	620186	3.636	360987992	0.46	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	4	13761924	13761924	6.78	306685	279893	2.131	143525863	0.30	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	5	13761924	13761924	6.78	324454	275772	2.181	135902114	0.30	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	6	13761924	13761924	6.78	322890	284218	2.206	140508235	0.31	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	7	13761924	13761924	6.78	328156	285938	2.231	157047924	0.31	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	8	13761496	13761496	6.78	341541	292272	2.303	152216680	0.30	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	9	13761496	13761496	6.78	360775	284424	2.344	130572909	0.30	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	10	13761496	13761496	6.78	346314	311619	2.390	178396292	0.30	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	11	13761496	13761496	6.78	383276	305327	2.502	167419212	0.30	8	0	8355840	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	12	573728	573728	0.28	0	0	0.000	0	0.00	0	0	1566752	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	13	160551	160551	0.08	0	0	0.000	0	0.00	0	0	32	1	src/decode.rs:1682
+SLOT	14	159652	159652	0.08	213	204	0.131	46863	0.13	3	0	391680	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	15	159280	159280	0.08	0	0	0.000	0	0.00	0	0	1551424	8	crates/rav1d-disjoint-mut/src/lib.rs:1405
+SLOT	16	157512	157512	0.08	0	0	0.000	0	0.00	0	0	32	1	src/recon.rs:2346
+SLOT	17	153927	153927	0.08	0	0	0.000	0	0.00	0	0	32	1	src/decode.rs:1682
+SLOT	18	151902	151902	0.07	0	0	0.000	0	0.00	0	0	32	1	src/recon.rs:2346
+SLOT	19	147708	147708	0.07	0	0	0.000	0	0.00	0	0	32	1	src/decode.rs:1682
+THREAD	tid	adds	removes	contended	wait_ns
+THREAD	0	27416692	27416692	1274140	351013861
+THREAD	1	21295170	21295170	1154805	328653048
+THREAD	2	24758741	24758741	1195878	281409499
+THREAD	3	30188666	30188666	1338683	343629667
+THREAD	4	25438830	25438830	1363919	338545907
+THREAD	5	29881305	29881305	1411677	415448895
+THREAD	6	22043092	22043092	1211582	297941414
+THREAD	7	22085084	22085084	1418510	350413356
+SHARD	hot_adds	162140764
+LEN	1	125407513	77.3448
+LEN	2	2531211	1.5611
+LEN	4	2347362	1.4477
+LEN	8	24396595	15.0466
+LEN	16	7350909	4.5337
+LEN	32	91934	0.0567
+LEN	512	1440	0.0009
+LEN	2048	13800	0.0085
+CFGHDR	cfg	shift	n	mixed	k_mean	k1_pct	k2_pct	k3_4_pct	k_gt4_pct	collide_per_add	collide_any_pct
+CFG	0	0	1	false	3.2123	77.345	1.561	1.447	19.647	2.06570	58.5752
+CFG	1	6	64	true	1.0104	99.472	0.518	0.000	0.009	0.03223	3.0674
+CFG	2	7	64	true	1.0051	99.733	0.257	0.000	0.009	0.03180	3.1368
+CFG	3	8	64	true	1.0024	99.875	0.116	0.000	0.009	0.03055	3.0140
+CFG	4	10	64	true	1.0006	99.963	0.029	0.003	0.005	0.03271	3.2531
+CFG	5	12	64	true	1.0001	99.985	0.015	0.000	0.000	0.04009	2.6469
+CFG	6	8	64	false	1.0024	99.875	0.116	0.000	0.009	0.03200	2.3246
+CFG	7	8	256	true	1.0024	99.875	0.116	0.000	0.009	0.00742	0.7387
+SPREAD	0	2528125
+SPREAD	1	2560064
+SPREAD	2	2549445
+SPREAD	3	2520085
+SPREAD	4	2510086
+SPREAD	5	2555105
+SPREAD	6	2548889
+SPREAD	7	2531066
+SPREAD	8	2523804
+SPREAD	9	2529837
+SPREAD	10	2547143
+SPREAD	11	2528971
+SPREAD	12	2556106
+SPREAD	13	2531569
+SPREAD	14	2516803
+SPREAD	15	2526992
+SPREAD	16	2546904
+SPREAD	17	2556995
+SPREAD	18	2508583
+SPREAD	19	2515109
+SPREAD	20	2551020
+SPREAD	21	2535953
+SPREAD	22	2510323
+SPREAD	23	2514506
+SPREAD	24	2546102
+SPREAD	25	2540678
+SPREAD	26	2516480
+SPREAD	27	2552367
+SPREAD	28	2533102
+SPREAD	29	2525405
+SPREAD	30	2527156
+SPREAD	31	2553314
+SPREAD	32	2548799
+SPREAD	33	2514652
+SPREAD	34	2513342
+SPREAD	35	2564617
+SPREAD	36	2538854
+SPREAD	37	2547067
+SPREAD	38	2511001
+SPREAD	39	2535484
+SPREAD	40	2551906
+SPREAD	41	2531519
+SPREAD	42	2519601
+SPREAD	43	2524271
+SPREAD	44	2548666
+SPREAD	45	2517322
+SPREAD	46	2545332
+SPREAD	47	2560075
+SPREAD	48	2501484
+SPREAD	49	2516526
+SPREAD	50	2557367
+SPREAD	51	2555323
+SPREAD	52	2510103
+SPREAD	53	2505016
+SPREAD	54	2550840
+SPREAD	55	2550052
+SPREAD	56	2511859
+SPREAD	57	2530657
+SPREAD	58	2543614
+SPREAD	59	2537234
+SPREAD	60	2514911
+SPREAD	61	2558126
+SPREAD	62	2545526
+SPREAD	63	2481531

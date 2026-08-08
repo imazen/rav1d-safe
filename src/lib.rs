@@ -175,6 +175,10 @@ pub(crate) fn rav1d_open(
 
     // Tell compact buffer guards whether to use per-row (threading) or single (fast) path.
     crate::include::dav1d::picture::set_tile_threading(n_tc > 1);
+    // Size the borrow tracker's shard set to the parallelism it is about to
+    // see. Both latches are monotone and for the same reason: a later
+    // single-threaded open must not reconfigure a live multi-threaded decoder.
+    rav1d_disjoint_mut::set_parallelism(n_tc as usize);
 
     let ttd = TaskThreadData {
         cur: (n_fc as u32).into(),

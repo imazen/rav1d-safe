@@ -31,6 +31,35 @@ default = ["std"]
 std = []
 # Runtime borrow instrumentation (records size histograms, concurrency, contention).
 instrument = ["std"]
+# THROWAWAY measurement probes (recon/tracker-profile branch). Never publish.
+__probe_count = ["std"]
+__probe_noscan = []
+__probe_lockonly = []
+__probe_untracked = []
+# Wide-path reason counters. Unlike __probe_count this KEEPS the sharded tracker.
+__probe_wide = ["std"]
+__probe_shardsim = ["__probe_count"]
+# THROWAWAY: TinyLock spin backoff + scheduler yield, re-tested on the adaptive
+# shard set (the P1 campaign measured it null on the 32-shard base).
+__probe_lock_backoff = ["std"]
+# Sharded-tracker A/B knobs (perf/shard-tracker). Compile-time only; the
+# defaults are the measured winners, see benchmarks/shard_tracker_*.meta.
+__tracker_legacy = []
+__shards_1 = []
+__shards_4 = []
+__shards_8 = []
+__shards_16 = []
+__shards_32 = []
+__shards_64 = []
+__shards_128 = []
+__shard_ident = []
+__blockshift_8 = []
+__blockshift_10 = []
+__blockshift_13 = []
+__blockshift_14 = []
+__blockshift_15 = []
+__blockshift_16 = []
+__blockshift_adaptive = []
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
 aligned = ["dep:aligned", "dep:aligned-vec"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).

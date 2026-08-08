@@ -39,6 +39,10 @@ extern crate std;
 #[cfg(feature = "aligned")]
 pub mod align;
 
+/// THROWAWAY contention probe (feature `__probe_count`). Not public API.
+#[cfg(feature = "__probe_count")]
+pub mod probe;
+
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -90,7 +94,10 @@ use zerocopy::KnownLayout;
 /// For audited hot paths, use
 /// [`DisjointMut::dangerously_unchecked`] to skip tracking.
 pub struct DisjointMut<T: ?Sized + AsMutPtr> {
-    tracker: Option<checked::BorrowTracker>,
+    /// Boxed so that `DisjointMut` stays pointer-sized regardless of how many
+    /// shards the tracker carries: `Rav1dTaskContext` embeds ~20 of these and
+    /// has a 48 KiB stack-weight gate.
+    tracker: Option<Box<checked::BorrowTracker>>,
 
     inner: UnsafeCell<T>,
 }
@@ -152,10 +159,22 @@ impl<T: AsMutPtr> DisjointMut<T> {
     ///
     /// Every `.index()` and `.index_mut()` call will validate that the
     /// requested range doesn't overlap with any outstanding borrow.
-    pub const fn new(value: T) -> Self {
+    ///
+    /// Not `const`: the tracker sizes its shard array from the container's
+    /// length, so that a picture plane gets many independently locked shards
+    /// while a 32-byte scratch buffer gets one cache line. If the container is
+    /// later grown with [`Self::resize`], the shard array is re-sized with it.
+    pub fn new(value: T) -> Self {
+        let len = AsMutPtr::len(&value);
         Self {
+            #[cfg(not(feature = "__probe_untracked"))]
+            tracker: Some(Box::new(checked::BorrowTracker::new(len))),
+            #[cfg(feature = "__probe_untracked")]
+            tracker: {
+                let _ = len;
+                None
+            },
             inner: UnsafeCell::new(value),
-            tracker: Some(checked::BorrowTracker::new()),
         }
     }
 
@@ -571,7 +590,14 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         I: Into<Bounds> + Clone,
         I: DisjointMutIndex<[<T as AsMutPtr>::Target]>,
     {
-        let bounds = index.clone().into();
+        let mut bounds: Bounds = index.clone().into();
+        // Clamp an open-ended range (`index(..)`, `index(n..)` — both encode
+        // their end as `usize::MAX`) to the real length. Sound: if the range
+        // really did run past the end, `get_mut` below panics and poisons, so
+        // no borrow of `len..end` can be missed. Without this the tracker would
+        // see an astronomically long span and take its all-shard slow path.
+        // `as_mut_slice` is called again below, so this costs nothing.
+        clamp_bounds(&mut bounds, self.as_mut_slice().len());
         // Register the borrow BEFORE creating the reference.
         // This prevents a TOCTOU gap where two threads could both create
         // references to overlapping ranges before either registers.
@@ -609,7 +635,9 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         I: Into<Bounds> + Clone,
         I: DisjointMutIndex<[<T as AsMutPtr>::Target]>,
     {
-        let bounds = index.clone().into();
+        let mut bounds: Bounds = index.clone().into();
+        // See `index_mut` for why the clamp is here and why it is sound.
+        clamp_bounds(&mut bounds, self.as_mut_slice().len());
         let borrow_id = match &self.tracker {
             Some(tracker) => tracker.add_immut(&bounds),
             None => checked::BorrowId::UNCHECKED,
@@ -829,6 +857,18 @@ impl Bounds {
     }
 }
 
+/// Trim an open-ended [`Bounds`] to the container's real length.
+///
+/// `RangeFull` / `RangeFrom` encode "to the end" as [`usize::MAX`], which is
+/// fine for a scan of plain intervals but makes an address-sharded tracker
+/// treat the borrow as spanning the whole 64-bit space.
+#[inline(always)]
+fn clamp_bounds(bounds: &mut Bounds, len: usize) {
+    if bounds.range.end > len {
+        bounds.range.end = len;
+    }
+}
+
 impl From<usize> for Bounds {
     fn from(index: usize) -> Self {
         Self {
@@ -963,410 +1003,78 @@ where
 }
 
 // =============================================================================
-// Bounds tracking (single mutex, holds lock during reference creation)
+// Bounds tracking (per-borrow, checked before the reference is created)
 // =============================================================================
 
-mod checked {
-    use super::*;
-    use core::panic::Location;
-    use core::sync::atomic::{AtomicBool, Ordering};
+/// The default tracker: address-block sharded, so concurrent tile workers stop
+/// serialising on one lock and one cache line.
+#[cfg(not(any(
+    feature = "__probe_count",
+    feature = "__probe_noscan",
+    feature = "__probe_lockonly",
+    feature = "__tracker_legacy"
+)))]
+mod tracker_shard;
+#[cfg(not(any(
+    feature = "__probe_count",
+    feature = "__probe_noscan",
+    feature = "__probe_lockonly",
+    feature = "__tracker_legacy"
+)))]
+use tracker_shard as checked;
 
-    /// Lightweight spinlock for borrow tracking.
-    ///
-    /// Uses a simple `AtomicBool::swap` for the lock — cheaper than
-    /// `compare_exchange` on the uncontended fast path because `swap`
-    /// is an unconditional store (no branch on old value). For the
-    /// single-threaded case (rav1d `threads=1`), this never spins.
-    ///
-    struct TinyLock(AtomicBool);
+/// Wide-path reason counters, when `__probe_wide` is on. See the module docs.
+#[cfg(all(
+    feature = "__probe_wide",
+    not(any(
+        feature = "__probe_count",
+        feature = "__probe_noscan",
+        feature = "__probe_lockonly",
+        feature = "__tracker_legacy"
+    ))
+))]
+pub use tracker_shard::wide_probe;
 
-    impl TinyLock {
-        const fn new() -> Self {
-            Self(AtomicBool::new(false))
-        }
+/// The single-lock predecessor, kept only so the throwaway `__probe_*`
+/// decomposition arms (`benchmarks/tracker_decomp_2026-08-07.meta`) remain
+/// reproducible against the tracker they actually measured.
+///
+/// `__tracker_legacy` selects it with no probe hooks at all, which is the
+/// straight A/B baseline arm: same commit, same decoder, only the tracker
+/// differs.
+#[cfg(any(
+    feature = "__probe_count",
+    feature = "__probe_noscan",
+    feature = "__probe_lockonly",
+    feature = "__tracker_legacy"
+))]
+mod tracker_legacy;
+#[cfg(any(
+    feature = "__probe_count",
+    feature = "__probe_noscan",
+    feature = "__probe_lockonly",
+    feature = "__tracker_legacy"
+))]
+use tracker_legacy as checked;
 
-        #[inline(always)]
-        fn lock(&self) -> TinyGuard<'_> {
-            // Fast path: swap is cheaper than compare_exchange for uncontended locks.
-            // On x86_64, `xchg` is simpler than `lock cmpxchg`.
-            if self.0.swap(true, Ordering::Acquire) {
-                // Contended — spin. This should essentially never happen in rav1d.
-                self.lock_slow();
-            }
-            TinyGuard(&self.0)
-        }
-
-        #[cold]
-        #[inline(never)]
-        fn lock_slow(&self) {
-            loop {
-                // Spin-wait: read without writing to avoid cache line bouncing
-                while self.0.load(Ordering::Relaxed) {
-                    core::hint::spin_loop();
-                }
-                if !self.0.swap(true, Ordering::Acquire) {
-                    return;
-                }
-            }
-        }
-    }
-
-    struct TinyGuard<'a>(&'a AtomicBool);
-
-    impl<'a> Drop for TinyGuard<'a> {
-        #[inline(always)]
-        fn drop(&mut self) {
-            self.0.store(false, Ordering::Release);
-        }
-    }
-
-    /// Inline capacity: 64 slots with a u64 bitmask for O(1) free-slot finding.
-    const INLINE_SLOTS: usize = 64;
-
-    /// A unique identifier for a borrow registration.
-    ///
-    /// Encoding:
-    /// - `0..63`: inline slot index
-    /// - `64..254`: overflow Vec index (value - INLINE_SLOTS)
-    /// - `EMPTY_SLOT` (254): empty-range borrow, no real slot
-    /// - `UNCHECKED` (255): unchecked guard, no tracking
-    #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-    pub(super) struct BorrowId(u8);
-
-    impl BorrowId {
-        /// Sentinel value for unchecked guards (no tracking).
-        pub const UNCHECKED: Self = Self(u8::MAX);
-    }
-
-    /// Borrow record storage with 64 inline slots and Vec overflow.
-    ///
-    /// The fast path uses a u64 bitmask for O(1) allocation/deallocation.
-    /// If all 64 inline slots are occupied, borrows spill into a Vec that
-    /// is allocated on demand. The Vec is never touched if inline capacity
-    /// suffices.
-    struct BorrowSlots {
-        // Parallel arrays for cache efficiency during overlap scans.
-        starts: [usize; INLINE_SLOTS],
-        ends: [usize; INLINE_SLOTS],
-        mutable: [bool; INLINE_SLOTS],
-        /// Registration site of each inline borrow (diagnostics for overlap
-        /// panics). With `debug_assertions` the callers propagate
-        /// `#[track_caller]`, so this names the true borrow site; in release
-        /// it names the `DisjointMut` wrapper method. One pointer store per
-        /// borrow — kept unconditionally so release overlap panics still say
-        /// *which* wrapper registered the existing side.
-        locs: [Option<&'static Location<'static>>; INLINE_SLOTS],
-        /// Bitmask of occupied inline slots. Bit `i` set iff slot `i` is active.
-        occupied: u64,
-        /// Overflow storage, allocated only when >64 concurrent borrows.
-        overflow: Vec<(usize, usize, bool, Option<&'static Location<'static>>)>,
-    }
-
-    /// An existing-borrow record returned by the overlap finders:
-    /// `(start, end, mutable, registration_site)`.
-    type OverlapHit = (usize, usize, bool, Option<&'static Location<'static>>);
-
-    impl BorrowSlots {
-        /// Sentinel slot index for empty-range borrows (no real slot allocated).
-        const EMPTY_SLOT: u8 = u8::MAX - 1; // 254
-
-        const fn new() -> Self {
-            Self {
-                starts: [0; INLINE_SLOTS],
-                ends: [0; INLINE_SLOTS],
-                mutable: [false; INLINE_SLOTS],
-                locs: [None; INLINE_SLOTS],
-                occupied: 0,
-                overflow: Vec::new(),
-            }
-        }
-
-        /// Allocate a slot and return its BorrowId encoding.
-        #[inline(always)]
-        fn alloc(
-            &mut self,
-            start: usize,
-            end: usize,
-            is_mutable: bool,
-            loc: &'static Location<'static>,
-        ) -> u8 {
-            if start >= end {
-                return Self::EMPTY_SLOT;
-            }
-            let free = self.occupied.trailing_ones() as usize;
-            if free < INLINE_SLOTS {
-                // Fast path: inline slot available.
-                self.starts[free] = start;
-                self.ends[free] = end;
-                self.mutable[free] = is_mutable;
-                self.locs[free] = Some(loc);
-                self.occupied |= 1u64 << free;
-                free as u8
-            } else {
-                // Slow path: spill to Vec.
-                self.alloc_overflow(start, end, is_mutable, loc)
-            }
-        }
-
-        /// Overflow allocation — cold path, never inlined.
-        #[cold]
-        #[inline(never)]
-        fn alloc_overflow(
-            &mut self,
-            start: usize,
-            end: usize,
-            is_mutable: bool,
-            loc: &'static Location<'static>,
-        ) -> u8 {
-            // Find a free slot in the overflow Vec (tombstoned entries have start >= end).
-            for (i, entry) in self.overflow.iter_mut().enumerate() {
-                if entry.0 >= entry.1 {
-                    // Reuse tombstoned slot.
-                    *entry = (start, end, is_mutable, Some(loc));
-                    return (INLINE_SLOTS + i) as u8;
-                }
-            }
-            let idx = self.overflow.len();
-            // BorrowId is u8, with 254/255 reserved. Max overflow index:
-            // INLINE_SLOTS + idx must be < 254, so idx < 254 - 64 = 190.
-            assert!(
-                INLINE_SLOTS + idx < Self::EMPTY_SLOT as usize,
-                "DisjointMut: too many concurrent borrows (max {})",
-                Self::EMPTY_SLOT as usize
-            );
-            self.overflow.push((start, end, is_mutable, Some(loc)));
-            (INLINE_SLOTS + idx) as u8
-        }
-
-        /// Free a slot by BorrowId encoding.
-        #[inline(always)]
-        fn free(&mut self, slot: u8) {
-            if slot == Self::EMPTY_SLOT {
-                return;
-            }
-            let idx = slot as usize;
-            if idx < INLINE_SLOTS {
-                debug_assert!(
-                    (self.occupied & (1u64 << idx)) != 0,
-                    "BorrowId slot {slot} not occupied"
-                );
-                self.occupied &= !(1u64 << idx);
-            } else {
-                // Overflow slot — tombstone it (set start >= end).
-                let ov_idx = idx - INLINE_SLOTS;
-                debug_assert!(ov_idx < self.overflow.len(), "overflow index out of range");
-                self.overflow[ov_idx] = (1, 0, false, None); // tombstone
-            }
-        }
-
-        /// Check if the range [start, end) overlaps any active borrow.
-        #[inline(always)]
-        fn find_overlap_any(&self, start: usize, end: usize) -> Option<OverlapHit> {
-            if start >= end {
-                return None;
-            }
-            // Scan inline slots.
-            let mut mask = self.occupied;
-            while mask != 0 {
-                let i = mask.trailing_zeros() as usize;
-                if self.starts[i] < end && start < self.ends[i] {
-                    return Some((self.starts[i], self.ends[i], self.mutable[i], self.locs[i]));
-                }
-                mask &= mask - 1;
-            }
-            // Scan overflow (cold — only reached if overflow is non-empty).
-            if !self.overflow.is_empty() {
-                return self.find_overlap_any_overflow(start, end);
-            }
-            None
-        }
-
-        #[cold]
-        #[inline(never)]
-        fn find_overlap_any_overflow(&self, start: usize, end: usize) -> Option<OverlapHit> {
-            for &(s, e, m, l) in &self.overflow {
-                if s < e && s < end && start < e {
-                    return Some((s, e, m, l));
-                }
-            }
-            None
-        }
-
-        /// Check if the range [start, end) overlaps any active MUTABLE borrow.
-        #[inline(always)]
-        fn find_overlap_mut(&self, start: usize, end: usize) -> Option<OverlapHit> {
-            if start >= end {
-                return None;
-            }
-            let mut mask = self.occupied;
-            while mask != 0 {
-                let i = mask.trailing_zeros() as usize;
-                if self.mutable[i] && self.starts[i] < end && start < self.ends[i] {
-                    return Some((self.starts[i], self.ends[i], true, self.locs[i]));
-                }
-                mask &= mask - 1;
-            }
-            if !self.overflow.is_empty() {
-                return self.find_overlap_mut_overflow(start, end);
-            }
-            None
-        }
-
-        #[cold]
-        #[inline(never)]
-        fn find_overlap_mut_overflow(&self, start: usize, end: usize) -> Option<OverlapHit> {
-            for &(s, e, m, l) in &self.overflow {
-                if m && s < e && s < end && start < e {
-                    return Some((s, e, true, l));
-                }
-            }
-            None
-        }
-    }
-
-    /// All active borrows for a single `DisjointMut` instance.
-    ///
-    /// Uses 64 inline slots with a u64 bitmask for O(1) allocation and
-    /// deallocation. If more than 64 concurrent borrows are needed, spills
-    /// to a heap-allocated Vec (up to 254 total). Overlap checking scans
-    /// only occupied slots.
-    ///
-    /// Like `std::sync::Mutex`, the tracker poisons the data structure when a
-    /// thread panics while holding a mutable borrow guard. This prevents
-    /// subsequent access to potentially corrupted data.
-    pub(super) struct BorrowTracker {
-        lock: TinyLock,
-        slots: UnsafeCell<BorrowSlots>,
-        poisoned: AtomicBool,
-    }
-
-    // SAFETY: BorrowSlots is only accessed while TinyLock is held.
-    unsafe impl Send for BorrowTracker {}
-    unsafe impl Sync for BorrowTracker {}
-
-    impl Default for BorrowTracker {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
-    impl BorrowTracker {
-        pub const fn new() -> Self {
-            Self {
-                lock: TinyLock::new(),
-                slots: UnsafeCell::new(BorrowSlots::new()),
-                poisoned: AtomicBool::new(false),
-            }
-        }
-
-        /// Mark this tracker as poisoned. All future borrow attempts will panic.
-        pub fn poison(&self) {
-            self.poisoned.store(true, Ordering::Release);
-        }
-
-        /// Panic if the tracker has been poisoned.
-        #[inline(always)]
-        fn check_poisoned(&self) {
-            if self.poisoned.load(Ordering::Acquire) {
-                Self::poisoned_panic();
-            }
-        }
-
-        #[cold]
-        #[inline(never)]
-        fn poisoned_panic() -> ! {
-            panic!("DisjointMut poisoned: a thread panicked while holding a mutable borrow");
-        }
-
-        /// Report an overlap violation with diagnostic info.
-        #[cold]
-        #[inline(never)]
-        #[track_caller]
-        fn overlap_panic(
-            new_start: usize,
-            new_end: usize,
-            new_mutable: bool,
-            existing: OverlapHit,
-        ) -> ! {
-            let (existing_start, existing_end, existing_mutable, existing_loc) = existing;
-            let new_mut_str = if new_mutable { "&mut" } else { "   &" };
-            let existing_mut_str = if existing_mutable { "&mut" } else { "   &" };
-            let caller = Location::caller();
-            struct MaybeLoc(Option<&'static Location<'static>>);
-            impl core::fmt::Display for MaybeLoc {
-                fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                    match self.0 {
-                        Some(loc) => write!(f, " at {loc}"),
-                        None => Ok(()),
-                    }
-                }
-            }
-            let existing_loc = MaybeLoc(existing_loc);
-            #[cfg(feature = "std")]
-            {
-                let thread = std::thread::current().id();
-                panic!(
-                    "\toverlapping DisjointMut:\n current: {new_mut_str} _[{new_start}..{new_end}] \
-                     on {thread:?} at {caller}\nexisting: {existing_mut_str} _[{existing_start}..{existing_end}]{existing_loc}",
-                );
-            }
-            #[cfg(not(feature = "std"))]
-            panic!(
-                "\toverlapping DisjointMut:\n current: {new_mut_str} _[{new_start}..{new_end}] \
-                 at {caller}\nexisting: {existing_mut_str} _[{existing_start}..{existing_end}]{existing_loc}",
-            );
-        }
-
-        /// Register a mutable borrow. Checks against ALL existing borrows.
-        #[inline]
-        #[track_caller]
-        pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
-            let start = bounds.range.start;
-            let end = bounds.range.end;
-            if start >= end {
-                return BorrowId(BorrowSlots::EMPTY_SLOT);
-            }
-            self.check_poisoned();
-            let _guard = self.lock.lock();
-            // SAFETY: TinyLock is held, so we have exclusive access to slots.
-            let slots = unsafe { &mut *self.slots.get() };
-            if let Some(existing) = slots.find_overlap_any(start, end) {
-                Self::overlap_panic(start, end, true, existing);
-            }
-            BorrowId(slots.alloc(start, end, true, Location::caller()))
-        }
-
-        /// Register an immutable borrow. Only checks against mutable borrows.
-        #[inline]
-        #[track_caller]
-        pub fn add_immut(&self, bounds: &Bounds) -> BorrowId {
-            let start = bounds.range.start;
-            let end = bounds.range.end;
-            if start >= end {
-                return BorrowId(BorrowSlots::EMPTY_SLOT);
-            }
-            self.check_poisoned();
-            let _guard = self.lock.lock();
-            // SAFETY: TinyLock is held, so we have exclusive access to slots.
-            let slots = unsafe { &mut *self.slots.get() };
-            if let Some(existing) = slots.find_overlap_mut(start, end) {
-                Self::overlap_panic(start, end, false, existing);
-            }
-            BorrowId(slots.alloc(start, end, false, Location::caller()))
-        }
-
-        /// Remove a borrow by slot index. O(1).
-        #[inline]
-        pub fn remove(&self, id: BorrowId) {
-            if id.0 == BorrowSlots::EMPTY_SLOT || id == BorrowId::UNCHECKED {
-                return;
-            }
-            let _guard = self.lock.lock();
-            // SAFETY: TinyLock is held, so we have exclusive access to slots.
-            let slots = unsafe { &mut *self.slots.get() };
-            slots.free(id.0);
-        }
-    }
+/// Declare the decode parallelism to the borrow tracker.
+///
+/// The tracker shards each big buffer's records by address so that concurrent
+/// tile workers stop serialising on one lock and one cache line, and the number
+/// of shards is a real trade: a serial decode is *slower* with more of them
+/// (its wide-borrow path holds every active shard), a concurrent one is much
+/// faster. Call this before creating the buffers a threaded decode will use.
+///
+/// Monotone: a later single-threaded declaration never shrinks the shard count
+/// out from under a concurrently live multi-threaded decoder.
+///
+/// A no-op when the tracker is compiled out.
+#[inline]
+pub fn set_parallelism(n: usize) {
+    #[cfg(feature = "__probe_untracked")]
+    let _ = n;
+    #[cfg(not(feature = "__probe_untracked"))]
+    checked::set_parallelism(n);
 }
 
 // =============================================================================
@@ -1417,7 +1125,24 @@ impl<V: Clone> Resizable for Vec<V> {
 
 impl<T: AsMutPtr + Resizable> DisjointMut<T> {
     pub fn resize(&mut self, new_len: usize, value: T::Value) {
-        self.inner.get_mut().resize(new_len, value)
+        self.inner.get_mut().resize(new_len, value);
+        self.retrack();
+    }
+}
+
+impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
+    /// Re-size the tracker for the container's current length.
+    ///
+    /// `&mut self` means no borrow can be outstanding, which is what makes
+    /// re-provisioning the shard array safe. Callers that grow the container
+    /// through a `&mut` path must call this, or a buffer that started tiny
+    /// keeps a single shard forever.
+    #[inline]
+    fn retrack(&mut self) {
+        let len = self.as_mut_slice().len();
+        if let Some(tracker) = self.tracker.as_mut() {
+            tracker.reprovision(len);
+        }
     }
 }
 
@@ -1452,7 +1177,9 @@ impl<T: AsMutPtr + TryResizable> DisjointMut<T> {
         new_len: usize,
         value: T::Value,
     ) -> Result<(), alloc::collections::TryReserveError> {
-        self.inner.get_mut().try_resize(new_len, value)
+        self.inner.get_mut().try_resize(new_len, value)?;
+        self.retrack();
+        Ok(())
     }
 }
 
@@ -1491,7 +1218,9 @@ impl<T: AsMutPtr + TryResizableWith> DisjointMut<T> {
         F: FnMut() -> T::Item,
         T: TryResizableWith,
     {
-        self.inner.get_mut().try_resize_with(new_len, f)
+        self.inner.get_mut().try_resize_with(new_len, f)?;
+        self.retrack();
+        Ok(())
     }
 }
 
@@ -1508,7 +1237,8 @@ impl<V> Clearable for Vec<V> {
 
 impl<T: AsMutPtr + Clearable> DisjointMut<T> {
     pub fn clear(&mut self) {
-        self.inner.get_mut().clear()
+        self.inner.get_mut().clear();
+        self.retrack();
     }
 }
 
@@ -1531,7 +1261,8 @@ impl<T: AsMutPtr + ResizableWith> DisjointMut<T> {
         F: FnMut() -> T::Item,
         T: ResizableWith,
     {
-        self.inner.get_mut().resize_with(new_len, f)
+        self.inner.get_mut().resize_with(new_len, f);
+        self.retrack();
     }
 }
 

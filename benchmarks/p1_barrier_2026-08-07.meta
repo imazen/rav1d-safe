@@ -1,0 +1,244 @@
+# P1: closing the tile-scaling plateau — the fix, measured
+
+date: 2026-08-07
+host: Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64
+rustc: stable, release profile (lto = "fat", codegen-units = 1), DEFAULT
+       features (bitdepth_8 + bitdepth_16 — the CHECKED `DisjointMut` build,
+       tracker armed). No `-C target-cpu=native`.
+branch: perf/p1-barrier, off perf/shard-tracker @ 34b0505.
+follows: benchmarks/p1_scaling_2026-08-07.meta (the diagnosis this acts on).
+
+## nice level — read this before reproducing
+
+NO `nice` WAS APPLIED TO ANY TIMED RUN. On Darwin a positive nice value maps
+the process to background QoS and distorts wall clock by well over an order of
+magnitude. `nice -n 19` was used for BUILDS only.
+
+Arms are interleaved back to back within each (vector, threads) cell and the
+arm order rotates every round; every number is a MEDIAN OF 9 (3 rounds x 3
+reps x 4 iters). `scripts/perf/p1_barrier_sweep.sh` refuses to start, and
+discards and re-runs the cell, while any non-agent process is above 25% CPU.
+
+## The arms
+
+Three commits on one branch; each arm is a full build of that commit, so an
+arm difference is exactly that commit's diff.
+
+  A  27f5e42  baseline. 32-shard tracker + the `check_tile` deblock barrier +
+              the wide CDEF padding guards. Functionally identical to
+              perf/shard-tracker @ 34b0505 — the only delta is inert
+              `probe-*` cargo features that `default` does not enable.
+  B  fdd6a35  A + exact-window CDEF padding guards.
+  C  054e2ed  B + the `check_tile` deblock barrier removed.
+  E  ba74cc4  C + the loop filter's per-tap borrows replaced by one guard per
+              tap row.
+
+## Result 1 — where it lands
+
+v4k_8tile, 3840x2160, 4 tile cols x 2 tile rows, ms/frame, median of 9.
+
+  8bpc                t=1     t=2     t=4     t=8   t1->t8
+  A  baseline       605.5   431.7   344.2   332.5    1.82x
+  C  no barrier     607.5   373.3   245.9   277.7    2.19x
+  E  + loopfilter   546.8   326.7   206.4   200.7    2.72x
+  ratio E/A         0.903   0.757   0.600   0.604
+
+  10bpc                             t=4     t=8
+  A  baseline                     426.8   423.6
+  C  no barrier                   287.7   317.4
+  E  + loopfilter                 238.3   234.0
+  ratio E/A                       0.558   0.552
+
+* **1.66x at 8 threads, 1.67x at 4, 1.81x at 10bpc t=8**, and 1.11x at t=1 —
+  the loop-filter change is a single-thread win too, because the borrows cost
+  even when nothing contends them.
+* Best shippable configuration goes from 332.5 ms (A at t=8) to 200.7 ms
+  (E at t=8): **1.66x**. Against A's best at ANY thread count, same number.
+* The t=4 -> t=8 inversion that the barrier fix re-armed (245.9 -> 277.7) is
+  gone (206.4 -> 200.7). It is flat, not inverted.
+* Every arm, every cell, every thread count: one md5 per vector
+  (`a00c11f4...` 8bpc, `840d4364...` 10bpc).
+
+## Result 2 — the diagnosis reproduced, including its warning
+
+The prior recon predicted, from an ablation build, that removing the barrier
+ALONE would be worth only ~1.19x at t=8 and would re-introduce anti-scaling
+(t=4 244.8 -> t=8 279.7 ms). Arm C, measured independently on the real
+shipping build: 1.20x at t=8, t=4 245.9 -> t=8 277.7 ms. Within 0.5% on both
+numbers. The "neither term pays alone" finding was correct and this is what
+made it worth doing the tracker half in the same pass.
+
+## Result 3 — the barrier was standing in for a 2-byte guard-width bug
+
+`check_tile`'s deblock barrier (06160a6) gated reconstruction of frame-sbrow N
+in ANY tile on a frame-global counter advanced by the serial deblock chain.
+It cost 2.19x at 8 threads. What it was suppressing:
+
+  cdef_arm.rs:124  &    _[138270..138282]  vs  &mut _[134432..138272]
+  cdef_arm.rs:464  &    _[184348..184372]  vs  &mut _[176672..184352]
+
+138272 - 134432 = 3840 = one 4K luma row, so the writer (`backup2lines`
+saving a CDEF line-buffer row) holds row R. The reader's guard starts at
+138270 = R_end - 2 and the first byte it actually reads is `guard[x_start]`
+= 138272, the first byte of row R+1. The two overlapping bytes are guarded
+and never dereferenced — the left-padding columns that `x_start = 2` skips
+when `HAVE_LEFT` is absent, which at the left frame edge live in the previous
+row. Same shape at 10bpc with 7680-byte rows and 4 bytes.
+
+f9458f4 (2026-07-23) diagnosed and fixed exactly this for the scalar
+reference in `src/cdef.rs` and stopped there; the SIMD padding functions — all
+of them on aarch64, and both bottom-edge loops in the portable/x86 file — never
+got it. fdd6a35 propagates the rule and adds it as a module note.
+
+No write hazard justified the barrier either. `rav1d_loopfilter_sbrow_rows(N)`
+walks the horizontal edges at 4-row units inside sbrow N; the taps reach at
+most 6 rows either side and the filter length is bounded by the transform
+heights on both sides, which cannot cross a superblock boundary — so the last
+edge of an sbrow is at most a 4-tap. Its writes stay inside sbrow N and the
+tail of sbrow N-1; they never reach sbrow N+1, which is all that concurrent
+reconstruction touches. The introducing commit had the direction backwards.
+dav1d being bit-exact at every thread count with no equivalent rule is the
+same statement from the other side.
+
+## Result 4 — the loop filter was 44.6% of the borrow tracker
+
+`sample`, 10 s, v4k_8tile 8bpc t=8, arm C. Every subtree rooted at a tracker
+frame (`BorrowTracker`, `TinyLock`, guard drop glue) charged to its nearest
+non-tracker caller; 20,800 of 49,137 tracker samples land under a truncated
+`<unknown binary>` frame and are excluded, leaving 28,337 attributed:
+
+  src/loopfilter.rs  loop_filter        12,653   44.6%
+  picture.rs         WithOffset::…       4,311   15.2%   (inlined index_mut/slice)
+  src/itx.rs         inv_txfm_add        1,519    5.4%
+  src/ipred.rs       splat_dc              766    2.7%
+  src/ipred.rs       cfl_ac_rust           603    2.1%
+  src/ipred.rs       cfl_pred              603    2.1%
+  src/cdef.rs        cdef_direct           411    1.4%
+
+`loop_filter` took a one-pixel mutable borrow per tap read AND per tap write —
+~26 per column, ~104 per call — through
+`(dst + strideb * k).index_mut::<BD>()`. `wd` fixes the tap window before any
+pixel is touched, and four columns share it, so a call's whole read set is a
+rectangle of at most 14x4. ba74cc4 reads that rectangle in with one guard per
+picture row, runs the filter on a stack array with no tracking at all, and
+writes back only the pixels that changed.
+
+This is a non-x86 problem specifically: `loopfilter_arm::loopfilter_sb_dispatch`
+returns `false` (issue #1) and the portable `safe_simd::loopfilter` is x86
+intrinsics, so aarch64, wasm and every scalar fallback ran the per-pixel path
+while x86_64 already had a compact one.
+
+## Gates
+
+* **Bit identity.** Full `cargo test --release --no-fail-fast` before and
+  after: 89 passed / 34 failed both times — the same 34 pre-existing failures
+  — and the 1,707 distinct `MISMATCH [tier]: <id> expected=… actual=…` triples
+  are byte-identical between the two logs (`diff` is empty). The failure set
+  did not grow and no `actual=` hash moved.
+* **mt_stress** passes at threads 1/2/4/8/16.
+* **Concurrent-process stress**, tracker armed, on the shipped build: 16
+  decoders at t=8/12/16/24 across v4k_8tile, v4k_8tile_10b, v4k_1tile and
+  v1024 — 0 overlap panics, 0 panics of any kind, one md5 per vector. Plus 20
+  repeats of the two configurations that failed during development.
+* **Detector liveness.** Not assumed: the same stress on the barrier-ablated
+  build with the WIDE CDEF guards panics 2 of 5 processes with
+  `overlapping DisjointMut` at cdef_arm.rs:124/464, and 0 of 16 with the
+  narrow guards. The detector fires and stops firing on the same code path
+  with a one-line change, so the clean runs above are evidence, not silence.
+  See "Liveness B" below for the loop-filter path.
+* `forbid(unsafe_code)` holds; no `unsafe` was added anywhere.
+* clippy `--release --all-targets` clean on the touched files.
+
+### Liveness B — the loop-filter path, and an honest limit on the probe
+
+The detector demonstrably fires at the two call sites `LfBlock` uses. The
+run-level variant of this same code (see "tried and measured worse" below) —
+identical `slice::<BD>(w)` read at picture.rs:697 and `slice_mut` write-back at
+picture.rs:710, only with the rectangle widened to `4 * steps` columns —
+panicked in 4 of 16 development runs:
+
+  picture.rs:697   &    _[3951104..3951296]  vs  &mut _[3951216..3951224]
+  picture.rs:710   &mut _[12293056..12293072] vs    & _[12292864..12293104]
+
+Two deliberately-widened variants of the SHIPPED code did NOT reproduce within
+the 16-process stress, and this is reported as a limit of the probe rather than
+as a clean bill of health:
+
+  * write-back widened from the changed span to the whole row: 0 panics
+  * read guard widened by 32 pixels beyond what is copied: 0 panics
+
+The probability is evidently steep in the width — 128 extra columns trips it,
+32 does not, within this stress budget — so these two nulls do not show the
+outermost taps are safe to guard. They show the probe is not sensitive enough
+to settle it. The shipped code keeps both narrowings on the argument that
+holds without a stress result: the rectangle is bounded by the direct path's
+own read set for the same `wd`, and the write-back is bounded by what changed.
+
+## What was tried and measured WORSE or NULL
+
+* **`TinyLock` spin backoff** (yield to the scheduler after 64 spins).
+  The prior recon flagged the bare `AtomicBool` spin as the wrong primitive
+  once real concurrency arrives, and its `sample` share does rise to 22.9%
+  with the barrier out. Measured on arm C, median of 9, interleaved:
+  t=8 276.8 -> 274.7 (0.992x), t=4 245.9 -> 246.3 (1.001x), 10bpc t=8
+  317.3 -> 316.2 (0.996x). Inside noise. **Backed out.** The spin share is a
+  symptom of borrow VOLUME, not of the primitive; the loop-filter change
+  attacks the volume and is worth 1.38x on the same arm.
+* **Run-level (not call-level) compaction of the loop filter's rectangle** —
+  one compact copy per `loop_filter_sb128_rust` call instead of per edge,
+  which is what the x86 dispatch does. It is faster (t=1 523 ms vs 547) but
+  **unsound as written**: the rectangle spans `4 * steps` columns, up to 128
+  pixels, including columns for steps the run skips, and reading them
+  collides with a concurrent writer. Reproduced as a real overlap panic
+  (`& _[3951104..3951296]` vs `&mut _[3951216..3951224]`, 3 of 8 runs at
+  10bpc t=4). The per-call rectangle is bounded by the direct path's own read
+  set for that `wd`, which is what makes it safe. Do not "optimise" it back.
+
+## Where this leaves the gap
+
+Against dav1d 1.5.4 `--framedelay 1` (tile threading only — the same threading
+model), measured here, not quoted: same host, same session, wall clock with a
+two-point (2 vs 20 frame) fit that removes process startup, median of 3,
+interleaved against our binaries with the same idle guard.
+`scripts/perf/p1_dav1d_wall.sh`, raw in `p1_barrier_dav1d_2026-08-07.tsv`.
+
+  ms/frame                 A        E    dav1d      E/dav1d    A/dav1d
+  v4k_8tile      t=1   604.7    547.5    246.6         2.22       2.45
+  v4k_8tile      t=8   333.6    200.2     34.3         5.83       9.72
+  v4k_8tile_10b  t=1   725.8    630.9    251.1         2.51       2.89
+  v4k_8tile_10b  t=8   421.7    233.6     35.7         6.55      11.82
+
+  t1 -> t8 scaling       A 1.81x    E 2.74x    dav1d 7.18x
+
+**The 8-thread gap goes 9.72x -> 5.83x (8bpc) and 11.82x -> 6.55x (10bpc);
+single-thread 2.45x -> 2.22x.** This instrument reproduces the interleaved
+sweep above to within 0.3% on all four rav1d-safe cells (604.7 vs 605.5,
+333.6 vs 332.5, 547.5 vs 546.8, 200.2 vs 200.7) and the earlier committed
+dav1d yardstick to within 0.3%, so the two measurements are consistent.
+
+The remaining constraint at 8 threads is the post-filter chain, which the
+diagnosis measured at 134.5 ms/frame of CPU running ~2 wide, and which is a
+P2 kernel problem: `src/safe_simd/cdef_arm.rs`, `loopfilter_arm.rs` and
+`looprestoration_arm.rs` contain ZERO aarch64 intrinsics — the "NEON" tier for
+those three is the scalar reference (`ROADMAP_SIMD_PORTING.md` row R3, still
+TODO; sibling record `benchmarks/p2_kernel_profile_2026-08-07.meta` puts CDEF
+at 17.3x and the loop filter at 11.3x dav1d at t=1). Nothing in this pass
+touched a kernel's arithmetic.
+
+## Data files
+
+  p1_barrier_2026-08-07.tsv         the A/B/C sweep, 108 rows
+  p1_barrier_ace_2026-08-07.tsv     the A/C/E sweep, 162 rows
+  p1_barrier_lock_ab_2026-08-07.tsv the rejected TinyLock backoff, 54 rows
+  p1_barrier_dav1d_2026-08-07.tsv   dav1d vs A vs E, wall-clock two-point fit
+  (columns: round, vector, threads, arm, ms_per_frame, md5)
+
+## Reproducing
+
+  # one target dir per arm; nice is for BUILDS only
+  for c in 27f5e42:A fdd6a35:B 054e2ed:C ba74cc4:E; do
+    git archive ${c%%:*} | tar -x -C ~/tmp/rav1d-p1fix/src-${c##*:}
+    CARGO_TARGET_DIR=~/tmp/rav1d-p1fix/tgt-${c##*:} RUSTC_WRAPPER=sccache \
+      nice -n 19 cargo build --release --example bench_ab_decode -j 4
+  done
+  ARMS="A C E" ./scripts/perf/p1_barrier_sweep.sh out.tsv 3 3 4

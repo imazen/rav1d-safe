@@ -78,11 +78,15 @@ fn avg_8bpc_inner(
             let sum_lo = vaddq_s16(t1_lo, t2_lo);
             let sum_hi = vaddq_s16(t1_hi, t2_hi);
 
-            // vqrdmulhq_n_s16(a, 2048) = (2 * a * 2048 + 0x8000) >> 16
-            // = (a * 4096 + 32768) >> 16 = (a * 1024 + 8192) >> 14
-            // We want (a * 1024 + 16384) >> 15 = pmulhrsw equivalent
-            let avg_lo = vqrdmulhq_n_s16(sum_lo, 2048);
-            let avg_hi = vqrdmulhq_n_s16(sum_hi, 2048);
+            // `avg_rust` at 8bpc: `(t1 + t2 + (1 << intermediate_bits)) >> (intermediate_bits + 1)`
+            // = `(sum + 16) >> 5`, with `PREP_BIAS = 0`.
+            //
+            // `vqrdmulhq_n_s16(a, k) = (2*a*k + 0x8000) >> 16`, so `k = 1024`
+            // gives `(2048*a + 32768) >> 16 = (a + 16) >> 5` — the shift the
+            // reference wants. `k = 2048` is `(a + 8) >> 4`, i.e. twice the
+            // average, which is what this computed before.
+            let avg_lo = vqrdmulhq_n_s16(sum_lo, 1024);
+            let avg_hi = vqrdmulhq_n_s16(sum_hi, 1024);
 
             // Pack to u8 with saturation (safe in #[arcane])
             let packed_lo = vqmovun_s16(avg_lo);
@@ -100,7 +104,8 @@ fn avg_8bpc_inner(
             let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
             let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
             let sum = vaddq_s16(t1, t2);
-            let avg = vqrdmulhq_n_s16(sum, 2048);
+            // See the 16-wide path: 1024 is `(sum + 16) >> 5`.
+            let avg = vqrdmulhq_n_s16(sum, 1024);
             let packed = vqmovun_s16(avg);
             // Store 8 bytes using partial_simd
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
@@ -169,7 +174,16 @@ fn avg_16bpc_inner(
     let mut dst = dst.flex_mut();
     let tmp1 = tmp1.flex();
     let tmp2 = tmp2.flex();
-    let intermediate_bits = 4;
+    // `avg_rust`: sh = intermediate_bits + 1,
+    // rnd = (1 << intermediate_bits) + PREP_BIAS * 2.
+    //
+    // Both terms were wrong: `intermediate_bits` was a literal 4 (right at 10
+    // bits, wrong at 12, where it is 2) and `PREP_BIAS` was absent entirely —
+    // this kernel spoke an unbiased convention that `prep_8tap_rust` and every
+    // scalar fallback in the same frame do not.
+    let intermediate_bits = intermediate_bits_16bpc(bitdepth_max);
+    let sh = intermediate_bits + 1;
+    let rnd = (1i32 << intermediate_bits) + PREP_BIAS_16BPC * 2;
 
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
@@ -189,42 +203,42 @@ fn avg_16bpc_inner(
             let t2_lo = vmovl_s16(vget_low_s16(t2));
             let t2_hi = vmovl_s16(vget_high_s16(t2));
 
-            // Add
-            let sum_lo = vaddq_s32(t1_lo, t2_lo);
-            let sum_hi = vaddq_s32(t1_hi, t2_hi);
+            let rnd_vec = vdupq_n_s32(rnd);
+            let sh_vec = vdupq_n_s32(-sh);
+            let avg_lo = vshlq_s32(vaddq_s32(vaddq_s32(t1_lo, t2_lo), rnd_vec), sh_vec);
+            let avg_hi = vshlq_s32(vaddq_s32(vaddq_s32(t1_hi, t2_hi), rnd_vec), sh_vec);
 
-            // Round and shift: (sum + (1 << intermediate_bits)) >> (intermediate_bits + 1)
-            let rnd = vdupq_n_s32(1 << intermediate_bits);
-            let sum_lo_rnd = vaddq_s32(sum_lo, rnd);
-            let sum_hi_rnd = vaddq_s32(sum_hi, rnd);
-
-            let avg_lo = vshrq_n_s32::<5>(sum_lo_rnd);
-            let avg_hi = vshrq_n_s32::<5>(sum_hi_rnd);
-
-            // Narrow to 16-bit
-            let avg_narrow_lo = vqmovn_s32(avg_lo);
-            let avg_narrow_hi = vqmovn_s32(avg_hi);
-            let avg_16 = vcombine_s16(avg_narrow_lo, avg_narrow_hi);
-
-            // Clamp
-            let zero = vdupq_n_s16(0);
-            let max = vdupq_n_s16(bitdepth_max as i16);
-            let clamped = vmaxq_s16(vminq_s16(avg_16, max), zero);
+            // Clamp to [0, bitdepth_max] in 32-bit, before narrowing: at 12bpc
+            // the pre-clip value does not fit i16.
+            let zero = vdupq_n_s32(0);
+            let max = vdupq_n_s32(bitdepth_max);
+            let cl_lo = vmaxq_s32(vminq_s32(avg_lo, max), zero);
+            let cl_hi = vmaxq_s32(vminq_s32(avg_hi, max), zero);
+            let out = vcombine_u16(
+                vmovn_u32(vreinterpretq_u32_s32(cl_lo)),
+                vmovn_u32(vreinterpretq_u32_s32(cl_hi)),
+            );
 
             let dst_arr: &mut [u16; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
-            safe_simd::vst1q_u16(dst_arr, vreinterpretq_u16_s16(clamped));
+            safe_simd::vst1q_u16(dst_arr, out);
             col += 8;
         }
 
         // Scalar fallback
         while col < w {
             let sum = tmp1_row[col] as i32 + tmp2_row[col] as i32;
-            let rnd = 1 << intermediate_bits;
-            let avg = ((sum + rnd) >> (intermediate_bits + 1)).clamp(0, bitdepth_max);
+            let avg = ((sum + rnd) >> sh).clamp(0, bitdepth_max);
             dst_row[col] = avg as u16;
             col += 1;
         }
     }
+}
+
+/// `14 - bitdepth`: 4 at 10bpc, 2 at 12bpc. `bitdepth_max` is 1023 or 4095.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn intermediate_bits_16bpc(bitdepth_max: i32) -> i32 {
+    (bitdepth_max as u16).leading_zeros() as i32 - 2
 }
 
 /// AVG operation for 16-bit pixels - extern "C" wrapper
@@ -283,6 +297,19 @@ fn w_avg_8bpc_inner(
     let mut dst = dst.flex_mut();
     let tmp1 = tmp1.flex();
     let tmp2 = tmp2.flex();
+    // `w_avg_rust` at 8bpc: intermediate_bits = 4, PREP_BIAS = 0, so
+    // `sh = 8` and `rnd = 8 << 4 = 128`, and the value is
+    //   (t1*weight + t2*(16 - weight) + 128) >> 8
+    // == ((t1 - t2)*weight + (t2 << 4) + 128) >> 8    (exact integer identity)
+    //
+    // The single shift matters: the old two-step form
+    // `(((t1-t2)*weight + 8) >> 4 + t2 + rnd) >> k` truncated the inner
+    // quotient before the outer round, so it disagreed with the reference at
+    // every weight except the degenerate 0 and 16 (where the inner remainder
+    // is always zero). Its scalar tail additionally used k = 5, dividing by
+    // 512 where the reference divides by 256.
+    const SH: i32 = 8;
+    const RND: i32 = 8 << 4;
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
@@ -295,29 +322,36 @@ fn w_avg_8bpc_inner(
             let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
             let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
-            // diff = tmp1 - tmp2
+            // diff = tmp1 - tmp2. The 8bpc prep interval is [-5132, 9212], so
+            // the difference needs 15 bits and cannot wrap an i16.
             let diff = vsubq_s16(t1, t2);
 
-            // Widen for multiply
+            // Widen; everything below is one exact i32 expression.
             let diff_lo = vmovl_s16(vget_low_s16(diff));
             let diff_hi = vmovl_s16(vget_high_s16(diff));
+            let t2_lo = vmovl_s16(vget_low_s16(t2));
+            let t2_hi = vmovl_s16(vget_high_s16(t2));
             let weight_vec = vdupq_n_s32(weight);
+            let rnd = vdupq_n_s32(RND);
 
-            let weighted_lo = vmulq_s32(diff_lo, weight_vec);
-            let weighted_hi = vmulq_s32(diff_hi, weight_vec);
+            // (t1 - t2)*weight + (t2 << 4) + rnd
+            let acc_lo = vaddq_s32(
+                vaddq_s32(vmulq_s32(diff_lo, weight_vec), vshlq_n_s32::<4>(t2_lo)),
+                rnd,
+            );
+            let acc_hi = vaddq_s32(
+                vaddq_s32(vmulq_s32(diff_hi, weight_vec), vshlq_n_s32::<4>(t2_hi)),
+                rnd,
+            );
 
-            // (weighted + 8) >> 4
-            let rnd = vdupq_n_s32(8);
-            let shifted_lo = vshrq_n_s32::<4>(vaddq_s32(weighted_lo, rnd));
-            let shifted_hi = vshrq_n_s32::<4>(vaddq_s32(weighted_hi, rnd));
+            let res_lo = vshrq_n_s32::<8>(acc_lo);
+            let res_hi = vshrq_n_s32::<8>(acc_hi);
 
-            // Narrow back to 16-bit
-            let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
-
-            // Add tmp2 and apply final scaling
-            let sum = vaddq_s16(shifted_16, t2);
-            let scaled = vqrdmulhq_n_s16(sum, 2048);
-            let packed = vqmovun_s16(scaled);
+            // The result is within [-321, 576] before clipping, so the narrow
+            // is exact and `vqmovun_s16` performs the reference's clip to
+            // [0, 255].
+            let res16 = vcombine_s16(vmovn_s32(res_lo), vmovn_s32(res_hi));
+            let packed = vqmovun_s16(res16);
 
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
             safe_simd::vst1_u8(dst_arr, packed);
@@ -326,10 +360,10 @@ fn w_avg_8bpc_inner(
 
         // Scalar fallback
         while col < w {
-            let diff = tmp1_row[col] as i32 - tmp2_row[col] as i32;
-            let weighted = ((diff * weight + 8) >> 4) + tmp2_row[col] as i32;
-            let scaled = ((weighted * 1024 + 16384) >> 15).clamp(0, 255);
-            dst_row[col] = scaled as u8;
+            let t1 = tmp1_row[col] as i32;
+            let t2 = tmp2_row[col] as i32;
+            let res = ((t1 * weight + t2 * (16 - weight) + RND) >> SH).clamp(0, 255);
+            dst_row[col] = res as u8;
             col += 1;
         }
     }
@@ -386,7 +420,16 @@ fn w_avg_16bpc_inner(
     let mut dst = dst.flex_mut();
     let tmp1 = tmp1.flex();
     let tmp2 = tmp2.flex();
-    let intermediate_bits = 4;
+    // `w_avg_rust`: sh = intermediate_bits + 4,
+    // rnd = (8 << intermediate_bits) + PREP_BIAS * 16, and the value is
+    //   (t1*weight + t2*(16 - weight) + rnd) >> sh
+    // == ((t1 - t2)*weight + (t2 << 4) + rnd) >> sh.
+    // Three defects at once: hardcoded intermediate_bits, no PREP_BIAS, and a
+    // double rounding (an inner `>> 4` before the outer shift) that disagrees
+    // with the reference at every weight except 0 and 16.
+    let intermediate_bits = intermediate_bits_16bpc(bitdepth_max);
+    let sh = intermediate_bits + 4;
+    let rnd = (8i32 << intermediate_bits) + PREP_BIAS_16BPC * 16;
 
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
@@ -402,33 +445,29 @@ fn w_avg_16bpc_inner(
             let t1 = vmovl_s16(t1_16);
             let t2 = vmovl_s16(t2_16);
 
-            let diff = vsubq_s32(t1, t2);
             let weight_vec = vdupq_n_s32(weight);
-            let weighted = vmulq_s32(diff, weight_vec);
-
-            let rnd = vdupq_n_s32(8);
-            let shifted = vshrq_n_s32::<4>(vaddq_s32(weighted, rnd));
-            let sum = vaddq_s32(shifted, t2);
-
-            let rnd2 = vdupq_n_s32(1 << intermediate_bits);
-            let result = vshrq_n_s32::<5>(vaddq_s32(sum, rnd2));
+            let inv_weight = vdupq_n_s32(16 - weight);
+            let acc = vaddq_s32(
+                vaddq_s32(vmulq_s32(t1, weight_vec), vmulq_s32(t2, inv_weight)),
+                vdupq_n_s32(rnd),
+            );
+            let result = vshlq_s32(acc, vdupq_n_s32(-sh));
 
             let zero = vdupq_n_s32(0);
             let max = vdupq_n_s32(bitdepth_max);
             let clamped = vmaxq_s32(vminq_s32(result, max), zero);
 
-            let narrow = vmovn_s32(clamped);
+            let narrow = vmovn_u32(vreinterpretq_u32_s32(clamped));
             let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
-            safe_simd::vst1_u16(dst_arr, vreinterpret_u16_s16(narrow));
+            safe_simd::vst1_u16(dst_arr, narrow);
             col += 4;
         }
 
         // Scalar fallback
         while col < w {
-            let diff = tmp1_row[col] as i32 - tmp2_row[col] as i32;
-            let weighted = ((diff * weight + 8) >> 4) + tmp2_row[col] as i32;
-            let rnd = 1 << intermediate_bits;
-            let result = ((weighted + rnd) >> (intermediate_bits + 1)).clamp(0, bitdepth_max);
+            let t1 = tmp1_row[col] as i32;
+            let t2 = tmp2_row[col] as i32;
+            let result = ((t1 * weight + t2 * (16 - weight) + rnd) >> sh).clamp(0, bitdepth_max);
             dst_row[col] = result as u16;
             col += 1;
         }
@@ -492,6 +531,16 @@ fn mask_8bpc_inner(
     let tmp1 = tmp1.flex();
     let tmp2 = tmp2.flex();
     let mask = mask.flex();
+    // `mask_rust` at 8bpc: intermediate_bits = 4, PREP_BIAS = 0, so `sh = 10`
+    // and `rnd = 32 << 4 = 512`, and the value is
+    //   (t1*m + t2*(64 - m) + 512) >> 10
+    // == ((t1 - t2)*m + (t2 << 6) + 512) >> 10   (exact integer identity)
+    //
+    // Same defect shape as `w_avg_8bpc_inner`: the old vector path rounded
+    // twice (`((diff*m + 32) >> 6)` then a second rounded shift) and the old
+    // scalar tail shifted by one bit too many.
+    const SH: i32 = 10;
+    const RND: i32 = 32 << 4;
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
@@ -506,32 +555,35 @@ fn mask_8bpc_inner(
             let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
             let m = safe_simd::vld1_u8(mask_row[col..][..8].try_into().unwrap());
 
-            // Widen mask to 16-bit
+            // Widen mask to 16-bit (0..=64, so the sign reinterpret is a no-op)
             let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
 
-            // diff = tmp1 - tmp2
+            // diff = tmp1 - tmp2; 8bpc prep is [-5132, 9212], no i16 wrap.
             let diff = vsubq_s16(t1, t2);
 
-            // Widen for multiply
             let diff_lo = vmovl_s16(vget_low_s16(diff));
             let diff_hi = vmovl_s16(vget_high_s16(diff));
             let m_lo = vmovl_s16(vget_low_s16(m16));
             let m_hi = vmovl_s16(vget_high_s16(m16));
+            let t2_lo = vmovl_s16(vget_low_s16(t2));
+            let t2_hi = vmovl_s16(vget_high_s16(t2));
+            let rnd = vdupq_n_s32(RND);
 
-            // weighted = diff * mask
-            let weighted_lo = vmulq_s32(diff_lo, m_lo);
-            let weighted_hi = vmulq_s32(diff_hi, m_hi);
+            // (t1 - t2)*m + (t2 << 6) + rnd, then one shift.
+            let acc_lo = vaddq_s32(
+                vaddq_s32(vmulq_s32(diff_lo, m_lo), vshlq_n_s32::<6>(t2_lo)),
+                rnd,
+            );
+            let acc_hi = vaddq_s32(
+                vaddq_s32(vmulq_s32(diff_hi, m_hi), vshlq_n_s32::<6>(t2_hi)),
+                rnd,
+            );
 
-            // (weighted + 32) >> 6
-            let rnd = vdupq_n_s32(32);
-            let shifted_lo = vshrq_n_s32::<6>(vaddq_s32(weighted_lo, rnd));
-            let shifted_hi = vshrq_n_s32::<6>(vaddq_s32(weighted_hi, rnd));
+            let res_lo = vshrq_n_s32::<10>(acc_lo);
+            let res_hi = vshrq_n_s32::<10>(acc_hi);
 
-            // Narrow and add tmp2
-            let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
-            let sum = vaddq_s16(shifted_16, t2);
-            let scaled = vqrdmulhq_n_s16(sum, 2048);
-            let packed = vqmovun_s16(scaled);
+            let res16 = vcombine_s16(vmovn_s32(res_lo), vmovn_s32(res_hi));
+            let packed = vqmovun_s16(res16);
 
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
             safe_simd::vst1_u8(dst_arr, packed);
@@ -540,11 +592,11 @@ fn mask_8bpc_inner(
 
         // Scalar fallback
         while col < w {
-            let diff = tmp1_row[col] as i32 - tmp2_row[col] as i32;
+            let t1 = tmp1_row[col] as i32;
+            let t2 = tmp2_row[col] as i32;
             let m = mask_row[col] as i32;
-            let weighted = ((diff * m + 32) >> 6) + tmp2_row[col] as i32;
-            let scaled = ((weighted * 1024 + 16384) >> 15).clamp(0, 255);
-            dst_row[col] = scaled as u8;
+            let res = ((t1 * m + t2 * (64 - m) + RND) >> SH).clamp(0, 255);
+            dst_row[col] = res as u8;
             col += 1;
         }
     }
@@ -603,7 +655,12 @@ fn mask_16bpc_inner(
     let tmp1 = tmp1.flex();
     let tmp2 = tmp2.flex();
     let mask = mask.flex();
-    let intermediate_bits = 4;
+    // `mask_rust`: sh = intermediate_bits + 6,
+    // rnd = (32 << intermediate_bits) + PREP_BIAS * 64. Same three defects as
+    // `w_avg_16bpc_inner`.
+    let intermediate_bits = intermediate_bits_16bpc(bitdepth_max);
+    let sh = intermediate_bits + 6;
+    let rnd = (32i32 << intermediate_bits) + PREP_BIAS_16BPC * 64;
 
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
@@ -635,33 +692,30 @@ fn mask_16bpc_inner(
             let m16 = vmovl_u8(m8);
             let m32 = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(m16)));
 
-            let diff = vsubq_s32(t1, t2);
-            let weighted = vmulq_s32(diff, m32);
-
-            let rnd = vdupq_n_s32(32);
-            let shifted = vshrq_n_s32::<6>(vaddq_s32(weighted, rnd));
-            let sum = vaddq_s32(shifted, t2);
-
-            let rnd2 = vdupq_n_s32(1 << intermediate_bits);
-            let result = vshrq_n_s32::<5>(vaddq_s32(sum, rnd2));
+            // (t1*m + t2*(64 - m) + rnd) >> sh, one shift.
+            let inv_m = vsubq_s32(vdupq_n_s32(64), m32);
+            let acc = vaddq_s32(
+                vaddq_s32(vmulq_s32(t1, m32), vmulq_s32(t2, inv_m)),
+                vdupq_n_s32(rnd),
+            );
+            let result = vshlq_s32(acc, vdupq_n_s32(-sh));
 
             let zero = vdupq_n_s32(0);
             let max = vdupq_n_s32(bitdepth_max);
             let clamped = vmaxq_s32(vminq_s32(result, max), zero);
 
-            let narrow = vmovn_s32(clamped);
+            let narrow = vmovn_u32(vreinterpretq_u32_s32(clamped));
             let dst_arr: &mut [u16; 4] = (&mut dst_row[col..col + 4]).try_into().unwrap();
-            safe_simd::vst1_u16(dst_arr, vreinterpret_u16_s16(narrow));
+            safe_simd::vst1_u16(dst_arr, narrow);
             col += 4;
         }
 
         // Scalar fallback
         while col < w {
-            let diff = tmp1_row[col] as i32 - tmp2_row[col] as i32;
+            let t1 = tmp1_row[col] as i32;
+            let t2 = tmp2_row[col] as i32;
             let m = mask_row[col] as i32;
-            let weighted = ((diff * m + 32) >> 6) + tmp2_row[col] as i32;
-            let rnd = 1 << intermediate_bits;
-            let result = ((weighted + rnd) >> (intermediate_bits + 1)).clamp(0, bitdepth_max);
+            let result = ((t1 * m + t2 * (64 - m) + rnd) >> sh).clamp(0, bitdepth_max);
             dst_row[col] = result as u16;
             col += 1;
         }
@@ -961,6 +1015,10 @@ mod tests {
     fn test_arm_token_permutations() {
         use archmage::testing::{CompileTimePolicy, for_each_token_permutation};
         use archmage::{Arm64, SimdToken};
+
+        // The permutation switch is process-global; hold the lock so no other
+        // test observes a token that is momentarily turned off.
+        let _guard = crate::src::safe_simd::token_test_lock();
 
         let mut had_enabled = false;
         let mut had_disabled = false;
@@ -1558,26 +1616,26 @@ fn w_mask_8bpc_inner(
     let tmp1 = tmp1.flex();
     let tmp2 = tmp2.flex();
     let mut mask = mask.flex_mut();
-    // For 8bpc: intermediate_bits = 4, bitdepth = 8
-    let intermediate_bits = 4i32;
-    let sh = intermediate_bits + 6;
-    let rnd = (32 << intermediate_bits) + 8192 * 64; // PREP_BIAS = 8192 for 8bpc in compound
-    let mask_sh = 8 + intermediate_bits - 4; // bitdepth + intermediate_bits - 4
-    let mask_rnd = 1i32 << (mask_sh - 5);
+    // `w_mask_rust` at 8bpc: intermediate_bits = 4, bitdepth = 8,
+    // **PREP_BIAS = 0**. `rnd` is `(32 << intermediate_bits) + PREP_BIAS * 64`
+    // = 512. The old constant added `8192 * 64` on top of that, i.e. it used
+    // the 16bpc bias at a depth where the bias is zero.
+    const SH: i32 = 4 + 6;
+    const RND: i32 = (32 << 4) + 0 * 64;
+    const MASK_SH: u32 = (8 + 4 - 4) as u32;
+    const MASK_RND: u16 = 1 << (MASK_SH - 5);
 
     // Mask output dimensions depend on subsampling
     let mask_w = if ss_hor { w >> 1 } else { w };
+
+    // One row of per-pixel weights, so the (sequential) mask bookkeeping below
+    // can read the same `m` the (vectorised) blend used. `w` is at most 128.
+    let mut mrow = [0u8; 128];
 
     for y in 0..h {
         let tmp1_row = &tmp1[y * w..][..w];
         let tmp2_row = &tmp2[y * w..][..w];
         let dst_row = &mut dst[y * dst_stride..][..w];
-        let mut mask_row = if ss_ver && (y & 1) != 0 {
-            None
-        } else {
-            let mask_y = if ss_ver { y >> 1 } else { y };
-            Some(&mut mask[mask_y * mask_w..][..mask_w])
-        };
 
         let mut col = 0;
 
@@ -1586,52 +1644,43 @@ fn w_mask_8bpc_inner(
             let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
             let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
-            // Compute diff and mask value
-            // abs_diff = |tmp1 - tmp2|
+            // abs_diff = |tmp1 - tmp2|; the 8bpc prep interval is
+            // [-5132, 9212], so neither the subtract nor the abs can wrap.
             let diff = vsubq_s16(t1, t2);
             let abs_diff = vabsq_s16(diff);
 
-            // mask = min(38 + (abs_diff + mask_rnd) >> mask_sh, 64)
+            // m = min(38 + ((abs_diff + mask_rnd) >> mask_sh), 64)
             let abs_32_lo = vmovl_s16(vget_low_s16(abs_diff));
             let abs_32_hi = vmovl_s16(vget_high_s16(abs_diff));
 
-            let mask_rnd_vec = vdupq_n_s32(mask_rnd);
+            let mask_rnd_vec = vdupq_n_s32(MASK_RND as i32);
             let m_lo = vaddq_s32(abs_32_lo, mask_rnd_vec);
             let m_hi = vaddq_s32(abs_32_hi, mask_rnd_vec);
 
-            // Shift by mask_sh (= 8)
             let m_shifted_lo = vshrq_n_s32::<8>(m_lo);
             let m_shifted_hi = vshrq_n_s32::<8>(m_hi);
 
-            // Add 38 and clamp to 64
-            let m_lo = vaddq_s32(m_shifted_lo, vdupq_n_s32(38));
-            let m_hi = vaddq_s32(m_shifted_hi, vdupq_n_s32(38));
-            let m_lo = vminq_s32(m_lo, vdupq_n_s32(64));
-            let m_hi = vminq_s32(m_hi, vdupq_n_s32(64));
+            let m_lo = vminq_s32(vaddq_s32(m_shifted_lo, vdupq_n_s32(38)), vdupq_n_s32(64));
+            let m_hi = vminq_s32(vaddq_s32(m_shifted_hi, vdupq_n_s32(38)), vdupq_n_s32(64));
 
             // Narrow to 16-bit for blending
             let m_16 = vcombine_s16(vmovn_s32(m_lo), vmovn_s32(m_hi));
 
-            // Apply sign: if sign, swap effective weights
-            let m_final = if sign != 0 {
-                vsubq_s16(vdupq_n_s16(64), m_16)
-            } else {
-                m_16
-            };
-            let inv_m = vsubq_s16(vdupq_n_s16(64), m_final);
+            // The blend uses `m` itself. `sign` does NOT enter here — in
+            // `w_mask_rust` it only reaches the SEGMENTATION MASK store below.
+            let inv_m = vsubq_s16(vdupq_n_s16(64), m_16);
 
-            // Widen tmp values to 32-bit for multiply
             let t1_lo = vmovl_s16(vget_low_s16(t1));
             let t1_hi = vmovl_s16(vget_high_s16(t1));
             let t2_lo = vmovl_s16(vget_low_s16(t2));
             let t2_hi = vmovl_s16(vget_high_s16(t2));
-            let m_lo_32 = vmovl_s16(vget_low_s16(m_final));
-            let m_hi_32 = vmovl_s16(vget_high_s16(m_final));
+            let m_lo_32 = vmovl_s16(vget_low_s16(m_16));
+            let m_hi_32 = vmovl_s16(vget_high_s16(m_16));
             let inv_m_lo_32 = vmovl_s16(vget_low_s16(inv_m));
             let inv_m_hi_32 = vmovl_s16(vget_high_s16(inv_m));
 
             // blend = (tmp1 * m + tmp2 * (64-m) + rnd) >> sh
-            let rnd_vec = vdupq_n_s32(rnd);
+            let rnd_vec = vdupq_n_s32(RND);
             let blend_lo = vaddq_s32(
                 vaddq_s32(vmulq_s32(t1_lo, m_lo_32), vmulq_s32(t2_lo, inv_m_lo_32)),
                 rnd_vec,
@@ -1641,7 +1690,6 @@ fn w_mask_8bpc_inner(
                 rnd_vec,
             );
 
-            // Shift by sh (= 10)
             let result_lo = vshrq_n_s32::<10>(blend_lo);
             let result_hi = vshrq_n_s32::<10>(blend_hi);
 
@@ -1651,42 +1699,17 @@ fn w_mask_8bpc_inner(
             let result_lo = vmaxq_s32(vminq_s32(result_lo, max_val), zero);
             let result_hi = vmaxq_s32(vminq_s32(result_hi, max_val), zero);
 
-            // Narrow to u8
-            let narrow_lo = vmovn_s32(result_lo);
-            let narrow_hi = vmovn_s32(result_hi);
-            let narrow_16 = vcombine_s16(narrow_lo, narrow_hi);
+            let narrow_16 = vcombine_s16(vmovn_s32(result_lo), vmovn_s32(result_hi));
             let result_u8 = vqmovun_s16(narrow_16);
 
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
             safe_simd::vst1_u8(dst_arr, result_u8);
 
-            // Store mask if needed
-            if let Some(ref mut mask_row) = mask_row {
-                // For 444: 1:1 mask storage
-                // For 422: horizontal averaging (2 pixels -> 1 mask)
-                // For 420: also horizontal averaging
-                if !ss_hor {
-                    // 444: store all mask values
-                    let m_narrow = vqmovun_s16(m_16);
-                    let mask_arr: &mut [u8; 8] = (&mut mask_row[col..col + 8]).try_into().unwrap();
-                    safe_simd::vst1_u8(mask_arr, m_narrow);
-                } else {
-                    // 422/420: average pairs horizontally (unrolled - vgetq_lane requires const)
-                    let mask_idx = col >> 1;
-                    let m0 = vgetq_lane_s16::<0>(m_16) as i32;
-                    let m1 = vgetq_lane_s16::<1>(m_16) as i32;
-                    mask_row[mask_idx] = ((m0 + m1 + 1) >> 1) as u8;
-                    let m2 = vgetq_lane_s16::<2>(m_16) as i32;
-                    let m3 = vgetq_lane_s16::<3>(m_16) as i32;
-                    mask_row[mask_idx + 1] = ((m2 + m3 + 1) >> 1) as u8;
-                    let m4 = vgetq_lane_s16::<4>(m_16) as i32;
-                    let m5 = vgetq_lane_s16::<5>(m_16) as i32;
-                    mask_row[mask_idx + 2] = ((m4 + m5 + 1) >> 1) as u8;
-                    let m6 = vgetq_lane_s16::<6>(m_16) as i32;
-                    let m7 = vgetq_lane_s16::<7>(m_16) as i32;
-                    mask_row[mask_idx + 3] = ((m6 + m7 + 1) >> 1) as u8;
-                }
-            }
+            // Keep this lane group's weights for the mask pass.
+            let m_narrow = vqmovun_s16(m_16);
+            let m_arr: &mut [u8; 8] = (&mut mrow[col..col + 8]).try_into().unwrap();
+            safe_simd::vst1_u8(m_arr, m_narrow);
+
             col += 8;
         }
 
@@ -1694,42 +1717,52 @@ fn w_mask_8bpc_inner(
         while col < w {
             let t1 = tmp1_row[col] as i32;
             let t2 = tmp2_row[col] as i32;
-            let diff = t1 - t2;
-            let abs_diff = diff.abs();
+            let m = cmp_min_i32(
+                38 + ((t1.abs_diff(t2).saturating_add(MASK_RND as u32) >> MASK_SH) as i32),
+                64,
+            );
 
-            // Compute mask
-            let mut m = 38 + ((abs_diff + mask_rnd) >> mask_sh);
-            m = m.min(64);
-
-            let m_final = if sign != 0 { 64 - m } else { m };
-            let inv_m = 64 - m_final;
-
-            // Blend
-            let blend = (t1 * m_final + t2 * inv_m + rnd) >> sh;
+            let blend = (t1 * m + t2 * (64 - m) + RND) >> SH;
             dst_row[col] = blend.clamp(0, 255) as u8;
-
-            // Store mask with subsampling
-            if let Some(ref mut mask_row) = mask_row {
-                if !ss_hor {
-                    mask_row[col] = m as u8;
-                } else if (col & 1) == 0 {
-                    // For 422/420, store averaged pairs
-                    let mask_idx = col >> 1;
-                    if col + 1 < w {
-                        let t1_next = tmp1_row[col + 1] as i32;
-                        let t2_next = tmp2_row[col + 1] as i32;
-                        let diff_next = (t1_next - t2_next).abs();
-                        let m_next = (38 + ((diff_next + mask_rnd) >> mask_sh)).min(64);
-                        mask_row[mask_idx] = ((m + m_next + 1) >> 1) as u8;
-                    } else {
-                        mask_row[mask_idx] = m as u8;
-                    }
-                }
-            }
+            mrow[col] = m as u8;
 
             col += 1;
         }
+
+        // Segmentation-mask store, transcribed from `w_mask_rust`. This is the
+        // half that carries `sign`, and for 4:2:0 it accumulates ACROSS the row
+        // pair: the even row writes the raw `m + n` sum and the odd row folds
+        // it in. Writing only on even rows (what this used to do) leaves the
+        // odd row's contribution out entirely.
+        let mask_y = if ss_ver { y >> 1 } else { y };
+        let mask_row = &mut mask[mask_y * mask_w..][..mask_w];
+        if !ss_hor {
+            mask_row[..w].copy_from_slice(&mrow[..w]);
+        } else {
+            let mut x = 0;
+            while x + 1 < w {
+                let m = mrow[x];
+                let n = mrow[x + 1];
+                let sum = m + n; // both <= 64, so <= 128: no u8 overflow
+                mask_row[x >> 1] = if ss_ver && (y & 1) != 0 {
+                    (((sum + 2 - sign) as u16 + mask_row[x >> 1] as u16) >> 2) as u8
+                } else if ss_ver {
+                    sum
+                } else {
+                    (sum + 1 - sign) >> 1
+                };
+                x += 2;
+            }
+        }
     }
+}
+
+/// `i32::min` as a free function, so the kernel body reads like the reference's
+/// `cmp::min` without pulling `std::cmp` into this module's namespace.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn cmp_min_i32(a: i32, b: i32) -> i32 {
+    if a < b { a } else { b }
 }
 
 #[cfg(feature = "asm")]
@@ -2507,17 +2540,26 @@ fn prep_bilin_16bpc_inner(
     h: usize,
     mx: i32,
     my: i32,
+    bitdepth_max: u16,
 ) {
     let mut tmp = tmp.flex_mut();
     let src = src.flex();
+    // `14 - bitdepth` (4 at 10bpc, 2 at 12bpc). Every shift below derives from
+    // it; the previous code used a fixed `>> 4` for the single-axis passes,
+    // which is `4 - intermediate_bits` at NEITHER depth, and skipped the
+    // `<< intermediate_bits` on the copy path entirely.
+    let intermediate_bits = bitdepth_max.leading_zeros() as u8 - 2;
+    let sh1 = 4 - intermediate_bits; // `prep_bilin_rust`'s `.rnd(4 - ib)`
+    let rnd1 = (1i32 << sh1) >> 1;
     match (mx, my) {
         (0, 0) => {
-            // Simple copy with bias
+            // `prep_rust`: `sub_prep_bias(src << intermediate_bits)`.
             for y in 0..h {
                 let src_row = &src[y * src_stride..][..w];
                 let tmp_row = &mut tmp[y * w..][..w];
                 for x in 0..w {
-                    tmp_row[x] = (src_row[x] as i32 - PREP_BIAS_16BPC) as i16;
+                    tmp_row[x] =
+                        (((src_row[x] as i32) << intermediate_bits) - PREP_BIAS_16BPC) as i16;
                 }
             }
         }
@@ -2535,7 +2577,7 @@ fn prep_bilin_16bpc_inner(
                     let r0 = src_row0[x] as i32;
                     let r1 = src_row1[x] as i32;
                     let pixel = coeff0 * r0 + coeff1 * r1;
-                    tmp_row[x] = ((pixel >> 4) - PREP_BIAS_16BPC) as i16;
+                    tmp_row[x] = (((pixel + rnd1) >> sh1) - PREP_BIAS_16BPC) as i16;
                 }
             }
         }
@@ -2552,7 +2594,7 @@ fn prep_bilin_16bpc_inner(
                     let s0 = src_row[x] as i32;
                     let s1 = src_row[x + 1] as i32;
                     let pixel = coeff0 * s0 + coeff1 * s1;
-                    tmp_row[x] = ((pixel >> 4) - PREP_BIAS_16BPC) as i16;
+                    tmp_row[x] = (((pixel + rnd1) >> sh1) - PREP_BIAS_16BPC) as i16;
                 }
             }
         }
@@ -2575,7 +2617,8 @@ fn prep_bilin_16bpc_inner(
                 for x in 0..w {
                     let s0 = src_row[x] as i32;
                     let s1 = src_row[x + 1] as i32;
-                    mid_row[x] = h_coeff0 * s0 + h_coeff1 * s1;
+                    // `.rnd(4 - ib).get()` — the reference's `mid` is i16.
+                    mid_row[x] = ((h_coeff0 * s0 + h_coeff1 * s1 + rnd1) >> sh1) as i16 as i32;
                 }
             }
 
@@ -2588,8 +2631,9 @@ fn prep_bilin_16bpc_inner(
                 for x in 0..w {
                     let r0 = mid_row0[x];
                     let r1 = mid_row1[x];
+                    // `.rnd(4).sub_prep_bias()`
                     let pixel = v_coeff0 * r0 + v_coeff1 * r1;
-                    tmp_row[x] = ((pixel >> 8) - PREP_BIAS_16BPC) as i16;
+                    tmp_row[x] = (((pixel + 8) >> 4) - PREP_BIAS_16BPC) as i16;
                 }
             }
         }
@@ -2645,63 +2689,68 @@ fn w_mask_16bpc_inner(
     ss_hor: bool,
     ss_ver: bool,
 ) {
-    // For 16bpc: intermediate_bits = 4
-    let bitdepth = if bitdepth_max == 1023 { 10u32 } else { 12u32 };
-    let intermediate_bits = 4i32;
+    // `w_mask_rust`: intermediate_bits = 14 - bitdepth (2 at 12bpc, not 4),
+    // rnd = (32 << intermediate_bits) + PREP_BIAS * 64, and
+    // mask_sh = bitdepth + intermediate_bits - 4 — which is 10 at BOTH 10 and
+    // 12 bits, but only because the two terms move oppositely. Hardcoding
+    // intermediate_bits made `sh` and `rnd` wrong at 12bpc and `mask_sh` wrong
+    // by 2 there.
+    //
+    // This kernel already used the scalar PREP_BIAS convention, unlike its
+    // avg/w_avg/mask siblings — which is one of the two reasons the seam had to
+    // pick a convention before any of them could be fixed in isolation.
+    let bitdepth = if bitdepth_max == 1023 { 10i32 } else { 12i32 };
+    let intermediate_bits = intermediate_bits_16bpc(bitdepth_max);
     let sh = intermediate_bits + 6;
-    let rnd = (32i32 << intermediate_bits) + 8192 * 64;
-    let mask_sh = (bitdepth as i32 + intermediate_bits - 4) as u32;
+    let rnd = (32i32 << intermediate_bits) + PREP_BIAS_16BPC * 64;
+    let mask_sh = (bitdepth + intermediate_bits - 4) as u32;
     let mask_rnd = 1u16 << (mask_sh - 5);
 
     let mask_w = if ss_hor { w >> 1 } else { w };
+
+    // One row of per-pixel weights, so the mask bookkeeping reads the same `m`
+    // the blend used. `w` is at most 128.
+    let mut mrow = [0u8; 128];
 
     for y in 0..h {
         let tmp1_row = &tmp1[y * w..][..w];
         let tmp2_row = &tmp2[y * w..][..w];
         let dst_row = &mut dst[y * dst_stride..][..w];
-        let mut mask_row = if ss_ver && (y & 1) != 0 {
-            None
-        } else {
-            let mask_y = if ss_ver { y >> 1 } else { y };
-            Some(&mut mask[mask_y * mask_w..][..mask_w])
-        };
 
-        let mut col = 0;
-
-        // Process pixels (scalar for now - SIMD could be added)
-        while col < w {
+        for col in 0..w {
             let t1 = tmp1_row[col] as i32;
             let t2 = tmp2_row[col] as i32;
-            let diff = t1.abs_diff(t2) as u16;
+            let diff = tmp1_row[col].abs_diff(tmp2_row[col]);
 
             let m = std::cmp::min(38 + ((diff.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
-            let m_final = if sign != 0 { 64 - m } else { m };
-            let inv_m = 64 - m_final;
-
-            let pixel = (t1 * m_final as i32 + t2 * inv_m as i32 + rnd) >> sh;
+            // `sign` does NOT enter the blend — `w_mask_rust` blends with `m`
+            // and routes `sign` only into the segmentation mask below.
+            let pixel = (t1 * m as i32 + t2 * (64 - m as i32) + rnd) >> sh;
             dst_row[col] = pixel.clamp(0, bitdepth_max) as u16;
+            mrow[col] = m;
+        }
 
-            if let Some(ref mut mask_row) = mask_row {
-                if !ss_hor {
-                    mask_row[col] = m;
-                } else if (col & 1) == 0 {
-                    let mask_idx = col >> 1;
-                    if col + 1 < w {
-                        let t1_next = tmp1_row[col + 1] as i32;
-                        let t2_next = tmp2_row[col + 1] as i32;
-                        let diff_next = t1_next.abs_diff(t2_next) as u16;
-                        let m_next = std::cmp::min(
-                            38 + ((diff_next.saturating_add(mask_rnd)) >> mask_sh),
-                            64,
-                        ) as u8;
-                        mask_row[mask_idx] = ((m as u16 + m_next as u16 + 1) >> 1) as u8;
-                    } else {
-                        mask_row[mask_idx] = m;
-                    }
-                }
+        // Segmentation mask, transcribed from `w_mask_rust`. For 4:2:0 the even
+        // row stores the raw `m + n` and the odd row folds it in at `>> 2`;
+        // writing only on even rows dropped the odd row's contribution, and
+        // 4:2:2 dropped `sign`.
+        let mask_y = if ss_ver { y >> 1 } else { y };
+        let mask_row = &mut mask[mask_y * mask_w..][..mask_w];
+        if !ss_hor {
+            mask_row[..w].copy_from_slice(&mrow[..w]);
+        } else {
+            let mut x = 0;
+            while x + 1 < w {
+                let sum = mrow[x] + mrow[x + 1]; // both <= 64, no u8 overflow
+                mask_row[x >> 1] = if ss_ver && (y & 1) != 0 {
+                    (((sum + 2 - sign) as u16 + mask_row[x >> 1] as u16) >> 2) as u8
+                } else if ss_ver {
+                    sum
+                } else {
+                    (sum + 1 - sign) >> 1
+                };
+                x += 2;
             }
-
-            col += 1;
         }
     }
 }
@@ -4409,9 +4458,11 @@ fn v_filter_8tap_16bpc_to_i16_neon(
     w: usize,
     filter: &[i8; 8],
     sh: u8,
+    bias: i32,
 ) {
     let mut dst = dst.flex_mut();
     let rnd = (1i32 << sh) >> 1;
+    let bias_vec = vdupq_n_s32(bias);
 
     let mut col = 0;
 
@@ -4444,7 +4495,14 @@ fn v_filter_8tap_16bpc_to_i16_neon(
         sum = vmlaq_n_s32(sum, r7, c7);
 
         let rnd_vec = vdupq_n_s32(rnd);
-        sum = vshrq_n_s32::<8>(vaddq_s32(sum, rnd_vec));
+        // The shift was hardcoded `::<8>` while `rnd` tracked `sh`, so the
+        // vector path and its own scalar tail disagreed at every `sh != 8` —
+        // and prep's V stage is `sh = 6` at both bit depths. Same defect the
+        // H filter above already had fixed.
+        sum = vshlq_s32(vaddq_s32(sum, rnd_vec), vdupq_n_s32(-(sh as i32)));
+        // `prep`'s output convention: subtract PREP_BIAS so the value fits i16
+        // (`FilterResult::sub_prep_bias`). 0 for callers that do not want it.
+        sum = vsubq_s32(sum, bias_vec);
 
         let result = vqmovn_s32(sum);
         let dst_arr: &mut [i16; 4] = (&mut dst[col..col + 4]).try_into().unwrap();
@@ -4458,7 +4516,7 @@ fn v_filter_8tap_16bpc_to_i16_neon(
         for i in 0..8 {
             sum += filter[i] as i64 * mid[i][col] as i64;
         }
-        dst[col] = ((sum + rnd as i64) >> sh) as i16;
+        dst[col] = (((sum + rnd as i64) >> sh) - bias as i64) as i16;
         col += 1;
     }
 }
@@ -4479,10 +4537,22 @@ fn prep_8tap_16bpc_inner(
     my: usize,
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
+    bitdepth_max: u16,
 ) {
     let mut tmp = tmp.flex_mut();
     let src = src.flex();
-    let intermediate_bits = 4u8;
+    // `14 - bitdepth`: 4 at 10bpc, **2 at 12bpc**. Same derivation
+    // `put_8tap_16bpc_inner` already uses. A hardcoded 4 is right at 10 bits
+    // and wrong at 12.
+    let intermediate_bits = bitdepth_max.leading_zeros() as u8 - 2;
+    // `prep` output carries `BitDepth16::PREP_BIAS` subtracted, so the value
+    // fits i16 and so the compound consumers (avg/w_avg/mask/w_mask) can add
+    // `PREP_BIAS * k` back inside their rounding constant. This is the
+    // convention `prep_8tap_rust` speaks, and therefore the one every scalar
+    // fallback in the same frame speaks.
+    let bias = PREP_BIAS_16BPC;
+    // H stage shift, from `prep_8tap_rust`'s `.rnd(6 - intermediate_bits)`.
+    let h_sh = 6 - intermediate_bits;
 
     let fh = get_filter_coeff(mx, w, h_filter_type);
     let fv = get_filter_coeff(my, h, v_filter_type);
@@ -4497,88 +4567,31 @@ fn prep_8tap_16bpc_inner(
                 let src_off =
                     src_base.wrapping_add_signed((y as isize - 3) * src_stride as isize - 3);
                 let src_row = &src[src_off..];
-                h_filter_8tap_16bpc_neon(
-                    token,
-                    &mut mid[y][..w],
-                    src_row,
-                    w,
-                    fh,
-                    6 - intermediate_bits,
-                );
+                h_filter_8tap_16bpc_neon(token, &mut mid[y][..w], src_row, w, fh, h_sh);
             }
 
             for y in 0..h {
                 let out_row = &mut tmp[y * w..][..w];
-                v_filter_8tap_16bpc_to_i16_neon(
-                    token,
-                    out_row,
-                    &mid[y..],
-                    w,
-                    fv,
-                    6 + intermediate_bits,
-                );
+                // `.rnd(6)` — NOT `6 + intermediate_bits`. That is `put`'s
+                // second-stage shift; `prep` leaves its output at
+                // intermediate precision.
+                v_filter_8tap_16bpc_to_i16_neon(token, out_row, &mid[y..], w, fv, 6, bias);
             }
         }
         (Some(fh), None) => {
+            // H only: one filter pass at `rnd(6 - intermediate_bits)`, then the
+            // bias. Reuses the same H kernel as the H+V case so the two cannot
+            // drift apart (this arm used to carry its own copy, hardcoded to
+            // `(sum + 8) >> 4` — the 12-bit shift, applied at both depths, and
+            // with no bias at either).
+            let mut mid = [0i32; MID_STRIDE];
             for y in 0..h {
-                // Row y, 3 cols left for the forward-reading h-filter.
                 let src_off = src_base.wrapping_add_signed(y as isize * src_stride as isize - 3);
                 let src_row = &src[src_off..];
+                h_filter_8tap_16bpc_neon(token, &mut mid[..w], src_row, w, fh, h_sh);
                 let out_row = &mut tmp[y * w..][..w];
-                let mut col = 0;
-                while col + 4 <= w {
-                    let c0 = fh[0] as i32;
-                    let c1 = fh[1] as i32;
-                    let c2 = fh[2] as i32;
-                    let c3 = fh[3] as i32;
-                    let c4 = fh[4] as i32;
-                    let c5 = fh[5] as i32;
-                    let c6 = fh[6] as i32;
-                    let c7 = fh[7] as i32;
-
-                    let s0 = safe_simd::vld1_u16(src_row[col..][..4].try_into().unwrap());
-                    let s1 = safe_simd::vld1_u16(src_row[col + 1..][..4].try_into().unwrap());
-                    let s2 = safe_simd::vld1_u16(src_row[col + 2..][..4].try_into().unwrap());
-                    let s3 = safe_simd::vld1_u16(src_row[col + 3..][..4].try_into().unwrap());
-                    let s4 = safe_simd::vld1_u16(src_row[col + 4..][..4].try_into().unwrap());
-                    let s5 = safe_simd::vld1_u16(src_row[col + 5..][..4].try_into().unwrap());
-                    let s6 = safe_simd::vld1_u16(src_row[col + 6..][..4].try_into().unwrap());
-                    let s7 = safe_simd::vld1_u16(src_row[col + 7..][..4].try_into().unwrap());
-
-                    let s0_32 = vreinterpretq_s32_u32(vmovl_u16(s0));
-                    let s1_32 = vreinterpretq_s32_u32(vmovl_u16(s1));
-                    let s2_32 = vreinterpretq_s32_u32(vmovl_u16(s2));
-                    let s3_32 = vreinterpretq_s32_u32(vmovl_u16(s3));
-                    let s4_32 = vreinterpretq_s32_u32(vmovl_u16(s4));
-                    let s5_32 = vreinterpretq_s32_u32(vmovl_u16(s5));
-                    let s6_32 = vreinterpretq_s32_u32(vmovl_u16(s6));
-                    let s7_32 = vreinterpretq_s32_u32(vmovl_u16(s7));
-
-                    let mut sum = vmulq_n_s32(s0_32, c0);
-                    sum = vmlaq_n_s32(sum, s1_32, c1);
-                    sum = vmlaq_n_s32(sum, s2_32, c2);
-                    sum = vmlaq_n_s32(sum, s3_32, c3);
-                    sum = vmlaq_n_s32(sum, s4_32, c4);
-                    sum = vmlaq_n_s32(sum, s5_32, c5);
-                    sum = vmlaq_n_s32(sum, s6_32, c6);
-                    sum = vmlaq_n_s32(sum, s7_32, c7);
-
-                    // Shift for intermediate
-                    let rnd_vec = vdupq_n_s32(8);
-                    let result = vshrq_n_s32::<4>(vaddq_s32(sum, rnd_vec));
-
-                    let narrow = vqmovn_s32(result);
-                    let out_arr: &mut [i16; 4] = (&mut out_row[col..col + 4]).try_into().unwrap();
-                    safe_simd::vst1_s16(out_arr, narrow);
-                    col += 4;
-                }
-                while col < w {
-                    let mut sum = 0i32;
-                    for i in 0..8 {
-                        sum += fh[i] as i32 * src_row[col + i] as i32;
-                    }
-                    out_row[col] = ((sum + 8) >> intermediate_bits) as i16;
-                    col += 1;
+                for x in 0..w {
+                    out_row[x] = (mid[x] - bias) as i16;
                 }
             }
         }
@@ -4596,15 +4609,21 @@ fn prep_8tap_16bpc_inner(
                     }
                 }
 
-                v_filter_8tap_16bpc_to_i16_neon(token, out_row, &mid, w, fv, 6);
+                // Pre-scaling by `intermediate_bits` and then rounding at 6 is
+                // exactly `rnd(6 - intermediate_bits)` on the unscaled sum:
+                // ((S << ib) + 32) >> 6 == (S + (1 << (6-ib) >> 1)) >> (6-ib).
+                v_filter_8tap_16bpc_to_i16_neon(token, out_row, &mid, w, fv, 6, bias);
             }
         }
         (None, None) => {
+            // `prep_rust`: `sub_prep_bias(src << intermediate_bits)`. This used
+            // to be a RIGHT shift by `10 - intermediate_bits`, which is neither
+            // the right direction nor the right magnitude, and dropped the bias.
             for y in 0..h {
                 let src_row = &src[src_base + y * src_stride..][..w];
                 let out_row = &mut tmp[y * w..][..w];
                 for x in 0..w {
-                    out_row[x] = (src_row[x] as i32 >> (10 - intermediate_bits)) as i16;
+                    out_row[x] = (((src_row[x] as i32) << intermediate_bits) - bias) as i16;
                 }
             }
         }
@@ -4697,6 +4716,10 @@ pub fn avg_dispatch<BD: BitDepth>(
     h: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -4810,6 +4833,10 @@ pub fn w_avg_dispatch<BD: BitDepth>(
     weight: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -4930,6 +4957,10 @@ pub fn mask_dispatch<BD: BitDepth>(
     mask: &[u8],
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -5050,6 +5081,10 @@ pub fn blend_dispatch<BD: BitDepth>(
     h: i32,
     mask: &[u8],
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -5168,6 +5203,10 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
     w: i32,
     h: i32,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -5328,6 +5367,10 @@ pub fn w_mask_dispatch<BD: BitDepth>(
     sign: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -5564,6 +5607,10 @@ pub fn mc_put_dispatch<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McPut) {
+        return false;
+    }
     // When src and dst are from the same picture component (self-referencing frames),
     // we can't hold both a mutable dst guard and immutable src guard simultaneously.
     // Fall through to scalar for this rare case.
@@ -6001,6 +6048,10 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McPrep) {
+        return false;
+    }
     use crate::include::common::bitdepth::BPC;
     use Filter2d::*;
     #[cfg(feature = "asm")]
@@ -6148,6 +6199,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                         h_u,
                         mx,
                         my,
+                        bd.into_c() as u16,
                     );
                 } else {
                     // x86 contract: full u16 buffer + base offset (pixel units);
@@ -6165,6 +6217,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                         my_u,
                         get_h_filter_type(filter),
                         get_v_filter_type(filter),
+                        bd.into_c() as u16,
                     );
                 }
             }
@@ -6187,6 +6240,10 @@ pub fn mc_scaled_dispatch<BD: BitDepth>(
     _dy: i32,
     _bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
 }
 
@@ -6204,6 +6261,10 @@ pub fn mct_scaled_dispatch<BD: BitDepth>(
     _dy: i32,
     _bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
 }
 
@@ -6217,6 +6278,10 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
     _my: i32,
     _bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
 }
 
@@ -6231,6 +6296,10 @@ pub fn warp8x8t_dispatch<BD: BitDepth>(
     _my: i32,
     _bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
 }
 
@@ -6247,6 +6316,10 @@ pub fn emu_edge_dispatch<BD: BitDepth>(
     _dst_pxstride: usize,
     _src: &crate::include::dav1d::picture::Rav1dPictureDataComponent,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
 }
 
@@ -6264,5 +6337,682 @@ pub fn resize_dispatch<BD: BitDepth>(
     _mx: i32,
     _bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
+}
+
+// ============================================================================
+// COMPOUND-PREDICTION PARITY (differential vs the generic scalar reference)
+// ============================================================================
+//
+// ## Why this module exists, and why it is the compound kernels specifically
+//
+// `src/mc.rs` dual-computes NEON against scalar under `__simd_test` for exactly
+// two entry points — `mc_put_direct` (`MC_PUT_MISMATCH`) and `mct_prep_direct`
+// (`MC_PREP_MISMATCH`). It does NOT do so for `avg` / `w_avg` / `mask` /
+// `w_mask` / `blend*` / `warp*` / `emu_edge` / `resize`. A divergence in any of
+// those is therefore invisible to a full-corpus `__simd_test_log` decode: the
+// run prints zero mismatches and the kernels are still wrong.
+//
+// Measured on `verify/compose` (eb6f9ae): ablating just this group repairs 80
+// dav1d-test-data vectors whose decode logs NO kernel mismatch at all, and it
+// is a necessary part of repairing 407 of the 464 failures overall. Record:
+// `benchmarks/aarch64_md5_attribution_2026-08-07.meta`.
+//
+// ## Read this before extending the module to 16bpc values
+//
+// The aarch64 16bpc compound path does NOT use the scalar reference's
+// `PREP_BIAS` convention. `src/mc.rs`'s `prep_8tap_rust` ends each output with
+// `.sub_prep_bias::<BD>()` (subtract 8192 at 16bpc so the value fits `i16`) and
+// `avg_rust`/`w_avg_rust`/`mask_rust`/`w_mask_rust` add it back inside `rnd`.
+// `prep_8tap_16bpc_inner` here omits the subtraction — the corpus proves it: the
+// modal `MC_PREP_MISMATCH max_diff` over the 10/12-bit vectors is exactly 8192
+// — and `avg_16bpc_inner` / `w_avg_16bpc_inner` / `mask_16bpc_inner` omit the
+// matching addition, so *those four* are internally paired.
+//
+// Consequence: a 16bpc value test that drives one of those kernels in isolation
+// against a scalar-convention oracle reports a difference of one `PREP_BIAS`
+// that is an artefact of the seam, not the defect. The two things that ARE
+// convention-free, and are what this module asserts, are:
+//
+//   * the SHIFT each kernel applies, which must be `intermediate_bits`-derived
+//     (`14 - bitdepth` at 16bpc: 4 at 10-bit, **2 at 12-bit**), and
+//   * agreement at 8bpc, where `PREP_BIAS` is 0, so the question does not
+//     arise — and where `prep_8tap_8bpc_inner` is independently known bit-exact
+//     (zero `MC_PREP_MISMATCH` across all 358 8-bit/data vectors).
+//
+// Whoever fixes this has to pick a convention and apply it to all five
+// consumers, not patch one kernel: `w_mask_{8,16}bpc_inner` currently adds
+// `8192 * 64` at BOTH bit depths, which agrees with neither its 8bpc siblings
+// (PREP_BIAS is 0 there) nor its 16bpc ones (which add nothing).
+#[cfg(all(test, target_arch = "aarch64"))]
+mod compound_parity {
+    use super::*;
+    use crate::include::common::bitdepth::{BitDepth, BitDepth8, BitDepth16};
+    use std::cmp;
+
+    /// xorshift64*, so a failure reproduces from its seed.
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+        fn in_range(&mut self, lo: i32, hi: i32) -> i32 {
+            lo + (self.next() % ((hi - lo + 1) as u64)) as i32
+        }
+    }
+
+    fn bd_max_of(bitdepth: u8) -> i32 {
+        (1i32 << bitdepth) - 1
+    }
+
+    /// `intermediate_bits` as the spec defines it: 4 at 8 and 10 bits, **2 at
+    /// 12 bits**. A kernel that writes a literal `4` is right at 8 and 10 and
+    /// wrong at 12 — the bug shape this module hunts.
+    fn intermediate_bits(bitdepth: u8) -> u8 {
+        if bitdepth == 8 { 4 } else { 14 - bitdepth }
+    }
+
+    /// Result accumulator: which parameter cells ran, which diverged.
+    #[derive(Default)]
+    struct Report {
+        cells: usize,
+        bad: Vec<String>,
+        first: Option<String>,
+    }
+
+    impl Report {
+        fn record(&mut self, label: &str, ok: bool, detail: impl FnOnce() -> String) {
+            self.cells += 1;
+            if !ok {
+                if self.first.is_none() {
+                    self.first = Some(format!("{label}: {}", detail()));
+                }
+                self.bad.push(label.to_string());
+            }
+        }
+
+        /// Fail on any divergence, AND on a vacuous run.
+        ///
+        /// `min_cells` is the liveness half. Without it, a refactor that made
+        /// the sweep skip every case (an emptied size list, a `continue` that
+        /// swallows the interesting shapes) would leave the parity assert
+        /// trivially true and the test permanently, uselessly green.
+        fn finish(self, what: &str, min_cells: usize) {
+            assert!(
+                self.cells >= min_cells,
+                "{what}: only {} parameter cells ran (expected >= {min_cells}) \
+                 — the sweep is not reaching the kernel",
+                self.cells
+            );
+            assert!(
+                self.bad.is_empty(),
+                "{what}: {} of {} parameter cells diverge from the scalar \
+                 reference.\n  first: {}\n  cells: {:?}",
+                self.bad.len(),
+                self.cells,
+                self.first.unwrap_or_default(),
+                self.bad
+            );
+        }
+    }
+
+    // ---- 8bpc oracles, transcribed from src/mc.rs ------------------------
+    //
+    // `BitDepth8::PREP_BIAS` is 0 and `get_intermediate_bits()` is 4, so these
+    // are the scalar formulas with nothing elided.
+
+    fn avg8_oracle(t1: i32, t2: i32) -> i32 {
+        ((t1 + t2 + (1 << 4)) >> 5).clamp(0, 255)
+    }
+    fn w_avg8_oracle(t1: i32, t2: i32, weight: i32) -> i32 {
+        ((t1 * weight + t2 * (16 - weight) + (8 << 4)) >> 8).clamp(0, 255)
+    }
+    fn mask8_oracle(t1: i32, t2: i32, m: i32) -> i32 {
+        ((t1 * m + t2 * (64 - m) + (32 << 4)) >> 10).clamp(0, 255)
+    }
+    /// The segmentation mask `w_mask_rust` writes for one row, given that
+    /// row's per-pixel weights and (for 4:2:0) the previous row's stored
+    /// values. Transcribed from `src/mc.rs::w_mask_rust`'s store arm.
+    ///
+    /// `sign` lives HERE and only here. The pixel blend uses `m` unmodified —
+    /// getting that wrong is invisible at `sign = 0` and wrong on half the
+    /// wedge blocks.
+    fn w_mask_store_oracle(
+        mrow: &[u8],
+        prev: &[u8],
+        y: usize,
+        sign: u8,
+        ss_hor: bool,
+        ss_ver: bool,
+    ) -> Vec<u8> {
+        let w = mrow.len();
+        if !ss_hor {
+            return mrow.to_vec();
+        }
+        let mut out = vec![0u8; w >> 1];
+        let mut x = 0;
+        while x + 1 < w {
+            let (m, n) = (mrow[x], mrow[x + 1]);
+            out[x >> 1] = if ss_ver && (y & 1) != 0 {
+                (((m + n + 2 - sign) as u16 + prev[x >> 1] as u16) >> 2) as u8
+            } else if ss_ver {
+                m + n
+            } else {
+                (m + n + 1 - sign) >> 1
+            };
+            x += 2;
+        }
+        out
+    }
+
+    /// `w_mask`'s per-pixel weight; identical at every bit depth except for
+    /// `mask_sh`, and bias-invariant because it reads `|t1 - t2|`.
+    fn w_mask_m_oracle(t1: i16, t2: i16, bitdepth: u8) -> u8 {
+        let mask_sh = bitdepth + intermediate_bits(bitdepth) - 4;
+        let mask_rnd = 1u16 << (mask_sh - 5);
+        cmp::min(
+            38 + (t1.abs_diff(t2).saturating_add(mask_rnd) >> mask_sh),
+            64,
+        ) as u8
+    }
+    fn w_mask8_px_oracle(t1: i32, t2: i32, m: i32) -> i32 {
+        ((t1 * m + t2 * (64 - m) + (32 << 4)) >> 10).clamp(0, 255)
+    }
+
+    /// The legal range of one 8bpc `prep` output, from `BitDepth8::PREP_BIAS`'s
+    /// own doc comment (`[-5132, 9212]`). Sampling the real interval rather
+    /// than all of `i16` is what keeps a wrong `>>` visible instead of clamped
+    /// away at both ends.
+    const T8_LO: i32 = -5132;
+    const T8_HI: i32 = 9212;
+
+    /// Every (w, h) an AV1 inter block can be.
+    const SIZES: &[(usize, usize)] = &[
+        (4, 4),
+        (4, 8),
+        (8, 4),
+        (8, 8),
+        (8, 16),
+        (16, 8),
+        (16, 16),
+        (16, 32),
+        (32, 16),
+        (32, 32),
+        (32, 64),
+        (64, 32),
+        (64, 64),
+        (128, 128),
+    ];
+
+    #[test]
+    fn compound_8bpc_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
+        let token = Arm64::summon().expect("NEON is mandatory on aarch64");
+        let mut rep = Report::default();
+
+        for &(w, h) in SIZES {
+            if w * h > COMPINTER_LEN {
+                continue;
+            }
+            let mut rng = Rng(0x1234_5678_9ABC_DEF0 ^ ((w * h) as u64));
+            let t1: Vec<i16> = (0..w * h)
+                .map(|_| rng.in_range(T8_LO, T8_HI) as i16)
+                .collect();
+            let t2: Vec<i16> = (0..w * h)
+                .map(|_| rng.in_range(T8_LO, T8_HI) as i16)
+                .collect();
+            // Wedge masks are 0..=64 inclusive; both ends are reachable.
+            let m: Vec<u8> = (0..w * h).map(|_| rng.in_range(0, 64) as u8).collect();
+            let stride = w + 7;
+
+            let mut got = vec![0u8; h * stride];
+            avg_8bpc_inner(token, &mut got, stride, &t1, &t2, w, h);
+            let bad = find_bad(&got, stride, w, h, |x, y| {
+                avg8_oracle(t1[y * w + x] as i32, t2[y * w + x] as i32) as u32
+            });
+            rep.record(&format!("avg8 {w}x{h}"), bad.is_none(), || fmt_bad(bad));
+
+            // AV1 signals compound weights in 0..=16; the ends must round like
+            // the middle.
+            for &weight in &[0i32, 1, 4, 8, 12, 15, 16] {
+                let mut got = vec![0u8; h * stride];
+                w_avg_8bpc_inner(token, &mut got, stride, &t1, &t2, w, h, weight);
+                let bad = find_bad(&got, stride, w, h, |x, y| {
+                    w_avg8_oracle(t1[y * w + x] as i32, t2[y * w + x] as i32, weight) as u32
+                });
+                rep.record(
+                    &format!("w_avg8 wt={weight} {w}x{h}"),
+                    bad.is_none(),
+                    || fmt_bad(bad),
+                );
+            }
+
+            let mut got = vec![0u8; h * stride];
+            mask_8bpc_inner(token, &mut got, stride, &t1, &t2, w, h, &m);
+            let bad = find_bad(&got, stride, w, h, |x, y| {
+                mask8_oracle(
+                    t1[y * w + x] as i32,
+                    t2[y * w + x] as i32,
+                    m[y * w + x] as i32,
+                ) as u32
+            });
+            rep.record(&format!("mask8 {w}x{h}"), bad.is_none(), || fmt_bad(bad));
+
+            // I444 / I422 / I420, all three of which `w_mask_dispatch` routes
+            // to this kernel, times both mask polarities.
+            for &(ss_hor, ss_ver) in &[(false, false), (true, false), (true, true)] {
+                for &sign in &[0u8, 1] {
+                    let mask_w = if ss_hor { w >> 1 } else { w };
+                    let mask_h = if ss_ver { h >> 1 } else { h };
+                    let mut seg = vec![0u8; mask_w * mask_h];
+                    let mut got = vec![0u8; h * stride];
+                    w_mask_8bpc_inner(
+                        token, &mut got, stride, &t1, &t2, w, h, &mut seg, sign, ss_hor, ss_ver,
+                    );
+                    // Pixels. `sign` must NOT appear here: `w_mask_rust`
+                    // blends with `m`, and routes `sign` only into the mask.
+                    let bad = find_bad(&got, stride, w, h, |x, y| {
+                        let (a, b) = (t1[y * w + x], t2[y * w + x]);
+                        let mm = w_mask_m_oracle(a, b, 8) as i32;
+                        w_mask8_px_oracle(a as i32, b as i32, mm) as u32
+                    });
+                    rep.record(
+                        &format!("w_mask8 px sign={sign} ss=({ss_hor},{ss_ver}) {w}x{h}"),
+                        bad.is_none(),
+                        || fmt_bad(bad),
+                    );
+
+                    // Segmentation mask. For 4:2:0 this is a two-row
+                    // accumulation, so the oracle is replayed row by row with
+                    // the previous row's stored values, exactly as the
+                    // reference's running `mask` slice does.
+                    let mut want = vec![0u8; mask_w * mask_h];
+                    for y in 0..h {
+                        let mrow: Vec<u8> = (0..w)
+                            .map(|x| w_mask_m_oracle(t1[y * w + x], t2[y * w + x], 8))
+                            .collect();
+                        let my = if ss_ver { y >> 1 } else { y };
+                        let prev = want[my * mask_w..][..mask_w].to_vec();
+                        let row = w_mask_store_oracle(&mrow, &prev, y, sign, ss_hor, ss_ver);
+                        want[my * mask_w..][..mask_w].copy_from_slice(&row);
+                    }
+                    let bad_seg = (0..mask_h)
+                        .flat_map(|y| (0..mask_w).map(move |x| (x, y)))
+                        .find(|&(x, y)| seg[y * mask_w + x] != want[y * mask_w + x])
+                        .map(|(x, y)| {
+                            (
+                                x,
+                                y,
+                                seg[y * mask_w + x] as u32,
+                                want[y * mask_w + x] as u32,
+                            )
+                        });
+                    rep.record(
+                        &format!("w_mask8 seg sign={sign} ss=({ss_hor},{ss_ver}) {w}x{h}"),
+                        bad_seg.is_none(),
+                        || fmt_bad(bad_seg),
+                    );
+                }
+            }
+        }
+        rep.finish("aarch64 8bpc compound kernels", 150);
+    }
+
+    fn find_bad(
+        got: &[impl Copy + Into<u32>],
+        stride: usize,
+        w: usize,
+        h: usize,
+        want: impl Fn(usize, usize) -> u32,
+    ) -> Option<(usize, usize, u32, u32)> {
+        for y in 0..h {
+            for x in 0..w {
+                let g: u32 = got[y * stride + x].into();
+                let wv = want(x, y);
+                if g != wv {
+                    return Some((x, y, g, wv));
+                }
+            }
+        }
+        None
+    }
+
+    fn fmt_bad(bad: Option<(usize, usize, u32, u32)>) -> String {
+        let (x, y, g, w) = bad.expect("only called on a failing cell");
+        format!("at ({x},{y}) neon={g} scalar={w}")
+    }
+
+    /// Recover the right shift a kernel actually applies, without knowing its
+    /// additive constant.
+    ///
+    /// This is the convention-free half. `out = clamp((k * t + C) >> sh)` for
+    /// some unknown `C`: sweeping `t` and measuring how far it must move to
+    /// change `out` by one recovers `2^sh / k` regardless of `C`. So it tests
+    /// the `intermediate_bits` term — the thing that must vary with bit depth —
+    /// without touching the `PREP_BIAS` term, which the aarch64 seam defines
+    /// differently from the scalar one (see the module comment).
+    ///
+    /// Returns the modal step, which is robust to the clamped ends.
+    fn measure_input_step(mut eval: impl FnMut(i32) -> u32) -> Option<i32> {
+        let mut transitions = Vec::new();
+        let mut prev = eval(-30000);
+        for t in -30000i32..30000 {
+            let cur = eval(t);
+            if cur != prev {
+                transitions.push(t);
+                prev = cur;
+            }
+        }
+        if transitions.len() < 8 {
+            return None; // fully clamped: no information
+        }
+        let mut gaps: Vec<i32> = transitions.windows(2).map(|w| w[1] - w[0]).collect();
+        gaps.sort_unstable();
+        Some(gaps[gaps.len() / 2])
+    }
+
+    #[test]
+    fn compound_16bpc_shift_tracks_bitdepth() {
+        let _lock = crate::src::safe_simd::token_test_lock();
+        let token = Arm64::summon().expect("NEON is mandatory on aarch64");
+        let mut rep = Report::default();
+
+        for &bitdepth in &[10u8, 12] {
+            let bd_max = bd_max_of(bitdepth);
+            let ib = intermediate_bits(bitdepth);
+
+            // avg: out = clamp((t1 + t2 + C) >> (ib + 1)), so one output step
+            // costs 2^(ib+1) of t1.
+            let want = 1i32 << (ib + 1);
+            let got = measure_input_step(|t| {
+                let mut dst = [0u16; 1];
+                avg_16bpc_inner(token, &mut dst, 1, &[t as i16], &[0i16], 1, 1, bd_max);
+                dst[0] as u32
+            });
+            rep.record(
+                &format!("avg16 bd={bitdepth} shift"),
+                got == Some(want),
+                || format!("input step {got:?}, expected {want} (= 2^(intermediate_bits+1))"),
+            );
+
+            // w_avg at weight 16: out = clamp((16*t1 + C) >> (ib + 4)), so one
+            // output step costs 2^(ib+4)/16 = 2^ib of t1.
+            let want = 1i32 << ib;
+            let got = measure_input_step(|t| {
+                let mut dst = [0u16; 1];
+                w_avg_16bpc_inner(token, &mut dst, 1, &[t as i16], &[0i16], 1, 1, 16, bd_max);
+                dst[0] as u32
+            });
+            rep.record(
+                &format!("w_avg16 bd={bitdepth} shift"),
+                got == Some(want),
+                || format!("input step {got:?}, expected {want} (= 2^intermediate_bits)"),
+            );
+
+            // mask at m = 64: out = clamp((64*t1 + C) >> (ib + 6)), so one
+            // output step costs 2^(ib+6)/64 = 2^ib of t1.
+            let want = 1i32 << ib;
+            let got = measure_input_step(|t| {
+                let mut dst = [0u16; 1];
+                mask_16bpc_inner(
+                    token,
+                    &mut dst,
+                    1,
+                    &[t as i16],
+                    &[0i16],
+                    1,
+                    1,
+                    &[64u8],
+                    bd_max,
+                );
+                dst[0] as u32
+            });
+            rep.record(
+                &format!("mask16 bd={bitdepth} shift"),
+                got == Some(want),
+                || format!("input step {got:?}, expected {want} (= 2^intermediate_bits)"),
+            );
+        }
+        rep.finish("aarch64 16bpc compound shift", 6);
+    }
+
+    /// `w_mask`'s segmentation mask output, which is bias-invariant.
+    ///
+    /// The written mask is `min(38 + (|t1-t2| + rnd >> mask_sh), 64)` — it
+    /// reads a DIFFERENCE, so whatever bias convention the tmp buffers carry
+    /// cancels. That makes it checkable at 10 and 12 bits with no ambiguity,
+    /// and it exercises `mask_sh = bitdepth + intermediate_bits - 4`, the other
+    /// place the 12-bit `intermediate_bits` term appears.
+    #[test]
+    fn w_mask_16bpc_segmentation_mask_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
+        let mut rep = Report::default();
+        for &bitdepth in &[10u8, 12] {
+            for &sign in &[0u8, 1] {
+                for &(w, h) in &[(8usize, 8usize), (16, 16), (32, 32)] {
+                    let mut rng =
+                        Rng(0xC0FF_EE00_1234_5678 ^ ((bitdepth as u64) << 40) ^ (sign as u64));
+                    // The 16bpc prep interval, per `BitDepth16::PREP_BIAS`'s
+                    // doc comment, in the aarch64 (unbiased) convention.
+                    let t1: Vec<i16> = (0..w * h)
+                        .map(|_| rng.in_range(-20602, 36983 - 16384) as i16)
+                        .collect();
+                    let t2: Vec<i16> = (0..w * h)
+                        .map(|_| rng.in_range(-20602, 36983 - 16384) as i16)
+                        .collect();
+                    let stride = w + 5;
+                    let mut got_px = vec![0u16; h * stride];
+                    let mut seg = vec![0u8; w * h];
+                    w_mask_16bpc_inner(
+                        &mut got_px,
+                        stride,
+                        &t1,
+                        &t2,
+                        w,
+                        h,
+                        &mut seg,
+                        sign,
+                        bd_max_of(bitdepth),
+                        false, // I444: mask is full resolution, one entry per pixel
+                        false,
+                    );
+                    let mut bad = None;
+                    for y in 0..h {
+                        for x in 0..w {
+                            let want = w_mask_m_oracle(t1[y * w + x], t2[y * w + x], bitdepth);
+                            if seg[y * w + x] != want && bad.is_none() {
+                                bad = Some((x, y, seg[y * w + x] as u32, want as u32));
+                            }
+                        }
+                    }
+                    rep.record(
+                        &format!("w_mask16 seg bd={bitdepth} sign={sign} {w}x{h}"),
+                        bad.is_none(),
+                        || fmt_bad(bad),
+                    );
+                }
+            }
+        }
+        rep.finish("w_mask_16bpc_inner segmentation mask", 12);
+    }
+
+    /// Full VALUE parity for the 16bpc compound kernels, at both bit depths.
+    ///
+    /// This is what the module could not assert before: the aarch64 16bpc seam
+    /// ran two different `PREP_BIAS` conventions at once (`prep_8tap` and
+    /// avg/w_avg/mask omitted it; `prep_bilin` and `w_mask` used it), so an
+    /// isolated value test against a scalar-convention oracle reported one
+    /// `PREP_BIAS` of seam artefact. All five now speak the scalar convention —
+    /// the only one a decoder that falls back to `prep_8tap_rust` for uncovered
+    /// shapes can survive — so the oracle is simply `src/mc.rs`'s formulas with
+    /// `BitDepth16::PREP_BIAS` in place.
+    #[test]
+    fn compound_16bpc_values_match_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
+        let token = Arm64::summon().expect("NEON is mandatory on aarch64");
+        let mut rep = Report::default();
+
+        // The 16bpc prep interval, from `BitDepth16::PREP_BIAS`'s doc comment,
+        // AFTER the bias is subtracted: [-20602, 36983] - 8192.
+        const T16_LO: i32 = -20602 - 8192;
+        const T16_HI: i32 = 36983 - 8192;
+
+        for &bitdepth in &[10u8, 12] {
+            let bd_max = bd_max_of(bitdepth);
+            let ib = intermediate_bits(bitdepth) as i32;
+            let bias = i32::from(BitDepth16::PREP_BIAS);
+
+            for &(w, h) in SIZES {
+                if w * h > COMPINTER_LEN {
+                    continue;
+                }
+                let mut rng =
+                    Rng(0xABCD_1234_0000_0001 ^ ((bitdepth as u64) << 40) ^ ((w * h) as u64));
+                let t1: Vec<i16> = (0..w * h)
+                    .map(|_| rng.in_range(T16_LO, T16_HI) as i16)
+                    .collect();
+                let t2: Vec<i16> = (0..w * h)
+                    .map(|_| rng.in_range(T16_LO, T16_HI) as i16)
+                    .collect();
+                let m: Vec<u8> = (0..w * h).map(|_| rng.in_range(0, 64) as u8).collect();
+                let stride = w + 5;
+
+                // avg: sh = ib + 1, rnd = (1 << ib) + PREP_BIAS*2
+                let mut got = vec![0u16; h * stride];
+                avg_16bpc_inner(token, &mut got, stride, &t1, &t2, w, h, bd_max);
+                let bad = find_bad(&got, stride, w, h, |x, y| {
+                    let (a, b) = (t1[y * w + x] as i32, t2[y * w + x] as i32);
+                    ((a + b + (1 << ib) + bias * 2) >> (ib + 1)).clamp(0, bd_max) as u32
+                });
+                rep.record(
+                    &format!("avg16 bd={bitdepth} {w}x{h}"),
+                    bad.is_none(),
+                    || fmt_bad(bad),
+                );
+
+                for &weight in &[0i32, 1, 4, 8, 12, 15, 16] {
+                    let mut got = vec![0u16; h * stride];
+                    w_avg_16bpc_inner(token, &mut got, stride, &t1, &t2, w, h, weight, bd_max);
+                    let bad = find_bad(&got, stride, w, h, |x, y| {
+                        let (a, b) = (t1[y * w + x] as i32, t2[y * w + x] as i32);
+                        ((a * weight + b * (16 - weight) + (8 << ib) + bias * 16) >> (ib + 4))
+                            .clamp(0, bd_max) as u32
+                    });
+                    rep.record(
+                        &format!("w_avg16 bd={bitdepth} wt={weight} {w}x{h}"),
+                        bad.is_none(),
+                        || fmt_bad(bad),
+                    );
+                }
+
+                let mut got = vec![0u16; h * stride];
+                mask_16bpc_inner(token, &mut got, stride, &t1, &t2, w, h, &m, bd_max);
+                let bad = find_bad(&got, stride, w, h, |x, y| {
+                    let (a, b) = (t1[y * w + x] as i32, t2[y * w + x] as i32);
+                    let mm = m[y * w + x] as i32;
+                    ((a * mm + b * (64 - mm) + (32 << ib) + bias * 64) >> (ib + 6)).clamp(0, bd_max)
+                        as u32
+                });
+                rep.record(
+                    &format!("mask16 bd={bitdepth} {w}x{h}"),
+                    bad.is_none(),
+                    || fmt_bad(bad),
+                );
+
+                for &(ss_hor, ss_ver) in &[(false, false), (true, false), (true, true)] {
+                    for &sign in &[0u8, 1] {
+                        let mask_w = if ss_hor { w >> 1 } else { w };
+                        let mask_h = if ss_ver { h >> 1 } else { h };
+                        let mut seg = vec![0u8; mask_w * mask_h];
+                        let mut got = vec![0u16; h * stride];
+                        w_mask_16bpc_inner(
+                            &mut got, stride, &t1, &t2, w, h, &mut seg, sign, bd_max, ss_hor,
+                            ss_ver,
+                        );
+                        // Pixels: `sign` must not appear.
+                        let bad = find_bad(&got, stride, w, h, |x, y| {
+                            let (a, b) = (t1[y * w + x], t2[y * w + x]);
+                            let mm = w_mask_m_oracle(a, b, bitdepth) as i32;
+                            ((a as i32 * mm + b as i32 * (64 - mm) + (32 << ib) + bias * 64)
+                                >> (ib + 6))
+                                .clamp(0, bd_max) as u32
+                        });
+                        rep.record(
+                            &format!(
+                                "w_mask16 px bd={bitdepth} sign={sign} ss=({ss_hor},{ss_ver}) {w}x{h}"
+                            ),
+                            bad.is_none(),
+                            || fmt_bad(bad),
+                        );
+
+                        // Segmentation mask, replayed row by row.
+                        let mut want = vec![0u8; mask_w * mask_h];
+                        for y in 0..h {
+                            let mr: Vec<u8> = (0..w)
+                                .map(|x| w_mask_m_oracle(t1[y * w + x], t2[y * w + x], bitdepth))
+                                .collect();
+                            let my = if ss_ver { y >> 1 } else { y };
+                            let prev = want[my * mask_w..][..mask_w].to_vec();
+                            let row = w_mask_store_oracle(&mr, &prev, y, sign, ss_hor, ss_ver);
+                            want[my * mask_w..][..mask_w].copy_from_slice(&row);
+                        }
+                        let bad_seg = (0..mask_h)
+                            .flat_map(|y| (0..mask_w).map(move |x| (x, y)))
+                            .find(|&(x, y)| seg[y * mask_w + x] != want[y * mask_w + x])
+                            .map(|(x, y)| {
+                                (
+                                    x,
+                                    y,
+                                    seg[y * mask_w + x] as u32,
+                                    want[y * mask_w + x] as u32,
+                                )
+                            });
+                        rep.record(
+                            &format!(
+                                "w_mask16 seg bd={bitdepth} sign={sign} ss=({ss_hor},{ss_ver}) {w}x{h}"
+                            ),
+                            bad_seg.is_none(),
+                            || fmt_bad(bad_seg),
+                        );
+                    }
+                }
+            }
+        }
+        rep.finish("aarch64 16bpc compound values", 300);
+    }
+
+    /// The oracles' own check: their constants must come from `BitDepth`, not
+    /// from a literal copied out of the kernel under test.
+    ///
+    /// If this fails alongside the kernel tests, suspect the oracle. If only
+    /// the kernel tests fail, the kernel is what moved.
+    #[test]
+    fn oracle_constants_come_from_the_bitdepth_not_a_literal() {
+        assert_eq!(BitDepth8::new(()).get_intermediate_bits(), 4);
+        assert_eq!(BitDepth16::new(1023).get_intermediate_bits(), 4);
+        assert_eq!(
+            BitDepth16::new(4095).get_intermediate_bits(),
+            2,
+            "12-bit intermediate_bits is 2, not 4 — a kernel that writes a \
+             literal 4 is correct at 8 and 10 bits and wrong here"
+        );
+        assert_eq!(intermediate_bits(8), 4);
+        assert_eq!(intermediate_bits(10), 4);
+        assert_eq!(intermediate_bits(12), 2);
+        assert_eq!(i32::from(BitDepth8::PREP_BIAS), 0);
+        assert_eq!(i32::from(BitDepth16::PREP_BIAS), 8192);
+        // `mask_sh` is where intermediate_bits shows up in the w_mask weight.
+        assert_eq!(8 + intermediate_bits(8) - 4, 8);
+        assert_eq!(10 + intermediate_bits(10) - 4, 10);
+        assert_eq!(12 + intermediate_bits(12) - 4, 10);
+    }
 }

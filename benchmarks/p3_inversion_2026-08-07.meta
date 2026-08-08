@@ -1,0 +1,374 @@
+# P3: the t=4 -> t=8 inversion on perf/p2-kernels — what it was, and the fix
+
+date: 2026-08-07
+host: Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64
+rustc: stable, release (lto="fat", codegen-units=1), DEFAULT features
+       (bitdepth_8 + bitdepth_16, CHECKED DisjointMut). No -C target-cpu=native.
+branch: perf/p3-t8-inversion, off perf/p2-kernels @ 0624dfd.
+vectors: ~/tmp/rav1d-perf/vec/v4k_8tile{,_10b}.avif — 3840x2160, 4 tile cols x
+         2 tile rows. Same files as the P1/P2 campaigns.
+follows: benchmarks/p2_kernels_2026-08-07.meta (which reported the inversion),
+         benchmarks/p1_barrier_2026-08-07.meta (which removed the barrier that
+         had been hiding it).
+
+## nice level, and a box that was not idle
+
+NO `nice` ON ANY TIMED RUN. Darwin maps a positive nice value to background QoS
+and distorts wall clock by ~40x; `nice -n 19` is for BUILDS only.
+
+Two classes of run below, and they are labelled:
+
+* **IDLE-BOX.** `scripts/perf/p3_sweep.sh` with its default guard: the cell is
+  discarded and re-run while any non-agent process is over 25% CPU. Every
+  number in "The diagnosis" and "What the fix is made of" is one of these.
+* **CONTENDED-BOX.** The final confirmation campaign ran while two sibling
+  agents were running their own `bench_*` sweeps on this machine continuously
+  (~2 of 12 cores, on and off, for the whole session), and a strict guard
+  discarded the same cell 4 times in a row without ever committing. That
+  campaign used `ALLOW=` to treat those two binaries as non-foreign. Arms are
+  still interleaved back to back with a rotating order inside each cell, which
+  is what lets an A/B survive a roughly stationary background load — it does
+  NOT make the absolute ms/frame comparable to an idle-box run, and the two
+  are not mixed in any table.
+
+## What was wrong
+
+perf/p2-kernels, v4k_8tile 8bpc, ms/frame, IDLE-BOX, median of 9
+(`benchmarks/p3_baseline_2026-08-07.tsv`):
+
+  t        1       2       4       8      12      16
+  head 411.9   259.6   176.8   189.1   202.3   208.2
+
+t=4 was the best configuration and every thread past it made things worse.
+10bpc did not invert (t=4 224.8 -> t=8 212.1).
+
+## The diagnosis — three instruments, one answer
+
+### 1. Occupancy is fine; the WORK inflates
+
+`probe-tasktime` (the P1 task profile, `src/probe_tasktime.rs`), per frame:
+
+  t     tile_recon  deblock_cols  deblock_rows   cdef   total CPU   wall   mean_active
+  4          713.1         106.4          45.2   67.7       932.3  236.1     3.95 / 4
+  8         1081.1         224.5          70.0  135.6      1511.2  200.0     7.55 / 8
+  16        1244.8         661.4          55.5  122.6      2084.3  231.4     8.42 / 16
+
+The task COUNTS are identical at every thread count — 136 tile-recon plus 34
+each of deblock-cols / deblock-rows / cdef — and `defer deblock_barrier` is 0,
+so the P1 barrier really is gone and the pool really is fed. What changes is
+the cost of the same work: **+62% CPU from t=4 to t=8, +124% to t=16.** The
+filter chain is no longer serial either (`filtconc` sees up to 8 concurrent
+filter tasks at t=8), so this is not an Amdahl term.
+
+`superres` and `loop_restore` are 0.000 ms on this vector, as before.
+
+### 2. `sample` says the inflation is the borrow tracker
+
+v4k_8tile 8bpc t=8, 6 s, self-time, `scripts/perf/sample_selftime.py`.
+`__psynch_cvwait` (15.91% raw) is idle parking and is excluded from the
+denominator below; percentages are of the 30,978 non-idle leaf samples:
+
+  TinyLock::lock_slow                       23.2%
+  BorrowTracker::add::<false> + ::<true>    24.3%
+  CompInterType guard drop glue             10.2%
+  decode_coefs                              16.8%
+
+At t=1 the same two `add` arms are 7.8% and `lock_slow` does not appear at all.
+So it is not only the spin: **the uncontended fast path itself gets 3x more
+expensive**, which is the signature of a cache line being written by eight
+cores rather than of a lock being queued on.
+
+### 3. Removing the tracker removes the inversion
+
+A `probe-untracked` build (the tracker compiled out — measurement only, never
+shippable) against head, IDLE-BOX, median of 9
+(`benchmarks/p3_shard_isolate_2026-08-07.tsv`):
+
+  v4k_8tile 8bpc      t=1     t=2     t=4     t=8    t=16
+  head (32 shards)  412.5   261.1   175.3   190.5   209.9
+  untracked         336.5   184.3    95.5    57.7    65.2
+  64 shards         447.1   257.9   163.7   162.0   172.3
+  128 shards        522.5   238.5   139.1   123.5   135.6
+
+  v4k_8tile 10bpc                     t=4     t=8
+  head                              224.9   213.6
+  untracked                         144.8    81.4
+  128 shards                        191.0   153.9
+
+Without the tracker there is no inversion at all (5.83x from t=1 to t=8) and
+the wall is 57.7 ms against dav1d's 34.6. **The inversion is the tracker, and
+at t=8 the tracker is ~70% of our wall.** More shards fixes it; it costs at
+t=1.
+
+**This supersedes the leading hypothesis in the P3 brief.** The brief expected
+an un-backed-off `TinyLock` to be most of the win. It is a symptom, not the
+cause: backoff re-tested on top of the shard fix is again inside noise
+(see "Idle-box confirmation"), exactly as the P1 campaign found.
+
+### 4. The t=1 cost of more shards is NOT cache footprint
+
+The obvious reading of the 522.5 above is that a 128-shard table (16 KiB per
+instance, 12 hot picture planes) no longer fits L1. It is not that. An arm with
+`N_SHARDS = 128` and only 32 of them reachable — same table, same allocation,
+one quarter of the lines ever touched — measures the same as using all 128
+(IDLE-BOX, median of 9, `benchmarks/p3_shard_mask_2026-08-07.tsv`):
+
+  arm                                     t=1     t=4     t=8
+  head            (32 shards, 32 used)  413.7   176.2   189.0
+  128 shards, 128 used                  523.7   138.5   124.7
+  128 shards,  32 used                  528.0   178.3   193.0
+
+The 32-used arm gets the t=1 penalty AND none of the t=8 win. So the penalty is
+proportional to the shard count the code *walks*, not to the table it allocates
+— and the only thing that walks every shard is the wide path, `add_wide` /
+`remove_wide`, which locks and scans all `N_SHARDS`.
+
+Wide borrows are not rare at t=1, and the reason is structural: with tile
+threading OFF, `WithOffset::block_mut` takes the strided guard over
+`(h - 1) * stride + w`, which for a 16x16 block on a 3840-wide plane is 15
+blocks — past `MAX_SHARDS_PER_BORROW = 4`, hence wide. Under tile threading the
+same call takes the compact per-row path, whose borrows are single-block. That
+is why the shard count is expensive exactly where it buys nothing.
+`sample` on the 128-shard build at t=1 confirms it: `add_wide` 12.55% +
+`remove_wide` 10.14% = 22.7% of self time, against 7.16% for the narrow `add`.
+
+## The fix
+
+Two changes, commit 14873a6.
+
+**(a) The wide path holds `0..=mask`, not the whole array.** `shard_of` ends in
+`& self.mask`, so every record an instance stores and every shard lock a narrow
+registrant of that instance takes are inside that prefix; the rest of the array
+is unreachable for it. Holding the prefix is exactly the exclusion `add_wide`
+needs. For a sub-`SHARD_MIN_LEN` instance that is 1 lock instead of 128.
+
+**(b) `set_parallelism(n_tc)`**, called from `rav1d_open` beside
+`set_tile_threading` and monotone for the same reason that one had to become
+monotone (P2 §"Soundness finding"): 32 active shards for a serial decode, the
+full 128 for a threaded one. Read once per `BorrowTracker::new` and immutable
+for that tracker's life.
+
+(a) alone, at the old 32 shards, is a null — IDLE-BOX, median of 9,
+`benchmarks/p3_widepath_2026-08-07.tsv`:
+
+  arm       8bpc t=1   t=4     t=8    10bpc t=8
+  head         412.7  176.0   189.3      213.4
+  +wide-narrow 418.3  175.5   188.0      213.2
+
+It is worth landing anyway because it is what makes (b) affordable: with (a) in
+place, a 128-shard build restricted to 32 active shards costs 431.0 ms at t=1
+instead of 531.3 — 100 of the 118 ms penalty recovered. The residual 17 ms
+(+4.2% at t=1) is the bigger array itself and is NOT recovered; see "What is
+still open".
+
+## Confirmation campaign
+
+CONTENDED-BOX (see "nice level"), 4 arms interleaved back to back with the
+order rotating each round, 3 rounds x 3 reps x 3 iters = MEDIAN OF 9 per
+cell/arm, 288 rows. Raw: `benchmarks/p3_adapt_2026-08-07.tsv`.
+
+  arms:  head  = perf/p2-kernels @ 0624dfd, unmodified (32 shards)
+         adapt = 14873a6, the shipped change (128 shards, adaptive mask)
+         a64   = 14873a6 + `--features shards-64`
+         a32   = 14873a6 + `--features shards-32` — the control that isolates
+                 the shard-count bump from everything else in the commit
+
+  v4k_8tile 8bpc     t=1     t=2     t=4     t=8    t=16
+  head             413.8   262.8   175.9   190.0   209.9
+  adapt            434.1   240.5   140.3   125.0   135.9
+  a64              421.8   259.4   163.5   160.0   171.7
+  a32              418.8   262.4   175.6   188.6   210.9
+  adapt vs head    +4.9%   -8.5%  -20.2%  -34.2%  -35.3%
+
+  v4k_8tile 10bpc    t=1                     t=4     t=8
+  head             601.5                   224.8   229.1*
+  adapt            621.0                   191.9   171.4*
+  a64              610.2                   208.7   187.0
+  a32              609.0                   225.4   214.3
+
+  * the 10bpc t=8 cell is the one that visibly caught background load in the
+    third round — head re-measures at 212.1 (baseline) / 213.6 (isolate) /
+    212.9 (this campaign's first two rounds) on a quiet box, and adapt at
+    157.1. The direction is not in doubt but treat that single cell's
+    absolute numbers as the least reliable in the table.
+
+Reading it:
+
+* **The inversion is gone.** 8bpc t=4 140.3 -> t=8 125.0 -> t=16 135.9: t=8 is
+  now the best configuration, as it should be, and t=16 (12 logical cores, so
+  oversubscribed) degrades gracefully instead of continuing to climb.
+* **Best shippable configuration: 175.9 ms (head at t=4) -> 125.0 ms (adapt at
+  t=8) = 1.41x.** Against head's best at ANY thread count, the same number.
+* **a32 reproduces head at every cell** (418.8/262.4/175.6/188.6/210.9 against
+  413.8/262.8/175.9/190.0/209.9, and it still inverts). So the win is the shard
+  count and nothing else in the commit; the wide-path narrowing and the latch
+  cost ~1% at t=1 and are otherwise inert.
+* 64 shards is the intermediate it looks like: half the win, half the t=1 cost,
+  and it still does not invert. Kept available as `--features shards-64`.
+* **Bit identity: 288/288 invocations across 4 arms x 8 cells x 5 thread counts
+  agree** — one md5 per vector (`a00c11f4...` 8bpc, `840d4364...` 10bpc), which
+  are the same two hashes the P1 and P2 campaigns recorded.
+
+## Idle-box confirmation, and the `TinyLock` backoff arm
+
+The campaign above was run under sibling load, so the headline cells were
+re-run with the STRICT guard — 7 cells discarded and re-run before committing —
+on the same three-arm interleave. IDLE-BOX, median of 9, 135 rows. Raw:
+`benchmarks/p3_confirm_idle_2026-08-07.tsv`.
+
+  ms/frame            8bpc t=1     t=4     t=8    t=16   10bpc t=8
+  head                   413.3   175.8   187.0   208.8       213.7
+  adapt                  430.5   139.7   125.3   135.6       161.7
+  adapt + backoff        428.8   139.0   124.9   132.4       162.2
+  adapt vs head          +4.2%  -20.5%  -33.0%  -35.1%      -24.3%
+
+This reproduces the contended campaign to within 0.5% on every `head` and
+`adapt` cell except 10bpc t=8, so the two are consistent and the contended
+table can be read at face value.
+
+**Best shippable configuration: 175.8 ms (head, t=4) -> 125.3 ms (adapt, t=8),
+1.40x, with t=8 restored to being the best thread count.**
+
+**MEASURED NEGATIVE — `TinyLock` spin backoff (yield to the scheduler after 64
+spins) is inside noise, again.** This was the P3 brief's leading hypothesis and
+its first candidate fix. On top of the shard change: -0.4% at t=1, -0.5% at
+t=4, -0.3% at t=8, +0.3% at 10bpc t=8. The only cell outside noise is t=16
+(-2.4%), which is oversubscribed on a 12-logical-core box and is one cell — not
+grounds for a spin-policy change. The P1 campaign reached the same verdict on
+the 32-shard base (`benchmarks/p1_barrier_lock_ab_2026-08-07.tsv`: t=8 276.8 ->
+274.7). Kept as `--features probe-lock-backoff` so the next person can re-test
+without rebuilding the argument; NOT enabled.
+
+The reason it keeps measuring null is visible in the diagnosis above: at t=8 on
+the OLD shard count, `add`'s uncontended fast path was itself 3x its
+single-thread cost. That is cache-line ownership traffic, which a waiter's
+politeness does not touch. Spreading the borrows over 4x the lines does.
+
+## Against dav1d
+
+Same instrument on both sides, measured here rather than quoted: each stream
+run at 2 and 20 frames and `total = alpha + beta*frames` fitted so process
+startup drops out. dav1d 1.5.4 (homebrew) driven with `--framedelay 1` so it
+runs the tile-threading-only model we do. IDLE-BOX guard, arms rotated. n is
+the completed round count per cell (2 or 3 — the campaign was cut short by
+sibling load; the raw file is `benchmarks/p3_dav1d_2026-08-07.tsv`).
+
+  ms/frame                 head    adapt    dav1d   head/dav1d   adapt/dav1d
+  v4k_8tile      t=1     412.7    434.1    246.7        1.67x         1.76x
+  v4k_8tile      t=8     187.7    123.6     35.9        5.23x         3.44x
+  v4k_8tile_10b  t=1     601.8    621.1    251.6        2.39x         2.47x
+  v4k_8tile_10b  t=8     212.4    158.6     38.2        5.65x         4.18x
+
+  t1 -> t8 scaling      head 2.20x   adapt 3.51x   dav1d 6.87x
+
+**The 8-thread gap goes 5.23x -> 3.44x at 8bpc and 5.65x -> 4.18x at 10bpc.**
+Single-thread moves the wrong way by the 4-5% the bigger shard array costs.
+
+This instrument reproduces the interleaved sweep to within 0.5% on all four of
+our cells (412.7 vs 413.3, 187.7 vs 187.0, 434.1 vs 430.5, 123.6 vs 125.3) and
+re-measures dav1d to within 0.04% of the 246.7 ms and 3.8% of the 34.6 ms on
+record from the P2 campaign — so this and the P1/P2 campaigns are directly
+comparable.
+
+## What is still open / not done
+
+* **The +4.2% single-thread residual is real and unexplained beyond "the array
+  is 4x bigger".** 431.0 vs 413.7 ms at t=1, IDLE-BOX. Sizing the shard array
+  itself at runtime (`Box<[Shard]>`) would remove it, but the array is a
+  fixed-size field precisely so a masked index needs no fat-pointer load and no
+  bounds check on the hottest path in the decoder, and that trade was not
+  measured here. Not attempted.
+* **The tracker is still ~70% of the t=8 wall.** 123.5 ms with the fix against
+  57.7 ms with the tracker compiled out. Shard count is a mitigation, not a
+  cure; the cure is fewer borrows. The two named volume targets from the
+  profile are `CompInterType`'s guard drop glue (10.2% of non-idle at t=8) and
+  `block_mut`'s compact path, which under tile threading takes h per-row
+  IMMUTABLE guards to read plus h per-row MUTABLE guards to write back —
+  double the tracker traffic of the scalar path it replaced, for the same
+  pixels. Neither was attempted.
+* **The itx8 t=8 regression named in P2 is explained but not fixed.** P2
+  measured `itx8` slower than its base at t=8 (211.6 vs 200.2) while much
+  faster at t=1. The NEON arm routes through `block_mut`, i.e. 16 per-row
+  guards plus a copy in and a copy out; the scalar `inv_txfm_add` takes 8
+  per-row guards and no copy. Holding the h per-row MUTABLE guards across the
+  kernel instead of taking immutable ones and then mutable ones would halve
+  that, and is sound (a write guard is strictly stronger than the read guard it
+  replaces), but it was not implemented or measured.
+* **10bpc.** The fix is bit-depth-agnostic and 10bpc improves too, but 10bpc
+  never inverted, so nothing here is validated as "fixing" a 10bpc problem.
+
+## Measured negatives
+
+* **`TinyLock` backoff — the brief's leading hypothesis — is again inside
+  noise.** Numbers under "Idle-box confirmation".
+* **A 128-shard array with a 32-shard active set** gets the single-thread cost
+  and none of the multi-thread win (528.0 / 178.3 / 193.0). Included because it
+  is the experiment that falsified the cache-footprint explanation.
+* **The wide-path narrowing on its own** is a null at 32 shards (above).
+
+## Correctness
+
+* **The wide path's exclusion is tested by a race, not asserted.**
+  `crates/rav1d-disjoint-mut/tests/wide_exclusion.rs` runs one thread taking
+  wide mutable borrows of the whole buffer against six taking narrow mutable
+  borrows scattered across it, and fails if a narrow borrow is ever granted
+  while the wide holder provably still holds. A missed overlap here is SILENT —
+  both borrows simply succeed — so the test looks for the witness, not for a
+  panic. 20/20 clean on the shipped code.
+* **Liveness of that gate, both directions.** Deliberately shortening the
+  prefix fails it: `..1` produces 5 witnesses, `..half` produces 2. So it
+  discriminates at the granularity the change actually operates on, not just
+  against a total removal.
+* **HONEST NEGATIVE: the single-threaded unit tests do NOT catch either
+  break.** `wide_and_narrow_still_see_each_other_on_a_one_shard_instance` and
+  `..._at_full_width` both PASS with the prefix broken to `..1`, because a
+  narrow registrant finds a wide record through the `state` word and the side
+  list regardless of which shards the wide registrant locked — the locking is a
+  race property. They are kept because they pin the side-list half at both mask
+  widths, but they are not evidence about the narrowing. That is why the race
+  gate is a separate file.
+* **Full corpus, bit identity.** `cargo test --release --no-fail-fast --
+  --test-threads=1` on this branch produces **4,945 `MISMATCH [tier]: <id>
+  expected=.. actual=..` lines and 2,845 distinct (tier, id, actual) triples** —
+  the exact counts `benchmarks/p2_kernels_2026-08-07.meta` recorded for
+  0624dfd's lineage on both sides of its own A/B. The failing set is the
+  documented 34.
+* **`mt_stress_4k` passes at threads 1/2/4/8/16.** It appeared as a 35th
+  failure on the first suite run for an environment reason, not a code one:
+  `test-vectors/` is gitignored and a fresh worktree has no
+  `test-vectors/bench/photo_4k.avif`. Symlinking it from the primary checkout
+  and re-running is green. Worth knowing before reading a fresh worktree's
+  test output as a regression.
+* **Concurrent-process overlap stress on the shipped build:** 6 concurrent
+  `tile_threading_overlap --ignored` processes x 4 rounds, **0/24 FAILED**
+  (`scripts/perf/p2_concurrent_overlap.sh`, the P2 instrument; the same script
+  showed 8-9/24 on the pre-latch build). `tile_threading_parity` 3/3 and
+  `tile_threading_overlap` 3/3.
+* All 20 `tracker_shard` unit tests pass, including
+  `cross_shard_overlaps_are_all_caught`, `wide_borrow_is_visible_to_narrow_registrants`
+  and `narrow_borrow_is_visible_to_wide_registrant`; all 5
+  `tests/shard_liveness.rs` tests pass, including `concurrent_overlaps_are_caught`.
+* **Cross-vector bit identity, adapt vs head:** all six local vectors
+  (v4k_8tile, v4k_8tile_10b, v4k_1tile, v4k_1tile_10b, v1024, v1024_10b,
+  v256) decode to the same md5 on both arms at t=1 and t=8, and v4k_8tile /
+  v4k_8tile_10b are identical at t=1/2/4/8/16 as well.
+* **The race gate under process pressure:** 6 concurrent `wide_exclusion`
+  processes x 4 rounds, 0/24 FAILED.
+* `set_parallelism` is monotone, pinned by `set_parallelism_is_monotone`.
+* clippy `--release --all-targets` reports 82 warnings against the 81 the P2
+  campaign recorded, and the extra one is not a lint — it is
+  `File system loop found: test-vectors/bench/bench points to an ancestor`,
+  from the symlink this worktree needs for `photo_4k.avif` (the primary
+  checkout has the same self-referential link). Zero lints in the touched
+  files.
+* `forbid(unsafe_code)` holds; no `unsafe` added. clippy clean on the touched
+  crate, `--release --all-targets`.
+
+## Reproducing
+
+  # builds are nice'd; timed runs are NOT
+  CARGO_TARGET_DIR=~/tmp/rav1d-p3/tgt-head nice -n 19 cargo build --release \
+    --example bench_ab_decode -j 4          # + --features shards-32 / shards-64
+                                            #   / probe-untracked for the arms
+  CELLS="v4k_8tile:1 v4k_8tile:4 v4k_8tile:8" ARMS="head adapt" \
+    ./scripts/perf/p3_sweep.sh out.tsv 3 3 3

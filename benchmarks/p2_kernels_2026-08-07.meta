@@ -1,0 +1,208 @@
+# P2 kernel deficit: what closing it took, and what refused to close
+
+date: 2026-08-07
+host: Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64
+rustc: stable, release (lto="fat", codegen-units=1), DEFAULT features
+       (bitdepth_8 + bitdepth_16, CHECKED DisjointMut). No -C target-cpu=native.
+branch: perf/p2-kernels, off perf/p1-barrier @ 6686b8f (itself off
+        perf/shard-tracker @ 34b0505). NOT pushed. PRs #448/#450 untouched.
+reference: dav1d 1.5.4 (homebrew), driven with `--framedelay 1` so it runs the
+           same threading model we do (tile threading only).
+vectors: ~/tmp/rav1d-perf/vec/*.avif — v4k_8tile is 3840x2160, 4 tile cols x
+         2 tile rows, 8bpc; v4k_8tile_10b is its 10-bit twin. v1024 / v256 and
+         v4k_1tile_10b are used in the correctness sweeps only. dav1d decodes
+         the matching .ivf from ~/tmp/recon-yard/vec/, verified elsewhere to be
+         the same key frame repeated, so both sides do identical work per frame.
+
+## nice level
+
+NO `nice` ON ANY TIMED RUN. Darwin maps a positive nice value to background QoS
+and distorts wall clock by ~40x. `nice -n 19` is for BUILDS only. Every timed
+number below is an un-niced run on an idle box behind a >25%-CPU foreign-process
+guard that discards and re-runs a contended cell (2 cells discarded and re-run
+across the campaign; both were the agent's own polling shell).
+
+Harness gotcha worth keeping: that guard must EXCLUDE the arm binary under test.
+macOS `ps` reports a decaying %cpu for a process that has only just exited, so
+at t>1 the guard sees the arm it just finished running and discards the cell
+forever. `scripts/perf/p2_sweep.sh`'s `busy_count` excludes `bench_*` for
+exactly this reason; the first campaign attempt livelocked without it.
+
+## What this was measured against
+
+Starting profile (`benchmarks/p2_kernel_profile_2026-08-07.meta`, taken on
+perf/shard-tracker @ 4af62ae): of a 605.8 ms/frame t=1 decode, entropy is at
+PARITY with dav1d (212.4 vs 215.4 ms) and the whole 359.5 ms gap is the borrow
+tracker (169.5) plus pixel kernels — CDEF 71.7 vs 4.1 (17.3x), itx 67.2 vs 4.7
+(14.3x), loop filter 34.2 vs 3.0 (11.3x). Three aarch64 "safe_simd" modules —
+`cdef_arm.rs`, `loopfilter_arm.rs`, `looprestoration_arm.rs` — contain ZERO
+aarch64 intrinsic calls; their bodies are scalar per-pixel loops.
+`ROADMAP_SIMD_PORTING.md` row R3 is the TODO for that.
+
+## Timed campaign
+
+`scripts/perf/p2_sweep.sh`, 6 arms interleaved back to back inside each cell
+with the arm order rotating every round, 3 rounds x 3 reps x 4 iters =
+MEDIAN OF 9 per cell/arm, 324 rows. Raw:
+`benchmarks/p2_kernels_2026-08-07.tsv` (round, vector, threads, arm,
+ms/frame, frame md5). Arms are built from the commits, not from a mutated tree.
+
+  vector           t     base    itx8    cdef  lfmask lfbatch    head   base/head
+  v4k_8tile        1    547.9   500.0   437.3   432.9   408.7   414.2      1.323x
+  v4k_8tile        2    327.2   309.6   278.1   274.0   258.8   260.9      1.254x
+  v4k_8tile        4    207.5   204.1   186.6   185.5   174.7   175.8      1.180x
+  v4k_8tile        8    200.2   211.6   204.3   203.1   188.5   188.3      1.063x
+  v4k_8tile_10b    1    630.9   631.2   631.1   636.3   603.2   601.1      1.050x
+  v4k_8tile_10b    8    232.7   233.5   234.0   233.8   212.0   212.1      1.097x
+
+  base    = 6686b8f, the branch point
+  itx8    = c4fc055, dispatch the existing 8x8 8bpc NEON itx kernels
+  cdef    = 70c1a70, + a real NEON tier for the 8bpc CDEF filter
+  lfmask  = 51f76a7, + bounds-check-free CompactTaps
+  lfbatch = 2fc646e, + fused loop-filter groups
+  head    = 75794ab, + the tile-threading latch (a correctness fix)
+
+Per-change at t=1 8bpc: itx8 -47.9 ms (1.096x), cdef -62.7 ms (1.143x), lfmask
+-4.4 ms (1.010x), lfbatch -24.2 ms (1.059x), latch +5.5 ms. The latch is inert
+in these runs — every bench process opens ONE decoder, so at t=1 the flag is
+never set and at t=8 it is set exactly as before; the +1.3% at 8bpc t=1 is code
+layout, and its sign flips at 10bpc t=1 (-2.1 ms) and t=8 (+0.1 ms).
+
+Two things the table says that are worth reading twice:
+
+* itx8 and cdef are BPC8-gated, so the 10bpc column does not move for them at
+  all (631.2 / 631.1 / 636.3 vs base 630.9 — noise). All of the 10bpc gain is
+  the bit-depth-generic loop-filter work.
+* At t=8 8bpc, itx8 is SLOWER than base (211.6 vs 200.2). Making a kernel
+  cheaper there just moves the load onto whatever is next in line; the t=8
+  bottleneck is not kernel throughput. That is why the composed t=8 gain is
+  only 1.063x while t=1 is 1.323x.
+
+## Against dav1d
+
+`scripts/perf/p2_dav1d_wall.sh`, same instrument on both sides: each stream run
+at 2 and 20 frames and `total = alpha + beta*frames` fitted so process startup
+drops out. 3 rounds, arms rotated, medians. Raw:
+`benchmarks/p2_dav1d_2026-08-07.tsv`.
+
+  vector           t     base    head   dav1d   base/dav1d   head/dav1d
+  v4k_8tile        1    548.2   413.6   246.7        2.22x        1.68x
+  v4k_8tile        8    199.8   188.0    34.6        5.77x        5.43x
+  v4k_8tile_10b    1    630.7   600.5   251.4        2.51x        2.39x
+  v4k_8tile_10b    8    232.6   213.3    36.1        6.44x        5.91x
+
+The wall fit reproduces the sweep to within 0.3 ms on both our arms, and dav1d
+re-measures to within 0.6% of the 246.3 / 34.4 ms on record from the P1
+campaign — so the two campaigns are directly comparable.
+
+## Correctness
+
+* BIT-IDENTITY, full corpus: `cargo test --release --no-fail-fast --
+  --test-threads=1` run at the branch point AND at head, and every
+  `MISMATCH [tier]: <id> expected=<hex> actual=<hex>` triple extracted from
+  both. 4,945 MISMATCH lines each side, across 5 CPU tiers (scalar / neon /
+  neon-dotprod / neon-i8mm / native) x 989 vectors; 2,845 distinct
+  (tier, id, actual) triples each side; **diff = 0 lines**. The failing-test
+  set is byte-identical and is exactly the documented 34.
+* BIT-IDENTITY, campaign: one frame md5 per (vector, threads) across all 6 arms
+  and all thread counts — 324/324 invocations agree
+  (a00c11f4... 8bpc, 840d4364... 10bpc).
+* Per-kernel oracle: `__simd_test_log` decodes (which run SIMD and scalar on
+  every block and diff the pixels) of v4k_8tile / v1024 / v256 log ZERO
+  ITX_MISMATCH and ZERO CDEF_MISMATCH after the itx and CDEF changes.
+* `-C debug-assertions=on` release builds decode all six local vectors without
+  firing the new `CompactTaps` range assert.
+* mt_stress passes at threads 1 / 2 / 4 / 8 / 16 (`mt_stress_4k` sweeps them).
+* tile_threading_parity 3/3, tile_threading_overlap 3/3, reproduce_overlap 6/1,
+  clippy 81 warnings before and 81 after with none in the touched files, and
+  zero `unsafe` / `#[allow(unsafe_code)]` added anywhere.
+
+### Overlap detection still fires
+
+* The tracker's own 8 `should_panic` detection tests pass, including
+  `concurrent_overlaps_are_caught` and `cross_shard_overlaps_are_all_caught`.
+* Live proof on this branch: the detector caught a REAL over-wide borrow — the
+  intra-edge bug below — in 8-9 of 24 concurrent runs, with a full backtrace,
+  before it was fixed.
+* HONEST NEGATIVE: a deliberate over-wide guard planted in `LfBlock::open`
+  (one wide `narrow_guard` spanning `(h-1)*stride + w` instead of h per-row
+  guards — the shape the codebase documents as unsound under tile threading)
+  did NOT fire, either solo or 6-way concurrent (0/18). That says the loop
+  filter's rectangle has no concurrent writer on this vector, not that
+  detection is broken. A +16-pixel widening of the same guard fired a bounds
+  panic instead, which is a different check.
+
+## Soundness finding — pre-existing, fixed here (75794ab)
+
+`TILE_THREADING` is ONE process-global `AtomicBool`, and `rav1d_open` stored
+`n_tc > 1` into it unconditionally. Opening a SINGLE-threaded decoder therefore
+stored `false` out from under every concurrently live multi-threaded decoder in
+the same process. Those decoders' tile workers then took the wide-guard path in
+`with_pixel_guard_immut` / `compact_read_per_row`, whose borrow extent is
+`(h-1) * stride + w`: a 1x16 intra left-edge column claims 16,321 pixels in
+order to read 16. Any concurrent row write inside that span is a real conflict —
+a spurious `overlapping DisjointMut` panic that kills the decode in a checked
+build, an undetected data race on picture memory in an `unchecked` one.
+
+That is exactly what `tile_threading_overlap`'s `single_threaded_no_panic`
+(n_tc = 1) does to `multi_threaded_cdef_lpf_race` (6 threaded decoders) running
+beside it in the same binary. The suite passes on an idle box because the store
+lands before the threaded decoders start; under load the windows overlap.
+
+  6 concurrent `tile_threading_overlap --ignored` processes, 4 rounds each:
+    perf/p1-barrier @ 6686b8f (branch point)   9/24 and 8/24 FAILED
+    my c4fc055 (itx only)                      6/24 FAILED
+    my HEAD before the latch                   6/24 FAILED
+    + the tile-threading latch                 0/24 FAILED
+
+  Pre-fix backtrace: rav1d_prepare_intra_edges (src/ipred_prepare.rs:256)
+  -> with_pixel_guard_immut -> narrow_guard (include/dav1d/picture.rs:865)
+  -> add_wide -> overlap_panic, `& _[671..16992]` against `&mut _[784..800]`.
+
+Instrument: `scripts/perf/p2_concurrent_overlap.sh`. A single green run of the
+committed suite proves nothing about this class — it needs process pressure.
+
+Fix is the minimal correct one: make the setter monotone, never storing `false`.
+Per-decoder state would be better but the flag is read from `picture.rs` helpers
+that have no decoder context. A purely single-threaded process still never sets
+the latch and keeps the fast wide guard.
+
+## What did not land
+
+**16bpc NEON inverse transforms — the kernels exist and are NOT bit-exact.**
+`itx_arm_neon_{16x16,32,64,large_rect}` define 16bpc kernels (16x16 all sixteen
+types, 32x32 DCT+IDTX, DCT_DCT for 8x32/32x8/16x32/32x16 and the five 64-dim
+shapes) and the `asm`-feature FFI wrappers call them, but every arm of the safe
+`itxfm_add_dispatch` is gated on BPC8. Wiring them measured, via a
+`__simd_test_log` decode: v4k_8tile_10b 5,038 ITX_MISMATCH (all 16x16),
+v4k_1tile_10b 5,028 (16x16 + 32x16), v1024_10b 126 (16x16 + 32x32). This is not
+rounding drift — nbad = 256, i.e. EVERY pixel of the block, on 3,814 of the
+5,038, with max_diff up to 354. eob = 0 DC-only blocks are clean, so the
+wiring and unit conversion are right and the transform math is wrong. Fixing
+them is the same per-transform work issue #400 did for 8bpc (missing
+intermediate clipping, rect2 scaling, shifts). REVERTED; the reason is recorded
+in a comment on the dispatch so the next person does not repeat the experiment.
+
+**LF_BATCH_MAX = 8.** Swept: 2 -> 409.4, 4 -> 403.0, 8 -> 406.9 ms/frame
+(t=1 8bpc, 3 interleaved pairs each). 8 loses because the larger scratch costs
+more zero-init per superblock edge than the extra fusion saves. 4 shipped.
+
+## Where the remaining time goes
+
+Fresh `sample` self-time at t=1 8bpc after the itx and CDEF changes (432 ms/frame
+at that point):
+
+  decode_coefs                     45.93%   <- AT PARITY with dav1d, no win here
+  borrow tracker (add/remove/wide)  15.9%
+  CompInterType guard drop glue      5.05%
+  loop filter family                11.13%  <- lfbatch has since taken a bite
+  CfL (cfl_pred + cfl_ac_rust)       4.0%
+  CDEF (was 11.8%)                   1.8%
+  itx  (was 11.1%)                   1.9%
+  _platform_memmove                  2.29%
+
+Entropy is ~200 ms of our 414 and ~215 ms of dav1d's 247, so ~200 ms is the
+floor at t=1 and the reachable remainder is the tracker (~90 ms), what is left
+of the loop filter, and CfL. `looprestoration_arm.rs` is still 1,527 lines of
+scalar with zero intrinsics but measured 0.0 ms on this vector (loop restoration
+is off in this bitstream), so it is not the next thing to port.

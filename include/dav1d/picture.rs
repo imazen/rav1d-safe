@@ -3,14 +3,40 @@
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Global flag: true when tile threading is active (n_tc > 1).
-/// When true, compact_read/compact_write_back use per-row guards to avoid
-/// stride-padding overlap. When false, they use a single fast guard.
+/// Global latch: true once any decoder in this process has used tile threading
+/// (n_tc > 1). When true, compact_read/compact_write_back and
+/// `with_pixel_guard_*` use per-row guards to avoid stride-padding overlap.
+/// When false, they use a single wide guard, which is only sound with no
+/// concurrent tile workers.
 static TILE_THREADING: AtomicBool = AtomicBool::new(false);
 
-/// Set whether tile threading is active. Called from decoder initialization.
+/// Latch tile threading on. Called from decoder initialization.
+///
+/// MONOTONE ON PURPOSE — never stores `false`. This is process-global state
+/// but decoders are per-instance, so a store of `false` from a
+/// single-threaded `rav1d_open` used to clobber the flag for every
+/// CONCURRENTLY LIVE multi-threaded decoder: their tile workers then took the
+/// wide `narrow_guard` path, whose extent is `(h-1) * stride + w` — a 1x16
+/// intra left-edge column claims 16,321 pixels to read 16 — and any
+/// concurrent row write inside that span is a real conflict. In a checked
+/// build that surfaced as a spurious `overlapping DisjointMut` panic in
+/// `rav1d_prepare_intra_edges`; in an `unchecked` build it is an undetected
+/// data race on picture memory.
+///
+/// Measured on this branch before the latch: 6 concurrent
+/// `tile_threading_overlap --ignored` processes (whose
+/// `single_threaded_no_panic` case opens an `n_tc == 1` decoder alongside
+/// `multi_threaded_cdef_lpf_race`'s threaded ones) panicked in 8-9 of 24
+/// runs. After: 0 of 24. See `benchmarks/p2_kernels_2026-08-07.meta`.
+///
+/// The cost of latching instead of tracking per decoder is that a process
+/// which has ever opened a threaded decoder keeps the per-row path for its
+/// single-threaded ones too. That is the correct direction to be wrong in,
+/// and a purely single-threaded process never sets the latch at all.
 pub fn set_tile_threading(active: bool) {
-    TILE_THREADING.store(active, Ordering::Relaxed);
+    if active {
+        TILE_THREADING.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Check if tile threading is active.
@@ -804,6 +830,10 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     #[cfg_attr(debug_assertions, track_caller)]
     pub fn block_mut<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
         if tile_threading_active() {
+            #[cfg(feature = "held-row-guards")]
+            if w != 0 && h != 0 && h <= MAX_HELD_ROWS {
+                return self.block_mut_held::<BD>(w, h);
+            }
             let (buf, byte_stride) = self.compact_read_per_row::<BD>(w, h);
             BlockMut {
                 storage: BlockMutStorage::Compact { buf },
@@ -825,6 +855,79 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
                 base,
                 byte_stride,
             }
+        }
+    }
+
+    /// The tile-threading [`Self::block_mut`] path that HOLDS its row guards.
+    ///
+    /// # Why it is cheaper
+    ///
+    /// The plain compact path reserves each row twice: `h` IMMUTABLE per-row
+    /// guards to copy the block in, and then, on drop, `h` MUTABLE per-row
+    /// guards over the very same bytes to copy it back. That is `2h`
+    /// registrations for one block. Taking the MUTABLE guards up front and
+    /// keeping them alive across the kernel does the same job with `h` — the
+    /// read borrows through a guard that already excludes every other borrow,
+    /// so the separate read guard was never adding exclusion.
+    ///
+    /// Measured on a t=8 4K frame before this existed (macOS `sample`, leaf
+    /// samples): the read half cost 14,081 samples and the write-back half
+    /// 10,105, together 9.3% of the whole decode.
+    ///
+    /// # Why it is sound
+    ///
+    /// * **Extents are unchanged.** Each guard covers exactly
+    ///   `[row_off, row_off + w)` — byte-for-byte what the read guard and the
+    ///   write-back guard each covered. Nothing widens.
+    /// * **Exclusion only tightens.** A mutable registration conflicts with
+    ///   every live record; the immutable one it replaces conflicted only with
+    ///   mutable records. No overlap that the two-pass shape detected can be
+    ///   missed here.
+    /// * The bytes held are the block this call is about to overwrite in full,
+    ///   so a concurrent borrow of them is a real conflict, not an artefact of
+    ///   holding longer: dav1d's task schedule never lets another worker read a
+    ///   block whose inverse transform has not finished.
+    ///
+    /// # Why the row cap
+    ///
+    /// The guards live in an inline array, so `h` is bounded at compile time,
+    /// and peak live registrations per thread rise from 1 to `h`. A shard holds
+    /// 7 records before it promotes a borrow to the wide list — which locks
+    /// every shard of the instance — so the cap is also a guard against turning
+    /// a tall block into a wide-path storm. `MAX_HELD_ROWS` covers every
+    /// transform height AV1 has; anything taller falls back to the two-pass
+    /// path, which is always correct.
+    #[cfg(feature = "held-row-guards")]
+    #[cfg_attr(debug_assertions, track_caller)]
+    fn block_mut_held<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
+        use crate::src::strided::Strided as _;
+        use zerocopy::IntoBytes;
+        let pixel_size = core::mem::size_of::<BD::Pixel>();
+        let byte_stride = w * pixel_size;
+        let needed = h * byte_stride;
+        let pxstride = self.data.pixel_stride::<BD>();
+        let abs_stride = pxstride.unsigned_abs();
+        let mut buf = take_compact_scratch();
+        buf.resize(needed, 0);
+        let mut rows: RowGuards<'a, BD> = [const { None }; MAX_HELD_ROWS];
+        for row in 0..h {
+            let row_off = if pxstride >= 0 {
+                self.offset + row * abs_stride
+            } else {
+                self.offset - row * abs_stride
+            };
+            let guard = self.data.slice_mut::<BD, _>((row_off.., ..w));
+            buf[row * byte_stride..][..byte_stride]
+                .copy_from_slice(&guard.as_bytes()[..byte_stride]);
+            rows[row] = Some(guard);
+        }
+        BlockMut {
+            storage: BlockMutStorage::Held { buf, rows },
+            dst: *self,
+            w,
+            h,
+            base: 0,
+            byte_stride: byte_stride as isize,
         }
     }
 
@@ -1689,14 +1792,38 @@ impl Rav1dPicAllocator {
 }
 pub type PicOffset<'a> = Rav1dPictureDataComponentOffset<'a>;
 
+/// Tallest block [`WithOffset::block_mut_held`] will hold row guards for.
+///
+/// 64 is the tallest AV1 transform (`TX_64X64` / `TX_16X64` / `TX_32X64`), so
+/// in practice nothing falls back. The array costs
+/// `MAX_HELD_ROWS * size_of::<Option<guard>>()` of stack in the frame that owns
+/// the [`BlockMut`]; a guard is a fat slice reference, a parent reference and a
+/// `BorrowId`, and `Option` is niche-packed into the slice pointer.
+#[cfg(feature = "held-row-guards")]
+const MAX_HELD_ROWS: usize = 64;
+
+#[cfg(feature = "held-row-guards")]
+type RowGuards<'a, BD> = [Option<
+    DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [<BD as BitDepth>::Pixel]>,
+>; MAX_HELD_ROWS];
+
 /// Backing storage for [`BlockMut`] — see [`WithOffset::block_mut`].
 enum BlockMutStorage<'a, BD: BitDepth> {
     /// Tile threading off: the picture's own memory, one contiguous guard.
     Direct {
         guard: DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
     },
-    /// Tile threading on: a detached compact copy, written back on drop.
+    /// Tile threading on: a detached compact copy, written back on drop
+    /// through fresh per-row guards.
     Compact { buf: Vec<u8> },
+    /// Tile threading on, and the per-row MUTABLE guards are held for the
+    /// block's whole life — see [`WithOffset::block_mut_held`]. Half the
+    /// registrations of `Compact`, same extents.
+    #[cfg(feature = "held-row-guards")]
+    Held {
+        buf: Vec<u8>,
+        rows: RowGuards<'a, BD>,
+    },
 }
 
 /// A writable w×h pixel block. Obtain one with [`WithOffset::block_mut`], which
@@ -1740,20 +1867,71 @@ impl<'a, BD: BitDepth> BlockMut<'a, BD> {
         match &mut self.storage {
             BlockMutStorage::Direct { guard } => guard.as_mut_bytes(),
             BlockMutStorage::Compact { buf } => buf.as_mut_slice(),
+            #[cfg(feature = "held-row-guards")]
+            BlockMutStorage::Held { buf, .. } => buf.as_mut_slice(),
         }
     }
 }
 
 impl<BD: BitDepth> Drop for BlockMut<'_, BD> {
     fn drop(&mut self) {
-        if let BlockMutStorage::Compact { buf } = &mut self.storage {
-            // Unconditional per-row write-back rather than the loopfilter's
-            // diff variant: an inverse transform adds residual across the whole
-            // block, so a diff would compare every byte only to discover that
-            // every byte changed. Per-row is what keeps the reservations narrow.
-            self.dst
-                .compact_write_back_per_row::<BD>(self.w, self.h, buf);
-            recycle_compact_scratch(core::mem::take(buf));
+        match &mut self.storage {
+            BlockMutStorage::Direct { .. } => {}
+            BlockMutStorage::Compact { buf } => {
+                // Unconditional per-row write-back rather than the loopfilter's
+                // diff variant: an inverse transform adds residual across the
+                // whole block, so a diff would compare every byte only to
+                // discover that every byte changed. Per-row is what keeps the
+                // reservations narrow.
+                self.dst
+                    .compact_write_back_per_row::<BD>(self.w, self.h, buf);
+                recycle_compact_scratch(core::mem::take(buf));
+            }
+            #[cfg(feature = "held-row-guards")]
+            BlockMutStorage::Held { buf, rows } => {
+                // The rows are already reserved — write straight through the
+                // guards taken in `block_mut_held`, then let them drop. Same
+                // bytes as `compact_write_back_per_row` would have written,
+                // with no second round of registrations.
+                let byte_stride = self.byte_stride as usize;
+                for (row, slot) in rows.iter_mut().enumerate().take(self.h) {
+                    if let Some(guard) = slot {
+                        guard.as_mut_bytes()[..byte_stride]
+                            .copy_from_slice(&buf[row * byte_stride..][..byte_stride]);
+                    }
+                }
+                // Drop the guards BEFORE recycling, so the scratch is only
+                // handed back once the picture is consistent.
+                *rows = [const { None }; MAX_HELD_ROWS];
+                recycle_compact_scratch(core::mem::take(buf));
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tile_threading_latch_tests {
+    /// `set_tile_threading` must never be able to turn the flag back off.
+    ///
+    /// It is one process-global bool shared by every decoder, so a
+    /// single-threaded `rav1d_open` storing `false` used to push concurrently
+    /// live multi-threaded decoders back onto the wide-guard path — whose
+    /// borrow extent is `(h-1) * stride + w`, e.g. 16,321 pixels for a 1x16
+    /// intra left-edge column — while their tile workers were running. That
+    /// showed up as spurious `overlapping DisjointMut` panics under load (8-9
+    /// of 24 concurrent runs) and would be an undetected data race in an
+    /// `unchecked` build.
+    #[test]
+    fn set_tile_threading_is_monotone() {
+        use super::{set_tile_threading, tile_threading_active};
+        // Whatever another test in this binary has already done, `true` sticks.
+        set_tile_threading(true);
+        assert!(tile_threading_active());
+        set_tile_threading(false);
+        assert!(
+            tile_threading_active(),
+            "a single-threaded open must not clear tile threading for \
+             concurrently live multi-threaded decoders"
+        );
     }
 }

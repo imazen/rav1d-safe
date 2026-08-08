@@ -8390,6 +8390,10 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     eob: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::Itx) {
+        return false;
+    }
     // Issue #400: the aarch64 NEON inverse transforms are now bit-exact with the
     // scalar/spec reference — verified tolerance-0 against the generic itx
     // (`__simd_test` feature) across the full dav1d conformance corpus on native
@@ -8421,8 +8425,109 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                 None => return false,
             };
             let (w, h) = txfm.to_wh();
+            crate::src::ablate::note(crate::src::ablate::Family::Itx, (w * h) as u64);
 
-            // Only 4x4 8bpc transforms are ported to NEON so far
+            // One `if` per (size, bitdepth) that has a NEON kernel wired; any
+            // shape that falls through every arm returns false and the caller
+            // runs the scalar reference. Adding a kernel file is NOT enough —
+            // the arm below is what makes it reachable from the safe build.
+            //
+            // Every arm is BPC8 ON PURPOSE. `itx_arm_neon_{16x16,32,64,
+            // large_rect}` also define 16bpc kernels (16x16 all sixteen types,
+            // 32x32 DCT+IDTX, and DCT_DCT for 8x32/32x8/16x32/32x16/64x64/
+            // 64x32/32x64/16x64/64x16) and the `asm`-feature FFI wrappers call
+            // them — but they are NOT bit-exact, so wiring them here would ship
+            // wrong pixels. Measured 2026-08-07 by adding the arms and running
+            // a `__simd_test_log` decode: v4k_8tile_10b 5,038 ITX_MISMATCH
+            // (16x16), v4k_1tile_10b 5,028 (16x16 + 32x16), v1024_10b 126
+            // (16x16 + 32x32). Not rounding drift — nbad=256 (every pixel of
+            // the block) on 3,814 of the 5,038, max_diff up to 354. eob=0
+            // DC-only blocks are clean, so the wiring/units are right and the
+            // transform math is wrong; fixing them is the same per-transform
+            // work issue #400 did for 8bpc (missing intermediate clipping,
+            // rect2 scaling, shifts). Record:
+            // benchmarks/p2_kernels_2026-08-07.meta.
+            //
+            // 2026-08-07: the 16bpc gap is instead closed by `itx_arm_hbd`, a
+            // 32-bit-lane vectorisation of the generic reference rather than a
+            // widening of those 16-bit ports — see that module's header for
+            // why the two cannot be the same code.
+            if BD::BPC == BPC::BPC16 && super::itx_arm_hbd::hbd_supported(w, h) {
+                use super::itx_arm_hbd::Kind;
+
+                // Same table as `inv_txfm_add_rust`, including its
+                // `(second, first)` order: `first` runs on rows (length w),
+                // `second` on columns (length h).
+                let (second, first) = match tx_type as u8 {
+                    levels::IDTX => (Kind::Identity, Kind::Identity),
+                    levels::DCT_DCT => (Kind::Dct, Kind::Dct),
+                    levels::ADST_DCT => (Kind::Adst, Kind::Dct),
+                    levels::FLIPADST_DCT => (Kind::FlipAdst, Kind::Dct),
+                    levels::H_DCT => (Kind::Identity, Kind::Dct),
+                    levels::DCT_ADST => (Kind::Dct, Kind::Adst),
+                    levels::ADST_ADST => (Kind::Adst, Kind::Adst),
+                    levels::FLIPADST_ADST => (Kind::FlipAdst, Kind::Adst),
+                    levels::DCT_FLIPADST => (Kind::Dct, Kind::FlipAdst),
+                    levels::ADST_FLIPADST => (Kind::Adst, Kind::FlipAdst),
+                    levels::FLIPADST_FLIPADST => (Kind::FlipAdst, Kind::FlipAdst),
+                    levels::V_DCT => (Kind::Dct, Kind::Identity),
+                    levels::H_ADST => (Kind::Identity, Kind::Adst),
+                    levels::H_FLIPADST => (Kind::Identity, Kind::FlipAdst),
+                    levels::V_ADST => (Kind::Adst, Kind::Identity),
+                    levels::V_FLIPADST => (Kind::FlipAdst, Kind::Identity),
+                    // WHT_WHT (lossless 4x4) has its own reference kernel.
+                    _ => return false,
+                };
+                let shift: u32 = match (w, h) {
+                    (4, 4) | (4, 8) | (8, 4) => 0,
+                    (4, 16) | (8, 8) | (8, 16) | (16, 4) | (16, 8) => 1,
+                    (16, 16) => 2,
+                    _ => return false,
+                };
+                let has_dc_only = tx_type as u8 == levels::DCT_DCT;
+                let bd_c = bd.into_c();
+                let coeff_i32: &mut [i32] =
+                    zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
+                        .expect("coeff alignment/size mismatch for i32 reinterpretation");
+
+                // ONE NARROW GUARD PER ROW, not `block_mut`'s wide guard over
+                // the whole block. Measured on `v4k_8tile` at t=1: the same
+                // trade in the CfL kernel cost +0.79% `add_wide::<true>` and
+                // +0.73% `remove_wide` against a 2.46% kernel saving, and
+                // switching that one to per-row guards moved it from 0.14% to
+                // 0.99% of whole-decode wall. `dst` here is only ever touched a
+                // row at a time, so the wide extent bought nothing; narrowing
+                // it is also the safe direction under tile threading.
+                let pxstride = dst.pixel_stride::<BD>();
+                let add_row = |y: usize, tmp_row: Option<&[i32]>, dc: i32| {
+                    let row = dst + (y as isize * pxstride);
+                    let mut guard = row.slice_mut::<BD>(w);
+                    let px: &mut [u16] =
+                        crate::src::safe_simd::pixel_access::reinterpret_slice_mut(&mut guard)
+                            .expect("BD::Pixel layout matches u16");
+                    match tmp_row {
+                        Some(t) => super::itx_arm_hbd::add_row_hbd_neon(token, px, t, w, bd_c),
+                        None => super::itx_arm_hbd::add_row_dc_hbd_neon(token, px, w, dc, bd_c),
+                    }
+                };
+
+                if eob < has_dc_only as i32 {
+                    let dc = super::itx_arm_hbd::hbd_dc_value(w, h, shift, coeff_i32);
+                    for y in 0..h {
+                        add_row(y, None, dc);
+                    }
+                    return true;
+                }
+
+                let mut tmp = [0i32; 16 * 16];
+                super::itx_arm_hbd::inv_txfm_hbd_neon(
+                    token, w, h, first, second, shift, coeff_i32, bd_c, &mut tmp,
+                );
+                for y in 0..h {
+                    add_row(y, Some(&tmp[y * w..y * w + w]), 0);
+                }
+                return true;
+            }
             if w == 4 && h == 4 && BD::BPC == BPC::BPC8 {
                 let bd_c = bd.into_c();
 
@@ -8597,6 +8702,183 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                             bd_c,
                         );
                     }
+                    _ => return false,
+                }
+                return true;
+            }
+
+            // 8x8 8bpc transforms via NEON.
+            //
+            // The sixteen `itx_arm_neon_8x8` kernels have existed since the
+            // NEON port landed and are reached by the `asm`-feature extern "C"
+            // wrappers, but this safe dispatch never grew an arm for them, so
+            // every 8x8 transform ran the scalar reference. On a 4K intra still
+            // that is the single largest scalar kernel left in the profile
+            // (`benchmarks/p2_kernel_profile_2026-08-07.meta` Result 3:
+            // `inv_txfm_add_rust::<8, 8>` = 11.10% of decode).
+            if w == 8 && h == 8 && BD::BPC == BPC::BPC8 {
+                let bd_c = bd.into_c();
+
+                // Tile-threading-safe block view: contiguous when threading is
+                // off, a compact per-row copy when it is on. See
+                // `WithOffset::block_mut`.
+                let mut block = dst.block_mut::<BD>(w, h);
+                let byte_stride_i = block.byte_stride();
+                let base = block.base();
+                let dst_u8: &mut [u8] = block.as_mut_bytes();
+                let coeff_i16: &mut [i16] =
+                    zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
+                        .expect("coeff alignment/size mismatch for i16 reinterpretation");
+
+                use super::itx_arm_neon_8x8::*;
+                let tx_t = tx_type as u8;
+                match tx_t {
+                    levels::DCT_DCT => inv_txfm_add_dct_dct_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::IDTX => inv_txfm_add_identity_identity_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::ADST_ADST => inv_txfm_add_adst_adst_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::ADST_DCT => inv_txfm_add_dct_adst_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::DCT_ADST => inv_txfm_add_adst_dct_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::FLIPADST_DCT => inv_txfm_add_dct_flipadst_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::DCT_FLIPADST => inv_txfm_add_flipadst_dct_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::FLIPADST_FLIPADST => {
+                        inv_txfm_add_flipadst_flipadst_8x8_8bpc_neon_inner(
+                            token,
+                            dst_u8,
+                            base,
+                            byte_stride_i,
+                            coeff_i16,
+                            eob,
+                            bd_c,
+                        )
+                    }
+                    levels::ADST_FLIPADST => inv_txfm_add_flipadst_adst_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::FLIPADST_ADST => inv_txfm_add_adst_flipadst_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::H_DCT => inv_txfm_add_dct_identity_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::V_DCT => inv_txfm_add_identity_dct_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::H_ADST => inv_txfm_add_adst_identity_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::V_ADST => inv_txfm_add_identity_adst_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::H_FLIPADST => inv_txfm_add_flipadst_identity_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
+                    levels::V_FLIPADST => inv_txfm_add_identity_flipadst_8x8_8bpc_neon_inner(
+                        token,
+                        dst_u8,
+                        base,
+                        byte_stride_i,
+                        coeff_i16,
+                        eob,
+                        bd_c,
+                    ),
                     _ => return false,
                 }
                 return true;

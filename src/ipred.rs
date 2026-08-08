@@ -386,6 +386,12 @@ fn cfl_pred_direct<BD: BitDepth>(
     {
         return;
     }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::ipred_arm::cfl_pred_dispatch::<BD>(
+        dst, width, height, dc, ac, alpha, bd,
+    ) {
+        return;
+    }
     cfl_pred(dst, width, height, dc, ac, alpha, bd);
 }
 
@@ -529,6 +535,22 @@ fn splat_dc<BD: BitDepth>(dst: PicOffset, width: c_int, height: c_int, dc: c_int
 }
 
 #[inline(never)]
+/// Test-only alias for the scalar CfL oracle, so the aarch64 parity sweep in
+/// `safe_simd::ipred_arm` compares against the *real* reference rather than a
+/// transcription of it.
+#[cfg(all(test, target_arch = "aarch64", not(feature = "asm")))]
+pub(crate) fn cfl_pred_scalar_for_test<BD: BitDepth>(
+    dst: PicOffset,
+    width: c_int,
+    height: c_int,
+    dc: c_int,
+    ac: &[i16; SCRATCH_AC_TXTP_LEN],
+    alpha: c_int,
+    bd: BD,
+) {
+    cfl_pred(dst, width, height, dc, ac, alpha, bd)
+}
+
 fn cfl_pred<BD: BitDepth>(
     dst: PicOffset,
     width: c_int,

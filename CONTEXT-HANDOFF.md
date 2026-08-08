@@ -37,9 +37,38 @@ and continue → ONE decode pass = full cross-module inventory.
 - Inventory: build `--features bitdepth_8,bitdepth_16,__simd_test_log` (~1m07s).
   Verify a fix: rebuild with just `__simd_test` → no panic == bit-exact.
 
+**2026-08-07 — know the harness's blind spots before trusting a clean run.**
+"`__simd_test_log` prints nothing" does NOT mean "bit-exact". Two families are
+invisible to it, and one of them is the largest current defect:
+- **No harness exists for `avg`/`w_avg`/`mask`/`w_mask`/`blend*`/`warp*`/
+  `emu_edge`/`resize`.** `src/mc.rs` dual-computes only `mc_put_direct` and
+  `mct_prep_direct`. That group breaks 407 of the 464 failing corpus vectors
+  and logs zero mismatches. Kernel-level coverage now lives in
+  `mc_arm::compound_parity`.
+- **`LF_MISMATCH` is unreachable on aarch64.** `loopfilter_arm::
+  loopfilter_sb_dispatch` always returns `false` (by design — the NEON tier is
+  one level down at `lf_compact_run_neon`), and the `__simd_test` block only
+  runs when the dispatch returned true. The real coverage is the
+  `src/loopfilter.rs::neon_parity` unit test.
+- `filmgrain` has no harness either (currently clean by ablation).
+Full map + per-vector name sets:
+`benchmarks/aarch64_md5_attribution_2026-08-07.meta`.
+
 ---
 
 ## 3. REMAINING (measured 2026-06-18, full corpus)
+
+> **Re-measured 2026-08-07 on `verify/compose` @ eb6f9ae** — read §3 alongside
+> `benchmarks/aarch64_md5_attribution_2026-08-07.meta`, which supersedes the
+> counts here. Still accurate: the ITX list below (16x16 H_DCT, IDTX
+> 16x32/32x16, DCT_DCT rect — plus 16x32 DCT_DCT, newly seen) and the 12bpc
+> `prep_8tap_16bpc_inner` `intermediate_bits` warning in §3's last block, which
+> is no longer latent. Now stale: "MC is fully bit-exact across 8/10/12-bit …
+> MC_PREP 0" — `mct_prep` breaks 91 vectors (10-bit/data 45, 10-bit/issues 1,
+> 12-bit/data 45), and its dominant divergence is a missing `sub_prep_bias`
+> (modal `max_diff` = 8192 = `BitDepth16::PREP_BIAS`), not only the hardcoded
+> `intermediate_bits`. Also stale: "CDEF ~745 mismatches" — CDEF is clean now
+> (0 by ablation, 0 logged) after the NEON port and the #446 `pri_tap` fix.
 
 ### ITX (type9=IDTX, type11=H_DCT, type0=DCT_DCT) — inter-frame configs the prior itx session never reached
 **DONE (`518bde8a`):** IDTX 8x32 + 32x8 (non-rect2 identity-rect).

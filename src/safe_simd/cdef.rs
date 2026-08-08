@@ -1384,19 +1384,24 @@ pub(super) fn padding_8bpc(
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * stride),
             };
+            // Same exact-window discipline as the top loop above: never guard
+            // the skipped left-padding columns.
             let slice = match bottom_row.data {
                 PicOrBuf::Pic(pic) => {
-                    let guard = pic.slice::<BitDepth8, _>((bottom_row.offset.., ..x_end));
+                    let guard = pic
+                        .slice::<BitDepth8, _>((bottom_row.offset + x_start.., ..x_end - x_start));
                     // Copy into tmp inline since guard lifetime is limited
                     for x in x_start..x_end {
-                        tmp[row_offset + x - 2] = guard[x] as u16;
+                        tmp[row_offset + x - 2] = guard[x - x_start] as u16;
                     }
                     continue;
                 }
-                PicOrBuf::Buf(buf) => buf.slice_as::<_, u8>((bottom_row.offset.., ..x_end)),
+                PicOrBuf::Buf(buf) => {
+                    buf.slice_as::<_, u8>((bottom_row.offset + x_start.., ..x_end - x_start))
+                }
             };
             for x in x_start..x_end {
-                tmp[row_offset + x - 2] = slice[x] as u16;
+                tmp[row_offset + x - 2] = slice[x - x_start] as u16;
             }
         }
     }
@@ -1838,18 +1843,23 @@ pub(super) fn padding_16bpc(
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * pixel_stride),
             };
+            // Same exact-window discipline as the top loop above: never guard
+            // the skipped left-padding columns.
             let slice = match bottom_row.data {
                 PicOrBuf::Pic(pic) => {
-                    let guard = pic.slice::<BitDepth16, _>((bottom_row.offset.., ..x_end));
+                    let guard = pic
+                        .slice::<BitDepth16, _>((bottom_row.offset + x_start.., ..x_end - x_start));
                     for x in x_start..x_end {
-                        tmp[row_offset + x - 2] = guard[x];
+                        tmp[row_offset + x - 2] = guard[x - x_start];
                     }
                     continue;
                 }
-                PicOrBuf::Buf(buf) => buf.slice_as::<_, u16>((bottom_row.offset.., ..x_end)),
+                PicOrBuf::Buf(buf) => {
+                    buf.slice_as::<_, u16>((bottom_row.offset + x_start.., ..x_end - x_start))
+                }
             };
             for x in x_start..x_end {
-                tmp[row_offset + x - 2] = slice[x];
+                tmp[row_offset + x - 2] = slice[x - x_start];
             }
         }
     }

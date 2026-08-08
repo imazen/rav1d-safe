@@ -1,0 +1,271 @@
+//! THROWAWAY measurement probe. Never merge.
+//!
+//! Answers the P1 (scaling-plateau) questions that cannot be answered by
+//! wall-clock A/B alone:
+//!
+//! 1. **Is work distributed N ways?** Per-worker busy nanoseconds, per task
+//!    stage. A straggler shows up as one worker with far more busy time than
+//!    the rest; an under-fed pool shows up as low aggregate busy against
+//!    `wall * threads`.
+//! 2. **Are the post-tile stages serial?** The five filter stages
+//!    (deblock-cols / deblock-rows / cdef / super-res / loop-restoration) are
+//!    driven by ONE task per frame sbrow that falls through all of them, so
+//!    their summed time is a candidate Amdahl term. Measured directly.
+//! 3. **How much concurrency is actually realised?** A sampling monitor reads
+//!    the count of workers inside a stage body every `SAMPLE_US` and builds a
+//!    time-weighted histogram. `mean(active)` IS the achieved parallelism.
+//!
+//! Cost: two `Instant::now()` per stage execution. A 4K frame runs ~170 stage
+//! executions (136 tile-sbrow + 34 filter-sbrow), so ~340 clock reads per
+//! frame against a ~330 ms frame — unmeasurable. This is deliberately unlike
+//! the tracker probes, which sit on a 50-million-per-frame path.
+//!
+//! Counters are process-global and never reset between reps; the driver prints
+//! and divides by the frame count.
+
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::time::Instant;
+
+pub const MAX_WORKERS: usize = 72;
+pub const N_STAGE: usize = 8;
+
+pub const STAGE_NAMES: [&str; N_STAGE] = [
+    "tile_entropy",
+    "tile_recon",
+    "deblock_cols",
+    "deblock_rows",
+    "cdef",
+    "superres",
+    "loop_restore",
+    "other",
+];
+
+/// Which stages make up the single-task-at-a-time post-filter chain.
+pub const FILTER_STAGES: [usize; 5] = [2, 3, 4, 5, 6];
+
+#[allow(clippy::declare_interior_mutable_const)]
+const ZERO: AtomicU64 = AtomicU64::new(0);
+
+/// Flat `[worker][stage]` tables; nested const-repeat needs `Copy`, which
+/// atomics are not, so the index is computed as `w * N_STAGE + s`.
+static BUSY_NS: [AtomicU64; N_STAGE * MAX_WORKERS] = [ZERO; N_STAGE * MAX_WORKERS];
+static BUSY_CNT: [AtomicU64; N_STAGE * MAX_WORKERS] = [ZERO; N_STAGE * MAX_WORKERS];
+
+#[inline]
+const fn ix(w: usize, s: usize) -> usize {
+    w * N_STAGE + s
+}
+static PARK_NS: [AtomicU64; MAX_WORKERS] = [ZERO; MAX_WORKERS];
+static PARK_CNT: [AtomicU64; MAX_WORKERS] = [ZERO; MAX_WORKERS];
+
+/// Number of workers currently executing a stage body. Sampled by the monitor.
+static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+/// Number of workers currently inside one of the five FILTER stages. If the
+/// post-tile chain really is one task at a time, this never exceeds 1 — and
+/// `FILT_CONC[k]` for `k >= 2` stays at zero.
+static FILT_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+static FILT_CONC: [AtomicU64; MAX_WORKERS + 1] = [ZERO; MAX_WORKERS + 1];
+/// `check_tile` deferral causes: 0 = this tile's own sbrow progress, 1 = the
+/// second-pass progress gate, 2 = THE DEBLOCK BARRIER (rav1d-safe-only),
+/// 3 = reference-frame progress. Index 4 counts admissions.
+pub const N_DEFER: usize = 5;
+pub const DEFER_NAMES: [&str; N_DEFER] = [
+    "own_progress",
+    "pass2_progress",
+    "deblock_barrier",
+    "ref_progress",
+    "admitted",
+];
+static DEFER: [AtomicU64; N_DEFER] = [ZERO; N_DEFER];
+
+#[inline]
+pub fn defer(kind: usize) {
+    DEFER[kind].fetch_add(1, Ordering::Relaxed);
+}
+/// Time-weighted concurrency histogram: `CONC[k]` counts samples that saw
+/// exactly `k` workers inside a stage body.
+static CONC: [AtomicU64; MAX_WORKERS + 1] = [ZERO; MAX_WORKERS + 1];
+static SAMPLES: AtomicU64 = AtomicU64::new(0);
+
+static NEXT_SLOT: AtomicUsize = AtomicUsize::new(0);
+
+thread_local! {
+    static SLOT: usize = NEXT_SLOT.fetch_add(1, Ordering::Relaxed).min(MAX_WORKERS - 1);
+}
+
+#[inline]
+pub fn slot() -> usize {
+    SLOT.with(|s| *s)
+}
+
+/// Enter a stage body. Returns the start instant for [`stage_end`].
+#[inline]
+const fn is_filter(stage: usize) -> bool {
+    stage >= 2 && stage <= 6
+}
+
+#[inline]
+pub fn stage_begin_of(stage: usize) -> Instant {
+    ACTIVE.fetch_add(1, Ordering::Relaxed);
+    if is_filter(stage) {
+        FILT_ACTIVE.fetch_add(1, Ordering::Relaxed);
+    }
+    Instant::now()
+}
+
+#[inline]
+pub fn stage_end(t0: Instant, stage: usize) {
+    let ns = t0.elapsed().as_nanos() as u64;
+    ACTIVE.fetch_sub(1, Ordering::Relaxed);
+    if is_filter(stage) {
+        FILT_ACTIVE.fetch_sub(1, Ordering::Relaxed);
+    }
+    let w = slot();
+    BUSY_NS[ix(w, stage)].fetch_add(ns, Ordering::Relaxed);
+    BUSY_CNT[ix(w, stage)].fetch_add(1, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn park_begin() -> Instant {
+    Instant::now()
+}
+
+#[inline]
+pub fn park_end(t0: Instant) {
+    let ns = t0.elapsed().as_nanos() as u64;
+    let w = slot();
+    PARK_NS[w].fetch_add(ns, Ordering::Relaxed);
+    PARK_CNT[w].fetch_add(1, Ordering::Relaxed);
+}
+
+const SAMPLE_US: u64 = 50;
+
+/// Start the concurrency sampler. Idempotent-ish; call once from the driver.
+pub fn start_monitor() {
+    std::thread::spawn(|| {
+        loop {
+            let a = ACTIVE.load(Ordering::Relaxed).min(MAX_WORKERS);
+            CONC[a].fetch_add(1, Ordering::Relaxed);
+            let fa = FILT_ACTIVE.load(Ordering::Relaxed).min(MAX_WORKERS);
+            FILT_CONC[fa].fetch_add(1, Ordering::Relaxed);
+            SAMPLES.fetch_add(1, Ordering::Relaxed);
+            std::thread::sleep(std::time::Duration::from_micros(SAMPLE_US));
+        }
+    });
+}
+
+/// Zero every counter. Call after warmup, before the timed reps, so the
+/// warmup decode and the thread-pool spin-up do not enter the numbers.
+pub fn reset() {
+    for w in 0..MAX_WORKERS {
+        for s in 0..N_STAGE {
+            BUSY_NS[ix(w, s)].store(0, Ordering::Relaxed);
+            BUSY_CNT[ix(w, s)].store(0, Ordering::Relaxed);
+        }
+        PARK_NS[w].store(0, Ordering::Relaxed);
+        PARK_CNT[w].store(0, Ordering::Relaxed);
+    }
+    for k in 0..=MAX_WORKERS {
+        CONC[k].store(0, Ordering::Relaxed);
+        FILT_CONC[k].store(0, Ordering::Relaxed);
+    }
+    for k in 0..N_DEFER {
+        DEFER[k].store(0, Ordering::Relaxed);
+    }
+    SAMPLES.store(0, Ordering::Relaxed);
+}
+
+/// Dump every counter as `PROBE <key> <value>` lines on stdout.
+pub fn report(frames: u64) {
+    let f = frames.max(1) as f64;
+    let mut per_stage_total = [0u64; N_STAGE];
+    let mut per_worker_total = [0u64; MAX_WORKERS];
+    let mut used = 0usize;
+
+    for w in 0..MAX_WORKERS {
+        let mut wt = 0u64;
+        for s in 0..N_STAGE {
+            let ns = BUSY_NS[ix(w, s)].load(Ordering::Relaxed);
+            per_stage_total[s] += ns;
+            wt += ns;
+        }
+        per_worker_total[w] = wt;
+        if wt > 0 || PARK_NS[w].load(Ordering::Relaxed) > 0 {
+            used = used.max(w + 1);
+        }
+    }
+
+    println!("PROBE frames {frames}");
+    for s in 0..N_STAGE {
+        let cnt: u64 = (0..MAX_WORKERS)
+            .map(|w| BUSY_CNT[ix(w, s)].load(Ordering::Relaxed))
+            .sum();
+        println!(
+            "PROBE stage_ms_per_frame {} {:.3} count_per_frame {:.2}",
+            STAGE_NAMES[s],
+            per_stage_total[s] as f64 / 1e6 / f,
+            cnt as f64 / f
+        );
+    }
+
+    let filter_ns: u64 = FILTER_STAGES.iter().map(|&s| per_stage_total[s]).sum();
+    let tile_ns: u64 = per_stage_total[0] + per_stage_total[1];
+    println!(
+        "PROBE filter_chain_ms_per_frame {:.3}",
+        filter_ns as f64 / 1e6 / f
+    );
+    println!("PROBE tile_ms_per_frame {:.3}", tile_ns as f64 / 1e6 / f);
+
+    for w in 0..used {
+        println!(
+            "PROBE worker {w} busy_ms_per_frame {:.3} park_ms_per_frame {:.3} park_count_per_frame {:.2}",
+            per_worker_total[w] as f64 / 1e6 / f,
+            PARK_NS[w].load(Ordering::Relaxed) as f64 / 1e6 / f,
+            PARK_CNT[w].load(Ordering::Relaxed) as f64 / f
+        );
+    }
+
+    let samples = SAMPLES.load(Ordering::Relaxed).max(1);
+    let mut weighted = 0f64;
+    for k in 0..=MAX_WORKERS {
+        let c = CONC[k].load(Ordering::Relaxed);
+        if c > 0 {
+            println!(
+                "PROBE conc {k} samples {c} frac {:.4}",
+                c as f64 / samples as f64
+            );
+            weighted += (k * c as usize) as f64;
+        }
+    }
+    println!("PROBE mean_active {:.3}", weighted / samples as f64);
+    for k in 0..=MAX_WORKERS {
+        let c = FILT_CONC[k].load(Ordering::Relaxed);
+        if c > 0 {
+            println!(
+                "PROBE filtconc {k} samples {c} frac {:.4}",
+                c as f64 / samples as f64
+            );
+        }
+    }
+    for k in 0..N_DEFER {
+        println!(
+            "PROBE defer {} per_frame {:.2}",
+            DEFER_NAMES[k],
+            DEFER[k].load(Ordering::Relaxed) as f64 / f
+        );
+    }
+    // Mean active over the samples where ANY worker was busy — i.e. achieved
+    // parallelism while the decoder is actually decoding, excluding the gaps
+    // between reps and the driver's own setup.
+    let busy_samples: u64 = (1..=MAX_WORKERS)
+        .map(|k| CONC[k].load(Ordering::Relaxed))
+        .sum();
+    if busy_samples > 0 {
+        println!(
+            "PROBE mean_active_when_busy {:.3}",
+            weighted / busy_samples as f64
+        );
+    }
+}
