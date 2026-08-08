@@ -12,6 +12,9 @@ use core::arch::aarch64::*;
 #[cfg(target_arch = "aarch64")]
 use archmage::{Arm64, SimdToken, arcane};
 
+#[cfg(target_arch = "aarch64")]
+use safe_unaligned_simd::aarch64 as safe_simd;
+
 use std::ffi::c_int;
 #[allow(non_camel_case_types)]
 type ptrdiff_t = isize;
@@ -1701,4 +1704,345 @@ mod cfl_parity {
     fn cfl_pred_12bpc_matches_scalar() {
         sweep(BitDepth16::new(4095), 0x51DE_0003_0000_0001, "cfl 12bpc");
     }
+}
+
+// ============================================================================
+// Chroma-from-luma AC (`cfl_ac`) — NEON
+// ============================================================================
+//
+// `src/ipred.rs::cfl_ac_rust` is the conformance oracle for what follows. It
+// subsamples the reconstructed luma block into the `ac` scratch, replicates the
+// right/bottom padding, then subtracts the block's own DC so the residual is
+// zero-mean. Every step is exact integer arithmetic on values that provably fit
+// their lane width, which is what makes a vector form bit-identical rather than
+// merely close:
+//
+// * A subsampled sum is at most 4 pixels, and the left shift is `1 + !ss_ver +
+//   !ss_hor`, so the product is at most `8 * (2^bd - 1)` = 2,040 / 8,184 /
+//   32,760 at 8 / 10 / 12 bpc. Every case fits `i16` (and `u16`) with no
+//   truncation, at every bit depth AV1 defines.
+// * The DC accumulator is `i32` over at most 32x32 = 1,024 such values, so at
+//   most 33.5 M — well inside `i32`. Integer addition is associative, so the
+//   pairwise-widening `vpadalq_s16` order gives the identical total as the
+//   reference's sequential one.
+// * `ac - dc` lands in `[-32760, 32760]`, so `vsubq_s16`'s wrapping subtract
+//   and the reference's `-=` agree.
+//
+// Measured cost of the scalar form before this existed, `v4k_8tile` at t=1
+// (macOS `sample`, self time): 2.08% of whole-decode wall at 8bpc and 1.86% at
+// 10bpc, of which only 0.26% was borrow-tracker work — i.e. essentially all
+// arithmetic, which is why this is a kernel port and not a guard change.
+// Record: `benchmarks/st1_kernels_2026-08-08.meta`.
+
+/// Subsample one output row, 4:2:0 (`ss_hor && ss_ver`), 8bpc.
+///
+/// `out[x] = (top[2x] + top[2x+1] + bot[2x] + bot[2x+1]) << 1`.
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn ac_row_420_8bpc(_token: Arm64, out: &mut [i16], top: &[u8], bot: &[u8], n: usize) {
+    let mut x = 0;
+    while x + 8 <= n {
+        let t = safe_simd::vld1q_u8(<&[u8; 16]>::try_from(&top[2 * x..2 * x + 16]).expect("16"));
+        let b = safe_simd::vld1q_u8(<&[u8; 16]>::try_from(&bot[2 * x..2 * x + 16]).expect("16"));
+        let s = vaddq_u16(vpaddlq_u8(t), vpaddlq_u8(b));
+        safe_simd::vst1q_s16(
+            <&mut [i16; 8]>::try_from(&mut out[x..x + 8]).expect("8"),
+            vreinterpretq_s16_u16(vshlq_n_u16::<1>(s)),
+        );
+        x += 8;
+    }
+    while x + 4 <= n {
+        let t = safe_simd::vld1_u8(<&[u8; 8]>::try_from(&top[2 * x..2 * x + 8]).expect("8"));
+        let b = safe_simd::vld1_u8(<&[u8; 8]>::try_from(&bot[2 * x..2 * x + 8]).expect("8"));
+        let s = vadd_u16(vpaddl_u8(t), vpaddl_u8(b));
+        safe_simd::vst1_s16(
+            <&mut [i16; 4]>::try_from(&mut out[x..x + 4]).expect("4"),
+            vreinterpret_s16_u16(vshl_n_u16::<1>(s)),
+        );
+        x += 4;
+    }
+    for x in x..n {
+        let s = top[2 * x] as u16 + top[2 * x + 1] as u16 + bot[2 * x] as u16 + bot[2 * x + 1] as u16;
+        out[x] = (s << 1) as i16;
+    }
+}
+
+/// Subsample one output row, 4:2:2 (`ss_hor && !ss_ver`), 8bpc.
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn ac_row_422_8bpc(_token: Arm64, out: &mut [i16], top: &[u8], n: usize) {
+    let mut x = 0;
+    while x + 8 <= n {
+        let t = safe_simd::vld1q_u8(<&[u8; 16]>::try_from(&top[2 * x..2 * x + 16]).expect("16"));
+        safe_simd::vst1q_s16(
+            <&mut [i16; 8]>::try_from(&mut out[x..x + 8]).expect("8"),
+            vreinterpretq_s16_u16(vshlq_n_u16::<2>(vpaddlq_u8(t))),
+        );
+        x += 8;
+    }
+    while x + 4 <= n {
+        let t = safe_simd::vld1_u8(<&[u8; 8]>::try_from(&top[2 * x..2 * x + 8]).expect("8"));
+        safe_simd::vst1_s16(
+            <&mut [i16; 4]>::try_from(&mut out[x..x + 4]).expect("4"),
+            vreinterpret_s16_u16(vshl_n_u16::<2>(vpaddl_u8(t))),
+        );
+        x += 4;
+    }
+    for x in x..n {
+        let s = top[2 * x] as u16 + top[2 * x + 1] as u16;
+        out[x] = (s << 2) as i16;
+    }
+}
+
+/// Subsample one output row, 4:4:4 (no subsampling), 8bpc.
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn ac_row_444_8bpc(_token: Arm64, out: &mut [i16], top: &[u8], n: usize) {
+    let mut x = 0;
+    while x + 8 <= n {
+        let t = safe_simd::vld1_u8(<&[u8; 8]>::try_from(&top[x..x + 8]).expect("8"));
+        safe_simd::vst1q_s16(
+            <&mut [i16; 8]>::try_from(&mut out[x..x + 8]).expect("8"),
+            vreinterpretq_s16_u16(vshlq_n_u16::<3>(vmovl_u8(t))),
+        );
+        x += 8;
+    }
+    for x in x..n {
+        out[x] = ((top[x] as u16) << 3) as i16;
+    }
+}
+
+/// Subsample one output row, 4:2:0, 16bpc (10/12-bit).
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn ac_row_420_16bpc(_token: Arm64, out: &mut [i16], top: &[u16], bot: &[u16], n: usize) {
+    let mut x = 0;
+    while x + 8 <= n {
+        let t0 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x..2 * x + 8]).expect("8"));
+        let t1 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x + 8..2 * x + 16]).expect("8"));
+        let b0 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&bot[2 * x..2 * x + 8]).expect("8"));
+        let b1 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&bot[2 * x + 8..2 * x + 16]).expect("8"));
+        let s = vaddq_u16(vpaddq_u16(t0, t1), vpaddq_u16(b0, b1));
+        safe_simd::vst1q_s16(
+            <&mut [i16; 8]>::try_from(&mut out[x..x + 8]).expect("8"),
+            vreinterpretq_s16_u16(vshlq_n_u16::<1>(s)),
+        );
+        x += 8;
+    }
+    while x + 4 <= n {
+        let t = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x..2 * x + 8]).expect("8"));
+        let b = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&bot[2 * x..2 * x + 8]).expect("8"));
+        let s = vadd_u16(
+            vpadd_u16(vget_low_u16(t), vget_high_u16(t)),
+            vpadd_u16(vget_low_u16(b), vget_high_u16(b)),
+        );
+        safe_simd::vst1_s16(
+            <&mut [i16; 4]>::try_from(&mut out[x..x + 4]).expect("4"),
+            vreinterpret_s16_u16(vshl_n_u16::<1>(s)),
+        );
+        x += 4;
+    }
+    for x in x..n {
+        let s = top[2 * x] + top[2 * x + 1] + bot[2 * x] + bot[2 * x + 1];
+        out[x] = (s << 1) as i16;
+    }
+}
+
+/// Subsample one output row, 4:2:2, 16bpc.
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn ac_row_422_16bpc(_token: Arm64, out: &mut [i16], top: &[u16], n: usize) {
+    let mut x = 0;
+    while x + 8 <= n {
+        let t0 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x..2 * x + 8]).expect("8"));
+        let t1 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x + 8..2 * x + 16]).expect("8"));
+        safe_simd::vst1q_s16(
+            <&mut [i16; 8]>::try_from(&mut out[x..x + 8]).expect("8"),
+            vreinterpretq_s16_u16(vshlq_n_u16::<2>(vpaddq_u16(t0, t1))),
+        );
+        x += 8;
+    }
+    while x + 4 <= n {
+        let t = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x..2 * x + 8]).expect("8"));
+        safe_simd::vst1_s16(
+            <&mut [i16; 4]>::try_from(&mut out[x..x + 4]).expect("4"),
+            vreinterpret_s16_u16(vshl_n_u16::<2>(vpadd_u16(
+                vget_low_u16(t),
+                vget_high_u16(t),
+            ))),
+        );
+        x += 4;
+    }
+    for x in x..n {
+        let s = top[2 * x] + top[2 * x + 1];
+        out[x] = (s << 2) as i16;
+    }
+}
+
+/// Subsample one output row, 4:4:4, 16bpc.
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn ac_row_444_16bpc(_token: Arm64, out: &mut [i16], top: &[u16], n: usize) {
+    let mut x = 0;
+    while x + 8 <= n {
+        let t = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[x..x + 8]).expect("8"));
+        safe_simd::vst1q_s16(
+            <&mut [i16; 8]>::try_from(&mut out[x..x + 8]).expect("8"),
+            vreinterpretq_s16_u16(vshlq_n_u16::<3>(t)),
+        );
+        x += 8;
+    }
+    for x in x..n {
+        out[x] = (top[x] << 3) as i16;
+    }
+}
+
+/// Sum `ac` into an `i32`, then subtract `(base + sum) >> log2sz` from every
+/// element — the reference's DC-removal tail, vectorised.
+///
+/// The accumulation order differs from the reference's (pairwise-widening into
+/// four lanes rather than left to right) and the result does not, because
+/// `i32` addition is associative and the total provably cannot overflow.
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+fn ac_remove_dc(_token: Arm64, ac: &mut [i16], base: i32, log2sz: u32) {
+    let n = ac.len();
+    let mut acc = vdupq_n_s32(0);
+    let mut i = 0;
+    while i + 8 <= n {
+        let v = safe_simd::vld1q_s16(<&[i16; 8]>::try_from(&ac[i..i + 8]).expect("8"));
+        acc = vpadalq_s16(acc, v);
+        i += 8;
+    }
+    let mut sum = base + vaddvq_s32(acc);
+    for &v in &ac[i..] {
+        sum += v as i32;
+    }
+    let dc = (sum >> log2sz) as i16;
+    let dcv = vdupq_n_s16(dc);
+    let mut i = 0;
+    while i + 8 <= n {
+        let v = safe_simd::vld1q_s16(<&[i16; 8]>::try_from(&ac[i..i + 8]).expect("8"));
+        safe_simd::vst1q_s16(
+            <&mut [i16; 8]>::try_from(&mut ac[i..i + 8]).expect("8"),
+            vsubq_s16(v, dcv),
+        );
+        i += 8;
+    }
+    for v in &mut ac[i..] {
+        *v -= dc;
+    }
+}
+
+/// Safe dispatch entry point for `cfl_ac` on aarch64.
+///
+/// Guard shape is deliberately IDENTICAL to `src/ipred.rs::cfl_ac_rust`'s — one
+/// immutable guard per source row — so this change is an arithmetic A/B and
+/// nothing else. (Two attempts to move guard shape in this subsystem measured
+/// negative in both directions; see the meta.)
+#[cfg(target_arch = "aarch64")]
+#[allow(clippy::too_many_arguments)]
+pub fn cfl_ac_dispatch<BD: crate::include::common::bitdepth::BitDepth>(
+    ac: &mut [i16],
+    y_src: PicOffset,
+    w_pad: c_int,
+    h_pad: c_int,
+    width: usize,
+    height: usize,
+    is_ss_hor: bool,
+    is_ss_ver: bool,
+) -> bool {
+    use crate::include::common::bitdepth::BPC;
+    use crate::src::safe_simd::pixel_access::reinterpret_slice;
+    use crate::src::strided::Strided as _;
+
+    if crate::src::ablate::is_off(crate::src::ablate::Family::IntraPred) {
+        return false;
+    }
+    let Some(token) = Arm64::summon() else {
+        return false;
+    };
+    // AV1 has no 4:4:0, and the reference's shift derivation assumes it.
+    if is_ss_ver && !is_ss_hor {
+        return false;
+    }
+
+    let ac = &mut ac[..width * height];
+    let w_pad = w_pad as usize * 4;
+    let h_pad = h_pad as usize * 4;
+    debug_assert!(w_pad < width);
+    debug_assert!(h_pad < height);
+    let active_w = width - w_pad;
+    let active_h = height - h_pad;
+    let ss_hor = is_ss_hor as u8;
+    let ss_ver = is_ss_ver as u8;
+
+    let y_pxstride = y_src.pixel_stride::<BD>();
+    let src_cols = active_w << ss_hor;
+    let row_stride = y_pxstride << ss_ver;
+
+    for y in 0..active_h {
+        let aci = y * width;
+        let row_pic = y_src + (y as isize * row_stride);
+        let row_guard = row_pic.slice::<BD>(src_cols);
+        let row_below_guard;
+        let below: Option<&[BD::Pixel]> = if is_ss_ver {
+            row_below_guard = (row_pic + y_pxstride).slice::<BD>(src_cols);
+            Some(&*row_below_guard)
+        } else {
+            None
+        };
+        let out = &mut ac[aci..aci + active_w];
+        match BD::BPC {
+            BPC::BPC8 => {
+                let top: &[u8] = match reinterpret_slice(&row_guard) {
+                    Some(t) => t,
+                    None => return false,
+                };
+                match (is_ss_hor, below) {
+                    (true, Some(b)) => {
+                        let bot: &[u8] = match reinterpret_slice(b) {
+                            Some(t) => t,
+                            None => return false,
+                        };
+                        ac_row_420_8bpc(token, out, top, bot, active_w);
+                    }
+                    (true, None) => ac_row_422_8bpc(token, out, top, active_w),
+                    (false, _) => ac_row_444_8bpc(token, out, top, active_w),
+                }
+            }
+            BPC::BPC16 => {
+                let top: &[u16] = match reinterpret_slice(&row_guard) {
+                    Some(t) => t,
+                    None => return false,
+                };
+                match (is_ss_hor, below) {
+                    (true, Some(b)) => {
+                        let bot: &[u16] = match reinterpret_slice(b) {
+                            Some(t) => t,
+                            None => return false,
+                        };
+                        ac_row_420_16bpc(token, out, top, bot, active_w);
+                    }
+                    (true, None) => ac_row_422_16bpc(token, out, top, active_w),
+                    (false, _) => ac_row_444_16bpc(token, out, top, active_w),
+                }
+            }
+        }
+        drop(row_guard);
+        // Right edge: replicate the last real column across the pad.
+        for x in active_w..width {
+            ac[aci + x] = ac[aci + x - 1];
+        }
+    }
+    // Bottom edge: replicate the last real row across the pad.
+    for y in height - h_pad..height {
+        let aci = y * width;
+        let (src, dst) = ac.split_at_mut(aci);
+        dst[..width].copy_from_slice(&src[src.len() - width..]);
+    }
+
+    let log2sz = width.trailing_zeros() + height.trailing_zeros();
+    ac_remove_dc(token, ac, 1 << log2sz >> 1, log2sz);
+    true
 }

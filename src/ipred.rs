@@ -306,6 +306,19 @@ fn cfl_ac_direct<BD: BitDepth>(
     ) {
         return;
     }
+    #[cfg(target_arch = "aarch64")]
+    if crate::src::safe_simd::ipred_arm::cfl_ac_dispatch::<BD>(
+        ac,
+        y,
+        w_pad,
+        h_pad,
+        cw as usize,
+        ch as usize,
+        is_ss_hor,
+        is_ss_ver,
+    ) {
+        return;
+    }
     cfl_ac_rust::<BD>(
         ac,
         y,
