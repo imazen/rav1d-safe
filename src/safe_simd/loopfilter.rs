@@ -5257,7 +5257,10 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                 (tap_before, (max_iter * 4 - 1) * u16_stride + tap_after)
             } else {
                 // V filter: iterates through column groups
-                (tap_before * u16_stride, max_iter * 4 - 1 + tap_after * u16_stride)
+                (
+                    tap_before * u16_stride,
+                    max_iter * 4 - 1 + tap_after * u16_stride,
+                )
             };
 
             // Guard: fall back to scalar if buffer bounds are insufficient.
