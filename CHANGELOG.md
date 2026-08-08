@@ -39,6 +39,11 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   Composed from `perf/blockshift-bpc` part 2; that branch's part 1 and all of
   `perf/shard-mapping` measured null on current main and were NOT composed
   (both target a wide path that #458 already removed — see the .meta §1).
+  The two halves of this change are super-additive and neither ships alone:
+  `inline(always)` only 0.9862, `cast_slice_failed` only 0.9820, both 0.9374
+  (n=9, 10bpc t=1). The handover's claim that the inline ALONE regresses
+  2.3-2.7% does not reproduce on main — see the .meta §8, which also corrects
+  that number having been restated here as if this campaign measured it.
   Record: `benchmarks/verify_compose4_2026-08-08.meta`.
 
 ### Added

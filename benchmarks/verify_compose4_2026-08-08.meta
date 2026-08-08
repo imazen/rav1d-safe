@@ -254,3 +254,39 @@ report as at or past the edge of detectability, not as a demonstrated property.
 * shard-mapping's edit to `benchmarks/st1_kernels_2026-08-08.meta` marks its
   §4 item 2 "RESOLVED … −5.6% at 8bpc 4K". That claim does not hold on main
   (§1). It is not on main because the branch is not composed.
+
+---
+
+## 8. CORRECTION to section 2, and a contradicted handover claim
+
+Section 2 and the first version of this branch's doc comment on `mut_slice_as`
+carried "forcing the inline while that frame is still there ... measured 2.3-2.7%
+SLOWER (verify/compose-4, n=11)". **That was the blockshift-bpc report's number,
+measured on fc120a8, restated as if this campaign had produced it. It had not,
+and it does not reproduce on main.** Cited-as-measured is exactly the failure
+this campaign exists to catch, so it is corrected here rather than edited away.
+
+Run properly: a 4-arm factorial, base / inline-only / cold-error-only / both,
+paired per-round ratios vs main @ 2aa00c5, n=9, all md5-IDENTICAL, foreign=0.
+Raw: `verify_compose4_factorial_2026-08-08.tsv`.
+
+```
+  cell                  inline-only              cold-only                both
+  v4k_8tile_10b t=1  0.9862 [.9713,.9971]  0.9820 [.9684,.9962]  0.9374 [.9248,.9454]
+  v4k_8tile_10b t=8  0.9760 [.9411,.9914]  0.9825 [.9588,1.0034] 0.9364 [.9136,.9486]
+```
+
+**Contradicted:** `#[inline(always)]` alone is NOT a regression on main. It is a
+1.4% win at t=1 and 2.4% at t=8. The +2.3-2.7% the handover reports for that arm
+does not appear at any thread count here.
+
+**Upheld, and more strongly than the ordering story told it:** the two halves are
+super-additive. Independent effects would predict 0.9862 x 0.9820 = 0.969; the
+pair measures 0.937, roughly double the combined single-knob effect. And each
+half alone is small enough to be dismissed — inline-only's band reaches 0.9971,
+which all but touches 1.000. So the operative lesson stands with a different
+mechanism behind it: this had to be measured as a factorial, not as two
+one-knob A/Bs, or it would have been sized at ~1.5% and possibly dropped. The
+attributed cause ("the inline drags the cold frame into every call site") is
+NOT supported on main; what is supported is only that neither half pays off
+without the other.

@@ -728,11 +728,22 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     /// aarch64 instructions, of which a 112-byte frame, ten callee-saved
     /// spill/reload pairs and the call/ret are about half. The 112 bytes exist
     /// only to hold the `CastError` the cold `.unwrap()` path would report,
-    /// which is why [`cast_slice_failed`] has to land FIRST: forcing the inline
-    /// while that frame is still there inlines the frame into every call site
-    /// and measured 2.3-2.7% SLOWER (verify/compose-4, n=11).
+    /// which is why this attribute and [`cast_slice_failed`] are ONE change:
+    /// they are strongly super-additive, and either alone is small enough to be
+    /// mistaken for noise. Measured on 2aa00c5, v4k_8tile_10b t=1, paired
+    /// per-round ratios vs that base, n=9, md5-identical, idle box:
     ///
-    /// See `benchmarks/verify_compose4_2026-08-08.meta`.
+    /// ```text
+    ///   inline(always) alone   0.9862  [0.9713, 0.9971]
+    ///   cast_slice_failed alone 0.9820 [0.9684, 0.9962]
+    ///   both (shipped)         0.9374  [0.9248, 0.9454]
+    /// ```
+    ///
+    /// Independent halves would predict 0.969; the pair delivers 0.937. A
+    /// one-knob A/B would have found ~1.5% with a band nearly touching 1.000
+    /// and plausibly stopped there.
+    ///
+    /// See `benchmarks/verify_compose4_2026-08-08.meta` section 8.
     #[inline(always)]
     #[track_caller]
     pub fn mut_slice_as<'a, I, V>(&'a self, index: I) -> DisjointMutGuard<'a, T, [V]>
