@@ -107,6 +107,7 @@ probe-lock-backoff = ["rav1d-disjoint-mut/__probe_lock_backoff"]
 shards-32 = ["rav1d-disjoint-mut/__shards_32"]
 shards-64 = ["rav1d-disjoint-mut/__shards_64"]
 shards-128 = ["rav1d-disjoint-mut/__shards_128"]
+shards-256 = ["rav1d-disjoint-mut/__shards_256"]
 # A/B: BlockMut holds its per-row MUTABLE guards across the kernel instead of
 # taking immutable ones to read and mutable ones to write back (2h -> h
 # registrations). MEASURED NULL — see the doc comment on `block_mut_held`.

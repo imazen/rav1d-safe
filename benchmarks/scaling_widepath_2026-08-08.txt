@@ -1,0 +1,16 @@
+--- t=1 ---
+RUN	v4k_8tile.avif	3840x2160	8bpc	threads=1	iters=6	ms_total=2209.77	ms_per_frame=368.294
+WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total
+WIDE	12	0	0	0	0	0	0
+--- t=2 ---
+RUN	v4k_8tile.avif	3840x2160	8bpc	threads=2	iters=6	ms_total=1341.85	ms_per_frame=223.641
+WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total
+WIDE	12	34440	34440	0	0	0	0
+--- t=4 ---
+RUN	v4k_8tile.avif	3840x2160	8bpc	threads=4	iters=6	ms_total=738.29	ms_per_frame=123.048
+WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total
+WIDE	12	34460	34460	0	0	0	0
+--- t=8 ---
+RUN	v4k_8tile.avif	3840x2160	8bpc	threads=8	iters=6	ms_total=454.08	ms_per_frame=75.680
+WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total
+WIDE	12	34501	34501	0	0	0	0
