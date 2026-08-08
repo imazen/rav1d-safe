@@ -20,6 +20,8 @@
 # Output columns:
 #   round  arm  vec  threads  nlo  ms_lo  nhi  ms_hi  foreign_max
 set -u
+# `.` as the decimal separator, so the EPOCHREALTIME split below is locale-proof.
+export LC_ALL=C
 OUT=${1:?out.tsv}; ROUNDS=${2:-7}
 BIN=${BIN:-$HOME/tmp/rav1d-iv/bin}
 AVIF=${AVIF:-$HOME/tmp/rav1d-perf/vec}
@@ -32,20 +34,39 @@ IFS=' ' read -r -a CELLS <<< "${CELLS:-v4k_8tile:1 v4k_8tile:2 v4k_8tile:4 v4k_8
 # `ps -o comm` prints the full path on macOS, so the exclusion is built from
 # $BIN and follows wherever the arms were staged. dav1d is excluded by name
 # because it IS one of the arms. macOS keeps a decaying %cpu for a process that
-# has only just exited, which is why the arms must be excluded at all.
+# has only just exited, which is why the arms must be excluded at all — and for
+# the same reason `python3` is excluded: `now_ms`'s fallback forks one twice per
+# timed run, and its decaying %cpu made the guard discard the SAME cell four
+# times in a row before this exclusion existed (2026-08-08, the st1 campaign).
 BIN_RE=$(printf '%s' "$BIN" | sed 's/[][\.*^$/(){}?+|]/\\&/g')
 busy_count() {
   ps -A -o %cpu,comm -r | awk -v me="$BIN_RE" \
-    'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\/|dav1d/ && $2 !~ me {c++} END {print c+0}'
+    'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\/|dav1d|python3/ && $2 !~ me {c++} END {print c+0}'
 }
+# ALLOW_LOAD=1 opts OUT of the strict gate: cells commit whatever the box is
+# doing, with the foreign count recorded in the last column so a contended run
+# is visible in the data rather than hidden. Use it ONLY when another agent owns
+# the box indefinitely, and label the resulting table as loaded — the arms still
+# interleave with a rotating order inside every cell, so both see the same load,
+# but absolute ms/frame is no longer comparable to an idle campaign's.
+ALLOW_LOAD=${ALLOW_LOAD:-0}
 wait_quiet() {
   local w=0
+  [ "$ALLOW_LOAD" = 1 ] && return 0
   while [ "$(busy_count)" -gt 0 ]; do
     sleep 5; w=$((w+5))
     [ $w -ge 1800 ] && { echo "box never went idle" >&2; exit 4; }
   done
 }
-now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
+# Wall clock in ms. `EPOCHREALTIME` (bash 5) is a builtin, so it forks nothing
+# and cannot show up in `busy_count`; the python3 fallback is for bash 3/4.
+# Either source is fine for the two-point fit: a constant per-read offset (which
+# is all a fork costs) cancels out of `beta = (hi - lo) / (NHI - NLO)`.
+if [ -n "${EPOCHREALTIME:-}" ]; then
+  now_ms() { local t=$EPOCHREALTIME; echo $(( ${t%%.*} * 1000 + 10#${t#*.} / 1000 )); }
+else
+  now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
+fi
 
 time_one() {
   local arm=$1 vec=$2 t=$3 n=$4 t0 t1
@@ -73,9 +94,9 @@ for round in $(seq 0 $((ROUNDS-1))); do
         [ "$f" -gt 0 ] && dirty=1
         rows+=("$round	$arm	$vec	$t	$NLO	$lo	$NHI	$hi")
       done
-      if [ $dirty -eq 0 ]; then
+      if [ $dirty -eq 0 ] || [ "$ALLOW_LOAD" = 1 ]; then
         for r in "${rows[@]}"; do printf '%s\t%s\n' "$r" "$fmax" >> "$OUT"; done
-        echo "[$(date +%H:%M:%S)] r$round $vec t=$t committed (idle)" >&2
+        echo "[$(date +%H:%M:%S)] r$round $vec t=$t committed (foreign=$fmax)" >&2
         break
       fi
       echo "[$(date +%H:%M:%S)] r$round $vec t=$t DISCARDED (foreign=$fmax)" >&2

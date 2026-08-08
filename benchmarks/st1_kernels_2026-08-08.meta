@@ -1,0 +1,428 @@
+# The single-thread deficit, re-profiled on the composed tree — and what moved
+
+date: 2026-08-08
+host: Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64
+rustc: stable, release (lto = "fat", codegen-units = 1), DEFAULT features
+       (bitdepth_8 + bitdepth_16, CHECKED DisjointMut). No `-C target-cpu=native`.
+base: `verify/compose-2` @ 2e0ea4d (PR #454), 766/766 dav1d-test-data.
+branch: `perf/st1-kernels`, in the sibling worktree `rav1d-safe--st1`.
+reference: dav1d 1.5.4 (homebrew), `--framedelay 1` (tile threading only — the
+           model we implement).
+vectors: `~/tmp/rav1d-perf/vec/v4k_8tile{,_10b}.avif`, 3840x2160, 4 tile cols x
+         2 tile rows; dav1d decodes the matching `.ivf` from
+         `~/tmp/recon-yard/vec/`, the same key frame repeated, so both sides do
+         identical work per frame.
+
+NO `nice` ON ANY TIMED OR PROFILED RUN. Darwin maps a positive nice value to
+background QoS and distorts wall clock by ~40x. `nice -n 19` is for BUILDS and
+for the correctness sweep only.
+
+Every A/B below is `scripts/perf/st1_ab.sh`: two staged binaries built from
+separate `cargo build` invocations, run back to back inside each round with the
+arm order rotated, 5 rounds, MEDIAN OF 5. Raw:
+`benchmarks/st1_ab_2026-08-08.tsv` (experiment, round, arm, ms/frame, frame md5,
+foreign count) — the frame md5 is in every row, so each A/B doubles as its own
+bit-identity check.
+
+**`st1_ab.sh` RECORDS the >25%-CPU foreign-process count per cell; it does not
+gate on it.** The box was shared with another agent's worktree for part of this
+session, so here is the honest per-experiment count of cells that saw a foreign
+process, out of 10 (5 rounds x 2 arms):
+
+    experiment                            cells with foreign > 0
+    ------------------------------------------------------------
+    rowguard_itx8      (3a, 8bpc)                  2 / 10
+    wideguard_itx16    (3b, 10bpc)                10 / 10
+    tls_tmp_itx16      (3c, 10bpc)                 1 / 10
+    blockshift_adapt   (4, 8bpc)                   5 / 10
+    blockshift_adapt   (4, 10bpc)                 10 / 10
+    cflac_neon         (2, 8bpc)                   3 / 10
+    cflac_neon         (2, 10bpc)                  3 / 10
+
+Interleaving with a rotating order is what makes a contended cell readable: both
+arms run back to back inside it and see the same load, so the RATIO survives
+even where the absolute ms/frame is inflated. Read the two 10/10 rows as ratios
+only.
+
+**Only the within-run ratio means anything, and the shipped win is smaller than
+the between-run spread.** The IDENTICAL `base` binary measured 385.5, 397.8,
+399.6 and 400.4 ms/frame as the median of its four separate 8bpc t=1 campaigns
+in this session — a 3.9% band, which is FIVE TIMES the 0.79% the `cfl_ac` port
+buys. That is not a defect in the measurement; it is why every arm is run back
+to back against its comparand inside one cell instead of against a number from
+an earlier run, and it is why no result here is quoted as an absolute. Compare
+rows within one experiment only.
+
+---
+
+## 1. Profile first — nobody had profiled t=1 on this tree
+
+`scripts/perf/prof_sample.sh` (`/usr/bin/sample`, 60 s of steady state, 200
+decode iterations), self time per symbol via `scripts/perf/sample_selftime.py`.
+46,019 leaf samples at 8bpc and 46,108 at 10bpc. New tool this session:
+`scripts/perf/sample_callers.py`, which credits a subsystem's samples to the
+nearest NON-matching ancestor, so "who asked for this borrow" is answerable
+without reading the tree by hand.
+
+Bucketed, converted to ms/frame at the measured wall clock (401.0 / 438.1):
+
+    subsystem                          8bpc            10bpc      dav1d 8bpc
+    ----------------------------------------------------------------------------
+    entropy                    218.5 ms 54.50%  217.4 ms 49.62%     ~215 ms
+    DisjointMut borrow tracker  96.8 ms 24.14%   89.2 ms 20.35%        0 ms
+    everything else (pixels)    85.7 ms 21.36%  131.5 ms 30.03%      ~31 ms
+    ----------------------------------------------------------------------------
+    TOTAL                      401.0 ms         438.1 ms            246.4 ms
+
+The entropy bucket is exactly these symbols: `decode_coefs`,
+`msac::rav1d_msac_decode_symbol_adapt_rust`, `recon::read_golomb`,
+`msac::ctx_refill`, `get_dc_sign_ctx`, `get_skip_ctx`(+`::cdir`) and
+`env::get_tx_ctx`. The tracker bucket is every `BorrowTracker` /
+`DisjointMutGuard` / `DisjointImmutGuard` frame's SELF time, from
+`sample_callers.py --self`. "Everything else" is the remainder of the wall
+clock, not a third sum, so rounding lands there.
+
+* **Entropy is at parity and stays at parity.** 218.5 vs dav1d's ~215 ms (the
+  dav1d figure is the symbol-resolved measurement on record in
+  `benchmarks/p2_kernel_profile_2026-08-07.meta`, which this profile's own
+  8bpc column reproduces to within 3%). Half of our single-thread time is in a
+  subsystem with no headroom. To reach 1.3x = 320 ms at 8bpc, the other
+  182.5 ms has to become 101.5 ms.
+* **The borrow tracker is the largest single addressable item and it is bigger
+  than every pixel kernel combined at 8bpc** (96.8 vs 85.7 ms).
+* 10bpc's extra 37 ms over 8bpc is almost entirely pixel kernels (131.5 vs
+  85.7), which is what makes its ratio worse (1.74x vs 1.63x).
+
+### Where the tracker traffic comes from (8bpc, self time by caller)
+
+     3.92%  WithOffset::block_mut            <- itx dispatch
+     3.32%  WithOffset::narrow_guard         <- itx dispatch + intra edges
+     2.59%  <itx::itxfm::Fn>::call
+     2.35%  recon::rav1d_recon_b_intra
+     1.91%  decode::decode_b
+     1.79%  ipred_prepare::rav1d_prepare_intra_edges
+     1.75%  loopfilter::LfBlock::open
+     1.53%  ctx::CaseSetter::set_disjoint (four instantiations)
+     0.96%  cdef_arm::cdef_filter_block_8bpc_inner
+     0.87%  decode::decode_sb
+    ------
+    24.14%  total
+
+### NEW: the all-shards WIDE path is live at t=1 and was invisible before
+
+`add_wide` + `remove_wide` are **10.17% of whole-decode wall at 8bpc**
+(4,678 samples = 41 ms/frame). `add_wide` locks EVERY active shard (32 in a
+serial decode) and scans every one, and `remove_wide` locks them all again.
+
+Chain, from `sample_callers.py`:
+
+    itxfm::Fn::call / prepare_intra_edges
+      -> WithOffset::block_mut | narrow_guard   7.54%
+        -> BorrowTracker::add_multi             7.12%
+          -> add_wide / remove_wide             6.04%
+
+The mechanism is the guard EXTENT. `narrow_guard(w, h)` reserves
+`(h-1)*stride + w` pixels — an 8x8 transform block at a 3840-byte 4K stride is
+26,888 bytes, which at the serial `BLOCK_SHIFT` of 12 is 7 tracker blocks on 7
+distinct shards, over `MAX_SHARDS_PER_BORROW = 4`, so it promotes. Only 4x4
+(3 blocks) stays narrow.
+
+Every tracker profile on record was taken at **t = 8**, where
+`tile_threading_active()` sends `block_mut` down the per-row path and the wide
+list is provably empty — `benchmarks/tracker_blockshift_2026-08-08.meta` §3
+records "Wide-path promotions: ZERO at every shift, on both bit depths". That
+is a t=8 statement. At t=1 the wide path is the hot path.
+
+### 10bpc pays a conversion 8bpc does not
+
+`DisjointMut<PicBuf>::slice_as::<u16>` (2.04% self) and `mut_slice_as::<u16>`
+(1.94%) together are 17.4 ms/frame at 10bpc and do not appear at all at 8bpc,
+where `BD::Pixel` is `u8` and the cast is the identity. That is the
+`cast_slice` + `check_cast_slice_len` half of every 16bpc pixel borrow.
+
+---
+
+## 2. What landed
+
+### NEON chroma-from-luma AC (0923f5a)
+
+`src/ipred.rs::cfl_ac_rust` was the last fully scalar per-pixel loop in the
+intra path on aarch64: 2.08% of whole-decode wall at 8bpc, 1.86% at 10bpc, of
+which only 0.26% was tracker — arithmetic, not bookkeeping. Six `#[arcane]` row
+kernels (4:2:0 / 4:2:2 / 4:4:4 x 8bpc / 16bpc) plus a vectorised DC-removal
+tail, in `src/safe_simd/ipred_arm.rs`, wired through `cfl_ac_direct` beside the
+existing x86 arm.
+
+    vector             t     before    after    ratio
+    ---------------------------------------------------
+    v4k_8tile          1      399.6    396.4    0.9921
+    v4k_8tile_10b      1      435.9    431.4    0.9895
+
+Bit-identity is structural, not empirical: a subsampled sum is at most 4 pixels
+and the shift is at most 3, so the product tops out at `8 * (2^bd - 1)` =
+2,040 / 8,184 / 32,760 at 8 / 10 / 12 bpc and never truncates in `i16` at any
+depth AV1 defines; the DC accumulator is `i32` over at most 1,024 such values;
+and `i32` addition is associative, so `vpadalq_s16`'s pairwise-widening order
+gives the reference's sequential total exactly.
+
+The guard shape was deliberately left alone (one immutable guard per source
+row, exactly as the reference), so this is an arithmetic A/B and nothing else.
+
+**Variant checklist — every `cfl_ac` shape, and its state:**
+
+    layout          depth    kernel                    state
+    ----------------------------------------------------------------------
+    4:2:0           8bpc     ac_row_420_8bpc           NEON  (vpaddlq_u8)
+    4:2:0           16bpc    ac_row_420_16bpc          NEON  (vpaddq_u16)
+    4:2:2           8bpc     ac_row_422_8bpc           NEON
+    4:2:2           16bpc    ac_row_422_16bpc          NEON
+    4:4:4           8bpc     ac_row_444_8bpc           NEON  (vmovl_u8)
+    4:4:4           16bpc    ac_row_444_16bpc          NEON
+    DC removal      both     ac_remove_dc              NEON  (vpadalq_s16)
+    ----------------------------------------------------------------------
+    ss_ver && !ss_hor  --    (4:4:0)                   REFUSED -> reference
+    right-edge column pad    --                        scalar (replication)
+    bottom-edge row pad      --                        scalar (copy_from_slice)
+    `active_w % 8` tail      --                        scalar (0-3 pixels)
+
+AV1 defines no 4:4:0 chroma layout, and the reference derives its shift from
+`!ss_ver`/`!ss_hor` on that assumption, so the dispatch returns `false` for it
+rather than guessing — the scalar reference stays the oracle for a shape
+neither of us can produce. The three padding/tail items are replication and
+memcpy, not arithmetic, and stayed as the reference writes them so the
+byte-for-byte equality argument covers them trivially.
+
+Re-profiled after the change (`v4k_8tile`, t=1, 46,047 leaf samples):
+`ipred::cfl_ac_rust` is gone from the ranking entirely and
+`recon::rav1d_recon_b_intra`'s self time rises 3.47% -> 4.13%, which is the
+NEON form inlined into its caller. 2.08% became ~0.66% — consistent with the
+0.79% of whole-decode wall the A/B measured.
+
+**Correctness: full corpus, set-diff BY NAME with the actual MD5 in the key.**
+`examples/md5_inventory` over all 768 dav1d-test-data vectors, joined on
+`(group, name)` against `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst`:
+768 rows both sides, 0 only-in-ref, 0 only-in-new, **0 differing
+(status, actual-md5) pairs**, 766 PASS / 2 SKIP either side. Plus frame md5
+equality on all 7 local vectors (8- and 10-bit, 1- and 8-tile, 4K / 1024 / 256)
+and in every one of the 20 A/B cells.
+
+---
+
+## 3. Honest negatives — four things tried, four did not ship
+
+Each of these was built as its own binary, A/B'd against the tree it came from,
+and reverted. They are here because the numbers are the deliverable: three of
+the four are directions the brief or the obvious reading of the profile points
+at, and knowing they are dead is worth more than the code would have been.
+
+### 3a. Per-row guards for the 8bpc itx: +2.4%, REVERTED
+
+Replacing `block_mut`'s one wide guard in the thirteen 8bpc arms of
+`itx_arm::itxfm_add_dispatch` with a compact `w x h` round trip through per-row
+guards (`compact_read_per_row` + `compact_write_back_per_row`, i.e. exactly the
+tile-threading path, unconditionally):
+
+    v4k_8tile t=1   base 385.5   rowguard 394.7   ratio 1.0239   md5 identical
+
+The wide registration is expensive but it is ONE registration; `2h` narrow ones
+plus `2wh` bytes of memcpy cost more. Not the direction.
+
+### 3b. One wide guard for the 16bpc itx: +4.7%, REVERTED
+
+The mirror image. `itx_arm`'s 16bpc arm writes the picture through one narrow
+guard PER ROW with no copy; collapsing that to a single `strided_slice_mut`
+over the block (branching on `tile_threading_active()` so threading kept the
+per-row form):
+
+    v4k_8tile_10b t=1   base 446.8   wide 468.0   ratio 1.0474   md5 identical
+
+**Taken together, 3a and 3b are the rule:** with no copy involved, `h` narrow
+registrations BEAT one wide one; the 8bpc loss was the memcpy, not the guard
+count. Both shipped shapes are therefore already the better of the two, and
+`cdef_arm`, `ipred::splat_dc`, `angular_ipred` and `loopfilter::LfBlock` were
+audited and are all already on per-row narrow guards. **The guard-shape lever
+is exhausted from `src/`.**
+
+### 3c. Thread-local scratch for the 16bpc itx `tmp`: null
+
+Every 16bpc transform allocated a fresh `[0i32; 256]` — 1 KiB that safe Rust
+must initialise, for a 4x4 that uses 16 slots. Carrying one buffer per thread
+in a `thread_local! { RefCell<..> }` instead (byte-identical: the row pass fully
+writes `tmp[..w*h]` before anything reads it):
+
+    v4k_8tile_10b t=1   431.4 -> 430.9   ratio 0.9990   md5 identical
+
+Inside the round-to-round spread. Reverted rather than carry a `RefCell` borrow
+on the hot path for nothing.
+
+### 3d. 16bpc transforms above 16x16 are NOT worth porting on this vector
+
+The brief flagged 32/64-point 16bpc transforms and `WHT_WHT` as unported
+(`itx_arm_hbd::MAXDIM = 16`), and the 16bpc-itx vein as productive. Measured
+before writing any kernel: an arm with `#[inline(never)]` on
+`inv_txfm_add_rust`, so the scalar reference monomorphises to one symbol per
+`(W, H)` in the profile instead of inlining into the dispatch. On
+`v4k_8tile_10b` at t=1, **no `inv_txfm_add_rust` symbol appears anywhere in the
+profile** — the scalar fallback is under the sampling floor. `itxfm::Fn::call`'s
+3.55% of self time is the inlined NEON driver and `add_row`, not unported
+sizes. A 32-point port would have bought nothing here. (This says nothing about
+a vector whose transform mix actually uses those sizes; it says the 4K still we
+tune against does not.)
+
+---
+
+## 4. For the tracker owner — one measured knob, and it points opposite ways
+
+`BLOCK_SHIFT` is fixed at 12 for a serial decode; `block_shift_for()` adapts
+only once `set_parallelism` has declared more than one thread. Building the
+same source with `--features blockshift-adaptive` (which forces adaptation at
+t=1 too, and is the ONLY difference between the arms — no source edit, so the
+tracker crate is untouched):
+
+    vector             t     base   adaptive   ratio
+    ----------------------------------------------------
+    v4k_8tile          1    397.8      383.9   0.9651   <- -3.5%
+    v4k_8tile_10b      1    438.7      464.4   1.0586   <- +5.9%
+
+Both bit-identical. The 8bpc win is the wide-path escalation of §1
+disappearing: at shift 14 a 4K luma plane gets ~4.3 picture rows per tracker
+block, so the 8x8 transform block of §1 spans 2 blocks instead of 7 — under
+`MAX_SHARDS_PER_BORROW` — and takes the multi-shard fast path with no copy. The 10bpc loss is the same coarsening seen
+from the other side: that path already uses per-row narrow borrows, and a
+bigger block funnels more of them onto one shard (longer overlap scans, more
+slot pressure).
+
+This reproduces, with n=5 (though with a foreign process present in 5/10 8bpc
+cells and 10/10 10bpc cells — see the header table; both arms interleave inside
+each cell, so the ratios hold), the direction of the n=1 row in
+`benchmarks/tracker_blockshift_2026-08-08.meta` §5b (base 404.0 / adapt 384.6
+at 8bpc t=1; base 510.9 / adapt 528.9 at 10bpc t=1), which that campaign could
+not resolve and therefore excluded from the shipped default. It is now
+resolved, and it is a genuine bit-depth-dependent trade, not noise.
+
+Two things follow, neither of which is `src/`'s to make:
+
+1. A serial `BLOCK_SHIFT` keyed on the pixel stride (or simply on `BD::BPC`)
+   rather than on the buffer length would take the 8bpc win without the 10bpc
+   loss. `block_shift_for` sees only `len`, and a 10-bit plane is both twice the
+   bytes and twice the stride, so length alone cannot separate them.
+2. `MAX_SHARDS_PER_BORROW = 4` with `shard_of(block) = block & mask` is what
+   turns any strided block borrow into a wide one at 4K. A shard mapping that
+   kept a short run of consecutive blocks on one shard would keep those borrows
+   on the multi-shard fast path at any block shift.
+
+---
+
+## 5. Where t=1 stands now
+
+`scripts/perf/verify_gap.sh` with `base` = 2e0ea4d, `head` = this branch, and
+`dav1d_fd1` = dav1d 1.5.4 `--framedelay 1`, 5 rounds, all three arms run back to
+back inside each cell with the order rotated per round; each stream timed at 2
+and 20 frames and `total = alpha + beta*frames` fitted so process startup drops
+out. Raw: `benchmarks/st1_gap_2026-08-08.tsv`, reported by
+`scripts/perf/verify_gap_report.py`.
+
+**This sweep ran with `ALLOW_LOAD=1`.** Another agent's worktree
+(`rav1d-safe--lrn2`) was running a correctness sweep on this box, the strict
+guard correctly refused to commit a single cell for over ten minutes, and
+killing another agent's job is not an option — so the run was restarted in the
+opt-in loaded mode this session added, which commits the cell and records the
+foreign count instead of discarding. Most cells ended up reading foreign = 0
+anyway; the per-cell truth is the TSV's last column and is reproduced in the
+table.
+
+Read the RATIO column, not the absolute one. All three arms run back to back
+inside each cell with the order rotated, so they see the same load; the
+per-campaign absolute drifts by up to 3.9% (see the header note), while the
+ratio to dav1d reproduces the numbers in the brief cell for cell.
+
+### 5b. The table
+
+`n = 5` on every cell; `foreign` is the worst per-cell count of the round set.
+
+    ms/frame (median of 5, alpha + beta*frames fitted)
+    vector             t      base      head    dav1d_fd1   foreign
+    -----------------------------------------------------------------
+    v4k_8tile          1     400.4     395.1        246.8      0
+    v4k_8tile          2     217.8     215.9        125.2      1
+    v4k_8tile          4     118.8     119.5         65.6      1
+    v4k_8tile          8      74.9      74.8         36.3      0
+    v4k_8tile_10b      1     436.8     429.9        251.4      0
+    v4k_8tile_10b      2     245.8     243.3        127.6      1
+    v4k_8tile_10b      4     132.6     133.5         66.9      1
+    v4k_8tile_10b      8      88.0      85.6         38.5      1
+
+    ratio to dav1d --framedelay 1
+    vector             t      base      head     brief's base
+    -----------------------------------------------------------------
+    v4k_8tile          1      1.62      1.60         1.63
+    v4k_8tile          2      1.74      1.72         1.73
+    v4k_8tile          4      1.81      1.82         1.77
+    v4k_8tile          8      2.06      2.06         2.11
+    v4k_8tile_10b      1      1.74      1.71         1.74
+    v4k_8tile_10b      2      1.93      1.91         1.93
+    v4k_8tile_10b      4      1.98      2.00         1.95
+    v4k_8tile_10b      8      2.29      2.22         2.34
+
+The `base` column reproduces the brief's ratios cell for cell (max deviation
+0.05 at 8bpc t=4/t=8), so the instrument agrees with the campaign it is being
+compared against even under load.
+
+**t=1: 1.62x -> 1.60x at 8bpc, 1.74x -> 1.71x at 10bpc.** Above t=1 the head/base
+ratio is flat to within the cell noise, exactly as expected: P2 already measured
+that a cheaper kernel at t=8 just hands the time to whatever is next in line.
+The 10bpc t=8 cell (2.29 -> 2.22) is the one that looks like more than noise, and
+it is a single cell in a loaded window — do not bank it.
+
+t=1 -> t=8 scaling is 5.28x (head, 8bpc) against dav1d's 6.79x, so the arithmetic
+in the brief still holds: had t=1 reached 1.3x at this scaling, t=8 would be
+about 1.67x.
+
+
+## 5c. What is NOT done
+
+Named, so nobody has to rediscover it:
+
+* **1.3x is not reached.** 8bpc t=1 moves from 1.62x to 1.60x, 10bpc from
+  1.74x to 1.71x (§5b). §6 explains why
+  the rest of it is not in this lane.
+* **The loop-filter family is untouched** and is now the largest pixel kernel at
+  both depths — 5.03% / 5.21% of wall (20 / 23 ms), split across
+  `LfBlock::open` (the per-row tap read plus its `pristine` twin),
+  `loopfilter_sb_direct`, `lf_compact_run_neon` and `LfBlock::close`. Only the
+  filter core is NEON; the scratch machinery around it is not, and it exists
+  purely to keep guards narrow under tile threading.
+* **`ipred`'s directional modes are still scalar on aarch64.**
+  `angular_ipred::Fn::call` is 0.93% / 0.97%, `splat_dc`, `upsample_edge`,
+  `filter_edge` and `sm_flag` another ~0.5% — about 6 ms a side, spread over
+  many modes, so it is a large port for a small number.
+* **`looprestoration_arm.rs` is still 1,527 lines with zero intrinsics**, and
+  still measures 0.0 ms on these vectors because loop restoration is off in this
+  bitstream. Do not port it against this corpus; it needs a vector that uses it.
+* **Only two vectors were timed** (`v4k_8tile` and its 10-bit twin), and only at
+  8 and 10 bpc. There is no 12bpc timing anywhere in this record, and §3d's
+  "32/64-point transforms are worthless" finding is a statement about THIS
+  transform mix, not about AV1.
+* **t=2/4/8 are unmoved and were not expected to move.** The §5b table shows the
+  head/base ratio flat above t=1; P2 already measured that making a kernel
+  cheaper at t=8 just moves the load onto whatever is next in line.
+* **Two guards-per-pixel hazards found by inspection and NOT measured**, because
+  this bitstream does not exercise either: `ipred::pal_pred_rust`
+  (`src/ipred.rs:1777`) takes one mutable guard per TWO pixels, and
+  `src/ipred.rs:1589` takes one per four. Both are zero samples here, so there is
+  no number to report — but on palette-coded screen content the first is the
+  same shape as the intra-edge column read that
+  `benchmarks/tracker_blockshift_2026-08-08.meta` called "the worst
+  guards-per-byte ratio in the decoder" at 9.19% of a frame. Worth a vector that
+  uses palette before anyone tunes screen content.
+
+## 6. What this says about the 1.3x target
+
+At 8bpc, 218 of 401 ms is entropy at parity with dav1d. The reachable 183 ms is
+97 ms of borrow tracker and 86 ms of pixel kernels, and after this session no
+single pixel kernel is above 21 ms (the loop-filter family) — the four largest
+after that are the recon driver's own loop (14), CDEF (7), the intra
+predictors (7) and the transforms (8). **Kernel work alone cannot reach 1.3x at
+t=1**: zeroing every pixel kernel leaves 315 ms, which is 1.28x, and that is the
+ceiling of this lane. The tracker is the binding constraint, and §4 is the
+cheapest measured lever into it.
