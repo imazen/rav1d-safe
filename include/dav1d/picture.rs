@@ -2064,7 +2064,11 @@ mod tile_threading_latch_tests {
 ///
 /// So each test asserts which EXTENT got reserved, by holding a byte that only
 /// the hull covers and checking whether the tracker rejects the call.
-#[cfg(test)]
+// These assert what the borrow TRACKER reserved, so they cannot run in an
+// `unchecked` build (which `asm` implies) — tracking is compiled out there and
+// the tests' own anti-vacuity assertion correctly fires. Same idiom as
+// src/disjoint_mut.rs:29 and src/safe_simd/pixel_access.rs:451.
+#[cfg(all(test, not(feature = "unchecked")))]
 mod row_guard_policy_tests {
     use super::{Rav1dPictureDataComponent, set_tile_threading, tile_threading_active};
     use crate::include::common::bitdepth::BitDepth8;
