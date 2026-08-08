@@ -99,12 +99,13 @@ fn backup2x8<BD: BitDepth>(
     let x_off = x_off as isize;
 
     if flag.contains(Backup2x8Flags::Y) {
-        for y in 0..8 {
+        // 8 rows x 2 pixels: `for_rows` decides whether that is 8 registrations
+        // or one, on the same `tile_threading_active()` latch as `block_mut`.
+        (src[0] + (x_off - 2)).for_rows::<BD, _>(2, 8, |y, row| {
             let y_dst = &mut dst[0][y];
-            let y_src = src[0] + (y as isize * src[0].pixel_stride::<BD>() + x_off - 2);
             let y_len = y_dst.len();
-            BD::pixel_copy(y_dst, &y_src.slice::<BD>(y_len), y_len);
-        }
+            BD::pixel_copy(y_dst, row, y_len);
+        });
     }
 
     if layout == Rav1dPixelLayout::I400 || !flag.contains(Backup2x8Flags::UV) {
@@ -115,13 +116,13 @@ fn backup2x8<BD: BitDepth>(
     let ss_hor = (layout != Rav1dPixelLayout::I444) as c_int;
 
     let x_off = x_off >> ss_hor;
-    for y in 0..8 >> ss_ver {
-        for pl in 1..3 {
+    let uv_rows = 8usize >> ss_ver;
+    for pl in 1..3 {
+        (src[pl] + (x_off - 2)).for_rows::<BD, _>(2, uv_rows, |y, row| {
             let uv_dst = &mut dst[pl][y];
-            let uv_src = src[pl] + (y as isize * src[pl].pixel_stride::<BD>() + x_off - 2);
             let uv_len = uv_dst.len();
-            BD::pixel_copy(uv_dst, &uv_src.slice::<BD>(uv_len), uv_len);
-        }
+            BD::pixel_copy(uv_dst, row, uv_len);
+        });
     }
 }
 

@@ -38,6 +38,10 @@ __probe_lockonly = []
 __probe_untracked = []
 # Wide-path reason counters. Unlike __probe_count this KEEPS the sharded tracker.
 __probe_wide = ["std"]
+# THROWAWAY per-call-site borrow COUNTS (keeps the sharded tracker).
+__probe_sites = ["std"]
+# THROWAWAY: skip tracking on sub-SHARD_MIN_LEN instances. UNSOUND, measurement only.
+__probe_tinynop = []
 # THROWAWAY: keep the add/remove CALL, delete the work. Isolates the call
 # barrier from the tracker's own instructions. UNSOUND -- measurement only.
 __probe_addnop = []
