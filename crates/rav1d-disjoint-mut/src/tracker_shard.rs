@@ -573,6 +573,12 @@ impl ShardRecs {
         start: usize,
         end: usize,
     ) -> Option<OverlapHit> {
+        // TRIED AND REVERTED: `if occupied == 0 { return None }` to skip the
+        // `mutable` load on an empty shard. +2.3% at 8bpc t=1 (335.1 -> 342.7,
+        // median of 9, idle box). The load is free — same cache line, issued in
+        // parallel — and LLVM already folds the test into ONE `ands`+`b.eq`;
+        // the early-out just adds a second branch with the same outcome.
+        // `benchmarks/tracker_borrowcost_2026-08-08.tsv`, arm `findeo`.
         let mut mask = if IS_MUT {
             occupied
         } else {
@@ -602,6 +608,25 @@ impl ShardRecs {
         end: usize,
         loc: Loc,
     ) -> Option<u8> {
+        // Empty shard: slot 0, with no `rbit`/`clz` and constant store offsets.
+        // Measured mean occupancy is 0.02 and measured max is 1, so this is the
+        // case essentially always, and `trailing_ones` sits on the dependency
+        // chain between the lock acquire and the record write — the only kind
+        // of work this path is sensitive to.
+        if occupied == 0 {
+            self.starts[0] = start;
+            self.ends[0] = end;
+            // Whole-byte STORE, not `|= 1` / `&= !1`: with no live slot, no
+            // other slot's mutability bit is meaningful (`find` masks with the
+            // live set), so there is nothing to preserve — and that turns a
+            // load-or-store on the dependency chain into a single store.
+            self.mutable = IS_MUT as u8;
+            #[cfg(debug_assertions)]
+            {
+                self.locs[0] = Some(loc);
+            }
+            return Some(0);
+        }
         // `!SLOTS_MASK` pre-fills the unusable high bits, so `trailing_ones`
         // reaches SLOTS exactly when the shard is full.
         let free = ((occupied | !SLOTS_MASK).trailing_ones() as usize).min(SLOTS);
@@ -682,12 +707,29 @@ impl Shard {
     /// back into `allocated`, which is what keeps the superset from saturating.
     #[inline(always)]
     fn live_mask(&self, allocated: u8) -> u8 {
+        // `allocated <= 1` is the measured steady state and it is straight-line:
+        // one load, no `rbit`/`clz`, no loop. `probe-count` reports occ_max == 1
+        // on every hot plane at t=1 and mean occupancy 0.02, and the allocator
+        // always takes the lowest free slot — so after the first borrow on a
+        // shard, `allocated` is 1 and stays 1. This matters because the whole
+        // of `live_mask` sits on the dependency chain between the lock acquire
+        // and the record write, which is the only kind of work this path has
+        // been measured to be sensitive to (see the .meta).
+        //
+        // `live[i]` stores 1, and slot 0's bit IS 1, so the byte is already the
+        // mask for this case.
+        //
+        // `allocated == 0` needs no separate branch: nothing was ever published
+        // in this shard, so `live[0]` reads 0 and the answer is the same.
+        if allocated <= 1 {
+            // Acquire pairs with the retiring owner's `Release` store, so a
+            // slot observed dead carries that borrow's writes with it.
+            return self.live[0].load(Ordering::Acquire);
+        }
         let mut m = allocated & SLOTS_MASK;
         let mut live = 0u8;
         while m != 0 {
             let i = (m.trailing_zeros() as usize).min(SLOTS - 1);
-            // Acquire pairs with the retiring owner's `Release` store, so a
-            // slot observed dead carries that borrow's writes with it.
             if self.live[i].load(Ordering::Acquire) != 0 {
                 live |= 1 << i;
             }
@@ -1332,6 +1374,13 @@ impl BorrowTracker {
         // dependency-chain win is real and smaller than the I-cache and frame
         // it buys. `benchmarks/tracker_borrowcost_2026-08-08.tsv`, arm `fold`.
         let si = if self.mask == 0 {
+            // The pre-lock `state` check is KEPT, and it is not redundant with
+            // the authoritative in-lock re-read below the way it looks. Removing
+            // it measured +0.8% at 8bpc t=1 (337.4 -> 340.0, median of 9, idle):
+            // this load warms the header line and resolves its branch while the
+            // lock acquire is still in flight, so deleting it does not shorten
+            // the chain, it serialises the in-lock load behind the acquire.
+            // `benchmarks/tracker_borrowcost_2026-08-08.tsv`, arm `chain3`.
             if self.state.load(Ordering::Acquire) != 0 {
                 return self.add_slow_wide_live::<IS_MUT>(start, end);
             }
@@ -1387,7 +1436,12 @@ impl BorrowTracker {
         // SAFETY: this shard's lock is held.
         let recs = unsafe { &mut *shard.recs.get() };
         let occ = shard.live_mask(recs.allocated);
-        recs.allocated = occ;
+        // `allocated` is written ONCE, on the success path below, instead of
+        // being narrowed here and re-widened there. Leaving it stale-LARGE on
+        // the two exits from here is sound by construction: it is a SUPERSET,
+        // never a subset, and the only cost of a stale bit is one extra flag
+        // load in a later scan. The success path narrows it on every borrow,
+        // so it cannot saturate.
         if let Some(existing) = recs.find::<IS_MUT>(occ, start, end) {
             drop(g);
             Self::overlap_panic(

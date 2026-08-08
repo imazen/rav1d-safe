@@ -11,7 +11,8 @@ Harness   scripts/perf/tracker_ab.sh (rotating-order interleaved, in-process
           enters the number) + scripts/perf/tracker_ab_report.py
           scripts/perf/verify_gap.sh for the dav1d column (two-point wall fit,
           dav1d 1.5.4 --framedelay 1, SAME interleaved sweep)
-Idle      ab_full foreign_busy_max=1, ab_fold and gap_final foreign_busy_max=0.
+Idle      ab_ship foreign_busy_max=1; ab_chain2/ab_chain3/ab_findeo/ab_fold and
+          both gap sweeps foreign_busy_max=0.
           ab_leaf was taken at foreign_busy_max=6 and is NOT used for any claim.
 
 Files     tracker_borrowcost_2026-08-08.tsv        decode A/B, all arms/cells
@@ -19,48 +20,64 @@ Files     tracker_borrowcost_2026-08-08.tsv        decode A/B, all arms/cells
           tracker_borrowcost_micro_2026-08-08.txt  examples/probe_borrow_cost
 
 
-THE ARMS
---------
+THE ARMS  (each is the previous one plus the named change)
+----------------------------------------------------------
 base        6c17d8c, unmodified
 slotflag    per-slot live-flag bytes: publish and release become plain stores,
             the two locked RMWs (fetch_or / fetch_and) are gone
-leaf        slotflag + `add`'s fast path made a frameless leaf (try_lock with a
-            cold outlined contended path; overlap_panic takes 7 scalars instead
-            of a 25-byte tuple).  0x80-byte frame + 3 stp/ldp pairs removed,
-            143 -> 117 instructions
-final       leaf + `mask == 0` instances skip the shift load, both block
-            divisions and the multiplicative hash entirely
-fold        REVERTED. final + the one-shard body duplicated so shard 0's
-            address constant-folds
+leaf        + `add`'s fast path made a frameless leaf (try_lock with a cold
+            outlined contended path; overlap_panic takes 7 scalars instead of a
+            25-byte tuple). 0x80 frame + 3 stp/ldp pairs gone, 143 -> 117 insns
+chain/final + `mask == 0` instances skip the shift load, both block divisions
+            and the multiplicative hash entirely
+lm          + `live_mask` straight-line when `allocated <= 1` (one load, no
+            `rbit`/`clz`, no loop) — the measured steady state
+alloc0      + `alloc` straight-line when the shard is empty (slot 0, constant
+            store offsets) and `allocated` written once instead of twice
+v2 SHIPPED  + `live_mask` drops its `allocated == 0` sub-branch, and the empty
+            -shard `alloc` stores `mutable` whole instead of read-modify-write
+fold        REVERTED. one-shard body duplicated so shard 0's address folds
+findeo      REVERTED. `find` early-out on `occupied == 0`
+chain3      REVERTED. findeo + dropping the pre-lock `state` check
 addnop      THROWAWAY `probe-addnop`: keeps the call, deletes the body
 untracked   THROWAWAY `probe-untracked`: no tracker at all (the ceiling)
 
 
-RESULT — decode ms/frame, median of 7, ratio vs base
-----------------------------------------------------
-  vec/threads    base   slotflag    leaf   final  addnop untracked
-  8bpc  t=1    365.77     .9894   .9844   .9553   .7955    .7849
-  8bpc  t=2    217.36     .9783   .9702   .9518   .7283    .7289
-  8bpc  t=4    116.21     .9833   .9751   .9569   .7130    .7117
-  8bpc  t=8     73.68     .9756   .9782   .9698   .6455    .6478
-  10bpc t=1    416.82     .9786   .9720   .9458   .7754    .7761
-  10bpc t=2    224.16     .9852   .9725   .9609   .7503    .7499
-  10bpc t=4    121.01     .9718   .9650   .9546   .7246    .7260
-  10bpc t=8     77.92     .9856   .9679   .9529   .6688    .6654
+RESULT — SHIPPED (v2) vs base, decode ms/frame, median of 7, ratio vs base
+--------------------------------------------------------------------------
+  vec/threads     base       v2   addnop untracked   tracker ms/frame
+                                                      base ->  v2
+  8bpc  t=1     362.81    .9310    .8016     .7913    72.0 -> 46.9  -34.9%
+  8bpc  t=2     217.09    .9123    .7296     .7299    58.7 -> 39.7  -32.4%
+  8bpc  t=4     116.17    .9200    .7118     .7115    33.5 -> 24.2  -27.8%
+  8bpc  t=8      72.12    .9236    .6583     .6501    24.6 -> 19.1  -22.4%
+  10bpc t=1     414.95    .9201    .7788     .7795    91.8 -> 58.6  -36.2%
+  10bpc t=2     223.82    .9163    .7506     .7510    55.8 -> 37.1  -33.5%
+  10bpc t=4     120.22    .9229    .7286     .7276    32.6 -> 23.4  -28.4%
+  10bpc t=8      77.29    .9133    .6687     .6536    25.6 -> 18.9  -26.2%
 
-All 6 arms x 8 cells produced the SAME plane md5 in every cell (the harness
+All arms x all cells produced the SAME plane md5 in every cell (the harness
 set-diffs them and printed no mismatch).
 
+Per-increment attribution at 8bpc / 10bpc t=1 (ratio vs base, each row is the
+previous row plus one change; every step measured on its own sweep):
+  slotflag  .9894 / .9786      lm      .9455 / .9397
+  leaf      .9844 / .9720      alloc0  .9348 / .9211
+  final     .9553 / .9458      v2      .9310 / .9201
 
-GAP TO dav1d 1.5.4 — same interleaved sweep, n=5, idle box
------------------------------------------------------------
-  vector          t     base    final    dav1d   base    final
-  v4k_8tile       1    363.1    350.2    246.4   1.47x   1.42x
-  v4k_8tile       8     73.8     70.3     35.9   2.05x   1.96x
-  v4k_8tile_10b   1    413.7    393.9    251.2   1.65x   1.57x
-  v4k_8tile_10b   8     77.7     74.6     37.1   2.09x   2.01x
 
-The 1.30x bar (320 ms at 8bpc t=1) is NOT met.  350.2 is 1.42x.
+GAP TO dav1d 1.5.4 — same interleaved sweep, n=5, idle box (foreign=0)
+-----------------------------------------------------------------------
+  vector          t     base       v2    dav1d    base     v2
+  v4k_8tile       1    362.5    337.1    246.4   1.47x   1.37x
+  v4k_8tile       2    217.1    197.1    125.2   1.73x   1.57x
+  v4k_8tile       4    117.1    107.4     65.6   1.78x   1.64x
+  v4k_8tile       8     74.7     67.3     36.2   2.07x   1.86x
+  v4k_8tile_10b   1    414.9    382.4    251.3   1.65x   1.52x
+  v4k_8tile_10b   8     77.7     71.8     37.2   2.09x   1.93x
+
+The 1.30x bar (320 ms at 8bpc t=1) is NOT met.  337.1 is 1.37x — 17 ms short,
+against a tracker that still costs 46.9 ms/frame on that cell.
 
 
 THE THING THIS RUN ACTUALLY ESTABLISHED
@@ -94,7 +111,11 @@ Three measurements, in order, each refuting the previous plan:
    bands disjoint, roughly seven times what the RMW and frame work bought
    together.
 
-Tracker cost at 8bpc t=1 (base - addnop): 74.8 -> 58.5 ms/frame, **-21.8%**.
+Everything that shipped after that point is the same lever applied again,
+and every one of them paid: `live_mask` and `alloc` straight-lined for the
+measured steady state (occ_max == 1, mean 0.02), `allocated` stored once
+instead of twice, `mutable` stored whole instead of read-modify-written.
+Tracker cost at 8bpc t=1 (base - addnop): 72.0 -> 46.9 ms/frame, **-34.9%**.
 
 Generalisation worth keeping: on this path, LATENCY fixes pay and THROUGHPUT
 fixes do not.  Anything that shortens the chain from `self` to the lock
@@ -109,6 +130,17 @@ fused lock+occupancy word (fetch_or to acquire, fetch_xor to publish+release)
     serialise; the shipped ones are on two addresses and overlap.  MICRO ONLY.
 publish with Relaxed instead of Release (the lock already orders it)
     4.82 ns/pair vs 3.50.  Slower, repeatably.  MICRO ONLY.
+`find` early-out on `occupied == 0`, to skip the `mutable` load (`findeo`)
+    +2.3% at 8bpc t=1 (335.1 -> 342.7, median of 9, idle).  The load is free
+    (same cache line, issued in parallel) and LLVM already folds the test into
+    one `ands`+`b.eq`; the early-out adds a second branch with the same
+    outcome.  DECODE-LEVEL.
+dropping the pre-lock `state` check now that the in-lock re-read routes to the
+same cold path (`chain3`, measured composed with findeo)
+    +0.8% at 8bpc t=1 over `chain2`.  That load warms the header line and
+    resolves its branch while the lock acquire is in flight; removing it
+    serialises the in-lock load behind the acquire instead of shortening
+    anything.  DECODE-LEVEL.
 duplicating the body to constant-fold shard 0's address (`fold`)
     +0.9% (8bpc t=1) / +0.8% (10bpc t=1) vs `final`, disjoint bands, idle box,
     n=9.  The address does fold; the function goes 117 -> 208 instructions and
@@ -123,6 +155,55 @@ frameless leaf, alone (`leaf` minus `slotflag`)
     also what makes the cold paths cold.
 
 
+CANDIDATE 4 (stop reserving the strided hull in `block_mut`/`narrow_guard`,
+split into row-groups) IS REFUTED, not untested
+---------------------------------------------------------------------------
+`probe-wide` on the shipped build, v4k_8tile 8bpc, per frame:
+
+    t=1   slow 0        multi 0        wide_total 0
+    t=8   slow 17,275   multi 17,275   wide_total 0
+
+At t=1 the strided hull costs EXACTLY what a one-byte borrow costs: `mask == 0`
+so the fast path takes it whole, without the block walk, without a multi-shard
+registration, and `find`'s cost is O(live slots) and independent of extent.
+Splitting a hull into row-groups there can only ADD registrations (h x more)
+for zero saving.  At t=8 the whole multi-block population is 17,275 of about
+15.65 M adds per frame — 0.11% — so eliminating it entirely cannot be worth
+more than a tenth of a percent.  The original motivation (feeding the wide
+path) died with #458; this measures that the replacement motivation
+(extent-driven scan cost) never existed.
+
+
+CANDIDATE 3 (thread-local registries) — COSTED, NOT BUILT
+----------------------------------------------------------
+Priced in `probe_borrow_cost`: a publish + `dmb ish` + one peer scan + release
+is **0.599 ns/pair** against 3.50 ns for the shipped atomic sequence, and the
+`dmb ish` alone is **0.246 ns** — a full fence is nearly free on this core,
+which is what makes the shape viable at all.  So the ceiling is real.
+
+Two things make it a redesign rather than an increment, and both are load-
+bearing:
+
+* The scan is O(registrants), over lines those registrants WRITE on every
+  borrow.  Measured: all 8 workers touch all 12 hot plane instances, so at t=8
+  this is 7 coherence misses per borrow.  It is only cheap where it is
+  currently needed most (t=1) and catastrophic where the scaling deficit is
+  (t=8).  A registrant-count fast path ("if only I have ever registered on this
+  instance, scan nothing") is what makes it usable — and that is the hard part.
+* That fast path is a store-buffer (Dekker) problem: a joining thread and an
+  incumbent can each publish then scan and both miss.  Fixing it needs SeqCst
+  on the fast path (which is the cost we were trying to avoid) or an RCU-style
+  grace period on the join, where the joiner waits until every incumbent has
+  passed a quiescence point.  The latter keeps the fast path at 0.599 ns and
+  puts all the cost on a once-per-thread-per-instance join.
+
+Estimate: ~46.9 ms/frame is what the tracker still costs at 8bpc t=1, and this
+shape could plausibly take most of it — 337 ms would become ~300, i.e. ~1.22x,
+which is the only identified route past the 1.30x bar at t=1.  It is a
+multi-day change to the crate's core invariant and it must not be attempted
+without the mutation battery below extended to cover the join protocol.
+
+
 SOUNDNESS
 ---------
 Four hazards planted, each confirmed to FAIL the suite, each restored with a
@@ -132,13 +213,15 @@ Four hazards planted, each confirmed to FAIL the suite, each restored with a
   (b) `active()` cut to one shard
       -> wide_exclusion FAILS on `witnesses`, 3 missed overlaps
   (c) a published slot never enters `recs.allocated` (NEW invariant)
-      -> 6 tests FAIL incl. same_block_overlap_is_caught,
-         cross_shard_overlaps_are_all_caught, narrow_borrow_is_visible_to_wide
+      -> FAILS (6 tests on the first shape of the change, 3 on the shipped
+         one), incl. same_block_overlap_is_caught and
+         cross_shard_overlaps_are_all_caught
   (d) `recs.allocated` narrowed to 0, dropping LIVE slots (NEW invariant)
-      -> shard_overflow_promotes_and_still_detects FAILS.  Only that one: the
-         publish immediately re-sets the bit, so the invariant can only be
-         broken for a slot that stays live ACROSS another registration, which
-         is exactly what that test builds.
+      -> FAILS, shard_overflow_promotes_and_still_detects.  The publish
+         immediately re-sets the bit, so the invariant can only be broken for a
+         slot that stays live ACROSS another registration — which is exactly
+         the shape that test builds, and the reason it is the only one that
+         catches this.
 All four run under `--features __probe_wide`, which is what makes the
 wide_exclusion gate non-vacuous (f968094, 6c17d8c).
 
