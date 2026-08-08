@@ -1005,7 +1005,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// at t=1: collapsing the per-row loops in the loopfilter, `ipred` and
     /// `cdef` took registrations per frame from 15,646,727 to 7,924,706
     /// (-49.4%), at a mean per-row extent of ~10 bytes.
-    #[inline(always)]
+    #[inline]
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn for_rows<BD: BitDepth, F: FnMut(usize, &[BD::Pixel])>(
         &self,
@@ -1045,7 +1045,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     }
 
     /// [`Self::for_rows`], mutably. Same policy, same soundness argument.
-    #[inline(always)]
+    #[inline]
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn for_rows_mut<BD: BitDepth, F: FnMut(usize, &mut [BD::Pixel])>(
         &self,
