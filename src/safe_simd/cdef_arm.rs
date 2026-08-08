@@ -1598,6 +1598,10 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
     edges: CdefEdgeFlags,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::Cdef) {
+        return false;
+    }
     use crate::include::common::bitdepth::BPC;
 
     let (w, h) = match variant {
@@ -1656,6 +1660,10 @@ pub fn cdef_dir_dispatch<BD: BitDepth>(
     variance: &mut c_uint,
     bd: BD,
 ) -> Option<c_int> {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::Cdef) {
+        return None;
+    }
     use crate::include::common::bitdepth::BPC;
 
     let dir = match BD::BPC {

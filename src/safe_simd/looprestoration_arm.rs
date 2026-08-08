@@ -1484,6 +1484,10 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
     edges: LrEdgeFlags,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::LoopRestoration) {
+        return false;
+    }
     use crate::include::common::bitdepth::BPC;
 
     let w = w as usize;

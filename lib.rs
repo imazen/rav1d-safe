@@ -93,6 +93,11 @@ pub mod src {
     // - Modules that need unsafe only for c-ffi use cfg_attr(feature, allow)
     // - safe_simd sub-modules set their own forbid/deny (no parent blanket allow)
 
+    // Per-kernel SIMD ablation switch (measurement infrastructure). Compiles to
+    // a constant `false` guard unless the `__ablate` feature is on; `pub` so the
+    // ablation harness in `examples/` can drive it.
+    pub mod ablate;
+
     // Core primitives
     pub(crate) mod align;
     #[cfg(feature = "c-ffi")]

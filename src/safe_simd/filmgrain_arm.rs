@@ -1428,6 +1428,10 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
     data: &Rav1dFilmGrainData,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::FilmGrain) {
+        return false;
+    }
     use zerocopy::{FromBytes, IntoBytes};
     match BD::BPC {
         BPC::BPC8 => {
@@ -1454,6 +1458,10 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     is_uv: bool,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::FilmGrain) {
+        return false;
+    }
     let (is_subx, is_suby) = match layout {
         Rav1dPixelLayoutSubSampled::I420 => (true, true),
         Rav1dPixelLayoutSubSampled::I422 => (true, false),
@@ -1490,6 +1498,10 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     row_num: usize,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::FilmGrain) {
+        return false;
+    }
     use zerocopy::{FromBytes, IntoBytes};
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
@@ -1569,6 +1581,10 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     is_id: bool,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::FilmGrain) {
+        return false;
+    }
     use zerocopy::{FromBytes, IntoBytes};
     let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;

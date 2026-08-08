@@ -4701,6 +4701,10 @@ pub fn avg_dispatch<BD: BitDepth>(
     h: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -4814,6 +4818,10 @@ pub fn w_avg_dispatch<BD: BitDepth>(
     weight: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -4934,6 +4942,10 @@ pub fn mask_dispatch<BD: BitDepth>(
     mask: &[u8],
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -5054,6 +5066,10 @@ pub fn blend_dispatch<BD: BitDepth>(
     h: i32,
     mask: &[u8],
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -5172,6 +5188,10 @@ pub fn blend_dir_dispatch<BD: BitDepth>(
     w: i32,
     h: i32,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -5332,6 +5352,10 @@ pub fn w_mask_dispatch<BD: BitDepth>(
     sign: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     // Tile-threading-safe block view: contiguous when threading is off, a
     // compact per-row copy when it is on. See `WithOffset::block_mut`.
@@ -5568,6 +5592,10 @@ pub fn mc_put_dispatch<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McPut) {
+        return false;
+    }
     // When src and dst are from the same picture component (self-referencing frames),
     // we can't hold both a mutable dst guard and immutable src guard simultaneously.
     // Fall through to scalar for this rare case.
@@ -6005,6 +6033,10 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
     my: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McPrep) {
+        return false;
+    }
     use crate::include::common::bitdepth::BPC;
     use Filter2d::*;
     #[cfg(feature = "asm")]
@@ -6191,6 +6223,10 @@ pub fn mc_scaled_dispatch<BD: BitDepth>(
     _dy: i32,
     _bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
 }
 
@@ -6208,6 +6244,10 @@ pub fn mct_scaled_dispatch<BD: BitDepth>(
     _dy: i32,
     _bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
 }
 
@@ -6221,6 +6261,10 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
     _my: i32,
     _bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
 }
 
@@ -6235,6 +6279,10 @@ pub fn warp8x8t_dispatch<BD: BitDepth>(
     _my: i32,
     _bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
 }
 
@@ -6251,6 +6299,10 @@ pub fn emu_edge_dispatch<BD: BitDepth>(
     _dst_pxstride: usize,
     _src: &crate::include::dav1d::picture::Rav1dPictureDataComponent,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
 }
 
@@ -6268,5 +6320,9 @@ pub fn resize_dispatch<BD: BitDepth>(
     _mx: i32,
     _bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::McOther) {
+        return false;
+    }
     false
 }

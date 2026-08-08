@@ -136,6 +136,14 @@ asm_arm64_sve2 = ["asm"]
 # Run SIMD and scalar side-by-side, panic on any mismatch (testing only)
 __simd_test = []
 
+# Per-kernel-family SIMD ablation (measurement only, see src/ablate.rs). Arms a
+# process-global "disabled families" bitmask that each aarch64 SIMD dispatcher
+# consults at entry, so a disabled family falls through to the generic scalar
+# reference. This is the causal attribution tool: ablate family X, re-run the
+# conformance corpus, and the vectors that flip to PASS are X's. Compile-time
+# gated so a production build has no atomic load on the dispatch path.
+__ablate = []
+
 # Like __simd_test but LOG every mismatch and continue instead of panicking, for a
 # one-pass cross-module bit-exactness inventory. Compile-time so there is no
 # per-mismatch env-var read. (implies __simd_test)

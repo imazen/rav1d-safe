@@ -8390,6 +8390,10 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     eob: i32,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::Itx) {
+        return false;
+    }
     // Issue #400: the aarch64 NEON inverse transforms are now bit-exact with the
     // scalar/spec reference — verified tolerance-0 against the generic itx
     // (`__simd_test` feature) across the full dav1d conformance corpus on native

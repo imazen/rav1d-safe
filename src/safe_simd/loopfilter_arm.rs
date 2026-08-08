@@ -79,6 +79,10 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     _is_y: bool,
     _is_v: bool,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::LoopFilter) {
+        return false;
+    }
     false
 }
 
@@ -680,6 +684,10 @@ pub(crate) fn lf_compact_run_neon(
     bitdepth_min_8: u8,
     bd_max: u16,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::LoopFilter) {
+        return false;
+    }
     use crate::include::common::bitdepth::BPC;
     use zerocopy::FromBytes as _;
 
@@ -823,6 +831,10 @@ pub(crate) fn lf_diff_span(
     row: usize,
     w: usize,
 ) -> Option<Option<(usize, usize)>> {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::LoopFilter) {
+        return None;
+    }
     use crate::include::common::bitdepth::BPC;
     use zerocopy::FromBytes as _;
 

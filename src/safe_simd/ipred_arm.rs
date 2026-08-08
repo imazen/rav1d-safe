@@ -1035,6 +1035,10 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     max_height: c_int,
     bd: BD,
 ) -> bool {
+    // Ablation switch (measurement only; const-false without `__ablate`).
+    if crate::src::ablate::is_off(crate::src::ablate::Family::IntraPred) {
+        return false;
+    }
     use crate::include::common::bitdepth::BPC;
     use zerocopy::IntoBytes;
 
