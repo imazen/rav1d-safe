@@ -1,0 +1,436 @@
+# aarch64: which kernels own the 464 failing dav1d-test-data vectors
+
+date: 2026-08-07
+host: Apple M4 Pro (8P+4E), macOS 15.5, aarch64
+base: `verify/compose` @ eb6f9ae (p2-kernels + NEON loop filter + NEON CDEF +
+      tracker shard sizing), default features (`bitdepth_8,bitdepth_16`), no `asm`
+tooling added here: `examples/md5_inventory`, `src/ablate.rs` +
+      `examples/md5_ablate`, `src::safe_simd::mc_arm::compound_parity`
+name sets: `benchmarks/aarch64_md5_attribution_2026-08-07/`
+
+This is an attribution pass. Nothing was fixed.
+
+---
+
+## 0. TL;DR
+
+Every one of the 464 failures is caused by an aarch64 SIMD kernel, and by
+**three** of them. The partition is exact and was measured, not inferred:
+
+| needs fixed                    | vectors | where                                        |
+|--------------------------------|--------:|----------------------------------------------|
+| `mc_other` alone               |      80 | 8-bit/data 79, 8-bit/issues 1                |
+| `itx` alone                    |      57 | 8-bit quantizer 26, data 20, size 8, +3      |
+| `itx` **and** `mc_other`       |     236 | 8-bit, incl. all 18 vq_suite                 |
+| `mc_prep` **and** `mc_other`   |      91 | 10-bit/data 45, 10-bit/issues 1, 12-bit 45   |
+| **total**                      | **464** |                                              |
+
+Cumulative repair if you fix in this order: `mc_other` → 80, `+itx` → 373,
+`+mc_prep` → 464. **`mc_other` is on the critical path for 407 of the 464** and
+is the family with **no differential harness of any kind**.
+
+Not guilty, measured: `mc_put`, `cdef`, `loopfilter`, `looprestoration`,
+`filmgrain`, `ipred` — each breaks **zero** vectors on its own, and ablating each
+repairs zero.
+
+---
+
+## 1. The prior attribution was wrong in both directions
+
+The standing note was "16bpc itx and mc". Measured:
+
+* **itx cannot be a 16bpc bug.** Every arm of
+  `safe_simd::itx_arm::itxfm_add_dispatch` is gated `BD::BPC == BPC::BPC8`
+  (13 arms: 4x4, 8x8, 16x16, 32x32, 8x32, 32x8, 16x32, 32x16, 64x64, 64x32,
+  32x64, 16x64, 64x16). The `BPC16` branch in that file is under
+  `#[cfg(feature = "asm")]`, so it is not in this build. itx breaks 293
+  vectors and **all 293 are 8-bit**; it breaks 0 at 10 or 12 bits, because no
+  16bpc transform runs a NEON kernel at all. The in-file comment already says
+  the 16bpc kernels are "NOT bit-exact, so wiring them here would ship wrong
+  pixels" — that is a latent hazard, not a current cause.
+* **8-bit is the majority, not the tail.** 304 of the 358 8-bit/data vectors
+  fail. A 16bpc-only hypothesis can explain at most the 91 10/12-bit failures.
+* **`ipred` has no NEON in this build at all.** `intra_pred_dispatch` is
+  `#[cfg(all(feature = "asm", target_arch = "aarch64"))]`, as is its call site
+  in `src/ipred.rs`. Intra prediction is 100% scalar here.
+
+Correct at HEAD: **MC_PREP 91 vectors** (the note's number is exact — 10-bit/data
+45, 10-bit/issues 1, 12-bit/data 45). Stale: **ITX 103** — it is 293 now.
+
+---
+
+## 2. Method
+
+### 2a. Baseline, by name
+
+`examples/md5_inventory` writes one TSV row per vector. 766 decoded, 302 PASS,
+**464 MISMATCH**, 0 ERROR, 2 skipped (non-IVF). This reproduces
+`tests/decode_md5_verify`'s count exactly and, unlike it, leaves an artifact you
+can set-diff: `.../md5_baseline_766.tsv.zst`, `.../failing_464.txt`.
+
+Per group: 8-bit/data 304/358, 8-bit/quantizer 26/64, 8-bit/vq_suite 18/18,
+8-bit/size 8/100, 8-bit/features 6/10, 8-bit/issues 5/15, 8-bit/{cdfupdate,
+film_grain, mfmv, mv} 1 each, 8-bit/resize 2/2, 10-bit/data 45/71,
+10-bit/issues 1/1, 12-bit/data 45/46. Clean: 10-bit/quantizer 64/64,
+10-bit/film_grain, 8-bit/intra, 12-bit/features.
+
+### 2b. Ablation — the causal instrument
+
+`CpuLevel::Scalar` / `rav1d_set_cpu_flags_mask(0)` **does not disable safe SIMD
+on aarch64.** Nothing under `src/safe_simd/` reads the cpu-flags mask; every
+dispatcher gates on `archmage::Arm64::summon()`, which cannot fail on real
+hardware. So `tests/decode_cpu_levels` compares three identical decoders here,
+and any claim of the shape "it fails at all three CPU levels, therefore it is
+not SIMD" is unsupported on this target. (`benchmarks/neon_tier_isolation_
+2026-07-28.meta` draws exactly that conclusion for the 13 vq_suite vectors. It
+is wrong: all 18 vq_suite failures are `itx` + `mc_other`, and every one passes
+with SIMD ablated.)
+
+`src/ablate.rs` adds the missing switch: a process-global bitmask of disabled
+families, checked at every aarch64 `*_dispatch` entry (26 guard sites), where a
+disabled family returns "not handled" and the caller runs the generic scalar
+reference. Two arm shapes:
+
+* `<family>` — that family scalar, rest NEON. Flipping to PASS ⇒ that family is
+  the *only* cause (**necessary**).
+* `only_<family>` — that family NEON, rest scalar. Still MISMATCH ⇒ that family
+  breaks the vector *by itself* (**sufficient**). This is what disambiguates a
+  vector two kernels each corrupt; such a vector is invisible in the first shape.
+
+| arm                | MISMATCH / 464 | reading                                   |
+|--------------------|---------------:|-------------------------------------------|
+| `none` (baseline)  |            464 | reproduces the inventory exactly           |
+| `itx`              |            407 | repairs 57                                 |
+| `mc_put`           |            464 | repairs 0                                  |
+| `mc_prep`          |            464 | repairs 0                                  |
+| `mc_other`         |            384 | repairs 80                                 |
+| `cdef`             |            464 | repairs 0                                  |
+| `loopfilter`       |            464 | repairs 0                                  |
+| `looprestoration`  |            464 | repairs 0                                  |
+| `ipred`            |            464 | repairs 0 (no NEON ipred in this build)    |
+| `filmgrain`        |            464 | repairs 0                                  |
+| **`all`**          |          **0** | **all 766 pass with every kernel scalar**  |
+| `only_itx`         |            293 | itx alone breaks 293                       |
+| `only_mc_put`      |              0 |                                            |
+| `only_mc_prep`     |             91 | mc_prep alone breaks 91                    |
+| `only_mc_other`    |            407 | mc_other alone breaks 407                  |
+| `only_cdef`        |              0 |                                            |
+| `only_loopfilter`  |              0 |                                            |
+| `only_looprestoration` |          0 |                                            |
+| `only_ipred`       |              0 |                                            |
+| `only_filmgrain`   |              0 |                                            |
+
+`all` = 766/766 PASS is the load-bearing line: **the generic scalar reference is
+fully conformant with dav1d on this corpus**, so it is a sound oracle, and 100%
+of the failures are SIMD. Nothing is a parser, MSAC, or operating-point bug.
+
+Set arithmetic over the `only_` arms (`itx ∪ mc_prep ∪ mc_other` = 464 exactly;
+`itx ∩ mc_prep` = ∅, which is the bit-depth split falling out of the data):
+
+```
+itx only            57
+mc_other only       80
+itx + mc_other     236
+mc_prep + mc_other  91
+```
+
+### 2c. `__simd_test_log` — one decode, cross-module mismatch census
+
+A full-corpus decode with `--features __simd_test_log`, with a `VECTOR` marker on
+stderr before each vector so per-call lines attribute (sound: `Settings::threads`
+defaults to 1). 766 vectors:
+
+| class              |    calls | vectors | groups                                   |
+|--------------------|---------:|--------:|------------------------------------------|
+| `ITX_MISMATCH`     |    7,855 |     293 | 8-bit only                                |
+| `MC_PREP_MISMATCH` |  132,144 |      91 | 10-bit/data 45, 10-bit/issues 1, 12-bit 45|
+| *(nothing logged)* |        — |      80 | 8-bit/data 79, 8-bit/issues 1             |
+
+Zero `MC_PUT_MISMATCH`, `CDEF_MISMATCH`, `CDEF_DIR_MISMATCH`, `LF_MISMATCH`,
+`LR_MISMATCH`. Zero MD5-passing vectors logged any mismatch, so on this corpus a
+logged divergence always reaches the output.
+
+The logged sets agree with the ablation sets exactly: the 80 silent vectors are
+precisely the 80 that `--ablate mc_other` repairs.
+
+ITX cells, all 8bpc: **16x16 type=11 (H_DCT) 7,190 calls / 243 vectors**;
+16x32 type=9 (IDTX) 142/51; 32x16 type=9 (IDTX) 78/47; 16x32 type=0 (DCT_DCT)
+16/13. This is still the `CONTEXT-HANDOFF.md` §3 list, plus 16x32 DCT_DCT.
+
+MC_PREP: modal `max_diff` is **exactly 8192** (24,466 calls), then 8194, 2036,
+8195. 8192 is `BitDepth16::PREP_BIAS`. See §4.
+
+---
+
+## 3. Harness coverage is the reason two of the three hid
+
+| family            | live differential harness?                    | breaks |
+|-------------------|-----------------------------------------------|-------:|
+| itx               | yes, `src/itx.rs` (`ITX_MISMATCH`)            |    293 |
+| mc_put            | yes, `src/mc.rs` (`MC_PUT_MISMATCH`)          |      0 |
+| mc_prep           | yes, `src/mc.rs` (`MC_PREP_MISMATCH`)         |     91 |
+| **mc_other**      | **none — no harness exists**                  |**407** |
+| cdef              | yes, `src/cdef.rs`                            |      0 |
+| **loopfilter**    | **compiled but structurally dead** (below)    |      0 |
+| looprestoration   | yes, `src/looprestoration.rs`                 |      0 |
+| filmgrain         | none                                          |      0 |
+| ipred             | n/a (no NEON in this build)                   |      0 |
+
+**`mc_other`** is `avg` / `w_avg` / `mask` / `w_mask` / `blend` / `blend_dir` /
+`w_mask` / `mc_scaled` / `mct_scaled` / `warp8x8` / `warp8x8t` / `emu_edge` /
+`resize`. `src/mc.rs` dual-computes only `mc_put_direct` and `mct_prep_direct`.
+The other twelve dispatchers have never been compared to scalar by anything.
+
+**The aarch64 loop-filter harness cannot fire.**
+`safe_simd::loopfilter_arm::loopfilter_sb_dispatch` **always returns `false`**
+(deliberately — the NEON tier is wired one level down, at
+`lf_compact_run_neon`, called from `LfBlock::filter_run` inside
+`loop_filter_sb128_rust`). `src/loopfilter.rs`'s `__simd_test` block only runs
+when `simd_handled` is true, so `LF_MISMATCH` is unreachable on aarch64 and the
+"scalar reference" it would compare against is the NEON path itself. The loop
+filter is not currently guilty — `only_loopfilter` breaks 0 — but that verdict
+comes from the ablation, **not** from the harness, which supplies no evidence
+either way. (There *is* real coverage elsewhere:
+`src/loopfilter.rs::neon_parity` unit-tests `lf_compact_run_neon` against a
+scalar oracle. Keep it; it is why the loop filter is clean.)
+
+---
+
+## 4. What is actually wrong, per family
+
+### 4a. `mc_other` (407 vectors) — HIGHEST YIELD
+
+Two independent defects, both confirmed by the new
+`src::safe_simd::mc_arm::compound_parity` tests:
+
+**(i) `avg_8bpc_inner`'s vector paths compute twice the correct average.**
+`vqrdmulhq_n_s16(a, b)` is `sat((2·a·b + 2^15) >> 16)`. With `b = 2048` that is
+`(a + 8) >> 4`, i.e. `sum/16`. The scalar reference is `(t1 + t2 + 16) >> 5`,
+i.e. `sum/32`. **The multiplier should be 1024.** The kernel's own comment
+derives `(a·1024 + 8192) >> 14` and then says "We want `(a·1024 + 16384) >> 15`"
+— it names the discrepancy and ships anyway. The scalar tail below it is
+correct, which is the fingerprint: `avg8` passes at 4x4 and 4x8 (tail only) and
+fails at every width ≥ 8. Same `vqrdmulhq_n_s16(sum, 2048)` appears in
+`w_avg_8bpc_inner`; there the *tail* is also off, in the other direction (it
+divides by 512 where the reference divides by 256), so check both.
+
+**(ii) `w_mask_{8,16}bpc_inner` add a `PREP_BIAS` that belongs to neither
+convention.** Both write `rnd = (32 << intermediate_bits) + 8192 * 64`. At 8bpc
+`BitDepth8::PREP_BIAS` is **0**, so the scalar `rnd` is 512 and the kernel's is
+524,800 — the source comment "PREP_BIAS = 8192 for 8bpc in compound" is simply
+false. At 16bpc its siblings add nothing (§4b), so it disagrees with them too.
+
+**(iii) `intermediate_bits` is hardcoded to 4 in four 16bpc kernels** —
+`avg_16bpc_inner` (mc_arm.rs:172), `w_avg_16bpc_inner` (:389),
+`mask_16bpc_inner` (:606), `w_mask_16bpc_inner` (:2654). The spec value is
+`14 - bitdepth`: 4 at 10-bit, **2 at 12-bit**. Correct at 10, wrong at 12 — the
+exact shape of the CDEF `bitdepth_min_8` bug that hid for months.
+`compound_16bpc_shift_tracks_bitdepth` measures the effective shift without
+touching the additive constant and finds all three of avg/w_avg/mask off at both
+10 and 12 bits; `w_mask_16bpc_segmentation_mask_matches_scalar` passes at 10-bit
+and fails at 12-bit, which is the clean isolated signature of this term
+(`mask_sh = bitdepth + intermediate_bits - 4` → 12 instead of 10).
+
+### 4b. `mc_prep` (91 vectors, 10 + 12 bit) — and a seam decision it forces
+
+`prep_8tap_16bpc_inner` (mc_arm.rs:4489) hardcodes `intermediate_bits = 4u8`
+while its `put` twin two hundred lines up derives it correctly
+(`bitdepth_max.leading_zeros() - 2`, mc_arm.rs:4250). `CONTEXT-HANDOFF.md` §3
+flagged this as latent in 2026-06; it is live.
+
+But the dominant `MC_PREP_MISMATCH max_diff` is **8192 = `BitDepth16::PREP_BIAS`,
+and it is 8192 at 10-bit too**, where the hardcoded 4 is right. So there is a
+second, larger divergence: **the aarch64 16bpc prep does not subtract the prep
+bias.** `src/mc.rs`'s `prep_8tap_rust` ends every output with
+`.sub_prep_bias::<BD>()`; this kernel does not. And `avg_16bpc_inner` /
+`w_avg_16bpc_inner` / `mask_16bpc_inner` correspondingly do **not** add it back
+inside `rnd`, so those four are internally paired on an unbiased convention that
+the scalar reference does not share.
+
+**This is a decision the fix has to make before touching a line**, and it is why
+all 91 mc_prep vectors also need mc_other: either
+(a) make `prep_8tap_16bpc_inner` scalar-conventional and add `PREP_BIAS·k` back
+in avg/w_avg/mask (and *remove* the bogus one from w_mask at 8bpc), or
+(b) keep the unbiased convention and strip the bias from `w_mask_{8,16}` — but
+then the arm prep can never be compared to the scalar prep, and
+`MC_PREP_MISMATCH` becomes permanently noisy and must be retired or rebiased.
+(a) is the smaller blast radius and keeps the harness meaningful.
+
+Same trap applies to any 16bpc value test written against a scalar-convention
+oracle: it will report one `PREP_BIAS` of difference that is a seam artefact, not
+the defect. `compound_parity` is deliberately convention-free at 16bpc
+(shift-only + the bias-invariant segmentation mask) and full-value only at 8bpc,
+where `PREP_BIAS` is 0 and `prep_8tap_8bpc_inner` is independently known
+bit-exact (zero `MC_PREP_MISMATCH` across all 358 8-bit/data vectors).
+
+### 4c. `itx` (293 vectors, all 8bpc)
+
+Four cells, from `__simd_test_log`:
+
+| size  | type            | calls | vectors |
+|-------|-----------------|------:|--------:|
+| 16x16 | 11 = `H_DCT`    | 7,190 |     243 |
+| 16x32 | 9 = `IDTX`      |   142 |      51 |
+| 32x16 | 9 = `IDTX`      |    78 |      47 |
+| 16x32 | 0 = `DCT_DCT`   |    16 |      13 |
+
+`H_DCT` at 16x16 dominates. Per the dispatch table, `H_DCT` routes to
+`inv_txfm_add_dct_identity_16x16_8bpc_neon_inner`. The IDTX rect2 pair is the
+`CONTEXT-HANDOFF.md` recipe's open item (16x32/32x16 need the ×1/√2
+`scale_input` the NEON omits; rect2 applies iff `log2(w)+log2(h)` is odd).
+
+---
+
+## 5. `bitdepth_min_8` audit (the CDEF-bug-shape sweep)
+
+Every `bitdepth_min_8` use in every `*_arm.rs`, against its scalar and x86 twin:
+
+* `cdef_arm.rs` (31 uses) — **clean**. `filter_params` has the #446 fix
+  (`4 - (pri_strength >> bitdepth_min_8 & 1)`); `bitdepth_min_8_of`, the
+  `neg_shift` splats and the direction search all derive from `bitdepth_max`.
+  Ablation agrees: cdef breaks 0.
+* `loopfilter_arm.rs` (8 uses) — **clean**. `f`, `clip_hi`, and the per-group
+  `e`/`i`/`h` shifts match `src/loopfilter.rs::loop_filter` term for term; the
+  narrow filter's `f1`/`f2`/`f3` and both arithmetic shifts match.
+* `looprestoration_arm.rs` (3 uses) — **clean**, and the two literal-looking
+  derivations (`if bitdepth_max == 1023 { 2 } else { 4 }`) are inside 16bpc-only
+  functions where 10 and 12 are the only inputs.
+* `filmgrain_arm.rs` (14 uses) — same 16bpc-only literal pattern
+  (`if bitdepth_max >= 4095 { 4 } else { 2 }`), consistent with
+  `src/filmgrain.rs`'s `bd.bitdepth() - 8`. Ablation agrees: 0.
+* `mc_arm.rs`, `itx_arm*.rs` — do not use `bitdepth_min_8`; they use
+  `intermediate_bits`, **and that is where the live instance of this bug class
+  is** (§4a-iii, §4b). Five hardcoded `intermediate_bits = 4` in 16bpc kernels.
+
+So: the sweep found no *new* `bitdepth_min_8` sibling, and the same bug *shape*
+one identifier over, five times.
+
+---
+
+## 6. "NEON tier is actually scalar" recount
+
+Real aarch64 intrinsic call sites per module at this base (regex over the
+`vld|vst|vadd|…` families, not the loose `v\w+_\w+\(`):
+
+```
+mc_arm.rs                937      itx_arm_neon_rect_large.rs  190
+loopfilter_arm.rs        223      itx_arm_neon_rect.rs        171
+cdef_arm.rs              104      itx_arm_neon_16x16.rs       146
+filmgrain_arm.rs          64      itx_arm_neon_32.rs          130
+ipred_arm.rs              48      itx_arm_neon_8x8.rs         128
+                                  itx_arm_neon_{64,large_rect} 92 each
+itx_arm.rs                 0  (dispatch only; kernels live in itx_arm_neon_*)
+looprestoration_arm.rs     0  ← still the scalar reference wearing a NEON name
+refmvs_arm.rs              2  (asm-only, not in this build)
+```
+
+`ROADMAP_SIMD_PORTING.md` R3's three zero-count files are down to one: CDEF and
+the loop filter have since been ported. **`looprestoration_arm.rs` is 1,531
+lines of scalar with `use core::arch::aarch64::*` at the top**, dispatched
+unconditionally (`lr_filter_dispatch` ends in `true`) at both bit depths. It is
+a hand-written *duplicate* of `src/looprestoration.rs` — any drift between them
+is a bug by construction, and it currently costs a real perf tier. It is not
+guilty of any of the 464 (ablation: 0), so it is a perf/dedup item, not a
+correctness one. `ipred_arm.rs`'s 48 intrinsics are all inside
+`#[cfg(feature = "asm")] mod ffi` and unreachable here.
+
+---
+
+## 7. The tests added, and proof they have teeth
+
+`src::safe_simd::mc_arm::compound_parity`, four tests, `cargo test --release
+--lib compound_parity`. Every one sweeps parameters and reports **which cells**
+diverge, not just that something did. Each ends in `Report::finish(what,
+min_cells)`, which fails both on divergence **and** on a vacuous run — if a
+refactor made the sweep skip every case, the parity assert alone would stay
+trivially true.
+
+Current state on `verify/compose` (this is the defect, stated executably):
+
+| test | result |
+|---|---|
+| `oracle_constants_come_from_the_bitdepth_not_a_literal` | **pass** |
+| `compound_8bpc_matches_scalar` | fail, 176 of 210 cells |
+| `compound_16bpc_shift_tracks_bitdepth` | fail, 5 of 6 cells |
+| `w_mask_16bpc_segmentation_mask_matches_scalar` | fail, 6 of 12 — **exactly the 12-bit half** |
+
+Three independent reasons to believe the oracle rather than the kernel:
+
+1. `w_mask_16bpc` segmentation **passes at 10-bit and fails at 12-bit** with the
+   same oracle. An oracle that were simply wrong would fail at both.
+2. `avg8` **passes at 4x4 and 4x8 and fails at every width ≥ 8** — the scalar
+   tail of the very same function agrees with the oracle while its vector path
+   does not.
+3. The `avg` defect is confirmed by algebra independent of any measurement:
+   `vqrdmulhq_n_s16(a, 2048) = (a + 8) >> 4`, the reference wants `>> 5`.
+
+**Planted-mutation check** (both reverted; `mc_arm.rs` restored byte-for-byte):
+
+* Mutation A — `w_mask_16bpc_inner`, `mask_rnd: 1 << (mask_sh - 5)` → `- 4`.
+  **Caught**: 4 of the 6 previously-passing 10-bit cells flipped to fail.
+* Mutation B — `avg_8bpc_inner` scalar tail, drop the `+ 16384` rounding.
+  **Caught**: both previously-passing cells (`avg8 4x4`, `avg8 4x8`) flipped.
+* Mutation B was first written as `16384` → `16385` and was **not** caught —
+  correctly: `sum·1024 + 16384 = 1024·(sum+16)` is always a multiple of 1024, so
+  a `+1` can never cross a `>> 15` boundary. Recorded because "the test missed
+  my mutation" is only evidence when the mutation was live.
+
+---
+
+## 8. Ranked work list
+
+1. **`mc_other`** — 80 vectors immediately, unblocks 327 more; 3 named defects
+   (§4a); no harness exists, so add one to `src/mc.rs` for the other twelve
+   dispatchers in the same change. Highest yield per unit of risk.
+2. **`itx` 16x16 `H_DCT` 8bpc** — 243 of the 293 itx vectors in one kernel.
+3. **`itx` IDTX 16x32 / 32x16 8bpc** (rect2 scaling) + **DCT_DCT 16x32** — the
+   remaining 50.
+4. **`mc_prep` 16bpc** — 91 vectors, but decide the `PREP_BIAS` convention first
+   (§4b); it is co-required with mc_other, so it lands last regardless.
+5. **Not correctness, but next**: `loopfilter_sb_dispatch` returning `false`
+   makes `LF_MISMATCH` unreachable — either delete the dead harness branch or
+   move the comparison down to `lf_compact_run_neon` so it means something;
+   `looprestoration_arm.rs` is a scalar duplicate that should be deleted in
+   favour of the reference or actually vectorised; the 16bpc itx kernels exist
+   and are known non-bit-exact, so keep them unwired.
+
+**Regression gate for whoever fixes this**: re-run `md5_inventory` and
+`comm -13` the new failing set against `failing_464.txt`. Any name that appears
+in the new set and not the old is a regression, however the count moved.
+
+---
+
+## 9. Files
+
+```
+benchmarks/aarch64_md5_attribution_2026-08-07/
+  md5_baseline_766.tsv.zst              full inventory (group,name,status,expected,actual,frames,ms)
+  ablate_one_family_scalar.tsv.zst      arms: none + one-family-scalar + all
+  ablate_only_one_family_neon.tsv.zst   arms: only_<family>
+  failing_464.txt                       the baseline failing set, by name
+  broken_by_itx_293.txt                 itx alone is sufficient to break these
+  broken_by_mc_other_407.txt            mc_other alone is sufficient
+  broken_by_mc_prep_91.txt              mc_prep alone is sufficient
+  needs_itx_only_57.txt                 repaired by ablating itx alone
+  needs_mc_other_only_80.txt            repaired by ablating mc_other alone
+  needs_itx_and_mc_other_236.txt        need both
+  needs_mc_prep_and_mc_other_91.txt     need both
+```
+
+Reproduce:
+
+```
+cargo build --release --example md5_inventory
+./target/release/examples/md5_inventory > baseline.tsv                      # 35 s
+
+cargo build --release --features __ablate --example md5_ablate
+./target/release/examples/md5_ablate --only-failing baseline.tsv > arms.tsv # ~35 min
+
+cargo build --release --features __simd_test_log --example md5_inventory
+./target/release/examples/md5_inventory > log.tsv 2> log.err                # ~25 min
+
+cargo test --release --lib compound_parity
+```
+
+All runs here were `nice -n 19` (shared box). No timing claim is made and none
+was needed: every number above is a hash comparison or a set cardinality.
