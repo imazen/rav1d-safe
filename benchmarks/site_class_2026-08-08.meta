@@ -130,7 +130,25 @@ counts).
 | other | 0 | 2,973,234 | 0 | 2,973,234 |
 | picwb | 0 | 0 | 2,662,876 | 0 |
 
-Three facts fall straight out, before any timing:
+Mutable vs immutable, same runs (v4k_8tile, per 3 frames):
+
+| class | t=1 mut | t=1 immut | t=8 mut | t=8 immut |
+|---|---|---|---|---|
+| recon | 3,076,634 | 2,451,417 | 2,749,824 | 7,170,537 |
+| filter | 667,170 | 5,725,480 | 666,576 | 5,724,886 |
+| decode | 376,260 | 376,532 | 376,260 | 376,532 |
+| other | 2,535,260 | 437,974 | 2,535,260 | 437,974 |
+| picwb | 0 | 0 | 2,662,876 | 0 |
+
+Relevant to Design A: recon is 56% mutable at t=1 and only 28% at t=8 — the
+t=1 -> t=8 growth is almost all READS (neighbour rows for intra edges, taken
+per-row once tile threading is on). Those reads are of rows the SAME tile owns,
+so a per-tile row split serves them with `&` slices out of the segment set the
+worker already holds; they do not need a second mechanism. The filter class is
+90% reads at both thread counts, which is the deblock tap window — and those
+are the reads that cross the tile edge.
+
+Three more facts fall straight out, before any timing:
 
 1. **`decode` and `other` are 100% sub-64-KiB.** `decode.rs` never borrows the
    picture buffer at all, so a picture row split provably cannot reach it — even
