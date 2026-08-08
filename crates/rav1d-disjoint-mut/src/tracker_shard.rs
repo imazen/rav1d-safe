@@ -1284,7 +1284,10 @@ mod tests {
             let _n = t.add_mut(&b(1002..1006));
         }))
         .is_err();
-        assert!(caught, "narrow borrow missed a wide record on a 1-shard instance");
+        assert!(
+            caught,
+            "narrow borrow missed a wide record on a 1-shard instance"
+        );
         t.remove(wide);
         // ...and stop seeing it once released.
         let n = t.add_mut(&b(1002..1006));
@@ -1301,7 +1304,11 @@ mod tests {
     fn wide_and_narrow_still_see_each_other_at_full_width() {
         set_parallelism(64);
         let t = BorrowTracker::new(1 << 24);
-        assert_eq!(t.mask, N_SHARDS - 1, "declared parallelism must widen the mask");
+        assert_eq!(
+            t.mask,
+            N_SHARDS - 1,
+            "declared parallelism must widen the mask"
+        );
         let bs = 1usize << BLOCK_SHIFT;
         // A borrow spanning far more blocks than MAX_SHARDS_PER_BORROW, so it
         // is promoted; the narrow probe sits in a block deep inside it, whose
@@ -1311,7 +1318,10 @@ mod tests {
             let _n = t.add_mut(&b(200 * bs..200 * bs + 4));
         }))
         .is_err();
-        assert!(caught, "narrow borrow missed a live wide record at full width");
+        assert!(
+            caught,
+            "narrow borrow missed a live wide record at full width"
+        );
         t.remove(wide);
         let n = t.add_mut(&b(200 * bs..200 * bs + 4));
         t.remove(n);
