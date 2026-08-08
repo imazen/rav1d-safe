@@ -1,0 +1,162 @@
+# x86-64 gap to dav1d + MT scaling: first valid x64 record (i265)
+
+date: 2026-08-08 (01:31Z–03:10Z)
+host: i265 — Intel Core Ultra 7 265K (Arrow Lake, 20C/20T, no SMT), 32 GB DDR5-6000
+      SINGLE-CHANNEL, Ubuntu 26.04, kernel 7.0.0-28. Box idle (load 0.00 at start;
+      max 1-min load recorded during the sweep: 2.83, all of it ours).
+rustc: 1.97.1 stable
+profile: release (lto = "fat", codegen-units = 1), default features
+         (bitdepth_8 + bitdepth_16 = CHECKED DisjointMut) unless labelled.
+         No `-C target-cpu=native`. No nice on timed runs (box is dedicated+idle).
+dav1d: 1.5.3-46-g1718ff9a, built on-box from ~/work/dav1d-ref rsync
+       (meson --buildtype release, default_library=static).
+       NOTE: the 2026-08-07 aarch64 records used dav1d 1.5.4 homebrew.
+upstream rav1d: 1.1.0 crates.io, `asm` feature (nasm-built), via rav1d-bench.
+
+## Arms (all builds of examples/bench_ab_decode.rs, separate CARGO_TARGET_DIRs)
+
+  pre445    0d350d1c  (immediately before #445)
+  main      a6a7e232  (origin/main tip, #445 merged)
+  audit445  b5211a03  (origin/perf/audit-445: batched per-row reservations)
+  attrib    762a346c  (origin/attrib/aarch64-md5-kernel-map: the composed
+                       P1-barrier-removal + P2-kernels + P3-shard-fix +
+                       LF/CDEF-NEON chain incl. latch fix + sharded tracker)
+
+## Vectors
+
+Generated ON i265 from test-vectors/bench/photo_4k.avif (3840x2561, the standard
+bench asset) per the recipe in benchmarks/tile_threading_guard_2026-08-06.meta,
+with ImageMagick `-resize` in place of macOS `sips`:
+avifenc -q 70 -s 6 -y 444 [-d 10] [--tilecolslog2 2 --tilerowslog2 1].
+NOT byte-identical to the mac-local vectors of the 2026-08-07 records (different
+source dims 3840x2561 vs 3840x2160, different avifenc build) — cross-host
+comparisons are ratio-vs-dav1d and scaling-shape only, never absolute ms.
+dav1d twins: same OBU payload (extracted via zenavif-parse, byte-identical to
+what the rav1d-safe harness decodes) wrapped in IVF with the frame repeated
+24x. IVF header is the full 32 bytes incl. the trailing unused u32 — a first
+pass omitted it, dav1d's demuxer then failed instantly, and those runs (the
+original dav1d_wall.tsv) are DISCARDED; wall2 re-ran with rc capture and all
+126 cells report rc=0/0.
+
+## Protocol
+
+scripts/perf/ab_sweep.sh (Linux-patched: /proc/loadavg + ps -eo pcpu=), 3 rounds
+x 3 reps, arms interleaved and rotated per cell, one process per (arm, vector,
+threads) cell, LOAD recorded per cell. bench_ab_decode reuses one decoder per
+process; ms/frame is steady-state (construction outside timing).
+dav1d: --muxer null --framedelay 1, wall two-point fit over --limit 2 vs
+--limit 20 (18-frame delta removes process+construction startup), 3 rounds,
+medians. Single-thread legs: examples/profile_{decode,avif} (threads=1
+hardcoded, the same harness as profile_v0.5.6_2026-05-25.txt), 500/20/20 iters.
+
+## Result 1 — single-thread, the May-baseline comparison
+
+profile harness, ms/iter (allintra = ms/frame), i265:
+
+  input      asm      checked  unchecked  partialasm | checked/asm  May-2026 (7950X)
+  allintra   3.047    4.018    3.782      3.766      |  1.32        1.52
+  photo_4k   131.4    176.1    165.5      162.0      |  1.34        1.56
+  photo_8k   767.3    1123.3   1014.3     840.7      |  1.46        1.54
+
+* The checked/ASM gap NARROWED vs the May v0.5.6 record on every input
+  (1.32-1.46x vs 1.52-1.56x). Post-May optimization commits (decode_coefs
+  index-offset, issue-17 alloc pooling, taskctx shrink) land in this window;
+  a cross-CPU component (Arrow Lake vs Zen4) cannot be excluded. Same
+  methodology, different machine — ratios only.
+* unchecked saves 6-10% over checked (README's "~5%" is the right order).
+* partial_asm sits between asm and unchecked on photo content (1.10-1.23x asm)
+  but is ~equal to unchecked on entropy-heavy allintra. NOTE: on main,
+  partial_asm still implies `unchecked` (the uncommitted local WIP decouples
+  them; not measured here).
+* upstream rav1d 1.1.0 (crates.io, asm): allintra 2.208 ms/f, photo_4k
+  106.4 ms, photo_8k 569.9 ms — 15-35% FASTER than this fork's own `asm`
+  build (131.4/767.3/3.047). The fork's asm mode has drifted behind upstream;
+  worth its own investigation before quoting "asm parity".
+
+## Result 2 — gap to dav1d (the headline)
+
+dav1d two-point per-frame (medians, rc-checked) vs bench_ab main arm (checked):
+
+  vector          t | main ms/f  dav1d ms/f   gap        dav1d curve t1..t20
+  v4k_8tile       1 |   220.1      145.8      1.51x      145.8/74.0/42.8/32.7/33.1/33.5
+  v4k_8tile       2 |   428.7       74.0      5.79x
+  v4k_8tile       4 |   590.6       42.8     13.8x
+  v4k_8tile       8 |   622.2       32.7     19.0x
+  v4k_8tile_10b   1 |   274.3      137.9      1.99x     137.9/71.0/40.1/32.1/33.7/33.8
+  v4k_8tile_10b   8 |   668.7       32.1     20.8x
+  v4k_1tile       1 |   220.0      148.1      1.49x     148.1/74.1/42.9/32.7/33.3/33.3
+  v4k_1tile       8 |   621.5       32.7     19.0x
+
+  photo_4k (dav1d only): 111.7/56.3/32.7/25.1/25.2/25.6
+  photo_8k (dav1d only): 535.2/267.2/150.7/110.5/114.8/115.6
+
+* Single-thread the safe checked build is 1.49-1.51x dav1d at 8 bpc and 1.99x
+  at 10 bpc — a shade NARROWER than the aarch64 same-week reference
+  (M4 Pro, verify_gap_2026-08-07: 1.62x / 2.01x).
+* dav1d scales 4.46x t1->t8 on this box and saturates there (single-channel
+  DDR5 is the likely ceiling; t16/t20 flat). dav1d notably decodes 1-tile 4K
+  at the same speed as 8-tile — its sbrow/task parallelism does not need tiles.
+* Because rav1d-safe ANTI-scales (Result 3), the MT gap explodes:
+  1.5x at t=1 -> 19-21x at t=8. On the M4 the equivalent figure was 5.23x
+  (pre-chain) -> 3.44x (chain); nothing on x64 today gets anywhere near.
+* allintra IVF, dav1d single-point incl. startup: ~2.8 ms/f t1 (vs checked
+  profile 4.018, asm 3.047, upstream rav1d 1.1.0 2.208 — harness differences
+  make this row indicative only).
+
+## Companion verification (mac, M4 Pro, same session)
+
+Full `cargo test --release` at four arms on aarch64 (logs on the mac,
+~/bench-r1d/logs/): main = 34 failures (decode_cpu_levels 5, decode_md5_verify
+13, decode_permutations 16; mt_stress_4k and tile_threading_parity PASS with
+the photo_4k asset provisioned). fix/446 alone: md5_verify 13->12. The
+fix/aarch64-mc-itx chain tip (ddbe8ba, incl. the PREP_BIAS/intermediate_bits
+commit pushed 2026-08-08 ~01:41Z): decode_cpu_levels 6p/0f and
+decode_md5_verify 14p/0f — the aarch64 MD5 conformance gates go GREEN.
+Residual: all 16 decode_permutations failures remain on every arm (10/12-bit
+only; at the chain tip at least one is a PANIC at src/safe_simd/mc_arm.rs:5931,
+not an md5 mismatch) — pre-existing, next target for the aarch64 wave.
+
+## Result 3 — multi-thread: x86-64 tile threading ANTI-SCALES, on every arm
+
+median ms/frame, still decode (v4k_8tile 8bpc, 4x2 tiles):
+
+  arm       t=1     t=2     t=4     t=8    t1->t8
+  pre445    222.5   418.5   603.0   621.5   0.36x
+  main      220.1   428.7   590.6   622.2   0.35x
+  audit445  219.9   418.4   596.4   637.1   0.35x
+  attrib    220.4   422.1   591.9   613.3   0.36x
+
+Every thread count above 1 is SLOWER than t=1 — t2 costs ~1.9x, t8 ~2.8x.
+This is categorically worse than the M4 record (which peaked at t2 ~1.25x
+FASTER and inverted only past t4, fixed by P3 to 3.51x t1->t8 scaling).
+
+* The aarch64 P3 program does NOT transfer to x86-64: attrib (sharded tracker
+  + barrier removal + latch) is within noise of main at every (vector, t).
+  Since main runs the legacy single-lock tracker and attrib the sharded one,
+  the tracker is EXONERATED as the x64 bottleneck at these thread counts.
+* audit445's reservation batching, worth 4-8% on M4, is also noise on x64.
+* Instrumentation snapshot (t=8 cell): process holds ~307% CPU across 9
+  threads; mid-decode kernel-stack sample shows 5/9 threads futex-parked —
+  worker starvation plus inflated active work, not pure spin.
+* #445's per-row-guard cost is NOISE on x64 (main/pre445 within 0.97-1.06
+  across all 28 cells) — the aarch64 +4-8% regression does not reproduce.
+* pre445 does NOT panic on x64 multi-tile MT (0 FAIL rows) — the #445
+  false-overlap panic was reachable through the aarch64/wasm dispatch sites;
+  x86-64 dispatch already routed through with_pixel_guard_mut.
+
+## Result 4 — bit identity on x64
+
+frame MD5 identical across all 4 arms x all 7 vectors x t{1,2,4,8}
+(one distinct md5 per vector; 28 checksum cells per vector).
+The aarch64 10-bit divergence (#446 CDEF pri_tap) does not exist on x64,
+matching the source-level finding that x86 16bpc CDEF carries the correct
+`pri_strength >> bitdepth_min_8 & 1`.
+
+## Files
+
+  x64_i265_ab_sweep_2026-08-08.tsv.zst   raw sweep (RESULT/CHECKSUM/GEOM/LOAD rows)
+  x64_i265_dav1d_wall2_2026-08-08.tsv    dav1d two-point raw (redo; the first
+                                         dav1d_wall.tsv raced twin regeneration
+                                         and is discarded)
+  x64_i265_st_profiles_2026-08-08.txt    ST profile-harness outputs (4 modes)
+  x64_i265_analysis_2026-08-08.txt       median/ratio tables (analyze script output)

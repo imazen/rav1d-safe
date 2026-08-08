@@ -1,0 +1,87 @@
+max LOAD seen: 2.83
+
+== median ms/frame (ab_sweep arms) + dav1d two-point ==
+vector                t |     pre445      main  audit445    attrib     dav1d | main/dav  attrib/dav
+v256.avif             1 |       1.58      1.54      1.56      1.57      1.06 |      1.46x      1.49x
+v256.avif             2 |       3.18      3.15      3.15      3.15      1.00 |      3.15x      3.15x
+v256.avif             4 |       3.45      3.50      3.52      3.55      1.06 |      3.32x      3.36x
+v256.avif             8 |       3.47      3.60      3.58      3.60      1.39 |      2.59x      2.59x
+
+v1024.avif            1 |      24.24     23.96     23.94     23.70     15.94 |      1.50x      1.49x
+v1024.avif            2 |      45.44     44.49     44.94     45.15     11.00 |      4.04x      4.10x
+v1024.avif            4 |      47.61     47.93     47.74     48.19     11.06 |      4.34x      4.36x
+v1024.avif            8 |      43.77     46.56     47.31     46.91     10.72 |      4.34x      4.37x
+
+v1024_10b.avif        1 |      30.26     30.37     30.26     30.02         — |         —         —
+v1024_10b.avif        2 |      53.96     53.17     53.53     52.85         — |         —         —
+v1024_10b.avif        4 |      55.79     54.64     54.50     54.94         — |         —         —
+v1024_10b.avif        8 |      56.68     56.35     56.17     55.73         — |         —         —
+
+v4k_1tile.avif        1 |     223.07    219.97    221.15    220.87    148.11 |      1.49x      1.49x
+v4k_1tile.avif        2 |     415.34    415.26    417.47    414.96     74.06 |      5.61x      5.60x
+v4k_1tile.avif        4 |     612.33    607.47    590.43    595.03     42.94 |     14.15x     13.86x
+v4k_1tile.avif        8 |     605.93    621.54    610.00    616.89     32.67 |     19.03x     18.88x
+
+v4k_1tile_10b.avif    1 |     274.35    275.61    269.74    273.96         — |         —         —
+v4k_1tile_10b.avif    2 |     481.98    493.19    495.68    493.65         — |         —         —
+v4k_1tile_10b.avif    4 |     643.66    639.85    641.79    636.06         — |         —         —
+v4k_1tile_10b.avif    8 |     663.60    652.05    667.64    662.00         — |         —         —
+
+v4k_8tile.avif        1 |     222.50    220.09    219.94    220.37    145.78 |      1.51x      1.51x
+v4k_8tile.avif        2 |     418.50    428.68    418.43    422.09     74.00 |      5.79x      5.70x
+v4k_8tile.avif        4 |     602.96    590.57    596.36    591.94     42.78 |     13.81x     13.84x
+v4k_8tile.avif        8 |     621.49    622.20    637.08    613.34     32.72 |     19.01x     18.74x
+
+v4k_8tile_10b.avif    1 |     270.89    274.30    274.00    273.15    137.94 |      1.99x      1.98x
+v4k_8tile_10b.avif    2 |     489.13    488.96    490.41    486.55     71.00 |      6.89x      6.85x
+v4k_8tile_10b.avif    4 |     632.03    632.10    637.39    627.69     40.06 |     15.78x     15.67x
+v4k_8tile_10b.avif    8 |     651.89    668.70    666.88    663.32     32.11 |     20.82x     20.66x
+
+== scaling t1->t8 (t1_ms / t8_ms; higher = better) ==
+v4k_8tile.avif        pre445=0.36x  main=0.35x  audit445=0.35x  attrib=0.36x  dav1d=4.46x
+v4k_8tile_10b.avif    pre445=0.42x  main=0.41x  audit445=0.41x  attrib=0.41x  dav1d=4.30x
+v4k_1tile.avif        pre445=0.37x  main=0.35x  audit445=0.36x  attrib=0.36x  dav1d=4.53x
+
+== #445 regression on x64: main/pre445 (>1 = main slower) ==
+v256.avif             t1=0.974  t2=0.991  t4=1.016  t8=1.038
+v1024.avif            t1=0.988  t2=0.979  t4=1.007  t8=1.064
+v1024_10b.avif        t1=1.004  t2=0.985  t4=0.979  t8=0.994
+v4k_1tile.avif        t1=0.986  t2=1.000  t4=0.992  t8=1.026
+v4k_1tile_10b.avif    t1=1.005  t2=1.023  t4=0.994  t8=0.983
+v4k_8tile.avif        t1=0.989  t2=1.024  t4=0.979  t8=1.001
+v4k_8tile_10b.avif    t1=1.013  t2=1.000  t4=1.000  t8=1.026
+
+== audit445 recovery: audit445/main ==
+v256.avif             t1=1.015  t2=1.002  t4=1.005  t8=0.996
+v1024.avif            t1=0.999  t2=1.010  t4=0.996  t8=1.016
+v1024_10b.avif        t1=0.996  t2=1.007  t4=0.998  t8=0.997
+v4k_1tile.avif        t1=1.005  t2=1.005  t4=0.972  t8=0.981
+v4k_1tile_10b.avif    t1=0.979  t2=1.005  t4=1.003  t8=1.024
+v4k_8tile.avif        t1=0.999  t2=0.976  t4=1.010  t8=1.024
+v4k_8tile_10b.avif    t1=0.999  t2=1.003  t4=1.008  t8=0.997
+
+== attrib (chain) vs main ==
+v256.avif             t1=1.021  t2=1.002  t4=1.012  t8=1.000
+v1024.avif            t1=0.989  t2=1.015  t4=1.005  t8=1.008
+v1024_10b.avif        t1=0.988  t2=0.994  t4=1.006  t8=0.989
+v4k_1tile.avif        t1=1.004  t2=0.999  t4=0.980  t8=0.993
+v4k_1tile_10b.avif    t1=0.994  t2=1.001  t4=0.994  t8=1.015
+v4k_8tile.avif        t1=1.001  t2=0.985  t4=1.002  t8=0.986
+v4k_8tile_10b.avif    t1=0.996  t2=0.995  t4=0.993  t8=0.992
+
+== bit identity across arms (per vec: distinct md5 count over arms x threads) ==
+v256.avif            distinct md5s=1  (pre445:1; main:1; audit445:1; attrib:1)
+v1024.avif           distinct md5s=1  (pre445:1; main:1; audit445:1; attrib:1)
+v1024_10b.avif       distinct md5s=1  (pre445:1; main:1; audit445:1; attrib:1)
+v4k_1tile.avif       distinct md5s=1  (pre445:1; main:1; audit445:1; attrib:1)
+v4k_1tile_10b.avif   distinct md5s=1  (pre445:1; main:1; audit445:1; attrib:1)
+v4k_8tile.avif       distinct md5s=1  (pre445:1; main:1; audit445:1; attrib:1)
+v4k_8tile_10b.avif   distinct md5s=1  (pre445:1; main:1; audit445:1; attrib:1)
+
+== dav1d wall full curve (median ms/frame) ==
+photo_4k          t1=111.7  t2=56.3  t4=32.7  t8=25.1  t16=25.2  t20=25.6
+photo_8k          t1=535.2  t2=267.2  t4=150.7  t8=110.5  t16=114.8  t20=115.6
+v4k_8tile         t1=145.8  t2=74.0  t4=42.8  t8=32.7  t16=33.1  t20=33.5
+v4k_8tile_10b     t1=137.9  t2=71.0  t4=40.1  t8=32.1  t16=33.7  t20=33.8
+v4k_1tile         t1=148.1  t2=74.1  t4=42.9  t8=32.7  t16=33.3  t20=33.3
+allintra        

@@ -1,0 +1,83 @@
+### mode=asm allintra 500
+Input: /home/zen/bench/corpus/av1-1-b8-02-allintra.ivf (39 frames, 1488225 bytes)
+Iterations: 500
+Decoded frames per iteration: 39
+Total: 59.422s (500 iters, 118.844ms/iter, 3.047ms/frame)
+### mode=asm photo_4k 20
+CpuLevel: Native
+Input: /home/zen/bench/corpus/photo_4k.avif (2037.7 KB AVIF, 2037.4 KB OBU)
+Iterations: 20
+Frames per decode: 1
+Total: 2.628s (20 iters, 131.4ms/iter)
+### mode=asm photo_8k 20
+CpuLevel: Native
+Input: /home/zen/bench/corpus/photo_8k.avif (7410.8 KB AVIF, 7410.5 KB OBU)
+Iterations: 20
+Frames per decode: 1
+Total: 15.346s (20 iters, 767.3ms/iter)
+### mode=checked allintra 500
+Input: /home/zen/bench/corpus/av1-1-b8-02-allintra.ivf (39 frames, 1488225 bytes)
+Iterations: 500
+Decoded frames per iteration: 39
+Total: 78.357s (500 iters, 156.713ms/iter, 4.018ms/frame)
+### mode=checked photo_4k 20
+CpuLevel: Native
+Input: /home/zen/bench/corpus/photo_4k.avif (2037.7 KB AVIF, 2037.4 KB OBU)
+Iterations: 20
+Frames per decode: 1
+Total: 3.521s (20 iters, 176.1ms/iter)
+### mode=checked photo_8k 20
+CpuLevel: Native
+Input: /home/zen/bench/corpus/photo_8k.avif (7410.8 KB AVIF, 7410.5 KB OBU)
+Iterations: 20
+Frames per decode: 1
+Total: 22.467s (20 iters, 1123.3ms/iter)
+### mode=unchecked allintra 500
+Input: /home/zen/bench/corpus/av1-1-b8-02-allintra.ivf (39 frames, 1488225 bytes)
+Iterations: 500
+Decoded frames per iteration: 39
+Total: 73.749s (500 iters, 147.498ms/iter, 3.782ms/frame)
+### mode=unchecked photo_4k 20
+CpuLevel: Native
+Input: /home/zen/bench/corpus/photo_4k.avif (2037.7 KB AVIF, 2037.4 KB OBU)
+Iterations: 20
+Frames per decode: 1
+Total: 3.309s (20 iters, 165.5ms/iter)
+### mode=unchecked photo_8k 20
+CpuLevel: Native
+Input: /home/zen/bench/corpus/photo_8k.avif (7410.8 KB AVIF, 7410.5 KB OBU)
+Iterations: 20
+Frames per decode: 1
+Total: 20.285s (20 iters, 1014.3ms/iter)
+### mode=partialasm allintra 500
+Input: /home/zen/bench/corpus/av1-1-b8-02-allintra.ivf (39 frames, 1488225 bytes)
+Iterations: 500
+Decoded frames per iteration: 39
+Total: 73.438s (500 iters, 146.876ms/iter, 3.766ms/frame)
+### mode=partialasm photo_4k 20
+CpuLevel: Native
+Input: /home/zen/bench/corpus/photo_4k.avif (2037.7 KB AVIF, 2037.4 KB OBU)
+Iterations: 20
+Frames per decode: 1
+Total: 3.240s (20 iters, 162.0ms/iter)
+### mode=partialasm photo_8k 20
+CpuLevel: Native
+Input: /home/zen/bench/corpus/photo_8k.avif (7410.8 KB AVIF, 7410.5 KB OBU)
+Iterations: 20
+Frames per decode: 1
+Total: 16.814s (20 iters, 840.7ms/iter)
+Input: /home/zen/bench/corpus/av1-1-b8-02-allintra.ivf (39 IVF frames, 1488225 bytes OBU)
+Iterations: 100
+Decoder: upstream rav1d 1.1.0 (ASM)
+Frames per decode: 39
+Total: 8.610s (100 iters, 86.1ms/iter, 2.208ms/frame)
+Input: /home/zen/bench/corpus/photo_4k.avif (2037.7 KB AVIF, 2037.4 KB OBU)
+Iterations: 20
+Decoder: upstream rav1d 1.1.0 (ASM)
+Frames per decode: 1
+Total: 2.129s (20 iters, 106.4ms/iter)
+Input: /home/zen/bench/corpus/photo_8k.avif (7410.8 KB AVIF, 7410.5 KB OBU)
+Iterations: 10
+Decoder: upstream rav1d 1.1.0 (ASM)
+Frames per decode: 1
+Total: 5.699s (10 iters, 569.9ms/iter)
