@@ -911,7 +911,23 @@ fn block_shift_rule(len: usize, shards: usize, tiles: usize, pixel_bytes: usize)
             return BLOCK_SHIFT;
         }
     }
-    let target = (BLOCKS_PER_SHARD * N_SHARDS) as u64;
+    // A serial decode aims at HALF the block count a concurrent one does.
+    //
+    // `BLOCKS_PER_SHARD` is 2 because a concurrent decode has to balance
+    // strided-read locality against putting every tile worker on one lock. A
+    // serial decode has no second worker, so the collision half of that trade
+    // is worth nothing and only the locality half is left — which argues for
+    // the coarsest block the ladder still likes.
+    //
+    // Measured, paired median of 9 against the ratio-2 arm, md5-identical
+    // (`benchmarks/blockshift_bpc_serial_target_2026-08-08.tsv`): v4k_8tile
+    // 0.9880 [0.9815, 0.9916] and v4k_1tile 0.9836 [0.9756, 0.9964] at 8bpc
+    // t=1, both 9/9 rounds better; v1024 t=1 1.0034, v4k_8tile t=8 0.9968 and
+    // v4k_8tile_10b t=1 0.9976, i.e. neutral everywhere the branch does not
+    // fire. It puts the 4K 8-bit plane on shift 15, which is where the fixed
+    // ladder's t=1 column bottoms out (0.936 at 15, 0.937 at 16, 0.958 at 14).
+    let blocks_per_shard = if serial { 1 } else { BLOCKS_PER_SHARD };
+    let target = (blocks_per_shard * N_SHARDS) as u64;
     let want = (len as u64 / target.max(1)).max(1);
     // `ilog2` rounds down, so the block count lands at or above the target.
     let shift = (u64::BITS - 1 - want.leading_zeros()).clamp(6, 24);
@@ -2034,7 +2050,10 @@ mod tests {
         const LEN8: usize = 3840 * 2176;
         let serial8 = block_shift_rule(LEN8, SHARDS_SERIAL, 8, 1);
         assert_ne!(serial8, BLOCK_SHIFT);
-        assert_eq!(serial8, 14);
+        // 15, not the concurrent branch's 14: a serial decode aims at half the
+        // block count, which is where the t=1 ladder bottoms out.
+        assert_eq!(serial8, 15);
+        assert_eq!(block_shift_rule(LEN8, SHARDS_CONCURRENT, 8, 1), 14);
         // Its 10-bit twin, same decode, same tiling: does NOT adapt.
         const LEN10: usize = 2 * 3840 * 2176;
         assert_eq!(

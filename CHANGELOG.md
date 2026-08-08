@@ -56,10 +56,13 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   differing in tiling and content, so the serial branch now adapts only at one
   byte per pixel — and never below `BLOCK_SHIFT`, since the block-count rule
   returns a *finer* shift for buffers under ~1 MB, which cost +4.5% on v1024
-  before the clamp. The concurrent branch is byte-for-byte unchanged and
-  deliberately blind to the pixel width (t=8 is a win at both depths). Measured
-  vs `fc120a8`, paired median of 11, md5-identical: v4k_8tile/v4k_1tile 8bpc
-  t=1 **0.959**, 8bpc t=8 neutral. A pixel-stride or rows-per-block key is
+  before the clamp. It also aims at half the block count a concurrent decode
+  does, since a serial one has no second worker to spread across — worth a
+  further 1.2-1.6% and neutral everywhere the branch does not fire. The
+  concurrent branch is byte-for-byte unchanged and deliberately blind to the
+  pixel width (t=8 is a win at both depths). Measured vs `fc120a8`, paired
+  median of 11, md5-identical: v4k_8tile **0.948** / v4k_1tile **0.943** at
+  8bpc t=1, 8bpc t=8 neutral. A pixel-stride or rows-per-block key is
   REFUTED — the length rule already yields the same rows per block at both
   depths. Record: `benchmarks/tracker_blockshift_bpc_2026-08-08.meta`.
 - **`rav1d-disjoint-mut`: the 10-bit zerocopy cast no longer carries a stack

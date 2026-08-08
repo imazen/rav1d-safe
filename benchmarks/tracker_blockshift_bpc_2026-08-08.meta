@@ -32,19 +32,21 @@ half held. **The first half's diagnosis did not** — see section 2.
 
     vector           bpc   t    ratio        range          what moved
     -----------------------------------------------------------------------
-    v4k_8tile          8   1   0.9594  [0.9557, 0.9654]   part 1
-    v4k_1tile          8   1   0.9595  [0.9430, 0.9676]   part 1
-    v4k_8tile_10b     10   1   0.9740  [0.9646, 0.9791]   part 2
-    v4k_1tile_10b     10   1   0.9689  [0.9599, 0.9778]   part 2
-    v1024              8   1   1.0014  [0.9763, 1.0215]   neutral
-    v1024_10b         10   1   0.9142  [0.8937, 0.9276]   part 2
-    v4k_8tile          8   8   1.0016  [0.9823, 1.0233]   neutral
-    v4k_8tile_10b     10   8   0.9237  [0.9041, 0.9495]   part 2
-    v4k_1tile          8   8   0.9980  [0.9905, 1.0038]   neutral
-    v4k_1tile_10b     10   8   0.9708  [0.9692, 0.9749]   part 2
+    v4k_8tile          8   1   0.9476  [0.9375, 0.9591]   part 1
+    v4k_1tile          8   1   0.9426  [0.9381, 0.9608]   part 1
+    v4k_8tile_10b     10   1   0.9703  [0.9620, 0.9773]   part 2
+    v4k_1tile_10b     10   1   0.9659  [0.9601, 0.9735]   part 2
+    v1024              8   1   0.9957  [0.9799, 1.0111]   neutral
+    v1024_10b         10   1   0.9164  [0.8888, 0.9227]   part 2
+    v4k_8tile          8   8   1.0064  [0.9891, 1.0221]   neutral
+    v4k_8tile_10b     10   8   0.9274  [0.9030, 0.9595]   part 2
+    v4k_1tile          8   8   0.9962  [0.9889, 0.9998]   neutral
+    v4k_1tile_10b     10   8   0.9704  [0.9665, 0.9761]   part 2
 
-No cell is worse. Every 10-bit cell gains 2.6-8.6%; single-threaded 8-bit 4K
-gains 4.1%; the 8-bit multi-thread column is untouched by construction (see 3).
+No cell is worse. Every 10-bit cell gains 2.9-8.4%; single-threaded 8-bit 4K
+gains 5.2-5.7%; the three neutral cells have per-round ranges that straddle
+1.000, and their policy is provably unchanged (see 3). The 8-bit multi-thread
+column is untouched by construction.
 
 
 ## 2. Part 1 — the brief's diagnosis was wrong, and the ladder says so
@@ -142,6 +144,29 @@ The v4k_1tile t=8 row is the same bug from the other side: instances built
 during decoder construction, before `set_parallelism`, take the serial branch,
 and some of them are small.
 
+### And the serial arm aims at half the block count
+
+`BLOCKS_PER_SHARD` is 2 because a concurrent decode balances strided-read
+locality against putting every tile worker on one lock. A serial decode has no
+second worker, so only the locality half of that trade is left. Halving the
+target block count puts the 4K 8-bit plane on shift 15, which is where the
+fixed ladder's t=1 column actually bottoms out (0.958 at 14, **0.936 at 15**,
+0.937 at 16) — the ratio-2 rule was leaving that on the table.
+
+Measured against the ratio-2 arm, paired median of 9, md5-identical
+(`benchmarks/blockshift_bpc_serial_target_2026-08-08.tsv`):
+
+    cell                        ratio         range        rounds better
+    ---------------------------------------------------------------------
+    v4k_8tile      8bpc t=1    0.9880  [0.9815, 0.9916]        9/9
+    v4k_1tile      8bpc t=1    0.9836  [0.9756, 0.9964]        9/9
+    v1024          8bpc t=1    1.0034  [0.9792, 1.0097]      neutral
+    v4k_8tile      8bpc t=8    0.9968  [0.9832, 1.0345]      neutral
+    v4k_8tile_10b 10bpc t=1    0.9976  [0.9886, 1.0053]      neutral
+
+Neutral everywhere the serial-8-bit branch does not fire, which is the shape a
+correctly-scoped change should have.
+
 
 ## 3. Liveness — the branch demonstrably fires in a real decode
 
@@ -225,6 +250,8 @@ order, measured **worse**, and only a factorial showed why.
     M5  block_shift() disagrees by one bit between  cross_shard_overlaps_are_all_caught
         consecutive registrations (SOUNDNESS)
     M6  drop the serial `shift.max(BLOCK_SHIFT)`    serial_adapts…
+    M7  serial uses the concurrent block-count      serial_adapts…
+        target
 
 M5 is the one that matters. The adaptive shift rests on exactly one premise —
 both registrants of a shared byte agree on where the block boundary is — and
@@ -252,9 +279,10 @@ monotone without touching correctness.
   differ exactly at "8-bit plane with a 10-bit-sized stride", which is what an
   8K 8-bit plane is. 12bpc was not measured either; it takes the 2-bytes path
   with 10bpc, which is the conservative side.
-* **The serial arm leaves ~2% on the table.** The fixed ladder's best 8-bit t=1
-  rung is 15/16 (0.936/0.937) and the adaptive rule delivers 14 (0.958). Closing
-  that means a serial-specific `BLOCKS_PER_SHARD`, which was not measured.
+* **Shift 16 for the serial 8-bit arm was not tried adaptively.** The
+  serial-specific `BLOCKS_PER_SHARD = 1` lands the 4K plane on 15, and the
+  fixed ladder puts 16 within noise of 15 (0.937 vs 0.936), so there is
+  probably nothing left — but a ratio of 1/2 (i.e. shift 16) was not built.
 * **`ShardRecs::locs` is stored unconditionally** (`tracker_shard.rs`, in
   `alloc`) even though the doc comment on `Loc` says release builds do not keep
   it. That is one store plus a `#[track_caller]` `&Location` materialised per
