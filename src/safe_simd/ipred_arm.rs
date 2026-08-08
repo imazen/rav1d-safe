@@ -1491,75 +1491,64 @@ pub fn cfl_pred_dispatch<BD: crate::include::common::bitdepth::BitDepth>(
     let ac = &ac[..w * h];
     let bitdepth_max = bd.bitdepth_max().as_::<c_int>();
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BD, _>(
-        &dst,
-        w,
-        h,
-        |bytes, base_bytes, byte_stride| match BD::BPC {
+    // ONE NARROW GUARD PER ROW, not one wide guard over the block.
+    //
+    // The obvious shape here is `with_pixel_guard_mut::<BD>(&dst, w, h)`, which
+    // is what the x86 twin and the 8bpc itx arms use. Measured on `v4k_8tile`
+    // at t=1 it costs more than the kernel saves: replacing the scalar loop
+    // with this one behind a wide guard removed `ipred::cfl_pred`'s 2.46% of
+    // self time and added +0.79% `add_wide::<true>` and +0.73% `remove_wide`,
+    // netting 0.24% of whole-decode wall (396.77 vs 397.71 ms/frame, medians of
+    // 9 interleaved rounds on an idle box). The reference takes one
+    // `slice_mut(w)` per row and that is cheaper, so this does the same. It is
+    // also the narrower extent of the two, which is the safe direction to move
+    // under tile threading.
+    use crate::src::strided::Strided as _;
+    let pxstride = dst.pixel_stride::<BD>();
+    for y in 0..h {
+        let row = dst + (y as isize * pxstride);
+        let mut guard = row.slice_mut::<BD>(w);
+        let px: &mut [BD::Pixel] = &mut guard;
+        match BD::BPC {
             BPC::BPC8 => {
-                cfl_pred_8bpc_neon(_token, bytes, base_bytes, byte_stride, ac, w, h, alpha, dc)
+                let b: &mut [u8] = crate::src::safe_simd::pixel_access::reinterpret_slice_mut(px)
+                    .expect("BD::Pixel layout matches u8");
+                cfl_row_8bpc_neon(_token, b, &ac[y * w..], w, alpha, dc);
             }
             BPC::BPC16 => {
-                let px: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(bytes)
-                    .expect("dst alignment/size mismatch for u16 reinterpretation");
-                cfl_pred_16bpc_neon(
-                    _token,
-                    px,
-                    base_bytes / 2,
-                    byte_stride / 2,
-                    ac,
-                    w,
-                    h,
-                    alpha,
-                    dc,
-                    bitdepth_max,
-                )
+                let b: &mut [u16] = crate::src::safe_simd::pixel_access::reinterpret_slice_mut(px)
+                    .expect("BD::Pixel layout matches u16");
+                cfl_row_16bpc_neon(_token, b, &ac[y * w..], w, alpha, dc, bitdepth_max);
             }
-        },
-    );
+        }
+    }
     true
 }
 
-/// One `#[arcane]` boundary for the whole block, not one per row — the token
-/// region is what lets `cfl_row_*` inline, and re-entering it per row would
-/// block LLVM across the loop.
+/// `#[arcane]` boundary per row.
+///
+/// One boundary per block would be cheaper, but the block form needs a wide
+/// guard over all `h` rows, and that guard measured more expensive than the
+/// kernel saves (see `cfl_pred_dispatch`). The token summon itself is ~1 ns and
+/// `h <= 32`, so per-row is the cheaper of the two shapes here.
 #[cfg(target_arch = "aarch64")]
 #[arcane]
-fn cfl_pred_8bpc_neon(
-    _token: Arm64,
-    bytes: &mut [u8],
-    base_bytes: usize,
-    byte_stride: isize,
-    ac: &[i16],
-    w: usize,
-    h: usize,
-    alpha: c_int,
-    dc: c_int,
-) {
-    for y in 0..h {
-        let base = base_bytes.wrapping_add_signed(y as isize * byte_stride);
-        cfl_row_8bpc(bytes, base, &ac[y * w..], w, alpha, dc);
-    }
+fn cfl_row_8bpc_neon(_token: Arm64, dst: &mut [u8], ac: &[i16], w: usize, alpha: c_int, dc: c_int) {
+    cfl_row_8bpc(dst, 0, ac, w, alpha, dc);
 }
 
 #[cfg(target_arch = "aarch64")]
 #[arcane]
-fn cfl_pred_16bpc_neon(
+fn cfl_row_16bpc_neon(
     _token: Arm64,
-    px: &mut [u16],
-    base_px: usize,
-    stride_px: isize,
+    dst: &mut [u16],
     ac: &[i16],
     w: usize,
-    h: usize,
     alpha: c_int,
     dc: c_int,
     bitdepth_max: c_int,
 ) {
-    for y in 0..h {
-        let base = base_px.wrapping_add_signed(y as isize * stride_px);
-        cfl_row_16bpc(px, base, &ac[y * w..], w, alpha, dc, bitdepth_max);
-    }
+    cfl_row_16bpc(dst, 0, ac, w, alpha, dc, bitdepth_max);
 }
 
 #[cfg(all(test, target_arch = "aarch64", not(feature = "asm")))]

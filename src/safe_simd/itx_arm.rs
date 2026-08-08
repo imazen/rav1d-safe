@@ -8485,33 +8485,47 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                     _ => return false,
                 };
                 let has_dc_only = tx_type as u8 == levels::DCT_DCT;
-
-                let mut block = dst.block_mut::<BD>(w, h);
-                // `base()` is in pixels, `byte_stride()` in bytes — the same
-                // convention `cdef_wasm`'s 16bpc block user follows.
-                let px_stride = block.byte_stride() / 2;
-                let px_base = block.base();
-                let dst_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(block.as_mut_bytes())
-                    .expect("dst alignment/size mismatch for u16 reinterpretation");
+                let bd_c = bd.into_c();
                 let coeff_i32: &mut [i32] =
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i32 reinterpretation");
 
-                super::itx_arm_hbd::inv_txfm_add_hbd_neon(
-                    token,
-                    w,
-                    h,
-                    first,
-                    second,
-                    shift,
-                    has_dc_only,
-                    dst_u16,
-                    px_base,
-                    px_stride,
-                    coeff_i32,
-                    eob,
-                    bd.into_c(),
+                // ONE NARROW GUARD PER ROW, not `block_mut`'s wide guard over
+                // the whole block. Measured on `v4k_8tile` at t=1: the same
+                // trade in the CfL kernel cost +0.79% `add_wide::<true>` and
+                // +0.73% `remove_wide` against a 2.46% kernel saving, and
+                // switching that one to per-row guards moved it from 0.14% to
+                // 0.99% of whole-decode wall. `dst` here is only ever touched a
+                // row at a time, so the wide extent bought nothing; narrowing
+                // it is also the safe direction under tile threading.
+                let pxstride = dst.pixel_stride::<BD>();
+                let add_row = |y: usize, tmp_row: Option<&[i32]>, dc: i32| {
+                    let row = dst + (y as isize * pxstride);
+                    let mut guard = row.slice_mut::<BD>(w);
+                    let px: &mut [u16] =
+                        crate::src::safe_simd::pixel_access::reinterpret_slice_mut(&mut guard)
+                            .expect("BD::Pixel layout matches u16");
+                    match tmp_row {
+                        Some(t) => super::itx_arm_hbd::add_row_hbd_neon(token, px, t, w, bd_c),
+                        None => super::itx_arm_hbd::add_row_dc_hbd_neon(token, px, w, dc, bd_c),
+                    }
+                };
+
+                if eob < has_dc_only as i32 {
+                    let dc = super::itx_arm_hbd::hbd_dc_value(w, h, shift, coeff_i32);
+                    for y in 0..h {
+                        add_row(y, None, dc);
+                    }
+                    return true;
+                }
+
+                let mut tmp = [0i32; 16 * 16];
+                super::itx_arm_hbd::inv_txfm_hbd_neon(
+                    token, w, h, first, second, shift, coeff_i32, bd_c, &mut tmp,
                 );
+                for y in 0..h {
+                    add_row(y, Some(&tmp[y * w..y * w + w]), 0);
+                }
                 return true;
             }
             if w == 4 && h == 4 && BD::BPC == BPC::BPC8 {

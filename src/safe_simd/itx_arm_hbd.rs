@@ -531,53 +531,85 @@ fn add_clip4(dst: &mut [u16], off: usize, delta: V, bd_max: V) {
     safe_simd::vst1_u16(slot, out);
 }
 
-/// The 16bpc 2-D inverse transform, vectorised.
+/// The DC-only shortcut's scalar half: `src/itx.rs::inv_txfm_add`'s `eob <
+/// has_dc_only` branch, up to but not including the pixel add.
+#[cfg(target_arch = "aarch64")]
+pub(crate) fn hbd_dc_value(w: usize, h: usize, shift: u32, coeff: &mut [i32]) -> i32 {
+    let is_rect2 = w * 2 == h || h * 2 == w;
+    let rnd: i32 = (1 << shift) >> 1;
+    let mut dc = coeff[0];
+    coeff[0] = 0;
+    if is_rect2 {
+        dc = (dc * 181 + 128) >> 8;
+    }
+    dc = (dc * 181 + 128) >> 8;
+    dc = (dc + rnd) >> shift;
+    (dc * 181 + 128 + 2048) >> 12
+}
+
+/// Add one already-computed row of residual to `w` destination pixels.
+///
+/// Taking `dst` as exactly one row is what lets the caller hold ONE NARROW
+/// GUARD PER ROW instead of a wide guard over the whole block. See
+/// `itxfm_add_dispatch`'s 16bpc arm for the measurement that decided it.
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+pub(crate) fn add_row_hbd_neon(
+    _token: Arm64,
+    dst: &mut [u16],
+    tmp_row: &[i32],
+    w: usize,
+    bitdepth_max: i32,
+) {
+    let bd_max = vdupq_n_s32(bitdepth_max);
+    for x in (0..w).step_by(4) {
+        let a = <&[i32; 4]>::try_from(&tmp_row[x..x + 4]).expect("4 lanes");
+        let delta = vshrq_n_s32::<4>(vaddq_s32(safe_simd::vld1q_s32(a), vdupq_n_s32(8)));
+        add_clip4(dst, x, delta, bd_max);
+    }
+}
+
+/// Add a constant DC to `w` destination pixels.
+#[cfg(target_arch = "aarch64")]
+#[arcane]
+pub(crate) fn add_row_dc_hbd_neon(
+    _token: Arm64,
+    dst: &mut [u16],
+    w: usize,
+    dc: i32,
+    bitdepth_max: i32,
+) {
+    let bd_max = vdupq_n_s32(bitdepth_max);
+    let dcv = vdupq_n_s32(dc);
+    for x in (0..w).step_by(4) {
+        add_clip4(dst, x, dcv, bd_max);
+    }
+}
+
+/// The 16bpc 2-D inverse transform, vectorised, WITHOUT the pixel add.
 ///
 /// Transliteration of `src/itx.rs::inv_txfm_add` for `BD::BITDEPTH != 8`, with
 /// `w, h <= 16` (so `sw == w` and `sh == h`, and the reference's
-/// zero-padded-tail cases cannot arise).
+/// zero-padded-tail cases cannot arise). The residual lands in `tmp` row-major
+/// and the caller adds it a row at a time.
 #[cfg(target_arch = "aarch64")]
 #[arcane]
-pub(crate) fn inv_txfm_add_hbd_neon(
+pub(crate) fn inv_txfm_hbd_neon(
     _token: Arm64,
     w: usize,
     h: usize,
     first: Kind,
     second: Kind,
     shift: u32,
-    has_dc_only: bool,
-    dst: &mut [u16],
-    dst_base: usize,
-    dst_stride: isize,
     coeff: &mut [i32],
-    eob: i32,
     bitdepth_max: i32,
+    tmp: &mut [i32; MAXDIM * MAXDIM],
 ) {
     debug_assert!(w <= MAXDIM && h <= MAXDIM);
     debug_assert!(w % 4 == 0 && h % 4 == 0);
 
     let is_rect2 = w * 2 == h || h * 2 == w;
     let rnd: i32 = (1 << shift) >> 1;
-    let bd_max = vdupq_n_s32(bitdepth_max);
-
-    if eob < has_dc_only as i32 {
-        let mut dc = coeff[0];
-        coeff[0] = 0;
-        if is_rect2 {
-            dc = (dc * 181 + 128) >> 8;
-        }
-        dc = (dc * 181 + 128) >> 8;
-        dc = (dc + rnd) >> shift;
-        dc = (dc * 181 + 128 + 2048) >> 12;
-        let dcv = vdupq_n_s32(dc);
-        for y in 0..h {
-            let row = dst_base.wrapping_add_signed(y as isize * dst_stride);
-            for x in (0..w).step_by(4) {
-                add_clip4(dst, row + x, dcv, bd_max);
-            }
-        }
-        return;
-    }
 
     let row_clip_min = vdupq_n_s32((!bitdepth_max) << 7);
     let row_clip_max = vdupq_n_s32(!((!bitdepth_max) << 7));
@@ -585,8 +617,6 @@ pub(crate) fn inv_txfm_add_hbd_neon(
     let col_clip_max = vdupq_n_s32(!((!bitdepth_max) << 5));
     let rnd_v = vdupq_n_s32(rnd);
     let shr = vdupq_n_s32(-(shift as i32));
-
-    let mut tmp = [0i32; MAXDIM * MAXDIM];
 
     // ---- row pass: four rows per iteration, lanes = rows ----
     let mut y0 = 0usize;
@@ -638,15 +668,5 @@ pub(crate) fn inv_txfm_add_hbd_neon(
             safe_simd::vst1q_s32(slot, u[y]);
         }
     }
-
-    // ---- add pass ----
-    for y in 0..h {
-        let row = dst_base.wrapping_add_signed(y as isize * dst_stride);
-        for x in (0..w).step_by(4) {
-            let off = y * w + x;
-            let a = <&[i32; 4]>::try_from(&tmp[off..off + 4]).expect("4 lanes");
-            let delta = vshrq_n_s32::<4>(vaddq_s32(safe_simd::vld1q_s32(a), vdupq_n_s32(8)));
-            add_clip4(dst, row + x, delta, bd_max);
-        }
-    }
+    let _ = bitdepth_max;
 }
