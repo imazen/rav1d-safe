@@ -746,24 +746,6 @@ fn dc_only_16x16_16bpc(
 // Generic 16x16 inverse transform (assembly lines 1374-1464)
 // ============================================================================
 
-/// NEON implementation of generic 16x16 inverse transform add for 8bpc.
-///
-/// Mirrors `inv_txfm_add_16x16_neon` from itx.S lines 1433-1464.
-///
-/// Algorithm:
-/// 1. Process two 8-column halves of the 16x16 coefficient block:
-///    a. Load 16 rows x 8 columns into V16
-///    b. Clear coefficient buffer
-///    c. Apply row transform (or identity)
-///    d. For non-identity: shift right by 2
-///    e. For identity: apply identity_8x16_shift2 (sqrdmulh + sshr + srhadd)
-///    f. Transpose two 8x8 blocks within each half
-///    g. Store interleaved to 512-byte temp buffer
-///
-/// 2. Process two 8-column halves of the transposed result:
-///    a. Load 16 rows from temp buffer
-///    b. Apply column transform
-///    c. Add to destination
 /// `eob` below which a 16x16 transform's rows 8..15 are guaranteed zero.
 ///
 /// From `src/arm/64/itx.S`, `def_fn_16x16 <txfm1>, <txfm2>, <eob_half>`:
@@ -787,6 +769,24 @@ fn eob_half_16x16(row_tx: TxType16, col_tx: TxType16) -> i32 {
     }
 }
 
+/// NEON implementation of generic 16x16 inverse transform add for 8bpc.
+///
+/// Mirrors `inv_txfm_add_16x16_neon` from itx.S lines 1433-1464.
+///
+/// Algorithm:
+/// 1. Process two 8-column halves of the 16x16 coefficient block:
+///    a. Load 16 rows x 8 columns into V16
+///    b. Clear coefficient buffer
+///    c. Apply row transform (or identity)
+///    d. For non-identity: shift right by 2
+///    e. For identity: apply identity_8x16_shift2 (sqrdmulh + sshr + srhadd)
+///    f. Transpose two 8x8 blocks within each half
+///    g. Store interleaved to 512-byte temp buffer
+///
+/// 2. Process two 8-column halves of the transposed result:
+///    a. Load 16 rows from temp buffer
+///    b. Apply column transform
+///    c. Add to destination
 #[cfg(target_arch = "aarch64")]
 #[arcane]
 pub(crate) fn inv_txfm_add_16x16_8bpc_neon(
