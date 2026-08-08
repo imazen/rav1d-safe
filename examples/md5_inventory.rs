@@ -213,6 +213,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut group_filter: Option<String> = None;
     let mut name_filter: Option<String> = None;
+    let mut activity = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -223,6 +224,16 @@ fn main() {
             "--name" => {
                 name_filter = args.get(i + 1).cloned();
                 i += 2;
+            }
+            // Per-family work counts alongside each vector. Answers "which
+            // vectors even exercise family X?" — the question that has to be
+            // settled BEFORE budgeting a kernel port, because a profiler
+            // reports "never called" and "free" as the same 0.0 ms. Needs
+            // `--features __ablate`; without it every count is 0 and the
+            // assert below refuses to emit a misleading all-zero column.
+            "--activity" => {
+                activity = true;
+                i += 1;
             }
             other => {
                 eprintln!("unknown arg: {other}");
@@ -238,13 +249,24 @@ fn main() {
         base.display()
     );
 
+    assert!(
+        !activity || rav1d_safe::src::ablate::ENABLED,
+        "--activity needs --features __ablate; without it every count is 0 \
+         and the output would read as 'no family does any work'"
+    );
+
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    writeln!(
-        out,
-        "group\tname\tstatus\texpected\tactual\tframes\twall_ms"
-    )
-    .unwrap();
+    let head = "group\tname\tstatus\texpected\tactual\tframes\twall_ms";
+    if activity {
+        let fams: Vec<&str> = rav1d_safe::src::ablate::Family::ALL
+            .iter()
+            .map(|f| f.name())
+            .collect();
+        writeln!(out, "{head}\t{}", fams.join("\t")).unwrap();
+    } else {
+        writeln!(out, "{head}").unwrap();
+    }
 
     let (mut pass, mut fail, mut err, mut skip) = (0usize, 0usize, 0usize, 0usize);
 
@@ -287,9 +309,17 @@ fn main() {
             // and `decode_md5` joins before returning, so no worker line can
             // straddle two vectors.
             eprintln!("VECTOR\t{group_key}\t{}", v.name);
+            rav1d_safe::src::ablate::activity_reset();
             let t0 = Instant::now();
             let res = decode_md5(&v.ivf_path, grain);
             let ms = t0.elapsed().as_millis();
+            let act = if activity {
+                let counts = rav1d_safe::src::ablate::activity_snapshot();
+                let cols: Vec<String> = counts.iter().map(|c| c.to_string()).collect();
+                format!("\t{}", cols.join("\t"))
+            } else {
+                String::new()
+            };
             match res {
                 Ok((actual, n)) => {
                     let status = if actual == v.expected_md5 {
@@ -301,7 +331,7 @@ fn main() {
                     };
                     writeln!(
                         out,
-                        "{group_key}\t{}\t{status}\t{}\t{actual}\t{n}\t{ms}",
+                        "{group_key}\t{}\t{status}\t{}\t{actual}\t{n}\t{ms}{act}",
                         v.name, v.expected_md5
                     )
                     .unwrap();
@@ -311,7 +341,7 @@ fn main() {
                     let e = e.replace('\t', " ").replace('\n', " ");
                     writeln!(
                         out,
-                        "{group_key}\t{}\tERROR\t{}\tERR:{e}\t0\t{ms}",
+                        "{group_key}\t{}\tERROR\t{}\tERR:{e}\t0\t{ms}{act}",
                         v.name, v.expected_md5
                     )
                     .unwrap();

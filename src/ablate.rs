@@ -125,3 +125,55 @@ pub fn is_off(f: Family) -> bool {
 pub fn is_off(_f: Family) -> bool {
     false
 }
+
+// ---------------------------------------------------------------------------
+// Activity counters
+// ---------------------------------------------------------------------------
+//
+// "Which vectors exercise family X, and by how much?" is a question that has
+// cost this project real time twice: `ROADMAP_SIMD_PORTING.md` records loop
+// restoration measuring **0.0 ms/frame** on the 4K vectors — not because it is
+// fast but because loop restoration is *off* in those bitstreams — and the P2
+// profile only discovered that after budgeting a port. A profiler cannot tell
+// "cheap" from "never called"; a counter can.
+//
+// Same compile-time gating as `is_off`: without `__ablate` these are no-ops and
+// the call sites vanish.
+
+#[cfg(feature = "__ablate")]
+static ACTIVITY: [std::sync::atomic::AtomicU64; 9] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 9];
+
+/// Record that `f` processed `units` of work (pixels, unless noted).
+///
+/// Called from each family's dispatcher *before* its `is_off` early-return, so
+/// the count reflects what the bitstream asks for, not what SIMD handled.
+#[inline(always)]
+pub fn note(f: Family, units: u64) {
+    #[cfg(feature = "__ablate")]
+    ACTIVITY[f as usize].fetch_add(units, std::sync::atomic::Ordering::Relaxed);
+    #[cfg(not(feature = "__ablate"))]
+    let _ = (f, units);
+}
+
+/// Per-family counts in [`Family::ALL`] order. All zero without `__ablate`.
+pub fn activity_snapshot() -> [u64; 9] {
+    #[cfg(feature = "__ablate")]
+    {
+        let mut out = [0u64; 9];
+        for (i, slot) in ACTIVITY.iter().enumerate() {
+            out[i] = slot.load(std::sync::atomic::Ordering::Relaxed);
+        }
+        out
+    }
+    #[cfg(not(feature = "__ablate"))]
+    [0u64; 9]
+}
+
+/// Zero every counter (call between vectors to get per-vector numbers).
+pub fn activity_reset() {
+    #[cfg(feature = "__ablate")]
+    for slot in ACTIVITY.iter() {
+        slot.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+}

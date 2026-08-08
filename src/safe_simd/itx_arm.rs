@@ -8425,6 +8425,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                 None => return false,
             };
             let (w, h) = txfm.to_wh();
+            crate::src::ablate::note(crate::src::ablate::Family::Itx, (w * h) as u64);
 
             // One `if` per (size, bitdepth) that has a NEON kernel wired; any
             // shape that falls through every arm returns false and the caller
@@ -8446,6 +8447,87 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             // work issue #400 did for 8bpc (missing intermediate clipping,
             // rect2 scaling, shifts). Record:
             // benchmarks/p2_kernels_2026-08-07.meta.
+            //
+            // 2026-08-07: the 16bpc gap is instead closed by `itx_arm_hbd`, a
+            // 32-bit-lane vectorisation of the generic reference rather than a
+            // widening of those 16-bit ports — see that module's header for
+            // why the two cannot be the same code.
+            if BD::BPC == BPC::BPC16 && super::itx_arm_hbd::hbd_supported(w, h) {
+                use super::itx_arm_hbd::Kind;
+
+                // Same table as `inv_txfm_add_rust`, including its
+                // `(second, first)` order: `first` runs on rows (length w),
+                // `second` on columns (length h).
+                let (second, first) = match tx_type as u8 {
+                    levels::IDTX => (Kind::Identity, Kind::Identity),
+                    levels::DCT_DCT => (Kind::Dct, Kind::Dct),
+                    levels::ADST_DCT => (Kind::Adst, Kind::Dct),
+                    levels::FLIPADST_DCT => (Kind::FlipAdst, Kind::Dct),
+                    levels::H_DCT => (Kind::Identity, Kind::Dct),
+                    levels::DCT_ADST => (Kind::Dct, Kind::Adst),
+                    levels::ADST_ADST => (Kind::Adst, Kind::Adst),
+                    levels::FLIPADST_ADST => (Kind::FlipAdst, Kind::Adst),
+                    levels::DCT_FLIPADST => (Kind::Dct, Kind::FlipAdst),
+                    levels::ADST_FLIPADST => (Kind::Adst, Kind::FlipAdst),
+                    levels::FLIPADST_FLIPADST => (Kind::FlipAdst, Kind::FlipAdst),
+                    levels::V_DCT => (Kind::Dct, Kind::Identity),
+                    levels::H_ADST => (Kind::Identity, Kind::Adst),
+                    levels::H_FLIPADST => (Kind::Identity, Kind::FlipAdst),
+                    levels::V_ADST => (Kind::Adst, Kind::Identity),
+                    levels::V_FLIPADST => (Kind::FlipAdst, Kind::Identity),
+                    // WHT_WHT (lossless 4x4) has its own reference kernel.
+                    _ => return false,
+                };
+                let shift: u32 = match (w, h) {
+                    (4, 4) | (4, 8) | (8, 4) => 0,
+                    (4, 16) | (8, 8) | (8, 16) | (16, 4) | (16, 8) => 1,
+                    (16, 16) => 2,
+                    _ => return false,
+                };
+                let has_dc_only = tx_type as u8 == levels::DCT_DCT;
+                let bd_c = bd.into_c();
+                let coeff_i32: &mut [i32] =
+                    zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
+                        .expect("coeff alignment/size mismatch for i32 reinterpretation");
+
+                // ONE NARROW GUARD PER ROW, not `block_mut`'s wide guard over
+                // the whole block. Measured on `v4k_8tile` at t=1: the same
+                // trade in the CfL kernel cost +0.79% `add_wide::<true>` and
+                // +0.73% `remove_wide` against a 2.46% kernel saving, and
+                // switching that one to per-row guards moved it from 0.14% to
+                // 0.99% of whole-decode wall. `dst` here is only ever touched a
+                // row at a time, so the wide extent bought nothing; narrowing
+                // it is also the safe direction under tile threading.
+                let pxstride = dst.pixel_stride::<BD>();
+                let add_row = |y: usize, tmp_row: Option<&[i32]>, dc: i32| {
+                    let row = dst + (y as isize * pxstride);
+                    let mut guard = row.slice_mut::<BD>(w);
+                    let px: &mut [u16] =
+                        crate::src::safe_simd::pixel_access::reinterpret_slice_mut(&mut guard)
+                            .expect("BD::Pixel layout matches u16");
+                    match tmp_row {
+                        Some(t) => super::itx_arm_hbd::add_row_hbd_neon(token, px, t, w, bd_c),
+                        None => super::itx_arm_hbd::add_row_dc_hbd_neon(token, px, w, dc, bd_c),
+                    }
+                };
+
+                if eob < has_dc_only as i32 {
+                    let dc = super::itx_arm_hbd::hbd_dc_value(w, h, shift, coeff_i32);
+                    for y in 0..h {
+                        add_row(y, None, dc);
+                    }
+                    return true;
+                }
+
+                let mut tmp = [0i32; 16 * 16];
+                super::itx_arm_hbd::inv_txfm_hbd_neon(
+                    token, w, h, first, second, shift, coeff_i32, bd_c, &mut tmp,
+                );
+                for y in 0..h {
+                    add_row(y, Some(&tmp[y * w..y * w + w]), 0);
+                }
+                return true;
+            }
             if w == 4 && h == 4 && BD::BPC == BPC::BPC8 {
                 let bd_c = bd.into_c();
 

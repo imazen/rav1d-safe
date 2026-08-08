@@ -55,6 +55,11 @@ pub mod looprestoration_arm;
 #[cfg(target_arch = "aarch64")]
 pub mod itx_arm;
 
+/// 10/12-bit inverse transforms in 32-bit NEON lanes (the 16-bit-lane
+/// `itx_arm_neon_*` ports are 8bpc-only by construction).
+#[cfg(target_arch = "aarch64")]
+pub mod itx_arm_hbd;
+
 /// Differential parity for the aarch64 itx kernels vs the scalar reference.
 /// Test-only; the module itself is `#![cfg(all(test, ...))]`.
 #[cfg(target_arch = "aarch64")]

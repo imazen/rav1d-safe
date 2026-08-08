@@ -1609,6 +1609,7 @@ pub fn cdef_filter_dispatch<BD: BitDepth>(
         1 => (4, 8),
         _ => (4, 4),
     };
+    crate::src::ablate::note(crate::src::ablate::Family::Cdef, (w * h) as u64);
 
     // Call inner functions directly, bypassing FFI wrappers.
     match BD::BPC {
