@@ -180,6 +180,28 @@ thresholds cannot have been chosen to suit the answer.
 * Any cell where the class arm's band OVERLAPS `cls_none`'s is reported as a
   null for that class, not as its median.
 
+## Reproducing
+
+```bash
+cd <worktree>                                    # perf/site-class
+mkdir -p ~/tmp/sitecls/bin
+for f in "cls --features probe-class" \
+         "clssite --features probe-class,probe-sites" \
+         "untracked --features probe-untracked" \
+         "addnop --features probe-addnop" \
+         "base"; do
+  set -- $f; n=$1; shift
+  cargo build --release --example bench_ab_decode "$@"
+  cp target/release/examples/bench_ab_decode ~/tmp/sitecls/bin/bench_$n
+done
+# census (counts + per-class + nulled= liveness)
+RAV1D_CLS_NULL=none ~/tmp/sitecls/bin/bench_clssite \
+  ~/tmp/rav1d-perf/vec/v4k_8tile.avif 8 3 1 c
+# timing sweep (NO nice; box must be idle)
+bash scripts/perf/site_class_sweep.sh ~/tmp/sitecls/out/gap.tsv 7
+python3 scripts/perf/site_class_report.py ~/tmp/sitecls/out/gap.tsv
+```
+
 ## Results
 
 <!-- filled in from site_class_gap_2026-08-08.tsv -->

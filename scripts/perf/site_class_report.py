@@ -78,7 +78,7 @@ print("\n== instrument weight and whole-tracker anchors (ms/frame) ==\n")
 h = (
     f"{'vector':16} {'t':>2} {'base':>8} {'untracked':>10} {'tracker':>8} "
     f"{'addnop':>8} {'body':>7} {'call':>6} {'cls_none':>9} {'instr':>7} "
-    f"{'cls_all':>8} {'memo':>6} {'dav1d':>7} {'gap':>6}"
+    f"{'cls_all':>8} {'exposed':>8} {'dav1d':>7} {'gap':>6}"
 )
 print(h)
 print("-" * len(h))
@@ -92,12 +92,15 @@ for vec, t in cells:
     print(
         f"{vec:16} {t:>2} {b:>8.1f} {u:>10.1f} {b - u:>8.1f} "
         f"{an:>8.1f} {b - an:>7.1f} {an - u:>6.1f} {cn:>9.1f} {cn - b:>7.1f} "
-        f"{ca:>8.1f} {ca - an:>6.1f} {d:>7.1f} {b / d:>6.3f}"
+        f"{ca:>8.1f} {ca - an:>8.1f} {d:>7.1f} {b / d:>6.3f}"
     )
 print(
     "\ntracker = base-untracked (all of it) | body = base-addnop (work, call kept)\n"
     "call = addnop-untracked (the call barrier alone) | instr = cls_none-base\n"
-    "memo = cls_all-addnop (the instrument's per-borrow class lookup)"
+    "exposed = cls_all-addnop: the instrument's per-borrow class lookup once there\n"
+    "is no tracker latency left to hide it under, PLUS the cost of the tracker body\n"
+    "still being present inline and branched over. It is why every per-class number\n"
+    "below is a LOWER bound on deleting that class outright."
 )
 
 print("\n== per-class attributable ms/frame = cls_none - cls_<class> ==\n")
