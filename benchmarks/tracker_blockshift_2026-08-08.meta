@@ -123,7 +123,51 @@ twin, a rule keyed on `len` alone tracks the stride for free:
 Pinned by `adaptive_shift_keeps_the_block_count_near_target`.
 
 
-## 5. Measured negatives — do not re-run these
+## 5. Idle-box A/B, `scripts/perf/verify_gap.sh`
+
+Wall clock of the whole process at two frame counts, `total = alpha + beta*frames`
+fitted so startup drops out; `beta` is ms/frame. Every arm run back to back per
+cell with the order rotated per round; a cell is DISCARDED and re-run whenever
+any foreign process exceeds 25% CPU. Raw: `benchmarks/tracker_blockshift_gap_2026-08-08.tsv`.
+
+    vector             t     base    lfrem     bs14     bs16    adapt
+    -----------------------------------------------------------------
+    v4k_8tile          1    404.0    408.2    387.4    384.9    384.6
+    v4k_8tile          2    223.1    223.2    221.2    222.2    221.3
+    v4k_8tile          4    156.1    134.0    122.3    126.4    126.5
+    v4k_8tile          8    119.9    116.7     77.0     80.0     78.9
+    v4k_8tile_10b      1    510.9    507.6    518.6    509.2    528.9
+    v4k_8tile_10b      2    274.6    274.2    273.3    272.8    276.9
+    v4k_8tile_10b      4    183.5    159.9    154.1    154.3    154.1
+    v4k_8tile_10b      8    139.2    139.5    107.6     97.2     98.3
+
+
+## 6. Soundness of the shift, mutation-proven
+
+The adaptive shift rests on exactly one premise: **both registrants of a shared
+byte agree on where the block boundary is.** They do, because the shift is read
+once in `BorrowTracker::new` and immutable for the tracker's life (it moves only
+in `reprovision`, which takes `&mut self`).
+
+Planting the negation — `let shift = self.block_shift() + (COUNTER.fetch_add(1)
+& 1)`, so consecutive registrations disagree by one bit — makes
+`cross_shard_overlaps_are_all_caught` FAIL, and restoring it makes 22/22 pass
+again. That is the test that sweeps 64 block offsets looking for an overlap the
+sharding lets slip, and it is the one that has to fail if the premise is
+violated.
+
+Two more mutation proofs cover the lock-free release:
+
+* `publish` written as `occupied.store(occ | bit)` from the lock holder's
+  snapshot — the lost-update shape — makes `threaded_churn_leaks_no_slots` fail
+  in under 50k iterations with a spurious `overlapping DisjointMut` against a
+  record whose release was dropped.
+* `find` fed a hardcoded empty occupancy — detection switched off — fails
+  `same_block_overlap_is_caught`, `cross_shard_overlaps_are_all_caught`,
+  `immutable_sharing_then_mutable_conflict` and `test_overlapping_mut`.
+
+
+## 7. Measured negatives — do not re-run these
 
 **`held-row-guards` (the brief's named `block_mut` target): NULL.**
 Taking the per-row MUTABLE guards up front and holding them across the kernel
@@ -153,7 +197,7 @@ campaign and was not re-run. Nothing in this profile suggests otherwise:
 `lock_slow` is 7.15% at shift 12 and falls with the shift.
 
 
-## 6. Traps this campaign walked into — so nobody repeats them
+## 8. Traps this campaign walked into — so nobody repeats them
 
 1. **Two agents' perf sweeps on one box.** The first ladder screen ran while
    another worktree's 8-thread `verify_gap.sh` held 763% CPU. Absolute numbers

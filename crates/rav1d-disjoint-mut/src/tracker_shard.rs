@@ -797,7 +797,6 @@ pub(super) struct BorrowTracker {
     shards: [Shard; N_SHARDS],
     /// `log2` of this instance's block size — see [`block_shift_for`]. Read
     /// once per registration off the same line as `mask`.
-    #[cfg(feature = "__blockshift_adaptive")]
     shift: u32,
     /// Which of the shards this instance actually uses: `N_SHARDS - 1` for a
     /// buffer big enough to be worth spreading, `0` for a small one, whose
@@ -850,7 +849,6 @@ unsafe impl Sync for BorrowTracker {}
 /// 1 would give ~8.5 rows and shift 15/16 — a hair better on 10-bit, at half
 /// the shard utilisation on every small buffer, which is the wrong trade for a
 /// rule that has to hold at all sizes.
-#[cfg(feature = "__blockshift_adaptive")]
 const BLOCKS_PER_SHARD: usize = 2;
 
 /// Block shift for an instance of `len` bytes: the power of two that lands
@@ -867,14 +865,41 @@ const BLOCKS_PER_SHARD: usize = 2;
 /// read once in [`BorrowTracker::new`] and immutable for that tracker's life
 /// (it moves only in [`BorrowTracker::reprovision`], which takes `&mut self`
 /// and therefore runs with no borrow outstanding).
-#[cfg(feature = "__blockshift_adaptive")]
 #[inline]
 fn block_shift_for(len: usize) -> u32 {
+    // A fixed rung, if one was selected, wins everywhere.
+    if FIXED_SHIFT_SELECTED {
+        return BLOCK_SHIFT;
+    }
+    // Serial decode keeps the old constant. The adaptive shift's whole benefit
+    // is cross-core shard-line traffic, which a single thread does not have,
+    // and the single-thread column of the ladder is flat-to-slightly-adverse.
+    // Same split, for the same reason, as SHARDS_SERIAL vs SHARDS_CONCURRENT —
+    // and read at the same moment, so an instance built before
+    // `set_parallelism` simply keeps the serial value, exactly like `mask`.
+    if !ADAPTIVE_WHEN_SERIAL && active_shards() < SHARDS_CONCURRENT {
+        return BLOCK_SHIFT;
+    }
     let target = (BLOCKS_PER_SHARD * N_SHARDS) as u64;
     let want = (len as u64 / target.max(1)).max(1);
     // `ilog2` rounds down, so the block count lands at or above the target.
     (u64::BITS - 1 - want.leading_zeros()).clamp(6, 24)
 }
+
+/// True when one of the fixed `blockshift-*` rungs was selected, in which case
+/// [`block_shift_for`] hands back [`BLOCK_SHIFT`] and nothing adapts.
+const FIXED_SHIFT_SELECTED: bool = cfg!(any(
+    feature = "__blockshift_8",
+    feature = "__blockshift_10",
+    feature = "__blockshift_13",
+    feature = "__blockshift_14",
+    feature = "__blockshift_15",
+    feature = "__blockshift_16"
+));
+
+/// `__blockshift_adaptive` forces the adaptive shift even for a serial decode.
+/// Only useful for A/B-ing the single-thread column; the default is off.
+const ADAPTIVE_WHEN_SERIAL: bool = cfg!(feature = "__blockshift_adaptive");
 
 /// Instances below this many elements get a single shard.
 ///
@@ -987,7 +1012,6 @@ impl BorrowTracker {
     pub fn new(len: usize) -> Self {
         Self {
             shards: [const { Shard::new() }; N_SHARDS],
-            #[cfg(feature = "__blockshift_adaptive")]
             shift: block_shift_for(len),
             mask: mask_for(len),
             wide: UnsafeCell::new(Vec::new()),
@@ -1002,10 +1026,7 @@ impl BorrowTracker {
     pub fn reprovision(&mut self, len: usize) {
         // Only the mask (and the block shift) moves; the shards are already
         // there, and `&mut self` guarantees every one of them is empty.
-        #[cfg(feature = "__blockshift_adaptive")]
-        {
-            self.shift = block_shift_for(len);
-        }
+        self.shift = block_shift_for(len);
         self.mask = mask_for(len);
     }
 
@@ -1040,14 +1061,7 @@ impl BorrowTracker {
     /// otherwise, so the hot path compiles to the same shape either way.
     #[inline(always)]
     fn block_shift(&self) -> u32 {
-        #[cfg(feature = "__blockshift_adaptive")]
-        {
-            self.shift
-        }
-        #[cfg(not(feature = "__blockshift_adaptive"))]
-        {
-            BLOCK_SHIFT
-        }
+        self.shift
     }
 
     /// Mark this tracker as poisoned. All future borrow attempts will panic.
@@ -1741,9 +1755,22 @@ mod tests {
     /// The sizes below are real: a 4K 8-bit luma plane, its chroma planes, the
     /// same at 10-bit, a 1024x1024 plane, and a buffer just over
     /// `SHARD_MIN_LEN`.
-    #[cfg(feature = "__blockshift_adaptive")]
+    // Not applicable when a fixed rung is compiled in — `block_shift_for` then
+    // hands back the constant by design, which the last assertion below pins
+    // from the other side. Gated on the CONFIG, not skipped at runtime.
+    #[cfg(not(any(
+        feature = "__blockshift_8",
+        feature = "__blockshift_10",
+        feature = "__blockshift_13",
+        feature = "__blockshift_14",
+        feature = "__blockshift_15",
+        feature = "__blockshift_16"
+    )))]
     #[test]
     fn adaptive_shift_keeps_the_block_count_near_target() {
+        // The shift only adapts once parallelism is declared — see
+        // `block_shift_for`. This test is about the rule, not about the gate.
+        set_parallelism(64);
         let target = BLOCKS_PER_SHARD * N_SHARDS;
         for len in [
             64 * 1024,       // just at SHARD_MIN_LEN
@@ -1771,6 +1798,22 @@ mod tests {
         // ...and a small buffer must NOT be handed that shift, which would
         // collapse it onto one or two shards.
         assert!(block_shift_for(64 * 1024) <= 9);
+    }
+
+    /// The other side of the gate: with a fixed rung compiled in, nothing
+    /// adapts and every buffer gets the constant.
+    #[test]
+    fn a_fixed_rung_overrides_the_adaptive_rule() {
+        set_parallelism(64);
+        if FIXED_SHIFT_SELECTED {
+            for len in [64 * 1024, 1024 * 1024, 3840 * 2160, 2 * 3840 * 2160] {
+                assert_eq!(block_shift_for(len), BLOCK_SHIFT, "len {len}");
+            }
+        } else {
+            // No rung selected: the rule must actually be doing something, i.e.
+            // two very different buffers must not get the same shift.
+            assert_ne!(block_shift_for(64 * 1024), block_shift_for(2 * 3840 * 2160));
+        }
     }
 
     /// Every record registered must be retired — no leaks — under maximal
