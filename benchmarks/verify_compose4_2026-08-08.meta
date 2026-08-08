@@ -1,0 +1,292 @@
+# verify/compose-4 — independent verification of perf/shard-mapping + perf/blockshift-bpc
+
+Date 2026-08-08. Host Apple M4 Pro (8P+4E, 12 logical), macOS 26.5.2, aarch64.
+Default features. No `-C target-cpu=native`. No `nice` on any timed run.
+Base: `main` @ 2aa00c5. Both branches under review: `fc120a8`.
+
+Raw data in this directory:
+  verify_compose4_gap_2026-08-08.tsv       160 rows, the dav1d sweep, foreign=0 on every row
+  verify_compose4_cast_ab_2026-08-08.tsv    81 rows, base vs cast
+  verify_compose4_rung_ab_2026-08-08.tsv    63 rows, the Part-1 falsification
+
+Instruments: `scripts/perf/verify_gap.sh` (two-point wall fit, strict idle gate)
++ `scripts/perf/v4_ab.sh` / `v4_report.py` (in-process timer, paired per-round
+ratios) + `scripts/perf/md5_setdiff.py` + `scripts/perf/bucket_selftime.py`.
+
+---
+
+## 1. THE FRAMING CORRECTION: both branches' Part 1 is dead on current main
+
+Both branches were cut from `fc120a8`. `main` has since gained
+**c5d1b00 (#458), `SHARDS_SERIAL = 1`**, which sets `mask = 0` on any instance
+of a process that has declared no parallelism. Two consequences:
+
+* `shard_of(b, 0) == 0` for every block, so no span can reach the wide path.
+* `add`'s fast-path test is `(b0 != b1 && self.mask != 0) || state != 0`, so the
+  **block shift is structurally unreachable at t=1** — the only thing it feeds
+  is `b0 != b1`, which is `&&`-ed with a false constant.
+
+Measured, `examples/probe_tracker --features probe-wide`, 10 frames, on main:
+
+```
+  cell                  slow    multi   w_shards  w_blocks  w_full  wide_total
+  v4k_8tile      t=1       0        0          0         0       0           0
+  v4k_8tile_10b  t=1       0        0          0         0       0           0
+  v4k_8tile      t=8   57551    57551          0         0       0           0
+  v4k_8tile_10b  t=8   59855    59855          0         0       0           0
+```
+
+At `fc120a8` the shard-mapping agent measured 5,033,100 (8bpc) and 3,111,250
+(10bpc) wide promotions per 10 frames in these cells. On main it is zero, and
+`add_multi` is zero too. There is nothing left for a coarser serial block to
+buy.
+
+**Falsified by wall clock, not only by argument.** `blockshift-15` / `-16` are
+main's own fixed rungs and set exactly the granularity both Part-1 mechanisms
+compute at 4K. Paired per-round ratios vs main, n=7, md5-identical, t=1:
+
+```
+  arm       v4k_8tile (8bpc)              v4k_8tile_10b (10bpc)
+  shift 15  0.9960 [0.9716, 1.0071]       0.9973 [0.9897, 1.0096]
+  shift 16  1.0089 [0.9954, 1.0105]       1.0007 [0.9912, 1.0209]
+```
+
+Every band straddles 1.000. At `fc120a8` the same rungs measured 0.936 / 0.937
+at 8bpc and 1.049 / 1.044 at 10bpc. **Both the −5.6% win AND the +4.9% 10bpc
+regression were artifacts of the pre-#458 wide path**, and both are gone.
+
+Therefore: shard-mapping's `SERIAL_RUN` ladder, and blockshift-bpc's
+`set_pixel_bytes` latch + serial adaptive shift, are **not composed**. The
+latter would have added a process-global monotone latch, a public API function
+and a call in `decode.rs` purely to gate a mechanism that now measures null in
+both directions.
+
+Neither branch is at fault: both measured their own base correctly. The
+mechanism was overtaken.
+
+## 2. WHAT IS COMPOSED: blockshift-bpc Part 2 (the zerocopy cast), and only that
+
+`cast_slice_failed` (`#[cold] #[inline(never)]`) replaces `.unwrap()` on
+`mut_from_bytes`/`ref_from_bytes` — the predicate is untouched, zerocopy still
+decides — plus `#[inline(always)]` on `slice_as`/`mut_slice_as`. This is
+independent of the tracker and survives #458.
+
+Live on main before the change: six out-of-line
+`slice_as`/`mut_slice_as::<_, u16>` symbols in the binary. After: zero.
+
+Paired per-round ratios vs main, n=9, in-process timer, md5-IDENTICAL every row:
+
+```
+  cell                        ratio     [min      max]     base_ms   head_ms
+  v4k_8tile_10b  t=1         0.9380   0.9261   0.9517      447.83    419.47
+  v4k_8tile_10b  t=8         0.9351   0.8632   0.9507       87.36     82.16
+  v4k_8tile      t=1  (ctl)  1.0043   0.9940   1.0121      368.21    369.23
+```
+
+The 8bpc cell is the instrument's calibration: at one byte per pixel `V == u8`
+and the whole cast folds away, so a null there is what a correct measurement
+looks like. It straddles 1.000.
+
+## 3. Gap to dav1d — same session, same interleaved sweep, idle box
+
+`verify_gap.sh`, 4 arms interleaved with rotating order, two-point fit
+(2 and 20 frames) so process startup drops out, median of n=5 rounds. The
+strict idle gate discarded 2 cells and **every committed row has foreign=0**.
+dav1d 1.5.4 from Homebrew, measured at `--framedelay 1` (the tile-threading
+model we implement) and at its shipping default.
+
+ms/frame:
+
+```
+  vector           t     base     head   dav1d_def  dav1d_fd1
+  v4k_8tile        1    365.5    364.9       246.5      246.5
+  v4k_8tile        2    216.1    216.6       125.8      125.1
+  v4k_8tile        4    115.7    116.3        63.9       65.7
+  v4k_8tile        8     70.2     70.9        32.3       34.5
+  v4k_8tile_10b    1    443.6    414.8       251.3      251.3
+  v4k_8tile_10b    2    244.8    223.3       128.7      127.6
+  v4k_8tile_10b    4    129.1    119.9        65.4       66.8
+  v4k_8tile_10b    8     81.8     75.6        34.2       36.1
+```
+
+Ratio to `dav1d_fd1`:
+
+```
+  vector           t     base     head
+  v4k_8tile        1     1.48     1.48
+  v4k_8tile        2     1.73     1.73
+  v4k_8tile        4     1.76     1.77
+  v4k_8tile        8     2.04     2.05
+  v4k_8tile_10b    1     1.77     1.65
+  v4k_8tile_10b    2     1.92     1.75
+  v4k_8tile_10b    4     1.93     1.80
+  v4k_8tile_10b    8     2.26     2.09
+```
+
+The 10bpc column improves at all four thread counts; the 8bpc column does not
+move at all. **The gap is 1.48x-2.09x and is >1.3x in every one of the eight
+cells.** Thread scaling is unchanged (t=1->t=8: 5.15x head vs 7.14x dav1d_fd1),
+so nothing here touched the scaling deficit.
+
+## 4. Per-bucket profile — did the tracker share actually move?
+
+`/usr/bin/sample`, 40 s, t=1, self-time leaves (`sample_selftime.py`), bucketed
+by `bucket_selftime.py`. Shares converted to ms/frame using the §3 medians, so
+the two arms are comparable despite head fitting more frames into the same 40 s.
+
+```
+  10bpc (v4k_8tile_10b, t=1)      base %   head %    base ms/f  head ms/f   delta
+    entropy                        50.29    52.37        223.1      217.2    -5.9
+    tracker                        23.79    19.84        105.5       82.3   -23.2
+    kernels                        21.67    23.73         96.1       98.4    +2.3
+    runtime                         2.47     2.17         11.0        9.0    -2.0
+    TOTAL                                                443.6      414.8   -28.8
+
+  8bpc (v4k_8tile, t=1) — control
+    entropy                        60.64    60.19        221.6      219.6    -2.0
+    tracker                        16.94    17.42         61.9       63.6    +1.7
+    kernels                        18.71    18.98         68.4       69.3    +0.9
+    TOTAL                                                365.5      364.9    -0.6
+```
+
+**Yes — the tracker bucket moved, and it is the whole story at 10bpc: −22.0%
+(105.5 → 82.3 ms/frame), against a total of −28.8.** The named symbols confirm
+the mechanism rather than merely correlating with it:
+
+```
+  base 10bpc  slice_as::<_,u16>      2.71%  + mut_slice_as 2.33% + 0.13% + 0.00%
+              = 5.17% of self time   = 22.9 ms/frame
+  head 10bpc  absent (inlined)       = 0
+```
+
+So 22.9 of the 28.8 ms is the cast wrapper itself; the remainder is knock-on
+(runtime −2.0, entropy −5.9 from the caller's registers no longer being spilled
+around the call). `add::<false>` / `add::<true>` are FLAT in absolute terms
+(33.9 → 33.0 and 33.0 → 32.8 ms/frame) — this change does not pay for itself
+out of the fast path, which is the distinguishing feature versus the Part-1
+mechanism, where coarsening the block made `add` markedly more expensive.
+
+At 8bpc every bucket moves less than 2 ms/frame and the total is −0.6 — null,
+as the mechanism requires.
+
+Note for the standing gap goal: the tracker is **17-24% of self time at t=1**,
+and dav1d has no borrow tracker at all. That bucket, not the kernels, is where
+the t=1 gap lives.
+
+## 5. Correctness
+
+* `cargo test --release --test decode_md5_verify`: **14 tests, 766/766**, twice
+  (mid-compose and on the final tree).
+* `examples/md5_inventory` set-diffed **BY NAME** with the md5 inside the value
+  against `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst`: 768 entries
+  both sides, 0 only-in-baseline, 0 only-in-head, **0 differing**. The differ
+  itself was mutation-tested (a planted hash swap + a status flip are both
+  reported while the count stays 768).
+* Every A/B row in §2 and §3 carries a per-arm frame md5; all identical.
+* `mt_stress` at threads 1/2/4/8/16, 25/25 trials ok.
+* `scripts/perf/multi_decoder_pressure.sh`, 12 concurrent decoders x 3 iters,
+  mixed thread counts: all md5s match the serial reference, no wedge.
+* `cargo clippy --release -p rav1d-disjoint-mut --all-targets`: clean.
+* `#![forbid(unsafe_code)]` proven ACTIVE by planting an `unsafe` block in
+  `src/lib.rs`: `error: usage of an unsafe block`. Restored byte-identical.
+
+**Pre-existing on main, not introduced here:** `cargo fmt --all -- --check`
+fails at `crates/rav1d-disjoint-mut/src/tracker_shard.rs:1824` (the test #458
+added) and `src/safe_simd/loopfilter.rs:5257` (#457). My tracker_shard.rs is
+byte-identical to origin/main's; my own two files are fmt-clean.
+
+## 6. THE SOUNDNESS FINDING: #458 silently made `wide_exclusion` vacuous
+
+`wide_exclusion.rs` is the crate's only gate for the wide-path lock-ordering
+TOCTOU. Its instance is built with no parallelism declared, so since
+`SHARDS_SERIAL = 1` it gets `mask = 0` — **one shard — and never enters the wide
+path at all.** Measured with a throwaway probe on unmodified main: 100
+whole-buffer borrows of an 8 MiB instance produced 0 promotions on every
+`wide_probe` counter. The file's two liveness assertions did not catch this
+because they count GRANTED borrows, which a single-shard instance grants fine.
+
+Consequence, measured: with hazard (a) planted (delete `add`'s in-lock `state`
+re-read — the 4af62ae shape), on **unmodified main**:
+
+```
+  wide_exclusion    PASS (0.00s)   <- the designated gate
+  soundness (25)    PASS
+  shard_liveness(5) PASS
+  narrow_release    PASS
+```
+
+**There was no gate at all for that hazard on main.**
+
+Repair (this commit, test-only — the library binary is byte-identical, verified
+by sha256): `wide_exclusion` now calls `set_parallelism` first, so the instance
+gets the concurrent shard set that a real decode reaches the wide path through,
+plus a `__probe_wide`-gated assertion that promotions actually occurred, so it
+cannot go vacuous silently again. After the repair, with hazard (a) planted:
+
+```
+  wide_exclusion  FAIL, 1393 witnesses (--features __probe_wide)
+  wide_exclusion  FAIL,  988 witnesses (plain)
+```
+
+restored -> green, source sha256 back to 900e165c…, `git diff` showing only the
+intended hunks.
+
+**Hazard (b), reported with its number and CONTRADICTING the handover.** The
+shard-mapping report states that shortening `active()`'s prefix by one shard
+fails this gate with 1 witness. Shortening it by one **passed 5 of 5 runs** here.
+The gate does detect prefix holes — cutting the prefix TO one shard (the break
+its own doc comment names) fails 3/3 with 9, 25 and 9 witnesses — but a
+one-shard shortening is below its sensitivity. Treat the by-one result in that
+report as at or past the edge of detectability, not as a demonstrated property.
+
+## 7. Measured negatives, so nobody repeats them
+
+* Serial block-shift coarsening at t=1 on main: **null at both depths**, §1.
+  Do not rebuild a serial granularity policy without first re-checking the
+  `probe-wide` counters — the mechanism it targets no longer exists.
+* `set_pixel_bytes` / a stride or `BD::BPC` key for the block shift: not needed
+  on main. It existed to dodge a 10bpc regression that is now null.
+* Both branches were audited for the silent-deletion class (removed `#[inline]`
+  / `#[inline(never)]` / assertions). **Clean this time**: blockshift-bpc's two
+  removed `#[inline]`s are the ones upgraded to `#[inline(always)]`, and the
+  removed assertions were replaced with 4-argument versions. shard-mapping
+  replaced one gate assertion, though only under a non-default feature.
+* shard-mapping's edit to `benchmarks/st1_kernels_2026-08-08.meta` marks its
+  §4 item 2 "RESOLVED … −5.6% at 8bpc 4K". That claim does not hold on main
+  (§1). It is not on main because the branch is not composed.
+
+---
+
+## 8. CORRECTION to section 2, and a contradicted handover claim
+
+Section 2 and the first version of this branch's doc comment on `mut_slice_as`
+carried "forcing the inline while that frame is still there ... measured 2.3-2.7%
+SLOWER (verify/compose-4, n=11)". **That was the blockshift-bpc report's number,
+measured on fc120a8, restated as if this campaign had produced it. It had not,
+and it does not reproduce on main.** Cited-as-measured is exactly the failure
+this campaign exists to catch, so it is corrected here rather than edited away.
+
+Run properly: a 4-arm factorial, base / inline-only / cold-error-only / both,
+paired per-round ratios vs main @ 2aa00c5, n=9, all md5-IDENTICAL, foreign=0.
+Raw: `verify_compose4_factorial_2026-08-08.tsv`.
+
+```
+  cell                  inline-only              cold-only                both
+  v4k_8tile_10b t=1  0.9862 [.9713,.9971]  0.9820 [.9684,.9962]  0.9374 [.9248,.9454]
+  v4k_8tile_10b t=8  0.9760 [.9411,.9914]  0.9825 [.9588,1.0034] 0.9364 [.9136,.9486]
+```
+
+**Contradicted:** `#[inline(always)]` alone is NOT a regression on main. It is a
+1.4% win at t=1 and 2.4% at t=8. The +2.3-2.7% the handover reports for that arm
+does not appear at any thread count here.
+
+**Upheld, and more strongly than the ordering story told it:** the two halves are
+super-additive. Independent effects would predict 0.9862 x 0.9820 = 0.969; the
+pair measures 0.937, roughly double the combined single-knob effect. And each
+half alone is small enough to be dismissed — inline-only's band reaches 0.9971,
+which all but touches 1.000. So the operative lesson stands with a different
+mechanism behind it: this had to be measured as a factorial, not as two
+one-knob A/Bs, or it would have been sized at ~1.5% and possibly dropped. The
+attributed cause ("the inline drags the cold frame into every call site") is
+NOT supported on main; what is supported is only that neither half pays off
+without the other.

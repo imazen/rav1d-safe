@@ -239,6 +239,36 @@ pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
     borrow_id: checked::BorrowId,
 }
 
+/// The zerocopy slice cast's failure path, out of line.
+///
+/// `<[V]>::mut_from_bytes` reports *which* invariant failed in a `CastError`
+/// that is several words wide, and `.unwrap()` requires that value to be
+/// materialisable in the calling frame. In the release build of
+/// `mut_slice_as::<_, u16>` that alone buys the SUCCESS path a 112-byte stack
+/// frame plus ten callee-saved spill/reload pairs it never touches — verified
+/// in the disassembly, where the only writes into that frame are the stores
+/// that build the `CastError` on the cold branch.
+///
+/// The two things that can actually be wrong here are the byte length and the
+/// base alignment, and reporting those needs no wide value. **The predicate is
+/// unchanged** — `mut_from_bytes` still decides, and this only moves where the
+/// panic is built. A 10-bit-only cost, since at one byte per pixel the whole
+/// cast folds away.
+#[cfg(feature = "zerocopy")]
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn cast_slice_failed<V>(bytes: usize, addr: usize) -> ! {
+    panic!(
+        "DisjointMut: {} bytes at {:#x} is not a valid [{}] (size {}, align {})",
+        bytes,
+        addr,
+        core::any::type_name::<V>(),
+        mem::size_of::<V>(),
+        mem::align_of::<V>(),
+    );
+}
+
 #[cfg(feature = "zerocopy")]
 impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
     #[inline] // Inline to see alignment to potentially elide checks.
@@ -247,8 +277,15 @@ impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
         // removing the borrow from parent here.
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
+        // Both are pure reads of values already live, so LLVM sinks them into
+        // the cold arm; they exist only to give `cast_slice_failed` something
+        // to report without a `CastError` on the hot path's frame.
+        let (n, addr) = (bytes.len(), bytes.as_ptr() as usize);
         DisjointMutGuard {
-            slice: <[V]>::mut_from_bytes(bytes).unwrap(),
+            slice: match <[V]>::mut_from_bytes(bytes) {
+                Ok(v) => v,
+                Err(_) => cast_slice_failed::<V>(n, addr),
+            },
             phantom: old_guard.phantom,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
@@ -297,8 +334,14 @@ impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
     fn cast_slice<V: FromBytes + KnownLayout + Immutable>(self) -> DisjointImmutGuard<'a, T, [V]> {
         let mut old_guard = ManuallyDrop::new(self);
         let bytes = mem::take(&mut old_guard.slice);
+        // See `cast_slice_failed`: the `CastError` is what puts a 112-byte
+        // frame on this function's success path.
+        let (n, addr) = (bytes.len(), bytes.as_ptr() as usize);
         DisjointImmutGuard {
-            slice: <[V]>::ref_from_bytes(bytes).unwrap(),
+            slice: match <[V]>::ref_from_bytes(bytes) {
+                Ok(v) => v,
+                Err(_) => cast_slice_failed::<V>(n, addr),
+            },
             phantom: old_guard.phantom,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
@@ -674,7 +717,34 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     }
 
     /// Mutably borrow a slice of a convertible type.
-    #[inline]
+    ///
+    /// # Why `inline(always)`
+    ///
+    /// At one byte per pixel `V == u8`, every part of this — the `mul(1)`, the
+    /// cast, the length check — folds to nothing and the caller is left with a
+    /// bare [`Self::index_mut`]. At two bytes per pixel it does not fold, and
+    /// under plain `#[inline]` LLVM declines to inline it: the release build
+    /// grows an out-of-line `mut_slice_as::<_, u16>` whose HOT path is ~35
+    /// aarch64 instructions, of which a 112-byte frame, ten callee-saved
+    /// spill/reload pairs and the call/ret are about half. The 112 bytes exist
+    /// only to hold the `CastError` the cold `.unwrap()` path would report,
+    /// which is why this attribute and [`cast_slice_failed`] are ONE change:
+    /// they are strongly super-additive, and either alone is small enough to be
+    /// mistaken for noise. Measured on 2aa00c5, v4k_8tile_10b t=1, paired
+    /// per-round ratios vs that base, n=9, md5-identical, idle box:
+    ///
+    /// ```text
+    ///   inline(always) alone   0.9862  [0.9713, 0.9971]
+    ///   cast_slice_failed alone 0.9820 [0.9684, 0.9962]
+    ///   both (shipped)         0.9374  [0.9248, 0.9454]
+    /// ```
+    ///
+    /// Independent halves would predict 0.969; the pair delivers 0.937. A
+    /// one-knob A/B would have found ~1.5% with a band nearly touching 1.000
+    /// and plausibly stopped there.
+    ///
+    /// See `benchmarks/verify_compose4_2026-08-08.meta` section 8.
+    #[inline(always)]
     #[track_caller]
     pub fn mut_slice_as<'a, I, V>(&'a self, index: I) -> DisjointMutGuard<'a, T, [V]>
     where
@@ -698,7 +768,11 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     }
 
     /// Immutably borrow a slice of a convertible type.
-    #[inline]
+    ///
+    /// `#[inline(always)]` for the reason spelled out on [`Self::mut_slice_as`]:
+    /// the wrapper is free at one byte per pixel and an out-of-line call with a
+    /// 112-byte frame at two.
+    #[inline(always)]
     #[track_caller]
     pub fn slice_as<'a, I, V>(&'a self, index: I) -> DisjointImmutGuard<'a, T, [V]>
     where

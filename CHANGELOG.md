@@ -4,6 +4,48 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Fixed
+- **`wide_exclusion` had gone vacuous, and with it the only gate for the
+  wide-path TOCTOU** (`crates/rav1d-disjoint-mut/tests/wide_exclusion.rs`).
+  Since `SHARDS_SERIAL = 1` (#458) an instance built by a process that has
+  declared no parallelism gets `mask = 0`, i.e. ONE shard — so this test's
+  whole-buffer borrow took `add`'s fast path and never entered the wide path
+  at all. Measured on 2aa00c5: 100 whole-buffer borrows of an 8 MiB instance
+  produced 0 promotions on every `wide_probe` counter, while the test still
+  reported `ok`; its two liveness assertions count GRANTED borrows, which a
+  single-shard instance grants fine. With the 4af62ae TOCTOU hazard planted
+  (delete `add`'s in-lock `state` re-read) `wide_exclusion`, `soundness` (25),
+  `shard_liveness` (5) and `narrow_release` ALL passed — no gate at all. The
+  test now declares parallelism first and, under `__probe_wide`, asserts that
+  promotions actually happened, so it cannot go quiet again. Post-repair the
+  same hazard fails it with 1393 witnesses (probe-wide) / 988 (plain).
+  Test-only: the library binary is byte-identical (sha256-verified).
+  Record: `benchmarks/verify_compose4_2026-08-08.meta` §6.
+
+### Changed
+- **The zerocopy slice cast no longer puts a 112-byte cold-error frame on the
+  10-bit hot path** (`crates/rav1d-disjoint-mut/src/lib.rs`). `.unwrap()` on
+  `mut_from_bytes`/`ref_from_bytes` required a several-word `CastError` to be
+  materialisable in the caller, which is what stopped LLVM inlining
+  `slice_as`/`mut_slice_as::<_, u16>`; a `#[cold] #[inline(never)]`
+  `cast_slice_failed` plus `#[inline(always)]` removes all six out-of-line cast
+  symbols from the binary. The predicate is unchanged — zerocopy still decides.
+  Measured idle-box, paired per-round ratios, n=9, md5-identical: **10bpc 4K
+  t=1 0.9380 [0.9261, 0.9517], t=8 0.9351**; 8bpc 1.0043 (null, and correctly
+  so — at one byte per pixel the cast folds away). Gap to dav1d 1.5.4
+  `--framedelay 1` at 10bpc: 1.77 -> 1.65 (t=1), 2.26 -> 2.09 (t=8); 8bpc
+  unmoved at 1.48/2.05. Self-time bucketing puts the whole win in the tracker
+  bucket (105.5 -> 82.3 ms/frame, −22.0%) with `add` flat in absolute terms.
+  Composed from `perf/blockshift-bpc` part 2; that branch's part 1 and all of
+  `perf/shard-mapping` measured null on current main and were NOT composed
+  (both target a wide path that #458 already removed — see the .meta §1).
+  The two halves of this change are super-additive and neither ships alone:
+  `inline(always)` only 0.9862, `cast_slice_failed` only 0.9820, both 0.9374
+  (n=9, 10bpc t=1). The handover's claim that the inline ALONE regresses
+  2.3-2.7% does not reproduce on main — see the .meta §8, which also corrects
+  that number having been restated here as if this campaign measured it.
+  Record: `benchmarks/verify_compose4_2026-08-08.meta`.
+
 ### Added
 - **10/12-bit inverse transforms now have an aarch64 NEON tier**
   (`src/safe_simd/itx_arm_hbd.rs`). `itxfm_add_dispatch` had been 8bpc-only on
