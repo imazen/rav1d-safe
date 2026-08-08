@@ -1754,10 +1754,7 @@ fn pal_pred_rust<BD: BitDepth>(
     // tile-threaded branch is the same per-row `[off, off+w)` the write set
     // already spanned).
     dst.for_rows_mut::<BD, _>(w, h, |y, row| {
-        let mut j = y * (w / 2);
-        for x in (0..w).step_by(2) {
-            let i = idx[j];
-            j += 1;
+        for (i, x) in idx[y * (w / 2)..].iter().zip((0..w).step_by(2)) {
             assert!((i & 0x88) == 0);
             row[x] = pal[(i & 7) as usize];
             row[x + 1] = pal[(i >> 4) as usize];
