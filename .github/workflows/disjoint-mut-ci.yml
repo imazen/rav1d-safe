@@ -37,6 +37,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test -p rav1d-disjoint-mut ${{ matrix.features }}
 
+  # The wide-path lock-ordering TOCTOU (4af62ae) has exactly ONE gate:
+  # tests/wide_exclusion.rs. It went VACUOUS once before — c5d1b00 set
+  # SHARDS_SERIAL = 1, so the test's instance got a single shard, took `add`'s
+  # one-lock fast path, and never reached the wide path at all. Its liveness
+  # assertions did not catch that (they count GRANTED borrows, which a
+  # single-shard instance grants fine), and with the TOCTOU hazard planted,
+  # wide_exclusion + soundness (25) + shard_liveness (5) ALL PASSED on main.
+  # There was no gate for that hazard for as long as that held.
+  #
+  # `__probe_wide` turns on the promotion counters and the assertion that
+  # promotions actually occurred, so a future change that silently routes this
+  # test away from the wide path fails here instead of going quiet.
+  wide-path-gate:
+    name: Wide-path exclusion gate (non-vacuous)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p rav1d-disjoint-mut --features __probe_wide --test wide_exclusion -- --nocapture
+
   miri:
     name: Miri (${{ matrix.model }})
     runs-on: ubuntu-latest
