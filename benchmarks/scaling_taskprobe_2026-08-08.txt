@@ -1,0 +1,118 @@
+=== t=1 8bpc ===
+PROBE stage_ms_per_frame tile_entropy 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame tile_recon 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame deblock_cols 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame deblock_rows 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame cdef 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame superres 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame loop_restore 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame other 0.000 count_per_frame 0.00
+PROBE filter_chain_ms_per_frame 0.000
+PROBE tile_ms_per_frame 0.000
+PROBE conc 0 samples 88414 frac 1.0000
+PROBE mean_active 0.000
+PROBE filtconc 0 samples 88414 frac 1.0000
+PROBE defer own_progress per_frame 0.00
+PROBE defer pass2_progress per_frame 0.00
+PROBE defer deblock_barrier per_frame 0.00
+PROBE defer ref_progress per_frame 0.00
+PROBE defer admitted per_frame 0.00
+=== t=2 8bpc ===
+PROBE stage_ms_per_frame tile_entropy 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame tile_recon 385.736 count_per_frame 136.00
+PROBE stage_ms_per_frame deblock_cols 24.230 count_per_frame 34.00
+PROBE stage_ms_per_frame deblock_rows 11.902 count_per_frame 34.00
+PROBE stage_ms_per_frame cdef 17.784 count_per_frame 34.00
+PROBE stage_ms_per_frame superres 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame loop_restore 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame other 0.000 count_per_frame 0.00
+PROBE filter_chain_ms_per_frame 53.916
+PROBE tile_ms_per_frame 385.736
+PROBE worker 0 busy_ms_per_frame 219.787 park_ms_per_frame 2.839 park_count_per_frame 2.50
+PROBE worker 1 busy_ms_per_frame 219.866 park_ms_per_frame 2.760 park_count_per_frame 2.50
+PROBE conc 0 samples 47 frac 0.0009
+PROBE conc 1 samples 402 frac 0.0080
+PROBE conc 2 samples 49708 frac 0.9910
+PROBE mean_active 1.990
+PROBE filtconc 0 samples 37902 frac 0.7557
+PROBE filtconc 1 samples 12255 frac 0.2443
+PROBE defer own_progress per_frame 128.00
+PROBE defer pass2_progress per_frame 0.00
+PROBE defer deblock_barrier per_frame 0.00
+PROBE defer ref_progress per_frame 0.00
+PROBE defer admitted per_frame 136.00
+PROBE mean_active_when_busy 1.992
+=== t=4 8bpc ===
+PROBE stage_ms_per_frame tile_entropy 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame tile_recon 403.346 count_per_frame 136.00
+PROBE stage_ms_per_frame deblock_cols 24.183 count_per_frame 34.00
+PROBE stage_ms_per_frame deblock_rows 11.817 count_per_frame 34.00
+PROBE stage_ms_per_frame cdef 17.721 count_per_frame 34.00
+PROBE stage_ms_per_frame superres 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame loop_restore 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame other 0.000 count_per_frame 0.00
+PROBE filter_chain_ms_per_frame 53.721
+PROBE tile_ms_per_frame 403.346
+PROBE worker 0 busy_ms_per_frame 114.041 park_ms_per_frame 4.383 park_count_per_frame 3.22
+PROBE worker 1 busy_ms_per_frame 114.696 park_ms_per_frame 3.728 park_count_per_frame 2.72
+PROBE worker 2 busy_ms_per_frame 114.270 park_ms_per_frame 4.127 park_count_per_frame 3.39
+PROBE worker 3 busy_ms_per_frame 114.060 park_ms_per_frame 4.392 park_count_per_frame 3.33
+PROBE conc 0 samples 45 frac 0.0017
+PROBE conc 1 samples 459 frac 0.0173
+PROBE conc 2 samples 275 frac 0.0103
+PROBE conc 3 samples 105 frac 0.0039
+PROBE conc 4 samples 25719 frac 0.9668
+PROBE mean_active 3.917
+PROBE filtconc 0 samples 14368 frac 0.5401
+PROBE filtconc 1 samples 12231 frac 0.4598
+PROBE filtconc 2 samples 4 frac 0.0002
+PROBE defer own_progress per_frame 128.00
+PROBE defer pass2_progress per_frame 0.00
+PROBE defer deblock_barrier per_frame 0.00
+PROBE defer ref_progress per_frame 0.00
+PROBE defer admitted per_frame 136.00
+PROBE mean_active_when_busy 3.923
+=== t=8 8bpc ===
+PROBE stage_ms_per_frame tile_entropy 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame tile_recon 438.429 count_per_frame 136.00
+PROBE stage_ms_per_frame deblock_cols 33.788 count_per_frame 34.00
+PROBE stage_ms_per_frame deblock_rows 12.945 count_per_frame 34.00
+PROBE stage_ms_per_frame cdef 19.003 count_per_frame 34.00
+PROBE stage_ms_per_frame superres 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame loop_restore 0.000 count_per_frame 0.00
+PROBE stage_ms_per_frame other 0.000 count_per_frame 0.00
+PROBE filter_chain_ms_per_frame 65.736
+PROBE tile_ms_per_frame 438.429
+PROBE worker 0 busy_ms_per_frame 63.299 park_ms_per_frame 8.684 park_count_per_frame 9.17
+PROBE worker 1 busy_ms_per_frame 62.548 park_ms_per_frame 9.423 park_count_per_frame 10.00
+PROBE worker 2 busy_ms_per_frame 63.434 park_ms_per_frame 8.612 park_count_per_frame 8.83
+PROBE worker 3 busy_ms_per_frame 62.887 park_ms_per_frame 9.097 park_count_per_frame 9.67
+PROBE worker 4 busy_ms_per_frame 63.116 park_ms_per_frame 8.846 park_count_per_frame 8.72
+PROBE worker 5 busy_ms_per_frame 63.138 park_ms_per_frame 8.892 park_count_per_frame 9.22
+PROBE worker 6 busy_ms_per_frame 63.113 park_ms_per_frame 8.921 park_count_per_frame 8.89
+PROBE worker 7 busy_ms_per_frame 62.629 park_ms_per_frame 9.417 park_count_per_frame 9.56
+PROBE conc 0 samples 45 frac 0.0029
+PROBE conc 1 samples 694 frac 0.0452
+PROBE conc 2 samples 681 frac 0.0443
+PROBE conc 3 samples 560 frac 0.0365
+PROBE conc 4 samples 106 frac 0.0069
+PROBE conc 5 samples 97 frac 0.0063
+PROBE conc 6 samples 130 frac 0.0085
+PROBE conc 7 samples 83 frac 0.0054
+PROBE conc 8 samples 12960 frac 0.8440
+PROBE mean_active 7.143
+PROBE filtconc 0 samples 6929 frac 0.4512
+PROBE filtconc 1 samples 6744 frac 0.4392
+PROBE filtconc 2 samples 477 frac 0.0311
+PROBE filtconc 3 samples 480 frac 0.0313
+PROBE filtconc 4 samples 56 frac 0.0036
+PROBE filtconc 5 samples 50 frac 0.0033
+PROBE filtconc 6 samples 78 frac 0.0051
+PROBE filtconc 7 samples 19 frac 0.0012
+PROBE filtconc 8 samples 523 frac 0.0341
+PROBE defer own_progress per_frame 128.00
+PROBE defer pass2_progress per_frame 0.00
+PROBE defer deblock_barrier per_frame 0.00
+PROBE defer ref_progress per_frame 0.00
+PROBE defer admitted per_frame 136.00
+PROBE mean_active_when_busy 7.164

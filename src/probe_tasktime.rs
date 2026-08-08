@@ -67,6 +67,18 @@ static ACTIVE: AtomicUsize = AtomicUsize::new(0);
 /// `FILT_CONC[k]` for `k >= 2` stays at zero.
 static FILT_ACTIVE: AtomicUsize = AtomicUsize::new(0);
 static FILT_CONC: [AtomicU64; MAX_WORKERS + 1] = [ZERO; MAX_WORKERS + 1];
+/// Workers currently inside a TILE stage (entropy or reconstruction).
+///
+/// Added for the t4->t8 scaling question: the concurrency histogram alone
+/// cannot say WHERE the low-occupancy samples sit. `TAIL_CONC` is the same
+/// histogram restricted to the samples where no worker is in a tile stage but
+/// at least one is in a filter stage -- i.e. the post-tile chain running on
+/// its own. If the scaling loss is a serial filter TAIL, that is where it is;
+/// if it is mid-frame dependency jitter, `TAIL_CONC` stays near empty while
+/// `CONC` still shows low buckets.
+static TILE_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+static TAIL_CONC: [AtomicU64; MAX_WORKERS + 1] = [ZERO; MAX_WORKERS + 1];
+static TAIL_SAMPLES: AtomicU64 = AtomicU64::new(0);
 /// `check_tile` deferral causes: 0 = this tile's own sbrow progress, 1 = the
 /// second-pass progress gate, 2 = THE DEBLOCK BARRIER (rav1d-safe-only),
 /// 3 = reference-frame progress. Index 4 counts admissions.
@@ -111,6 +123,8 @@ pub fn stage_begin_of(stage: usize) -> Instant {
     ACTIVE.fetch_add(1, Ordering::Relaxed);
     if is_filter(stage) {
         FILT_ACTIVE.fetch_add(1, Ordering::Relaxed);
+    } else if stage < 2 {
+        TILE_ACTIVE.fetch_add(1, Ordering::Relaxed);
     }
     Instant::now()
 }
@@ -121,6 +135,8 @@ pub fn stage_end(t0: Instant, stage: usize) {
     ACTIVE.fetch_sub(1, Ordering::Relaxed);
     if is_filter(stage) {
         FILT_ACTIVE.fetch_sub(1, Ordering::Relaxed);
+    } else if stage < 2 {
+        TILE_ACTIVE.fetch_sub(1, Ordering::Relaxed);
     }
     let w = slot();
     BUSY_NS[ix(w, stage)].fetch_add(ns, Ordering::Relaxed);
@@ -150,6 +166,10 @@ pub fn start_monitor() {
             CONC[a].fetch_add(1, Ordering::Relaxed);
             let fa = FILT_ACTIVE.load(Ordering::Relaxed).min(MAX_WORKERS);
             FILT_CONC[fa].fetch_add(1, Ordering::Relaxed);
+            if TILE_ACTIVE.load(Ordering::Relaxed) == 0 && fa > 0 {
+                TAIL_CONC[a].fetch_add(1, Ordering::Relaxed);
+                TAIL_SAMPLES.fetch_add(1, Ordering::Relaxed);
+            }
             SAMPLES.fetch_add(1, Ordering::Relaxed);
             std::thread::sleep(std::time::Duration::from_micros(SAMPLE_US));
         }
@@ -170,11 +190,13 @@ pub fn reset() {
     for k in 0..=MAX_WORKERS {
         CONC[k].store(0, Ordering::Relaxed);
         FILT_CONC[k].store(0, Ordering::Relaxed);
+        TAIL_CONC[k].store(0, Ordering::Relaxed);
     }
     for k in 0..N_DEFER {
         DEFER[k].store(0, Ordering::Relaxed);
     }
     SAMPLES.store(0, Ordering::Relaxed);
+    TAIL_SAMPLES.store(0, Ordering::Relaxed);
 }
 
 /// Dump every counter as `PROBE <key> <value>` lines on stdout.
@@ -249,6 +271,27 @@ pub fn report(frames: u64) {
             );
         }
     }
+    let tail = TAIL_SAMPLES.load(Ordering::Relaxed);
+    let mut tail_weighted = 0f64;
+    for k in 0..=MAX_WORKERS {
+        let c = TAIL_CONC[k].load(Ordering::Relaxed);
+        if c > 0 {
+            println!(
+                "PROBE tailconc {k} samples {c} frac_of_all {:.4}",
+                c as f64 / samples as f64
+            );
+            tail_weighted += (k * c as usize) as f64;
+        }
+    }
+    println!(
+        "PROBE tail_frac_of_wall {:.4} tail_mean_active {:.3}",
+        tail as f64 / samples as f64,
+        if tail > 0 {
+            tail_weighted / tail as f64
+        } else {
+            0.0
+        }
+    );
     for k in 0..N_DEFER {
         println!(
             "PROBE defer {} per_frame {:.2}",

@@ -1,0 +1,40 @@
+# sample self-time buckets, v4k_8tile 8bpc t=1, 60 s, M4 Pro, idle, verify/compose-5
+# ms/frame = bucket fraction x measured ms/frame from verify_compose5_gap (base 367.1, head 337.3)
+
+== base   total self samples 46117
+   entropy        27549   59.74%
+   tracker         8301   18.00%
+   kernels         8548   18.54%
+   runtime          491    1.06%
+   other           1228    2.66%
+
+== head   total self samples 46144
+   entropy        29988   64.99%
+   tracker         5701   12.35%
+   kernels         8618   18.68%
+   runtime          531    1.15%
+   other           1306    2.83%
+
+# top leaves
+## base
+# total leaf samples: 46127   (file: /Users/lilith/tmp/v5_prof_base.txt)
+25297	54.84%	_RINvNtNtCs81uYfgcMjbK_10rav1d_safe3src5recon12decode_coefsNtNtNtNtB6_7include6common8bitdepth9BitDepth8EB6_
+3821	8.28%	_RINvMs7_NtCsliS9WUFY4Sl_18rav1d_disjoint_mut13tracker_shardNtB6_13BorrowTracker3addKb0_ECs81uYfgcMjbK_10rav1d_safe
+3099	6.72%	_RINvMs7_NtCsliS9WUFY4Sl_18rav1d_disjoint_mut13tracker_shardNtB6_13BorrowTracker3addKb1_ECs81uYfgcMjbK_10rav1d_safe
+2144	4.65%	_RINvNtNtCs81uYfgcMjbK_10rav1d_safe3src5recon19rav1d_recon_b_intraNtNtNtNtB6_7include6common8bitdepth9BitDepth8EB6_
+1381	2.99%	_RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtCsliS9WUFY4Sl_18rav1d_disjoint_mut16DisjointMutGuardINtCs3iKfIvnm9SY_7aligned7AlignedNtB1w_2A8AINtNtB4_6option6OptionNtNtNtCs81uYfgcMjbK_10rav1d_safe3src6levels13CompInterTypeEj20_ESB2a_EEB2C_
+958	2.08%	_RNvMs3_NtNtCs81uYfgcMjbK_10rav1d_safe3src10loopfilterINtB5_7LfBlockNtNtNtNtB9_7include6common8bitdepth9BitDepth8E4openB9_
+816	1.77%	_RNvNtNtCs81uYfgcMjbK_10rav1d_safe3src5recon11read_golomb
+811	1.76%	_RNvNtNtNtCs81uYfgcMjbK_10rav1d_safe3src9safe_simd14loopfilter_arm19lf_compact_run_neon
+762	1.65%	_RINvNtNtCs81uYfgcMjbK_10rav1d_safe3src10loopfilter20loopfilter_sb_directNtNtNtNtB6_7include6common8bitdepth9BitDepth8EB6_
+## head
+# total leaf samples: 46149   (file: /Users/lilith/tmp/v5_prof_head.txt)
+27589	59.78%	_RINvNtNtCs81uYfgcMjbK_10rav1d_safe3src5recon12decode_coefsNtNtNtNtB6_7include6common8bitdepth9BitDepth8EB6_
+2392	5.18%	_RINvMs7_NtCsliS9WUFY4Sl_18rav1d_disjoint_mut13tracker_shardNtB6_13BorrowTracker3addKb0_ECs81uYfgcMjbK_10rav1d_safe
+2301	4.99%	_RINvNtNtCs81uYfgcMjbK_10rav1d_safe3src5recon19rav1d_recon_b_intraNtNtNtNtB6_7include6common8bitdepth9BitDepth8EB6_
+1915	4.15%	_RINvMs7_NtCsliS9WUFY4Sl_18rav1d_disjoint_mut13tracker_shardNtB6_13BorrowTracker3addKb1_ECs81uYfgcMjbK_10rav1d_safe
+1394	3.02%	_RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtCsliS9WUFY4Sl_18rav1d_disjoint_mut16DisjointMutGuardINtCs3iKfIvnm9SY_7aligned7AlignedNtB1w_2A8AINtNtB4_6option6OptionNtNtNtCs81uYfgcMjbK_10rav1d_safe3src6levels13CompInterTypeEj20_ESB2a_EEB2C_
+918	1.99%	_RNvNtNtCs81uYfgcMjbK_10rav1d_safe3src5recon11read_golomb
+823	1.78%	_RNvMs3_NtNtCs81uYfgcMjbK_10rav1d_safe3src10loopfilterINtB5_7LfBlockNtNtNtNtB9_7include6common8bitdepth9BitDepth8E4openB9_
+760	1.65%	_RNvNtNtCs81uYfgcMjbK_10rav1d_safe3src4msac35rav1d_msac_decode_symbol_adapt_rust
+749	1.62%	_RNvNtNtNtCs81uYfgcMjbK_10rav1d_safe3src9safe_simd14loopfilter_arm19lf_compact_run_neon
