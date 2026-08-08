@@ -894,7 +894,10 @@ pub(crate) fn inv_txfm_add_dct_dct_16x32_8bpc_neon_inner(
         return;
     }
 
-    let eob_thresholds: [i32; 4] = [36, 136, 300, 1024];
+    // dav1d's `eob_16x32` = {36, 151, 279, 512}, not `eob_32x32`
+    // (`movrel x13, eob_16x32` in inv_txfm_add_dct_dct_16x32_8bpc_neon).
+    // The larger 32x32 entries break out early and drop coefficient rows.
+    let eob_thresholds: [i32; 4] = [36, 151, 279, 512];
 
     // Scratch: 32 rows x 16 columns
     let mut scratch = [0i16; 512];
@@ -947,7 +950,10 @@ pub(crate) fn inv_txfm_add_dct_dct_16x32_16bpc_neon_inner(
         return;
     }
 
-    let eob_thresholds: [i32; 4] = [36, 136, 300, 1024];
+    // dav1d's `eob_16x32` = {36, 151, 279, 512}, not `eob_32x32`
+    // (`movrel x13, eob_16x32` in inv_txfm_add_dct_dct_16x32_8bpc_neon).
+    // The larger 32x32 entries break out early and drop coefficient rows.
+    let eob_thresholds: [i32; 4] = [36, 151, 279, 512];
 
     // Scratch: 32 rows x 16 columns
     let mut scratch = [0i16; 512];
@@ -1240,7 +1246,13 @@ pub(crate) fn inv_txfm_add_identity_identity_16x32_8bpc_neon_inner(
     eob: i32,
     _bitdepth_max: i32,
 ) {
-    let eob_row_thresholds: [i32; 4] = [36, 136, 300, 1024];
+    // dav1d's `eob_16x32` = {36, 151, 279, 512} for the four ROW groups and
+    // `eob_16x32_shortside` = {36, 512} for the two COLUMN groups
+    // (`def_identity_1632 16, 32, _shortside,` in src/arm/64/itx.S). The port
+    // had `eob_32x32` = {36, 136, 300, 1024} in the row slot, whose larger
+    // entries break out of the loop early and drop coefficient rows a legal
+    // stream can carry.
+    let eob_row_thresholds: [i32; 4] = [36, 151, 279, 512];
     let eob_col_thresholds: [i32; 2] = [36, 512];
 
     for rg in 0..4 {
@@ -1263,6 +1275,30 @@ pub(crate) fn inv_txfm_add_identity_identity_16x32_8bpc_neon_inner(
                 let arr: [i16; 8] = coeff[base..base + 8].try_into().unwrap();
                 v[c] = safe_simd::vld1q_s16(&arr);
                 coeff[base..base + 8].fill(0);
+            }
+
+            // 16x32 IS rect2 (h == 2w), so unlike 8x32/32x8 the chain is NOT
+            // a pure power of two and cannot be collapsed to one shift:
+            //   rect2      c   -> (181*c + 128) >> 8       (a rounded multiply)
+            //   identity16 v   -> 2v + ((1697*v + 1024) >> 11)
+            //   shift 1        -> (. + 1) >> 1
+            //   identity32     -> *= 4
+            //   final          -> (. + 8) >> 4
+            // Both middle steps round, so `round2(c, 2)` — what this used to
+            // compute — is off by one wherever those roundings do not cancel
+            // (c = 1: reference 1, shortcut 0).
+            //
+            // In NEON, exactly as dav1d does it:
+            //   sqrdmulh(c, 2896*8)      == (181*c + 128) >> 8
+            //   sqrdmulh(v, 2*(5793-4096)*8) == (1697*v + 1024) >> 11
+            //   v + srshr(that, 1)       == (2v + t + 1) >> 1, since 2v is even
+            //   srshr(., 2)              == (4u + 8) >> 4
+            // (`scale_input` + `identity_8x8_shift1` + `load_add_store_8x8
+            // shiftbits=2` in src/arm/64/itx.S.)
+            for vi in v.iter_mut() {
+                let scaled = vqrdmulhq_n_s16(*vi, 2896 * 8);
+                let t = vrshrq_n_s16::<1>(vqrdmulhq_n_s16(scaled, 2 * (5793 - 4096) * 8));
+                *vi = vqaddq_s16(scaled, t);
             }
 
             let (r0, r1, r2, r3, r4, r5, r6, r7) =
@@ -1298,8 +1334,11 @@ pub(crate) fn inv_txfm_add_identity_identity_32x16_8bpc_neon_inner(
     eob: i32,
     _bitdepth_max: i32,
 ) {
+    // Mirror image of the 16x32 case: the SHORT side (2 row groups) takes
+    // `eob_16x32_shortside`, the long side (4 column groups) takes
+    // `eob_16x32`. The column slot held `eob_32x32` and skipped real columns.
     let eob_row_thresholds: [i32; 2] = [36, 512];
-    let eob_col_thresholds: [i32; 4] = [36, 136, 300, 1024];
+    let eob_col_thresholds: [i32; 4] = [36, 151, 279, 512];
 
     for rg in 0..2 {
         if rg > 0 && eob < eob_row_thresholds[rg - 1] {
@@ -1323,12 +1362,29 @@ pub(crate) fn inv_txfm_add_identity_identity_32x16_8bpc_neon_inner(
                 coeff[base..base + 8].fill(0);
             }
 
+            // 32x16 is rect2 too, with the identity roles swapped: the ROW
+            // transform is identity32 (an exact x4) and the COLUMN transform
+            // is identity16 (the rounded one).
+            //   rect2      c -> sqrdmulh(c, 2896*8)
+            //   identity32   -> *= 4, then shift 1 and the i16 clip == sqshl 1
+            //   identity16 u -> 2u + sqrdmulh(u, 2*(5793-4096)*8)
+            //   final        -> (. + 8) >> 4 == srshr 4
+            // (`scale_input` + `shift_8_regs sqshl, 1` + `identity_8x8` +
+            // `load_add_store_8x8 shiftbits=4` in src/arm/64/itx.S.) The old
+            // `round2(c, 2)` shortcut dropped both roundings; c = 2 alone
+            // shows it (reference 0, shortcut 1).
+            for vi in v.iter_mut() {
+                let scaled = vqshlq_n_s16::<1>(vqrdmulhq_n_s16(*vi, 2896 * 8));
+                let t = vqrdmulhq_n_s16(scaled, 2 * (5793 - 4096) * 8);
+                *vi = vqaddq_s16(vqaddq_s16(scaled, scaled), t);
+            }
+
             let (r0, r1, r2, r3, r4, r5, r6, r7) =
                 transpose_8x8h(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
 
             let rows = [r0, r1, r2, r3, r4, r5, r6, r7];
             for r in 0..8 {
-                let shifted = vrshrq_n_s16::<2>(rows[r]);
+                let shifted = vrshrq_n_s16::<4>(rows[r]);
                 let row_off =
                     dst_base.wrapping_add_signed((row_start + r) as isize * dst_stride) + col_start;
 

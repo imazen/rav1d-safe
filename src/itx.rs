@@ -296,8 +296,12 @@ unsafe extern "C" fn inv_txfm_add_c_erased<
 
 /// Scalar fallback for ITX when no function pointer table is available.
 /// Dispatches to `inv_txfm_add_rust` based on runtime (tx_size, tx_type).
+///
+/// `pub(crate)` so a differential test can use the REAL reference as its
+/// oracle instead of transcribing one. A transcribed oracle can drift from
+/// this function; this cannot.
 #[cfg(not(feature = "asm"))]
-fn itxfm_add_scalar_fallback<BD: BitDepth>(
+pub(crate) fn itxfm_add_scalar_fallback<BD: BitDepth>(
     tx_size: usize,
     tx_type: TxfmType,
     dst: PicOffset,
