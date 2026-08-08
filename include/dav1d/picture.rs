@@ -1000,11 +1000,12 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     ///
     /// # Why it exists
     ///
-    /// Per-row guards over small blocks are the decoder's borrow-count
-    /// distribution: measured with `--features probe-sites` on `v4k_8tile` 8bpc
-    /// at t=1, the per-row loops in `ipred`, `cdef` and the loopfilter were
-    /// 8.4 M of 15.6 M registrations per frame, at a mean extent of ~10 bytes.
-    #[inline]
+    /// Per-row guards over small blocks ARE the decoder's borrow-count
+    /// distribution. Measured with `--features probe-sites` on `v4k_8tile` 8bpc
+    /// at t=1: collapsing the per-row loops in the loopfilter, `ipred` and
+    /// `cdef` took registrations per frame from 15,646,727 to 7,924,706
+    /// (-49.4%), at a mean per-row extent of ~10 bytes.
+    #[inline(always)]
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn for_rows<BD: BitDepth, F: FnMut(usize, &[BD::Pixel])>(
         &self,
@@ -1044,7 +1045,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     }
 
     /// [`Self::for_rows`], mutably. Same policy, same soundness argument.
-    #[inline]
+    #[inline(always)]
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn for_rows_mut<BD: BitDepth, F: FnMut(usize, &mut [BD::Pixel])>(
         &self,
