@@ -1635,7 +1635,6 @@ unsafe extern "C" fn ipred_filter_c_erased<BD: BitDepth>(
     )
 }
 
-#[inline(never)]
 /// Test-only alias for the scalar `cfl_ac` oracle, so the aarch64 parity sweep
 /// in `safe_simd::ipred_arm` compares against the *real* reference rather than
 /// a transcription of it.
@@ -1654,6 +1653,12 @@ pub(crate) fn cfl_ac_scalar_for_test<BD: BitDepth>(
     cfl_ac_rust::<BD>(ac, y_src, w_pad, h_pad, width, height, is_ss_hor, is_ss_ver)
 }
 
+// Kept out-of-line so the scalar fallback is attributable in a `sample`
+// profile. `perf/st1-kernels` inserted `cfl_ac_scalar_for_test` BETWEEN this
+// attribute and its function, which silently moved the attribute onto the
+// test-only alias — and, because that alias is `#[cfg(test)]`, deleted it
+// outright from every non-test build. Restored here; see the compose record.
+#[inline(never)]
 fn cfl_ac_rust<BD: BitDepth>(
     ac: &mut [i16; SCRATCH_AC_TXTP_LEN],
     y_src: PicOffset,
