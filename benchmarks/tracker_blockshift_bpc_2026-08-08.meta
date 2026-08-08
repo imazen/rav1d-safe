@@ -1,0 +1,289 @@
+# The block shift's sign flips with bit depth, and the 10-bit cast was a frame
+
+Host: Apple M4 Pro (8P+4E), macOS 26.5.2, 12 cores.
+Base: `main` @ fc120a8, default features, 766/766 dav1d-test-data.
+No `nice` on any timed run. No `-C target-cpu=native`.
+
+**The box was NOT idle.** Two other agents held it for this whole session
+(`zenav1-svt/identity_run` at ~100% throughout, plus a second rav1d-safe
+worktree). Every number below is therefore a **paired per-round ratio**: the
+arms are run back to back inside one round with the order rotated, so a round
+that ran under load inflates both arms and the ratio survives it. Absolute
+ms/frame from these tables are NOT comparable to an idle campaign's; the ratios
+are. Every table also prints min/max across rounds, and a claim is only made
+where the per-round range clears 1.000.
+
+Harness: `scripts/perf/tshift_ab.sh` + `scripts/perf/tshift_report.py`
+(in-process `ms_per_frame` from `bench_ab_decode`, which warms up first).
+Every arm built with its own `cargo build --features` invocation and
+**sha256-verified distinct** before use — see trap 2 in
+`tracker_blockshift_2026-08-08.meta`.
+
+The brief was: make the adaptive shift bit-depth-aware by keying it on pixel
+stride or `BD::BPC`, then cut the 10bpc-only `slice_as::<u16>` cost. The second
+half held. **The first half's diagnosis did not** — see section 2.
+
+
+## 1. The headline
+
+`base` = main @ fc120a8. `ship` = this change. Paired per-round ratio, median of
+11, in-process timer. **All ten cells md5-identical between arms.** Raw:
+`benchmarks/blockshift_bpc_final_2026-08-08.tsv`.
+
+    vector           bpc   t    ratio        range          what moved
+    -----------------------------------------------------------------------
+    v4k_8tile          8   1   0.9594  [0.9557, 0.9654]   part 1
+    v4k_1tile          8   1   0.9595  [0.9430, 0.9676]   part 1
+    v4k_8tile_10b     10   1   0.9740  [0.9646, 0.9791]   part 2
+    v4k_1tile_10b     10   1   0.9689  [0.9599, 0.9778]   part 2
+    v1024              8   1   1.0014  [0.9763, 1.0215]   neutral
+    v1024_10b         10   1   0.9142  [0.8937, 0.9276]   part 2
+    v4k_8tile          8   8   1.0016  [0.9823, 1.0233]   neutral
+    v4k_8tile_10b     10   8   0.9237  [0.9041, 0.9495]   part 2
+    v4k_1tile          8   8   0.9980  [0.9905, 1.0038]   neutral
+    v4k_1tile_10b     10   8   0.9708  [0.9692, 0.9749]   part 2
+
+No cell is worse. Every 10-bit cell gains 2.6-8.6%; single-threaded 8-bit 4K
+gains 4.1%; the 8-bit multi-thread column is untouched by construction (see 3).
+
+
+## 2. Part 1 — the brief's diagnosis was wrong, and the ladder says so
+
+The premise handed over was that `block_shift_for` sees only the buffer LENGTH,
+that a 10-bit plane is both 2x the bytes and 2x the stride, and that keying on
+**pixel stride** or `BD::BPC` would put both depths on the same
+picture-rows-per-block and so deliver the 8-bit win without the 10-bit loss.
+
+The first two clauses are true. The conclusion is not, for a reason the
+existing code already documents: keying on `len` **already** lands both depths
+on the same rows per block (4.27), because the plane's length scales with its
+stride. A pixel-stride rule would compute the same 14 / 15 the length rule
+computes, and reproduce the regression exactly.
+
+So the ladder had to be mapped rather than assumed. Fixed rungs, t=1, paired
+median of 5, against the shipped `BLOCK_SHIFT` of 12
+(`benchmarks/blockshift_bpc_ladder_t1_2026-08-08.tsv`):
+
+    vector           bpc    bs13     bs14     bs15     bs16
+    ---------------------------------------------------------
+    v4k_8tile          8   0.980    0.958    0.936    0.937
+    v4k_8tile_10b     10   1.012    1.059    1.049    1.044
+
+8-bit improves monotonically with the shift. **10-bit gets worse at every rung —
+its optimum at t=1 IS the base shift 12.** No rows-per-block matching can
+produce that; the answer is not "a different coarse shift for 10-bit", it is
+"no coarse shift for 10-bit".
+
+### Is it the bit depth or is it that vector?
+
+Two more pairs, same protocol
+(`benchmarks/blockshift_bpc_ladder_pairs_2026-08-08.tsv`):
+
+    vector           bpc    bs14     bs16     ranges vs base
+    ----------------------------------------------------------
+    v4k_1tile          8   0.958    0.930    separated
+    v4k_1tile_10b     10   1.049    1.038    separated
+    v1024              8   0.978    0.960    separated at 16
+    v1024_10b         10   0.994    0.994    OVERLAP (null)
+
+Two 4K vectors of each depth, differing in tiling AND content, and the sign is
+constant within a depth and opposite across it. It is the bit depth.
+
+### Why — the profile, not a story
+
+`/usr/bin/sample`, 40 s, t=1, self-time leaves, share of all samples,
+base -> shift 14:
+
+                            8bpc              10bpc
+    add_wide + remove_wide  10.65 -> 0.76     5.32 -> 1.23   (what it BUYS)
+    add (single-block)      10.80 -> 13.95   11.10 -> 18.30  (what it COSTS)
+    net tracker              -6.7 points      +4.0 points
+
+Both depths lose almost all their wide-path traffic, exactly as intended: the
+`--features probe-wide` promotion counters drop 1,006,620 -> 72,644 at 8bpc and
+622,250 -> 36,510 at 10bpc. But 10-bit had only **half as much wide-path cost to
+recover** in the first place, and its single-block fast path pays **over twice**
+the penalty for the coarser block. Same mechanism, opposite arithmetic.
+
+That "over twice" is a measured fact, not an explained one — see section 6.
+
+### What shipped
+
+A third monotone latch, `set_pixel_bytes`, beside `set_parallelism` and
+`set_tile_concurrency`, called from `decode.rs` next to the tile-split
+declaration (both must run before `rav1d_thread_picture_alloc` builds the
+tracker). The gate splits:
+
+* **serial** (`shards < SHARDS_CONCURRENT`): adapt iff one byte per pixel.
+* **concurrent**: adapt iff `tiles >= 2` — byte-for-byte the shipped rule, and
+  deliberately blind to the pixel width, because the t=8 column is a win at
+  both depths.
+
+### Adapt UPWARDS ONLY — a regression the first cut shipped
+
+The unclamped serial arm cost **+4.5%** on v1024 at t=1 (paired median of 11,
+[1.0227, 1.0596], 11/11 rounds worse) while the 4K planes gained 3%. Cause:
+v1024's 8-bit planes are 696,320 bytes, and a rule that aims at a fixed BLOCK
+COUNT returns shift **11** there — *finer* than the constant. On a serial decode
+the only thing the shift buys is the wide-path promotions a *coarser* block
+stops making, so a finer one is the mechanism run backwards. Any buffer under
+`2 * N_SHARDS << BLOCK_SHIFT` bytes reaches it.
+
+`shift.max(BLOCK_SHIFT)` on the serial branch only. Attribution
+(`benchmarks/blockshift_bpc_attrib_2026-08-08.tsv`, median of 11 vs base):
+
+    cell                  unclamped   clamped
+    ---------------------------------------------
+    v1024      8bpc t=1     1.0446    1.0013
+    v4k_1tile  8bpc t=8     1.0056    0.9951
+    v4k_8tile  8bpc t=1     0.9671    0.9584
+
+The v4k_1tile t=8 row is the same bug from the other side: instances built
+during decoder construction, before `set_parallelism`, take the serial branch,
+and some of them are small.
+
+
+## 3. Liveness — the branch demonstrably fires in a real decode
+
+A perf delta is evidence; this is proof. Temporary `DM_DUMP` instrumentation in
+`BorrowTracker::new` (not committed), `--features probe-wide`, 2 iterations:
+
+    arm    vector           t   shift  pxbytes   wide promotions
+    ----------------------------------------------------------------
+    base   v4k_8tile        1     12       -         1,006,620
+    ship   v4k_8tile        1     14       1            72,644
+    ship   v4k_8tile        8     14       1                 0
+    base   v4k_8tile_10b    1     12       -           622,250
+    ship   v4k_8tile_10b    1     12       2           622,250   <- withheld
+    ship   v4k_8tile_10b    8     15       2                 0
+
+8-bit serial adapts and sheds 93% of its wide promotions; 10-bit serial is
+identical to base; both t=8 columns are the shipped values, confirming the
+concurrent branch is untouched.
+
+
+## 4. Part 2 — the 10bpc cast was a stack frame, and ORDER MATTERED
+
+`slice_as` / `mut_slice_as` cost 2.02% + 2.20% of self time on v4k_8tile_10b at
+t=1 and do not exist at 8bpc, where `V == u8` makes every part of them fold to a
+bare `index()`.
+
+The release disassembly of `slice_as::<_, u16>` explains it. 100 instructions,
+of which the hot path is ~35:
+
+    sub  sp, sp, #0x70        <- 112-byte frame
+    stp  x26,x25 / x24,x23 / x22,x21 / x20,x19 / x29,x30   <- 10 spills
+    ... ~18 instructions of real work, incl. bl BorrowTracker::add ...
+    ldp  x5 / ret
+
+The only writes into that 112-byte frame are the three stores that build a
+`CastError` on the cold `.unwrap()` branch. **The success path pays a frame and
+ten callee-saved spill/reload pairs to hold a value it never constructs.**
+
+Two candidate fixes, measured as a factorial against `head` (part 1 only),
+paired median of 11 (`benchmarks/blockshift_bpc_cast_ab_2026-08-08.tsv`):
+
+    cell                    inline-only   cold-err-only   BOTH
+    ---------------------------------------------------------------
+    v4k_8tile_10b   t=1       1.0233         0.9866      0.9652
+    v4k_1tile_10b   t=1       1.0272         0.9900      0.9629
+    v4k_8tile_10b   t=8       0.9689         0.9761      0.9280
+    v4k_8tile        t=8      0.9948         0.9935      1.0038   (8bpc control)
+
+**`#[inline(always)]` on its own is a 2.3-2.7% REGRESSION at t=1** — it inlines
+the 112-byte cold frame into every call site. Move the `CastError` out of line
+first (a `#[cold] #[inline(never)] cast_slice_failed` that reports the byte
+length and address instead; the predicate is untouched, `mut_from_bytes` still
+decides) and the frame drops 112 -> 80 bytes, 100 -> 91 instructions. Only then
+is forcing the inline a win, and a large one. Both together: the two symbols
+disappear from the binary entirely, for +15.9 KB (+0.6%) of text.
+
+If you take one thing from this section: the obvious fix, applied in the obvious
+order, measured **worse**, and only a factorial showed why.
+
+
+## 5. Correctness
+
+* 766/766 `decode_md5_verify`, before and after.
+* `examples/md5_inventory` **set-diffed BY NAME** against
+  `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst`: 0 names added, 0
+  removed, **0 entries differing** in status or md5. A count alone would hide a
+  5-repaired / 5-broken swap.
+* All 40 A/B cells in this campaign md5-identical between arms.
+* `#![forbid(unsafe_code)]` proven ACTIVE, not merely present: planting an
+  `unsafe` block in `decode.rs` fails the build with
+  `error: usage of an unsafe block`.
+
+### Mutation proofs — every new test made to FAIL, then restored green
+
+    mutation                                        test that failed
+    ---------------------------------------------------------------------------
+    M1  delete the pixel-width guard                serial_adapts…, one_tile…
+    M2b serial branch never adapts (old behaviour)  serial_adapts…
+    M3  width gate leaks into concurrent branch     serial_adapts…, one_tile…
+    M4  set_pixel_bytes stores instead of fetch_max set_pixel_bytes_is_monotone
+    M5  block_shift() disagrees by one bit between  cross_shard_overlaps_are_all_caught
+        consecutive registrations (SOUNDNESS)
+    M6  drop the serial `shift.max(BLOCK_SHIFT)`    serial_adapts…
+
+M5 is the one that matters. The adaptive shift rests on exactly one premise —
+both registrants of a shared byte agree on where the block boundary is — and
+this change adds a THIRD input to the value they must agree on, so the premise
+was re-proven rather than inherited. Restoring it: 27/27 pass.
+
+Soundness argument, unchanged in shape: the shift is read once in
+`BorrowTracker::new`, is immutable for that tracker's life (it moves only in
+`reprovision`, which takes `&mut self`), and two registrants of a shared byte
+share the instance. A stale or racing latch value only decides which constant a
+*new* tracker picks. That is why all three latches can be process-global and
+monotone without touching correctness.
+
+
+## 6. What is NOT explained, and what was NOT done
+
+* **The mechanism behind the 10-bit fast-path penalty is measured, not
+  understood.** `add`'s self time rises 3.5x more at 10bpc than at 8bpc for the
+  same coarsening. Blocks-per-shard does not explain it (matching that quantity,
+  10bpc shift 15, is still 1.049), and neither does bytes-per-shard (fixed by
+  length and shard count, not by the shift). The shipped rule is keyed on the
+  measured discriminator; a mechanism might key it better.
+* **Sizes covered are 1024 and 4K only, at two depths.** 8K was not measured, so
+  neither a `BD::BPC` rule nor a byte-stride rule is validated there — they
+  differ exactly at "8-bit plane with a 10-bit-sized stride", which is what an
+  8K 8-bit plane is. 12bpc was not measured either; it takes the 2-bytes path
+  with 10bpc, which is the conservative side.
+* **The serial arm leaves ~2% on the table.** The fixed ladder's best 8-bit t=1
+  rung is 15/16 (0.936/0.937) and the adaptive rule delivers 14 (0.958). Closing
+  that means a serial-specific `BLOCKS_PER_SHARD`, which was not measured.
+* **`ShardRecs::locs` is stored unconditionally** (`tracker_shard.rs`, in
+  `alloc`) even though the doc comment on `Loc` says release builds do not keep
+  it. That is one store plus a `#[track_caller]` `&Location` materialised per
+  borrow — two instructions on the hottest path in the decoder, at both depths.
+  Not touched here: it is in `alloc`, which the concurrent wide-path work owns.
+* **`check_cast_slice_len` re-reads `self.len()`** after the tracker call. One
+  load; left alone.
+
+### Pre-existing failure found, NOT caused by this change
+
+`cargo test --release --workspace` fails 16 of 19 `decode_permutations` tests
+with `called Option::unwrap() on a None value` at
+`src/safe_simd/mc_arm.rs:5931`. **Verified identical on pristine `main` in a
+throwaway worktree — same 16 test names, same panic site.** Cause: that suite
+ablates archmage tokens process-wide, and nine sites assume NEON is always
+summonable — six `Arm64::summon().unwrap()` in `mc_arm.rs`, three in
+`filmgrain_arm.rs`, plus one
+`.expect("NEON always available on aarch64")` — so the scalar permutation
+panics instead of dispatching scalar. `decode_md5_verify` does not ablate, which
+is why the corpus gate is green either way.
+
+
+## 7. Measured negatives — do not re-run these
+
+* **A pixel-stride-keyed or rows-per-block-keyed shift: REFUTED.** It computes
+  the same 14/15 the length rule already computes (section 2), so it reproduces
+  the +4.9% 10-bit regression it was meant to fix.
+* **A coarser block for 10-bit at t=1, at any rung: REFUTED.** 1.012 / 1.059 /
+  1.049 / 1.044 at shifts 13/14/15/16 on v4k_8tile_10b, replicated on
+  v4k_1tile_10b. The optimum is the base shift.
+* **`#[inline(always)]` on the zerocopy casts, alone: a 2.3-2.7% REGRESSION** at
+  10bpc t=1. It is only a win once the cold `CastError` frame is gone.

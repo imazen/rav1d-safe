@@ -867,40 +867,76 @@ const BLOCKS_PER_SHARD: usize = 2;
 /// and therefore runs with no borrow outstanding).
 #[inline]
 fn block_shift_for(len: usize) -> u32 {
-    block_shift_rule(len, active_shards(), tile_concurrency())
+    block_shift_rule(len, active_shards(), tile_concurrency(), pixel_bytes())
 }
 
-/// The shift decision as a pure function of `len` and the two declared
-/// concurrency facts, so the policy can be tested without touching the
-/// process-global monotone latches that feed it (they can only move one way,
-/// which makes an ordering-dependent test of the gate impossible).
+/// The shift decision as a pure function of `len` and the three declared facts,
+/// so the policy can be tested without touching the process-global monotone
+/// latches that feed it (they can only move one way, which makes an
+/// ordering-dependent test of the gate impossible).
 #[inline]
-fn block_shift_rule(len: usize, shards: usize, tiles: usize) -> u32 {
+fn block_shift_rule(len: usize, shards: usize, tiles: usize, pixel_bytes: usize) -> u32 {
     // A fixed rung, if one was selected, wins everywhere.
     if FIXED_SHIFT_SELECTED {
         return BLOCK_SHIFT;
     }
+    let mut serial = false;
     if !ADAPTIVE_WHEN_SERIAL {
-        // Serial decode keeps the old constant. The adaptive shift's whole
-        // benefit is cross-core shard-line traffic, which a single thread does
-        // not have, and the single-thread column of the ladder is
-        // flat-to-slightly-adverse. Same split, for the same reason, as
-        // SHARDS_SERIAL vs SHARDS_CONCURRENT — and read at the same moment, so
-        // an instance built before `set_parallelism` simply keeps the serial
-        // value, exactly like `mask`.
-        //
-        // Threads are necessary but NOT sufficient: a single-tile frame on
-        // eight threads is concurrent, and the coarse shift measured 3.08%
-        // SLOWER there while measuring 39% faster on the eight-tile frame at
-        // the same thread count. See `set_tile_concurrency`.
-        if shards < SHARDS_CONCURRENT || tiles < 2 {
+        // Same split, for the same reason, as SHARDS_SERIAL vs
+        // SHARDS_CONCURRENT — and read at the same moment, so an instance built
+        // before `set_parallelism` simply keeps the serial value, exactly like
+        // `mask`.
+        if shards < SHARDS_CONCURRENT {
+            // SERIAL decode. There is no cross-core shard-line traffic to save,
+            // so the only thing a coarser block buys is the wide path it stops
+            // promoting borrows onto — and whether that pays depends on the bit
+            // depth, measured, in opposite directions. See [`set_pixel_bytes`]
+            // for the table and the profile: at one byte per pixel the trade is
+            // worth -4.2% (v4k_8tile) to -4.2% (v4k_1tile), and at two it costs
+            // +4.7% to +4.9% on the same two vectors.
+            if pixel_bytes > 1 {
+                return BLOCK_SHIFT;
+            }
+            serial = true;
+        } else if tiles < 2 {
+            // CONCURRENT, but a single-tile frame: threads are necessary and
+            // NOT sufficient. The coarse shift measured 3.08% SLOWER on
+            // v4k_1tile at t=8 while measuring 39% faster on v4k_8tile at the
+            // same thread count. See `set_tile_concurrency`.
+            //
+            // Bit depth is deliberately NOT consulted on this branch: the
+            // concurrent column was measured a win at BOTH depths (see the
+            // t=8 rows in `benchmarks/tracker_blockshift_bpc_2026-08-08.meta`),
+            // so this half of the gate is byte-for-byte the shipped one.
             return BLOCK_SHIFT;
         }
     }
     let target = (BLOCKS_PER_SHARD * N_SHARDS) as u64;
     let want = (len as u64 / target.max(1)).max(1);
     // `ilog2` rounds down, so the block count lands at or above the target.
-    (u64::BITS - 1 - want.leading_zeros()).clamp(6, 24)
+    let shift = (u64::BITS - 1 - want.leading_zeros()).clamp(6, 24);
+    if serial {
+        // ADAPT UPWARDS ONLY. On a serial decode the only thing the shift buys
+        // is the wide-path promotions a COARSER block stops making — the t=1
+        // ladder is monotone in the shift at 8bpc (1.000 / 0.980 / 0.958 /
+        // 0.936 / 0.937 at 12..16) — so a shift below the constant is the
+        // mechanism run backwards, and it is reachable: the rule aims at a
+        // fixed BLOCK COUNT, so any buffer under `BLOCK_SHIFT * BLOCKS_PER_SHARD
+        // * N_SHARDS` bytes gets a finer block than the constant.
+        //
+        // Measured, and this is why the clamp exists rather than being a
+        // precaution: v1024's 8-bit planes are 696,320 bytes, for which the
+        // rule returns 11 against the constant's 12, and the unclamped serial
+        // arm cost **+4.9%** there (paired median of 11, [1.0394, 1.0625],
+        // 11/11 rounds worse) while the 4K planes gained 3%.
+        //
+        // The concurrent branch is deliberately NOT clamped: there a finer
+        // block is the shipped, measured behaviour (more blocks spread more
+        // shards, which is the point when there are cores to spread across).
+        shift.max(BLOCK_SHIFT)
+    } else {
+        shift
+    }
 }
 
 /// True when one of the fixed `blockshift-*` rungs was selected, in which case
@@ -1063,6 +1099,72 @@ pub fn set_tile_concurrency(n: usize) {
 #[inline(always)]
 fn tile_concurrency() -> usize {
     OBSERVED_TILES.load(Ordering::Relaxed)
+}
+
+/// Bytes per pixel of the widest plane the process has seen. Monotone.
+static OBSERVED_PIXEL_BYTES: AtomicUsize = AtomicUsize::new(1);
+
+/// Declare the pixel width of the frame about to be decoded, in bytes.
+///
+/// The third input to the adaptive block shift's gate, and the only one that is
+/// a property of the *content* rather than of the decoder's configuration. It
+/// exists because the shift's sign flips with bit depth on a SERIAL decode, and
+/// nothing already latched can see that.
+///
+/// Measured on this box (Apple M4 Pro 8P+4E, `scripts/perf/tshift_ab.sh`,
+/// interleaved rotating order, median of 5, in-process timer, no `nice`,
+/// bit-identical md5 on every arm), t=1, fixed rungs against the shipped
+/// `BLOCK_SHIFT` of 12 — see `benchmarks/tracker_blockshift_bpc_2026-08-08.meta`:
+///
+/// ```text
+///   vector           bpc   shift 14   shift 16   ranges vs base
+///   v4k_8tile          8      0.958      0.937   separated
+///   v4k_1tile          8      0.958      0.930   separated
+///   v1024              8      0.978      0.960   separated at 16
+///   v4k_8tile_10b     10      1.059      1.044   separated
+///   v4k_1tile_10b     10      1.049      1.038   separated
+///   v1024_10b         10      0.994      0.994   overlap (null)
+/// ```
+///
+/// Two 4K vectors of each depth, differing in tiling and in content, and the
+/// sign is the same within a depth and opposite across it. So it is the bit
+/// depth, not the vector.
+///
+/// The mechanism is in the profile (`/usr/bin/sample`, 40 s, t=1, self-time
+/// leaves, share of all samples, base -> shift 14):
+///
+/// ```text
+///                        8bpc              10bpc
+///   add_wide + remove   10.65 -> 0.76     5.32 -> 1.23    (what a coarse block BUYS)
+///   add (fast path)     10.80 -> 13.95   11.10 -> 18.30   (what it COSTS)
+///   net tracker          -6.7 points       +4.0 points
+/// ```
+///
+/// Both depths lose most of their wide-path traffic, exactly as intended — the
+/// wide-promotion counters (`--features probe-wide`) drop 1,006,620 -> 72,644 at
+/// 8bpc and 622,250 -> 36,510 at 10bpc. But 10bpc had only half as much
+/// wide-path cost to recover in the first place, and its single-block fast path
+/// pays over twice the penalty for the coarser block. The trade is favourable
+/// at one byte per pixel and unfavourable at two.
+///
+/// Monotone `fetch_max`, for the reason [`set_parallelism`] and
+/// [`set_tile_concurrency`] are: a later 8-bit frame must not re-open the
+/// serial adaptation for a decoder that is concurrently running 10-bit ones.
+/// Erring towards 2 is also the cheap direction — the 10bpc penalty measured
+/// larger than the 8bpc gain.
+///
+/// SOUNDNESS is untouched, and for the same reason as the other two latches:
+/// the shift is read once in [`BorrowTracker::new`], is immutable for that
+/// tracker's life, and "no missed overlap" needs only that both registrants of
+/// a shared byte agree on the block boundary — which they do because they share
+/// the instance, whatever value the latch held when it was built.
+pub fn set_pixel_bytes(n: usize) {
+    OBSERVED_PIXEL_BYTES.fetch_max(n.max(1), Ordering::Relaxed);
+}
+
+#[inline(always)]
+fn pixel_bytes() -> usize {
+    OBSERVED_PIXEL_BYTES.load(Ordering::Relaxed)
 }
 
 impl BorrowTracker {
@@ -1829,7 +1931,7 @@ mod tests {
         // `block_shift_rule` with both concurrency facts declared rather than
         // poking the monotone globals (which the gate test below must be able
         // to see un-poked).
-        let sh = |len: usize| block_shift_rule(len, SHARDS_CONCURRENT, 8);
+        let sh = |len: usize| block_shift_rule(len, SHARDS_CONCURRENT, 8, 1);
         let target = BLOCKS_PER_SHARD * N_SHARDS;
         for len in [
             64 * 1024,       // just at SHARD_MIN_LEN
@@ -1863,7 +1965,7 @@ mod tests {
     /// adapts and every buffer gets the constant.
     #[test]
     fn a_fixed_rung_overrides_the_adaptive_rule() {
-        let sh = |len: usize| block_shift_rule(len, SHARDS_CONCURRENT, 8);
+        let sh = |len: usize| block_shift_rule(len, SHARDS_CONCURRENT, 8, 1);
         if FIXED_SHIFT_SELECTED {
             for len in [64 * 1024, 1024 * 1024, 3840 * 2160, 2 * 3840 * 2160] {
                 assert_eq!(sh(len), BLOCK_SHIFT, "len {len}");
@@ -1894,17 +1996,86 @@ mod tests {
     #[test]
     fn one_tile_does_not_get_the_coarse_shift() {
         const LEN: usize = 2 * 3840 * 2160;
-        // Threads but one tile: the constant.
-        assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 1), BLOCK_SHIFT);
-        // Tiles but one thread: still the constant (the pre-existing gate).
-        assert_eq!(block_shift_rule(LEN, SHARDS_SERIAL, 8), BLOCK_SHIFT);
+        // Threads but one tile: the constant. Both bit depths, because the
+        // concurrent half of the gate must not consult the pixel width.
+        assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 1, 1), BLOCK_SHIFT);
+        assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 1, 2), BLOCK_SHIFT);
+        // Tiles but one thread AND two bytes per pixel: still the constant.
+        assert_eq!(block_shift_rule(LEN, SHARDS_SERIAL, 8, 2), BLOCK_SHIFT);
         // Both: adapt. And this must be a real change, or the test is vacuous.
-        let adapted = block_shift_rule(LEN, SHARDS_CONCURRENT, 8);
+        let adapted = block_shift_rule(LEN, SHARDS_CONCURRENT, 8, 2);
         assert_ne!(adapted, BLOCK_SHIFT);
         assert_eq!(adapted, 15);
         // Two tiles is already "multi-tile"; the gate is a threshold, not a
         // proportion.
-        assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 2), adapted);
+        assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 2, 2), adapted);
+    }
+
+    /// The serial half of the gate is keyed on the PIXEL WIDTH, and only there.
+    ///
+    /// Measured, t=1, median of 5, interleaved, ranges separated, md5-identical
+    /// (`benchmarks/tracker_blockshift_bpc_2026-08-08.meta`): the coarse shift
+    /// is worth -4.2% on v4k_8tile and v4k_1tile at 8bpc and costs +4.7%/+4.9%
+    /// on the 10-bit renditions of those same two vectors. One byte per pixel
+    /// adapts; two does not.
+    #[cfg(not(any(
+        feature = "__blockshift_8",
+        feature = "__blockshift_10",
+        feature = "__blockshift_13",
+        feature = "__blockshift_14",
+        feature = "__blockshift_15",
+        feature = "__blockshift_16",
+        feature = "__blockshift_adaptive"
+    )))]
+    #[test]
+    fn serial_adapts_at_one_byte_per_pixel_and_not_at_two() {
+        // The 8-bit 4K luma plane, decoded serially: adapts, and to a value
+        // that is really different from the constant (else this is vacuous).
+        const LEN8: usize = 3840 * 2176;
+        let serial8 = block_shift_rule(LEN8, SHARDS_SERIAL, 8, 1);
+        assert_ne!(serial8, BLOCK_SHIFT);
+        assert_eq!(serial8, 14);
+        // Its 10-bit twin, same decode, same tiling: does NOT adapt.
+        const LEN10: usize = 2 * 3840 * 2176;
+        assert_eq!(
+            block_shift_rule(LEN10, SHARDS_SERIAL, 8, 2),
+            BLOCK_SHIFT,
+            "two bytes per pixel must keep the constant on a serial decode"
+        );
+        // The tile split is NOT what gates the serial branch: a single-tile
+        // 8-bit frame at t=1 measured the same -4.2% as the eight-tile one, so
+        // it must adapt too.
+        assert_eq!(block_shift_rule(LEN8, SHARDS_SERIAL, 1, 1), serial8);
+        // ADAPT UPWARDS ONLY. v1024's 8-bit plane is 696,320 bytes, for which
+        // the block-count rule wants 11 — FINER than the constant, which is the
+        // serial mechanism backwards and measured +4.9% before the clamp.
+        const LEN_V1024: usize = 696_320;
+        assert!(
+            block_shift_rule(LEN_V1024, SHARDS_SERIAL, 1, 1) >= BLOCK_SHIFT,
+            "the serial arm must never hand out a finer block than the constant"
+        );
+        // ...and that bound has to be doing work here, or the test is vacuous:
+        // the unclamped rule really does want a smaller shift for this length.
+        assert!(block_shift_rule(LEN_V1024, SHARDS_CONCURRENT, 8, 1) < BLOCK_SHIFT);
+        // ...and the width gate must not leak into the concurrent branch,
+        // which the t=8 column measured a win at BOTH depths.
+        assert_eq!(
+            block_shift_rule(LEN10, SHARDS_CONCURRENT, 8, 2),
+            block_shift_rule(LEN10, SHARDS_CONCURRENT, 8, 1),
+            "the concurrent branch must be blind to the pixel width"
+        );
+    }
+
+    /// A later 8-bit frame must not re-open serial adaptation for a decoder
+    /// that is concurrently running 10-bit ones — same reason the other two
+    /// latches are monotone.
+    #[test]
+    fn set_pixel_bytes_is_monotone() {
+        set_pixel_bytes(2);
+        let raised = pixel_bytes();
+        assert!(raised >= 2);
+        set_pixel_bytes(1);
+        assert_eq!(pixel_bytes(), raised);
     }
 
     /// A later single-tile frame must not undo a multi-tile declaration, for

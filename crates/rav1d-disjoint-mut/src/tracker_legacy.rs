@@ -592,3 +592,7 @@ pub fn set_parallelism(_n: usize) {}
 /// Likewise: with no shards and no block shift there is nothing for the tile
 /// split to select.
 pub fn set_tile_concurrency(_n: usize) {}
+
+/// Likewise for the pixel width: it only ever gates the adaptive block shift,
+/// which this tracker does not have.
+pub fn set_pixel_bytes(_n: usize) {}

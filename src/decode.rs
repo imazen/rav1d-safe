@@ -5131,6 +5131,11 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     rav1d_disjoint_mut::set_tile_concurrency(
         frame_hdr.tiling.cols as usize * frame_hdr.tiling.rows as usize,
     );
+    // And how wide a pixel is, which is the third input to the same gate: on a
+    // SERIAL decode the coarse shift measured -4.2% at 8bpc and +4.9% at 10bpc,
+    // on two 4K vectors of each depth. Same placement requirement as the tile
+    // split — before `rav1d_thread_picture_alloc` builds the tracker. Monotone.
+    rav1d_disjoint_mut::set_pixel_bytes(if bpc > 8 { 2 } else { 1 });
     if frame_hdr.frame_type.is_inter_or_switch() {
         if frame_hdr.primary_ref_frame != RAV1D_PRIMARY_REF_NONE {
             let pri_ref = frame_hdr.refidx[frame_hdr.primary_ref_frame as usize] as usize;
