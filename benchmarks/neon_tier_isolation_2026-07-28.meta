@@ -54,6 +54,24 @@ conformance vectors decode to the wrong MD5, at ALL THREE cpu levels
 The `_opN` family are AV1 operating points (scalability layers), which points
 at operating-point selection rather than any pixel kernel.
 
+**CORRECTION 2026-08-07 — the "NOT SIMD-related" conclusion above is wrong, and
+so is the operating-point guess.** The premise fails: on aarch64 the three CPU
+levels are the SAME decoder. Nothing under `src/safe_simd/` reads
+`rav1d_cpu_flags_mask`; every dispatcher gates on `archmage::Arm64::summon()`,
+which cannot return None on real hardware — the very fact this file documents
+two sections above. So "fails identically at native / neon / scalar" is not
+evidence about SIMD on this target; it is three runs of the same code.
+
+Measured with a real per-kernel ablation switch (`src/ablate.rs`,
+`benchmarks/aarch64_md5_attribution_2026-08-07.meta`): all 18 8-bit/vq_suite
+vectors — including every `_opN` — are broken by the aarch64 NEON inverse
+transforms AND the aarch64 compound-prediction kernels, and all 18 PASS with
+those two families forced to the generic scalar reference. Operating-point
+selection is not involved.
+
+The rest of this file stands: the tier bench genuinely cannot produce a
+comparison on aarch64, and the "graceful skip" point below is right.
+
 ATTRIBUTION: pre-existing, not introduced here. The only change in this commit
 is a new bench file plus a `[[bench]]` entry in Cargo.toml — `git status` shows
 no src/ or tests/ file touched, and a bench registration cannot alter library

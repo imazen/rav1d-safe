@@ -125,6 +125,18 @@ dav1d's 4.1 (17.3x), loop filter 34.2 against 3.0 (11.3x).
   bitstreams. Do not port it on the strength of its line count; find a vector
   that exercises it first.
 
+  2026-08-07 recount confirms this is now the LAST of R3's three: intrinsic call
+  counts at `verify/compose` are cdef_arm 104, loopfilter_arm 223,
+  **looprestoration_arm 0**. Two things worth knowing before porting it. It is
+  not a correctness problem — per-kernel ablation over the full dav1d corpus
+  says loop restoration breaks **0** of the 464 failing vectors
+  (`benchmarks/aarch64_md5_attribution_2026-08-07.meta`). But it *is* a
+  hand-written duplicate of `src/looprestoration.rs` that `lr_filter_dispatch`
+  runs unconditionally (it ends in `true`) at both bit depths, so any drift
+  between the two is a silent bug by construction — its 16bpc self-guided
+  rounding already was one once. Deleting it in favour of the reference is a
+  legitimate outcome of this row, not a failure to do the work.
+
 ## Notes
 - **R1 BLOCKER (verified 2026-05-26):** the ARM DotProd/I8MM compute intrinsics
   needed for the 8-tap dot-product kernels — `vdotq_s32` (DotProd) and
