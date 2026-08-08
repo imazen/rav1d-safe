@@ -48,6 +48,31 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   still scalar — a real NEON tier is named as remaining work in
   `ROADMAP_SIMD_PORTING.md` R3 and `benchmarks/lr_arm_vs_reference_2026-08-07.meta`.
 ### Changed
+- **`rav1d-disjoint-mut`: the adaptive block shift is bit-depth-aware, and
+  adapts upwards only, on a serial decode** (`88bb742`). New monotone
+  `set_pixel_bytes` latch beside `set_parallelism` / `set_tile_concurrency`,
+  declared from `decode.rs` next to the tile split. The coarse shift measured
+  **-4.2% at 8bpc and +4.9% at 10bpc** at t=1, on two 4K vectors of each depth
+  differing in tiling and content, so the serial branch now adapts only at one
+  byte per pixel — and never below `BLOCK_SHIFT`, since the block-count rule
+  returns a *finer* shift for buffers under ~1 MB, which cost +4.5% on v1024
+  before the clamp. The concurrent branch is byte-for-byte unchanged and
+  deliberately blind to the pixel width (t=8 is a win at both depths). Measured
+  vs `fc120a8`, paired median of 11, md5-identical: v4k_8tile/v4k_1tile 8bpc
+  t=1 **0.959**, 8bpc t=8 neutral. A pixel-stride or rows-per-block key is
+  REFUTED — the length rule already yields the same rows per block at both
+  depths. Record: `benchmarks/tracker_blockshift_bpc_2026-08-08.meta`.
+- **`rav1d-disjoint-mut`: the 10-bit zerocopy cast no longer carries a stack
+  frame for an error it does not build** (`88bb742`). `.unwrap()` on
+  `mut_from_bytes` requires its `CastError` to be materialisable in the calling
+  frame, which bought the *success* path of `slice_as::<_, u16>` a 112-byte
+  frame and ten callee-saved spills; a `#[cold] cast_slice_failed` reporting the
+  byte length and address instead drops it to 80 bytes / 91 instructions, after
+  which `#[inline(always)]` removes the symbols entirely for +0.6% text. The
+  predicate is unchanged. Order matters: inlining *before* removing the frame
+  measured a 2.3-2.7% regression. Measured: 10bpc t=1 **0.974/0.969** (4K),
+  **0.914** (1024), 10bpc t=8 **0.924/0.971**; 8bpc unaffected, where the cast
+  folds to nothing.
 - **`rav1d-disjoint-mut`: releasing a borrow no longer takes the shard lock**
   (`1f09769`). The occupancy bitmap moved out of the lock-protected record
   block into an `AtomicU8` on the shard, so `remove` is one `fetch_and` against
