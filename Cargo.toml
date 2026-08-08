@@ -105,8 +105,17 @@ probe-lock-backoff = ["rav1d-disjoint-mut/__probe_lock_backoff"]
 shards-32 = ["rav1d-disjoint-mut/__shards_32"]
 shards-64 = ["rav1d-disjoint-mut/__shards_64"]
 shards-128 = ["rav1d-disjoint-mut/__shards_128"]
+# A/B: BlockMut holds its per-row MUTABLE guards across the kernel instead of
+# taking immutable ones to read and mutable ones to write back (2h -> h
+# registrations). MEASURED NULL — see the doc comment on `block_mut_held`.
+held-row-guards = []
+shard-ident = ["rav1d-disjoint-mut/__shard_ident"]
 blockshift-8 = ["rav1d-disjoint-mut/__blockshift_8"]
 blockshift-10 = ["rav1d-disjoint-mut/__blockshift_10"]
+blockshift-13 = ["rav1d-disjoint-mut/__blockshift_13"]
+blockshift-14 = ["rav1d-disjoint-mut/__blockshift_14"]
+blockshift-15 = ["rav1d-disjoint-mut/__blockshift_15"]
+blockshift-16 = ["rav1d-disjoint-mut/__blockshift_16"]
 
 # Test-only (double-underscore = private, never enable in production): arms a
 # one-shot worker-thread panic so tests can prove a worker death surfaces as a

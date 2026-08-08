@@ -50,7 +50,7 @@
 
 use super::*;
 use core::panic::Location;
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicUsize, Ordering};
 
 // =============================================================================
 // Tunables (compile-time A/B knobs — see benchmarks/shard_tracker_*.meta)
@@ -199,11 +199,62 @@ pub(super) const N_SHARDS: usize = 128;
 /// So: chosen by measurement, not by the tile-geometry argument, which the
 /// measurement does not support. Shift 8 and 10 remain available as
 /// `blockshift-8` / `blockshift-10` if a different tiling ever inverts this.
+///
+/// **Re-opened 2026-08-08 with 14 and 16**, for a reason the 8/10/12 screening
+/// did not have in front of it: the biggest single tracker consumer turns out
+/// to be `rav1d_prepare_intra_edges`'s left-COLUMN read (9.19% of a t=8 4K
+/// frame's samples), which registers one 1-pixel interval per row. At a 3840-
+/// byte row and a 4 KiB block no two of those rows share a block, so a 16-row
+/// column costs 16 distinct shard lines. At shift 16 seventeen rows share a
+/// block, which collapses that to one line — at the price of putting every
+/// concurrent tile column of the same sbrow-stripe on the same lock.
 #[cfg(feature = "__blockshift_8")]
 const BLOCK_SHIFT: u32 = 8;
 #[cfg(all(feature = "__blockshift_10", not(feature = "__blockshift_8")))]
 const BLOCK_SHIFT: u32 = 10;
-#[cfg(not(any(feature = "__blockshift_8", feature = "__blockshift_10")))]
+#[cfg(all(
+    feature = "__blockshift_13",
+    not(any(feature = "__blockshift_8", feature = "__blockshift_10"))
+))]
+const BLOCK_SHIFT: u32 = 13;
+#[cfg(all(
+    feature = "__blockshift_14",
+    not(any(
+        feature = "__blockshift_8",
+        feature = "__blockshift_10",
+        feature = "__blockshift_13"
+    ))
+))]
+const BLOCK_SHIFT: u32 = 14;
+#[cfg(all(
+    feature = "__blockshift_16",
+    not(any(
+        feature = "__blockshift_8",
+        feature = "__blockshift_10",
+        feature = "__blockshift_13",
+        feature = "__blockshift_14"
+    ))
+))]
+const BLOCK_SHIFT: u32 = 16;
+#[cfg(all(
+    feature = "__blockshift_15",
+    not(any(
+        feature = "__blockshift_8",
+        feature = "__blockshift_10",
+        feature = "__blockshift_13",
+        feature = "__blockshift_14",
+        feature = "__blockshift_16"
+    ))
+))]
+const BLOCK_SHIFT: u32 = 15;
+#[cfg(not(any(
+    feature = "__blockshift_8",
+    feature = "__blockshift_10",
+    feature = "__blockshift_13",
+    feature = "__blockshift_14",
+    feature = "__blockshift_15",
+    feature = "__blockshift_16"
+)))]
 const BLOCK_SHIFT: u32 = 12;
 
 /// Records per shard. Sized so a shard is exactly one 128-byte cache line.
@@ -316,10 +367,15 @@ type OverlapHit = (usize, usize, bool, Option<&'static Location<'static>>);
 
 /// The records of one shard. Only ever touched while that shard's [`TinyLock`]
 /// is held.
+///
+/// The occupancy bitmap is NOT here — it lives in [`Shard::occupied`] as an
+/// atomic, because releasing a borrow only has to clear one bit and therefore
+/// does not need the lock at all. See [`BorrowTracker::remove`].
 struct ShardRecs {
-    /// Bit `i` set iff slot `i` holds a live record.
-    occupied: u8,
     /// Bit `i` set iff slot `i`'s record is a mutable borrow.
+    ///
+    /// Only meaningful for slots whose [`Shard::occupied`] bit is set, and only
+    /// ever read or written by a lock holder.
     mutable: u8,
     starts: [usize; SLOTS],
     ends: [usize; SLOTS],
@@ -336,7 +392,6 @@ struct ShardRecs {
 impl ShardRecs {
     const fn new() -> Self {
         Self {
-            occupied: 0,
             mutable: 0,
             starts: [0; SLOTS],
             ends: [0; SLOTS],
@@ -368,12 +423,21 @@ impl ShardRecs {
     /// const parameter, so each call site compiles to one loop with the mask
     /// folded in — the way the legacy tracker's two separate `find_overlap_*`
     /// functions did.
+    ///
+    /// `occupied` is passed in because it now lives outside the lock, in
+    /// [`Shard::occupied`]; the caller loads it once and uses the same snapshot
+    /// for the scan and for [`Self::alloc`].
     #[inline(always)]
-    fn find<const IS_MUT: bool>(&self, start: usize, end: usize) -> Option<OverlapHit> {
+    fn find<const IS_MUT: bool>(
+        &self,
+        occupied: u8,
+        start: usize,
+        end: usize,
+    ) -> Option<OverlapHit> {
         let mut mask = if IS_MUT {
-            self.occupied
+            occupied
         } else {
-            self.occupied & self.mutable
+            occupied & self.mutable
         };
         while mask != 0 {
             let i = (mask.trailing_zeros() as usize).min(SLOTS - 1);
@@ -385,18 +449,28 @@ impl ShardRecs {
         None
     }
 
-    /// Claim a slot for `[start, end)`. `None` when the shard is full.
+    /// Claim a slot for `[start, end)`, given the `occupied` snapshot the
+    /// caller already loaded. `None` when the shard is full.
+    ///
+    /// Returns the slot index; PUBLISHING it (setting the occupancy bit) is the
+    /// caller's job and must happen *after* this returns, so that the record
+    /// fields are complete before any other thread can observe the bit.
     #[inline(always)]
-    fn alloc<const IS_MUT: bool>(&mut self, start: usize, end: usize, loc: Loc) -> Option<u8> {
+    fn alloc<const IS_MUT: bool>(
+        &mut self,
+        occupied: u8,
+        start: usize,
+        end: usize,
+        loc: Loc,
+    ) -> Option<u8> {
         // `!SLOTS_MASK` pre-fills the unusable high bits, so `trailing_ones`
         // reaches SLOTS exactly when the shard is full.
-        let free = ((self.occupied | !SLOTS_MASK).trailing_ones() as usize).min(SLOTS);
+        let free = ((occupied | !SLOTS_MASK).trailing_ones() as usize).min(SLOTS);
         if free == SLOTS {
             return None;
         }
         self.starts[free] = start;
         self.ends[free] = end;
-        self.occupied |= 1 << free;
         if IS_MUT {
             self.mutable |= 1 << free;
         } else {
@@ -410,16 +484,10 @@ impl ShardRecs {
         let _ = loc;
         Some(free as u8)
     }
-
-    #[inline(always)]
-    fn free(&mut self, slot: u8) {
-        let bit = 1u8 << (slot as usize).min(SLOTS - 1);
-        debug_assert!(self.occupied & bit != 0, "freeing an unoccupied shard slot");
-        self.occupied &= !bit;
-    }
 }
 
-/// One shard: its lock and its records, alone on a cache line.
+/// One shard: its lock, its occupancy bitmap, and its records, alone on a
+/// cache line.
 ///
 /// 128 bytes is the M-series line size (`hw.cachelinesize`). Two shards sharing
 /// a line would halve the effective shard count, so the alignment is
@@ -427,6 +495,20 @@ impl ShardRecs {
 #[repr(align(128))]
 struct Shard {
     lock: TinyLock,
+    /// Bit `i` set iff slot `i` holds a live record.
+    ///
+    /// Atomic, and deliberately OUTSIDE [`Self::recs`]: releasing a borrow only
+    /// has to clear one bit, which `fetch_and` does without the lock. That
+    /// takes the whole of [`BorrowTracker::remove`] — measured 20.6% of a t=8
+    /// 4K frame's samples — from `swap`-acquire + bit clear + `store`-release
+    /// down to one RMW, and it stops releases from contending with each other
+    /// and with registrations for the shard lock at all.
+    ///
+    /// Registration still holds the lock, and must publish here with `fetch_or`
+    /// (never `store(load | bit)`) so a concurrent release cannot be lost. The
+    /// record fields in `recs` are written BEFORE the bit is set, so a bit
+    /// observed set always has complete fields behind it.
+    occupied: AtomicU8,
     recs: UnsafeCell<ShardRecs>,
 }
 
@@ -434,8 +516,28 @@ impl Shard {
     const fn new() -> Self {
         Self {
             lock: TinyLock::new(),
+            occupied: AtomicU8::new(0),
             recs: UnsafeCell::new(ShardRecs::new()),
         }
+    }
+
+    /// Publish slot `slot` as live. Must be called by the lock holder, after
+    /// [`ShardRecs::alloc`] has filled the record in.
+    #[inline(always)]
+    fn publish(&self, slot: u8) {
+        self.occupied
+            .fetch_or(1u8 << (slot as usize).min(SLOTS - 1), Ordering::Release);
+    }
+
+    /// Retire slot `slot`. Lock-free — see [`Self::occupied`].
+    #[inline(always)]
+    fn retire(&self, slot: u8) {
+        let bit = 1u8 << (slot as usize).min(SLOTS - 1);
+        debug_assert!(
+            self.occupied.load(Ordering::Relaxed) & bit != 0,
+            "freeing an unoccupied shard slot"
+        );
+        self.occupied.fetch_and(!bit, Ordering::Release);
     }
 }
 
@@ -621,12 +723,33 @@ const SHARD_MIN_LEN: usize = 64 * 1024;
 /// Fibonacci hashing: the multiplicative constant is `2^64 / phi`. Taking the
 /// *high* bits mixes the low block bits (the x position within a picture row)
 /// into the shard index, which is what separates concurrent tile columns.
+///
+/// `__shard_ident` swaps in the identity instead — see the A/B note there. Any
+/// pure function of the block index is equally SOUND: the "no missed overlap"
+/// argument only needs `shard(b)` to agree for both registrants of a shared
+/// block, which any function does. The choice is purely locality vs collision.
+#[cfg(not(feature = "__shard_ident"))]
 #[inline(always)]
 fn shard_of(block: usize, mask: usize) -> usize {
     // The second `&` is with a constant, which is what lets LLVM prove the
     // result indexes `[Shard; N_SHARDS]` in bounds. `mask` alone is a runtime
     // value it cannot bound.
     ((((block as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)) >> 40) as usize & mask) & (N_SHARDS - 1)
+}
+
+/// Identity shard mapping: consecutive blocks land on consecutive shards.
+///
+/// The hypothesis this arm tests: a `w x h` compact read registers `h` row
+/// intervals whose block indices are consecutive-ish (at 4K a 3840-byte row
+/// against a 4096-byte block advances the index by ~1), so under the identity
+/// they occupy `h` ADJACENT 128-byte shard lines — one prefetchable 2 KiB run —
+/// instead of `h` lines scattered over the instance's whole 16 KiB table.
+/// The cost is that two tile columns on the same picture row, which differ by
+/// at most one block index, can no longer be separated by the hash.
+#[cfg(feature = "__shard_ident")]
+#[inline(always)]
+fn shard_of(block: usize, mask: usize) -> usize {
+    (block & mask) & (N_SHARDS - 1)
 }
 
 /// `active_shards() - 1` when the buffer is worth spreading, else `0`.
@@ -849,14 +972,21 @@ impl BorrowTracker {
             drop(g);
             return self.add_slow::<IS_MUT>(start, end, b0, b1);
         }
+        // One snapshot of the occupancy bitmap drives both the scan and the
+        // slot search. A release landing between the two can only clear bits,
+        // which at worst wastes a slot search — never loses a record.
+        let occ = shard.occupied.load(Ordering::Acquire);
         // SAFETY: this shard's lock is held.
         let recs = unsafe { &mut *shard.recs.get() };
-        if let Some(existing) = recs.find::<IS_MUT>(start, end) {
+        if let Some(existing) = recs.find::<IS_MUT>(occ, start, end) {
             drop(g);
             Self::overlap_panic(start, end, IS_MUT, existing);
         }
-        match recs.alloc::<IS_MUT>(start, end, here()) {
-            Some(slot) => BorrowId::narrow1(si, slot),
+        match recs.alloc::<IS_MUT>(occ, start, end, here()) {
+            Some(slot) => {
+                shard.publish(slot);
+                BorrowId::narrow1(si, slot)
+            }
             None => {
                 // Shard full — release and retry on the wide path, which is
                 // atomic against everything.
@@ -888,9 +1018,10 @@ impl BorrowTracker {
             let shard = &self.shards[si];
             shard.lock.lock();
             let g = ShardGuard(&shard.lock);
+            let occ = shard.occupied.load(Ordering::Acquire);
             // SAFETY: this shard's lock is held.
             let recs = unsafe { &mut *shard.recs.get() };
-            let mut hit = recs.find::<IS_MUT>(start, end);
+            let mut hit = recs.find::<IS_MUT>(occ, start, end);
             if hit.is_none() {
                 // SAFETY: a shard lock is held, and wide records are only
                 // written while every shard lock is held.
@@ -900,8 +1031,11 @@ impl BorrowTracker {
                 drop(g);
                 Self::overlap_panic(start, end, IS_MUT, existing);
             }
-            return match recs.alloc::<IS_MUT>(start, end, here()) {
-                Some(slot) => BorrowId::narrow1(si, slot),
+            return match recs.alloc::<IS_MUT>(occ, start, end, here()) {
+                Some(slot) => {
+                    shard.publish(slot);
+                    BorrowId::narrow1(si, slot)
+                }
                 None => {
                     drop(g);
                     self.add_wide::<IS_MUT>(start, end)
@@ -948,9 +1082,11 @@ impl BorrowTracker {
         // Check every held shard, plus the wide list.
         let mut hit = None;
         for &s in &set[..n] {
+            let shard = &self.shards[(s as usize) & (N_SHARDS - 1)];
+            let occ = shard.occupied.load(Ordering::Acquire);
             // SAFETY: shard `s`'s lock is held.
-            let recs = unsafe { &*self.shards[(s as usize) & (N_SHARDS - 1)].recs.get() };
-            if let Some(h) = recs.find::<IS_MUT>(start, end) {
+            let recs = unsafe { &*shard.recs.get() };
+            if let Some(h) = recs.find::<IS_MUT>(occ, start, end) {
                 hit = Some(h);
                 break;
             }
@@ -968,13 +1104,11 @@ impl BorrowTracker {
         let mut slots = [0u8; MAX_SHARDS_PER_BORROW];
         let mut done = 0usize;
         while done < n {
+            let shard = &self.shards[(set[done] as usize) & (N_SHARDS - 1)];
+            let occ = shard.occupied.load(Ordering::Acquire);
             // SAFETY: the shard's lock is held.
-            let recs = unsafe {
-                &mut *self.shards[(set[done] as usize) & (N_SHARDS - 1)]
-                    .recs
-                    .get()
-            };
-            match recs.alloc::<IS_MUT>(start, end, here()) {
+            let recs = unsafe { &mut *shard.recs.get() };
+            match recs.alloc::<IS_MUT>(occ, start, end, here()) {
                 Some(slot) => {
                     slots[done] = slot;
                     done += 1;
@@ -983,14 +1117,15 @@ impl BorrowTracker {
             }
         }
         if done < n {
-            for i in 0..done {
-                // SAFETY: the shard's lock is held.
-                let recs =
-                    unsafe { &mut *self.shards[(set[i] as usize) & (N_SHARDS - 1)].recs.get() };
-                recs.free(slots[i]);
-            }
+            // Nothing was published yet, so the rollback has nothing to undo:
+            // `alloc` only fills fields, and the occupancy bits are set below.
             Self::unlock_all(&self.shards, &set[..n]);
             return self.add_wide::<IS_MUT>(start, end);
+        }
+        // Publish only once every shard has a slot, so a partially-registered
+        // borrow is never observable.
+        for i in 0..n {
+            self.shards[(set[i] as usize) & (N_SHARDS - 1)].publish(slots[i]);
         }
         Self::unlock_all(&self.shards, &set[..n]);
         BorrowId::from_pairs(&set[..n], &slots[..n])
@@ -1009,9 +1144,10 @@ impl BorrowTracker {
         }
         let mut hit = None;
         for shard in active {
+            let occ = shard.occupied.load(Ordering::Acquire);
             // SAFETY: every shard lock is held.
             let recs = unsafe { &*shard.recs.get() };
-            if let Some(h) = recs.find::<IS_MUT>(start, end) {
+            if let Some(h) = recs.find::<IS_MUT>(occ, start, end) {
                 hit = Some(h);
                 break;
             }
@@ -1079,6 +1215,21 @@ impl BorrowTracker {
     }
 
     /// Release a borrow.
+    ///
+    /// **Lock-free.** Retiring a record is one bit-clear in [`Shard::occupied`],
+    /// and `fetch_and` does that atomically against the `fetch_or` a concurrent
+    /// registration publishes with; neither can lose the other's update. The
+    /// record's own fields are left alone — they are only ever read for slots
+    /// whose bit is set, and the next registration to claim the slot rewrites
+    /// them under the lock before publishing.
+    ///
+    /// What this does NOT change is the size of the add/remove race window.
+    /// Whether a registration that overlaps a borrow being dropped sees the
+    /// record was already decided by which of the two reached the shard first;
+    /// taking the lock here never made that ordering more meaningful, it only
+    /// made both sides queue for the same cache line. (It is also why the
+    /// deliberate-overlap tests still fire: they hold the first borrow LIVE
+    /// across the second registration, which no ordering can hide.)
     #[inline]
     pub fn remove(&self, id: BorrowId) {
         if id.kind() != KIND_NARROW {
@@ -1091,16 +1242,19 @@ impl BorrowTracker {
             return self.remove_multi(id);
         }
         let (si, slot) = id.pair(0, self.mask);
-        let shard = &self.shards[si];
-        shard.lock.lock();
-        let _g = ShardGuard(&shard.lock);
-        // SAFETY: this shard's lock is held.
-        unsafe { &mut *shard.recs.get() }.free(slot);
+        self.shards[si].retire(slot);
     }
 
     /// Releasing a multi-shard borrow must be atomic: dropping the record from
     /// shard A before shard B would leave a window in which a genuinely
     /// disjoint neighbour still sees the dead record and panics.
+    ///
+    /// The bit-clears are lock-free like [`Self::remove`]'s, but the locks are
+    /// still taken, because *that* is what makes the whole set retire as one
+    /// step against a registrant that holds several of these shards at once
+    /// ([`Self::add_multi`], [`Self::add_wide`]). This path is cold — measured
+    /// 0.00% of a 4K frame — so the two extra acquisitions buy the property for
+    /// nothing.
     #[cold]
     #[inline(never)]
     fn remove_multi(&self, id: BorrowId) {
@@ -1111,8 +1265,7 @@ impl BorrowTracker {
         }
         for i in 0..n {
             let (si, slot) = id.pair(i, self.mask);
-            // SAFETY: the shard's lock is held.
-            unsafe { &mut *self.shards[si].recs.get() }.free(slot);
+            self.shards[si].retire(slot);
         }
         for i in (0..n).rev() {
             self.shards[id.pair(i, self.mask).0].lock.unlock();
@@ -1284,7 +1437,10 @@ mod tests {
             let _n = t.add_mut(&b(1002..1006));
         }))
         .is_err();
-        assert!(caught, "narrow borrow missed a wide record on a 1-shard instance");
+        assert!(
+            caught,
+            "narrow borrow missed a wide record on a 1-shard instance"
+        );
         t.remove(wide);
         // ...and stop seeing it once released.
         let n = t.add_mut(&b(1002..1006));
@@ -1301,7 +1457,11 @@ mod tests {
     fn wide_and_narrow_still_see_each_other_at_full_width() {
         set_parallelism(64);
         let t = BorrowTracker::new(1 << 24);
-        assert_eq!(t.mask, N_SHARDS - 1, "declared parallelism must widen the mask");
+        assert_eq!(
+            t.mask,
+            N_SHARDS - 1,
+            "declared parallelism must widen the mask"
+        );
         let bs = 1usize << BLOCK_SHIFT;
         // A borrow spanning far more blocks than MAX_SHARDS_PER_BORROW, so it
         // is promoted; the narrow probe sits in a block deep inside it, whose
@@ -1311,7 +1471,10 @@ mod tests {
             let _n = t.add_mut(&b(200 * bs..200 * bs + 4));
         }))
         .is_err();
-        assert!(caught, "narrow borrow missed a live wide record at full width");
+        assert!(
+            caught,
+            "narrow borrow missed a live wide record at full width"
+        );
         t.remove(wide);
         let n = t.add_mut(&b(200 * bs..200 * bs + 4));
         t.remove(n);
@@ -1368,6 +1531,54 @@ mod tests {
         }))
         .is_err();
         assert!(caught);
+    }
+
+    /// Every record registered must be retired — no leaks — under maximal
+    /// add/remove interleaving on ONE shard.
+    ///
+    /// This is the test that guards the lock-free [`BorrowTracker::remove`].
+    /// Registration publishes with `fetch_or` while holding the shard lock and
+    /// release clears with `fetch_and` while holding nothing, so the two RMWs
+    /// race by construction. Had `publish` been written the obvious way —
+    /// `occupied.store(occ | bit)` from the snapshot the lock holder already
+    /// had — a release landing between the load and the store would be
+    /// silently undone, the slot would stay occupied forever, and the shard
+    /// would leak until it overflowed to the wide list and started reporting
+    /// overlaps against borrows that had ended.
+    ///
+    /// Every range lives in block 0, so all eight threads hammer the same
+    /// `occupied` byte. Slot exhaustion is real here (8 threads, `SLOTS`
+    /// slots), so some registrations legitimately go wide; those retire
+    /// through `remove_wide` and must leave the shard clean too.
+    #[test]
+    fn threaded_churn_leaks_no_slots() {
+        use std::sync::Arc;
+        let t = Arc::new(BorrowTracker::new(1 << 20));
+        let mut hs = Vec::new();
+        for th in 0..8usize {
+            let t = Arc::clone(&t);
+            hs.push(std::thread::spawn(move || {
+                for _ in 0..50_000usize {
+                    // Disjoint per thread, all inside block 0 => one shard.
+                    let id = t.add_mut(&b(th * 4..th * 4 + 4));
+                    t.remove(id);
+                }
+            }));
+        }
+        for h in hs {
+            h.join().unwrap();
+        }
+        for (i, shard) in t.shards.iter().enumerate() {
+            assert_eq!(
+                shard.occupied.load(Ordering::Relaxed),
+                0,
+                "shard {i} leaked a slot: a release was lost"
+            );
+        }
+        assert_eq!(t.state.load(Ordering::Relaxed), 0, "a wide record leaked");
+        // Proof the tracker is still functional rather than merely empty.
+        let x = t.add_mut(&b(0..32));
+        t.remove(x);
     }
 
     /// Concurrent registration of disjoint ranges must never report an overlap,
