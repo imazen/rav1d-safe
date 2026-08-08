@@ -1,0 +1,32 @@
+Paired A/B: does gating the NEON token cost anything on the film-grain path?
+
+why           The mc_arm change is cost-identical by construction (`summon()` +
+              a branch either way — `let Some(..) else` vs `.unwrap()`). The
+              filmgrain_arm change is not: the token became a loop-invariant
+              `Option<Arm64>` matched once per 32-pixel-block row instead of a
+              bare `Arm64` summoned once per `fgy_inner_*` call. This measures
+              that.
+
+base          8568dbb (main, Merge pull request #465)
+head          9ef5f42 (fix/perm-gate-aarch64)
+host          Darwin 25.5.0 aarch64 (M-series), load avg ~2.9 at start — NOT an
+              idle box; ratios are the claim, absolutes are not
+build         cargo build --release --no-default-features \
+                --features "bitdepth_8,bitdepth_16" --example profile_ivf
+              (no -C target-cpu=native)
+command       ~/tmp/permgate_fg_ab.sh <vector> 300 9
+vector        test-vectors/dav1d-test-data/8-bit/film_grain/av1-1-b8-23-film_grain-50.ivf
+              10 frames, 300 in-process iterations per rep, threads=1,
+              Settings::default() => apply_grain = true (so the changed path
+              really runs; verified by the film-grain permutation tests)
+design        arms interleaved, order rotated every rep (base,head / head,base)
+              so drift cannot favour one side; n=9 reps per arm
+
+result        base  n=9  median 1.9126 ms/frame  min 1.8958  max 1.9880
+              head  n=9  median 1.9390 ms/frame  min 1.8937  max 1.9763
+              paired head/base per rep:
+                1.0153 1.0015 1.0184 0.9920 1.0142 0.9889 1.0149 0.9821 0.9830
+              median paired ratio 1.0015x (min 0.9821, max 1.0184)
+
+verdict       NULL. The arm ranges overlap almost completely and the paired
+              ratios straddle 1.0 in both directions. No measurable cost.

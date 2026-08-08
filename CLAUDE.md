@@ -899,6 +899,17 @@ own liveness (fails at <2 permutations, and when every vector was skipped).
    FAILS while `decode_md5_verify` stays **14/14 green** — i.e. the fallback
    paths are a surface no other gate in this repo covers.
 
+**Cost: null, measured.** The mc_arm change is cost-identical by construction
+(`summon()` + a branch either way). filmgrain_arm's is not — the token became a
+loop-invariant `Option<Arm64>` matched per block-row — so it was A/B'd:
+median paired ratio **1.0015×** (n=9 interleaved reps per arm, min 0.9821,
+max 1.0184, arm ranges overlapping). Record:
+`benchmarks/permgate_filmgrain_ab_2026-08-08.{tsv,meta}`.
+
+**CI cost of the new leg:** `Conformance (decode permutations, aarch64)` on
+`ubuntu-24.04-arm` = **1380 s** (23 min), 19/19. That is why its
+`timeout-minutes` is 60 and not the x86 leg's 30.
+
 **Audit result:** zero `summon().unwrap()` remain in `src/`. Remaining
 `summon().expect()` are all either in `#[cfg(test)]` modules (all now hold
 `token_test_lock()`: `cdef_arm` ×3 sites, `itx_arm_neon_16x16` ×3, `itx_arm` ×1,
