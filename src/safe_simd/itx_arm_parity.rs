@@ -37,7 +37,7 @@
 
 #![cfg(all(test, target_arch = "aarch64", not(feature = "asm")))]
 
-use crate::include::common::bitdepth::{BitDepth, BitDepth8};
+use crate::include::common::bitdepth::{BitDepth, BitDepth8, BitDepth16};
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 use crate::src::levels::{self, TxClass, TxfmSize, TxfmType};
 use crate::src::scan::dav1d_scans;
@@ -354,6 +354,200 @@ fn itx_8bpc_every_eob_small_coeffs() {
         48,
         0xFEED_FACE_0000_0001,
         "aarch64 8bpc itx, every eob (|coeff| <= 48)",
+        true,
+    );
+}
+
+// ============================================================================
+// 16bpc (`itx_arm_hbd`) — the same instrument, 10/12-bit
+// ============================================================================
+
+/// One 16bpc cell through both paths. Same shape as [`run_cell`], but the
+/// coefficients are `i32`, the pixels `u16`, and `bd` carries `bitdepth_max`.
+fn run_cell_16(
+    tx: TxfmSize,
+    tx_type: TxfmType,
+    eob: i32,
+    coeff: &[i32],
+    pixels: &[u16],
+    stride: usize,
+    bitdepth_max: u16,
+) -> (Vec<u16>, Vec<u16>, bool) {
+    let bd = BitDepth16::new(bitdepth_max);
+
+    let run = |simd: bool| -> (Vec<u16>, bool) {
+        let mut px = pixels.to_vec();
+        let mut cf = coeff.to_vec();
+        let mut out = vec![0u16; px.len()];
+        let handled = {
+            let comp = Rav1dPictureDataComponent::wrap_buf::<BitDepth16>(&mut px, stride);
+            let dst = comp.with_offset::<BitDepth16>();
+            let handled = if simd {
+                crate::src::safe_simd::itx_arm::itxfm_add_dispatch::<BitDepth16>(
+                    tx as usize,
+                    tx_type as usize,
+                    dst,
+                    &mut cf,
+                    eob,
+                    bd,
+                )
+            } else {
+                crate::src::itx::itxfm_add_scalar_fallback::<BitDepth16>(
+                    tx as usize,
+                    tx_type,
+                    dst,
+                    &mut cf,
+                    eob,
+                    bd,
+                );
+                true
+            };
+            comp.copy_pixels_to::<BitDepth16>(&mut out);
+            handled
+        };
+        (out, handled)
+    };
+
+    let (neon, handled) = run(true);
+    let (scalar, _) = run(false);
+    (neon, scalar, handled)
+}
+
+/// The (size, type) pairs `itxfm_add_dispatch` wires to `itx_arm_hbd`.
+///
+/// Every shape with `max(w, h) <= 16`, every non-WHT type — that is the whole
+/// set `hbd_supported` admits, so this list and the dispatch cannot drift
+/// apart without the liveness gate in [`Report::finish`] firing.
+fn wired_cells_16() -> Vec<(TxfmSize, TxfmType)> {
+    use TxfmSize::*;
+    let all16: [TxfmType; 16] = [
+        levels::DCT_DCT,
+        levels::ADST_DCT,
+        levels::DCT_ADST,
+        levels::ADST_ADST,
+        levels::FLIPADST_DCT,
+        levels::DCT_FLIPADST,
+        levels::FLIPADST_FLIPADST,
+        levels::ADST_FLIPADST,
+        levels::FLIPADST_ADST,
+        levels::IDTX,
+        levels::V_DCT,
+        levels::H_DCT,
+        levels::V_ADST,
+        levels::H_ADST,
+        levels::V_FLIPADST,
+        levels::H_FLIPADST,
+    ];
+    let mut out = Vec::new();
+    for &sz in &[S4x4, S8x8, S16x16, R4x8, R8x4, R4x16, R16x4, R8x16, R16x8] {
+        for &t in &all16 {
+            out.push((sz, t));
+        }
+    }
+    out
+}
+
+fn sweep16(scale: i32, seed: u64, bitdepth_max: u16, what: &str, every_eob: bool) {
+    let _lock = crate::src::safe_simd::token_test_lock();
+    let mut rep = Report::default();
+
+    for (tx, tx_type) in wired_cells_16() {
+        let (w, h) = tx.to_wh();
+        let n = w * h;
+        let stride = (w + 16).next_multiple_of(16);
+        let mut rng = Rng(seed ^ ((tx as u64) << 40) ^ ((tx_type as u64) << 32));
+
+        let pixels: Vec<u16> = (0..stride * h)
+            .map(|_| rng.in_range(0, bitdepth_max as i32) as u16)
+            .collect();
+
+        let eobs: Vec<i32> = if every_eob {
+            (0..n as i32).collect()
+        } else {
+            eob_sweep(n)
+        };
+        for eob in eobs {
+            let mut coeff = vec![0i32; 32 * 32];
+            for pos in reachable_positions(tx, tx_type, eob as usize) {
+                let mut c = rng.in_range(-scale, scale);
+                if c == 0 {
+                    c = 1;
+                }
+                coeff[pos] = c;
+            }
+
+            let (neon, scalar, live) =
+                run_cell_16(tx, tx_type, eob, &coeff, &pixels, stride, bitdepth_max);
+            let bad = (0..h)
+                .flat_map(|y| (0..w).map(move |x| (x, y)))
+                .find(|&(x, y)| neon[y * stride + x] != scalar[y * stride + x]);
+            rep.record(
+                &format!("{w}x{h} type={tx_type} eob={eob}"),
+                live,
+                bad.is_none(),
+                || {
+                    let (x, y) = bad.unwrap();
+                    format!(
+                        "at ({x},{y}) neon={} scalar={}",
+                        neon[y * stride + x],
+                        scalar[y * stride + x]
+                    )
+                },
+            );
+        }
+    }
+    rep.finish(what, 1400);
+}
+
+/// 10-bit, ordinary residual magnitudes.
+#[test]
+fn itx_10bpc_matches_scalar_small_coeffs() {
+    sweep16(
+        64,
+        0x1234_5678_9ABC_DEF0,
+        1023,
+        "aarch64 10bpc itx (|coeff| <= 64)",
+        false,
+    );
+}
+
+/// 10-bit, magnitudes large enough to drive the row/column clips.
+///
+/// At 10bpc those clips are `+-(1 << 17)` (row) and `+-(1 << 15)` (column), so
+/// a port that kept the 8bpc `i16` state — which is exactly what the
+/// `itx_arm_neon_*` 16bpc entry points do — fails here and not in the small
+/// arm above.
+#[test]
+fn itx_10bpc_matches_scalar_large_coeffs() {
+    sweep16(
+        1 << 14,
+        0x0BAD_C0DE_1234_5678,
+        1023,
+        "aarch64 10bpc itx (|coeff| <= 16384)",
+        false,
+    );
+}
+
+/// 12-bit: the widest clips the decoder can ask for.
+#[test]
+fn itx_12bpc_matches_scalar_large_coeffs() {
+    sweep16(
+        1 << 16,
+        0xC0FF_EE00_1234_5678,
+        4095,
+        "aarch64 12bpc itx (|coeff| <= 65536)",
+        false,
+    );
+}
+
+/// EVERY legal `eob` at 10bpc, for every wired (size, type).
+#[test]
+fn itx_10bpc_every_eob_small_coeffs() {
+    sweep16(
+        48,
+        0xFEED_FACE_0000_0002,
+        1023,
+        "aarch64 10bpc itx, every eob (|coeff| <= 48)",
         true,
     );
 }

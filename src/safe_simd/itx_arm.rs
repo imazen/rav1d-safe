@@ -8446,6 +8446,73 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             // work issue #400 did for 8bpc (missing intermediate clipping,
             // rect2 scaling, shifts). Record:
             // benchmarks/p2_kernels_2026-08-07.meta.
+            //
+            // 2026-08-07: the 16bpc gap is instead closed by `itx_arm_hbd`, a
+            // 32-bit-lane vectorisation of the generic reference rather than a
+            // widening of those 16-bit ports — see that module's header for
+            // why the two cannot be the same code.
+            if BD::BPC == BPC::BPC16 && super::itx_arm_hbd::hbd_supported(w, h) {
+                use super::itx_arm_hbd::Kind;
+
+                // Same table as `inv_txfm_add_rust`, including its
+                // `(second, first)` order: `first` runs on rows (length w),
+                // `second` on columns (length h).
+                let (second, first) = match tx_type as u8 {
+                    levels::IDTX => (Kind::Identity, Kind::Identity),
+                    levels::DCT_DCT => (Kind::Dct, Kind::Dct),
+                    levels::ADST_DCT => (Kind::Adst, Kind::Dct),
+                    levels::FLIPADST_DCT => (Kind::FlipAdst, Kind::Dct),
+                    levels::H_DCT => (Kind::Identity, Kind::Dct),
+                    levels::DCT_ADST => (Kind::Dct, Kind::Adst),
+                    levels::ADST_ADST => (Kind::Adst, Kind::Adst),
+                    levels::FLIPADST_ADST => (Kind::FlipAdst, Kind::Adst),
+                    levels::DCT_FLIPADST => (Kind::Dct, Kind::FlipAdst),
+                    levels::ADST_FLIPADST => (Kind::Adst, Kind::FlipAdst),
+                    levels::FLIPADST_FLIPADST => (Kind::FlipAdst, Kind::FlipAdst),
+                    levels::V_DCT => (Kind::Dct, Kind::Identity),
+                    levels::H_ADST => (Kind::Identity, Kind::Adst),
+                    levels::H_FLIPADST => (Kind::Identity, Kind::FlipAdst),
+                    levels::V_ADST => (Kind::Adst, Kind::Identity),
+                    levels::V_FLIPADST => (Kind::FlipAdst, Kind::Identity),
+                    // WHT_WHT (lossless 4x4) has its own reference kernel.
+                    _ => return false,
+                };
+                let shift: u32 = match (w, h) {
+                    (4, 4) | (4, 8) | (8, 4) => 0,
+                    (4, 16) | (8, 8) | (8, 16) | (16, 4) | (16, 8) => 1,
+                    (16, 16) => 2,
+                    _ => return false,
+                };
+                let has_dc_only = tx_type as u8 == levels::DCT_DCT;
+
+                let mut block = dst.block_mut::<BD>(w, h);
+                // `base()` is in pixels, `byte_stride()` in bytes — the same
+                // convention `cdef_wasm`'s 16bpc block user follows.
+                let px_stride = block.byte_stride() / 2;
+                let px_base = block.base();
+                let dst_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(block.as_mut_bytes())
+                    .expect("dst alignment/size mismatch for u16 reinterpretation");
+                let coeff_i32: &mut [i32] =
+                    zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
+                        .expect("coeff alignment/size mismatch for i32 reinterpretation");
+
+                super::itx_arm_hbd::inv_txfm_add_hbd_neon(
+                    token,
+                    w,
+                    h,
+                    first,
+                    second,
+                    shift,
+                    has_dc_only,
+                    dst_u16,
+                    px_base,
+                    px_stride,
+                    coeff_i32,
+                    eob,
+                    bd.into_c(),
+                );
+                return true;
+            }
             if w == 4 && h == 4 && BD::BPC == BPC::BPC8 {
                 let bd_c = bd.into_c();
 

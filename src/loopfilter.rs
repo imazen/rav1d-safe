@@ -572,9 +572,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         CompactTaps {
             len: (self.h - 1) * LF_BW + self.w,
             buf: &mut self.scratch.buf,
-            base: self
-                .base
-                .wrapping_add_signed(4 * g as isize * self.stridea),
+            base: self.base.wrapping_add_signed(4 * g as isize * self.stridea),
             stridea: self.stridea,
             strideb: self.strideb,
         }
@@ -1151,8 +1149,8 @@ impl Rav1dLoopFilterDSPContext {
 #[cfg(all(test, target_arch = "aarch64"))]
 mod neon_parity {
     use super::*;
-    use crate::include::common::bitdepth::BitDepth16;
     use crate::include::common::bitdepth::BitDepth8;
+    use crate::include::common::bitdepth::BitDepth16;
 
     /// xorshift; a fixed generator keeps a failure reproducible from its seed.
     struct Rng(u64);
@@ -1198,8 +1196,7 @@ mod neon_parity {
         let bd8 = bd.bitdepth() - 8;
         let [f, e, i, h] = [1, e, i, h].map(|n| (n as i32) << bd8);
         let at = |k: isize| -> i32 {
-            buf[base
-                .wrapping_add_signed(stridea * lane as isize + strideb * k)
+            buf[base.wrapping_add_signed(stridea * lane as isize + strideb * k)
                 & (LF_BLOCK_LEN - 1)]
                 .as_::<i32>()
         };
@@ -1252,18 +1249,14 @@ mod neon_parity {
         let bd_max: u16 = bd.bitdepth_max().into();
         let reach = lf_reach(wd) as usize;
         let (w, h, stridea, strideb, base) = if is_v {
-            (
-                4 * groups,
-                2 * reach,
-                1isize,
-                LF_BW as isize,
-                reach * LF_BW,
-            )
+            (4 * groups, 2 * reach, 1isize, LF_BW as isize, reach * LF_BW)
         } else {
             (2 * reach, 4 * groups, LF_BW as isize, 1isize, reach)
         };
 
-        let mut rng = Rng(0x9E37_79B9_7F4A_7C15 ^ ((wd as u64) << 40) ^ ((groups as u64) << 20)
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15
+            ^ ((wd as u64) << 40)
+            ^ ((groups as u64) << 20)
             ^ (is_v as u64)
             ^ ((bd_max as u64) << 8));
 
@@ -1410,12 +1403,11 @@ mod neon_parity {
 
             let a = &work[row * LF_BW..][..w];
             let b = &pristine[row * LF_BW..][..w];
-            let want = a.iter().zip(b).position(|(x, y)| x != y).map(|first| {
-                (
-                    first,
-                    a.iter().zip(b).rposition(|(x, y)| x != y).unwrap(),
-                )
-            });
+            let want = a
+                .iter()
+                .zip(b)
+                .position(|(x, y)| x != y)
+                .map(|first| (first, a.iter().zip(b).rposition(|(x, y)| x != y).unwrap()));
             let got = crate::src::safe_simd::loopfilter_arm::lf_diff_span(
                 BD::BPC,
                 work.as_bytes(),
@@ -1431,7 +1423,10 @@ mod neon_parity {
                 empty += 1;
             }
         }
-        assert!(fired > 100 && empty > 100, "diff span not exercised both ways");
+        assert!(
+            fired > 100 && empty > 100,
+            "diff span not exercised both ways"
+        );
     }
 
     #[test]
