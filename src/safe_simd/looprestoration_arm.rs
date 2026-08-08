@@ -130,6 +130,145 @@ const BOX_LEN: usize = (64 + 2 + 2) * S;
 const DST_LEN: usize = 64 * MAXW;
 
 // ============================================================================
+// PER-THREAD SCRATCH
+// ============================================================================
+//
+// A restoration unit is at most 256x64 luma pixels, but the scratch it filters
+// through is sized for the maximum at every call: `tmp` 70x390, `hor` 70x390,
+// `sumsq`/`sum` 68x390 and one or two 64x384 `dst` planes. As stack arrays
+// (which is what the reference uses) that is ~285 KB zeroed per 8bpc `sgr_mix`
+// call and ~460 KB at 16bpc, and `_platform_memset` duly showed up at 6.7% of
+// decode self time on `10-bit/issues/318_tx_4x4`.
+//
+// None of that zeroing is load-bearing. Every position these kernels READ is
+// written first, in the same call:
+//
+//   * `tmp` — `looprestoration::padding` fills columns `0..w + 6` of rows
+//     `0..h + 6`, which is exactly the window the Wiener taps, the box sums and
+//     the neighbour pass read. (The 8bpc output pass issues an 8-byte load to
+//     use 4 lanes, so it can touch two columns past `w + 6`; those lanes are
+//     discarded, and the row is 390 wide, so it stays inside the buffer.)
+//   * `hor` — written for columns `0..w` of rows `0..h + 6`; the vertical pass
+//     reads rows `j..j + 7` for `j < h` and the same columns.
+//   * `sumsq`/`sum` — the box sums write rows `1..=h + 2`, columns `2..=w + 3`.
+//     The `a`/`b` loop rewrites the rows it steps over inside that rectangle,
+//     and the neighbour pass reads rows `j + 1 ..= j + 3` and columns
+//     `2..=w + 3` — for `n == 25` only the odd rows, which are precisely the
+//     ones `step == 2` visited.
+//   * `d0`/`d1` — written for `j < h`, `i < w`, read for the same.
+//
+// So the buffers are reused across calls without being cleared. That argument
+// is checked rather than trusted: `--features __lrpoison` fills every buffer
+// with a non-zero pattern before each call, which turns any read-before-write
+// into a divergence the `__simd_test` differential reports.
+//
+// Cost is one thread-local `RefCell` borrow per call and ~283 KB (8bpc) or
+// ~460 KB (16bpc) per decoding thread, allocated lazily on first use and freed
+// at thread exit. Loop restoration is not re-entrant within a thread, so the
+// borrow cannot be contended.
+
+#[cfg(target_arch = "aarch64")]
+fn boxed_zeroed<T: Copy + Default, const N: usize>() -> Box<[T; N]> {
+    // Through `vec!` rather than `Box::new([T::default(); N])`: the latter
+    // builds a ~100 KB temporary on the stack first.
+    vec![T::default(); N].into_boxed_slice().try_into().ok().unwrap()
+}
+
+#[cfg(target_arch = "aarch64")]
+struct Scratch8 {
+    tmp: Box<[u8; TMP_LEN]>,
+    hor: Box<[u16; TMP_LEN]>,
+    sumsq: Box<[i32; BOX_LEN]>,
+    sum: Box<[i16; BOX_LEN]>,
+    d0: Box<[i16; DST_LEN]>,
+    d1: Box<[i16; DST_LEN]>,
+}
+
+#[cfg(target_arch = "aarch64")]
+struct Scratch16 {
+    tmp: Box<[u16; TMP_LEN]>,
+    hor: Box<[u16; TMP_LEN]>,
+    sumsq: Box<[i32; BOX_LEN]>,
+    sum: Box<[i32; BOX_LEN]>,
+    d0: Box<[i32; DST_LEN]>,
+    d1: Box<[i32; DST_LEN]>,
+}
+
+#[cfg(target_arch = "aarch64")]
+impl Scratch8 {
+    fn new() -> Self {
+        Self {
+            tmp: boxed_zeroed(),
+            hor: boxed_zeroed(),
+            sumsq: boxed_zeroed(),
+            sum: boxed_zeroed(),
+            d0: boxed_zeroed(),
+            d1: boxed_zeroed(),
+        }
+    }
+    #[cfg(feature = "__lrpoison")]
+    fn poison(&mut self) {
+        self.tmp.fill(0xA5);
+        self.hor.fill(0xA5A5);
+        self.sumsq.fill(0x5A5A_5A5A);
+        self.sum.fill(0x5A5A);
+        self.d0.fill(0x5A5A);
+        self.d1.fill(0x5A5A);
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+impl Scratch16 {
+    fn new() -> Self {
+        Self {
+            tmp: boxed_zeroed(),
+            hor: boxed_zeroed(),
+            sumsq: boxed_zeroed(),
+            sum: boxed_zeroed(),
+            d0: boxed_zeroed(),
+            d1: boxed_zeroed(),
+        }
+    }
+    #[cfg(feature = "__lrpoison")]
+    fn poison(&mut self) {
+        self.tmp.fill(0xA5A5);
+        self.hor.fill(0xA5A5);
+        self.sumsq.fill(0x5A5A_5A5A);
+        self.sum.fill(0x5A5A_5A5A);
+        self.d0.fill(0x5A5A_5A5A);
+        self.d1.fill(0x5A5A_5A5A);
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+thread_local! {
+    static SCRATCH8: std::cell::RefCell<Option<Scratch8>> = const { std::cell::RefCell::new(None) };
+    static SCRATCH16: std::cell::RefCell<Option<Scratch16>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(target_arch = "aarch64")]
+fn with_scratch8<R>(f: impl FnOnce(&mut Scratch8) -> R) -> R {
+    SCRATCH8.with(|c| {
+        let mut b = c.borrow_mut();
+        let s = b.get_or_insert_with(Scratch8::new);
+        #[cfg(feature = "__lrpoison")]
+        s.poison();
+        f(s)
+    })
+}
+
+#[cfg(target_arch = "aarch64")]
+fn with_scratch16<R>(f: impl FnOnce(&mut Scratch16) -> R) -> R {
+    SCRATCH16.with(|c| {
+        let mut b = c.borrow_mut();
+        let s = b.get_or_insert_with(Scratch16::new);
+        #[cfg(feature = "__lrpoison")]
+        s.poison();
+        f(s)
+    })
+}
+
+// ============================================================================
 // WIENER
 // ============================================================================
 
@@ -232,15 +371,14 @@ fn wiener_8bpc(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
 ) {
-    let mut tmp = [0u8; TMP_LEN];
-    padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
-    let mut hor = [0u16; TMP_LEN];
-
-    // Fold the 8bpc `tmp[i + 3] * 128` term into tap 3; see the module header.
-    let mut hf = params.filter[0];
-    hf[3] += 128;
-    wiener_hor_8bpc(token, &tmp, &mut hor, w, h, &hf);
-    wiener_ver_8bpc(token, &hor, p, w, h, &params.filter[1]);
+    with_scratch8(|sc| {
+        padding::<BitDepth8>(&mut sc.tmp, p, left, lpf, lpf_off, w, h, edges);
+        // Fold the 8bpc `tmp[i + 3] * 128` term into tap 3; see the module header.
+        let mut hf = params.filter[0];
+        hf[3] += 128;
+        wiener_hor_8bpc(token, &sc.tmp, &mut sc.hor, w, h, &hf);
+        wiener_ver_8bpc(token, &sc.hor, p, w, h, &params.filter[1]);
+    });
 }
 
 /// Horizontal 7-tap pass, 16bpc. `round_bits_h` is 3 (10bpc) or 5 (12bpc), so
@@ -361,12 +499,12 @@ fn wiener_16bpc(
     edges: LrEdgeFlags,
     bitdepth_max: i32,
 ) {
-    let mut tmp = [0u16; TMP_LEN];
-    padding::<BitDepth16>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
-    let mut hor = [0u16; TMP_LEN];
-    let bitdepth = if bitdepth_max == 1023 { 10 } else { 12 };
-    wiener_hor_16bpc(token, &tmp, &mut hor, w, h, &params.filter[0], bitdepth);
-    wiener_ver_16bpc(token, &hor, p, w, h, &params.filter[1], bitdepth, bitdepth_max);
+    with_scratch16(|sc| {
+        padding::<BitDepth16>(&mut sc.tmp, p, left, lpf, lpf_off, w, h, edges);
+        let bitdepth = if bitdepth_max == 1023 { 10 } else { 12 };
+        wiener_hor_16bpc(token, &sc.tmp, &mut sc.hor, w, h, &params.filter[0], bitdepth);
+        wiener_ver_16bpc(token, &sc.hor, p, w, h, &params.filter[1], bitdepth, bitdepth_max);
+    });
 }
 
 // ============================================================================
@@ -1026,29 +1164,25 @@ fn sgr_8bpc(
     edges: LrEdgeFlags,
     variant: usize,
 ) {
-    let mut tmp = [0u8; TMP_LEN];
-    padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
-    let sgr = params.sgr();
-    let mut sumsq = [0i32; BOX_LEN];
-    let mut sum = [0i16; BOX_LEN];
-    let mut d0 = [0i16; DST_LEN];
-
-    match variant {
-        2 => {
-            selfguided_8bpc(token, &mut d0, &tmp, w, h, 25, sgr.s0, &mut sumsq, &mut sum);
-            sgr_apply_8bpc(token, p, w, h, &d0, sgr.w0 as i32, None, 0);
+    with_scratch8(|sc| {
+        padding::<BitDepth8>(&mut sc.tmp, p, left, lpf, lpf_off, w, h, edges);
+        let sgr = params.sgr();
+        match variant {
+            2 => {
+                selfguided_8bpc(token, &mut sc.d0, &sc.tmp, w, h, 25, sgr.s0, &mut sc.sumsq, &mut sc.sum);
+                sgr_apply_8bpc(token, p, w, h, &sc.d0, sgr.w0 as i32, None, 0);
+            }
+            3 => {
+                selfguided_8bpc(token, &mut sc.d0, &sc.tmp, w, h, 9, sgr.s1, &mut sc.sumsq, &mut sc.sum);
+                sgr_apply_8bpc(token, p, w, h, &sc.d0, sgr.w1 as i32, None, 0);
+            }
+            _ => {
+                selfguided_8bpc(token, &mut sc.d0, &sc.tmp, w, h, 25, sgr.s0, &mut sc.sumsq, &mut sc.sum);
+                selfguided_8bpc(token, &mut sc.d1, &sc.tmp, w, h, 9, sgr.s1, &mut sc.sumsq, &mut sc.sum);
+                sgr_apply_8bpc(token, p, w, h, &sc.d0, sgr.w0 as i32, Some(&sc.d1), sgr.w1 as i32);
+            }
         }
-        3 => {
-            selfguided_8bpc(token, &mut d0, &tmp, w, h, 9, sgr.s1, &mut sumsq, &mut sum);
-            sgr_apply_8bpc(token, p, w, h, &d0, sgr.w1 as i32, None, 0);
-        }
-        _ => {
-            let mut d1 = [0i16; DST_LEN];
-            selfguided_8bpc(token, &mut d0, &tmp, w, h, 25, sgr.s0, &mut sumsq, &mut sum);
-            selfguided_8bpc(token, &mut d1, &tmp, w, h, 9, sgr.s1, &mut sumsq, &mut sum);
-            sgr_apply_8bpc(token, p, w, h, &d0, sgr.w0 as i32, Some(&d1), sgr.w1 as i32);
-        }
-    }
+    });
 }
 
 // ============================================================================
@@ -1329,40 +1463,36 @@ fn sgr_16bpc(
     variant: usize,
     bitdepth_max: i32,
 ) {
-    let mut tmp = [0u16; TMP_LEN];
-    padding::<BitDepth16>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
-    let sgr = params.sgr();
-    let bdm8 = if bitdepth_max == 1023 { 2 } else { 4 };
-    let mut sumsq = [0i32; BOX_LEN];
-    let mut sum = [0i32; BOX_LEN];
-    let mut d0 = [0i32; DST_LEN];
-
-    match variant {
-        2 => {
-            selfguided_16bpc(token, &mut d0, &tmp, w, h, 25, sgr.s0, bdm8, &mut sumsq, &mut sum);
-            sgr_apply_16bpc(token, p, w, h, &d0, sgr.w0 as i32, None, 0, bitdepth_max);
+    with_scratch16(|sc| {
+        padding::<BitDepth16>(&mut sc.tmp, p, left, lpf, lpf_off, w, h, edges);
+        let sgr = params.sgr();
+        let bdm8 = if bitdepth_max == 1023 { 2 } else { 4 };
+        match variant {
+            2 => {
+                selfguided_16bpc(token, &mut sc.d0, &sc.tmp, w, h, 25, sgr.s0, bdm8, &mut sc.sumsq, &mut sc.sum);
+                sgr_apply_16bpc(token, p, w, h, &sc.d0, sgr.w0 as i32, None, 0, bitdepth_max);
+            }
+            3 => {
+                selfguided_16bpc(token, &mut sc.d0, &sc.tmp, w, h, 9, sgr.s1, bdm8, &mut sc.sumsq, &mut sc.sum);
+                sgr_apply_16bpc(token, p, w, h, &sc.d0, sgr.w1 as i32, None, 0, bitdepth_max);
+            }
+            _ => {
+                selfguided_16bpc(token, &mut sc.d0, &sc.tmp, w, h, 25, sgr.s0, bdm8, &mut sc.sumsq, &mut sc.sum);
+                selfguided_16bpc(token, &mut sc.d1, &sc.tmp, w, h, 9, sgr.s1, bdm8, &mut sc.sumsq, &mut sc.sum);
+                sgr_apply_16bpc(
+                    token,
+                    p,
+                    w,
+                    h,
+                    &sc.d0,
+                    sgr.w0 as i32,
+                    Some(&sc.d1),
+                    sgr.w1 as i32,
+                    bitdepth_max,
+                );
+            }
         }
-        3 => {
-            selfguided_16bpc(token, &mut d0, &tmp, w, h, 9, sgr.s1, bdm8, &mut sumsq, &mut sum);
-            sgr_apply_16bpc(token, p, w, h, &d0, sgr.w1 as i32, None, 0, bitdepth_max);
-        }
-        _ => {
-            let mut d1 = [0i32; DST_LEN];
-            selfguided_16bpc(token, &mut d0, &tmp, w, h, 25, sgr.s0, bdm8, &mut sumsq, &mut sum);
-            selfguided_16bpc(token, &mut d1, &tmp, w, h, 9, sgr.s1, bdm8, &mut sumsq, &mut sum);
-            sgr_apply_16bpc(
-                token,
-                p,
-                w,
-                h,
-                &d0,
-                sgr.w0 as i32,
-                Some(&d1),
-                sgr.w1 as i32,
-                bitdepth_max,
-            );
-        }
-    }
+    });
 }
 
 // ============================================================================
