@@ -170,3 +170,33 @@ for vec, t in cells:
     print(row)
 print("\n* = that class's band overlapped cls_none's, so it is counted as zero and the")
 print("cell just repeats `now`.")
+
+# The pre-registered decision rule is stated as a fraction of the EXCESS over
+# the 1.30x bar, not as an absolute ms, because 12 ms means something different
+# at a cell that is 22 ms over the bar and one that is 58 ms over.
+print("\n== share of the excess over the 1.30x bar that each class accounts for ==\n")
+print("excess = base - 1.30 * dav1d.  A = recon+big (picture-buffer recon) + picwb,")
+print("which is what a static per-tile row split of the picture buffer can reach.\n")
+h4 = (
+    f"{'vector':16} {'t':>2} {'excess':>7} " + "".join(f"{c:>11}" for c in CLASSES)
+    + f"{'A':>8}{'tracker':>9}"
+)
+print(h4)
+print("-" * len(h4))
+for vec, t in cells:
+    b, d, u = (med(vec, t, a) for a in ("base", "dav1d_fd1", "untracked"))
+    if None in (b, d, u):
+        continue
+    ex = b - 1.30 * d
+    row = f"{vec:16} {t:>2} {ex:>7.1f} "
+    for c in CLASSES:
+        a = attrib.get((vec, t, c))
+        row += f"{'-':>11}" if a is None else f"{100 * a / ex:>10.0f}%"
+    rp = attrib.get((vec, t, "recon+big"), attrib.get((vec, t, "recon"), 0)) + attrib.get(
+        (vec, t, "picwb"), 0
+    )
+    row += f"{100 * rp / ex:>7.0f}%{100 * (b - u) / ex:>8.0f}%"
+    print(row)
+print("\ntracker = the whole tracker (base - untracked), i.e. the hard cap on any")
+print("tracker-removal design at that cell. >100% means a zero-cost tracker would")
+print("clear the 1.30x bar there.")
