@@ -1092,6 +1092,8 @@ mod tests {
         use super::{MID_STRIDE, h_filter_8tap_8bpc_neon};
         use archmage::{Arm64, SimdToken};
 
+        // Depends on the NEON token; see `safe_simd::token_test_lock`.
+        let _lock = crate::src::safe_simd::token_test_lock();
         let token = Arm64::summon().expect("NEON always available on aarch64");
         let filters: [[i8; 8]; 4] = [
             [0, 1, -3, 63, 4, -1, 0, 0],
@@ -4703,7 +4705,20 @@ define_prep_8tap_16bpc!(prep_8tap_sharp_16bpc_neon, Filter2d::Sharp8Tap);
 
 // ============================================================================
 // Safe dispatch wrappers for aarch64 NEON
-// NEON is always available on aarch64, so these always return true.
+//
+// Each returns `true` when it handled the block and `false` to hand it back to
+// the scalar reference in `src/mc.rs`.
+//
+// GATE on `Arm64::summon()`, never assert it. NEON is architecturally
+// mandatory on aarch64, but the token is not: `archmage`'s `testable_dispatch`
+// feature lets `for_each_token_permutation` disable it PROCESS-WIDE so the
+// fallback paths get exercised, and `tests/decode_permutations.rs` does
+// exactly that. A dispatcher that unwraps the token panics under the only test
+// that checks cross-tier bit-identity — which is how that gate sat dead on
+// aarch64 (16/19 failing) while passing on the x86 runner it was pinned to.
+// The `let Some(token) = ... else { return false }` shape below is the same one
+// `loopfilter_arm::lpf_dispatch` and `looprestoration_arm::lr_filter_dispatch`
+// already use.
 // ============================================================================
 
 #[cfg(target_arch = "aarch64")]
@@ -4779,7 +4794,11 @@ pub(crate) fn avg_dispatch_inner<BD: BitDepth>(
     }
     #[cfg(not(feature = "asm"))]
     {
-        let token = Arm64::summon().unwrap();
+        // Gate on the token; see the dispatch banner above. `None` means the
+        // caller runs the scalar reference in `src/mc.rs`.
+        let Some(token) = Arm64::summon() else {
+            return false;
+        };
         let w_u = w as usize;
         let h_u = h as usize;
         let dst_stride_u = dst_stride as usize;
@@ -4901,7 +4920,11 @@ pub(crate) fn w_avg_dispatch_inner<BD: BitDepth>(
     }
     #[cfg(not(feature = "asm"))]
     {
-        let token = Arm64::summon().unwrap();
+        // Gate on the token; see the dispatch banner above. `None` means the
+        // caller runs the scalar reference in `src/mc.rs`.
+        let Some(token) = Arm64::summon() else {
+            return false;
+        };
         let w_u = w as usize;
         let h_u = h as usize;
         let dst_stride_u = dst_stride as usize;
@@ -5026,7 +5049,11 @@ pub(crate) fn mask_dispatch_inner<BD: BitDepth>(
     }
     #[cfg(not(feature = "asm"))]
     {
-        let token = Arm64::summon().unwrap();
+        // Gate on the token; see the dispatch banner above. `None` means the
+        // caller runs the scalar reference in `src/mc.rs`.
+        let Some(token) = Arm64::summon() else {
+            return false;
+        };
         let w_u = w as usize;
         let h_u = h as usize;
         let mask_slice = &mask[..(w_u * h_u)];
@@ -5487,7 +5514,11 @@ pub(crate) fn w_mask_dispatch_inner<BD: BitDepth>(
     }
     #[cfg(not(feature = "asm"))]
     {
-        let token = Arm64::summon().unwrap();
+        // Gate on the token; see the dispatch banner above. `None` means the
+        // caller runs the scalar reference in `src/mc.rs`.
+        let Some(token) = Arm64::summon() else {
+            return false;
+        };
         let w_u = w as usize;
         let h_u = h as usize;
         let dst_stride_u = dst_stride as usize;
@@ -5928,7 +5959,11 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
     }
     #[cfg(not(feature = "asm"))]
     {
-        let token = Arm64::summon().unwrap();
+        // Gate on the token; see the dispatch banner above. `None` means the
+        // caller runs the scalar reference in `src/mc.rs`.
+        let Some(token) = Arm64::summon() else {
+            return false;
+        };
         let w_u = w as usize;
         let h_u = h as usize;
         let mx_u = mx as usize;
@@ -6134,7 +6169,11 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
     }
     #[cfg(not(feature = "asm"))]
     {
-        let token = Arm64::summon().unwrap();
+        // Gate on the token; see the dispatch banner above. `None` means the
+        // caller runs the scalar reference in `src/mc.rs`.
+        let Some(token) = Arm64::summon() else {
+            return false;
+        };
         let w_u = w as usize;
         let h_u = h as usize;
         let mx_u = mx as usize;

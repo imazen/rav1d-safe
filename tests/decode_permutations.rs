@@ -8,7 +8,23 @@
 //! loopfilter, looprestoration, ipred, filmgrain, pal, refmvs) at every
 //! tier the CPU supports (e.g. AVX-512, AVX2, SSE4, SSE2, scalar).
 //!
-//! Token state is process-wide, so this MUST run with `--test-threads=1`.
+//! # Run it on aarch64 too
+//!
+//! The dispatchers this covers are per-architecture: `src/safe_simd/*_arm.rs`
+//! is compiled out on x86_64 and `src/safe_simd/mc.rs` et al. are compiled out
+//! on aarch64. **A green run on one architecture says nothing about the
+//! other.** Until 2026-08-08 the CI job was pinned to `ubuntu-latest` and 16 of
+//! these 19 tests were failing on aarch64 — `Arm64::summon().unwrap()` in
+//! `mc_arm`/`filmgrain_arm` panicked the moment the harness disabled the NEON
+//! token — with CI reporting green throughout. `.github/workflows/ci.yml` now
+//! runs the job on both.
+//!
+//! # Threading
+//!
+//! Token state is process-wide. Under `cargo nextest` each test gets its own
+//! process, so nothing extra is needed; under plain `cargo test` pass
+//! `--test-threads=1`. Note that serialization does NOT rescue a dispatcher
+//! that unwraps its token — that is a bug in the dispatcher, not a race.
 //!
 //! **Requires `--release`** — debug mode is 50-100x slower.
 
@@ -246,6 +262,20 @@ fn verify_permutations(
         ));
     }
 
+    // LIVENESS. One permutation means only the all-tokens-enabled state ran,
+    // so nothing was compared against anything and a green result proves
+    // nothing about the fallback dispatch paths. That happens when the tokens
+    // are compile-time guaranteed and therefore undisableable — build with
+    // archmage's `testable_dispatch` feature (it is on for dev-dependencies in
+    // Cargo.toml) and without `-Ctarget-cpu=...` in RUSTFLAGS.
+    if report.permutations_run < 2 {
+        return Err(format!(
+            "{name}: only {} token permutation ran — this gate is vacuous. \
+             Warnings from the harness: {:?}",
+            report.permutations_run, report.warnings
+        ));
+    }
+
     Ok(report.permutations_run)
 }
 
@@ -332,6 +362,13 @@ fn test_permutations_8bit_data() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -343,6 +380,13 @@ fn test_permutations_8bit_features() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -354,6 +398,13 @@ fn test_permutations_8bit_issues() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -365,6 +416,13 @@ fn test_permutations_8bit_quantizer() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -376,6 +434,13 @@ fn test_permutations_8bit_size() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -387,6 +452,13 @@ fn test_permutations_8bit_intra() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -398,6 +470,13 @@ fn test_permutations_8bit_film_grain() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -409,6 +488,13 @@ fn test_permutations_8bit_cdfupdate() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -420,6 +506,13 @@ fn test_permutations_8bit_mfmv() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -431,6 +524,13 @@ fn test_permutations_8bit_mv() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -442,6 +542,13 @@ fn test_permutations_8bit_resize() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -453,6 +560,13 @@ fn test_permutations_10bit_data() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -464,6 +578,13 @@ fn test_permutations_10bit_features() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -475,6 +596,13 @@ fn test_permutations_10bit_quantizer() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -486,6 +614,13 @@ fn test_permutations_10bit_issues() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -497,6 +632,13 @@ fn test_permutations_10bit_film_grain() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -508,6 +650,13 @@ fn test_permutations_12bit_data() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
 
 #[test]
@@ -519,4 +668,11 @@ fn test_permutations_12bit_features() {
         failed.len()
     );
     assert!(failed.is_empty(), "failures:\n{}", failed.join("\n"));
+    // LIVENESS: skipped-everything must not read as green. Vectors are
+    // skipped silently when the file is missing, so a corpus that failed to
+    // download would otherwise pass this test having decoded nothing.
+    assert!(
+        passed > 0,
+        "no vectors ran ({skipped} skipped) — is test-vectors/dav1d-test-data present?"
+    );
 }
