@@ -22,6 +22,14 @@
 //!
 //! NO timing is printed: the point is that the *driver's* clock is the only
 //! instrument, so both arms are measured by the same one.
+//!
+//! **`RAV1D_MD5=1` OPTS IN to hashing, and a timed run must NOT set it.**
+//! Hashing is a per-pixel `md5::Context::consume`, and at 16bpc it is a
+//! per-*pixel* `to_le_bytes` feed — on `10-bit/issues/318_tx_4x4` that alone
+//! was 8.5 of 17.0 ms/frame, i.e. HALF the measured cost, against a
+//! `dav1d --muxer null` arm that hashes nothing. Measured that way the gap to
+//! dav1d reads 8.5x when it is 4.2x. Run the identity check as its own
+//! (untimed) pass.
 
 #[path = "helpers/ivf_parser.rs"]
 mod ivf_parser;
@@ -89,6 +97,9 @@ fn main() {
     settings.max_frame_delay = 1;
     let mut dec = Decoder::with_settings(settings).expect("decoder");
 
+    // Off by default — see the module docs. `dav1d --muxer null` hashes
+    // nothing, so hashing here would put a per-pixel cost on one arm only.
+    let want_md5 = std::env::var("RAV1D_MD5").as_deref() == Ok("1");
     let mut ctx = md5::Context::new();
     let mut decoded = 0usize;
     // `limit` counts OUTPUT frames, exactly like dav1d's `--limit`, so the two
@@ -99,7 +110,9 @@ fn main() {
         }
         match dec.decode(&ivf_frame.data) {
             Ok(Some(frame)) => {
-                hash_frame(&mut ctx, &frame);
+                if want_md5 {
+                    hash_frame(&mut ctx, &frame);
+                }
                 black_box(&frame);
                 decoded += 1;
             }
@@ -116,14 +129,18 @@ fn main() {
                 if decoded >= limit {
                     break;
                 }
-                hash_frame(&mut ctx, frame);
+                if want_md5 {
+                    hash_frame(&mut ctx, frame);
+                }
                 black_box(frame);
                 decoded += 1;
             }
         }
     }
-    println!(
-        "CHECKSUM\t{label}\t{file}\t{threads}\t{decoded}\t{:x}",
-        ctx.finalize()
-    );
+    let digest = if want_md5 {
+        format!("{:x}", ctx.finalize())
+    } else {
+        "nohash".to_string()
+    };
+    println!("CHECKSUM\t{label}\t{file}\t{threads}\t{decoded}\t{digest}");
 }
