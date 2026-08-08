@@ -6340,7 +6340,6 @@ pub fn resize_dispatch<BD: BitDepth>(
     false
 }
 
-
 // ============================================================================
 // COMPOUND-PREDICTION PARITY (differential vs the generic scalar reference)
 // ============================================================================
@@ -6388,7 +6387,7 @@ pub fn resize_dispatch<BD: BitDepth>(
 #[cfg(all(test, target_arch = "aarch64"))]
 mod compound_parity {
     use super::*;
-    use crate::include::common::bitdepth::{BitDepth, BitDepth16, BitDepth8};
+    use crate::include::common::bitdepth::{BitDepth, BitDepth8, BitDepth16};
     use std::cmp;
 
     /// xorshift64*, so a failure reproduces from its seed.
@@ -6586,9 +6585,11 @@ mod compound_parity {
                 let bad = find_bad(&got, stride, w, h, |x, y| {
                     w_avg8_oracle(t1[y * w + x] as i32, t2[y * w + x] as i32, weight) as u32
                 });
-                rep.record(&format!("w_avg8 wt={weight} {w}x{h}"), bad.is_none(), || {
-                    fmt_bad(bad)
-                });
+                rep.record(
+                    &format!("w_avg8 wt={weight} {w}x{h}"),
+                    bad.is_none(),
+                    || fmt_bad(bad),
+                );
             }
 
             let mut got = vec![0u8; h * stride];

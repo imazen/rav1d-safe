@@ -48,7 +48,6 @@ use std::sync::atomic::AtomicU8;
 type ptrdiff_t = isize;
 use std::ffi::c_int;
 
-
 /// Whole-superblock-edge dispatch for `loopfilter_sb` on aarch64.
 ///
 /// Always returns false, and that is not a TODO. aarch64's NEON tier is wired
@@ -202,7 +201,10 @@ fn ld8_u16(buf: &[u16; LF_BLOCK_LEN], idx: usize) -> uint16x8_t {
 #[cfg(target_arch = "aarch64")]
 #[rite(neon)]
 fn st8_u16(buf: &mut [u16; LF_BLOCK_LEN], idx: usize, v: uint16x8_t) {
-    safe_simd::vst1q_u16(<&mut [u16; 8]>::try_from(&mut buf[idx..idx + 8]).unwrap(), v);
+    safe_simd::vst1q_u16(
+        <&mut [u16; 8]>::try_from(&mut buf[idx..idx + 8]).unwrap(),
+        v,
+    );
 }
 
 /// Standard 8x8 `u16` transpose: `out[r]` lane `c` = `inp[c]` lane `r`.
@@ -295,10 +297,7 @@ fn lf_core<const WD: c_int>(
     let ad_p1q1 = vabdq_u16(p1, q1);
 
     let mut fm = vandq_u16(vcleq_u16(ad_p1p0, i), vcleq_u16(ad_q1q0, i));
-    let ecmp = vaddq_u16(
-        vaddq_u16(ad_p0q0, ad_p0q0),
-        vshrq_n_u16::<1>(ad_p1q1),
-    );
+    let ecmp = vaddq_u16(vaddq_u16(ad_p0q0, ad_p0q0), vshrq_n_u16::<1>(ad_p1q1));
     fm = vandq_u16(fm, vcleq_u16(ecmp, e));
 
     if WD > 4 {
@@ -330,7 +329,10 @@ fn lf_core<const WD: c_int>(
     //   otherwise                         -> narrow
     let mut m_wide = vdupq_n_u16(0);
     if WD >= 16 {
-        let mut flat8out = vandq_u16(vcleq_u16(vabdq_u16(p6, p0), f), vcleq_u16(vabdq_u16(p5, p0), f));
+        let mut flat8out = vandq_u16(
+            vcleq_u16(vabdq_u16(p6, p0), f),
+            vcleq_u16(vabdq_u16(p5, p0), f),
+        );
         flat8out = vandq_u16(flat8out, vcleq_u16(vabdq_u16(p4, p0), f));
         flat8out = vandq_u16(flat8out, vcleq_u16(vabdq_u16(q4, q0), f));
         flat8out = vandq_u16(flat8out, vcleq_u16(vabdq_u16(q5, q0), f));
@@ -417,11 +419,11 @@ fn lf_core<const WD: c_int>(
     if WD >= 16 {
         // 13-term wide filter, weights summing to 16.
         let mut s = vaddq_u16(
-            vaddq_u16(vmulq_n_u16(p6, 7), vaddq_u16(vaddq_u16(p5, p5), vaddq_u16(p4, p4))),
             vaddq_u16(
-                vaddq_u16(vaddq_u16(p3, p2), vaddq_u16(p1, p0)),
-                q0,
+                vmulq_n_u16(p6, 7),
+                vaddq_u16(vaddq_u16(p5, p5), vaddq_u16(p4, p4)),
             ),
+            vaddq_u16(vaddq_u16(vaddq_u16(p3, p2), vaddq_u16(p1, p0)), q0),
         );
         let eight = vdupq_n_u16(8);
         let rnd = |s: uint16x8_t| vshrq_n_u16::<4>(vaddq_u16(s, eight));
@@ -778,10 +780,7 @@ fn first_last_set(diff: uint8x16_t) -> Option<(usize, usize)> {
 #[cfg(target_arch = "aarch64")]
 #[rite(neon)]
 fn valid_mask(w: usize) -> uint8x16_t {
-    vcltq_u8(
-        safe_simd::vld1q_u8(&LANE_IDX),
-        vdupq_n_u8(w as u8),
-    )
+    vcltq_u8(safe_simd::vld1q_u8(&LANE_IDX), vdupq_n_u8(w as u8))
 }
 
 #[cfg(target_arch = "aarch64")]

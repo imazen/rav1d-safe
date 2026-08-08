@@ -8714,15 +8714,17 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                         eob,
                         bd_c,
                     ),
-                    levels::FLIPADST_FLIPADST => inv_txfm_add_flipadst_flipadst_8x8_8bpc_neon_inner(
-                        token,
-                        dst_u8,
-                        base,
-                        byte_stride_i,
-                        coeff_i16,
-                        eob,
-                        bd_c,
-                    ),
+                    levels::FLIPADST_FLIPADST => {
+                        inv_txfm_add_flipadst_flipadst_8x8_8bpc_neon_inner(
+                            token,
+                            dst_u8,
+                            base,
+                            byte_stride_i,
+                            coeff_i16,
+                            eob,
+                            bd_c,
+                        )
+                    }
                     levels::ADST_FLIPADST => inv_txfm_add_flipadst_adst_8x8_8bpc_neon_inner(
                         token,
                         dst_u8,
