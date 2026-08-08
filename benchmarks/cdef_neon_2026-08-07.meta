@@ -200,6 +200,35 @@ padding, so the 16bpc machine code is unchanged, and the consistent -0.5% at
 8bpc side is a real +0.8% and the change is the documented fixed-size-array
 pattern.
 
+## Against dav1d
+
+`scripts/perf/p2_dav1d_wall.sh`, same instrument on both sides: each stream is
+run at 2 and 20 frames and `total = alpha + beta * frames` fitted so process
+startup drops out. dav1d 1.5.4 with `--framedelay 1` (tile threading only, the
+model we run). 5 rounds, arms rotated. Raw:
+`benchmarks/cdef_neon_dav1d_2026-08-07.tsv` (round, arm, vector, threads, then
+the two frame counts and their totals in ms).
+
+  vector           t     base    HEAD   dav1d   base/dav1d   HEAD/dav1d
+  v4k_8tile        1    426.8   405.2   259.9        1.64x        1.56x
+  v4k_8tile        2    290.7   256.7   133.0        2.29x        2.05x
+  v4k_8tile        4    176.2   172.9    66.3        2.67x        2.63x
+  v4k_8tile        8    187.2   183.0    37.1        5.06x        4.94x
+  v4k_8tile_10b    1    610.3   521.8   267.8        2.30x        1.99x
+  v4k_8tile_10b    2    376.2   312.9   136.9        2.82x        2.30x
+  v4k_8tile_10b    4    224.4   198.2    67.7        3.34x        2.93x
+  v4k_8tile_10b    8    213.4   200.3    39.4        5.52x        5.21x
+
+The ratio columns are per-round paired medians. **This campaign ran with a
+sibling agent's timed benchmarks live on the box**, so the absolute ms are
+inflated on BOTH sides by roughly 5% — dav1d's 8bpc t=1 measures 259.9 here
+against the 246.7 on record in `p2_dav1d_2026-08-07.tsv`, and our own base
+measures 426.8 against the interleaved sweep's 413.5. Read the ratios, not the
+absolutes, and prefer `cdef_neon_2026-08-07.tsv` for base-vs-head.
+
+10bpc t=1 crossing 2.30x -> 1.99x is the headline: that vector spent 17% of its
+decode in a scalar CDEF.
+
 ## Where CDEF stands now
 
 `sample` self/inclusive time at t=1 after the port:
