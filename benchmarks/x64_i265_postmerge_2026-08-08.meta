@@ -1,3 +1,8 @@
+# CORRECTION 2026-08-08: the `audit445` and `attrib` arms in this record were
+# CONTAMINATED (a silent checkout refusal rebuilt pre-merge main for both).
+# Conclusions derived from those arms are VOID. Full details and what still
+# stands: benchmarks/x64_i265_CORRECTION_2026-08-08.md and issue #458.
+
 # x86-64 after the #454/#456 merges: scaling fixed, two new x64 defects (i265)
 
 date: 2026-08-08 (10:30Z–13:30Z)
