@@ -59,6 +59,23 @@ const ROUNDS: usize = 60_000;
 
 #[test]
 fn a_wide_borrow_excludes_every_narrow_shard() {
+    // DECLARE PARALLELISM FIRST, or this whole file is vacuous.
+    //
+    // `mask_for` hands an instance `active_shards() - 1`, and `active_shards()`
+    // is `SHARDS_SERIAL` until some caller declares otherwise. Since issue #458
+    // set `SHARDS_SERIAL = 1` that default mask is ZERO, and a mask-0 instance
+    // has exactly one shard — so `index_mut(0..LEN)` below takes `add`'s
+    // one-lock fast path and the wide path is never entered. Measured on
+    // 2aa00c5 before this line existed: 100 whole-buffer borrows of an 8 MiB
+    // instance produced 0 promotions on every `wide_probe` counter, while the
+    // test still reported `ok` — the two liveness assertions at the bottom
+    // count GRANTED borrows, which a single-shard instance grants just fine.
+    //
+    // A real decode reaches the wide path through the concurrent shard set, so
+    // that is the configuration this gate has to run in. `set_parallelism` is a
+    // monotone process-global and this file holds exactly one test, so there is
+    // no ordering hazard here.
+    rav1d_disjoint_mut::set_parallelism(NARROW_THREADS + 1);
     // The tracker reports overlaps by panicking, and here that is the DESIRED
     // outcome on one side of each race, so the default hook's backtrace spam is
     // suppressed for the duration.
@@ -143,4 +160,25 @@ fn a_wide_borrow_excludes_every_narrow_shard() {
         "a narrow mutable borrow was granted inside a wide mutable borrow that \
          was provably still held — the wide path's shard exclusion has a hole"
     );
+    // THE GATE'S OWN LIVENESS. The two counts above prove borrows were granted,
+    // which is necessary and NOT sufficient: a single-shard instance grants
+    // them happily while never entering the code this file is named after. Only
+    // the promotion counters can tell the difference, and they exist only under
+    // `__probe_wide` — so run this gate with
+    // `--features __probe_wide` whenever you need it to prove itself, and treat
+    // a plain run as the cheap regression check rather than as evidence.
+    #[cfg(feature = "__probe_wide")]
+    {
+        use rav1d_disjoint_mut::wide_probe;
+        let promotions = wide_probe::WIDE_SHARDS.load(Ordering::Relaxed)
+            + wide_probe::WIDE_BLOCKS.load(Ordering::Relaxed)
+            + wide_probe::WIDE_FULL.load(Ordering::Relaxed);
+        assert!(
+            promotions > 0,
+            "VACUOUS GATE: {ROUNDS} whole-buffer borrows produced zero wide \
+             promotions, so nothing here exercised the wide path. This is what \
+             `SHARDS_SERIAL = 1` (issue #458) did to this file before the \
+             `set_parallelism` call at the top existed."
+        );
+    }
 }
