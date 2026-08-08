@@ -2,27 +2,36 @@
 //!
 //! # What this exists to catch
 //!
-//! Retiring a borrow used to run under the shard lock; it is now one
-//! `fetch_and(!bit)` on the shard's atomic occupancy byte. That makes the
-//! release a read-modify-write on state that live records depend on, and it
+//! Retiring a borrow used to run under the shard lock; it is now one plain
+//! `Release` store to this slot's OWN `Shard::live` byte. Release therefore
+//! writes state that live records depend on without holding anything, and that
 //! opens a failure direction the rest of the suite does not cover:
 //!
-//! * **A release that clears too LITTLE** (a lost update — `store(load | bit)`
-//!   in `publish` racing a `fetch_and`) leaks the slot forever. That is gated
-//!   by `tracker_shard::tests::threaded_churn_leaks_no_slots`.
-//! * **A release that clears too MUCH** — anything that writes the occupancy
-//!   byte rather than clearing one bit of it — silently retires records that
-//!   are still live. Every overlap against those records then goes undetected,
-//!   and their slots can be handed out and overwritten underneath them.
+//! * **A release that clears too LITTLE** (a lost update) leaks the slot
+//!   forever. That is gated by
+//!   `tracker_shard::tests::threaded_churn_leaks_no_slots`.
+//! * **A release that clears too MUCH** — anything that retires more than the
+//!   one slot it owns — silently retires records that are still live. Every
+//!   overlap against those records then goes undetected, and their slots can be
+//!   handed out and overwritten underneath them.
 //!
-//! The second direction had no gate. Verified by mutation on 2026-08-08:
-//! replacing `Shard::retire`'s `fetch_and(!bit)` with `store(0)` leaves the
+//! The second direction had no gate. Verified by mutation on 2026-08-08,
+//! against the then-current SHARED-bitmap representation: replacing
+//! `Shard::retire`'s `fetch_and(!bit)` with a whole-byte `store(0)` left the
 //! ENTIRE `cargo test -p rav1d-disjoint-mut` suite green — 23 lib + 25
-//! `soundness.rs` + 5 `shard_liveness.rs` + `wide_exclusion.rs`. It passes
+//! `soundness.rs` + 5 `shard_liveness.rs` + `wide_exclusion.rs`. It passed
 //! because nothing else drives many live NARROW records through one shard while
 //! also racing an overlapping pair against them: `wide_exclusion.rs` scatters
 //! its narrow borrows across the whole shard prefix, and its violation is
 //! wide-versus-narrow, which does not use shard slots at all.
+//!
+//! THE REPRESENTATION HAS SINCE CHANGED and the mutation above no longer
+//! describes a defect: liveness is one atomic byte PER SLOT (`Shard::live`),
+//! so a correct `retire` IS `store(0)` — of that slot's own byte. This file
+//! still gates the same direction on the new shape; verified 2026-08-08 by
+//! widening `Shard::live_mask`'s `allocated <= 1` fast path to `<= 2`, which
+//! makes the mask a SUBSET of the live set and drops live neighbours: this
+//! test, and only this test, FAILS.
 //!
 //! # How
 //!

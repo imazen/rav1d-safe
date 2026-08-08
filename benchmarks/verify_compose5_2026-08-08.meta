@@ -1,0 +1,282 @@
+INDEPENDENT VERIFICATION — compose #461 (perf/borrow-cost) + #460 (perf/t8-scaling)
+====================================================================================
+
+Host      Apple M4 Pro, 8 P-cores + 4 E-cores (12 logical), Darwin 25.5.0.
+Base      main 6c17d8c. BOTH branches merge-base at 6c17d8c exactly — verified
+          with `git merge-base`, and `git log 6c17d8c..<branch>` shows nothing
+          on main that either branch is missing. The "measured against a stale
+          branch point" failure mode of the previous round (#459: two branches
+          targeting a wide path #458 had already removed) DOES NOT APPLY here.
+Compose   `git merge perf/borrow-cost` then `git merge perf/t8-scaling` —
+          NO CONFLICTS. Both carry the same `style: cargo fmt` reflow.
+Build     cargo build --release, default features, NO -C target-cpu=native.
+Timing    NO `nice` on any timed run. Two-point wall fit (2 and 20 frames,
+          beta = (hi-lo)/18) so process startup drops out.
+Method    scripts/perf/verify_gap.sh, rotating-order interleaved, dav1d 1.5.4
+          measured IN THE SAME SWEEP. n=7 for the gap, n=5 for the
+          decomposition. STRICT idle gate: 5 cells were DISCARDED and re-run
+          when a foreign process crossed 25%; **all 224 committed gap rows and
+          all 80 decomposition rows carry foreign=0**.
+Files     verify_compose5_gap_2026-08-08.tsv      224 raw rows (4 arms x 8 cells x 7)
+          verify_compose5_decomp_2026-08-08.tsv    80 raw rows (4 arms x 4 cells x 5)
+          verify_compose5_buckets_2026-08-08.txt   sample self-time, base + head
+
+
+VERDICT: the composition is sound, pixel-inert, and materially faster at every
+cell — and the ~1.30x bar is met at NO thread count. Best cell 1.368x.
+
+
+1. GAP TO dav1d — REPRODUCED (n=7, idle, dav1d in the same interleaved sweep)
+------------------------------------------------------------------------------
+ms/frame, median of 7, min/max printed because a delta inside its own band is
+not a result:
+
+  vector          t    base   [min..max]     head   [min..max]  dav1d_fd1  dav1d_def
+  v4k_8tile       1   367.1 [362.6..370.1]  337.3 [336.2..340.4]   246.6     246.6
+  v4k_8tile       2   217.5 [216.9..218.9]  197.9 [196.6..198.8]   125.1     125.8
+  v4k_8tile       4   116.9 [115.8..118.6]  107.1 [105.9..108.8]    65.6      63.9
+  v4k_8tile       8    74.5 [ 70.7.. 75.9]   68.2 [ 64.0.. 69.6]    36.1      34.7
+  v4k_8tile_10b   1   417.0 [412.7..426.6]  381.3 [379.7..383.4]   251.4     251.5
+  v4k_8tile_10b   2   224.1 [223.6..225.4]  204.9 [204.4..206.7]   127.6     128.6
+  v4k_8tile_10b   4   121.2 [118.8..122.6]  111.1 [110.7..113.8]    66.8      65.3
+  v4k_8tile_10b   8    79.1 [ 73.9.. 80.7]   73.2 [ 69.6.. 74.4]    37.6      35.8
+
+  vector          t   base/fd1  head/fd1  head/base   head vs 1.30x*fd1
+  v4k_8tile       1     1.489     1.368     0.9187      16.7 ms short
+  v4k_8tile       2     1.738     1.582     0.9098      35.2 ms short
+  v4k_8tile       4     1.782     1.633     0.9159      21.8 ms short
+  v4k_8tile       8     2.066     1.891     0.9150      21.3 ms short
+  v4k_8tile_10b   1     1.659     1.517     0.9145      54.5 ms short
+  v4k_8tile_10b   2     1.757     1.607     0.9145      39.1 ms short
+  v4k_8tile_10b   4     1.815     1.664     0.9166      24.3 ms short
+  v4k_8tile_10b   8     2.105     1.948     0.9255      24.3 ms short
+
+#461's headline is CONFIRMED to three digits: it claimed 337.1 ms and 1.37x at
+8bpc t=1 against a base of 362.5; I measure 337.3 ms and 1.368x against a base
+of 367.1 (my base is a fresh build of 6c17d8c; the 1.3% base disagreement moves
+head/base from 0.9310 to 0.9187 and leaves the dav1d ratio unchanged).
+
+BAND CHECK (the rule that killed a 2.7% claim last round). 7 of 8 cells are
+DISJOINT base-vs-head. The exception is **v4k_8tile_10b t=8: base
+[73.9..80.7] vs head [69.6..74.4] OVERLAP** — the medians differ 7.5% but the
+ranges touch, so that single cell's delta does not clear its own noise at n=7.
+It clears it in the separate n=5 decomposition sweep (75.5..77.4 vs 70.1..71.8,
+disjoint), so the direction is not in doubt; the magnitude at that cell is.
+
+
+2. THE ~1.30x BAR IS MET NOWHERE
+---------------------------------
+Best cell 1.368x (8bpc t=1), worst 1.948x (10bpc t=8). Against dav1d's SHIPPING
+default (frame threading on) the multi-thread cells are worse still: 1.966x and
+2.042x at t=8. What remains, in ms/frame, is the last column of the table
+above: 16.7 ms at the best cell, 21-55 ms everywhere else.
+
+
+3. SCALING DID NOT MOVE — as #460 says, and #461 admits
+--------------------------------------------------------
+t=1 -> t=8, same sweep:
+
+  arm         v4k_8tile   v4k_8tile_10b
+  base          4.928x        5.275x
+  head          4.948x        5.212x
+  dav1d_fd1     6.840x        6.694x
+  dav1d_def     7.112x        7.019x
+
+#460's target correction is INDEPENDENTLY REPRODUCED: dav1d's tile-only model
+(--framedelay 1) scales 6.84x here against 6.83x in its record, and its default
+7.11x against 7.24x. Frame threading is worth 4% to dav1d at t=8 (34.7 vs 36.1).
+6.84x, not 7.14x, is the comparable target.
+
+CORRECTION TO THE CAMPAIGN'S OWN "5.15x". That figure is from the IN-PROCESS
+instrument (scripts/perf/scaling_ab.sh). The two-point wall fit on the same
+box, same day, idle, n=7 gives **4.93x** for base at 8bpc. Both are honest; they
+are different instruments and the t=8 cell is the noisy end (base band
+70.7..75.9). Quote the instrument with the number.
+
+
+4. PER-BUCKET PROFILE at 8bpc t=1 (`sample`, 60 s, ~46.1k leaf samples/arm)
+----------------------------------------------------------------------------
+ms/frame = bucket fraction x that arm's measured ms/frame from section 1.
+
+  bucket     base %   base ms/f    head %   head ms/f    delta
+  entropy     59.74      219.3      64.99      219.2      -0.1
+  tracker     18.00       66.1      12.35       41.7     -24.4
+  kernels     18.54       68.1      18.68       63.0      -5.1
+  runtime      1.06        3.9       1.15        3.9       0.0
+  other        2.66        9.8       2.83        9.5      -0.3
+  TOTAL                  367.1                 337.3     -29.8
+
+Entropy is FLAT to 0.1 ms/frame — `decode_coefs` is 201.3 ms/frame before and
+201.6 after — which is the control this whole table needs. The two `add`
+instantiations alone go 30.4 + 24.7 = 55.1 ms/frame -> 17.5 + 14.0 = 31.5.
+
+The kernels row is ATTRIBUTION SLOP, not a kernel win: no kernel changed.
+Making `add`'s fast path a frameless leaf changes what LLVM inlines into
+loopfilter/cdef call sites, so guard code that used to be a kernel leaf is now
+a tracker leaf (or vice versa). The independent wall-clock decomposition below
+settles it: the tracker's TOTAL cost falls 81.9 -> 52.2 ms/frame (-29.7), which
+is the whole -29.8 ms wall delta. **All of the win is the tracker.**
+
+
+5. TRACKER DECOMPOSITION — both agents' ceiling arms reproduced (n=5, idle)
+----------------------------------------------------------------------------
+  cell          base    head   addnop  untracked   tracker cost (base-untracked
+                                                    -> head-untracked)
+  8bpc  t=1    368.3   338.6    289.5     286.4     81.9 -> 52.2   -36.3%
+  8bpc  t=8     73.4    66.2     47.6      47.6     25.8 -> 18.6   -27.9%
+  10bpc t=1    414.7   379.6    322.6     323.4     91.3 -> 56.2   -38.4%
+  10bpc t=8     77.1    71.4     51.7      51.8     25.3 -> 19.6   -22.5%
+
+  untracked/base:  0.778 (8bpc t=1)   0.649 (8bpc t=8)
+  #461 reported    0.7913             0.6501
+  #460 reported    0.7875             0.6501
+
+  addnop vs untracked at 8bpc t=1: 289.5 vs 286.4 — the CALL BARRIER is 3.1 ms
+  of the tracker's 81.9, i.e. **3.8%** against #461's claimed 4.4%. Its central
+  argument ("the call is 4%, `add`'s own latency is the rest") holds.
+
+  Scaling with the tracker removed: untracked 6.015x vs base 5.019x at 8bpc —
+  #460's 6.149x vs 5.077x, same instrument family, same conclusion.
+
+  All four arms produced identical plane md5s at every cell.
+
+
+6. SOUNDNESS — SIX mutations, each planted on the SHIPPING code, each restored
+-------------------------------------------------------------------------------
+Protocol: byte-level snapshot (sha256 58eb3296...) taken before any edit;
+after every arm the file is restored from the snapshot and BOTH the sha256 and
+`git diff --exit-code` are checked. Every restore came back exact.
+All under `--features __probe_wide` (without it `wide_exclusion`'s anti-vacuity
+assertion is compiled out).
+
+  A  delete `add`'s IN-LOCK `state` re-read, FAST PATH ONLY (the 4af62ae TOCTOU)
+     -> wide_exclusion FAILS on the real `witnesses` assertion, 8 missed overlaps.
+
+  B  delete `add_contended`'s IN-LOCK `state` re-read, THAT SITE ALONE.
+     -> wide_exclusion FAILS 5/5 runs, 1555 / 2960 / 2319 / 2906 / 2509 missed
+        overlaps. #461 only ever deleted BOTH sites at once, which cannot tell
+        whether the NEW cold path is gated. It is — and it is the DOMINANT one
+        in that test (two orders of magnitude more witnesses than arm A).
+
+  B' reachability control for B: `loop { spin_loop() }` at the top of
+     `add_contended` HANGS the test (killed at 90 s, rc=124), so the path is
+     genuinely entered rather than B being a lucky miss.
+     Note also: an unconditional `panic!` in `add_contended` leaves
+     wide_exclusion GREEN — correct, since a refusal cannot manufacture a
+     missed overlap, but worth knowing before treating that gate as a
+     liveness check for the contended path.
+
+  C  drop `recs.allocated = occ | (1<<slot)` in `add`'s fast path, so the
+     lock-protected superset stops growing before a publish (the new
+     invariant `allocated ⊇ live`)
+     -> 2 unit tests FAIL: `shard_overflow_promotes_and_still_detects`,
+        `wide_and_narrow_still_see_each_other_on_a_one_shard_instance`.
+
+  D  `alloc`'s new empty-shard fast path records the WRONG mutability
+     (`self.mutable = 0` instead of `IS_MUT as u8` — the whole-byte store this
+     branch introduced)
+     -> shard_liveness FAILS 3 of 5.
+
+  F  widen `live_mask`'s `allocated <= 1` straight-line shortcut to `<= 2`, so
+     the mask becomes a SUBSET of the live set
+     -> `narrow_release::a_lock_free_release_never_retires_a_live_neighbour`
+        FAILS. ONLY that test — which is exactly the direction that file was
+        written for.
+
+  G  `mask == 0` fast path picks shard 1 instead of shard 0, so registration
+     and release disagree
+     -> 3 unit tests FAIL, incl. `serial_big_instance_keeps_strided_guards_narrow`.
+
+`#![forbid(unsafe_code)]` proved ACTIVELY, not by reading the attribute: an
+`unsafe { core::ptr::null::<u8>().read() }` appended to `src/decode.rs` makes
+the default build fail with `error: usage of an unsafe block`; restored to the
+byte (sha bf667af1...), rebuild green.
+
+Compile-time guard that survived the change: `size_of::<Shard>() == 128` still
+asserts in release, so replacing one `AtomicU8` with `[AtomicU8; 7]` did NOT
+grow the 128-shard table past 16 KiB. The build is the proof.
+
+Attribute / assertion census, tracker_shard.rs, main -> composed: `#[inline*]`
+40->47, `#[cold]` 8->11, `#[track_caller]` 11->13, `#[inline(never)]` 8->12,
+`debug_assert` 9->10, `assert!` 23->23, `assert_eq!` 19->20, `#[test]` 19->19.
+NOTHING decreased. Every removed line in the whole composed diff is accounted
+for by the representation change (5 `occupied.load`, one `fetch_or`, one
+`fetch_and`, two `&*`->`&mut *`, one restructured branch, one fmt reflow).
+
+Threading: `mt_stress` 1/2/4/8/16 x 5 trials ok; `multi_decoder_pressure.sh`
+12 procs x 3 iters x threads {1,2,4,8,16} x 5 vectors PASS, every md5 matching
+the serial reference. `threaded_churn_leaks_no_slots` — the gate for the
+per-slot-flag design's one new failure mode — 60/60 standalone runs.
+
+
+7. CORPUS — 766/766, set-diff BY NAME with the md5 IN THE VALUE
+----------------------------------------------------------------
+`examples/md5_inventory`, full dav1d-test-data, run on the FINAL shipping tree:
+
+  baseline entries : 768  (PASS 766)      <- benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst
+  head entries     : 768  (PASS 766)
+  only in baseline : 0
+  only in head     : 0
+  differing        : 0   <- status OR md5
+  SETDIFF: CLEAN
+
+Cross-arm identity on the perf vectors, base binary vs head binary:
+20/20 (5 vectors x t=1,2,4,8) byte-identical plane md5s. The tracker change is
+provably pixel-inert at every thread count, not just at t=1.
+
+
+8. THREE THINGS THAT ARE BROKEN ON `main` AND ARE NOT THESE BRANCHES' FAULT
+----------------------------------------------------------------------------
+(a) `tests/decode_permutations.rs` — 16 of 19 tests FAIL ON AARCH64, on
+    UNMODIFIED main, under the exact CI invocation
+    (`cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16"
+    --release --test decode_permutations`): `called Option::unwrap() on a None
+    value` at `src/safe_simd/mc_arm.rs:5931` (`Arm64::summon().unwrap()`) and
+    `src/safe_simd/filmgrain_arm.rs`. Composed head: the SAME 16 of 19, same
+    sites. **The token-permutation bit-identity gate is dead on aarch64 and CI
+    cannot see it: `.github/workflows/ci.yml:245` pins that job to
+    `ubuntu-latest`, where the `*_arm.rs` code paths do not exist.** A gate that
+    passes only because it is never run on the architecture where it fails.
+    `--test-threads=1` does NOT fix it; the file's own header attributing this
+    class of failure to parallelism is a red herring here.
+(b) `cargo fmt --all --check` FAILS on main at two sites
+    (`tracker_shard.rs:1824`, `loopfilter.rs:5257`) — which is why the `Format`
+    CI job is red on 6c17d8c. Both branches' `style: cargo fmt` commits are
+    exactly this fix, so THE COMPOSITION TURNS THAT JOB GREEN (`cargo fmt --all
+    --check` rc=0 on the composed tree).
+(c) `cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16"
+    -- -D warnings` fails identically on main and on head:
+    `method 'bit' is never used` (`src/ablate.rs:83`). Pre-existing; not fixed
+    here. `cargo clippy --release -p rav1d-disjoint-mut --all-targets` is clean.
+Also re-confirmed: `test-vectors/bench/photo_4k.avif` is gitignored, so
+`mt_stress` hard-fails in any fresh worktree until it is copied in.
+
+
+9. WHERE #461's OWN NARRATIVE IS INCOMPLETE (not wrong — incomplete)
+---------------------------------------------------------------------
+Its per-increment attribution table is t=1 ONLY, and its headline mechanism —
+"`mask == 0` skips the block arithmetic entirely... this is the big one" —
+CANNOT fire on the hot picture planes at t>1. `src/lib.rs:181` calls
+`set_parallelism(n_tc)`, `n_tc > 1` raises ACTIVE_SHARDS to 128, and
+`mask_for(len >= SHARD_MIN_LEN)` then returns 127. So on a multi-threaded decode
+the skip applies only to the ~1,027 sub-64-KiB instances. The measured t>1 wins
+(0.910-0.926 head/base) are real and are bought by the OTHER four mechanisms
+(per-slot flags, the frameless leaf, straight-line `live_mask`, straight-line
+`alloc`). Nothing to fix; the attribution table just does not cover the cells
+it is quoted next to.
+
+
+10. NOT DONE HERE
+------------------
+- x86_64: NOT MEASURED, and this composition is the change most likely to
+  behave differently there (two `lock`-prefixed RMWs per borrow pair removed;
+  on x86 those are full fences, on M4 LSE they are cheap). #461 says the same.
+  Do not extrapolate the aarch64 ratios.
+- Only `v4k_8tile` and `v4k_8tile_10b`. No `v4k_1tile`, no small sizes, no
+  12bpc perf cell (12bpc correctness is covered by the corpus).
+- Miri was not run (`crates/rav1d-disjoint-mut/tests/aligned_miri.rs` exists;
+  the `disjoint-mut CI` Miri job is among the 6 already red on main).
+- #460's own probe-tasktime numbers (occupancy 7.143/8, the 12% post-tile tail,
+  the blockshift and shards-256 ladders) were NOT re-run. Its two load-bearing
+  claims that I could check independently — the untracked/plain ratios and the
+  dav1d 6.83x correction — both reproduced.

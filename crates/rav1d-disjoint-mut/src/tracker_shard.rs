@@ -674,7 +674,7 @@ impl ShardRecs {
     }
 }
 
-/// One shard: its lock, its occupancy bitmap, and its records, alone on a
+/// One shard: its lock, its per-slot live flags, and its records, alone on a
 /// cache line.
 ///
 /// 128 bytes is the M-series line size (`hw.cachelinesize`). Two shards sharing
@@ -2290,14 +2290,18 @@ mod tests {
     /// add/remove interleaving on ONE shard.
     ///
     /// This is the test that guards the lock-free [`BorrowTracker::remove`].
-    /// Registration publishes with `fetch_or` while holding the shard lock and
-    /// release clears with `fetch_and` while holding nothing, so the two RMWs
-    /// race by construction. Had `publish` been written the obvious way —
+    /// Registration publishes with a plain `Release` store while holding the
+    /// shard lock; release stores 0 to the same byte while holding nothing.
+    /// They race by construction, and the design's claim is that they cannot
+    /// LOSE each other because a slot byte has at most one writer at a time
+    /// (see [`Shard::live`]). When the two were a `fetch_or` / `fetch_and` pair
+    /// on ONE shared byte, writing `publish` the obvious way —
     /// `occupied.store(occ | bit)` from the snapshot the lock holder already
-    /// had — a release landing between the load and the store would be
-    /// silently undone, the slot would stay occupied forever, and the shard
-    /// would leak until it overflowed to the wide list and started reporting
-    /// overlaps against borrows that had ended.
+    /// had — would have let a release landing between the load and the store be
+    /// silently undone, leaving the slot occupied forever until the shard
+    /// overflowed to the wide list and started reporting overlaps against
+    /// borrows that had ended. The per-slot flags make that shape unwritable;
+    /// this test is what proves the new one does not reintroduce it.
     ///
     /// Every range lives in block 0, so all eight threads hammer the same
     /// shard's flag bytes. Slot exhaustion is real here (8 threads, `SLOTS`
