@@ -68,34 +68,14 @@ def matches(n):
     return any(p.search(n) for p in pats)
 
 
-# ancestor stack of (depth, name); walk in order, tracking the innermost
-# non-matching ancestor for each frame.
 agg = collections.Counter()
 grand = 0
-stack = []          # list of (depth, name, matching)
-for d, c, n in D:
-    while stack and stack[-1][0] >= d:
-        stack.pop()
-    m = matches(n)
-    inside = any(s[2] for s in stack)
-    if m and not inside:
-        # outermost entry into the subsystem: find nearest non-matching ancestor
-        caller = next((s[1] for s in reversed(stack) if not s[2]), '<root>')
-        if self_only:
-            kids = 0
-            # self = own count - immediate children's counts (computed below)
-            agg[(short(caller), short(n))] += 0  # placeholder, filled later
-        else:
-            agg[short(caller)] += c
-            grand += c
-    stack.append((d, n, m or inside))
 
 if self_only:
-    # recompute with self semantics: for every matching frame, self samples go
-    # to the nearest non-matching ancestor.
-    agg = collections.Counter()
-    grand = 0
-    stack = []
+    # SELF semantics: every matching frame's own samples (its count minus its
+    # immediate children's) go to the nearest non-matching ancestor. Nested
+    # matches each keep their own self time, so nothing is double counted.
+    stack = []          # list of (depth, name)
     for i, (d, c, n) in enumerate(D):
         while stack and stack[-1][0] >= d:
             stack.pop()
@@ -106,11 +86,25 @@ if self_only:
                 if D[j][0] == d + 1:
                     kids += D[j][1]
                 j += 1
-            slf = c - kids
             caller = next((s[1] for s in reversed(stack) if not matches(s[1])), '<root>')
-            agg[short(caller)] += slf
-            grand += slf
-        stack.append((d, n, False))
+            agg[short(caller)] += c - kids
+            grand += c - kids
+        stack.append((d, n))
+else:
+    # INCLUSIVE semantics: credit each MAXIMAL matching subtree's whole count to
+    # the nearest ancestor outside the subsystem. `inside` suppresses nested
+    # matches so a subtree is counted once.
+    stack = []          # list of (depth, name, matching-or-inside)
+    for d, c, n in D:
+        while stack and stack[-1][0] >= d:
+            stack.pop()
+        m = matches(n)
+        inside = any(s[2] for s in stack)
+        if m and not inside:
+            caller = next((s[1] for s in reversed(stack) if not s[2]), '<root>')
+            agg[short(caller)] += c
+            grand += c
+        stack.append((d, n, m or inside))
 
 print(f"# subsystem {' | '.join(a for a in args[1:])}"
       f"   {'self' if self_only else 'inclusive'} {grand} ({100.0 * grand / total:.2f}% of {total})")

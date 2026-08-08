@@ -1762,7 +1762,8 @@ fn ac_row_420_8bpc(_token: Arm64, out: &mut [i16], top: &[u8], bot: &[u8], n: us
         x += 4;
     }
     for x in x..n {
-        let s = top[2 * x] as u16 + top[2 * x + 1] as u16 + bot[2 * x] as u16 + bot[2 * x + 1] as u16;
+        let s =
+            top[2 * x] as u16 + top[2 * x + 1] as u16 + bot[2 * x] as u16 + bot[2 * x + 1] as u16;
         out[x] = (s << 1) as i16;
     }
 }
@@ -1819,9 +1820,11 @@ fn ac_row_420_16bpc(_token: Arm64, out: &mut [i16], top: &[u16], bot: &[u16], n:
     let mut x = 0;
     while x + 8 <= n {
         let t0 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x..2 * x + 8]).expect("8"));
-        let t1 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x + 8..2 * x + 16]).expect("8"));
+        let t1 =
+            safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x + 8..2 * x + 16]).expect("8"));
         let b0 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&bot[2 * x..2 * x + 8]).expect("8"));
-        let b1 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&bot[2 * x + 8..2 * x + 16]).expect("8"));
+        let b1 =
+            safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&bot[2 * x + 8..2 * x + 16]).expect("8"));
         let s = vaddq_u16(vpaddq_u16(t0, t1), vpaddq_u16(b0, b1));
         safe_simd::vst1q_s16(
             <&mut [i16; 8]>::try_from(&mut out[x..x + 8]).expect("8"),
@@ -1855,7 +1858,8 @@ fn ac_row_422_16bpc(_token: Arm64, out: &mut [i16], top: &[u16], n: usize) {
     let mut x = 0;
     while x + 8 <= n {
         let t0 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x..2 * x + 8]).expect("8"));
-        let t1 = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x + 8..2 * x + 16]).expect("8"));
+        let t1 =
+            safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&top[2 * x + 8..2 * x + 16]).expect("8"));
         safe_simd::vst1q_s16(
             <&mut [i16; 8]>::try_from(&mut out[x..x + 8]).expect("8"),
             vreinterpretq_s16_u16(vshlq_n_u16::<2>(vpaddq_u16(t0, t1))),
@@ -1970,8 +1974,13 @@ pub fn cfl_ac_dispatch<BD: crate::include::common::bitdepth::BitDepth>(
     let ac = &mut ac[..width * height];
     let w_pad = w_pad as usize * 4;
     let h_pad = h_pad as usize * 4;
-    debug_assert!(w_pad < width);
-    debug_assert!(h_pad < height);
+    // The reference `assert!`s these. Decline instead of asserting: a refusal
+    // here runs the reference, which asserts anyway, so the invariant is still
+    // enforced in exactly one place — and a release build cannot reach the
+    // wrapping subtraction below.
+    if w_pad >= width || h_pad >= height {
+        return false;
+    }
     let active_w = width - w_pad;
     let active_h = height - h_pad;
     let ss_hor = is_ss_hor as u8;
@@ -2045,4 +2054,171 @@ pub fn cfl_ac_dispatch<BD: crate::include::common::bitdepth::BitDepth>(
     let log2sz = width.trailing_zeros() + height.trailing_zeros();
     ac_remove_dc(token, ac, 1 << log2sz >> 1, log2sz);
     true
+}
+
+#[cfg(all(test, target_arch = "aarch64", not(feature = "asm")))]
+mod cfl_ac_parity {
+    //! Differential parity for `cfl_ac_dispatch` against the scalar
+    //! `src/ipred.rs::cfl_ac_rust` it replaces.
+    //!
+    //! `cfl_ac` has no `__simd_test` dual-compute hook, so this sweep plus the
+    //! corpus MD5 are the only per-parameter evidence there is. The parameter
+    //! space swept is the real one: all three chroma layouts, every chroma
+    //! transform size AV1 defines (4..32 on a side), both padding axes over
+    //! their full signalled range, both bit depths, and source pixels driven to
+    //! 0 / `bitdepth_max` as well as random, because a shift that overflowed
+    //! `i16` would only show at the top of the range.
+    //!
+    //! The live-cell assertion matters as much as the equality one: a cell the
+    //! NEON dispatch declined would compare the reference against itself and
+    //! prove nothing.
+
+    use crate::include::common::bitdepth::{BitDepth, BitDepth8, BitDepth16};
+    use crate::include::dav1d::picture::Rav1dPictureDataComponent;
+    use crate::src::internal::SCRATCH_AC_TXTP_LEN;
+
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+        fn in_range(&mut self, lo: i32, hi: i32) -> i32 {
+            lo + (self.next() % ((hi - lo + 1) as u64)) as i32
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run<BD: BitDepth>(
+        pixels: &[BD::Pixel],
+        stride: usize,
+        w_pad: i32,
+        h_pad: i32,
+        cw: usize,
+        ch: usize,
+        ss_hor: bool,
+        ss_ver: bool,
+    ) -> (Vec<i16>, Vec<i16>, bool)
+    where
+        BD::Pixel: Copy + Default,
+    {
+        let go = |simd: bool| -> (Vec<i16>, bool) {
+            let mut px = pixels.to_vec();
+            let comp = Rav1dPictureDataComponent::wrap_buf::<BD>(&mut px, stride);
+            let dst = comp.with_offset::<BD>();
+            // Prefilled with a recognisable pattern so a kernel that fails to
+            // write a lane is caught rather than matching a shared zero.
+            let mut ac = [0x5A5Ai16; SCRATCH_AC_TXTP_LEN];
+            let handled = if simd {
+                super::cfl_ac_dispatch::<BD>(&mut ac, dst, w_pad, h_pad, cw, ch, ss_hor, ss_ver)
+            } else {
+                crate::src::ipred::cfl_ac_scalar_for_test::<BD>(
+                    &mut ac, dst, w_pad, h_pad, cw, ch, ss_hor, ss_ver,
+                );
+                true
+            };
+            (ac[..cw * ch].to_vec(), handled)
+        };
+        let (neon, handled) = go(true);
+        let (scalar, _) = go(false);
+        (neon, scalar, handled)
+    }
+
+    fn sweep<BD: BitDepth>(bd: BD, seed: u64, what: &str)
+    where
+        BD::Pixel: Copy + Default + PartialEq + std::fmt::Debug,
+    {
+        use crate::include::common::bitdepth::AsPrimitive;
+        let _lock = crate::src::safe_simd::token_test_lock();
+        let pmax = bd.bitdepth_max().as_::<i32>();
+        let mut cells = 0usize;
+        let mut live = 0usize;
+        let mut bad: Vec<String> = Vec::new();
+
+        for &(ss_hor, ss_ver) in &[(true, true), (true, false), (false, false)] {
+            for &cw in &[4usize, 8, 16, 32] {
+                for &ch in &[4usize, 8, 16, 32] {
+                    // Source extent the reference reads: `ch << ss_ver` rows of
+                    // `cw << ss_hor` pixels, plus one more row for the 4:2:0
+                    // bottom half of the last pair.
+                    let src_w = cw << ss_hor as usize;
+                    let src_h = ch << ss_ver as usize;
+                    // 64 so the byte length is a multiple of
+                    // `RAV1D_PICTURE_GUARANTEED_MULTIPLE` at 8bpc too, where a
+                    // pixel is one byte and 16 is not enough for `wrap_buf`.
+                    let stride = (src_w + 16).next_multiple_of(64);
+                    let mut rng =
+                        Rng(seed ^ ((cw as u64) << 32) ^ ((ch as u64) << 8) ^ ss_hor as u64);
+                    for &fill in &[-1i32, 0, 1] {
+                        let pixels: Vec<BD::Pixel> = (0..stride * (src_h + 2))
+                            .map(|_| {
+                                match fill {
+                                    -1 => rng.in_range(0, pmax),
+                                    0 => 0,
+                                    _ => pmax,
+                                }
+                                .as_()
+                            })
+                            .collect();
+                        // `w_pad`/`h_pad` are signalled in units of 4 samples
+                        // and must leave at least one real column/row.
+                        for &wp in &[0i32, 1, 2] {
+                            for &hp in &[0i32, 1, 2] {
+                                if (wp as usize) * 4 >= cw || (hp as usize) * 4 >= ch {
+                                    continue;
+                                }
+                                let (neon, scalar, ok) =
+                                    run::<BD>(&pixels, stride, wp, hp, cw, ch, ss_hor, ss_ver);
+                                cells += 1;
+                                if ok {
+                                    live += 1;
+                                }
+                                if let Some(i) = (0..cw * ch).find(|&i| neon[i] != scalar[i]) {
+                                    let msg = format!(
+                                        "{cw}x{ch} ss=({ss_hor},{ss_ver}) pad=({wp},{hp}) \
+                                         fill={fill} at {i} ({},{}) : neon={} scalar={}",
+                                        i % cw,
+                                        i / cw,
+                                        neon[i],
+                                        scalar[i]
+                                    );
+                                    if bad.len() < 4 {
+                                        bad.push(msg);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(cells >= 300, "{what}: only {cells} cells ran");
+        assert_eq!(
+            live,
+            cells,
+            "{what}: {} of {cells} cells did NOT take the NEON path — those \
+             compared the scalar reference against itself and proved nothing",
+            cells - live
+        );
+        assert!(bad.is_empty(), "{what}: divergence\n  {}", bad.join("\n  "));
+    }
+
+    #[test]
+    fn cfl_ac_8bpc_matches_scalar() {
+        sweep(BitDepth8::new(()), 0xAC00_0001_0000_0001, "cfl_ac 8bpc");
+    }
+
+    #[test]
+    fn cfl_ac_10bpc_matches_scalar() {
+        sweep(BitDepth16::new(1023), 0xAC00_0002_0000_0001, "cfl_ac 10bpc");
+    }
+
+    #[test]
+    fn cfl_ac_12bpc_matches_scalar() {
+        sweep(BitDepth16::new(4095), 0xAC00_0003_0000_0001, "cfl_ac 12bpc");
+    }
 }

@@ -20,6 +20,8 @@
 # Output columns:
 #   round  arm  vec  threads  nlo  ms_lo  nhi  ms_hi  foreign_max
 set -u
+# `.` as the decimal separator, so the EPOCHREALTIME split below is locale-proof.
+export LC_ALL=C
 OUT=${1:?out.tsv}; ROUNDS=${2:-7}
 BIN=${BIN:-$HOME/tmp/rav1d-iv/bin}
 AVIF=${AVIF:-$HOME/tmp/rav1d-perf/vec}
@@ -32,11 +34,14 @@ IFS=' ' read -r -a CELLS <<< "${CELLS:-v4k_8tile:1 v4k_8tile:2 v4k_8tile:4 v4k_8
 # `ps -o comm` prints the full path on macOS, so the exclusion is built from
 # $BIN and follows wherever the arms were staged. dav1d is excluded by name
 # because it IS one of the arms. macOS keeps a decaying %cpu for a process that
-# has only just exited, which is why the arms must be excluded at all.
+# has only just exited, which is why the arms must be excluded at all — and for
+# the same reason `python3` is excluded: `now_ms`'s fallback forks one twice per
+# timed run, and its decaying %cpu made the guard discard the SAME cell four
+# times in a row before this exclusion existed (2026-08-08, the st1 campaign).
 BIN_RE=$(printf '%s' "$BIN" | sed 's/[][\.*^$/(){}?+|]/\\&/g')
 busy_count() {
   ps -A -o %cpu,comm -r | awk -v me="$BIN_RE" \
-    'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\/|dav1d/ && $2 !~ me {c++} END {print c+0}'
+    'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\/|dav1d|python3/ && $2 !~ me {c++} END {print c+0}'
 }
 wait_quiet() {
   local w=0
@@ -45,7 +50,15 @@ wait_quiet() {
     [ $w -ge 1800 ] && { echo "box never went idle" >&2; exit 4; }
   done
 }
-now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
+# Wall clock in ms. `EPOCHREALTIME` (bash 5) is a builtin, so it forks nothing
+# and cannot show up in `busy_count`; the python3 fallback is for bash 3/4.
+# Either source is fine for the two-point fit: a constant per-read offset (which
+# is all a fork costs) cancels out of `beta = (hi - lo) / (NHI - NLO)`.
+if [ -n "${EPOCHREALTIME:-}" ]; then
+  now_ms() { local t=$EPOCHREALTIME; echo $(( ${t%%.*} * 1000 + 10#${t#*.} / 1000 )); }
+else
+  now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
+fi
 
 time_one() {
   local arm=$1 vec=$2 t=$3 n=$4 t0 t1
