@@ -110,6 +110,11 @@ pub fn reset() {
     for n in crate::site_class::NULLED.iter() {
         n.store(0, Relaxed);
     }
+    for c in crate::site_class::BY_SIZE.iter() {
+        for n in c.iter() {
+            n.store(0, Relaxed);
+        }
+    }
 }
 
 /// TSV: `SITE <n_total_per_frame> <n_mut> <n_immut> <mean_bytes> <file:line:col>`,
@@ -162,11 +167,13 @@ pub fn report(frames: u64) -> String {
     for (i, name) in crate::site_class::CLASS_NAMES.iter().enumerate() {
         let _ = writeln!(
             out,
-            "CLASS\t{}\t{:.0}\t{:.1}%\tnulled={:.0}",
+            "CLASS\t{}\t{:.0}\t{:.1}%\tnulled={:.0}\tbig={:.0}\tsmall={:.0}",
             name,
             per_class[i] as f64 / f,
             100.0 * per_class[i] as f64 / total.max(1) as f64,
             crate::site_class::NULLED[i].load(Relaxed) as f64 / f,
+            crate::site_class::BY_SIZE[i][1].load(Relaxed) as f64 / f,
+            crate::site_class::BY_SIZE[i][0].load(Relaxed) as f64 / f,
         );
     }
     let _ = writeln!(

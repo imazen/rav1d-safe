@@ -84,6 +84,19 @@ pub const N_CLASSES: usize = 5;
 
 pub const CLASS_NAMES: [&str; N_CLASSES] = ["recon", "filter", "decode", "other", "picwb"];
 
+/// Modifier: null only borrows on instances at least `SHARD_MIN_LEN` (64 KiB)
+/// long. That is the frame-sized-buffer population — the picture planes and
+/// their kin — and it is the population a static per-tile ROW SPLIT of the
+/// picture buffer could actually cover. Without this modifier the `recon` arm
+/// also nulls `recon.rs`'s coefficient-context borrows and `ipred_prepare`'s
+/// `BlockContext::intra` reads, which live on 32-byte instances that no picture
+/// row split touches: 1.26 M of the class's 5.53 M registrations per frame at
+/// t=1. Attributing those to a picture-buffer design would overstate it.
+pub const ONLY_BIG: u8 = 1 << 5;
+/// The complement, so the two halves can be priced separately and checked
+/// against the un-modified arm.
+pub const ONLY_SMALL: u8 = 1 << 6;
+
 /// Bit `i` set => class `i` is NOT tracked.
 static NULL_MASK: AtomicU8 = AtomicU8::new(0);
 
@@ -116,8 +129,16 @@ pub fn mask_from_str(s: &str) -> Option<u8> {
     let mut m = 0u8;
     for part in s.split(',') {
         let part = part.trim();
-        let i = CLASS_NAMES.iter().position(|n| *n == part)?;
-        m |= 1 << i;
+        match part {
+            "big" => m |= ONLY_BIG,
+            "small" => m |= ONLY_SMALL,
+            _ => m |= 1 << CLASS_NAMES.iter().position(|n| *n == part)?,
+        }
+    }
+    // A size modifier with no class is a no-op arm that would silently measure
+    // the baseline under a different name.
+    if m & ((1 << N_CLASSES) - 1) == 0 {
+        return None;
     }
     Some(m)
 }
@@ -217,14 +238,30 @@ pub fn class_for_file_pub(f: &str) -> u8 {
 /// and it is invisible in both the pixels and the wall clock.
 #[cfg(feature = "__probe_sites")]
 pub static NULLED: [AtomicU64; N_CLASSES] = [const { AtomicU64::new(0) }; N_CLASSES];
+/// Registrations per (class, big) so the census can say exactly what an arm
+/// with a size modifier covers.
+#[cfg(feature = "__probe_sites")]
+pub static BY_SIZE: [[AtomicU64; 2]; N_CLASSES] =
+    [const { [const { AtomicU64::new(0) }; 2] }; N_CLASSES];
 
+/// `big` is whether the instance is at least `SHARD_MIN_LEN`; the caller passes
+/// it because only the tracker knows its own length.
 #[inline(always)]
-pub fn nulled(loc: &'static Location<'static>) -> bool {
+pub fn nulled(loc: &'static Location<'static>, big: bool) -> bool {
     let c = class_of(loc);
-    let hit = (NULL_MASK.load(Relaxed) >> c) & 1 != 0;
+    let m = NULL_MASK.load(Relaxed);
+    let size_ok = if big {
+        m & ONLY_SMALL == 0
+    } else {
+        m & ONLY_BIG == 0
+    };
+    let hit = (m >> c) & 1 != 0 && size_ok;
     #[cfg(feature = "__probe_sites")]
-    if hit {
-        NULLED[c as usize].fetch_add(1, Relaxed);
+    {
+        BY_SIZE[c as usize][big as usize].fetch_add(1, Relaxed);
+        if hit {
+            NULLED[c as usize].fetch_add(1, Relaxed);
+        }
     }
     hit
 }

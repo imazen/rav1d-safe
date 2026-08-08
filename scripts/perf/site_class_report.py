@@ -22,7 +22,10 @@ from statistics import median
 
 path = sys.argv[1]
 only_idle = os.environ.get("ONLY_IDLE") == "1"
-CLASSES = ["recon", "filter", "decode", "other", "picwb"]
+CLASSES = ["recon", "recon+big", "filter", "decode", "other", "picwb"]
+# `recon+big` is a SUBSET of `recon`, not a peer, so it is excluded from the
+# additivity sum and from the disjoint partition of the total.
+PARTITION = ["recon", "filter", "decode", "other", "picwb"]
 
 betas = defaultdict(list)
 loaded = defaultdict(int)
@@ -115,7 +118,8 @@ for vec, t in cells:
             row += f"{'-':>20}"
             continue
         d = cn - m
-        s += d
+        if c in PARTITION:
+            s += d
         dj = "d" if (bb[1] < cnb[0] or cnb[1] < bb[0]) else "O"
         attrib[(vec, t, c)] = d
         row += f"{d:>16.1f} {dj:>3}"
@@ -131,7 +135,7 @@ print("projected = (base - attributable) / dav1d.  base and dav1d are the real")
 print("builds; the attributable ms comes from the instrumented family.\n")
 h3 = (
     f"{'vector':16} {'t':>2} {'now':>6} " + "".join(f"{c:>8}" for c in CLASSES)
-    + f"{'recon+picwb':>12}{'all':>8}{'untracked':>10}"
+    + f"{'A=rbig+picwb':>13}{'all':>8}{'untracked':>10}"
 )
 print(h3)
 print("-" * len(h3))
@@ -145,8 +149,10 @@ for vec, t in cells:
     for c in CLASSES:
         a = attrib.get((vec, t, c))
         row += f"{'-':>8}" if a is None else f"{(b - a) / d:>8.3f}"
-    rp = attrib.get((vec, t, "recon"), 0) + attrib.get((vec, t, "picwb"), 0)
-    row += f"{(b - rp) / d:>12.3f}"
+    rp = attrib.get((vec, t, "recon+big"), attrib.get((vec, t, "recon"), 0)) + attrib.get(
+        (vec, t, "picwb"), 0
+    )
+    row += f"{(b - rp) / d:>13.3f}"
     row += f"{(b - (cn - ca)) / d:>8.3f}" if ca is not None else f"{'-':>8}"
     row += f"{u / d:>10.3f}"
     print(row)

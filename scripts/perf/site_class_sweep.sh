@@ -32,7 +32,7 @@ BIN=${BIN:-$HOME/tmp/sitecls/bin}
 AVIF=${AVIF:-$HOME/tmp/rav1d-perf/vec}
 IVF=${IVF:-$HOME/tmp/recon-yard/vec}
 NLO=${NLO:-2}; NHI=${NHI:-20}
-IFS=' ' read -r -a ARMS <<< "${ARMS:-base cls_none cls_recon cls_filter cls_decode cls_other cls_picwb cls_all addnop untracked dav1d_fd1}"
+IFS=' ' read -r -a ARMS <<< "${ARMS:-base cls_none cls_recon cls_recon+big cls_filter cls_decode cls_other cls_picwb cls_all addnop untracked dav1d_fd1}"
 IFS=' ' read -r -a CELLS <<< "${CELLS:-v4k_8tile:1 v4k_8tile:2 v4k_8tile:4 v4k_8tile:8 v4k_8tile_10b:1 v4k_8tile_10b:2 v4k_8tile_10b:4 v4k_8tile_10b:8}"
 
 BIN_RE=$(printf '%s' "$BIN" | sed 's/[][\.*^$/(){}?+|]/\\&/g')
@@ -60,7 +60,9 @@ time_one() {
   t0=$(now_ms)
   case "$arm" in
     dav1d_fd1) dav1d -i "$IVF/$vec.ivf" --muxer null --threads "$t" --framedelay 1 -q --limit "$n" >/dev/null 2>&1 ;;
-    cls_*)     RAV1D_CLS_NULL="${arm#cls_}" "$BIN/bench_cls" "$AVIF/$vec.avif" "$t" "$n" 1 w >/dev/null 2>&1 ;;
+    # `+` in the arm name is the mask's `,` — a comma in an arm name would be a
+    # trap for every downstream CSV/awk reader of the TSV.
+    cls_*)     spec=${arm#cls_}; RAV1D_CLS_NULL="${spec//+/,}" "$BIN/bench_cls" "$AVIF/$vec.avif" "$t" "$n" 1 w >/dev/null 2>&1 ;;
     *)         "$BIN/bench_$arm" "$AVIF/$vec.avif" "$t" "$n" 1 w >/dev/null 2>&1 ;;
   esac
   t1=$(now_ms); echo $((t1 - t0))

@@ -33,8 +33,10 @@ fn this_file_is_class_other() {
     );
 }
 
-fn overlapping_borrow_panics() -> bool {
-    let v: DisjointMut<Vec<u8>> = DisjointMut::new(vec![0u8; 4096]);
+/// `len` selects which side of the `SHARD_MIN_LEN` (64 KiB) size split the
+/// instance lands on, so the `big` / `small` modifiers can be tested too.
+fn overlapping_borrow_panics(len: usize) -> bool {
+    let v: DisjointMut<Vec<u8>> = DisjointMut::new(vec![0u8; len]);
     std::panic::catch_unwind(AssertUnwindSafe(|| {
         let a = v.index_mut(0..64);
         let b = v.index_mut(32..96);
@@ -52,16 +54,27 @@ fn nulling_this_class_removes_the_check_and_not_nulling_keeps_it() {
     std::panic::set_hook(Box::new(|_| {}));
 
     site_class::set_null_mask(0);
-    let tracked = overlapping_borrow_panics();
+    let tracked = overlapping_borrow_panics(4096);
 
     site_class::set_null_mask(1 << site_class::OTHER);
-    let nulled = overlapping_borrow_panics();
+    let nulled = overlapping_borrow_panics(4096);
 
     // A class this file does NOT belong to must leave the check in place —
     // otherwise the mask is a global off-switch wearing a class label, and
     // every per-class number the campaign reports would be the same number.
     site_class::set_null_mask(1 << site_class::RECON);
-    let other_class_nulled = overlapping_borrow_panics();
+    let other_class_nulled = overlapping_borrow_panics(4096);
+
+    // Size modifiers: `other,big` must leave a 4 KiB instance checked and a
+    // 256 KiB one unchecked, and `other,small` the reverse. Without this the
+    // modifier could be a no-op and the "picture-buffer only" arm would
+    // silently be the whole-class arm.
+    site_class::set_null_mask((1 << site_class::OTHER) | site_class::ONLY_BIG);
+    let big_arm_small_inst = overlapping_borrow_panics(4096);
+    let big_arm_big_inst = overlapping_borrow_panics(256 * 1024);
+    site_class::set_null_mask((1 << site_class::OTHER) | site_class::ONLY_SMALL);
+    let small_arm_small_inst = overlapping_borrow_panics(4096);
+    let small_arm_big_inst = overlapping_borrow_panics(256 * 1024);
 
     site_class::set_null_mask(0);
     std::panic::set_hook(prev);
@@ -81,4 +94,16 @@ fn nulling_this_class_removes_the_check_and_not_nulling_keeps_it() {
         "nulling `recon` also disabled a borrow from an `other` site — the mask \
          is not selective"
     );
+    assert!(big_arm_small_inst, "`big` modifier nulled a sub-SHARD_MIN_LEN instance");
+    assert!(!big_arm_big_inst, "`big` modifier failed to null a large instance");
+    assert!(!small_arm_small_inst, "`small` modifier failed to null a small instance");
+    assert!(small_arm_big_inst, "`small` modifier nulled a large instance");
+}
+
+#[test]
+fn a_size_modifier_with_no_class_is_rejected() {
+    // Otherwise `RAV1D_CLS_NULL=big` would be a baseline arm wearing a
+    // different name and would report every class as free.
+    assert!(site_class::mask_from_str("big").is_none());
+    assert!(site_class::mask_from_str("recon,big").is_some());
 }

@@ -937,6 +937,12 @@ pub(super) struct BorrowTracker {
     /// the array a fixed-size field, so a masked index needs no fat-pointer
     /// load and no bounds check.
     mask: usize,
+    /// THROWAWAY (`__probe_class`): this instance is at least [`SHARD_MIN_LEN`]
+    /// long, i.e. a frame-sized buffer rather than one of the 32-byte
+    /// `BlockContext` arrays. Set once off the same line as `mask`, read only
+    /// to decide whether a size-modified null arm applies. Measurement only.
+    #[cfg(feature = "__probe_class")]
+    big: bool,
     /// Live wide records. Read while holding **any** shard lock; written only
     /// while holding **every** shard lock.
     wide: UnsafeCell<Vec<WideRec>>,
@@ -1213,6 +1219,8 @@ impl BorrowTracker {
             shards: [const { Shard::new() }; N_SHARDS],
             shift: block_shift_for(len),
             mask: mask_for(len),
+            #[cfg(feature = "__probe_class")]
+            big: len >= SHARD_MIN_LEN,
             wide: UnsafeCell::new(Vec::new()),
             state: AtomicU32::new(0),
         }
@@ -1227,6 +1235,10 @@ impl BorrowTracker {
         // there, and `&mut self` guarantees every one of them is empty.
         self.shift = block_shift_for(len);
         self.mask = mask_for(len);
+        #[cfg(feature = "__probe_class")]
+        {
+            self.big = len >= SHARD_MIN_LEN;
+        }
     }
 
     /// The prefix of [`Self::shards`] this instance can actually reach.
@@ -1372,7 +1384,7 @@ impl BorrowTracker {
         // for free -- the CALL on both sides survives, only the WORK goes.
         // UNSOUND: the overlap check for that class is gone. Measurement only.
         #[cfg(feature = "__probe_class")]
-        if crate::site_class::nulled(Location::caller()) {
+        if crate::site_class::nulled(Location::caller(), self.big) {
             return BorrowId::UNCHECKED;
         }
         if start >= end {
