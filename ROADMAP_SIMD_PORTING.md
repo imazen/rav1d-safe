@@ -195,6 +195,27 @@ them folded together with the reference's `iclip(tmp + rnd >> shift)` step.
   (the exact defect the old ports carry) passes both small-coefficient arms and
   fails only the large ones.
 
+### Guard shape: per-row narrow, not `block_mut`
+
+The 5.88 points above are why. `block_mut` / `with_pixel_guard_mut` take one
+guard spanning the whole strided w x h region; both this path and the new CfL
+kernel only ever touch `dst` a row at a time, so that extent bought nothing and
+the wide-guard bookkeeping cost more than the kernels saved. Measured on the
+CfL kernel, foreign = 0, medians of 9: the NEON kernel removes 2.46% of self
+time, a wide guard adds back +0.79% `add_wide::<true>` and +0.73%
+`remove_wide`, and the net is **0.14%** of wall — per-row `slice_mut(w)` guards
+make the same kernel worth **0.99%**. The itx path moved 0.8858 -> 0.8535 of
+base at 10bpc under the same change. Guard extents only ever NARROW here, to
+exactly the pixels each kernel writes, which is the extent the scalar reference
+already guards.
+
+**Generalisation worth testing on the other aarch64 kernels:** every
+`safe_simd/*_arm.rs` dispatcher that reaches for `block_mut` when its kernel is
+row-sequential is paying the same toll. The 8bpc itx arms are the obvious next
+candidates (`block_mut` shows at 3.54% + 2.50% `remove_wide` on `v4k_8tile`),
+but their kernels index `dst` by an arbitrary row inside the transform, so the
+change is not the same one-line move it was here.
+
 ## Notes
 - **R1 BLOCKER (verified 2026-05-26):** the ARM DotProd/I8MM compute intrinsics
   needed for the 8-tap dot-product kernels — `vdotq_s32` (DotProd) and
