@@ -8425,6 +8425,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                 None => return false,
             };
             let (w, h) = txfm.to_wh();
+            crate::src::ablate::note(crate::src::ablate::Family::Itx, (w * h) as u64);
 
             // One `if` per (size, bitdepth) that has a NEON kernel wired; any
             // shape that falls through every arm returns false and the caller
