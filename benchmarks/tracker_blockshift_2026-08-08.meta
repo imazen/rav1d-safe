@@ -123,7 +123,45 @@ twin, a rule keyed on `len` alone tracks the stride for free:
 Pinned by `adaptive_shift_keeps_the_block_count_near_target`.
 
 
-## 5. Idle-box A/B, `scripts/perf/verify_gap.sh`
+## 5. THE SHIPPED RESULT — idle box, median of 5, zero foreign
+
+`scripts/perf/verify_gap.sh`, arms `base` (2c7c082) vs `newdef` (the shipped
+default: adaptive shift once parallelism is declared). Wall clock of the whole
+process at 2 and 20 frames, `total = alpha + beta*frames` fitted so startup
+drops out. Both arms run back to back per cell, order rotated per round, every
+cell re-run until it commits with ZERO foreign processes over 25% CPU. Raw:
+`benchmarks/tracker_blockshift_confirm_2026-08-08.tsv`.
+
+    vector             t     base   newdef   ratio
+    ------------------------------------------------
+    v4k_8tile          4    131.3    119.8    0.91
+    v4k_8tile          8    117.9     76.3    0.65
+    v4k_8tile_10b      4    162.0    155.3    0.96
+    v4k_8tile_10b      8    141.6     97.1    0.69
+    v1024              8     27.2     26.9    0.99
+    v4k_1tile          8    364.6    373.9    1.03   <- COST
+
+Against dav1d 1.5.4 `--framedelay 1` on this host with this harness
+(`benchmarks/verify_compose_2026-08-07.meta`: 246.5 / 125.2 / 65.6 / 37.4 at
+t=1/2/4/8 8bpc, and 10bpc derivable from its ratio row as 251 / 127 / 66.8 /
+37.9):
+
+    v4k_8tile 8bpc     t=4  2.00x -> 1.83x     t=8  3.15x -> 2.04x
+    v4k_8tile 10bpc    t=4  2.43x -> 2.32x     t=8  3.74x -> 2.56x
+
+**The cost is real and reproducible: single-tile 4K at t=8 is 2.6% slower**
+across all five rounds. One tile means the recon task is serial and the
+concurrency is post-filter tasks sharing the same planes, so the coarser block
+buys no strided-read locality and only adds collisions. It is not detectable
+from the buffer length, which is all the tracker knows, so it is not gated out.
+1024x1024 is neutral (0.99).
+
+
+## 5b. Earlier, thinner table — all five arms, n=1
+
+Superseded by 5 for the ship decision, kept because it is the only measurement
+that separates `lfrem` / `bs14` / `bs16` / `adapt` from each other on an idle
+box.
 
 Wall clock of the whole process at two frame counts, `total = alpha + beta*frames`
 fitted so startup drops out; `beta` is ms/frame. Every arm run back to back per

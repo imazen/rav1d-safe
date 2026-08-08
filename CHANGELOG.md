@@ -27,13 +27,19 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   `cross_shard_overlaps_are_all_caught`).
 - **The adaptive shift is now the DEFAULT for a threaded decode** (`fd5239f`),
   with serial decode left byte-for-byte on the old constant — the same split,
-  for the same reason, as `SHARDS_SERIAL` vs `SHARDS_CONCURRENT`. Idle-box,
-  wall fit, ms/frame: v4k_8tile 156.1 -> 126.5 at t=4 and 119.9 -> 78.9 at t=8;
-  10bpc 183.5 -> 154.1 and 139.2 -> 98.3. That takes the t=8 8bpc gap to
-  dav1d 1.5.4 `--framedelay 1` from 3.21x to 2.11x. Output bit-identical on
-  all 769 corpus vectors; wide-path promotions zero. n=1 round per cell — the
-  box carried two concurrent perf campaigns and idle windows were short.
-  Record: `benchmarks/tracker_blockshift_2026-08-08.meta`.
+  for the same reason, as `SHARDS_SERIAL` vs `SHARDS_CONCURRENT`. Idle box,
+  median of 5, zero foreign, ms/frame: v4k_8tile 131.3 -> 119.8 at t=4 and
+  117.9 -> 76.3 at t=8; 10bpc 162.0 -> 155.3 and 141.6 -> 97.1. Against
+  dav1d 1.5.4 `--framedelay 1` that is **t=8 3.15x -> 2.04x (8bpc) and
+  3.74x -> 2.56x (10bpc)**, t=4 2.00x -> 1.83x and 2.43x -> 2.32x. Cost,
+  measured and reproducible across all five rounds: single-tile 4K at t=8 is
+  **2.6% slower** (364.6 -> 373.9) — one tile means the concurrency is
+  post-filter tasks sharing planes, so a coarser block buys no strided-read
+  locality and only adds collisions; the tracker cannot detect that from the
+  buffer length. 1024x1024 is neutral. Output bit-identical on all 769 corpus
+  vectors; wide-path promotions zero.
+  Record: `benchmarks/tracker_blockshift_2026-08-08.meta`, raw
+  `benchmarks/tracker_blockshift_confirm_2026-08-08.tsv`.
 - **`held-row-guards` (default off), a measured negative kept on purpose**
   (`94f1bdb`). `WithOffset::block_mut`'s compact path can hold its per-row
   MUTABLE guards across the kernel instead of taking immutable ones to read and
