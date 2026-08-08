@@ -415,6 +415,14 @@ struct LfBlock<'a, 'b, BD: BitDepth> {
     strideb: isize,
     /// `true` for `HV::V` — taps run down the picture and the scratch is
     /// tap-major, which is what lets the vector kernel skip the transpose.
+    ///
+    /// Read by exactly one call site, `filter_run`'s NEON arm, which is
+    /// `#[cfg(target_arch = "aarch64")]`. On every other target the field is
+    /// genuinely never read and `clippy -D warnings` (the CI job, on
+    /// ubuntu-latest x86_64) rejects it. Narrow the allow to the targets where
+    /// the statement is true instead of cfg-ing the field, which would also
+    /// have to cfg the struct literal in `open`.
+    #[cfg_attr(not(target_arch = "aarch64"), allow(dead_code))]
     is_v: bool,
 }
 
