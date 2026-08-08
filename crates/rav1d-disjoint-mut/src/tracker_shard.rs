@@ -170,6 +170,29 @@ pub(super) const N_SHARDS: usize = 64;
     ))
 ))]
 pub(super) const N_SHARDS: usize = 128;
+/// 256 shards: MEASURED WORSE AT EVERY THREAD COUNT, kept only as an A/B rung.
+///
+/// The 128 default was chosen while the `check_tile` deblock barrier still
+/// capped achieved occupancy at 2.86 of 8, so "more shards for less collision"
+/// was worth re-testing once occupancy reached 7.14. It is not: v4k_8tile 8bpc,
+/// M4 Pro, interleaved median of 5 on an idle box, against the default
+/// (`benchmarks/scaling_shards_2026-08-08.tsv`), holding the block shift at 14
+/// so only the table size moves — t=1 1.0730, t=4 1.0594, t=8 1.0295. The
+/// bigger table costs more than the collisions it removes, which is the same
+/// verdict the original 32/64/128/256 ladder reached for a different reason.
+#[cfg(all(
+    feature = "__shards_256",
+    not(any(
+        feature = "__shards_1",
+        feature = "__shards_4",
+        feature = "__shards_8",
+        feature = "__shards_16",
+        feature = "__shards_32",
+        feature = "__shards_64",
+        feature = "__shards_128"
+    ))
+))]
+pub(super) const N_SHARDS: usize = 256;
 #[cfg(not(any(
     feature = "__shards_1",
     feature = "__shards_4",
@@ -177,7 +200,8 @@ pub(super) const N_SHARDS: usize = 128;
     feature = "__shards_16",
     feature = "__shards_32",
     feature = "__shards_64",
-    feature = "__shards_128"
+    feature = "__shards_128",
+    feature = "__shards_256"
 )))]
 pub(super) const N_SHARDS: usize = 128;
 
@@ -1824,7 +1848,10 @@ mod tests {
             let _o = t.add_mut(&b(4 * bs..4 * bs + 4));
         }))
         .is_err();
-        assert!(caught, "overlap inside the strided span must still be caught");
+        assert!(
+            caught,
+            "overlap inside the strided span must still be caught"
+        );
         t.remove(id);
         // ...and clears cleanly.
         let again = t.add_mut(&b(4 * bs..4 * bs + 4));
