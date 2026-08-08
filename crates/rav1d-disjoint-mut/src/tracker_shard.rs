@@ -992,7 +992,21 @@ const SHARDS_CONCURRENT: usize = N_SHARDS;
 /// from 32 to 128 with the wide path holding all of them costs 413.7 -> 531.3
 /// ms/frame, and narrowing the wide path to the active prefix takes 100 of
 /// those 118 ms back — the residual 17 ms is the bigger array itself.
-const SHARDS_SERIAL: usize = if N_SHARDS < 32 { N_SHARDS } else { 32 };
+///
+/// **ONE, not 32 (issue #458).** With 32 serial shards the mask still spreads a
+/// strided block guard's ~15 blocks over up to 15 distinct shards, which is
+/// over `MAX_SHARDS_PER_BORROW` — so at t=1 EVERY such guard still promoted to
+/// the wide path. Each wide add/remove is ~`SHARDS_SERIAL` lock-prefixed RMWs;
+/// on x86-64 those are full fences (~20-40 cycles each even uncontended) where
+/// Apple LSE atomics are near-free, which is why the M4 ladder that chose 32
+/// never saw the cost: on an Ultra 7 265K, v4k_8tile 8bpc t=1 decode measured
+/// 352 ms/frame against the legacy tracker's 220 (`add_wide`+`remove_wide` =
+/// 31% of self time). At ONE serial shard the mask is 0, every block of a span
+/// maps to shard 0, and a strided guard registers as one ordinary narrow
+/// interval — legacy-tracker behavior: 242 ms/frame, wide reserved for slot
+/// exhaustion. Sharding exists to separate CONCURRENT registrants; with no
+/// declared parallelism there is nothing to separate.
+const SHARDS_SERIAL: usize = 1;
 
 /// Declared decode parallelism, as a shard count. Monotone.
 static ACTIVE_SHARDS: AtomicUsize = AtomicUsize::new(SHARDS_SERIAL);
@@ -1198,12 +1212,23 @@ impl BorrowTracker {
         let b1 = (end - 1) >> shift;
         // One load and one branch covers poisoning, live wide records, and
         // multi-block borrows. All three are cold.
-        if b0 != b1 || self.state.load(Ordering::Acquire) != 0 {
+        //
+        // `self.mask == 0` (a serial or sub-`SHARD_MIN_LEN` instance) takes the
+        // fast path even for a multi-block span: `shard_of(b, 0)` is 0 for
+        // every block, so the span's distinct-shard set is exactly {0} and
+        // `add_slow`'s per-block classification walk — up to `MAX_BLOCKS_SCAN`
+        // `shard_of` calls per strided guard — would only rediscover that. The
+        // record stored is the same plain `[start, end)` interval either way,
+        // in the same shard, so overlap detection is unchanged (issue #458:
+        // this plus `SHARDS_SERIAL = 1` is what keeps single-threaded strided
+        // block guards off the wide path).
+        if (b0 != b1 && self.mask != 0) || self.state.load(Ordering::Acquire) != 0 {
             return self.add_slow::<IS_MUT>(start, end, b0, b1);
         }
 
-        // Fast path: the borrow lives in one block, so one shard. 99.875% of
-        // hot-plane borrows at BLOCK_SHIFT = 8.
+        // Fast path: the borrow lives in one shard — either one block, or any
+        // span on a mask-0 instance. 99.875% of hot-plane borrows at
+        // BLOCK_SHIFT = 8.
         let si = shard_of(b0, self.mask);
         let shard = &self.shards[si];
         shard.lock.lock();
@@ -1750,6 +1775,60 @@ mod tests {
         t.remove(wide);
         let n = t.add_mut(&b(200 * bs..200 * bs + 4));
         t.remove(n);
+    }
+
+    /// Issue #458: with no parallelism declared, a BIG instance must get ONE
+    /// shard (mask 0), and a strided multi-block guard must register as one
+    /// ordinary narrow interval — never promote to the wide path. With
+    /// `SHARDS_SERIAL = 32` this failed twice over: the instance got mask 31,
+    /// and a ~15-block guard hashed to more than `MAX_SHARDS_PER_BORROW`
+    /// distinct shards, so EVERY such guard went wide — ~32 lock-prefixed RMWs
+    /// per add/remove on the single-threaded decode path (measured +59%
+    /// whole-frame at t=1 on x86-64, where a locked RMW is a full fence).
+    ///
+    /// Process-state note: `set_parallelism` is a monotone process-global, so
+    /// this test is meaningful only while THIS process has not declared
+    /// parallelism — under nextest's process-per-test isolation that always
+    /// holds. The first assertion fails loudly (never silently skips) if that
+    /// assumption breaks.
+    #[test]
+    fn serial_big_instance_keeps_strided_guards_narrow() {
+        // The serial-instance half of the guarantee is compile-time: reverting
+        // `SHARDS_SERIAL` to a wider set fails the build, not a race-prone
+        // runtime assertion (`set_parallelism` is a monotone process-global,
+        // so a big-instance mask check here would flake under plain
+        // `cargo test`'s shared process).
+        const _: () = assert!(
+            SHARDS_SERIAL == 1,
+            "issue #458: serial instances must get ONE shard, or strided block \
+             guards promote to the wide path on the single-threaded decode path"
+        );
+        // Behavioral half on an instance that is mask-0 by CONSTRUCTION
+        // (below SHARD_MIN_LEN), immune to process state: a multi-block span
+        // must stay narrow, keep the wide list empty, and still detect
+        // overlap.
+        let t = BorrowTracker::new(32 * 1024);
+        assert_eq!(t.mask, 0, "sub-SHARD_MIN_LEN instances are single-shard");
+        let bs = 1usize << t.block_shift();
+        // The shape of a strided block guard: ~15 blocks.
+        let id = t.add_mut(&b(bs..7 * bs + 3));
+        assert_eq!(
+            t.state.load(Ordering::Relaxed),
+            0,
+            "a multi-block guard on a mask-0 instance must not go wide"
+        );
+        assert_eq!(id.kind(), KIND_NARROW, "must be a narrow record");
+        assert_eq!(id.pairs(), 1, "must occupy exactly one (shard, slot) pair");
+        // Overlap detection through that narrow record still fires...
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _o = t.add_mut(&b(4 * bs..4 * bs + 4));
+        }))
+        .is_err();
+        assert!(caught, "overlap inside the strided span must still be caught");
+        t.remove(id);
+        // ...and clears cleanly.
+        let again = t.add_mut(&b(4 * bs..4 * bs + 4));
+        t.remove(again);
     }
 
     /// A single-threaded open must never shrink the shard set out from under a
