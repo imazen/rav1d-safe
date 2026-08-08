@@ -92,6 +92,46 @@ vector whose profile named `_platform_memset` at 6.7% in the first place. So:
 removing that memset is worth ~2% on the big 8bpc vector and is **not
 resolvable on `318_tx_4x4`**. Reported rather than rounded away.
 
+### Kernel-local evidence, and a correction to the 2026-08-07 attribution
+
+`/usr/bin/sample`, `318_tx_4x4`, t=1, 60 iterations, 20 s, self time
+(`scripts/perf/sample_selftime.py`). Same vector, same binary, the two arms
+being the `__ablate` switch:
+
+    scalar reference   selfguided_filter        4.59%
+                       + eight_neighbors        3.48%   = 8.07%
+
+    NEON tier          sgr_out_16bpc            1.30%
+                       + boxsum_16bpc           0.90%
+                       + sgr_ab_16bpc           0.77%   = 2.97%
+
+2.7x less time in the kernel, and 8.07 - 2.97 = 5.1 points of frame, which is
+what the 0.941 whole-frame ratio (5.9%) is made of. The Wiener filter, 2.03% of
+self time before, is no longer in the top 22 symbols at all.
+
+**CORRECTION — the `_platform_memset` in that profile is NOT loop
+restoration.** The 2026-08-07 record named "the ~300 KB of zero-initialised
+stack scratch every restoration unit pays for on entry" as a starting point for
+this port, alongside a 6.73% `_platform_memset` line. Attributing that symbol to
+its rav1d callers says otherwise, in all three arms:
+
+    arm                      memset samples   from recon::mc   from looprestoration
+    v1 (stack scratch)                  992     912 (91.9%)              2 (0.2%)
+    v2 (reused scratch)                 986     906 (91.9%)              2 (0.2%)
+    scalar reference                    976     899 (92.1%)              1 (0.1%)
+
+So `_platform_memset` on this vector is motion compensation's scratch, and it
+does not move when loop restoration's scratch is removed. The LR zeroing was
+real but LLVM emits it INLINE (sized stores) rather than as a `memset` call, so
+it never appeared under that symbol — which is exactly why removing it shows up
+as ~2% on `00001147` (33.4 M LR pixels over 3 frames, many units per frame) and
+is unresolvable on `318_tx_4x4` (35 small frames). Recorded so the next reader
+does not re-derive the wrong lead.
+
+For the same reason, one number worth passing on to whoever takes the next row:
+`_platform_memmove` is 9.2% on this vector, 57.6% of it under `recon::mc` and
+17.6% under picture allocation. Loop restoration is 1.9% of it.
+
 ### For scale: what was here before
 
 The module this replaces was 1,531 lines of hand-written SCALAR that
@@ -197,6 +237,15 @@ planted ON TOP of the tile-gate change:
 `wide_exclusion::a_wide_borrow_excludes_every_narrow_shard` FAILED in 0.01 s
 with 135 violations. Restored, green. 25 tracker unit tests + `wide_exclusion`
 + doctests pass.
+
+
+## ONE THING THE TILE GATE PROVES ABOUT ITS OWN TIMING
+
+The latch has a deadline: `set_tile_concurrency` must run before the frame's
+picture trackers are built, or the coarse shift is never selected and the
+multi-tile win evaporates. That is not asserted, it is observed — `v4k_8tile`
+t=8 still reads 72.8 / 73.3 ms/frame. Had the declaration landed late, that
+cell would have fallen back to the pre-tracker 117.3.
 
 
 ## WHAT THIS DOES NOT SAY
