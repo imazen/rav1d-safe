@@ -207,3 +207,70 @@ pictures with positive strides; negative strides arrive only through a c-ffi
 `Dav1dPicAllocator`), and `for_rows` deliberately does NOT copy the formula.
 Worth a separate issue; not touched here because it cannot be tested without a
 negative-stride vector.
+
+
+4. RESULTS
+--------------------------------------------------------------------------------
+4a. GAP TO dav1d, n=7, rotating-order interleaved, dav1d 1.5.4 in the SAME
+sweep, 224 rows in `borrow_pairs_gap_2026-08-08.tsv`. Three arms present at
+once, so every comparison is paired. Bands are min..max over the 7 rounds;
+`disjoint` means the arms' ranges do not touch.
+
+  vector          t   base ms/f [min..max]     head ms/f [min..max]   dav1d_fd1
+  v4k_8tile       1   337.5 [334.2..342.2]     319.2 [318.0..321.8]     246.7
+  v4k_8tile       2   198.0 [196.7..200.7]     198.1 [197.7..203.3]     125.3
+  v4k_8tile       4   106.7 [106.2..107.9]     106.9 [106.7..108.6]      65.7
+  v4k_8tile       8    68.3 [ 68.1.. 69.3]      68.6 [ 67.9.. 69.4]      36.6
+  v4k_8tile_10b   1   382.4 [378.1..385.7]     361.4 [360.1..362.3]     251.6
+  v4k_8tile_10b   2   206.1 [204.8..206.6]     206.8 [206.6..207.8]     127.5
+  v4k_8tile_10b   4   111.2 [110.1..112.1]     111.3 [110.4..112.2]      66.8
+  v4k_8tile_10b   8    73.3 [ 72.6.. 74.0]      72.9 [ 71.3.. 73.5]      37.9
+
+  vector          t  head/base   bands     base/dav1d  head/dav1d  vs 1.30x
+  v4k_8tile       1    0.9458   disjoint      1.368       1.294    -1.5 ms
+  v4k_8tile       2    1.0003   OVERLAP       1.580       1.581    35.2 ms
+  v4k_8tile       4    1.0016   OVERLAP       1.625       1.628    21.5 ms
+  v4k_8tile       8    1.0033   OVERLAP       1.869       1.875    21.0 ms
+  v4k_8tile_10b   1    0.9449   disjoint      1.520       1.437    34.4 ms
+  v4k_8tile_10b   2    1.0038   OVERLAP       1.616       1.622    41.1 ms
+  v4k_8tile_10b   4    1.0010   OVERLAP       1.666       1.667    24.5 ms
+  v4k_8tile_10b   8    0.9947   OVERLAP       1.935       1.925    23.7 ms
+
+**8bpc t=1 is 1.294x — the ~1.30x bar is MET, at that one cell only.**
+The base column reproduces #465's 1.368 to three digits, which is the control
+that says this instrument agrees with the one that measured it.
+
+Every t>1 band OVERLAPS, in both directions, at every cell. That is the
+expected result and the designed one — see 5a. It is NOT a claim that the
+change is free at t>1 beyond "inside its own noise at n=7".
+
+4b. WHAT IS LEFT, priced with two ceiling arms (n=5, 8bpc,
+`borrow_pairs_decomp_2026-08-08.tsv`). `tinynop` is a THROWAWAY, UNSOUND build
+that stops tracking every sub-`SHARD_MIN_LEN` instance (the `BlockContext`
+class); `untracked` removes the tracker entirely.
+
+  cell   base    head    tinynop  untracked  dav1d   tracker  of which:
+                                                     residual  tiny  picture
+  t=1   338.9   318.1     299.4     286.3    246.6    31.8    18.7     13.1
+  t=8    65.2    65.6      63.8      45.9     34.4    19.7     1.8     17.9
+
+  head/dav1d 1.290 (t=1), 1.905 (t=8); untracked/dav1d 1.161 and 1.335.
+
+TWO FINDINGS THAT REDIRECT THE NEXT ROUND:
+
+* At t=1 the residual tracker cost is **59% the BlockContext class** — twenty
+  separate 32-byte `DisjointMut`s, 2.53 M `set_disjoint` registrations plus
+  ~2.3 M single-element reads. Picture-plane borrows are only 13.1 ms.
+* At t=8 that inverts: the tiny class is **1.8 ms of 19.7** and the picture
+  planes are 17.9. The registration count at t=8 is 22,700,725 per frame —
+  HIGHER than the 15.6 M at t=1, because `block_mut` / `with_pixel_guard_*`
+  switch to per-row compact reads there.
+* Even a ZERO-COST tracker leaves t=8 at 1.335x. At t=8 the bar is not
+  reachable by tracker work at all; at t=1 the untracked ceiling is 1.161x, so
+  there is still ~29.7 ms of tracker head-room there.
+
+4c. AT t=8 THE CHANGE IS PROVABLY INERT, by count and not by timing:
+`--features probe-sites` gives **22,700,725 registrations per frame on BOTH
+base and head** at t=8, over the same 68 sites. Identical totals, identical
+distribution — the hull never fires under tile threading, and `pal_pred` (the
+one all-thread-count change) does not occur on this photo vector.
