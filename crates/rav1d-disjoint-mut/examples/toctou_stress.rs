@@ -1,26 +1,47 @@
 //! Stress harness for the wide/narrow lock-ordering TOCTOU fixed in 4af62ae.
 //!
+//! # CORRECTION (2026-08-08, independent verifier): the bug IS gated
+//!
+//! An earlier revision of this header claimed `cargo test --release -p
+//! rav1d-disjoint-mut` passes everything with the TOCTOU planted, three runs
+//! out of three, and that no in-tree gate exists. **That is wrong at the
+//! suite level and the harness below was built on it.** Re-measured by
+//! mutation — delete the in-lock `state` re-read from
+//! `BorrowTracker::add`'s single-block fast path, exactly the named hazard:
+//!
+//!   tests/soundness.rs        25 passed  (incl. `concurrent_overlaps_are_caught`)
+//!   tests/shard_liveness.rs    5 passed
+//!   lib unit tests            23 passed
+//!   tests/wide_exclusion.rs   ***FAILED*** in 0.03 s, every run
+//!
+//! `a_wide_borrow_excludes_every_narrow_shard` fails with
+//! "a narrow mutable borrow was granted inside a wide mutable borrow that was
+//! provably still held" — **5 of 5 runs** on the composed tree and **3 of 3**
+//! on the unmodified base (`fix/aarch64-mc-itx` @ 2c7c082), so it is neither
+//! flaky nor an artifact of any later tracker change. Restoring the re-read
+//! returns it to green.
+//!
+//! What survives of the original claim is only its narrow half: the
+//! *`soundness.rs`* tests do not catch it, for the structural reason below.
+//! `wide_exclusion.rs` does, because unlike them it takes and DROPS the wide
+//! borrow 60,000 times, so contenders repeatedly enter the window where
+//! `state` reads 0 pre-lock.
+//!
+//! The structural reason the `soundness.rs` tests miss it: they hold a wide
+//! borrow for the whole attempt window, so every contender's *pre-lock*
+//! `state` load already reads non-zero and takes the slow path — the in-lock
+//! re-read is never the thing that saves it. The bug lives in a window a few
+//! nanoseconds wide: a narrow registrant loads `state == 0`, a wide registrant
+//! then publishes into `self.wide` and bumps `state`, and only then does the
+//! narrow take its shard lock and scan a shard that legitimately holds no
+//! record of the wide borrow. Hitting it needs *churn* — which is what
+//! `wide_exclusion.rs` supplies and what this harness was written to supply.
+//!
 //! # Why this is not a `#[test]`
 //!
-//! The in-tree soundness suite does **not** detect that bug. Verified by
-//! mutation on 2026-08-07: delete the in-lock `state` re-read from
-//! `BorrowTracker::add`'s single-block fast path and
-//! `cargo test --release -p rav1d-disjoint-mut` still passes everything,
-//! including `concurrent_overlaps_are_caught`, three runs out of three.
-//!
-//! The reason is structural, not an oversight in that test. It has one thread
-//! hold a wide borrow for the whole attempt window, so every contender's
-//! *pre-lock* `state` load already reads non-zero and takes the slow path — the
-//! in-lock re-read is never the thing that saves it. The bug lives in a window
-//! a few nanoseconds wide: a narrow registrant loads `state == 0`, a wide
-//! registrant then publishes into `self.wide` and bumps `state`, and only then
-//! does the narrow take its shard lock and scan a shard that legitimately holds
-//! no record of the wide borrow. Hitting it needs *churn* — wide borrows being
-//! taken and dropped continuously against narrow borrows on the same byte — and
-//! the original report saw 115 / 18 / 22 violations across three runs of
-//! ~1.4e9 acquisitions. That is minutes of wall clock, which is why it is a
-//! committed dev tool with an explicit iteration budget rather than something
-//! that runs on every `cargo test`.
+//! Because `wide_exclusion.rs` already is one and is faster at it. This file
+//! stays as a dev tool for the steady-state directions and for its explicit
+//! iteration budget, not as the gate — see the honest result below.
 //!
 //! # HONEST RESULT (2026-08-07): this harness does NOT detect that bug either
 //!
@@ -46,9 +67,18 @@
 //! **So: `violations 0` from this harness is NOT evidence the tracker is
 //! sound.** What it is good for is the steady-state directions — wide held vs
 //! narrow arriving, and narrow vs narrow — where the refusal count proves the
-//! two sides met. Closing the real gap needs a test-only hook that lets a
-//! granted narrow borrow ask the tracker whether an overlapping record exists;
-//! that hook does not exist yet and is named as remaining work.
+//! two sides met.
+//!
+//! The "closing the real gap needs a test-only in-tracker hook" conclusion
+//! that used to end this section was drawn from the false premise corrected
+//! at the top: `wide_exclusion.rs` closes it already, from *inside* the
+//! tracker's own panic path rather than from an external flag. It gets to
+//! observe the miss because the tracker itself is what refuses — the narrow
+//! side's `catch_unwind` distinguishes "refused" from "granted", and the flag
+//! is only used to decide whether a GRANT was concurrent, which for a
+//! 60,000-round drop/retake loop it reliably is. An in-tracker query hook
+//! would still be a stronger detector; it is an improvement, not a
+//! prerequisite.
 //!
 //! # Detection rule (conservative in the direction that hides the bug)
 //!
