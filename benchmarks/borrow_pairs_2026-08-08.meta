@@ -1,0 +1,276 @@
+CUTTING THE NUMBER OF BORROW PAIRS (issue #455)
+================================================================================
+
+Host      Apple M4 Pro, 8 P + 4 E cores (12 logical), Darwin 25.5.0.
+Base      main 8568dbb (the #465 composition; 766/766, 1.368x at 8bpc t=1).
+Branch    perf/borrow-pairs.
+Build     cargo build --release, default features, NO -C target-cpu=native.
+Timing    NO `nice` on any timed run. Two-point wall fit (2 and 20 frames,
+          beta = (hi - lo) / 18) so process startup drops out.
+Files     borrow_sites_2026-08-08.tsv   per-call-site registration counts,
+                                        base and head, same vector/cell
+          borrow_pairs_gap_2026-08-08.tsv  raw gap rows (4 arms x 8 cells)
+
+
+0. WHY COUNTS, AND HOW THEY WERE OBTAINED
+--------------------------------------------------------------------------------
+The tracker is 41.7 ms/frame at 8bpc t=1 (#465's bucket profile) over 15,646,727
+registrations, spread across ~25 caller sites with no hot spot. `sample` cannot
+say more than that: it attributes `add`/`remove` to whichever caller LLVM
+inlined them into, so a site's SELF TIME says nothing about how many borrows it
+takes.
+
+New throwaway probe: `--features probe-sites`
+(`crates/rav1d-disjoint-mut/src/site_probe.rs`). The whole
+`index_mut` -> `add_mut` -> `add` chain is already `#[track_caller]`, so
+`Location::caller()` inside `add` is the real borrow site; the probe hashes the
+`&'static Location` POINTER into a fixed open-addressed table and counts.
+`Rav1dPictureDataComponent`'s own wrappers carry
+`#[cfg_attr(debug_assertions, track_caller)]` — i.e. NOT in release — so the
+probe feature widens all 38 of those `cfg_attr`s (23 in `picture.rs`, 10 in
+`with_offset.rs`, 3 in `pixels.rs`, 2 in `recon.rs`) to
+`any(debug_assertions, feature = "probe-sites")`. Without that widening every picture borrow collapses
+onto three lines in `picture.rs` and the map is useless; with it, 68 distinct
+sites resolve.
+
+The distribution is the opposite of flat. `v4k_8tile` 8bpc t=1, per frame:
+
+  3,835,042  24.5%  loopfilter.rs LfBlock::fill        mean   8.8 B  immut
+  2,534,988  16.2%  ctx.rs CaseSetter::set_disjoint    mean   2.1 B  mut
+  1,232,696   7.9%  safe_simd/ipred_arm.rs cfl_pred    mean  10.1 B  mut
+    736,520   4.7%  ipred.rs splat_dc                  mean  10.4 B  mut
+    646,912   4.1%  safe_simd/cdef_arm.rs padding      mean  10.0 B  immut
+    646,912   4.1%  safe_simd/cdef_arm.rs block write  mean   8.0 B  mut
+    629,080   4.0%  safe_simd/ipred_arm.rs cfl_ac      mean  10.2 B  immut
+  top 3 = 48.6%, top 7 = 65.6%
+
+Every picture-plane entry is the same shape: a `w x h` STRIDED BLOCK touched ONE
+ROW AT A TIME — `h` registrations of ~10 bytes.
+
+
+1. WHAT CHANGED
+--------------------------------------------------------------------------------
+The alternative to `h` row registrations is ONE over the strided hull, and the
+repo already had a policy for choosing: `block_mut`, `with_pixel_guard_immut`
+and `compact_read` all switch on `tile_threading_active()`. The hull
+additionally reserves the INTER-ROW GAPS, and AV1 tiles partition a frame by
+COLUMNS, so under tile threading a neighbouring tile's legitimate write lands in
+a reserved gap and `DisjointMut` reports a FALSE overlap (measured 8-9 spurious
+panics in 24 concurrent runs before `set_tile_threading` was made monotone).
+
+This adds callers to that policy; it does not invent one.
+
+  include/dav1d/picture.rs  `for_rows` / `for_rows_mut` — the shared
+                            implementation, `#[inline(always)]`.
+  src/loopfilter.rs         `LfBlock::fill_hull` (open-coded: `fill` is handed
+                            an explicit pixel stride).
+  src/ipred.rs              cfl_pred, ipred_v, ipred_h, paeth, smooth,
+                            smooth_v, smooth_h, z1, z2, splat_dc, pal_pred.
+  src/safe_simd/ipred_arm.rs  NEON cfl_pred.
+  src/safe_simd/cdef_arm.rs   NEON padding read (8/16), block write (8/16),
+                              `cdef_find_dir` 8x8 read.
+  src/cdef_apply.rs         `backup2x8` (8 rows of TWO pixels).
+
+`pal_pred_rust` is the one change that fires at EVERY thread count: it took one
+guard per TWO PIXELS (`w*h/2` per block) and now takes one per row. That is a
+pure count reduction with no extent change — the row is written in full, so the
+sub-row extents bought no exclusion.
+
+DETECTION IS NEVER WEAKENED. A hull is a SUPERSET of the h row ranges, so it
+conflicts with strictly more and cannot miss an overlap the narrow ones would
+have caught. Only FALSE POSITIVES are at stake, and the latch is what rules
+those out.
+
+Registrations per frame, `v4k_8tile` 8bpc t=1:
+
+  main 8568dbb                    15,646,727
+  + loopfilter hull               12,183,702   -22.1%
+  + for_rows + ipred               9,858,666   -37.0%
+  + cdef + backup2x8               7,924,706   -49.4%
+
+
+2. SOUNDNESS
+--------------------------------------------------------------------------------
+2a. NEW GATE for the new mechanism. Which extent got reserved is invisible in
+the decoded pixels, so no existing test could catch a regression in either
+direction. `include/dav1d/picture.rs` gains two MECHANISM tests that hold a byte
+only the hull covers and check whether the tracker rejects the call:
+
+  threading OFF  run in a CHILD PROCESS (`TILE_THREADING` is a monotone
+                 process-global that `set_tile_threading_is_monotone` latches
+                 on in the same binary, and libtest gives no usable ordering
+                 guarantee). The parent re-execs with `--exact` and checks a
+                 MARKER LINE, not just the exit status — libtest exits 0 when a
+                 filter matches nothing, which is exactly how #459's
+                 `wide_exclusion` went vacuous.
+  threading ON   latches the flag itself, so it is order-independent.
+
+Both carry an anti-vacuity assertion (a byte the block really does touch must
+still conflict), so neither can pass with tracking compiled out.
+
+Teeth proved by mutation, each restored from a sha256 snapshot and re-verified
+green:
+
+  `if tile_threading_active()` -> `if true`   OFF test FAILS ("a gap byte
+                                              inside [0, 200) did not conflict")
+  `if tile_threading_active()` -> `if false`  ON test FAILS ("a byte in the
+                                              inter-row gap conflicted")
+  child test name renamed                     OFF test FAILS on the missing
+                                              marker
+
+2b. THE EXISTING GATES still have teeth on this tree. Snapshot sha256
+ddaad9f4...  of `tracker_shard.rs`; after each arm, restore and check BOTH the
+sha256 and `git diff --exit-code`. All under `--features __probe_wide`.
+
+  (a) the 4af62ae lock-ordering TOCTOU — `add`'s IN-LOCK `state` re-read
+      deleted        -> `wide_exclusion` FAILS, 4 missed overlaps.
+  (b) `active()` cut TO ONE SHARD, so the wide path's exclusion prefix is
+      shorter than the narrow registrants' spread
+                     -> `wide_exclusion` FAILS, 13 missed overlaps.
+
+  After restoration: `wide_exclusion` 1/1, `soundness` 25/25,
+  `shard_liveness` 5/5, `narrow_release` 1/1, tracker unit tests 1/1.
+
+2c. `#![forbid(unsafe_code)]` proved ACTIVELY, not by reading the attribute:
+appending `unsafe { core::ptr::null::<u8>().read() }` to `src/decode.rs` makes
+the default build fail with `error: usage of an unsafe block`; restored,
+rebuild green.
+
+2d. WHY A HULL CANNOT MISS AN OVERLAP. `for_rows{,_mut}`'s hull is
+`[min_row_start, max_row_start + w)`, which is exactly the union of the h
+per-row ranges plus the gaps between them — a SUPERSET. A registration
+conflicts with every live record it intersects, so widening can only ADD
+conflicts. The failure mode of widening is a false positive, not a missed
+overlap, and the latch is what rules those out.
+
+
+3. THREADING / CORPUS
+--------------------------------------------------------------------------------
+  mt_stress 1/2/4/8/16 x 5 trials              ok
+  multi_decoder_pressure.sh 12 procs x 3 iters x threads {1,2,4,8,16}
+    x 5 vectors                                PASS, every md5 matching the
+                                               serial reference
+  examples/md5_inventory over dav1d-test-data  pass=766 mismatch=0 error=0
+  md5_setdiff.py vs benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst
+    only in baseline 0 / only in head 0 / differing 0   SETDIFF: CLEAN
+
+
+5. NOT DONE / STILL OPEN
+--------------------------------------------------------------------------------
+5a. THE t>1 CELLS DID NOT MOVE, BY CONSTRUCTION. Every hull is gated on
+`tile_threading_active()`, which is TRUE at every thread count above one, so at
+t=2/4/8 this change registers exactly the extents `main` did. The only
+count-reducing change that fires at t>1 is `pal_pred_rust` (screen content;
+byte-identical extents), and this vector is a photo. The t>1 rows below are a
+CONTROL, not a result: they should be, and are, inside their own noise.
+
+5b. THE BIGGEST REMAINING SITE IS UNTOUCHED, and it is the one that WOULD move
+t>1. `ctx.rs`'s `CaseSetter::set_disjoint` is 2,534,988 registrations/frame —
+32% of what is left — on `BlockContext`'s twenty separate 32-byte
+`DisjointMut`s. Add the single-element `BlockContext` reads in `env.rs`,
+`decode.rs`, `recon.rs` and `ipred_prepare.rs` and the class is roughly 4.8 M of
+the remaining 7.9 M. Those instances are BELOW `SHARD_MIN_LEN`, so `mask_for`
+keeps them single-shard at EVERY thread count — their cost is thread-count
+independent, which makes them the only lever left that can move t=2/4/8.
+
+No safe batching exists at the call site: `CaseSet::many`'s two `dirs` are two
+different `BlockContext`s and each field is its own instance, so nothing merges.
+Collapsing `BlockContext` into ONE `DisjointMut` with a union guard per
+`set_ctx` would do it, but the union spans OTHER fields' bytes at the same
+4x4-unit offsets, and whether that is a false positive depends on a
+concurrency-structure argument about `f.a[t.a]` that this round did not
+establish. Not attempted half-way.
+
+5c. `safe_simd/ipred_arm.rs` NEON `cfl_ac` (629,080/frame, 8% of the remainder)
+is NOT converted. It needs the top row AND the row below simultaneously, so
+`for_rows`'s one-row-at-a-time callback does not fit; doing it needs either an
+`Option<hull>` with a duplicated body or an `#[rite]` helper out of the
+`#[arcane]` region. Judged not worth the risk for ~1.9 ms at one cell.
+
+5d. x86_64 NOT MEASURED. The mechanism is architecture-neutral (it removes
+registrations, not atomics), so it is less exposed than #461 was, but no number
+here transfers.
+
+5e. Only `v4k_8tile` / `v4k_8tile_10b`. No `v4k_1tile`, no small sizes, no
+12bpc perf cell. 12bpc correctness is covered by the corpus.
+
+5f. PRE-EXISTING, FOUND WHILE WRITING `for_rows`, NOT FIXED.
+`narrow_guard` / `narrow_guard_mut`'s NEGATIVE-STRIDE branch computes
+`start = self.offset + 1 - total` and returns `base = total - 1`. The rows those
+guards stand for run FORWARD `w` pixels from `offset + row*stride` (that is what
+the per-row branch, `pixel_access.rs`'s documented convention and `for_rows` all
+do), whose union is `[offset - (h-1)*|stride|, offset + w)`. The computed span
+is that shifted DOWN by `w - 1`, so it does not cover the last `w-1` pixels of
+row 0 — a guard narrower than the bytes it hands out, which is the unsound
+direction. It is unreachable in the safe build (rav1d-safe allocates its own
+pictures with positive strides; negative strides arrive only through a c-ffi
+`Dav1dPicAllocator`), and `for_rows` deliberately does NOT copy the formula.
+Worth a separate issue; not touched here because it cannot be tested without a
+negative-stride vector.
+
+
+4. RESULTS
+--------------------------------------------------------------------------------
+4a. GAP TO dav1d, n=7, rotating-order interleaved, dav1d 1.5.4 in the SAME
+sweep, 224 rows in `borrow_pairs_gap_2026-08-08.tsv`. Three arms present at
+once, so every comparison is paired. Bands are min..max over the 7 rounds;
+`disjoint` means the arms' ranges do not touch.
+
+  vector          t   base ms/f [min..max]     head ms/f [min..max]   dav1d_fd1
+  v4k_8tile       1   337.5 [334.2..342.2]     319.2 [318.0..321.8]     246.7
+  v4k_8tile       2   198.0 [196.7..200.7]     198.1 [197.7..203.3]     125.3
+  v4k_8tile       4   106.7 [106.2..107.9]     106.9 [106.7..108.6]      65.7
+  v4k_8tile       8    68.3 [ 68.1.. 69.3]      68.6 [ 67.9.. 69.4]      36.6
+  v4k_8tile_10b   1   382.4 [378.1..385.7]     361.4 [360.1..362.3]     251.6
+  v4k_8tile_10b   2   206.1 [204.8..206.6]     206.8 [206.6..207.8]     127.5
+  v4k_8tile_10b   4   111.2 [110.1..112.1]     111.3 [110.4..112.2]      66.8
+  v4k_8tile_10b   8    73.3 [ 72.6.. 74.0]      72.9 [ 71.3.. 73.5]      37.9
+
+  vector          t  head/base   bands     base/dav1d  head/dav1d  vs 1.30x
+  v4k_8tile       1    0.9458   disjoint      1.368       1.294    -1.5 ms
+  v4k_8tile       2    1.0003   OVERLAP       1.580       1.581    35.2 ms
+  v4k_8tile       4    1.0016   OVERLAP       1.625       1.628    21.5 ms
+  v4k_8tile       8    1.0033   OVERLAP       1.869       1.875    21.0 ms
+  v4k_8tile_10b   1    0.9449   disjoint      1.520       1.437    34.4 ms
+  v4k_8tile_10b   2    1.0038   OVERLAP       1.616       1.622    41.1 ms
+  v4k_8tile_10b   4    1.0010   OVERLAP       1.666       1.667    24.5 ms
+  v4k_8tile_10b   8    0.9947   OVERLAP       1.935       1.925    23.7 ms
+
+**8bpc t=1 is 1.294x — the ~1.30x bar is MET, at that one cell only.**
+The base column reproduces #465's 1.368 to three digits, which is the control
+that says this instrument agrees with the one that measured it.
+
+Every t>1 band OVERLAPS, in both directions, at every cell. That is the
+expected result and the designed one — see 5a. It is NOT a claim that the
+change is free at t>1 beyond "inside its own noise at n=7".
+
+4b. WHAT IS LEFT, priced with two ceiling arms (n=5, 8bpc,
+`borrow_pairs_decomp_2026-08-08.tsv`). `tinynop` is a THROWAWAY, UNSOUND build
+that stops tracking every sub-`SHARD_MIN_LEN` instance (the `BlockContext`
+class); `untracked` removes the tracker entirely.
+
+  cell   base    head    tinynop  untracked  dav1d   tracker  of which:
+                                                     residual  tiny  picture
+  t=1   338.9   318.1     299.4     286.3    246.6    31.8    18.7     13.1
+  t=8    65.2    65.6      63.8      45.9     34.4    19.7     1.8     17.9
+
+  head/dav1d 1.290 (t=1), 1.905 (t=8); untracked/dav1d 1.161 and 1.335.
+
+TWO FINDINGS THAT REDIRECT THE NEXT ROUND:
+
+* At t=1 the residual tracker cost is **59% the BlockContext class** — twenty
+  separate 32-byte `DisjointMut`s, 2.53 M `set_disjoint` registrations plus
+  ~2.3 M single-element reads. Picture-plane borrows are only 13.1 ms.
+* At t=8 that inverts: the tiny class is **1.8 ms of 19.7** and the picture
+  planes are 17.9. The registration count at t=8 is 22,700,725 per frame —
+  HIGHER than the 15.6 M at t=1, because `block_mut` / `with_pixel_guard_*`
+  switch to per-row compact reads there.
+* Even a ZERO-COST tracker leaves t=8 at 1.335x. At t=8 the bar is not
+  reachable by tracker work at all; at t=1 the untracked ceiling is 1.161x, so
+  there is still ~29.7 ms of tracker head-room there.
+
+4c. AT t=8 THE CHANGE IS PROVABLY INERT, by count and not by timing:
+`--features probe-sites` gives **22,700,725 registrations per frame on BOTH
+base and head** at t=8, over the same 68 sites. Identical totals, identical
+distribution — the hull never fires under tile threading, and `pal_pred` (the
+one all-thread-count change) does not occur on this photo vector.

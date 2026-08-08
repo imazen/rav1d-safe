@@ -937,6 +937,12 @@ pub(super) struct BorrowTracker {
     /// the array a fixed-size field, so a masked index needs no fat-pointer
     /// load and no bounds check.
     mask: usize,
+    /// THROWAWAY (`__probe_tinynop`): this instance is shorter than
+    /// [`SHARD_MIN_LEN`]. Set once in [`Self::new`]/[`Self::reprovision`] off
+    /// the same line as `mask`, and read only to SKIP tracking entirely.
+    /// UNSOUND — measurement only. See [`Self::add`]'s probe arm.
+    #[cfg(feature = "__probe_tinynop")]
+    tiny: bool,
     /// Live wide records. Read while holding **any** shard lock; written only
     /// while holding **every** shard lock.
     wide: UnsafeCell<Vec<WideRec>>,
@@ -1213,6 +1219,8 @@ impl BorrowTracker {
             shards: [const { Shard::new() }; N_SHARDS],
             shift: block_shift_for(len),
             mask: mask_for(len),
+            #[cfg(feature = "__probe_tinynop")]
+            tiny: len < SHARD_MIN_LEN,
             wide: UnsafeCell::new(Vec::new()),
             state: AtomicU32::new(0),
         }
@@ -1227,6 +1235,10 @@ impl BorrowTracker {
         // there, and `&mut self` guarantees every one of them is empty.
         self.shift = block_shift_for(len);
         self.mask = mask_for(len);
+        #[cfg(feature = "__probe_tinynop")]
+        {
+            self.tiny = len < SHARD_MIN_LEN;
+        }
     }
 
     /// The prefix of [`Self::shards`] this instance can actually reach.
@@ -1362,6 +1374,17 @@ impl BorrowTracker {
     fn add<const IS_MUT: bool>(&self, bounds: &Bounds) -> BorrowId {
         let start = bounds.range.start;
         let end = bounds.range.end;
+        #[cfg(feature = "__probe_sites")]
+        crate::site_probe::record(Location::caller(), IS_MUT, end.saturating_sub(start));
+        // THROWAWAY (`__probe_tinynop`): price the sub-`SHARD_MIN_LEN` instance
+        // class — `BlockContext`'s twenty 32-byte arrays and their kin, ~1,027
+        // instances, which `mask_for` keeps single-shard at EVERY thread count.
+        // Nothing else can separate their cost from the picture planes'.
+        // UNSOUND: it stops tracking them.
+        #[cfg(feature = "__probe_tinynop")]
+        if self.tiny {
+            return BorrowId::UNCHECKED;
+        }
         if start >= end {
             return BorrowId::EMPTY;
         }

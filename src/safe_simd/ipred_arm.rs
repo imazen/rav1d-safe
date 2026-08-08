@@ -1494,37 +1494,36 @@ pub fn cfl_pred_dispatch<BD: crate::include::common::bitdepth::BitDepth>(
     let ac = &ac[..w * h];
     let bitdepth_max = bd.bitdepth_max().as_::<c_int>();
 
-    // ONE NARROW GUARD PER ROW, not one wide guard over the block.
+    // ROW GRANULARITY IS DECIDED BY `for_rows_mut`, NOT HERE.
     //
-    // The obvious shape here is `with_pixel_guard_mut::<BD>(&dst, w, h)`, which
-    // is what the x86 twin and the 8bpc itx arms use. Measured on `v4k_8tile`
-    // at t=1 it costs more than the kernel saves: replacing the scalar loop
-    // with this one behind a wide guard removed `ipred::cfl_pred`'s 2.46% of
-    // self time and added +0.79% `add_wide::<true>` and +0.73% `remove_wide`,
-    // netting 0.24% of whole-decode wall (396.77 vs 397.71 ms/frame, medians of
-    // 9 interleaved rounds on an idle box). The reference takes one
-    // `slice_mut(w)` per row and that is cheaper, so this does the same. It is
-    // also the narrower extent of the two, which is the safe direction to move
-    // under tile threading.
-    use crate::src::strided::Strided as _;
-    let pxstride = dst.pixel_stride::<BD>();
-    for y in 0..h {
-        let row = dst + (y as isize * pxstride);
-        let mut guard = row.slice_mut::<BD>(w);
-        let px: &mut [BD::Pixel] = &mut guard;
-        match BD::BPC {
-            BPC::BPC8 => {
-                let b: &mut [u8] = crate::src::safe_simd::pixel_access::reinterpret_slice_mut(px)
-                    .expect("BD::Pixel layout matches u8");
-                cfl_row_8bpc_neon(_token, b, &ac[y * w..], w, alpha, dc);
-            }
-            BPC::BPC16 => {
-                let b: &mut [u16] = crate::src::safe_simd::pixel_access::reinterpret_slice_mut(px)
-                    .expect("BD::Pixel layout matches u16");
-                cfl_row_16bpc_neon(_token, b, &ac[y * w..], w, alpha, dc, bitdepth_max);
-            }
+    // History, because the previous decision here was measured and is now
+    // superseded rather than merely re-argued. This site used to hardcode one
+    // narrow guard per row, on the strength of an A/B against
+    // `with_pixel_guard_mut::<BD>(&dst, w, h)`: the wide form removed
+    // `ipred::cfl_pred`'s 2.46% of self time but added +0.79% `add_wide::<true>`
+    // and +0.73% `remove_wide`, netting 0.24% of whole-decode wall (396.77 vs
+    // 397.71 ms/frame, medians of 9 interleaved rounds, idle box).
+    //
+    // Both of the terms that made the wide form lose were WIDE-PATH terms, and
+    // the wide path is gone at t=1: issue #458's probe measures
+    // `wide_total = 0` at every thread count on current `main`. So that A/B was
+    // measuring a mechanism that no longer exists, exactly like the two
+    // branches #459 retired. `for_rows_mut` takes the hull as ONE ordinary
+    // single-shard registration when tile threading is off, and keeps the
+    // per-row guards when it is on — where the narrow extent is load-bearing
+    // against a neighbouring tile column.
+    dst.for_rows_mut::<BD, _>(w, h, |y, px| match BD::BPC {
+        BPC::BPC8 => {
+            let b: &mut [u8] = crate::src::safe_simd::pixel_access::reinterpret_slice_mut(px)
+                .expect("BD::Pixel layout matches u8");
+            cfl_row_8bpc_neon(_token, b, &ac[y * w..], w, alpha, dc);
         }
-    }
+        BPC::BPC16 => {
+            let b: &mut [u16] = crate::src::safe_simd::pixel_access::reinterpret_slice_mut(px)
+                .expect("BD::Pixel layout matches u16");
+            cfl_row_16bpc_neon(_token, b, &ac[y * w..], w, alpha, dc, bitdepth_max);
+        }
+    });
     true
 }
 
