@@ -108,6 +108,43 @@ Mutation 3 is the reason the large-coefficient arms exist. A port validated
 only on light residual would look bit-exact and ship wrong pixels on real
 10-bit content.
 
+## Follow-up the same day: the wide guard was eating the win
+
+The 12.79% that remained above was 5.88 points of `block_mut` guard traffic.
+The CfL kernel landed in between and made the mechanism unmissable, so both
+were changed to take **one narrow guard per row** instead of one wide guard per
+block — the extent the scalar reference already uses, and the *narrower* of the
+two, so nothing about tile-thread safety loosens.
+
+The CfL measurement is what established it (same driver as the LR A/B:
+`scripts/perf/bin_ab.sh`, one process per cell, arm order rotated per round,
+median of 9, raw in `benchmarks/narrow_guard_ab_2026-08-07.tsv`):
+
+    v4k_8tile 8bpc, t=1        ms/frame   ratio to no-CfL-NEON   foreign
+      no CfL NEON (hbd)         398.19      1.0000               0
+      CfL NEON, wide guard      397.63      0.9986               0
+      CfL NEON, per-row guard   394.23      0.9901               0
+
+A 2.46%-of-self-time kernel bought 0.14% of wall behind a wide guard, because
+the wide guard cost +0.79% `add_wide::<true>` and +0.73% `remove_wide` (profile
+diff of the two 8bpc `sample` runs). Per-row guards turn the same kernel into
+0.99%.
+
+Applying the same shape to the 16bpc itx path:
+
+    v4k_8tile_10b, t=1         ms/frame   ratio to base          foreign
+      base (2c7c082)            519.93      1.0000               0..3
+      itx NEON, block_mut       460.57      0.8858
+      itx NEON, per-row guard   443.76      0.8535
+
+i.e. another ~3.2% on top of the transform port. **Caveat: a sibling agent's
+benchmark was resident for part of that 10bpc run (`foreign` up to 3), so
+those three are an interleaved same-vector ratio and not idle-box absolutes.**
+The idle-box absolutes on record are the base-vs-`block_mut` table above
+(508.3 -> 455.8 at 10bpc t=1, foreign 0 throughout); the per-row increment did
+not get a clean window before the session ended and is reported as a ratio
+only.
+
 ## What this does NOT say
 
 * Nothing was measured on inter-heavy or 32/64-transform content. One 4K intra
