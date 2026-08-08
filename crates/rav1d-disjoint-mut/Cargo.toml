@@ -60,6 +60,16 @@ __blockshift_14 = []
 __blockshift_15 = []
 __blockshift_16 = []
 __blockshift_adaptive = []
+# Serial-decode shard granularity: how many powers of two coarser than the
+# size rule a t=1 instance gets, `off` restoring the flat BLOCK_SHIFT it used
+# to get. See `serial_shift_rule`.
+__shardrun_off = []
+__shardrun_m2 = []
+__shardrun_m1 = []
+__shardrun_0 = []
+__shardrun_1 = []
+__shardrun_2 = []
+__shardrun_3 = []
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
 aligned = ["dep:aligned", "dep:aligned-vec"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).

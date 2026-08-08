@@ -1,0 +1,235 @@
+# The DisjointMut wide path at t=1: eliminated, measured, and NOT shipped on
+
+date: 2026-08-08
+host: Apple M4 Pro (8 P + 4 E = 12 logical), macOS 26.5.2, aarch64
+rustc: stable, release (lto = "fat", codegen-units = 1), DEFAULT features
+       (bitdepth_8 + bitdepth_16, CHECKED DisjointMut). No `-C target-cpu=native`.
+base: `main` @ fc120a8, 766/766 dav1d-test-data.
+branch: `perf/shard-mapping`, sibling worktree `rav1d-safe--shardmap`.
+vectors: `~/tmp/rav1d-perf/vec/*.avif`.
+raw: `benchmarks/tracker_shardrun_2026-08-08.tsv`
+     (campaign, vector, bpc, threads, round, arm, ms/frame, frame md5, foreign).
+
+**THE BOX WAS NOT IDLE.** Two other agents held a core each for the whole
+session (`zenav1-svt/.../identity_run`, `bpcshift/bin/bench_base`), so 194 of
+the 217 raw rows record a foreign process over 25% CPU. Every cell is
+`scripts/perf/st1_ab.sh`: arms interleaved back to back with a rotating order
+inside each round, so both arms of a comparison see the same load and the
+RATIO survives. **Absolute ms/frame here is inflated and is not comparable to
+an idle campaign; read ratios only.** Min and max are printed for every arm so
+the noise band is visible rather than asserted.
+
+NO `nice` ON ANY TIMED RUN (Darwin maps it to background QoS, ~40x distortion).
+Builds and the correctness sweep were niced.
+
+---
+
+## 1. The diagnosis, confirmed with the counters before any code was written
+
+`examples/probe_tracker --features probe-wide`, v4k_8tile, t=1, **per 10
+frames** (`WIDE_FULL` and `WIDE_BLOCKS` are exactly zero in every row below, so
+every promotion came through the `WIDE_SHARDS` door — more than
+`MAX_SHARDS_PER_BORROW = 4` distinct shards):
+
+    cell              add_slow    add_multi    WIDE_SHARDS
+    -----------------------------------------------------
+    8bpc   t=1       6,204,930    6,204,930      5,033,100
+    8bpc   t=8          57,553       57,553              0
+    10bpc  t=1       3,349,700    3,349,700      3,111,250
+    10bpc  t=8          59,704       59,704              0
+
+503,310 wide borrows per frame at 8bpc t=1, each locking and scanning all 32
+active shards on registration and locking them all again on release. The t=8
+rows reproduce `tracker_blockshift_2026-08-08.meta` §3's "zero at every shift":
+tile threading sends `block_mut` down the per-row path, so this is a t=1-only
+problem, exactly as `st1_kernels_2026-08-08.meta` §1 said.
+
+Mechanism: `WithOffset::block_mut` / `narrow_guard(w, h)` reserve the strided
+HULL `(h-1)*stride + w`. An 8x8 transform at a 3840-byte 4K stride is 26,888
+bytes = 7 blocks at `BLOCK_SHIFT` 12, hence up to 7 shards. Only 4x4 stays
+narrow.
+
+## 2. The named candidate is a re-parameterisation, not a new mechanism
+
+The brief proposed `shard_of(block) = (block >> run_log2) & mask` to keep a run
+of consecutive blocks on one shard. With the fast path's single-shard test read
+at the same run granularity — which strictly dominates, since a borrow inside
+one run genuinely is one shard and should take the one-lock path — that is
+**identical** to raising the shift by `run_log2`:
+
+    shard = hash((addr >> S) >> R)  ==  hash(addr >> (S+R))
+
+`shift` has no other consumer: it appears only in `add`'s `b0 != b1` test, in
+`add_slow`'s repeat of it, and in `add_multi`'s block enumeration. So the
+deliverable is a *policy* over granularity, not a second mechanism, and it is
+implemented as one — `serial_shift_rule` in `tracker_shard.rs`. Keeping a
+separate `run` field would have been dead weight.
+
+The fixed ladder (a rung compiled in, so every instance takes it), same probe,
+per 10 frames, t=1:
+
+    shift   8bpc add_multi   8bpc WIDE   10bpc add_multi   10bpc WIDE
+       12        6,204,930   5,033,100         3,349,700    3,111,250
+       13        6,137,520   1,856,890         3,247,460    2,254,620
+       14        5,772,350     351,340         3,178,140      846,050
+       15        4,617,580           0         2,876,040      170,670
+       16        2,566,560           0         2,214,750            0
+
+8bpc needs 15, 10bpc needs 16 — one rung apart because a 10-bit plane has twice
+the stride. `size_shift(len)` already tracks that (it lands both depths on the
+same picture-rows-per-block), so the shipped rule is ONE bump on top of it:
+
+    serial_shift_rule(len) = clamp(size_shift(len) + SERIAL_RUN, BLOCK_SHIFT, 24)
+
+The `BLOCK_SHIFT` floor is load-bearing: it stops a small instance being turned
+into one block and one lock, which is what a fixed rung of 15 would do. With
+`SERIAL_RUN = 1` the wide count goes to **ZERO at both depths** (measured, not
+derived: 5,033,100 -> 0 and 3,111,250 -> 0), with `WIDE_FULL` still 0, while
+the t=8 counters are unchanged.
+
+## 3. Wall clock — and why this ships OFF
+
+Median of 7 (5 for the t>1 rows), interleaved, rotating order. Every arm in
+every cell produced the SAME frame md5, so all of this is bit-identical.
+Arm -> effective shift on the 4K luma plane: 8bpc `m2`=12 `m1`=13 `r0`=14
+`r1`=15 `r2`=16 `r3`=17; 10bpc one higher throughout.
+
+    v4k_8tile 8bpc t=1        median     min      max    ratio
+    off  (shipped default)    406.51  403.24   416.66   1.0000
+    r0                        395.73  389.58   402.18   0.9735
+    r1                        383.86  381.10   392.59   0.9443
+    r2                        381.01  378.90   391.10   0.9373
+    r3                        380.52  377.12   388.73   0.9361
+
+    v4k_8tile_10b t=1         median     min      max    ratio
+    off                       441.94  438.13   445.76   1.0000
+    r0                        464.20  460.74   467.46   1.0504
+    r1                        463.36  457.23   466.69   1.0485
+    r2                        460.89  457.42   467.93   1.0429
+    r3                        461.28  457.10   467.41   1.0438
+
+    v4k_8tile_10b t=1 (second campaign, adds the sub-size-rule rungs)
+    off                       452.87  445.48   462.73   1.0000
+    m2                        457.76  440.49   474.31   1.0108
+    m1                        478.76  464.43   509.96   1.0572
+    r0                        478.52  467.73   509.68   1.0566
+    r1                        473.00  464.14   478.28   1.0445
+
+8bpc min/max bands do not overlap (off 403.24-416.66 vs r1 381.10-392.59), and
+r0/r1 reproduce across the two independent 10bpc campaigns. **-5.6% at 8bpc and
++4.9% at 10bpc, both real.**
+
+Generality of the 8bpc win, and the shape of the cost:
+
+    cell                        off      r1 ratio   r2 ratio
+    v4k_1tile   8bpc  t=1    408.71      0.9434     0.9429
+    v1024       8bpc  t=1     30.88      1.0091     0.9984
+    v256        8bpc  t=1      0.97      1.0026     1.0009
+
+The win is a 4K phenomenon and the mechanism says why: at a 1024-byte stride an
+8x8 hull is 7,176 bytes = 2 blocks, already narrow, so there is nothing to fix
+and nothing to lose. Small sizes are null in both directions.
+
+t>1 is untouched, which is the point of gating on declared parallelism:
+
+    v4k_8tile     8bpc t=4   off 126.42   r1 0.9917  (n=5)
+    v4k_8tile     8bpc t=8   off  79.35   r1 0.9944  (n=5)
+    v4k_8tile_10b     t=8    off  89.03   r1 1.0132  (n=9, bands overlap: off
+                                                      84.72-93.07, r1 85.18-91.36)
+
+The 10bpc t=8 cell first read 1.0223 at n=5 and collapsed to null at n=9 — a
+worked example of the brief's "check the noise band before believing a sub-3%
+claim". It is reported as NULL.
+
+### Why 10bpc loses, from the profile rather than from a story
+
+`/usr/bin/sample`, 45 s of steady state, self time per leaf
+(`scripts/perf/sample_selftime.py`), v4k_8tile_10b t=1, off vs r1. Converted to
+per-frame cost (share x ms/frame, so the differing frame counts cancel):
+
+    symbol                                   change in per-frame cost
+    decode_coefs (46% of wall, no tracker)          +0.9%   <- flat: control
+    BorrowTracker::add<true>                       +53%
+    BorrowTracker::add<false>                      +41%
+    add_wide<false>                               -100%     (14.8 -> 0 ms)
+    remove_wide                                   -100%      (8.1 -> 0 ms)
+    DisjointMut::slice_as::<u16>                   +27%
+    LfBlock::open                                  +23%
+    rav1d_recon_b_intra                            +15%
+
+The wide path really is gone; `add`'s fast path got more expensive by slightly
+more than the wide path saved. `add` is `#[inline]`, which is why its callers
+(`slice_as`, `LfBlock::open`, `recon_b_intra`) grew too while `decode_coefs`
+stayed flat. The cost is `ShardRecs::find`'s scan: at a granularity coarse
+enough to keep an `h`-row hull inside 4 blocks, borrows one ROW apart
+necessarily land in the same block and therefore the same shard, so per-row
+borrows that used to be alone on a shard now scan each other.
+
+**That tension is irreducible for any mapping.** To put a span of `L`
+consecutive blocks on <= 4 shards the mapping must be constant on runs of ~L/4
+blocks; per-row borrows are one stride apart and fall inside such a run. Adding
+shards does not help — the colliding borrows are in the SAME block. The 16-bit
+path simply keeps more borrows live at once (`slice_as::<u16>` /
+`mut_slice_as::<u16>` are 17.4 ms/frame at 10bpc and do not exist at 8bpc), so
+it pays the collision and 8bpc does not.
+
+There is no rung that serves both: matched at ~4.3 picture rows per block, 8bpc
+is 0.9735 and 10bpc is 1.0566. The discriminator is the pixel size, which
+`BorrowTracker::new(len)` cannot see — a 4K 8-bit plane and a 4K 10-bit plane
+differ only by a factor of two in `len`, which an 8K 8-bit plane also does.
+
+**So the default is `SERIAL_RUN = None`, byte-for-byte the behaviour `main`
+shipped**, pinned by `the_serial_rule_is_off_by_default`. Turning it on
+requires one new input, and it is the input
+`st1_kernels_2026-08-08.meta` §4 item 1 already asked for: the pixel stride or
+`BD::BPC` at tracker construction (`Rav1dPictureDataComponent::from_parts` has
+the stride in hand). With that, `shardrun-1` is a -5.6% t=1 win on 8-bit 4K at
+zero cost elsewhere, and the numbers above are the whole A/B, so it can be
+flipped without re-measuring.
+
+## 4. What is NOT done, and the next lever
+
+* **Not shipped enabled.** The mechanism is proven and measured; the gate that
+  makes it safe is not built.
+* **Not measured: 12bpc.** `BitDepth16` covers 10 and 12; only 10 was run.
+* **Not measured: any non-4K 10bpc cell, and any t=2.**
+* **A self-tuning shift (measure the promotion rate, adapt) is UNSOUND** and
+  must not be attempted: both registrants of a shared byte have to agree on the
+  block boundary, so the granularity may only move in `reprovision(&mut self)`.
+* **The better lever, untried: stop reserving the hull.** The wide path exists
+  because a `w x h` block borrow reserves `(h-1)*stride + w` to touch `w*h`
+  pixels. Splitting it into row-GROUPS of <= 4 blocks each would keep every
+  piece on the multi-shard fast path at TODAY's fine granularity — removing the
+  wide path with no collision cost, hence at both bit depths. That is a
+  `BlockMut`/kernel-API change in `src/`, not a tracker change, and it is where
+  the remaining 41 ms/frame at 8bpc t=1 lives.
+
+## 5. Correctness
+
+* `cargo test --release --test decode_md5_verify`: 14/14 on the shipped default
+  AND on `--features shardrun-1`.
+* `examples/md5_inventory` on `shardrun-1`: **766 PASS, 2 SKIP**, and a set-diff
+  BY NAME (group, name -> status, actual hash) against
+  `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` is **0 differences,
+  0 vectors added, 0 removed**.
+* Every A/B arm in every cell emitted the same frame md5 as its comparand.
+* `cargo test -p rav1d-disjoint-mut`: 26 lib + 25 soundness + 5 shard_liveness
+  + 1 wide_exclusion, green on the default and on `__shardrun_1`.
+
+### The soundness gate was proven live, twice, and its blind spot confirmed
+
+Granularity is not a correctness knob — "no missed overlap" needs only that
+both registrants of a shared byte agree on the block boundary, and the value is
+fixed for a tracker's life — but the claim was tested rather than asserted:
+
+* Hazard (a), the 4af62ae TOCTOU shape (delete `add`'s in-lock `state`
+  re-read): `wide_exclusion::a_wide_borrow_excludes_every_narrow_shard` FAILED
+  in 0.01 s with 123 witnesses.
+* Hazard (b), `active()` shortened by one shard: FAILED in 0.01 s with 1
+  witness.
+* Restored from a byte-level snapshot both times (`diff` clean), green again.
+* **Confirmed: with hazard (a) planted, `soundness.rs` (25 tests) and
+  `shard_liveness.rs` (5 tests) BOTH PASS.** `wide_exclusion.rs` is the only
+  gate for that shape.
+* `the_serial_rule_clears_the_wide_path_at_both_depths` was mutation-tested
+  (neuter the rule to return `BLOCK_SHIFT`): FAILS, restored, green.

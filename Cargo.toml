@@ -118,6 +118,16 @@ blockshift-14 = ["rav1d-disjoint-mut/__blockshift_14"]
 blockshift-15 = ["rav1d-disjoint-mut/__blockshift_15"]
 blockshift-16 = ["rav1d-disjoint-mut/__blockshift_16"]
 blockshift-adaptive = ["rav1d-disjoint-mut/__blockshift_adaptive"]
+# Serial-decode shard granularity (perf/shard-mapping). The default is the
+# measured winner; these are its A/B rungs. See
+# `tracker_shard::serial_shift_rule`.
+shardrun-off = ["rav1d-disjoint-mut/__shardrun_off"]
+shardrun-m2 = ["rav1d-disjoint-mut/__shardrun_m2"]
+shardrun-m1 = ["rav1d-disjoint-mut/__shardrun_m1"]
+shardrun-0 = ["rav1d-disjoint-mut/__shardrun_0"]
+shardrun-1 = ["rav1d-disjoint-mut/__shardrun_1"]
+shardrun-2 = ["rav1d-disjoint-mut/__shardrun_2"]
+shardrun-3 = ["rav1d-disjoint-mut/__shardrun_3"]
 
 # Test-only (double-underscore = private, never enable in production): arms a
 # one-shot worker-thread panic so tests can prove a worker death surfaces as a

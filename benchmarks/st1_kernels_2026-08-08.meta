@@ -311,6 +311,16 @@ Two things follow, neither of which is `src/`'s to make:
    kept a short run of consecutive blocks on one shard would keep those borrows
    on the multi-shard fast path at any block shift.
 
+   RESOLVED 2026-08-08 — `benchmarks/tracker_shardrun_2026-08-08.meta`. The run
+   mapping is algebraically the same thing as raising the shift (`shard_of` is
+   a function of the block index alone), so it was implemented as a serial
+   granularity POLICY, `tracker_shard::serial_shift_rule`. It does what item 2
+   predicts — wide promotions measured 5,033,100 -> 0 per 10 frames at 8bpc t=1
+   and 3,111,250 -> 0 at 10bpc — and is -5.6% at 8bpc 4K. It ships DISABLED,
+   because the same coarsening lands per-row borrows on one shard and costs
+   +4.9% at 10bpc, and `len` alone cannot separate the two planes. It needs
+   exactly the input item 1 above asks for.
+
 ---
 
 ## 5. Where t=1 stands now

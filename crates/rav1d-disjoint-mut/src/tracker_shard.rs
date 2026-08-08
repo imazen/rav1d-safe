@@ -881,27 +881,124 @@ fn block_shift_rule(len: usize, shards: usize, tiles: usize) -> u32 {
         return BLOCK_SHIFT;
     }
     if !ADAPTIVE_WHEN_SERIAL {
-        // Serial decode keeps the old constant. The adaptive shift's whole
-        // benefit is cross-core shard-line traffic, which a single thread does
-        // not have, and the single-thread column of the ladder is
-        // flat-to-slightly-adverse. Same split, for the same reason, as
-        // SHARDS_SERIAL vs SHARDS_CONCURRENT — and read at the same moment, so
-        // an instance built before `set_parallelism` simply keeps the serial
-        // value, exactly like `mask`.
-        //
-        // Threads are necessary but NOT sufficient: a single-tile frame on
-        // eight threads is concurrent, and the coarse shift measured 3.08%
-        // SLOWER there while measuring 39% faster on the eight-tile frame at
-        // the same thread count. See `set_tile_concurrency`.
-        if shards < SHARDS_CONCURRENT || tiles < 2 {
+        // A SERIAL decode gets its own rule, below: it has no cross-core shard
+        // traffic to spread, and the thing that hurts it is the wide path.
+        if shards < SHARDS_CONCURRENT {
+            return serial_shift_rule(len);
+        }
+        // Threads but one tile: keep the constant. Threads are necessary but
+        // NOT sufficient — a single-tile frame on eight threads is concurrent,
+        // and the coarse shift measured 3.08% SLOWER there while measuring 39%
+        // faster on the eight-tile frame at the same thread count. See
+        // `set_tile_concurrency`.
+        if tiles < 2 {
             return BLOCK_SHIFT;
         }
     }
+    size_shift(len)
+}
+
+/// The block count the adaptive rule aims at, as a shift: the power of two
+/// that lands `len` on about `BLOCKS_PER_SHARD * N_SHARDS` blocks.
+#[inline]
+fn size_shift(len: usize) -> u32 {
     let target = (BLOCKS_PER_SHARD * N_SHARDS) as u64;
     let want = (len as u64 / target.max(1)).max(1);
     // `ilog2` rounds down, so the block count lands at or above the target.
     (u64::BITS - 1 - want.leading_zeros()).clamp(6, 24)
 }
+
+/// Granularity for a decode that has declared no parallelism.
+///
+/// # Why serial needs its own rule
+///
+/// The shift is two knobs wearing one hat. It sets the *block* size, which
+/// decides whether [`BorrowTracker::add`] takes its one-lock fast path; and it
+/// sets the *shard* granularity, because [`shard_of`] is a function of the
+/// block index. Sharding exists to spread concurrent registrants over separate
+/// cache lines — so with one thread the second knob has no job, and the first
+/// one is all that is left.
+///
+/// Measured, `examples/probe_tracker` with `--features probe-wide`, v4k_8tile,
+/// t=1, wide promotions per 10 frames (a fixed rung compiled in, so every
+/// instance takes the same shift):
+///
+/// ```text
+///   shift    8bpc add_multi   8bpc WIDE    10bpc add_multi   10bpc WIDE
+///      12         6,204,930   5,033,100          3,349,700    3,111,250
+///      13         6,137,520   1,856,890          3,247,460    2,254,620
+///      14         5,772,350     351,340          3,178,140      846,050
+///      15         4,617,580           0          2,876,040      170,670
+///      16         2,566,560           0          2,214,750            0
+/// ```
+///
+/// Every one of those promotions came through the `WIDE_SHARDS` door — more
+/// than [`MAX_SHARDS_PER_BORROW`] distinct shards — with `WIDE_BLOCKS` and
+/// `WIDE_FULL` reading exactly zero at every rung and both depths. There is no
+/// slot-pressure counter-force to trade against here; the coarsening is free
+/// until the wide path is gone.
+///
+/// The mechanism is the guard EXTENT, not the guard count.
+/// `WithOffset::block_mut` / `narrow_guard(w, h)` reserve the strided hull
+/// `(h - 1) * stride + w`, so an 8x8 transform at a 3840-byte 4K stride is
+/// 26,888 bytes — 7 blocks, hence up to 7 distinct shards, at shift 12. Over
+/// four, so it promotes, and a wide borrow locks and scans EVERY active shard
+/// (32 in a serial decode) on registration and locks them all again on release.
+///
+/// # Why this is a bump on the size rule and not a constant
+///
+/// The extent that has to fit is a multiple of the picture STRIDE, and a
+/// 10-bit plane is both twice the bytes and twice the stride of its 8-bit twin
+/// — which is exactly why the two columns above hit zero one rung apart.
+/// [`size_shift`] already tracks the stride through `len`, landing both depths
+/// on the same picture-rows-per-block, so ONE bump on top of it covers both
+/// (8bpc 14 + 1 = 15, 10bpc 15 + 1 = 16) where any single constant covers at
+/// most one.
+///
+/// The [`BLOCK_SHIFT`] floor is what keeps this from being the fixed ladder in
+/// disguise: a rung of 15 applied to a 64 KiB instance would turn it into one
+/// block and one lock, so small buffers keep today's value and only buffers
+/// the size rule already wants to coarsen are coarsened further.
+///
+/// SOUND FOR ANY VALUE, for the same reason [`block_shift_for`] is: the "no
+/// missed overlap" argument needs only that both registrants of a shared byte
+/// agree on where the block boundaries are, and this is read once in
+/// [`BorrowTracker::new`] and immutable for that tracker's life.
+#[inline]
+fn serial_shift_rule(len: usize) -> u32 {
+    match SERIAL_RUN {
+        None => BLOCK_SHIFT,
+        Some(run) => (size_shift(len) as i32 + run).clamp(BLOCK_SHIFT as i32, 24) as u32,
+    }
+}
+
+/// How much coarser than [`size_shift`] a serial decode's granularity is, or
+/// `None` to keep the flat [`BLOCK_SHIFT`] a serial decode used to get.
+///
+/// Swept as `shardrun-{off,0,1,2,3}`; see [`serial_shift_rule`] for the ladder
+/// this is read off and `benchmarks/tracker_shardrun_2026-08-08.meta` for the
+/// wall-clock A/B that chose the default.
+const SERIAL_RUN: Option<i32> = if cfg!(feature = "__shardrun_m2") {
+    Some(-2)
+} else if cfg!(feature = "__shardrun_m1") {
+    Some(-1)
+} else if cfg!(feature = "__shardrun_0") {
+    Some(0)
+} else if cfg!(feature = "__shardrun_1") {
+    Some(1)
+} else if cfg!(feature = "__shardrun_2") {
+    Some(2)
+} else if cfg!(feature = "__shardrun_3") {
+    Some(3)
+} else {
+    // DEFAULT OFF, and not because the mechanism does not work: it removes
+    // every wide promotion at t=1 and buys -5.6% on 8bpc 4K, but costs +4.9%
+    // on the same 4K frame at 10bpc, because the granularity that keeps a
+    // strided hull off the wide path also lands per-row borrows on one shard.
+    // `len` cannot tell those two planes apart. See the module note above
+    // `serial_shift_rule` and benchmarks/tracker_shardrun_2026-08-08.meta.
+    None
+};
 
 /// True when one of the fixed `blockshift-*` rungs was selected, in which case
 /// [`block_shift_for`] hands back [`BLOCK_SHIFT`] and nothing adapts.
@@ -1896,8 +1993,6 @@ mod tests {
         const LEN: usize = 2 * 3840 * 2160;
         // Threads but one tile: the constant.
         assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 1), BLOCK_SHIFT);
-        // Tiles but one thread: still the constant (the pre-existing gate).
-        assert_eq!(block_shift_rule(LEN, SHARDS_SERIAL, 8), BLOCK_SHIFT);
         // Both: adapt. And this must be a real change, or the test is vacuous.
         let adapted = block_shift_rule(LEN, SHARDS_CONCURRENT, 8);
         assert_ne!(adapted, BLOCK_SHIFT);
@@ -1905,6 +2000,82 @@ mod tests {
         // Two tiles is already "multi-tile"; the gate is a threshold, not a
         // proportion.
         assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 2), adapted);
+    }
+
+    /// The serial rule must land the 4K planes on the granularity at which the
+    /// measured wide-promotion count is ZERO, at BOTH bit depths, and must
+    /// never make a small buffer finer than it is today.
+    ///
+    /// The two rungs asserted are read straight off the ladder in
+    /// [`serial_shift_rule`]'s docs (8bpc wide hits 0 at 15, 10bpc at 16), so
+    /// this test fails the moment the rule stops delivering the thing it was
+    /// introduced for. `serial_shift_rule` is driven directly rather than
+    /// through `block_shift_rule`, because on a `shards-16`/`shards-32` build
+    /// `SHARDS_SERIAL == SHARDS_CONCURRENT` and the gate can never select it.
+    #[cfg(all(
+        feature = "__shardrun_1",
+        not(any(
+            feature = "__blockshift_8",
+            feature = "__blockshift_10",
+            feature = "__blockshift_13",
+            feature = "__blockshift_14",
+            feature = "__blockshift_15",
+            feature = "__blockshift_16",
+        ))
+    ))]
+    #[test]
+    fn the_serial_rule_clears_the_wide_path_at_both_depths() {
+        // 4K luma, 8-bit and 10/12-bit.
+        assert_eq!(serial_shift_rule(3840 * 2160), 15);
+        assert_eq!(serial_shift_rule(2 * 3840 * 2160), 16);
+        // An 8x8 transform's strided hull must now fit in at most
+        // MAX_SHARDS_PER_BORROW blocks, which is what stops it promoting.
+        for (len, stride) in [(3840 * 2160, 3840usize), (2 * 3840 * 2160, 7680)] {
+            let extent = 7 * stride + 8;
+            let blocks = (extent >> serial_shift_rule(len)) + 1;
+            assert!(
+                blocks <= MAX_SHARDS_PER_BORROW,
+                "len {len}: an 8x8 hull still spans {blocks} blocks"
+            );
+        }
+        // The floor: small instances keep today's granularity, never finer.
+        for len in [SHARD_MIN_LEN, 128 * 1024, 1024 * 1024] {
+            assert!(
+                serial_shift_rule(len) >= BLOCK_SHIFT,
+                "len {len} went finer than BLOCK_SHIFT"
+            );
+        }
+        assert_eq!(serial_shift_rule(64 * 1024), BLOCK_SHIFT);
+        // And the gate really does route a serial decode here, on a build
+        // where a serial decode is distinguishable at all.
+        if SHARDS_SERIAL < SHARDS_CONCURRENT {
+            assert_eq!(
+                block_shift_rule(2 * 3840 * 2160, SHARDS_SERIAL, 8),
+                serial_shift_rule(2 * 3840 * 2160)
+            );
+        }
+    }
+
+    /// The DEFAULT must be the flat serial granularity that predates this
+    /// rule — byte-for-byte the behaviour `main` shipped — because the rule
+    /// regresses 16-bit content and is not safe to enable blind.
+    #[cfg(not(any(
+        feature = "__shardrun_m2",
+        feature = "__shardrun_m1",
+        feature = "__shardrun_0",
+        feature = "__shardrun_1",
+        feature = "__shardrun_2",
+        feature = "__shardrun_3",
+    )))]
+    #[test]
+    fn the_serial_rule_is_off_by_default() {
+        assert!(
+            SERIAL_RUN.is_none(),
+            "the serial granularity rule must ship disabled"
+        );
+        for len in [64 * 1024, 1024 * 1024, 3840 * 2160, 2 * 3840 * 2160] {
+            assert_eq!(serial_shift_rule(len), BLOCK_SHIFT, "len {len}");
+        }
     }
 
     /// A later single-tile frame must not undo a multi-tile declaration, for
