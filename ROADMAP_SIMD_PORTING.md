@@ -46,7 +46,7 @@ Dispatch pattern: `incant!` for multi-tier, or `if let Some(t) = X64V4xToken::su
 | X4 | ipred directional z1/z2/z3 AVX-512ICL (vpermb) | X64V4x | `safe_simd/ipred.rs` | merged DONE (z1/z2/z3 bit-exact; z3 was scalar before; ~0.6% of photo profile) | ef03927, 430e7a8, 4b76f48 |
 | X5 | itx/cdef/loopfilter 16bpc AVX-512 | X64V4 | (after X1–X3) | — | TODO | |
 | R1 | mc 8tap dotprod + i8mm | Arm64V2/V3 | `safe_simd/mc_arm.rs`, `cpu.rs`, `build.rs` | merged | SCAFFOLDED, cfg-gated OFF (nightly intrinsics — see note). Default build = NEON | 75f044c |
-| R2 | itx NEON tier (rdm sqrdmulh) | Arm64V2 | `safe_simd/itx_arm*.rs` | — | TODO | |
+| R2 | itx NEON tier (rdm sqrdmulh) | Arm64V2 | `safe_simd/itx_arm*.rs` | — | TODO — *the Arm64V2 half*. The **baseline-NEON 16bpc tier landed 2026-08-07** (`safe_simd/itx_arm_hbd.rs`, every shape with max(w,h) ≤ 16, all 16 non-WHT types); 32/64-point 16bpc still scalar. See R2-16bpc below | 560f4ec |
 | R3 | loopfilter/cdef ARM tier | NEON (baseline) | `safe_simd/{loopfilter,cdef}_arm.rs` | p2-kernels, lf-neon-port, cdef-neon | **CDEF DONE** (filter 8bpc+16bpc, all 3 shapes, all 3 strength branches, direction search; bit-exact vs the 783-vector corpus) and **LOOP FILTER DONE** (all 4 widths x both directions x 8/10/12 bpc, bit-exact). See the R3 note below | 70c1a70, 8c1fa2d, 998d743, 3b44f6d, d751493 |
 
 ## Cross-cutting findings (2026-05-26 AVX-512/ARM wave — all merged to main)
@@ -136,6 +136,64 @@ dav1d's 4.1 (17.3x), loop filter 34.2 against 3.0 (11.3x).
   between the two is a silent bug by construction — its 16bpc self-guided
   rounding already was one once. Deleting it in favour of the reference is a
   legitimate outcome of this row, not a failure to do the work.
+
+  **2026-08-07 (later) — that is exactly what happened, and the "0.0 ms/frame"
+  above is now retired as a vector artefact.** Full record:
+  `benchmarks/lr_arm_vs_reference_2026-08-07.meta`.
+  * The reason nobody could size this row is that a profiler reports "never
+    called" and "free" as the same 0.0 ms. `src/ablate.rs` now carries
+    per-family activity counters (`note` / `activity_snapshot` /
+    `activity_reset`, `__ablate`-gated exactly like `is_off`, so nothing lands
+    on a production hot path) and `md5_inventory --activity` emits them per
+    vector. Loop restoration is active in **696 of 768** corpus vectors; it is
+    off in `v4k_8tile{,_10b}`, which is the whole of the 0.0 ms.
+  * On `10-bit/issues/318_tx_4x4` (LR = 76% of all kernel pixel work) `sample`
+    puts `selfguided_filter` at 9.5% and the Wiener filter at 2.0% of decode
+    self-time. The kernel is worth a real tier.
+  * The duplicate was **slower than the reference it shadowed**: interleaved
+    `__ablate` A/B, rotating order, median of 9 — 8bpc `00001147` 204.42 vs
+    192.83 ms/frame (**1.060**), 10bpc `318_tx_4x4` 9.7187 vs 9.7243 (0.999).
+    So it was deleted (1,436 lines); the dispatcher returns `false` and the
+    caller runs the reference. 766/766 with byte-identical per-vector MD5s,
+    which is also the proof the duplicate bought nothing.
+  * **Still TODO for this row:** an actual NEON loop-restoration tier, written
+    against `src/looprestoration.rs`. The two profile-blamed starting points
+    are `selfguided_filter`'s per-pixel `.get(..).unwrap_or(0)` neighbour
+    gather and the ~300 KB of zero-initialised stack scratch each restoration
+    unit pays on entry (`sumsq` at `i64`, `sum`, `dst0`, `dst1`).
+    `lr_filter_direct` already has the `__simd_test` differential to gate on.
+
+## R2-16bpc status (measured + landed 2026-08-07)
+
+`itxfm_add_dispatch`'s arms were all `BPC8` on purpose: the `itx_arm_neon_*`
+kernels keep transform state in `int16x8_t`, which *is* the spec's 8bpc row and
+column clip and nothing wider, and their `*_16bpc_*` entry points clamp to `i16`
+(5,038 `ITX_MISMATCH` on the 4K 10-bit vector for 16x16 alone, `nbad = 256` on
+3,814 of them).
+
+`safe_simd/itx_arm_hbd.rs` closes it from the other side: it vectorises the
+*generic* reference (`src/itx.rs` + `src/itx_1d.rs`) in `int32x4_t` lanes, four
+independent 1-D transforms per vector, each lane running the identical i32 op
+sequence the scalar reference runs. Both passes load contiguously — `coeff` is
+column-major so four rows at one column index are one `vld1q_s32`, and `tmp` is
+row-major so four adjacent columns are one — with a 4x4 s32 transpose between
+them folded together with the reference's `iclip(tmp + rnd >> shift)` step.
+
+- Wired: every shape with `max(w, h) <= 16`, all 16 non-WHT types
+  (4x4, 8x8, 16x16, 4x8, 8x4, 4x16, 16x4, 8x16, 16x8).
+- **Not** wired, still scalar: anything with a 32 or 64 dimension, and WHT_WHT.
+  `hbd_supported()` is the single place that says so.
+- Effect at t=1 on `v4k_8tile_10b` (`sample` self/inclusive time): itx went from
+  **21.93% inclusive to 12.79%**, and no `itx_1d::inv_*_1d_internal_c` sample
+  remains at all. Of what is left, 5.88 points are `block_mut` guard traffic
+  (`mut_slice_as` 3.29 + `remove_wide` 2.59) rather than transform arithmetic —
+  the same `block_mut` cost the P2 profile flagged, now the dominant term.
+- Gates: 766/766 dav1d-test-data with byte-identical per-vector MD5s; new
+  `itx_arm_parity.rs` arms at 10bpc and 12bpc, small **and large** coefficients,
+  plus every legal `eob` at 10bpc (12,544 cells). The large-coefficient arms are
+  load-bearing: a mutation that swaps the 16bpc clips back to `i16::MIN..MAX`
+  (the exact defect the old ports carry) passes both small-coefficient arms and
+  fails only the large ones.
 
 ## Notes
 - **R1 BLOCKER (verified 2026-05-26):** the ARM DotProd/I8MM compute intrinsics
