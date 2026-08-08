@@ -180,6 +180,21 @@ thresholds cannot have been chosen to suit the answer.
 * Any cell where the class arm's band OVERLAPS `cls_none`'s is reported as a
   null for that class, not as its median.
 
+## The negative control, and why the report needs one
+
+`cls_picwb` at **t=1** is a null arm BY CONSTRUCTION: the census says picwb has
+zero registrations at t=1 (`BlockMut` takes the Direct path when tile threading
+is off, so there is no per-row write-back to null). Any nonzero
+`cls_none - cls_picwb` at t=1 is therefore pure harness noise plus arm-position
+bias, measured on the same box in the same sweep — a free calibration of the
+floor every other number has to clear.
+
+It matters because the arm order inside a cell rotates by round but keeps its
+cyclic ORDER, so with 12 arms it takes 12 rounds for every arm to visit every
+slot. Below that, a residual position effect survives, and at n=2 the t=1
+control already reads a *disjoint* 3.1 ms. A delta smaller than the control at
+the same cell is not a measurement, whatever its bands say.
+
 ## Reproducing
 
 ```bash
