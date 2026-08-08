@@ -1,0 +1,84 @@
+== phase 1: barrier-revert panic A/B (t4, 12 runs each)
+barrier: 0/12 runs panicked (t=4 v4k_8tile)
+newmain: 4/12 runs panicked (t=4 v4k_8tile)
+== phase 2: t1 bisect builds
+built c2
+built c3
+== phase 3: t1 probe (3 rounds interleaved, medians from RESULT lines)
+RESULT	oldmain	v4k_8tile.avif	1	0	2	452.3450	226.172478
+RESULT	oldmain	v4k_8tile.avif	1	1	2	441.2253	220.612670
+RESULT	oldmain	v4k_8tile.avif	1	2	2	441.1202	220.560109
+RESULT	c2	v4k_8tile.avif	1	0	2	706.9423	353.471152
+RESULT	c2	v4k_8tile.avif	1	1	2	694.3844	347.192212
+RESULT	c2	v4k_8tile.avif	1	2	2	694.9624	347.481206
+RESULT	c3	v4k_8tile.avif	1	0	2	715.3283	357.664133
+RESULT	c3	v4k_8tile.avif	1	1	2	705.4978	352.748884
+RESULT	c3	v4k_8tile.avif	1	2	2	701.1673	350.583651
+RESULT	newmain	v4k_8tile.avif	1	0	2	707.1429	353.571438
+RESULT	newmain	v4k_8tile.avif	1	1	2	693.4869	346.743452
+RESULT	newmain	v4k_8tile.avif	1	2	2	693.4010	346.700522
+RESULT	oldmain	v4k_8tile.avif	1	0	2	454.2852	227.142619
+RESULT	oldmain	v4k_8tile.avif	1	1	2	441.6287	220.814349
+RESULT	oldmain	v4k_8tile.avif	1	2	2	439.1511	219.575550
+RESULT	c2	v4k_8tile.avif	1	0	2	714.6312	357.315607
+RESULT	c2	v4k_8tile.avif	1	1	2	702.0712	351.035595
+RESULT	c2	v4k_8tile.avif	1	2	2	701.6455	350.822749
+RESULT	c3	v4k_8tile.avif	1	0	2	718.8284	359.414193
+RESULT	c3	v4k_8tile.avif	1	1	2	705.9509	352.975469
+RESULT	c3	v4k_8tile.avif	1	2	2	698.8146	349.407299
+RESULT	newmain	v4k_8tile.avif	1	0	2	720.0430	360.021492
+RESULT	newmain	v4k_8tile.avif	1	1	2	705.1767	352.588347
+RESULT	newmain	v4k_8tile.avif	1	2	2	705.6177	352.808828
+RESULT	oldmain	v4k_8tile.avif	1	0	2	445.6807	222.840334
+RESULT	oldmain	v4k_8tile.avif	1	1	2	432.3300	216.165006
+RESULT	oldmain	v4k_8tile.avif	1	2	2	431.1472	215.573609
+RESULT	c2	v4k_8tile.avif	1	0	2	706.8699	353.434975
+RESULT	c2	v4k_8tile.avif	1	1	2	696.5513	348.275630
+RESULT	c2	v4k_8tile.avif	1	2	2	693.9629	346.981450
+RESULT	c3	v4k_8tile.avif	1	0	2	716.7390	358.369505
+RESULT	c3	v4k_8tile.avif	1	1	2	704.1939	352.096974
+RESULT	c3	v4k_8tile.avif	1	2	2	703.2897	351.644850
+RESULT	newmain	v4k_8tile.avif	1	0	2	708.5654	354.282700
+RESULT	newmain	v4k_8tile.avif	1	1	2	695.7818	347.890900
+RESULT	newmain	v4k_8tile.avif	1	2	2	694.3323	347.166129
+DIAGNOSE-DONE
+built 1f09769
+built c003d2f
+built fd5239f
+RESULT	1f09769	v4k_8tile.avif	1	0	2	704.0758	352.037908
+RESULT	1f09769	v4k_8tile.avif	1	1	2	694.1767	347.088342
+RESULT	1f09769	v4k_8tile.avif	1	2	2	693.1937	346.596857
+RESULT	c003d2f	v4k_8tile.avif	1	0	2	708.9238	354.461912
+RESULT	c003d2f	v4k_8tile.avif	1	1	2	694.9942	347.497096
+RESULT	c003d2f	v4k_8tile.avif	1	2	2	694.5707	347.285346
+RESULT	fd5239f	v4k_8tile.avif	1	0	2	707.9570	353.978495
+RESULT	fd5239f	v4k_8tile.avif	1	1	2	695.3881	347.694047
+RESULT	fd5239f	v4k_8tile.avif	1	2	2	695.2238	347.611919
+RESULT	oldmain	v4k_8tile.avif	1	0	2	454.3301	227.165069
+RESULT	oldmain	v4k_8tile.avif	1	1	2	439.9371	219.968526
+RESULT	oldmain	v4k_8tile.avif	1	2	2	438.6712	219.335606
+RESULT	1f09769	v4k_8tile.avif	1	0	2	706.0848	353.042382
+RESULT	1f09769	v4k_8tile.avif	1	1	2	693.6700	346.834992
+RESULT	1f09769	v4k_8tile.avif	1	2	2	693.3655	346.682757
+RESULT	c003d2f	v4k_8tile.avif	1	0	2	715.3386	357.669282
+RESULT	c003d2f	v4k_8tile.avif	1	1	2	703.1075	351.553766
+RESULT	c003d2f	v4k_8tile.avif	1	2	2	702.6898	351.344902
+RESULT	fd5239f	v4k_8tile.avif	1	0	2	708.8482	354.424086
+RESULT	fd5239f	v4k_8tile.avif	1	1	2	694.5785	347.289260
+RESULT	fd5239f	v4k_8tile.avif	1	2	2	693.6712	346.835615
+RESULT	oldmain	v4k_8tile.avif	1	0	2	453.1662	226.583078
+RESULT	oldmain	v4k_8tile.avif	1	1	2	439.8914	219.945712
+RESULT	oldmain	v4k_8tile.avif	1	2	2	439.9551	219.977564
+RESULT	1f09769	v4k_8tile.avif	1	0	2	715.2490	357.624493
+RESULT	1f09769	v4k_8tile.avif	1	1	2	703.0171	351.508555
+RESULT	1f09769	v4k_8tile.avif	1	2	2	702.6459	351.322942
+RESULT	c003d2f	v4k_8tile.avif	1	0	2	714.9372	357.468577
+RESULT	c003d2f	v4k_8tile.avif	1	1	2	703.1921	351.596027
+RESULT	c003d2f	v4k_8tile.avif	1	2	2	701.1464	350.573201
+RESULT	fd5239f	v4k_8tile.avif	1	0	2	708.9607	354.480335
+RESULT	fd5239f	v4k_8tile.avif	1	1	2	694.8312	347.415598
+RESULT	fd5239f	v4k_8tile.avif	1	2	2	696.6867	348.343362
+RESULT	oldmain	v4k_8tile.avif	1	0	2	453.8464	226.923183
+RESULT	oldmain	v4k_8tile.avif	1	1	2	439.7576	219.878796
+RESULT	oldmain	v4k_8tile.avif	1	2	2	438.9274	219.463694
+BISECT2-DONE

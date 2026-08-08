@@ -1,0 +1,66 @@
+# x86-64 after the #454/#456 merges: scaling fixed, two new x64 defects (i265)
+
+date: 2026-08-08 (10:30Z–13:30Z)
+host: i265 — Intel Core Ultra 7 265K (20C/20T), 32 GB DDR5-6000 single-channel,
+      Ubuntu 26.04, idle. Same rig, vectors, and protocol as
+      x64_i265_gap_2026-08-08.meta (the pre-merge record); dav1d columns cited
+      from that record's wall2 run (same box, previous day).
+arms: oldmain = a6a7e232 (pre-merge tip) · newmain = fc120a8b (post #454/#456)
+      · c2 = 490ed78a (verify/compose-2 merge) · c3 = 79343e64 (compose-3 merge)
+harness: examples/bench_ab_decode.rs. The in-tree version (newmain arms)
+      differs from the audit-445-era copy (oldmain arm) only by an explicit
+      max_frame_delay=1 (no-op in checked builds) and an unused cpu-level arg —
+      behaviourally equivalent for these invocations.
+
+## 1. The anti-scaling is FIXED on x86-64 by the merged chain
+
+median ms/frame, 3 rounds x 3 reps, arms interleaved+rotated, one process/cell:
+
+  vector          t | oldmain  newmain  new/old | dav1d   new/dav
+  v4k_8tile       1 |   221.1    351.9   1.592  | 145.8    2.41x   <- #458
+  v4k_8tile       2 |   418.9    229.9   0.549  |  74.0    3.11x
+  v4k_8tile       4 |   605.7    136.1   0.225  |  42.8    3.18x
+  v4k_8tile       8 |   620.0     96.2   0.155  |  32.7    2.94x
+  v4k_8tile      16 |   607.9    100.2   0.165  |
+  v4k_8tile_10b   1 |   274.7    412.3   1.501  | 137.9    2.99x   <- #458
+  v4k_8tile_10b   8 |   651.7    126.2   0.194  |  32.1    3.93x
+
+scaling t1->t8: oldmain 0.36x -> newmain 3.66x (8bpc), 0.42x -> 3.27x (10bpc).
+MT gap to dav1d at t8: 19-21x -> 2.9-3.9x. Frame MD5s identical across all
+arms and thread counts per vector. The ab5b81cc "A" section transfers to x64:
+the multiplicative barrier x tracker-shard diagnosis was correct, and my
+pre-merge "tracker exonerated" conclusion was the exact false-negative that
+doc predicts (the attrib arm predated the adaptive block shift).
+
+## 2. NEW DEFECT: x86 LF window race — issue #457
+
+newmain intermittently panics at t>=2 (13/60 sweep cells; 4/12 dedicated t=4
+runs): immutable read at src/safe_simd/loopfilter.rs:5081 (compact V-window =
+tap_before + 16 rows, memcpy'd) x mutable BlockMut write-back
+(picture.rs:1887) of next-sbrow reconstruction. Causal A/B: reverse-applying
+054e2ed8 (re-adding the deblock barrier) -> 0/12 panics. Reproduced
+independently on WSL 7950X (mt_stress_4k, t=2) and by
+tile_threading_overlap::multi_threaded_cdef_lpf_race in 0.13 s. M4: zero
+panics, full suite — the window shape is x86-path code the ARM LF rewrite
+does not share. Fix shape: exact tap-reach windows in the x86 LF (not the
+barrier). CI now runs these gates (c3ea1781); the job is expected red on
+x86-64 until #457 lands.
+
+## 3. NEW DEFECT: x86-64 t=1 +50-59% regression — issue #458
+
+Bisected to verify/compose-2, then fine-bisected to **1f09769** ("release a
+borrow without taking the shard lock, and re-open the BLOCK_SHIFT ladder"):
+oldmain 220.0 -> 1f09769 351.3 ms/f, flat through c003d2f/fd5239f/main.
+aarch64 t=1 did NOT regress (verify_compose3 meta §2: comp/base 0.994; the
+commit's own M4 A/B said -0.9%), and the sharded tracker per se is exonerated
+(attrib tip 762a346c, sharded, measured t=1 220.4 on this rig the previous
+day). perf at t=1 on 1f09769: add::<true> 7.4%, add_wide 3.3%, remove_wide
+3.3% self — the WIDE path fires at single-thread — and memset+memmove grow
+8.3+3.6% -> 13.8+11.8%. Suspect: serial-instance shard/slot configuration
+after the occupancy externalization (overflow -> wide promotion), not the
+fetch_and itself.
+
+## Files
+
+  x64_i265_rebase_curve_2026-08-08.tsv    raw A/B sweep rows (incl. FAIL rows)
+  x64_i265_diagnose_2026-08-08.txt        barrier A/B counts + coarse bisect probes

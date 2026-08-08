@@ -1,0 +1,283 @@
+0	CHECKSUM	oldmain	v4k_8tile.avif	1	11b129551fbac9df4a20b40c9a2f4db6
+0	RESULT	oldmain	v4k_8tile.avif	1	0	2	454.5492	227.274591
+0	RESULT	oldmain	v4k_8tile.avif	1	1	2	443.8218	221.910899
+0	RESULT	oldmain	v4k_8tile.avif	1	2	2	442.1307	221.065370
+0	LOAD	oldmain	v4k_8tile.avif	1	0.25
+0	CHECKSUM	newmain	v4k_8tile.avif	1	11b129551fbac9df4a20b40c9a2f4db6
+0	RESULT	newmain	v4k_8tile.avif	1	0	2	717.4241	358.712061
+0	RESULT	newmain	v4k_8tile.avif	1	1	2	704.7988	352.399406
+0	RESULT	newmain	v4k_8tile.avif	1	2	2	706.2834	353.141713
+0	LOAD	newmain	v4k_8tile.avif	1	0.31
+0	CHECKSUM	oldmain	v4k_8tile.avif	2	11b129551fbac9df4a20b40c9a2f4db6
+0	RESULT	oldmain	v4k_8tile.avif	2	0	2	837.7074	418.853676
+0	RESULT	oldmain	v4k_8tile.avif	2	1	2	825.7782	412.889119
+0	RESULT	oldmain	v4k_8tile.avif	2	2	2	820.9271	410.463566
+0	LOAD	oldmain	v4k_8tile.avif	2	0.31
+0	FAIL	newmain	v4k_8tile.avif	2	rc=101
+0	CHECKSUM	newmain	v4k_8tile.avif	2	11b129551fbac9df4a20b40c9a2f4db6
+0	LOAD	newmain	v4k_8tile.avif	2	0.31
+0	CHECKSUM	oldmain	v4k_8tile.avif	4	11b129551fbac9df4a20b40c9a2f4db6
+0	RESULT	oldmain	v4k_8tile.avif	4	0	2	1225.4614	612.730694
+0	RESULT	oldmain	v4k_8tile.avif	4	1	2	1221.9360	610.968010
+0	RESULT	oldmain	v4k_8tile.avif	4	2	2	1211.4987	605.749375
+0	LOAD	oldmain	v4k_8tile.avif	4	0.44
+0	FAIL	newmain	v4k_8tile.avif	4	rc=101
+0	CHECKSUM	newmain	v4k_8tile.avif	4	11b129551fbac9df4a20b40c9a2f4db6
+0	RESULT	newmain	v4k_8tile.avif	4	0	2	280.3426	140.171283
+0	LOAD	newmain	v4k_8tile.avif	4	0.44
+0	CHECKSUM	oldmain	v4k_8tile.avif	8	11b129551fbac9df4a20b40c9a2f4db6
+0	RESULT	oldmain	v4k_8tile.avif	8	0	2	1264.6218	632.310898
+0	RESULT	oldmain	v4k_8tile.avif	8	1	2	1261.7846	630.892320
+0	RESULT	oldmain	v4k_8tile.avif	8	2	2	1228.3833	614.191654
+0	LOAD	oldmain	v4k_8tile.avif	8	0.49
+0	CHECKSUM	newmain	v4k_8tile.avif	8	11b129551fbac9df4a20b40c9a2f4db6
+0	RESULT	newmain	v4k_8tile.avif	8	0	2	206.3104	103.155186
+0	RESULT	newmain	v4k_8tile.avif	8	1	2	192.0174	96.008702
+0	RESULT	newmain	v4k_8tile.avif	8	2	2	192.6319	96.315962
+0	LOAD	newmain	v4k_8tile.avif	8	0.49
+0	CHECKSUM	oldmain	v4k_8tile.avif	16	11b129551fbac9df4a20b40c9a2f4db6
+0	RESULT	oldmain	v4k_8tile.avif	16	0	2	1235.1517	617.575872
+0	RESULT	oldmain	v4k_8tile.avif	16	1	2	1234.8730	617.436505
+0	RESULT	oldmain	v4k_8tile.avif	16	2	2	1220.6290	610.314502
+0	LOAD	oldmain	v4k_8tile.avif	16	0.77
+0	FAIL	newmain	v4k_8tile.avif	16	rc=101
+0	CHECKSUM	newmain	v4k_8tile.avif	16	11b129551fbac9df4a20b40c9a2f4db6
+0	RESULT	newmain	v4k_8tile.avif	16	0	2	204.5067	102.253369
+0	RESULT	newmain	v4k_8tile.avif	16	1	2	196.2167	98.108352
+0	LOAD	newmain	v4k_8tile.avif	16	0.77
+0	CHECKSUM	oldmain	v4k_8tile_10b.avif	1	a79a2c0025584b83e9cbb0424dbbd16f
+0	RESULT	oldmain	v4k_8tile_10b.avif	1	0	2	566.9793	283.489647
+0	RESULT	oldmain	v4k_8tile_10b.avif	1	1	2	550.4887	275.244328
+0	RESULT	oldmain	v4k_8tile_10b.avif	1	2	2	548.2386	274.119293
+0	LOAD	oldmain	v4k_8tile_10b.avif	1	0.79
+0	CHECKSUM	newmain	v4k_8tile_10b.avif	1	a79a2c0025584b83e9cbb0424dbbd16f
+0	RESULT	newmain	v4k_8tile_10b.avif	1	0	2	844.2842	422.142082
+0	RESULT	newmain	v4k_8tile_10b.avif	1	1	2	823.4186	411.709302
+0	RESULT	newmain	v4k_8tile_10b.avif	1	2	2	824.6126	412.306286
+0	LOAD	newmain	v4k_8tile_10b.avif	1	0.79
+0	CHECKSUM	oldmain	v4k_8tile_10b.avif	2	a79a2c0025584b83e9cbb0424dbbd16f
+0	RESULT	oldmain	v4k_8tile_10b.avif	2	0	2	981.3724	490.686202
+0	RESULT	oldmain	v4k_8tile_10b.avif	2	1	2	962.1614	481.080712
+0	RESULT	oldmain	v4k_8tile_10b.avif	2	2	2	958.8483	479.424126
+0	LOAD	oldmain	v4k_8tile_10b.avif	2	0.81
+0	FAIL	newmain	v4k_8tile_10b.avif	2	rc=101
+0	LOAD	newmain	v4k_8tile_10b.avif	2	0.81
+0	CHECKSUM	oldmain	v4k_8tile_10b.avif	4	a79a2c0025584b83e9cbb0424dbbd16f
+0	RESULT	oldmain	v4k_8tile_10b.avif	4	0	2	1319.0096	659.504806
+0	RESULT	oldmain	v4k_8tile_10b.avif	4	1	2	1267.0542	633.527124
+0	RESULT	oldmain	v4k_8tile_10b.avif	4	2	2	1279.8817	639.940853
+0	LOAD	oldmain	v4k_8tile_10b.avif	4	1.06
+0	FAIL	newmain	v4k_8tile_10b.avif	4	rc=101
+0	CHECKSUM	newmain	v4k_8tile_10b.avif	4	a79a2c0025584b83e9cbb0424dbbd16f
+0	RESULT	newmain	v4k_8tile_10b.avif	4	0	2	333.9797	166.989868
+0	LOAD	newmain	v4k_8tile_10b.avif	4	1.06
+0	CHECKSUM	oldmain	v4k_8tile_10b.avif	8	a79a2c0025584b83e9cbb0424dbbd16f
+0	RESULT	oldmain	v4k_8tile_10b.avif	8	0	2	1328.3618	664.180881
+0	RESULT	oldmain	v4k_8tile_10b.avif	8	1	2	1301.0953	650.547659
+0	RESULT	oldmain	v4k_8tile_10b.avif	8	2	2	1287.5808	643.790394
+0	LOAD	oldmain	v4k_8tile_10b.avif	8	1.06
+0	CHECKSUM	newmain	v4k_8tile_10b.avif	8	a79a2c0025584b83e9cbb0424dbbd16f
+0	RESULT	newmain	v4k_8tile_10b.avif	8	0	2	272.0168	136.008408
+0	RESULT	newmain	v4k_8tile_10b.avif	8	1	2	247.8665	123.933239
+0	RESULT	newmain	v4k_8tile_10b.avif	8	2	2	242.1210	121.060505
+0	LOAD	newmain	v4k_8tile_10b.avif	8	1.06
+0	CHECKSUM	oldmain	v4k_8tile_10b.avif	16	a79a2c0025584b83e9cbb0424dbbd16f
+0	RESULT	oldmain	v4k_8tile_10b.avif	16	0	2	1311.1820	655.590991
+0	RESULT	oldmain	v4k_8tile_10b.avif	16	1	2	1285.7371	642.868528
+0	RESULT	oldmain	v4k_8tile_10b.avif	16	2	2	1305.8553	652.927659
+0	LOAD	oldmain	v4k_8tile_10b.avif	16	1.29
+0	FAIL	newmain	v4k_8tile_10b.avif	16	rc=101
+0	CHECKSUM	newmain	v4k_8tile_10b.avif	16	a79a2c0025584b83e9cbb0424dbbd16f
+0	LOAD	newmain	v4k_8tile_10b.avif	16	1.29
+1	CHECKSUM	newmain	v4k_8tile.avif	1	11b129551fbac9df4a20b40c9a2f4db6
+1	RESULT	newmain	v4k_8tile.avif	1	0	2	701.2595	350.629750
+1	RESULT	newmain	v4k_8tile.avif	1	1	2	688.7995	344.399752
+1	RESULT	newmain	v4k_8tile.avif	1	2	2	688.3366	344.168315
+1	LOAD	newmain	v4k_8tile.avif	1	1.27
+1	CHECKSUM	oldmain	v4k_8tile.avif	1	11b129551fbac9df4a20b40c9a2f4db6
+1	RESULT	oldmain	v4k_8tile.avif	1	0	2	454.5750	227.287483
+1	RESULT	oldmain	v4k_8tile.avif	1	1	2	441.9093	220.954670
+1	RESULT	oldmain	v4k_8tile.avif	1	2	2	440.7061	220.353042
+1	LOAD	oldmain	v4k_8tile.avif	1	1.27
+1	CHECKSUM	newmain	v4k_8tile.avif	2	11b129551fbac9df4a20b40c9a2f4db6
+1	RESULT	newmain	v4k_8tile.avif	2	0	2	474.1382	237.069077
+1	RESULT	newmain	v4k_8tile.avif	2	1	2	459.7836	229.891789
+1	RESULT	newmain	v4k_8tile.avif	2	2	2	457.9395	228.969729
+1	LOAD	newmain	v4k_8tile.avif	2	1.33
+1	CHECKSUM	oldmain	v4k_8tile.avif	2	11b129551fbac9df4a20b40c9a2f4db6
+1	RESULT	oldmain	v4k_8tile.avif	2	0	2	839.3000	419.650003
+1	RESULT	oldmain	v4k_8tile.avif	2	1	2	822.5036	411.251824
+1	RESULT	oldmain	v4k_8tile.avif	2	2	2	821.6783	410.839144
+1	LOAD	oldmain	v4k_8tile.avif	2	1.33
+1	FAIL	newmain	v4k_8tile.avif	4	rc=101
+1	CHECKSUM	newmain	v4k_8tile.avif	4	11b129551fbac9df4a20b40c9a2f4db6
+1	RESULT	newmain	v4k_8tile.avif	4	0	2	280.8914	140.445707
+1	RESULT	newmain	v4k_8tile.avif	4	1	2	266.3137	133.156830
+1	LOAD	newmain	v4k_8tile.avif	4	1.33
+1	CHECKSUM	oldmain	v4k_8tile.avif	4	11b129551fbac9df4a20b40c9a2f4db6
+1	RESULT	oldmain	v4k_8tile.avif	4	0	2	1203.9961	601.998047
+1	RESULT	oldmain	v4k_8tile.avif	4	1	2	1174.4486	587.224298
+1	RESULT	oldmain	v4k_8tile.avif	4	2	2	1167.5240	583.761987
+1	LOAD	oldmain	v4k_8tile.avif	4	1.30
+1	CHECKSUM	newmain	v4k_8tile.avif	8	11b129551fbac9df4a20b40c9a2f4db6
+1	RESULT	newmain	v4k_8tile.avif	8	0	2	209.5374	104.768707
+1	RESULT	newmain	v4k_8tile.avif	8	1	2	191.1601	95.580043
+1	RESULT	newmain	v4k_8tile.avif	8	2	2	190.7050	95.352491
+1	LOAD	newmain	v4k_8tile.avif	8	1.30
+1	CHECKSUM	oldmain	v4k_8tile.avif	8	11b129551fbac9df4a20b40c9a2f4db6
+1	RESULT	oldmain	v4k_8tile.avif	8	0	2	1247.8019	623.900937
+1	RESULT	oldmain	v4k_8tile.avif	8	1	2	1240.0435	620.021770
+1	RESULT	oldmain	v4k_8tile.avif	8	2	2	1222.7827	611.391361
+1	LOAD	oldmain	v4k_8tile.avif	8	1.52
+1	CHECKSUM	newmain	v4k_8tile.avif	16	11b129551fbac9df4a20b40c9a2f4db6
+1	RESULT	newmain	v4k_8tile.avif	16	0	2	214.6014	107.300714
+1	RESULT	newmain	v4k_8tile.avif	16	1	2	195.8269	97.913475
+1	RESULT	newmain	v4k_8tile.avif	16	2	2	196.4454	98.222704
+1	LOAD	newmain	v4k_8tile.avif	16	1.52
+1	CHECKSUM	oldmain	v4k_8tile.avif	16	11b129551fbac9df4a20b40c9a2f4db6
+1	RESULT	oldmain	v4k_8tile.avif	16	0	2	1197.2702	598.635094
+1	RESULT	oldmain	v4k_8tile.avif	16	1	2	1215.8981	607.949054
+1	RESULT	oldmain	v4k_8tile.avif	16	2	2	1231.2561	615.628028
+1	LOAD	oldmain	v4k_8tile.avif	16	1.48
+1	CHECKSUM	newmain	v4k_8tile_10b.avif	1	a79a2c0025584b83e9cbb0424dbbd16f
+1	RESULT	newmain	v4k_8tile_10b.avif	1	0	2	837.5162	418.758084
+1	RESULT	newmain	v4k_8tile_10b.avif	1	1	2	820.9638	410.481918
+1	RESULT	newmain	v4k_8tile_10b.avif	1	2	2	819.3829	409.691472
+1	LOAD	newmain	v4k_8tile_10b.avif	1	1.44
+1	CHECKSUM	oldmain	v4k_8tile_10b.avif	1	a79a2c0025584b83e9cbb0424dbbd16f
+1	RESULT	oldmain	v4k_8tile_10b.avif	1	0	2	567.0897	283.544833
+1	RESULT	oldmain	v4k_8tile_10b.avif	1	1	2	549.4347	274.717334
+1	RESULT	oldmain	v4k_8tile_10b.avif	1	2	2	548.5652	274.282599
+1	LOAD	oldmain	v4k_8tile_10b.avif	1	1.44
+1	FAIL	newmain	v4k_8tile_10b.avif	2	rc=101
+1	CHECKSUM	newmain	v4k_8tile_10b.avif	2	a79a2c0025584b83e9cbb0424dbbd16f
+1	RESULT	newmain	v4k_8tile_10b.avif	2	0	2	575.9700	287.985004
+1	LOAD	newmain	v4k_8tile_10b.avif	2	1.48
+1	CHECKSUM	oldmain	v4k_8tile_10b.avif	2	a79a2c0025584b83e9cbb0424dbbd16f
+1	RESULT	oldmain	v4k_8tile_10b.avif	2	0	2	1030.9761	515.488044
+1	RESULT	oldmain	v4k_8tile_10b.avif	2	1	2	1013.7303	506.865133
+1	RESULT	oldmain	v4k_8tile_10b.avif	2	2	2	1016.2554	508.127712
+1	LOAD	oldmain	v4k_8tile_10b.avif	2	1.48
+1	CHECKSUM	newmain	v4k_8tile_10b.avif	4	a79a2c0025584b83e9cbb0424dbbd16f
+1	RESULT	newmain	v4k_8tile_10b.avif	4	0	2	338.5927	169.296374
+1	RESULT	newmain	v4k_8tile_10b.avif	4	1	2	317.8303	158.915173
+1	RESULT	newmain	v4k_8tile_10b.avif	4	2	2	317.5923	158.796165
+1	LOAD	newmain	v4k_8tile_10b.avif	4	1.68
+1	CHECKSUM	oldmain	v4k_8tile_10b.avif	4	a79a2c0025584b83e9cbb0424dbbd16f
+1	RESULT	oldmain	v4k_8tile_10b.avif	4	0	2	1295.5553	647.777642
+1	RESULT	oldmain	v4k_8tile_10b.avif	4	1	2	1277.6600	638.830010
+1	RESULT	oldmain	v4k_8tile_10b.avif	4	2	2	1276.0851	638.042572
+1	LOAD	oldmain	v4k_8tile_10b.avif	4	1.68
+1	CHECKSUM	newmain	v4k_8tile_10b.avif	8	a79a2c0025584b83e9cbb0424dbbd16f
+1	RESULT	newmain	v4k_8tile_10b.avif	8	0	2	264.6636	132.331786
+1	RESULT	newmain	v4k_8tile_10b.avif	8	1	2	245.6923	122.846153
+1	RESULT	newmain	v4k_8tile_10b.avif	8	2	2	257.0473	128.523669
+1	LOAD	newmain	v4k_8tile_10b.avif	8	2.03
+1	CHECKSUM	oldmain	v4k_8tile_10b.avif	8	a79a2c0025584b83e9cbb0424dbbd16f
+1	RESULT	oldmain	v4k_8tile_10b.avif	8	0	2	1313.3211	656.660526
+1	RESULT	oldmain	v4k_8tile_10b.avif	8	1	2	1303.4137	651.706838
+1	RESULT	oldmain	v4k_8tile_10b.avif	8	2	2	1305.1228	652.561394
+1	LOAD	oldmain	v4k_8tile_10b.avif	8	1.95
+1	CHECKSUM	newmain	v4k_8tile_10b.avif	16	a79a2c0025584b83e9cbb0424dbbd16f
+1	RESULT	newmain	v4k_8tile_10b.avif	16	0	2	287.2532	143.626579
+1	RESULT	newmain	v4k_8tile_10b.avif	16	1	2	245.0046	122.502323
+1	RESULT	newmain	v4k_8tile_10b.avif	16	2	2	256.1948	128.097402
+1	LOAD	newmain	v4k_8tile_10b.avif	16	1.95
+1	CHECKSUM	oldmain	v4k_8tile_10b.avif	16	a79a2c0025584b83e9cbb0424dbbd16f
+1	RESULT	oldmain	v4k_8tile_10b.avif	16	0	2	1303.7831	651.891525
+1	RESULT	oldmain	v4k_8tile_10b.avif	16	1	2	1307.1480	653.573993
+1	RESULT	oldmain	v4k_8tile_10b.avif	16	2	2	1345.8064	672.903220
+1	LOAD	oldmain	v4k_8tile_10b.avif	16	2.11
+2	CHECKSUM	oldmain	v4k_8tile.avif	1	11b129551fbac9df4a20b40c9a2f4db6
+2	RESULT	oldmain	v4k_8tile.avif	1	0	2	451.9654	225.982716
+2	RESULT	oldmain	v4k_8tile.avif	1	1	2	438.5167	219.258370
+2	RESULT	oldmain	v4k_8tile.avif	1	2	2	437.8074	218.903679
+2	LOAD	oldmain	v4k_8tile.avif	1	2.11
+2	CHECKSUM	newmain	v4k_8tile.avif	1	11b129551fbac9df4a20b40c9a2f4db6
+2	RESULT	newmain	v4k_8tile.avif	1	0	2	714.3469	357.173451
+2	RESULT	newmain	v4k_8tile.avif	1	1	2	703.7395	351.869773
+2	RESULT	newmain	v4k_8tile.avif	1	2	2	702.5724	351.286192
+2	LOAD	newmain	v4k_8tile.avif	1	2.02
+2	CHECKSUM	oldmain	v4k_8tile.avif	2	11b129551fbac9df4a20b40c9a2f4db6
+2	RESULT	oldmain	v4k_8tile.avif	2	0	2	871.4568	435.728410
+2	RESULT	oldmain	v4k_8tile.avif	2	1	2	860.8729	430.436444
+2	RESULT	oldmain	v4k_8tile.avif	2	2	2	857.5021	428.751034
+2	LOAD	oldmain	v4k_8tile.avif	2	2.02
+2	FAIL	newmain	v4k_8tile.avif	2	rc=101
+2	LOAD	newmain	v4k_8tile.avif	2	2.02
+2	CHECKSUM	oldmain	v4k_8tile.avif	4	11b129551fbac9df4a20b40c9a2f4db6
+2	RESULT	oldmain	v4k_8tile.avif	4	0	2	1224.0755	612.037751
+2	RESULT	oldmain	v4k_8tile.avif	4	1	2	1218.0493	609.024633
+2	RESULT	oldmain	v4k_8tile.avif	4	2	2	1207.8854	603.942698
+2	LOAD	oldmain	v4k_8tile.avif	4	2.18
+2	CHECKSUM	newmain	v4k_8tile.avif	4	11b129551fbac9df4a20b40c9a2f4db6
+2	RESULT	newmain	v4k_8tile.avif	4	0	2	278.0540	139.027010
+2	RESULT	newmain	v4k_8tile.avif	4	1	2	262.0160	131.008004
+2	RESULT	newmain	v4k_8tile.avif	4	2	2	263.5414	131.770685
+2	LOAD	newmain	v4k_8tile.avif	4	2.18
+2	CHECKSUM	oldmain	v4k_8tile.avif	8	11b129551fbac9df4a20b40c9a2f4db6
+2	RESULT	oldmain	v4k_8tile.avif	8	0	2	1271.5199	635.759965
+2	RESULT	oldmain	v4k_8tile.avif	8	1	2	1235.0814	617.540678
+2	RESULT	oldmain	v4k_8tile.avif	8	2	2	1235.8918	617.945909
+2	LOAD	oldmain	v4k_8tile.avif	8	2.33
+2	FAIL	newmain	v4k_8tile.avif	8	rc=101
+2	LOAD	newmain	v4k_8tile.avif	8	2.33
+2	CHECKSUM	oldmain	v4k_8tile.avif	16	11b129551fbac9df4a20b40c9a2f4db6
+2	RESULT	oldmain	v4k_8tile.avif	16	0	2	1211.4686	605.734321
+2	RESULT	oldmain	v4k_8tile.avif	16	1	2	1181.7573	590.878633
+2	RESULT	oldmain	v4k_8tile.avif	16	2	2	1199.6240	599.812017
+2	LOAD	oldmain	v4k_8tile.avif	16	2.38
+2	FAIL	newmain	v4k_8tile.avif	16	rc=101
+2	CHECKSUM	newmain	v4k_8tile.avif	16	11b129551fbac9df4a20b40c9a2f4db6
+2	RESULT	newmain	v4k_8tile.avif	16	0	2	208.1215	104.060755
+2	LOAD	newmain	v4k_8tile.avif	16	2.38
+2	CHECKSUM	oldmain	v4k_8tile_10b.avif	1	a79a2c0025584b83e9cbb0424dbbd16f
+2	RESULT	oldmain	v4k_8tile_10b.avif	1	0	2	556.9311	278.465552
+2	RESULT	oldmain	v4k_8tile_10b.avif	1	1	2	539.5336	269.766795
+2	RESULT	oldmain	v4k_8tile_10b.avif	1	2	2	538.8551	269.427574
+2	LOAD	oldmain	v4k_8tile_10b.avif	1	2.27
+2	CHECKSUM	newmain	v4k_8tile_10b.avif	1	a79a2c0025584b83e9cbb0424dbbd16f
+2	RESULT	newmain	v4k_8tile_10b.avif	1	0	2	844.7580	422.379010
+2	RESULT	newmain	v4k_8tile_10b.avif	1	1	2	823.2524	411.626210
+2	RESULT	newmain	v4k_8tile_10b.avif	1	2	2	824.7697	412.384836
+2	LOAD	newmain	v4k_8tile_10b.avif	1	2.27
+2	CHECKSUM	oldmain	v4k_8tile_10b.avif	2	a79a2c0025584b83e9cbb0424dbbd16f
+2	RESULT	oldmain	v4k_8tile_10b.avif	2	0	2	1012.9434	506.471704
+2	RESULT	oldmain	v4k_8tile_10b.avif	2	1	2	989.2008	494.600390
+2	RESULT	oldmain	v4k_8tile_10b.avif	2	2	2	984.9782	492.489104
+2	LOAD	oldmain	v4k_8tile_10b.avif	2	2.25
+2	CHECKSUM	newmain	v4k_8tile_10b.avif	2	a79a2c0025584b83e9cbb0424dbbd16f
+2	RESULT	newmain	v4k_8tile_10b.avif	2	0	2	578.3589	289.179471
+2	RESULT	newmain	v4k_8tile_10b.avif	2	1	2	558.7179	279.358941
+2	RESULT	newmain	v4k_8tile_10b.avif	2	2	2	558.0678	279.033877
+2	LOAD	newmain	v4k_8tile_10b.avif	2	2.25
+2	CHECKSUM	oldmain	v4k_8tile_10b.avif	4	a79a2c0025584b83e9cbb0424dbbd16f
+2	RESULT	oldmain	v4k_8tile_10b.avif	4	0	2	1276.5913	638.295647
+2	RESULT	oldmain	v4k_8tile_10b.avif	4	1	2	1279.3133	639.656628
+2	RESULT	oldmain	v4k_8tile_10b.avif	4	2	2	1243.1958	621.597885
+2	LOAD	oldmain	v4k_8tile_10b.avif	4	2.15
+2	FAIL	newmain	v4k_8tile_10b.avif	4	rc=101
+2	CHECKSUM	newmain	v4k_8tile_10b.avif	4	a79a2c0025584b83e9cbb0424dbbd16f
+2	RESULT	newmain	v4k_8tile_10b.avif	4	0	2	333.4617	166.730850
+2	RESULT	newmain	v4k_8tile_10b.avif	4	1	2	320.2567	160.128345
+2	LOAD	newmain	v4k_8tile_10b.avif	4	2.15
+2	CHECKSUM	oldmain	v4k_8tile_10b.avif	8	a79a2c0025584b83e9cbb0424dbbd16f
+2	RESULT	oldmain	v4k_8tile_10b.avif	8	0	2	1307.3796	653.689802
+2	RESULT	oldmain	v4k_8tile_10b.avif	8	1	2	1290.0317	645.015850
+2	RESULT	oldmain	v4k_8tile_10b.avif	8	2	2	1281.8290	640.914504
+2	LOAD	oldmain	v4k_8tile_10b.avif	8	2.06
+2	FAIL	newmain	v4k_8tile_10b.avif	8	rc=101
+2	CHECKSUM	newmain	v4k_8tile_10b.avif	8	a79a2c0025584b83e9cbb0424dbbd16f
+2	RESULT	newmain	v4k_8tile_10b.avif	8	0	2	262.1857	131.092863
+2	RESULT	newmain	v4k_8tile_10b.avif	8	1	2	245.9585	122.979246
+2	LOAD	newmain	v4k_8tile_10b.avif	8	2.29
+2	CHECKSUM	oldmain	v4k_8tile_10b.avif	16	a79a2c0025584b83e9cbb0424dbbd16f
+2	RESULT	oldmain	v4k_8tile_10b.avif	16	0	2	1304.8526	652.426280
+2	RESULT	oldmain	v4k_8tile_10b.avif	16	1	2	1259.4965	629.748246
+2	RESULT	oldmain	v4k_8tile_10b.avif	16	2	2	1257.5419	628.770929
+2	LOAD	oldmain	v4k_8tile_10b.avif	16	2.43
+2	CHECKSUM	newmain	v4k_8tile_10b.avif	16	a79a2c0025584b83e9cbb0424dbbd16f
+2	RESULT	newmain	v4k_8tile_10b.avif	16	0	2	264.6903	132.345145
+2	RESULT	newmain	v4k_8tile_10b.avif	16	1	2	245.8712	122.935577
+2	RESULT	newmain	v4k_8tile_10b.avif	16	2	2	274.5561	137.278046
+2	LOAD	newmain	v4k_8tile_10b.avif	16	2.43
