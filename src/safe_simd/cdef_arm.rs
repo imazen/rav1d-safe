@@ -189,11 +189,10 @@ fn padding_8bpc(
     } else {
         w
     };
-    for y in 0..h {
+    dst.for_rows::<BitDepth8, _>(read_w, h, |y, src| {
         let row_offset = TMP_OFFSET + y * TMP_STRIDE;
-        let src = (dst + (y as isize * stride)).slice::<BitDepth8>(read_w);
-        widen_row(&mut tmp[row_offset..], &src, read_w);
-    }
+        widen_row(&mut tmp[row_offset..], src, read_w);
+    });
 
     // Handle left edge
     if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
@@ -305,11 +304,10 @@ fn padding_16bpc(
     } else {
         w
     };
-    for y in 0..h {
+    dst.for_rows::<BitDepth16, _>(read_w, h, |y, src| {
         let row_offset = TMP_OFFSET + y * TMP_STRIDE;
-        let src = (dst + (y as isize * stride)).slice::<BitDepth16>(read_w);
         tmp[row_offset..row_offset + read_w].copy_from_slice(&src[..read_w]);
-    }
+    });
 
     // Handle left edge
     if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
@@ -616,13 +614,12 @@ fn cdef_filter_block_8bpc_neon<const W: usize, const H: usize, const PRI: bool, 
 ) {
     use crate::include::common::bitdepth::BitDepth8;
 
-    let stride = dst.pixel_stride::<BitDepth8>();
     let pri_threshold = vdupq_n_u16(p.pri_threshold);
     let pri_neg_shift = vdupq_n_s16(p.pri_neg_shift);
     let sec_threshold = vdupq_n_u16(p.sec_threshold);
     let sec_neg_shift = vdupq_n_s16(p.sec_neg_shift);
 
-    for y in 0..H {
+    dst.for_rows_mut::<BitDepth8, _>(W, H, |y, dst_row| {
         let base = TMP_OFFSET + y * TMP_STRIDE;
         // `px` comes from `tmp`, not from a second read of `dst`: `padding_*`
         // already copied this row's pixels there and nothing has written the
@@ -646,8 +643,6 @@ fn cdef_filter_block_8bpc_neon<const W: usize, const H: usize, const PRI: bool, 
         );
         let packed = vmovn_u16(vreinterpretq_u16_s16(out));
 
-        // One guard per destination row, exactly W pixels wide.
-        let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth8>(W);
         if W == 8 {
             safe_simd::vst1_u8(<&mut [u8; 8]>::try_from(&mut dst_row[..8]).unwrap(), packed);
         } else {
@@ -655,7 +650,7 @@ fn cdef_filter_block_8bpc_neon<const W: usize, const H: usize, const PRI: bool, 
             safe_simd::vst1_u8(&mut buf, packed);
             dst_row[..W].copy_from_slice(&buf[..W]);
         }
-    }
+    });
 }
 
 /// Route to the right `(W, H, PRI, SEC)` monomorphisation.
@@ -773,13 +768,12 @@ fn cdef_filter_block_16bpc_neon<
 ) {
     use crate::include::common::bitdepth::BitDepth16;
 
-    let stride = dst.pixel_stride::<BitDepth16>();
     let pri_threshold = vdupq_n_u16(p.pri_threshold);
     let pri_neg_shift = vdupq_n_s16(p.pri_neg_shift);
     let sec_threshold = vdupq_n_u16(p.sec_threshold);
     let sec_neg_shift = vdupq_n_s16(p.sec_neg_shift);
 
-    for y in 0..H {
+    dst.for_rows_mut::<BitDepth16, _>(W, H, |y, dst_row| {
         let base = TMP_OFFSET + y * TMP_STRIDE;
         // `px` from `tmp` — see the note in the 8bpc kernel.
         let px = cdef_tap(tmp, base);
@@ -797,8 +791,6 @@ fn cdef_filter_block_16bpc_neon<
         );
         let packed = vreinterpretq_u16_s16(out);
 
-        // One guard per destination row, exactly W pixels wide.
-        let mut dst_row = (dst + (y as isize * stride)).slice_mut::<BitDepth16>(W);
         if W == 8 {
             safe_simd::vst1q_u16(
                 <&mut [u16; 8]>::try_from(&mut dst_row[..8]).unwrap(),
@@ -809,7 +801,7 @@ fn cdef_filter_block_16bpc_neon<
             safe_simd::vst1q_u16(&mut buf, packed);
             dst_row[..W].copy_from_slice(&buf[..W]);
         }
-    }
+    });
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1220,17 +1212,12 @@ fn cdef_dir_cost(
 fn cdef_find_dir_8bpc_neon(_token: Arm64, img: PicOffset, variance: &mut c_uint) -> c_int {
     use crate::include::common::bitdepth::BitDepth8;
 
-    let stride = img.pixel_stride::<BitDepth8>();
     let c128 = vdupq_n_s16(128);
     let mut rows = [vdupq_n_s16(0); 8];
-    for y in 0..8usize {
-        let row = img + (y as isize * stride);
-        // One guard per row, exactly the 8 pixels the search reads.
-        let guard = row.slice::<BitDepth8>(8);
-        let v = safe_simd::vld1_u8(<&[u8; 8]>::try_from(&guard[..8]).unwrap());
-        drop(guard);
+    img.for_rows::<BitDepth8, _>(8, 8, |y, px| {
+        let v = safe_simd::vld1_u8(<&[u8; 8]>::try_from(&px[..8]).unwrap());
         rows[y] = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(v)), c128);
-    }
+    });
     cdef_dir_core(&rows, variance)
 }
 
@@ -1244,18 +1231,13 @@ fn cdef_find_dir_16bpc_neon(
 ) -> c_int {
     use crate::include::common::bitdepth::BitDepth16;
 
-    let stride = img.pixel_stride::<BitDepth16>();
     let c128 = vdupq_n_s16(128);
     let neg_shift = vdupq_n_s16(-(bitdepth_min_8 as i16));
     let mut rows = [vdupq_n_s16(0); 8];
-    for y in 0..8usize {
-        let row = img + (y as isize * stride);
-        // One guard per row, exactly the 8 pixels the search reads.
-        let guard = row.slice::<BitDepth16>(8);
-        let px = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&guard[..8]).unwrap());
-        drop(guard);
+    img.for_rows::<BitDepth16, _>(8, 8, |y, row| {
+        let px = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&row[..8]).unwrap());
         rows[y] = vsubq_s16(vreinterpretq_s16_u16(vshlq_u16(px, neg_shift)), c128);
-    }
+    });
     cdef_dir_core(&rows, variance)
 }
 
