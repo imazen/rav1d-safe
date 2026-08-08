@@ -49,6 +49,8 @@ fn main() {
 
     #[cfg(feature = "probe-count")]
     rav1d_disjoint_mut::probe::reset();
+    #[cfg(feature = "probe-wide")]
+    rav1d_disjoint_mut::wide_probe::reset();
     #[cfg(feature = "probe-shardsim")]
     rav1d_disjoint_mut::probe::shard_reset();
 
@@ -65,6 +67,8 @@ fn main() {
         ms / iters as f64
     );
 
+    #[cfg(feature = "probe-wide")]
+    print!("{}", rav1d_disjoint_mut::wide_probe::report());
     #[cfg(feature = "probe-count")]
     {
         print!("{}", rav1d_disjoint_mut::probe::report(iters));
@@ -73,8 +77,8 @@ fn main() {
     {
         print!("{}", rav1d_disjoint_mut::probe::shard_report());
     }
-    #[cfg(not(feature = "probe-count"))]
-    eprintln!("(built without --features probe-count; no counters)");
+    #[cfg(not(any(feature = "probe-count", feature = "probe-wide")))]
+    eprintln!("(built without --features probe-count / probe-wide; no counters)");
 
     let _ = dec.flush();
 }

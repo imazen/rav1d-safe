@@ -80,6 +80,7 @@ unchecked = []
 
 # THROWAWAY measurement probes (recon/tracker-profile branch). Never merge.
 probe-count = ["rav1d-disjoint-mut/__probe_count"]
+probe-wide = ["rav1d-disjoint-mut/__probe_wide"]
 probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]
 probe-lockonly = ["rav1d-disjoint-mut/__probe_lockonly"]
 # Tracking off, bounds checks untouched (isolates the tracker from `unchecked`).
@@ -116,6 +117,7 @@ blockshift-13 = ["rav1d-disjoint-mut/__blockshift_13"]
 blockshift-14 = ["rav1d-disjoint-mut/__blockshift_14"]
 blockshift-15 = ["rav1d-disjoint-mut/__blockshift_15"]
 blockshift-16 = ["rav1d-disjoint-mut/__blockshift_16"]
+blockshift-adaptive = ["rav1d-disjoint-mut/__blockshift_adaptive"]
 
 # Test-only (double-underscore = private, never enable in production): arms a
 # one-shot worker-thread panic so tests can prove a worker death surfaces as a

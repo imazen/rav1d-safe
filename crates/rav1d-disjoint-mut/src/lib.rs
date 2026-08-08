@@ -1023,6 +1023,18 @@ mod tracker_shard;
 )))]
 use tracker_shard as checked;
 
+/// Wide-path reason counters, when `__probe_wide` is on. See the module docs.
+#[cfg(all(
+    feature = "__probe_wide",
+    not(any(
+        feature = "__probe_count",
+        feature = "__probe_noscan",
+        feature = "__probe_lockonly",
+        feature = "__tracker_legacy"
+    ))
+))]
+pub use tracker_shard::wide_probe;
+
 /// The single-lock predecessor, kept only so the throwaway `__probe_*`
 /// decomposition arms (`benchmarks/tracker_decomp_2026-08-07.meta`) remain
 /// reproducible against the tracker they actually measured.

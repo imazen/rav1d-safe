@@ -20,7 +20,8 @@
 //! sharding buys nothing, and thread sharding would make each registrant read
 //! every other thread's line).
 //!
-//! * The buffer is cut into fixed `1 << BLOCK_SHIFT`-byte blocks.
+//! * The buffer is cut into `1 << shift`-byte blocks — a per-instance shift
+//!   under `__blockshift_adaptive`, the [`BLOCK_SHIFT`] constant otherwise.
 //! * `shard(block)` is a multiplicative hash of the block index.
 //! * A borrow `R` registers its **exact** interval `[R.start, R.end)` — not a
 //!   clipped piece — in every shard that `R`'s blocks map to, and checks for
@@ -33,6 +34,19 @@
 //! registers second holds `shard(b)`'s lock, scans it, and finds the other's
 //! record. Registration happens *before* the reference is created (unchanged
 //! from the legacy tracker), so there is no TOCTOU gap.
+//!
+//! That argument needs only that both registrants agree on where the block
+//! boundaries are and on which shard a block maps to. It does NOT constrain
+//! either choice, which is why the block shift can be a per-instance value and
+//! `shard_of` can be any function of the block index: both are fixed for a
+//! tracker's whole life (they move only in [`BorrowTracker::reprovision`],
+//! which takes `&mut self` and so runs with no borrow outstanding). Those are
+//! locality-versus-collision knobs, never correctness ones.
+//!
+//! *Release does not need the lock.* Retiring a record is one bit-clear in
+//! [`Shard::occupied`], which is atomic and so cannot lose, or be lost by, the
+//! `fetch_or` a concurrent registration publishes with. See
+//! [`BorrowTracker::remove`] for why this does not widen the add/remove race.
 //!
 //! *No false positive.* Every stored record is the borrow's full interval, so
 //! two records overlap exactly when the two borrows do. (Storing a *clipped*
@@ -200,14 +214,40 @@ pub(super) const N_SHARDS: usize = 128;
 /// measurement does not support. Shift 8 and 10 remain available as
 /// `blockshift-8` / `blockshift-10` if a different tiling ever inverts this.
 ///
-/// **Re-opened 2026-08-08 with 14 and 16**, for a reason the 8/10/12 screening
-/// did not have in front of it: the biggest single tracker consumer turns out
-/// to be `rav1d_prepare_intra_edges`'s left-COLUMN read (9.19% of a t=8 4K
-/// frame's samples), which registers one 1-pixel interval per row. At a 3840-
-/// byte row and a 4 KiB block no two of those rows share a block, so a 16-row
-/// column costs 16 distinct shard lines. At shift 16 seventeen rows share a
-/// block, which collapses that to one line — at the price of putting every
-/// concurrent tile column of the same sbrow-stripe on the same lock.
+/// **Re-opened 2026-08-08, and the ladder does NOT stop at 12**
+/// (`benchmarks/tracker_blockshift_2026-08-08.meta`). The 8/10/12 screening
+/// above measured the right thing for the wrong quantity: it counted
+/// multi-shard REGISTRATIONS, and those really are ~flat past shift 12. What it
+/// could not see is that the tracker's cost is the shard CACHE LINE, not the
+/// registration — and a strided access pays one line per ROW.
+///
+/// The biggest single tracker consumer is `rav1d_prepare_intra_edges`'s
+/// left-COLUMN read, 9.19% of a t=8 4K frame's samples, which registers one
+/// 1-PIXEL interval per row to read one byte per row. At a 3840-byte row and a
+/// 4 KiB block no two of those rows share a block, so a 16-row column costs 16
+/// distinct shard lines. Doubling the block halves that.
+///
+/// Measured, `examples/probe_tracker`, v4k_8tile, t=8, ms/frame:
+///
+/// ```text
+///   shift  bytes/block  rows/block   8bpc   10bpc   add_slow(8bpc)
+///      12         4096        1.07  119.0   140.7            72585
+///      13         8192        2.13   89.3   130.1            36197
+///      14        16384        4.27   72.8   100.4            18061
+///      15        32768        8.53   73.0    92.1             9038
+///      16        65536       17.07   75.5    91.0             4454
+/// ```
+///
+/// Wide-path promotions are ZERO at every one of those, on both bit depths, so
+/// nothing here is trading against the all-shards path. `rows/block` is at the
+/// 8-bit luma stride; the 10-bit column peaks two shifts later because its
+/// stride is twice as wide, which is the observation
+/// [`block_shift_for`] turns into a rule.
+///
+/// The fixed values stay available as `blockshift-13/14/15/16`, but a CONSTANT
+/// is the wrong shape: the shift that makes a 4K plane's rows share a block
+/// turns a 64 KiB buffer into one block and one lock. Prefer
+/// `blockshift-adaptive`.
 #[cfg(feature = "__blockshift_8")]
 const BLOCK_SHIFT: u32 = 8;
 #[cfg(all(feature = "__blockshift_10", not(feature = "__blockshift_8")))]
@@ -290,6 +330,80 @@ const MAX_SHARDS_PER_BORROW: usize = 4;
 /// Blocks scanned before giving up and going wide. Bounds the fast path's work
 /// for a pathologically long borrow (e.g. an unbounded `index(..)`).
 const MAX_BLOCKS_SCAN: usize = 64;
+
+
+/// THROWAWAY wide-path reason counters (`__probe_wide`).
+///
+/// The wide path holds EVERY active shard of an instance, so a workload that
+/// reaches it at any rate collapses. Which of its three doors a promotion came
+/// through decides what to do about it, and they move in OPPOSITE directions
+/// as `BLOCK_SHIFT` grows: `WIDE_SHARDS` and `WIDE_BLOCKS` get rarer, while
+/// `WIDE_FULL` (slot exhaustion, because a bigger block funnels more
+/// simultaneous borrows onto one shard) gets commoner. Without these the shift
+/// ladder's cliffs can only be guessed at.
+///
+/// Unlike `__probe_count`, this does NOT switch the crate to the legacy
+/// tracker — it has to observe the sharded one.
+#[cfg(feature = "__probe_wide")]
+pub mod wide_probe {
+    use core::sync::atomic::AtomicU64;
+    use core::sync::atomic::Ordering::Relaxed;
+
+    /// `add_multi` saw more than `MAX_SHARDS_PER_BORROW` distinct shards.
+    pub static WIDE_SHARDS: AtomicU64 = AtomicU64::new(0);
+    /// The borrow spanned more than `MAX_BLOCKS_SCAN` blocks.
+    pub static WIDE_BLOCKS: AtomicU64 = AtomicU64::new(0);
+    /// A shard had no free slot, so the record was promoted.
+    pub static WIDE_FULL: AtomicU64 = AtomicU64::new(0);
+    /// `add_slow` entries (poisoned / a live wide record / multi-block).
+    pub static N_SLOW: AtomicU64 = AtomicU64::new(0);
+    /// `add_multi` entries.
+    pub static N_MULTI: AtomicU64 = AtomicU64::new(0);
+    /// Total registrations — NOT counted. One shared `fetch_add` per `add`, at
+    /// 136 M adds per 4K frame from eight threads, serialises the decoder hard
+    /// enough that slot pressure disappears and `WIDE_FULL` reads zero for the
+    /// wrong reason. The counters that remain fire 10^4-10^5 times per frame,
+    /// which is free. Kept as a field so the report's shape does not change.
+    pub static N_ADD: AtomicU64 = AtomicU64::new(0);
+
+    pub fn report() -> std::string::String {
+        use core::fmt::Write as _;
+        let mut out = std::string::String::new();
+        let adds = N_ADD.load(Relaxed).max(1);
+        let w = WIDE_SHARDS.load(Relaxed) + WIDE_BLOCKS.load(Relaxed) + WIDE_FULL.load(Relaxed);
+        let _ = writeln!(
+            out,
+            "WIDEHDR\tblock_shift\tadds\tslow\tmulti\tw_shards\tw_blocks\tw_full\tslow_pct\twide_pct"
+        );
+        let _ = writeln!(
+            out,
+            "WIDE\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.5}\t{:.6}",
+            super::BLOCK_SHIFT,
+            N_ADD.load(Relaxed),
+            N_SLOW.load(Relaxed),
+            N_MULTI.load(Relaxed),
+            WIDE_SHARDS.load(Relaxed),
+            WIDE_BLOCKS.load(Relaxed),
+            WIDE_FULL.load(Relaxed),
+            N_SLOW.load(Relaxed) as f64 * 100.0 / adds as f64,
+            w as f64 * 100.0 / adds as f64,
+        );
+        out
+    }
+
+    pub fn reset() {
+        for a in [
+            &WIDE_SHARDS,
+            &WIDE_BLOCKS,
+            &WIDE_FULL,
+            &N_SLOW,
+            &N_MULTI,
+            &N_ADD,
+        ] {
+            a.store(0, Relaxed);
+        }
+    }
+}
 
 // =============================================================================
 // Lock
@@ -682,6 +796,10 @@ type WideRec = (usize, usize, bool, Option<&'static Location<'static>>);
 /// fails.
 pub(super) struct BorrowTracker {
     shards: [Shard; N_SHARDS],
+    /// `log2` of this instance's block size — see [`block_shift_for`]. Read
+    /// once per registration off the same line as `mask`.
+    #[cfg(feature = "__blockshift_adaptive")]
+    shift: u32,
     /// Which of the shards this instance actually uses: `N_SHARDS - 1` for a
     /// buffer big enough to be worth spreading, `0` for a small one, whose
     /// borrows then all land on shard 0 and stay on one cache line.
@@ -709,6 +827,55 @@ const POISON_BIT: u32 = 1 << 31;
 // `TinyLock`(s), per the module-level rules.
 unsafe impl Send for BorrowTracker {}
 unsafe impl Sync for BorrowTracker {}
+
+/// Blocks per shard the adaptive shift aims for.
+///
+/// The whole point of a bigger block is that a STRIDED access — a `w x h`
+/// compact read, or worse `rav1d_prepare_intra_edges`' 1-pixel-wide left
+/// column — stops paying one distinct shard line per row. That argues for as
+/// few blocks as possible. The opposite pull is that a shard is the unit of
+/// mutual exclusion, so collapsing a whole plane onto a handful of shards puts
+/// every concurrent tile worker on the same lock.
+///
+/// Aiming for a fixed ratio of blocks to shards balances the two AT EVERY
+/// BUFFER SIZE, which a single global constant cannot: the shift that makes a
+/// 4K plane's rows share a block turns a 64 KiB buffer into ONE block and one
+/// lock. See [`block_shift_for`].
+///
+/// 2 is chosen so that the quantity the mechanism actually cares about —
+/// PICTURE ROWS PER BLOCK — comes out the same at every bit depth. A 10-bit
+/// plane is twice the bytes AND twice the stride of the 8-bit one, so a rule
+/// keyed on `len` alone tracks the stride for free: both land on ~4.3 rows per
+/// block. On the fixed ladder that is shift 14 for the 8-bit 4K plane (its
+/// joint-best) and 15 for the 10-bit one (within 1.2% of its best). A ratio of
+/// 1 would give ~8.5 rows and shift 15/16 — a hair better on 10-bit, at half
+/// the shard utilisation on every small buffer, which is the wrong trade for a
+/// rule that has to hold at all sizes.
+#[cfg(feature = "__blockshift_adaptive")]
+const BLOCKS_PER_SHARD: usize = 2;
+
+/// Block shift for an instance of `len` bytes: the power of two that lands
+/// `len` on about `BLOCKS_PER_SHARD * N_SHARDS` blocks.
+///
+/// At 128 shards and a ratio of 2 that is `log2(len) - 8`, clamped. An 8.3 MB
+/// 4K 8-bit luma plane gets 14 and its 16.6 MB 10-bit twin gets 15 — the same
+/// ~4.3 picture rows per block either way — while a 1 MB plane gets 12 and a
+/// 64 KiB one gets 8, instead of all of them being forced onto whatever suits
+/// 4K.
+///
+/// SOUND FOR ANY VALUE: the "no missed overlap" argument needs only that both
+/// registrants of a shared byte agree on the block boundaries, and the shift is
+/// read once in [`BorrowTracker::new`] and immutable for that tracker's life
+/// (it moves only in [`BorrowTracker::reprovision`], which takes `&mut self`
+/// and therefore runs with no borrow outstanding).
+#[cfg(feature = "__blockshift_adaptive")]
+#[inline]
+fn block_shift_for(len: usize) -> u32 {
+    let target = (BLOCKS_PER_SHARD * N_SHARDS) as u64;
+    let want = (len as u64 / target.max(1)).max(1);
+    // `ilog2` rounds down, so the block count lands at or above the target.
+    (u64::BITS - 1 - want.leading_zeros()).clamp(6, 24)
+}
 
 /// Instances below this many elements get a single shard.
 ///
@@ -821,6 +988,8 @@ impl BorrowTracker {
     pub fn new(len: usize) -> Self {
         Self {
             shards: [const { Shard::new() }; N_SHARDS],
+            #[cfg(feature = "__blockshift_adaptive")]
+            shift: block_shift_for(len),
             mask: mask_for(len),
             wide: UnsafeCell::new(Vec::new()),
             state: AtomicU32::new(0),
@@ -832,8 +1001,12 @@ impl BorrowTracker {
     /// `&mut self` is the whole safety argument: the caller holds `&mut
     /// DisjointMut`, so no borrow can be outstanding and no record can be lost.
     pub fn reprovision(&mut self, len: usize) {
-        // Only the mask moves; the shards are already there, and `&mut self`
-        // guarantees every one of them is empty.
+        // Only the mask (and the block shift) moves; the shards are already
+        // there, and `&mut self` guarantees every one of them is empty.
+        #[cfg(feature = "__blockshift_adaptive")]
+        {
+            self.shift = block_shift_for(len);
+        }
         self.mask = mask_for(len);
     }
 
@@ -862,6 +1035,20 @@ impl BorrowTracker {
         // `min` keeps the slice in bounds for LLVM without a panic path; the
         // mask is always `<= N_SHARDS - 1` by construction.
         &self.shards[..(self.mask & (N_SHARDS - 1)) + 1]
+    }
+
+    /// This instance's block shift: a field when adaptive, the constant
+    /// otherwise, so the hot path compiles to the same shape either way.
+    #[inline(always)]
+    fn block_shift(&self) -> u32 {
+        #[cfg(feature = "__blockshift_adaptive")]
+        {
+            self.shift
+        }
+        #[cfg(not(feature = "__blockshift_adaptive"))]
+        {
+            BLOCK_SHIFT
+        }
     }
 
     /// Mark this tracker as poisoned. All future borrow attempts will panic.
@@ -936,8 +1123,9 @@ impl BorrowTracker {
         if start >= end {
             return BorrowId::EMPTY;
         }
-        let b0 = start >> BLOCK_SHIFT;
-        let b1 = (end - 1) >> BLOCK_SHIFT;
+        let shift = self.block_shift();
+        let b0 = start >> shift;
+        let b1 = (end - 1) >> shift;
         // One load and one branch covers poisoning, live wide records, and
         // multi-block borrows. All three are cold.
         if b0 != b1 || self.state.load(Ordering::Acquire) != 0 {
@@ -990,6 +1178,8 @@ impl BorrowTracker {
             None => {
                 // Shard full — release and retry on the wide path, which is
                 // atomic against everything.
+                #[cfg(feature = "__probe_wide")]
+                wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
                 drop(g);
                 self.add_wide::<IS_MUT>(start, end)
             }
@@ -1008,6 +1198,8 @@ impl BorrowTracker {
         b0: usize,
         b1: usize,
     ) -> BorrowId {
+        #[cfg(feature = "__probe_wide")]
+        wide_probe::N_SLOW.fetch_add(1, Ordering::Relaxed);
         if self.state.load(Ordering::Acquire) & POISON_BIT != 0 {
             Self::poisoned_panic();
         }
@@ -1037,6 +1229,8 @@ impl BorrowTracker {
                     BorrowId::narrow1(si, slot)
                 }
                 None => {
+                    #[cfg(feature = "__probe_wide")]
+                    wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
                     drop(g);
                     self.add_wide::<IS_MUT>(start, end)
                 }
@@ -1057,8 +1251,12 @@ impl BorrowTracker {
         b0: usize,
         b1: usize,
     ) -> BorrowId {
+        #[cfg(feature = "__probe_wide")]
+        wide_probe::N_MULTI.fetch_add(1, Ordering::Relaxed);
         let nblocks = b1 - b0 + 1;
         if nblocks > MAX_BLOCKS_SCAN {
+            #[cfg(feature = "__probe_wide")]
+            wide_probe::WIDE_BLOCKS.fetch_add(1, Ordering::Relaxed);
             return self.add_wide::<IS_MUT>(start, end);
         }
         let mut set = [0u16; MAX_SHARDS_PER_BORROW];
@@ -1069,6 +1267,8 @@ impl BorrowTracker {
                 continue;
             }
             if n == MAX_SHARDS_PER_BORROW {
+                #[cfg(feature = "__probe_wide")]
+                wide_probe::WIDE_SHARDS.fetch_add(1, Ordering::Relaxed);
                 return self.add_wide::<IS_MUT>(start, end);
             }
             set[n] = s;
@@ -1117,6 +1317,8 @@ impl BorrowTracker {
             }
         }
         if done < n {
+            #[cfg(feature = "__probe_wide")]
+            wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
             // Nothing was published yet, so the rollback has nothing to undo:
             // `alloc` only fills fields, and the occupancy bits are set below.
             Self::unlock_all(&self.shards, &set[..n]);
@@ -1325,7 +1527,7 @@ mod tests {
     #[should_panic(expected = "overlapping DisjointMut")]
     fn overlap_in_a_later_block_is_caught() {
         let t = BorrowTracker::new(1 << 20);
-        let bs = 1usize << BLOCK_SHIFT;
+        let bs = 1usize << t.block_shift();
         // a covers blocks 0..=2, c covers blocks 2..=4; they share block 2.
         let _a = t.add_mut(&b(0..2 * bs + 1));
         let _c = t.add_mut(&b(2 * bs..4 * bs + 1));
@@ -1336,7 +1538,7 @@ mod tests {
     #[test]
     fn block_boundary_neighbours_do_not_collide() {
         let t = BorrowTracker::new(1 << 20);
-        let bs = 1usize << BLOCK_SHIFT;
+        let bs = 1usize << t.block_shift();
         for k in 0..256usize {
             let a = t.add_mut(&b(k * bs..(k + 1) * bs));
             let c = t.add_mut(&b((k + 1) * bs..(k + 2) * bs));
@@ -1350,7 +1552,7 @@ mod tests {
     /// shard pairs.
     #[test]
     fn cross_shard_overlaps_are_all_caught() {
-        let bs = 1usize << BLOCK_SHIFT;
+        let bs = 1usize << BorrowTracker::new(1 << 20).block_shift();
         for k in 0..64usize {
             let t = BorrowTracker::new(1 << 20);
             let _a = t.add_mut(&b(k * bs..k * bs + 4));
@@ -1391,7 +1593,7 @@ mod tests {
     #[test]
     fn wide_borrow_is_visible_to_narrow_registrants() {
         let t = BorrowTracker::new(1 << 20);
-        let bs = 1usize << BLOCK_SHIFT;
+        let bs = 1usize << t.block_shift();
         let wide = t.add_mut(&b(0..MAX_BLOCKS_SCAN * bs * 4));
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _n = t.add_mut(&b(5 * bs..5 * bs + 4));
@@ -1408,7 +1610,7 @@ mod tests {
     #[test]
     fn narrow_borrow_is_visible_to_wide_registrant() {
         let t = BorrowTracker::new(1 << 20);
-        let bs = 1usize << BLOCK_SHIFT;
+        let bs = 1usize << t.block_shift();
         let n = t.add_mut(&b(5 * bs..5 * bs + 4));
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _w = t.add_mut(&b(0..MAX_BLOCKS_SCAN * bs * 4));
@@ -1462,7 +1664,7 @@ mod tests {
             N_SHARDS - 1,
             "declared parallelism must widen the mask"
         );
-        let bs = 1usize << BLOCK_SHIFT;
+        let bs = 1usize << t.block_shift();
         // A borrow spanning far more blocks than MAX_SHARDS_PER_BORROW, so it
         // is promoted; the narrow probe sits in a block deep inside it, whose
         // shard is nowhere near the wide registrant's first.
@@ -1531,6 +1733,45 @@ mod tests {
         }))
         .is_err();
         assert!(caught);
+    }
+
+    /// The adaptive shift must keep the block count near
+    /// `BLOCKS_PER_SHARD * N_SHARDS` across the whole range of buffer sizes the
+    /// decoder allocates — that is the entire point of it over a constant.
+    ///
+    /// The sizes below are real: a 4K 8-bit luma plane, its chroma planes, the
+    /// same at 10-bit, a 1024x1024 plane, and a buffer just over
+    /// `SHARD_MIN_LEN`.
+    #[cfg(feature = "__blockshift_adaptive")]
+    #[test]
+    fn adaptive_shift_keeps_the_block_count_near_target() {
+        let target = BLOCKS_PER_SHARD * N_SHARDS;
+        for len in [
+            64 * 1024,          // just at SHARD_MIN_LEN
+            1024 * 1024,        // 1024x1024 8-bit plane
+            1920 * 1080,        // 4K chroma, 4:2:0
+            3840 * 2160,        // 4K luma, 8-bit
+            2 * 3840 * 2160,    // 4K luma, 10/12-bit
+            8 * 3840 * 2160,    // a generous over-allocation
+        ] {
+            let shift = block_shift_for(len);
+            let nblocks = len >> shift;
+            assert!(
+                nblocks >= target && nblocks < target * 2,
+                "len {len}: shift {shift} gives {nblocks} blocks, target {target}"
+            );
+        }
+        // The two 4K planes the fixed ladder was measured on must land on the
+        // shift that ladder measured best for each...
+        assert_eq!(block_shift_for(3840 * 2160), 14);
+        assert_eq!(block_shift_for(2 * 3840 * 2160), 15);
+        // ...at the SAME picture-rows-per-block, which is the quantity that
+        // actually drives the win (4.3 rows either way).
+        assert_eq!((1usize << block_shift_for(3840 * 2160)) / 3840, 4);
+        assert_eq!((1usize << block_shift_for(2 * 3840 * 2160)) / 7680, 4);
+        // ...and a small buffer must NOT be handed that shift, which would
+        // collapse it onto one or two shards.
+        assert!(block_shift_for(64 * 1024) <= 9);
     }
 
     /// Every record registered must be retired — no leaks — under maximal

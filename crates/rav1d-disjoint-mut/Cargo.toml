@@ -36,6 +36,8 @@ __probe_count = ["std"]
 __probe_noscan = []
 __probe_lockonly = []
 __probe_untracked = []
+# Wide-path reason counters. Unlike __probe_count this KEEPS the sharded tracker.
+__probe_wide = ["std"]
 __probe_shardsim = ["__probe_count"]
 # THROWAWAY: TinyLock spin backoff + scheduler yield, re-tested on the adaptive
 # shard set (the P1 campaign measured it null on the 32-shard base).
@@ -57,6 +59,7 @@ __blockshift_13 = []
 __blockshift_14 = []
 __blockshift_15 = []
 __blockshift_16 = []
+__blockshift_adaptive = []
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
 aligned = ["dep:aligned", "dep:aligned-vec"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).

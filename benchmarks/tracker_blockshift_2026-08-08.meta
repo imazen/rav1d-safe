@@ -1,0 +1,183 @@
+# Where the DisjointMut tracker's time actually goes, and the one knob that moved it
+
+Host: Apple M4 Pro (8P+4E), macOS 26.5.2, 12 cores.
+Base: `fix/aarch64-mc-itx` @ 2c7c082 (PR #453) — verify/compose plus the
+aarch64 correctness fixes, 766/766 dav1d-test-data.
+Default features on every arm. No `nice` on any timed run. No
+`-C target-cpu=native`.
+
+The brief was "halve the tracker's guard traffic", with two named targets:
+`WithOffset::block_mut`'s double reservation, and `CompInterType`'s guard drop
+glue. Both were profiled. One is a documented negative and the other is a
+mirage. The thing that actually moved is `BLOCK_SHIFT`.
+
+
+## 1. Profile first — where the guard traffic is
+
+`scripts/perf/prof_sample.sh`, `bench_base`, v4k_8tile 8bpc, t=8, 45 s.
+259,480 leaf samples, of which 56,160 are `__psynch_cvwait` (idle waits), so
+203,320 are work. Attribution is by nearest NON-tracker ancestor, so
+registration and release are separated from the code that asked for them.
+
+    caller                                   add     drop    total   % all   % work
+    -------------------------------------------------------------------------------
+    compact_read_per_row (all callers)     12131    19763    31894   12.29   15.69
+    LfBlock::open (loopfilter tap read)     8393    12881    21274    8.20   10.46
+    drop_glue<BlockMut> (itx write-back)    3410     3561     6971    2.69    3.43
+    decode_b                                 775     3335     4110    1.58    2.02
+    ipred::splat_dc                         2806     1430     4236    1.63    2.08
+    cdef_filter_block_8bpc_inner            1478     2474     3952    1.52    1.94
+    ipred::cfl_pred                         2181     1751     3932    1.52    1.93
+    angular_ipred                           1750     1701     3451    1.33    1.70
+    rav1d_recon_b_intra                     1296     1519     2815    1.08    1.38
+    rav1d_prepare_intra_edges (direct)       862     1922     2784    1.07    1.37
+    -------------------------------------------------------------------------------
+    TOTAL tracker                          38851    53451    92302   35.58   45.40
+
+`TinyLock::lock_slow` is 18,544 (7.15%) and lies INSIDE the add column:
+9,624 under `add::<false>`, 4,848 under `add::<true>`.
+
+Two corrections to the brief's reading of the code:
+
+* **The `CompInterType` guard drop glue is not `CompInterType`.** The symbol
+  `drop_glue<DisjointImmutGuard<Aligned<A8, [Option<CompInterType>; 32]>>>`
+  carries 15.19% of leaf samples, which reads like `env.rs`'s block-context
+  lookups. It is not. The drop glue is identical machine code for every guard
+  whose payload needs no drop, so the linker folds them all onto whichever
+  mangled name survives — and that happened to be this one. Its callers are
+  `compact_read_per_row` (19,763) and `LfBlock::open` (12,881), not `env.rs`.
+  Attributing by parent instead of by symbol is what unmasks it.
+
+* **`compact_read_per_row`'s biggest caller is not `block_mut`.** Splitting it:
+
+        rav1d_prepare_intra_edges   23837   9.19%   <- 1-PIXEL-WIDE COLUMN
+        block_mut                   14081   5.43%
+
+  `ipred_prepare.rs` reads the left edge and the bottom-left edge through
+  `with_pixel_guard_immut(col_pic, /*w*/ 1, px_have)`, which under tile
+  threading becomes `compact_read_per_row(1, h)` — **one tracker registration
+  per row to read ONE BYTE per row**, up to `4 * th` = 64 of them per edge, for
+  every intra block. That is the worst guards-per-byte ratio in the decoder and
+  it is 9.19% of a 4K frame on its own.
+
+
+## 2. The mechanism: it is the shard cache line, not the atomics
+
+`remove` was `swap`-acquire + bit clear + `store`-release. Making the occupancy
+bitmap atomic and dropping the lock takes it to one `fetch_and` — a third of
+the line traffic gone from a path the profile blamed for 20.6% of samples.
+
+Measured: **-0.9%** (119.4 vs 120.5 ms/frame, v4k_8tile 8bpc t=8, interleaved
+median of 5). Essentially nothing.
+
+That is the finding. A strided access registers one interval per ROW; at a
+3840-byte row and a 4096-byte block no two rows share a block, so `shard_of`
+sends each row to a different one of the instance's 128 shard lines. What the
+profile calls "guard drop cost" is the core waiting for a line, and removing
+atomic operations from it does not remove the wait. Fewer LINES does.
+
+
+## 3. The BLOCK_SHIFT ladder
+
+`examples/probe_tracker` (`--features probe-wide`), v4k_8tile, t=8, 6 iters,
+in-process timer, one foreign core busy. Every arm built with its own
+`cargo build --features` invocation and sha256-verified distinct.
+
+    shift   bytes/block  rows/block   8bpc ms/f   10bpc ms/f   add_slow(8b)
+    ------------------------------------------------------------------------
+       12          4096        1.07       119.0        140.7          72585
+       13          8192        2.13        89.3        130.1          36197
+       14         16384        4.27        72.8        100.4          18061
+       15         32768        8.53        73.0         92.1           9038
+       16         65536       17.07        75.5         91.0           4454
+
+`rows/block` is at the 8-bit luma stride of 3840. `add_slow` == `add_multi`
+here (every entry was a multi-block borrow) and halves with each step, exactly
+as a doubling block size predicts.
+
+**Wide-path promotions: ZERO at every shift, on both bit depths.**
+`WIDE_SHARDS` / `WIDE_BLOCKS` / `WIDE_FULL` all read 0 for 12, 13, 14, 15 and
+16. The knob does not push anything onto the all-shards path.
+
+
+## 4. `blockshift-adaptive`: the shift as a function of the buffer, not a constant
+
+A global constant cannot be right at every size: the shift that makes a 4K
+plane's rows share a block turns a 64 KiB buffer into ONE block and one lock.
+`block_shift_for(len)` picks the power of two that lands `len` on about
+`BLOCKS_PER_SHARD * N_SHARDS` blocks — at 128 shards and a ratio of 2 that is
+`log2(len) - 8`, clamped to [6, 24].
+
+Because a 10-bit plane is twice the bytes AND twice the stride of its 8-bit
+twin, a rule keyed on `len` alone tracks the stride for free:
+
+    buffer                        len        shift   blocks   rows/block
+    ---------------------------------------------------------------------
+    64 KiB (SHARD_MIN_LEN)      65536            8      256            -
+    1024x1024 8-bit           1048576           12      256          4.0
+    4K chroma 4:2:0 8-bit     2073600           13      253          4.3
+    4K luma 8-bit             8294400           14      506          4.3
+    4K luma 10-bit           16588800           15      506          4.3
+    8x over-allocation       66355200           17      506          4.3
+
+Pinned by `adaptive_shift_keeps_the_block_count_near_target`.
+
+
+## 5. Measured negatives — do not re-run these
+
+**`held-row-guards` (the brief's named `block_mut` target): NULL.**
+Taking the per-row MUTABLE guards up front and holding them across the kernel
+does halve `block_mut`'s registrations from `2h` to `h`, the extents are
+byte-identical, and it is 766/766 correct. It measures 131.3 vs 128.5 ms/frame
+at shift 12, t=8 — inside the noise and if anything worse. Halving the
+registration COUNT does not help when the cost is the line, because holding
+`h` guards touches the same `h` lines the two-pass shape did. Kept behind a
+feature, default off.
+
+**`held-row-guards` + a larger block: CATASTROPHIC, and it is the only thing
+that ever reached the wide path.** shift 15 + held guards measured 402 ms/frame
+against a 120 ms base; shift 16 + held guards + `shard-ident` measured 986 ms.
+Profile of the 402 ms arm: `TinyLock::lock_slow` 55.18%, `add_wide::<true>`
+7.58%, `remove_wide` 4.50%. Mechanism: holding up to 64 row guards concentrates
+records on few shards once a block spans several rows; a shard holds `SLOTS`=7
+before promoting, and `add_wide` locks EVERY active shard of the instance. The
+two features are individually harmless and jointly a collapse — which is the
+reason the held-guards experiment stays off rather than merely unmeasured.
+
+**`shard-ident` (identity instead of Fibonacci shard mapping): -12.4% at shift
+12 alone** (105.5 vs 120.5), and superseded — it is the same locality effect
+the shift gets more of. Not re-measured on top of the shift; kept as a knob.
+
+**A TinyLock backoff arm was already measured null twice** by an earlier
+campaign and was not re-run. Nothing in this profile suggests otherwise:
+`lock_slow` is 7.15% at shift 12 and falls with the shift.
+
+
+## 6. Traps this campaign walked into — so nobody repeats them
+
+1. **Two agents' perf sweeps on one box.** The first ladder screen ran while
+   another worktree's 8-thread `verify_gap.sh` held 763% CPU. Absolute numbers
+   were inflated ~1.6x and one arm's ordering was inverted. `verify_gap.sh`'s
+   idle guard protects the arm it is running, not the agent who forgets to look
+   at `ps` first. Check `pgrep -f verify_gap` before launching, and check
+   `.workongoing` in the sibling worktrees.
+
+2. **zsh does not word-split unquoted `${1:+--features "$1"}`.** A build helper
+   using that idiom passed cargo a single argument `--features blockshift-14`,
+   and every arm in the loop was staged from one stale binary. Eight "different"
+   arms measured identical to 0.5%, which reads exactly like a null result.
+   **sha256 the staged binaries and assert they are distinct** before believing
+   any A/B.
+
+3. **A hot global counter destroys what it measures.** A `fetch_add` on one
+   shared `AtomicU64` per registration is 136 M RMWs per 4K frame from eight
+   threads on one cache line. It serialised the decoder hard enough that shard
+   slot pressure disappeared and `WIDE_FULL` read zero for the wrong reason.
+   The wide-path counters now only count events that fire 10^4 times per frame,
+   and `N_ADD` is deliberately not incremented.
+
+4. **`__probe_count` switches the crate to the LEGACY tracker.** Counters added
+   to `tracker_shard.rs` are dead code under it and silently read zero. That is
+   why `__probe_wide` exists as a separate feature that keeps the sharded one.
+
+5. **Symbol self-time lies when drop glue is folded.** See section 1.
