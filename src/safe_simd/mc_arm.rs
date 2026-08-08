@@ -78,11 +78,15 @@ fn avg_8bpc_inner(
             let sum_lo = vaddq_s16(t1_lo, t2_lo);
             let sum_hi = vaddq_s16(t1_hi, t2_hi);
 
-            // vqrdmulhq_n_s16(a, 2048) = (2 * a * 2048 + 0x8000) >> 16
-            // = (a * 4096 + 32768) >> 16 = (a * 1024 + 8192) >> 14
-            // We want (a * 1024 + 16384) >> 15 = pmulhrsw equivalent
-            let avg_lo = vqrdmulhq_n_s16(sum_lo, 2048);
-            let avg_hi = vqrdmulhq_n_s16(sum_hi, 2048);
+            // `avg_rust` at 8bpc: `(t1 + t2 + (1 << intermediate_bits)) >> (intermediate_bits + 1)`
+            // = `(sum + 16) >> 5`, with `PREP_BIAS = 0`.
+            //
+            // `vqrdmulhq_n_s16(a, k) = (2*a*k + 0x8000) >> 16`, so `k = 1024`
+            // gives `(2048*a + 32768) >> 16 = (a + 16) >> 5` — the shift the
+            // reference wants. `k = 2048` is `(a + 8) >> 4`, i.e. twice the
+            // average, which is what this computed before.
+            let avg_lo = vqrdmulhq_n_s16(sum_lo, 1024);
+            let avg_hi = vqrdmulhq_n_s16(sum_hi, 1024);
 
             // Pack to u8 with saturation (safe in #[arcane])
             let packed_lo = vqmovun_s16(avg_lo);
@@ -100,7 +104,8 @@ fn avg_8bpc_inner(
             let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
             let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
             let sum = vaddq_s16(t1, t2);
-            let avg = vqrdmulhq_n_s16(sum, 2048);
+            // See the 16-wide path: 1024 is `(sum + 16) >> 5`.
+            let avg = vqrdmulhq_n_s16(sum, 1024);
             let packed = vqmovun_s16(avg);
             // Store 8 bytes using partial_simd
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
@@ -283,6 +288,19 @@ fn w_avg_8bpc_inner(
     let mut dst = dst.flex_mut();
     let tmp1 = tmp1.flex();
     let tmp2 = tmp2.flex();
+    // `w_avg_rust` at 8bpc: intermediate_bits = 4, PREP_BIAS = 0, so
+    // `sh = 8` and `rnd = 8 << 4 = 128`, and the value is
+    //   (t1*weight + t2*(16 - weight) + 128) >> 8
+    // == ((t1 - t2)*weight + (t2 << 4) + 128) >> 8    (exact integer identity)
+    //
+    // The single shift matters: the old two-step form
+    // `(((t1-t2)*weight + 8) >> 4 + t2 + rnd) >> k` truncated the inner
+    // quotient before the outer round, so it disagreed with the reference at
+    // every weight except the degenerate 0 and 16 (where the inner remainder
+    // is always zero). Its scalar tail additionally used k = 5, dividing by
+    // 512 where the reference divides by 256.
+    const SH: i32 = 8;
+    const RND: i32 = 8 << 4;
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
@@ -295,29 +313,36 @@ fn w_avg_8bpc_inner(
             let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
             let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
-            // diff = tmp1 - tmp2
+            // diff = tmp1 - tmp2. The 8bpc prep interval is [-5132, 9212], so
+            // the difference needs 15 bits and cannot wrap an i16.
             let diff = vsubq_s16(t1, t2);
 
-            // Widen for multiply
+            // Widen; everything below is one exact i32 expression.
             let diff_lo = vmovl_s16(vget_low_s16(diff));
             let diff_hi = vmovl_s16(vget_high_s16(diff));
+            let t2_lo = vmovl_s16(vget_low_s16(t2));
+            let t2_hi = vmovl_s16(vget_high_s16(t2));
             let weight_vec = vdupq_n_s32(weight);
+            let rnd = vdupq_n_s32(RND);
 
-            let weighted_lo = vmulq_s32(diff_lo, weight_vec);
-            let weighted_hi = vmulq_s32(diff_hi, weight_vec);
+            // (t1 - t2)*weight + (t2 << 4) + rnd
+            let acc_lo = vaddq_s32(
+                vaddq_s32(vmulq_s32(diff_lo, weight_vec), vshlq_n_s32::<4>(t2_lo)),
+                rnd,
+            );
+            let acc_hi = vaddq_s32(
+                vaddq_s32(vmulq_s32(diff_hi, weight_vec), vshlq_n_s32::<4>(t2_hi)),
+                rnd,
+            );
 
-            // (weighted + 8) >> 4
-            let rnd = vdupq_n_s32(8);
-            let shifted_lo = vshrq_n_s32::<4>(vaddq_s32(weighted_lo, rnd));
-            let shifted_hi = vshrq_n_s32::<4>(vaddq_s32(weighted_hi, rnd));
+            let res_lo = vshrq_n_s32::<8>(acc_lo);
+            let res_hi = vshrq_n_s32::<8>(acc_hi);
 
-            // Narrow back to 16-bit
-            let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
-
-            // Add tmp2 and apply final scaling
-            let sum = vaddq_s16(shifted_16, t2);
-            let scaled = vqrdmulhq_n_s16(sum, 2048);
-            let packed = vqmovun_s16(scaled);
+            // The result is within [-321, 576] before clipping, so the narrow
+            // is exact and `vqmovun_s16` performs the reference's clip to
+            // [0, 255].
+            let res16 = vcombine_s16(vmovn_s32(res_lo), vmovn_s32(res_hi));
+            let packed = vqmovun_s16(res16);
 
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
             safe_simd::vst1_u8(dst_arr, packed);
@@ -326,10 +351,10 @@ fn w_avg_8bpc_inner(
 
         // Scalar fallback
         while col < w {
-            let diff = tmp1_row[col] as i32 - tmp2_row[col] as i32;
-            let weighted = ((diff * weight + 8) >> 4) + tmp2_row[col] as i32;
-            let scaled = ((weighted * 1024 + 16384) >> 15).clamp(0, 255);
-            dst_row[col] = scaled as u8;
+            let t1 = tmp1_row[col] as i32;
+            let t2 = tmp2_row[col] as i32;
+            let res = ((t1 * weight + t2 * (16 - weight) + RND) >> SH).clamp(0, 255);
+            dst_row[col] = res as u8;
             col += 1;
         }
     }
@@ -492,6 +517,16 @@ fn mask_8bpc_inner(
     let tmp1 = tmp1.flex();
     let tmp2 = tmp2.flex();
     let mask = mask.flex();
+    // `mask_rust` at 8bpc: intermediate_bits = 4, PREP_BIAS = 0, so `sh = 10`
+    // and `rnd = 32 << 4 = 512`, and the value is
+    //   (t1*m + t2*(64 - m) + 512) >> 10
+    // == ((t1 - t2)*m + (t2 << 6) + 512) >> 10   (exact integer identity)
+    //
+    // Same defect shape as `w_avg_8bpc_inner`: the old vector path rounded
+    // twice (`((diff*m + 32) >> 6)` then a second rounded shift) and the old
+    // scalar tail shifted by one bit too many.
+    const SH: i32 = 10;
+    const RND: i32 = 32 << 4;
     for row in 0..h {
         let tmp1_row = &tmp1[row * w..][..w];
         let tmp2_row = &tmp2[row * w..][..w];
@@ -506,32 +541,35 @@ fn mask_8bpc_inner(
             let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
             let m = safe_simd::vld1_u8(mask_row[col..][..8].try_into().unwrap());
 
-            // Widen mask to 16-bit
+            // Widen mask to 16-bit (0..=64, so the sign reinterpret is a no-op)
             let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
 
-            // diff = tmp1 - tmp2
+            // diff = tmp1 - tmp2; 8bpc prep is [-5132, 9212], no i16 wrap.
             let diff = vsubq_s16(t1, t2);
 
-            // Widen for multiply
             let diff_lo = vmovl_s16(vget_low_s16(diff));
             let diff_hi = vmovl_s16(vget_high_s16(diff));
             let m_lo = vmovl_s16(vget_low_s16(m16));
             let m_hi = vmovl_s16(vget_high_s16(m16));
+            let t2_lo = vmovl_s16(vget_low_s16(t2));
+            let t2_hi = vmovl_s16(vget_high_s16(t2));
+            let rnd = vdupq_n_s32(RND);
 
-            // weighted = diff * mask
-            let weighted_lo = vmulq_s32(diff_lo, m_lo);
-            let weighted_hi = vmulq_s32(diff_hi, m_hi);
+            // (t1 - t2)*m + (t2 << 6) + rnd, then one shift.
+            let acc_lo = vaddq_s32(
+                vaddq_s32(vmulq_s32(diff_lo, m_lo), vshlq_n_s32::<6>(t2_lo)),
+                rnd,
+            );
+            let acc_hi = vaddq_s32(
+                vaddq_s32(vmulq_s32(diff_hi, m_hi), vshlq_n_s32::<6>(t2_hi)),
+                rnd,
+            );
 
-            // (weighted + 32) >> 6
-            let rnd = vdupq_n_s32(32);
-            let shifted_lo = vshrq_n_s32::<6>(vaddq_s32(weighted_lo, rnd));
-            let shifted_hi = vshrq_n_s32::<6>(vaddq_s32(weighted_hi, rnd));
+            let res_lo = vshrq_n_s32::<10>(acc_lo);
+            let res_hi = vshrq_n_s32::<10>(acc_hi);
 
-            // Narrow and add tmp2
-            let shifted_16 = vcombine_s16(vmovn_s32(shifted_lo), vmovn_s32(shifted_hi));
-            let sum = vaddq_s16(shifted_16, t2);
-            let scaled = vqrdmulhq_n_s16(sum, 2048);
-            let packed = vqmovun_s16(scaled);
+            let res16 = vcombine_s16(vmovn_s32(res_lo), vmovn_s32(res_hi));
+            let packed = vqmovun_s16(res16);
 
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
             safe_simd::vst1_u8(dst_arr, packed);
@@ -540,11 +578,11 @@ fn mask_8bpc_inner(
 
         // Scalar fallback
         while col < w {
-            let diff = tmp1_row[col] as i32 - tmp2_row[col] as i32;
+            let t1 = tmp1_row[col] as i32;
+            let t2 = tmp2_row[col] as i32;
             let m = mask_row[col] as i32;
-            let weighted = ((diff * m + 32) >> 6) + tmp2_row[col] as i32;
-            let scaled = ((weighted * 1024 + 16384) >> 15).clamp(0, 255);
-            dst_row[col] = scaled as u8;
+            let res = ((t1 * m + t2 * (64 - m) + RND) >> SH).clamp(0, 255);
+            dst_row[col] = res as u8;
             col += 1;
         }
     }
@@ -1562,26 +1600,26 @@ fn w_mask_8bpc_inner(
     let tmp1 = tmp1.flex();
     let tmp2 = tmp2.flex();
     let mut mask = mask.flex_mut();
-    // For 8bpc: intermediate_bits = 4, bitdepth = 8
-    let intermediate_bits = 4i32;
-    let sh = intermediate_bits + 6;
-    let rnd = (32 << intermediate_bits) + 8192 * 64; // PREP_BIAS = 8192 for 8bpc in compound
-    let mask_sh = 8 + intermediate_bits - 4; // bitdepth + intermediate_bits - 4
-    let mask_rnd = 1i32 << (mask_sh - 5);
+    // `w_mask_rust` at 8bpc: intermediate_bits = 4, bitdepth = 8,
+    // **PREP_BIAS = 0**. `rnd` is `(32 << intermediate_bits) + PREP_BIAS * 64`
+    // = 512. The old constant added `8192 * 64` on top of that, i.e. it used
+    // the 16bpc bias at a depth where the bias is zero.
+    const SH: i32 = 4 + 6;
+    const RND: i32 = (32 << 4) + 0 * 64;
+    const MASK_SH: u32 = (8 + 4 - 4) as u32;
+    const MASK_RND: u16 = 1 << (MASK_SH - 5);
 
     // Mask output dimensions depend on subsampling
     let mask_w = if ss_hor { w >> 1 } else { w };
+
+    // One row of per-pixel weights, so the (sequential) mask bookkeeping below
+    // can read the same `m` the (vectorised) blend used. `w` is at most 128.
+    let mut mrow = [0u8; 128];
 
     for y in 0..h {
         let tmp1_row = &tmp1[y * w..][..w];
         let tmp2_row = &tmp2[y * w..][..w];
         let dst_row = &mut dst[y * dst_stride..][..w];
-        let mut mask_row = if ss_ver && (y & 1) != 0 {
-            None
-        } else {
-            let mask_y = if ss_ver { y >> 1 } else { y };
-            Some(&mut mask[mask_y * mask_w..][..mask_w])
-        };
 
         let mut col = 0;
 
@@ -1590,52 +1628,43 @@ fn w_mask_8bpc_inner(
             let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
             let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
-            // Compute diff and mask value
-            // abs_diff = |tmp1 - tmp2|
+            // abs_diff = |tmp1 - tmp2|; the 8bpc prep interval is
+            // [-5132, 9212], so neither the subtract nor the abs can wrap.
             let diff = vsubq_s16(t1, t2);
             let abs_diff = vabsq_s16(diff);
 
-            // mask = min(38 + (abs_diff + mask_rnd) >> mask_sh, 64)
+            // m = min(38 + ((abs_diff + mask_rnd) >> mask_sh), 64)
             let abs_32_lo = vmovl_s16(vget_low_s16(abs_diff));
             let abs_32_hi = vmovl_s16(vget_high_s16(abs_diff));
 
-            let mask_rnd_vec = vdupq_n_s32(mask_rnd);
+            let mask_rnd_vec = vdupq_n_s32(MASK_RND as i32);
             let m_lo = vaddq_s32(abs_32_lo, mask_rnd_vec);
             let m_hi = vaddq_s32(abs_32_hi, mask_rnd_vec);
 
-            // Shift by mask_sh (= 8)
             let m_shifted_lo = vshrq_n_s32::<8>(m_lo);
             let m_shifted_hi = vshrq_n_s32::<8>(m_hi);
 
-            // Add 38 and clamp to 64
-            let m_lo = vaddq_s32(m_shifted_lo, vdupq_n_s32(38));
-            let m_hi = vaddq_s32(m_shifted_hi, vdupq_n_s32(38));
-            let m_lo = vminq_s32(m_lo, vdupq_n_s32(64));
-            let m_hi = vminq_s32(m_hi, vdupq_n_s32(64));
+            let m_lo = vminq_s32(vaddq_s32(m_shifted_lo, vdupq_n_s32(38)), vdupq_n_s32(64));
+            let m_hi = vminq_s32(vaddq_s32(m_shifted_hi, vdupq_n_s32(38)), vdupq_n_s32(64));
 
             // Narrow to 16-bit for blending
             let m_16 = vcombine_s16(vmovn_s32(m_lo), vmovn_s32(m_hi));
 
-            // Apply sign: if sign, swap effective weights
-            let m_final = if sign != 0 {
-                vsubq_s16(vdupq_n_s16(64), m_16)
-            } else {
-                m_16
-            };
-            let inv_m = vsubq_s16(vdupq_n_s16(64), m_final);
+            // The blend uses `m` itself. `sign` does NOT enter here — in
+            // `w_mask_rust` it only reaches the SEGMENTATION MASK store below.
+            let inv_m = vsubq_s16(vdupq_n_s16(64), m_16);
 
-            // Widen tmp values to 32-bit for multiply
             let t1_lo = vmovl_s16(vget_low_s16(t1));
             let t1_hi = vmovl_s16(vget_high_s16(t1));
             let t2_lo = vmovl_s16(vget_low_s16(t2));
             let t2_hi = vmovl_s16(vget_high_s16(t2));
-            let m_lo_32 = vmovl_s16(vget_low_s16(m_final));
-            let m_hi_32 = vmovl_s16(vget_high_s16(m_final));
+            let m_lo_32 = vmovl_s16(vget_low_s16(m_16));
+            let m_hi_32 = vmovl_s16(vget_high_s16(m_16));
             let inv_m_lo_32 = vmovl_s16(vget_low_s16(inv_m));
             let inv_m_hi_32 = vmovl_s16(vget_high_s16(inv_m));
 
             // blend = (tmp1 * m + tmp2 * (64-m) + rnd) >> sh
-            let rnd_vec = vdupq_n_s32(rnd);
+            let rnd_vec = vdupq_n_s32(RND);
             let blend_lo = vaddq_s32(
                 vaddq_s32(vmulq_s32(t1_lo, m_lo_32), vmulq_s32(t2_lo, inv_m_lo_32)),
                 rnd_vec,
@@ -1645,7 +1674,6 @@ fn w_mask_8bpc_inner(
                 rnd_vec,
             );
 
-            // Shift by sh (= 10)
             let result_lo = vshrq_n_s32::<10>(blend_lo);
             let result_hi = vshrq_n_s32::<10>(blend_hi);
 
@@ -1655,42 +1683,17 @@ fn w_mask_8bpc_inner(
             let result_lo = vmaxq_s32(vminq_s32(result_lo, max_val), zero);
             let result_hi = vmaxq_s32(vminq_s32(result_hi, max_val), zero);
 
-            // Narrow to u8
-            let narrow_lo = vmovn_s32(result_lo);
-            let narrow_hi = vmovn_s32(result_hi);
-            let narrow_16 = vcombine_s16(narrow_lo, narrow_hi);
+            let narrow_16 = vcombine_s16(vmovn_s32(result_lo), vmovn_s32(result_hi));
             let result_u8 = vqmovun_s16(narrow_16);
 
             let dst_arr: &mut [u8; 8] = (&mut dst_row[col..col + 8]).try_into().unwrap();
             safe_simd::vst1_u8(dst_arr, result_u8);
 
-            // Store mask if needed
-            if let Some(ref mut mask_row) = mask_row {
-                // For 444: 1:1 mask storage
-                // For 422: horizontal averaging (2 pixels -> 1 mask)
-                // For 420: also horizontal averaging
-                if !ss_hor {
-                    // 444: store all mask values
-                    let m_narrow = vqmovun_s16(m_16);
-                    let mask_arr: &mut [u8; 8] = (&mut mask_row[col..col + 8]).try_into().unwrap();
-                    safe_simd::vst1_u8(mask_arr, m_narrow);
-                } else {
-                    // 422/420: average pairs horizontally (unrolled - vgetq_lane requires const)
-                    let mask_idx = col >> 1;
-                    let m0 = vgetq_lane_s16::<0>(m_16) as i32;
-                    let m1 = vgetq_lane_s16::<1>(m_16) as i32;
-                    mask_row[mask_idx] = ((m0 + m1 + 1) >> 1) as u8;
-                    let m2 = vgetq_lane_s16::<2>(m_16) as i32;
-                    let m3 = vgetq_lane_s16::<3>(m_16) as i32;
-                    mask_row[mask_idx + 1] = ((m2 + m3 + 1) >> 1) as u8;
-                    let m4 = vgetq_lane_s16::<4>(m_16) as i32;
-                    let m5 = vgetq_lane_s16::<5>(m_16) as i32;
-                    mask_row[mask_idx + 2] = ((m4 + m5 + 1) >> 1) as u8;
-                    let m6 = vgetq_lane_s16::<6>(m_16) as i32;
-                    let m7 = vgetq_lane_s16::<7>(m_16) as i32;
-                    mask_row[mask_idx + 3] = ((m6 + m7 + 1) >> 1) as u8;
-                }
-            }
+            // Keep this lane group's weights for the mask pass.
+            let m_narrow = vqmovun_s16(m_16);
+            let m_arr: &mut [u8; 8] = (&mut mrow[col..col + 8]).try_into().unwrap();
+            safe_simd::vst1_u8(m_arr, m_narrow);
+
             col += 8;
         }
 
@@ -1698,42 +1701,52 @@ fn w_mask_8bpc_inner(
         while col < w {
             let t1 = tmp1_row[col] as i32;
             let t2 = tmp2_row[col] as i32;
-            let diff = t1 - t2;
-            let abs_diff = diff.abs();
+            let m = cmp_min_i32(
+                38 + ((t1.abs_diff(t2).saturating_add(MASK_RND as u32) >> MASK_SH) as i32),
+                64,
+            );
 
-            // Compute mask
-            let mut m = 38 + ((abs_diff + mask_rnd) >> mask_sh);
-            m = m.min(64);
-
-            let m_final = if sign != 0 { 64 - m } else { m };
-            let inv_m = 64 - m_final;
-
-            // Blend
-            let blend = (t1 * m_final + t2 * inv_m + rnd) >> sh;
+            let blend = (t1 * m + t2 * (64 - m) + RND) >> SH;
             dst_row[col] = blend.clamp(0, 255) as u8;
-
-            // Store mask with subsampling
-            if let Some(ref mut mask_row) = mask_row {
-                if !ss_hor {
-                    mask_row[col] = m as u8;
-                } else if (col & 1) == 0 {
-                    // For 422/420, store averaged pairs
-                    let mask_idx = col >> 1;
-                    if col + 1 < w {
-                        let t1_next = tmp1_row[col + 1] as i32;
-                        let t2_next = tmp2_row[col + 1] as i32;
-                        let diff_next = (t1_next - t2_next).abs();
-                        let m_next = (38 + ((diff_next + mask_rnd) >> mask_sh)).min(64);
-                        mask_row[mask_idx] = ((m + m_next + 1) >> 1) as u8;
-                    } else {
-                        mask_row[mask_idx] = m as u8;
-                    }
-                }
-            }
+            mrow[col] = m as u8;
 
             col += 1;
         }
+
+        // Segmentation-mask store, transcribed from `w_mask_rust`. This is the
+        // half that carries `sign`, and for 4:2:0 it accumulates ACROSS the row
+        // pair: the even row writes the raw `m + n` sum and the odd row folds
+        // it in. Writing only on even rows (what this used to do) leaves the
+        // odd row's contribution out entirely.
+        let mask_y = if ss_ver { y >> 1 } else { y };
+        let mask_row = &mut mask[mask_y * mask_w..][..mask_w];
+        if !ss_hor {
+            mask_row[..w].copy_from_slice(&mrow[..w]);
+        } else {
+            let mut x = 0;
+            while x + 1 < w {
+                let m = mrow[x];
+                let n = mrow[x + 1];
+                let sum = m + n; // both <= 64, so <= 128: no u8 overflow
+                mask_row[x >> 1] = if ss_ver && (y & 1) != 0 {
+                    (((sum + 2 - sign) as u16 + mask_row[x >> 1] as u16) >> 2) as u8
+                } else if ss_ver {
+                    sum
+                } else {
+                    (sum + 1 - sign) >> 1
+                };
+                x += 2;
+            }
+        }
     }
+}
+
+/// `i32::min` as a free function, so the kernel body reads like the reference's
+/// `cmp::min` without pulling `std::cmp` into this module's namespace.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn cmp_min_i32(a: i32, b: i32) -> i32 {
+    if a < b { a } else { b }
 }
 
 #[cfg(feature = "asm")]
@@ -6463,6 +6476,41 @@ mod compound_parity {
     fn mask8_oracle(t1: i32, t2: i32, m: i32) -> i32 {
         ((t1 * m + t2 * (64 - m) + (32 << 4)) >> 10).clamp(0, 255)
     }
+    /// The segmentation mask `w_mask_rust` writes for one row, given that
+    /// row's per-pixel weights and (for 4:2:0) the previous row's stored
+    /// values. Transcribed from `src/mc.rs::w_mask_rust`'s store arm.
+    ///
+    /// `sign` lives HERE and only here. The pixel blend uses `m` unmodified —
+    /// getting that wrong is invisible at `sign = 0` and wrong on half the
+    /// wedge blocks.
+    fn w_mask_store_oracle(
+        mrow: &[u8],
+        prev: &[u8],
+        y: usize,
+        sign: u8,
+        ss_hor: bool,
+        ss_ver: bool,
+    ) -> Vec<u8> {
+        let w = mrow.len();
+        if !ss_hor {
+            return mrow.to_vec();
+        }
+        let mut out = vec![0u8; w >> 1];
+        let mut x = 0;
+        while x + 1 < w {
+            let (m, n) = (mrow[x], mrow[x + 1]);
+            out[x >> 1] = if ss_ver && (y & 1) != 0 {
+                (((m + n + 2 - sign) as u16 + prev[x >> 1] as u16) >> 2) as u8
+            } else if ss_ver {
+                m + n
+            } else {
+                (m + n + 1 - sign) >> 1
+            };
+            x += 2;
+        }
+        out
+    }
+
     /// `w_mask`'s per-pixel weight; identical at every bit depth except for
     /// `mask_sh`, and bias-invariant because it reads `|t1 - t2|`.
     fn w_mask_m_oracle(t1: i16, t2: i16, bitdepth: u8) -> u8 {
@@ -6565,16 +6613,48 @@ mod compound_parity {
                     w_mask_8bpc_inner(
                         token, &mut got, stride, &t1, &t2, w, h, &mut seg, sign, ss_hor, ss_ver,
                     );
+                    // Pixels. `sign` must NOT appear here: `w_mask_rust`
+                    // blends with `m`, and routes `sign` only into the mask.
                     let bad = find_bad(&got, stride, w, h, |x, y| {
                         let (a, b) = (t1[y * w + x], t2[y * w + x]);
-                        let mm = w_mask_m_oracle(a, b, 8);
-                        let mf = if sign != 0 { 64 - mm } else { mm } as i32;
-                        w_mask8_px_oracle(a as i32, b as i32, mf) as u32
+                        let mm = w_mask_m_oracle(a, b, 8) as i32;
+                        w_mask8_px_oracle(a as i32, b as i32, mm) as u32
                     });
                     rep.record(
-                        &format!("w_mask8 sign={sign} ss=({ss_hor},{ss_ver}) {w}x{h}"),
+                        &format!("w_mask8 px sign={sign} ss=({ss_hor},{ss_ver}) {w}x{h}"),
                         bad.is_none(),
                         || fmt_bad(bad),
+                    );
+
+                    // Segmentation mask. For 4:2:0 this is a two-row
+                    // accumulation, so the oracle is replayed row by row with
+                    // the previous row's stored values, exactly as the
+                    // reference's running `mask` slice does.
+                    let mut want = vec![0u8; mask_w * mask_h];
+                    for y in 0..h {
+                        let mrow: Vec<u8> = (0..w)
+                            .map(|x| w_mask_m_oracle(t1[y * w + x], t2[y * w + x], 8))
+                            .collect();
+                        let my = if ss_ver { y >> 1 } else { y };
+                        let prev = want[my * mask_w..][..mask_w].to_vec();
+                        let row = w_mask_store_oracle(&mrow, &prev, y, sign, ss_hor, ss_ver);
+                        want[my * mask_w..][..mask_w].copy_from_slice(&row);
+                    }
+                    let bad_seg = (0..mask_h)
+                        .flat_map(|y| (0..mask_w).map(move |x| (x, y)))
+                        .find(|&(x, y)| seg[y * mask_w + x] != want[y * mask_w + x])
+                        .map(|(x, y)| {
+                            (
+                                x,
+                                y,
+                                seg[y * mask_w + x] as u32,
+                                want[y * mask_w + x] as u32,
+                            )
+                        });
+                    rep.record(
+                        &format!("w_mask8 seg sign={sign} ss=({ss_hor},{ss_ver}) {w}x{h}"),
+                        bad_seg.is_none(),
+                        || fmt_bad(bad_seg),
                     );
                 }
             }
