@@ -331,7 +331,6 @@ const MAX_SHARDS_PER_BORROW: usize = 4;
 /// for a pathologically long borrow (e.g. an unbounded `index(..)`).
 const MAX_BLOCKS_SCAN: usize = 64;
 
-
 /// THROWAWAY wide-path reason counters (`__probe_wide`).
 ///
 /// The wide path holds EVERY active shard of an instance, so a workload that
@@ -369,24 +368,24 @@ pub mod wide_probe {
     pub fn report() -> std::string::String {
         use core::fmt::Write as _;
         let mut out = std::string::String::new();
-        let adds = N_ADD.load(Relaxed).max(1);
         let w = WIDE_SHARDS.load(Relaxed) + WIDE_BLOCKS.load(Relaxed) + WIDE_FULL.load(Relaxed);
+        // Absolute counts only. There is deliberately no denominator: see
+        // `N_ADD`. `const_shift` is the compile-time constant and is NOT what
+        // an `__blockshift_adaptive` build uses — that one is per instance.
         let _ = writeln!(
             out,
-            "WIDEHDR\tblock_shift\tadds\tslow\tmulti\tw_shards\tw_blocks\tw_full\tslow_pct\twide_pct"
+            "WIDEHDR\tconst_shift\tslow\tmulti\tw_shards\tw_blocks\tw_full\twide_total"
         );
         let _ = writeln!(
             out,
-            "WIDE\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.5}\t{:.6}",
+            "WIDE\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             super::BLOCK_SHIFT,
-            N_ADD.load(Relaxed),
             N_SLOW.load(Relaxed),
             N_MULTI.load(Relaxed),
             WIDE_SHARDS.load(Relaxed),
             WIDE_BLOCKS.load(Relaxed),
             WIDE_FULL.load(Relaxed),
-            N_SLOW.load(Relaxed) as f64 * 100.0 / adds as f64,
-            w as f64 * 100.0 / adds as f64,
+            w,
         );
         out
     }
@@ -1747,12 +1746,12 @@ mod tests {
     fn adaptive_shift_keeps_the_block_count_near_target() {
         let target = BLOCKS_PER_SHARD * N_SHARDS;
         for len in [
-            64 * 1024,          // just at SHARD_MIN_LEN
-            1024 * 1024,        // 1024x1024 8-bit plane
-            1920 * 1080,        // 4K chroma, 4:2:0
-            3840 * 2160,        // 4K luma, 8-bit
-            2 * 3840 * 2160,    // 4K luma, 10/12-bit
-            8 * 3840 * 2160,    // a generous over-allocation
+            64 * 1024,       // just at SHARD_MIN_LEN
+            1024 * 1024,     // 1024x1024 8-bit plane
+            1920 * 1080,     // 4K chroma, 4:2:0
+            3840 * 2160,     // 4K luma, 8-bit
+            2 * 3840 * 2160, // 4K luma, 10/12-bit
+            8 * 3840 * 2160, // a generous over-allocation
         ] {
             let shift = block_shift_for(len);
             let nblocks = len >> shift;
