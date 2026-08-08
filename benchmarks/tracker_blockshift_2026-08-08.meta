@@ -141,6 +141,29 @@ any foreign process exceeds 25% CPU. Raw: `benchmarks/tracker_blockshift_gap_202
     v4k_8tile_10b      4    183.5    159.9    154.1    154.3    154.1
     v4k_8tile_10b      8    139.2    139.5    107.6     97.2     98.3
 
+**n = 1 round for every cell except v4k_8tile t=1 (n = 2).** The box carried
+two agents' perf campaigns for most of this session and idle windows were
+short; the effect at t=4/t=8 is 5-10x the cell-to-cell spread, the t=1 and
+t=2 columns are not resolvable at this n. The loaded-box interleaved screens
+(median of 5-6, both arms seeing the same load) agree on the t=8 figure to
+within 2 points.
+
+`adapt` here is the ALWAYS-ON arm (`--features blockshift-adaptive`). The
+shipped default only adapts once `set_parallelism` has been told there is
+more than one thread, so its t=1 rows are `base`'s by construction — which is
+also why the one adverse cell in the table, v4k_8tile_10b t=1 at +3.5%,
+cannot reach a shipped configuration.
+
+dav1d 1.5.4 `--framedelay 1` on this host and these vectors, same harness and
+same wall fit, is 246.5 / 125.2 / 65.6 / 37.4 at t=1/2/4/8 8bpc
+(`benchmarks/verify_compose_2026-08-07.meta`); this campaign's own dav1d arm
+was pointed at the wrong vector directory and then never got an idle window,
+so the ratios below are computed against THAT measurement, not one taken
+alongside these rows:
+
+    v4k_8tile 8bpc   t=1 1.56x   t=2 1.77x   t=4 1.93x   t=8 2.11x
+    (was, at base)       1.64x       1.78x       2.38x       3.21x
+
 
 ## 6. Soundness of the shift, mutation-proven
 
