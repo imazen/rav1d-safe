@@ -217,6 +217,28 @@ bash scripts/perf/site_class_sweep.sh ~/tmp/sitecls/out/gap.tsv 7
 python3 scripts/perf/site_class_report.py ~/tmp/sitecls/out/gap.tsv
 ```
 
-## Results
+## How to read the three tables the report prints
 
-<!-- filled in from site_class_gap_2026-08-08.tsv -->
+1. **Arm bands.** Every arm's ms/frame as `median [min..max]` over rounds. A
+   delta whose two bands overlap is not a result.
+2. **Anchors.** `tracker = base - untracked` is the hard cap on ANY
+   tracker-removal design at that cell. `instr = cls_none - base` is what the
+   instrument costs. `exposed = cls_all - addnop` is the class lookup once
+   there is no tracker latency left to hide it under, plus the tracker body
+   still sitting inline and being branched over.
+3. **Per-class attributable**, with a disjoint/OVERLAP verdict, an additivity
+   check (`SUM` of the five partition classes against `all`), and the
+   projection of each class to zero against dav1d.
+
+Two structural warnings about the arithmetic, both visible in the tables:
+
+* **`SUM` exceeds `all`.** Removing one class saves more than its share of
+  removing all of them, because the classes that remain are what hide the
+  instrument's own per-borrow lookup under their latency. The split is a
+  RANKING, not a conservation-law decomposition, and the residual is printed
+  rather than hidden.
+* **Every per-class number is a LOWER bound** on deleting that class's tracking
+  outright, for the same reason plus the un-recovered I-cache footprint of a
+  body that is still present and merely branched over.
+
+## Results
