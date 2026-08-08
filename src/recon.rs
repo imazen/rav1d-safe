@@ -737,12 +737,12 @@ fn decode_coefs<BD: BitDepth>(
             i
         }
 
-        #[cfg_attr(debug_assertions, track_caller)]
+        #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
         pub fn get(&self, rc: u16) -> i32 {
             self.0[self.index(rc)].into()
         }
 
-        #[cfg_attr(debug_assertions, track_caller)]
+        #[cfg_attr(any(debug_assertions, feature = "probe-sites", feature = "probe-class"), track_caller)]
         pub fn set<T: ToPrimitive<BD::Coef>>(&mut self, rc: u16, value: T) {
             self.0[self.index(rc)] = value.as_();
         }

@@ -43,6 +43,15 @@ pub mod align;
 #[cfg(feature = "__probe_count")]
 pub mod probe;
 
+/// THROWAWAY per-call-site borrow counter (feature `__probe_sites`). Not public API.
+#[cfg(feature = "__probe_sites")]
+pub mod site_probe;
+
+/// THROWAWAY site-selective tracker nulling (feature `__probe_class`). UNSOUND;
+/// measurement only. Not public API.
+#[cfg(any(feature = "__probe_class", feature = "__probe_sites"))]
+pub mod site_class;
+
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;

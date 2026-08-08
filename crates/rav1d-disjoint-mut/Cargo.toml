@@ -38,6 +38,12 @@ __probe_lockonly = []
 __probe_untracked = []
 # Wide-path reason counters. Unlike __probe_count this KEEPS the sharded tracker.
 __probe_wide = ["std"]
+# THROWAWAY per-call-site borrow COUNTS + per-class census (keeps the tracker).
+__probe_sites = ["std"]
+# THROWAWAY: site-SELECTIVE tracker nulling, class chosen at runtime by
+# `set_null_mask`. UNSOUND (it deletes the overlap check for the selected
+# class) -- measurement only, never a shipping configuration.
+__probe_class = []
 # THROWAWAY: keep the add/remove CALL, delete the work. Isolates the call
 # barrier from the tracker's own instructions. UNSOUND -- measurement only.
 __probe_addnop = []

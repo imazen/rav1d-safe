@@ -97,6 +97,25 @@ fn main() {
         .unwrap_or(path)
         .to_string();
 
+    // THROWAWAY (`probe-class`): which call-site class stops being tracked.
+    // Read here, before any decode, so every arm of a sweep is the SAME BINARY
+    // and an inter-arm delta cannot be a codegen difference. A missing or
+    // misspelled value is fatal on purpose — silently measuring the baseline
+    // five times under five different arm names is the failure mode this
+    // guards against.
+    #[cfg(feature = "probe-class")]
+    {
+        let spec = std::env::var("RAV1D_CLS_NULL").unwrap_or_else(|_| "none".into());
+        let mask = rav1d_disjoint_mut::site_class::mask_from_str(&spec)
+            .unwrap_or_else(|| panic!("bad RAV1D_CLS_NULL={spec:?}"));
+        rav1d_disjoint_mut::site_class::set_null_mask(mask);
+        println!("CLSNULL\t{label}\t{spec}\t{mask:#04b}");
+    }
+    #[cfg(not(feature = "probe-class"))]
+    if std::env::var_os("RAV1D_CLS_NULL").is_some_and(|v| v != "none") {
+        panic!("RAV1D_CLS_NULL set but this binary was built without --features probe-class");
+    }
+
     let avif = std::fs::read(path).expect("read input");
     let obu = extract_obu(&avif);
 
@@ -134,6 +153,10 @@ fn main() {
         rav1d_safe::src::probe_tasktime::reset();
         rav1d_safe::src::probe_tasktime::start_monitor();
     }
+    // Zero the census AFTER the warmup decode so the per-frame counts below are
+    // steady-state and not diluted by first-frame allocation.
+    #[cfg(feature = "probe-sites")]
+    rav1d_disjoint_mut::site_probe::reset();
 
     for rep in 0..reps {
         let t0 = Instant::now();
@@ -150,5 +173,10 @@ fn main() {
     }
     #[cfg(feature = "probe-tasktime")]
     rav1d_safe::src::probe_tasktime::report((reps * iters) as u64);
+    #[cfg(feature = "probe-sites")]
+    print!(
+        "{}",
+        rav1d_disjoint_mut::site_probe::report((reps * iters) as u64)
+    );
     let _ = dec.flush();
 }

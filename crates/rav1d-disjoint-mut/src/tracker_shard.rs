@@ -1362,6 +1362,19 @@ impl BorrowTracker {
     fn add<const IS_MUT: bool>(&self, bounds: &Bounds) -> BorrowId {
         let start = bounds.range.start;
         let end = bounds.range.end;
+        // THROWAWAY (`__probe_sites`): per-call-site registration COUNTS.
+        #[cfg(feature = "__probe_sites")]
+        crate::site_probe::record(Location::caller(), IS_MUT, end.saturating_sub(start));
+        // THROWAWAY (`__probe_class`): drop the borrow on the floor when its
+        // call site belongs to a nulled class. `BorrowId::UNCHECKED` is already
+        // the id `remove` treats as "nothing to retire" (`kind()` is neither
+        // NARROW nor WIDE), so the paired `remove` becomes a compare-and-return
+        // for free -- the CALL on both sides survives, only the WORK goes.
+        // UNSOUND: the overlap check for that class is gone. Measurement only.
+        #[cfg(feature = "__probe_class")]
+        if crate::site_class::nulled(Location::caller()) {
+            return BorrowId::UNCHECKED;
+        }
         if start >= end {
             return BorrowId::EMPTY;
         }

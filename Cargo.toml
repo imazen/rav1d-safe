@@ -82,6 +82,13 @@ unchecked = []
 probe-count = ["rav1d-disjoint-mut/__probe_count"]
 probe-wide = ["rav1d-disjoint-mut/__probe_wide"]
 probe-addnop = ["rav1d-disjoint-mut/__probe_addnop"]
+# THROWAWAY per-call-site borrow counts + per-class census.
+probe-sites = ["rav1d-disjoint-mut/__probe_sites"]
+# THROWAWAY site-selective tracker nulling. UNSOUND -- deletes the overlap
+# check for whichever class `RAV1D_CLS_NULL` names. Measurement only; it is not
+# in `default`, not in any published feature, and the binaries it produces are
+# not decoders.
+probe-class = ["rav1d-disjoint-mut/__probe_class"]
 probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]
 probe-lockonly = ["rav1d-disjoint-mut/__probe_lockonly"]
 # Tracking off, bounds checks untouched (isolates the tracker from `unchecked`).
