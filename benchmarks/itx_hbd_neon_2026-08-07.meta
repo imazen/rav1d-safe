@@ -1,0 +1,119 @@
+# 10/12-bit inverse transforms in 32-bit NEON lanes: the t=1 measurement
+
+date: 2026-08-07
+host: Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64
+build: stable rustc, `--release` (lto="fat", codegen-units=1), DEFAULT features
+       (bitdepth_8 + bitdepth_16, CHECKED DisjointMut, `forbid(unsafe_code)`).
+       No `-C target-cpu=native`. No `nice` on any timed run.
+base:  fix/aarch64-mc-itx @ 2c7c082 (PR #453)
+arm:   perf/lr-itx-neon @ 560f4ec + 67accdd (itx 16bpc + the LR deletion)
+ref:   dav1d 1.5.4 (homebrew), `--framedelay 1` (tile threading only, the model
+       we implement)
+vectors: 3840x2160, 4 tile cols x 2 tile rows.
+       rav1d-safe decodes `v4k_8tile{,_10b}.avif`; dav1d decodes the IVF twin
+       verified to be the same key frame repeated.
+
+## Instrument
+
+`scripts/perf/verify_gap.sh` unchanged: one process per (arm, cell), each run at
+2 and at 20 frames, `beta = (ms20 - ms2) / 18` so process startup drops out;
+arm order rotated per round; a round is DISCARDED and re-run whole if any
+foreign process exceeds 25% CPU during it. Every cell below committed with
+**foreign = 0**. Reported figure is the median beta over n rounds.
+Raw: `benchmarks/itx_hbd_gap_2026-08-07.tsv`
+(round, arm, vector, threads, 2, ms2, 20, ms20, foreign).
+
+## Result
+
+ms/frame, and the ratio to dav1d --framedelay 1:
+
+    vector           t   base     arm    dav1d   base/dav1d  arm/dav1d   arm/base
+    v4k_8tile        1   398.5   397.7   246.6      1.62       1.61       0.998
+    v4k_8tile        2   223.6   222.9   125.2      1.79       1.78       0.997
+    v4k_8tile        4   132.1   130.9    65.7      2.01       1.99       0.991
+    v4k_8tile        8   116.6   118.2    37.1      3.15       3.19       1.014
+    v4k_8tile_10b    1   508.3   455.8   251.4      2.02       1.81       0.897
+    v4k_8tile_10b    2   276.1   260.6   127.7      2.16       2.04       0.944
+    v4k_8tile_10b    4   162.9   156.0    66.9      2.43       2.33       0.958
+    v4k_8tile_10b    8   141.3   142.8    38.7      3.65       3.69       1.011
+                                              n = 7 at t=1, 5 at t=2/4/8
+
+**10bpc t=1: 508.3 -> 455.8 ms/frame, 1.115x, ratio 2.02 -> 1.81.** t=2 and t=4
+carry 5.6% and 4.2%.
+
+The 8bpc column is the control and is flat, as it must be: the change adds one
+`BPC16` arm to `itxfm_add_dispatch` and touches no 8bpc kernel. Read the 8bpc
+row as "no regression", not as a result.
+
+**The t=8 cells are +1.4% (8bpc) and +1.1% (arm slower).** Both bit depths move
+the same way, including the 8bpc control that contains none of the new code, so
+this is the t=8 cell's own dispatch/tracker noise and not an effect of the
+change — but it is a real measured number and it is reported rather than
+dropped. t=8 is also the inverted regime on this machine (t=4 -> t=8 is 0.88-0.92x
+for us against 0.56-0.58x for dav1d); it is tracker-bound, not kernel-bound,
+which is why a kernel win does not show there.
+
+## Where the time went
+
+`/usr/bin/sample`, t=1, self+inclusive via `scripts/perf/sample_selftime.py` and
+`sample_tree.py`, `v4k_8tile_10b`:
+
+    itx inclusive                     21.93%  ->  12.79%
+    itx_1d::inv_dct4_1d_internal_c     6.37%  ->  absent
+    itx_1d::inv_dct8_1d_internal_c     3.88%  ->  absent
+    itx_1d::inv_dct16_1d_internal_c    2.56%  ->  absent
+    itx_1d::inv_adst8_1d_internal_c    1.26%  ->  absent
+    itx::inv_txfm_add::<BitDepth16>    4.94%  ->  absent  (self, the 2-D glue)
+    itx_arm_hbd::apply1d                  --  ->   2.43%  (self)
+    itxfm::Fn::call::<BitDepth16>         --  ->   4.10%  (self, inlined driver)
+
+No `itx_1d` sample remains: every inverse transform this bitstream asks for now
+runs in NEON. **Of the 12.79% that is left, 5.88 points are `block_mut` guard
+traffic** — `mut_slice_as` 3.29 + `remove_wide` 2.59 — and only ~6.5 points are
+transform work. That is the same `block_mut` cost the P2 profile named; it is
+now the dominant term in itx and is owned by whoever is working
+`include/dav1d/picture.rs`. This branch deliberately did not touch that file.
+
+Also confirms a P2 prediction: `inv_dct32_1d` and `inv_dct64_1d` take **zero**
+samples on this vector, which is why `hbd_supported()` stopping at
+`max(w, h) <= 16` costs nothing here. On content with 32/64-point transforms it
+will; those shapes still run the scalar reference.
+
+## Correctness
+
+* 766/766 dav1d-test-data (2 SKIP are non-IVF), and the set-diff is BY NAME
+  against `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst`: every vector
+  has the same status AND the same *actual* MD5. A change that repaired some
+  and broke others would be invisible in a count and is not invisible here.
+* `examples/bench_ab_decode`'s CHECKSUM line agrees between arms on both perf
+  vectors.
+* `safe_simd/itx_arm_parity.rs` gains four 16bpc arms driving the real
+  dispatcher against `itx::itxfm_add_scalar_fallback`: 10bpc and 12bpc, small
+  and large coefficients, and every legal `eob` at 10bpc (12,544 cells). The
+  `Report::finish` liveness gate asserts every cell took the NEON path, so a
+  shape the dispatch refuses cannot pass as scalar-vs-scalar.
+
+### Mutation proofs (the sweep detects what it claims to)
+
+Each planted, test run, reverted, green re-confirmed:
+
+  1. `dct4`'s 1567 -> 1568 — 877 of 2,848 cells diverge, all four arms fail.
+  2. `transpose4x4` returns rows 0,2,1,3 — 12,085 of 12,544 cells diverge.
+  3. Row/column clips replaced with `i16::MIN..=i16::MAX`, i.e. **exactly the
+     defect the existing `itx_arm_neon_*` 16bpc entry points carry** — the two
+     *small*-coefficient arms still PASS; only the large-coefficient arms fail
+     (633/2,848 at 10bpc, 2,438/2,848 at 12bpc).
+
+Mutation 3 is the reason the large-coefficient arms exist. A port validated
+only on light residual would look bit-exact and ship wrong pixels on real
+10-bit content.
+
+## What this does NOT say
+
+* Nothing was measured on inter-heavy or 32/64-transform content. One 4K intra
+  still per bit depth.
+* No claim about `unchecked` builds; every number is the checked default.
+* The 32- and 64-point 16bpc transforms are NOT ported. They are named in
+  `hbd_supported()` and they run the scalar reference.
+* `Kind::Identity` at n=32 and the WHT 4x4 lossless transform are likewise not
+  ported.
