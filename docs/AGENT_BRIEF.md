@@ -49,6 +49,17 @@ campaigns. Every rule below cost real time to learn.
 - **Verify your instrument sees the code.** Loop restoration is switched OFF in both 4K gap
   vectors, so an entire campaign's numbers contained no LR at all while it was active in 696/768
   corpus vectors. A null from a vector that never runs the code is not a result — prove execution.
+- **One box, one timed campaign.** Two agents measuring at once corrupt each other, and a STRICT idle
+  gate does not save you — every discarded attempt is itself load dumped on the other campaign. Check
+  `.workongoing` across sibling worktrees AND `ps` for another agent's bench binaries before starting;
+  if someone got there first, back off and wait rather than running with `ALLOW_LOAD=1`.
+- **A polite "wait until the box is free" predicate must not match its own `ps` line.** Grepping
+  `ps -o args` for a pattern that appears in the waiter's own argv waits forever. `ps -o comm` carries no
+  arguments and is self-match-proof for a binary; scope a script check to `bash <name>.sh`.
+- **Give every A/B family a NEGATIVE CONTROL arm** — an arm that provably changes nothing, measured in the
+  same sweep. `cls_picwb` at t=1 nulls zero registrations by construction and still read a *disjoint*
+  3.1 ms at n=2, which is arm-position bias: a rotation over N arms needs N rounds for every arm to visit
+  every slot. That number is the floor every other delta has to clear, and it costs one extra arm.
 - **Profile before optimizing, and profile self-time leaves**, not inclusive stacks. `samply` is
   installed and gives real call-tree attribution; macOS `sample` works too. Two sessions were
   saved by a profile contradicting the "obvious" target, and one was wasted by not taking one.
@@ -95,6 +106,8 @@ campaigns. Every rule below cost real time to learn.
 | Allocator traffic past the first fix (zenav1-svt) | null despite malloc+memset at 15.5% self time — `sample` attributes page-fault/zone work there |
 | Lazy deblock/CDEF application (zenav1-svt) | REFUTED — changes bytes; loop restoration reads post-CDEF recon |
 | 2D-dot hoist in `compute_stats` (zenav1-svt) | 0.944-0.977x regression |
+| Tracker cost is mostly the FILTER chain (rav1d-safe) | half true — filter > recon at 8bpc t=1 only; at every t>1 recon is 2-3x it and filter is not separable from noise at t=4. `benchmarks/site_class_2026-08-08.meta` |
+| Removing the tracker reaches ~1.30x at t=8 (rav1d-safe) | REFUTED — a ZERO-cost tracker still leaves 1.339 (8bpc) / 1.390 (10bpc) at t=8. Whatever closes t=8 is not tracker work |
 
 **The meta-lesson from the top two rows: a large self-time share is not automatically a large
 opportunity, and reducing the COUNT of an operation is not the same as reducing its COST.**
