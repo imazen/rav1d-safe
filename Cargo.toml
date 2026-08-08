@@ -146,6 +146,9 @@ asm_arm64_sve2 = ["asm"]
 
 # Run SIMD and scalar side-by-side, panic on any mismatch (testing only)
 __simd_test = []
+# Temporary measurement-only: print each (bitdepth, LR variant) pair the first
+# time it is dispatched, so a __simd_test run can prove which variants it covered.
+__lrvarcov = []
 
 # Per-kernel-family SIMD ablation (measurement only, see src/ablate.rs). Arms a
 # process-global "disabled families" bitmask that each aarch64 SIMD dispatcher
