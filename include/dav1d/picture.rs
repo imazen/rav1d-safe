@@ -2044,3 +2044,147 @@ mod tile_threading_latch_tests {
         );
     }
 }
+
+/// MECHANISM gate for [`Rav1dPictureDataComponentOffset::for_rows`] and
+/// [`Rav1dPictureDataComponentOffset::for_rows_mut`].
+///
+/// Those two pick between ONE hull registration and `h` per-row ones on
+/// [`tile_threading_active`]. Which branch runs is invisible in the decoded
+/// pixels, so nothing else in the tree can catch a regression in either
+/// direction:
+///
+/// * per-row taken with threading OFF — the whole point of the helper is lost
+///   and 8.4 M registrations per frame come back, with no test going red.
+/// * hull taken with threading ON — the hull reserves the inter-row gaps, which
+///   belong to other tile COLUMNS. A neighbouring tile's legitimate write then
+///   trips a spurious `overlapping DisjointMut` panic (measured 8-9 of 24
+///   concurrent runs before [`set_tile_threading`] was made monotone), or, in
+///   an `unchecked` build, races undetected.
+///
+/// So each test asserts which EXTENT got reserved, by holding a byte that only
+/// the hull covers and checking whether the tracker rejects the call.
+#[cfg(test)]
+mod row_guard_policy_tests {
+    use super::{Rav1dPictureDataComponent, set_tile_threading, tile_threading_active};
+    use crate::include::common::bitdepth::BitDepth8;
+    use crate::src::with_offset::WithOffset;
+    use std::panic::{self, AssertUnwindSafe};
+
+    const STRIDE: usize = 64;
+    const ROWS: usize = 4;
+    const W: usize = 8;
+    /// First pixel of row 0 to last pixel of row `ROWS-1`, gaps included.
+    const HULL: usize = (ROWS - 1) * STRIDE + W;
+
+    fn plane() -> Rav1dPictureDataComponent {
+        // `wrap_buf` asserts the byte length is a multiple of 64.
+        let mut buf = vec![0u8; STRIDE * ROWS];
+        Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut buf, STRIDE)
+    }
+
+    /// Does `for_rows_mut` over the `W x ROWS` block at offset 0 conflict with a
+    /// live mutable borrow of the single pixel `probe`?
+    fn conflicts_with(probe: usize) -> bool {
+        let pic = plane();
+        let held = pic.slice_mut::<BitDepth8, _>((probe.., ..1));
+        let at = WithOffset {
+            data: &pic,
+            offset: 0,
+        };
+        let prev = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+        let r = panic::catch_unwind(AssertUnwindSafe(|| {
+            at.for_rows_mut::<BitDepth8, _>(W, ROWS, |_, row| {
+                row[0] = 1;
+            });
+        }));
+        panic::set_hook(prev);
+        drop(held);
+        r.is_err()
+    }
+
+    fn assert_hull_branch() {
+        assert!(
+            !tile_threading_active(),
+            "precondition: this must run in a process where no decoder has \
+             latched tile threading, or it is testing the other branch"
+        );
+        // A byte in the INTER-ROW GAP — inside the hull, outside every row's
+        // own `[row*STRIDE, row*STRIDE + W)`. Only the hull registration covers
+        // it, so a conflict here is proof the hull branch ran.
+        assert!(
+            conflicts_with(W),
+            "with tile threading off, `for_rows_mut` must take ONE hull guard; \
+             a gap byte inside [0, {HULL}) did not conflict, so the per-row \
+             branch ran instead"
+        );
+        // Control: past the hull nothing may conflict, or the assertion above
+        // would pass for the wrong reason.
+        assert!(
+            !conflicts_with(HULL),
+            "a byte outside the hull must never conflict"
+        );
+    }
+
+    /// The threading-OFF half, run in a CHILD PROCESS.
+    ///
+    /// `TILE_THREADING` is a monotone process-global and
+    /// `set_tile_threading_is_monotone` (above, same binary) latches it on, so
+    /// this branch is simply not observable in the parent — and libtest gives
+    /// no ordering guarantee that would fix that. Re-exec'ing ourselves with
+    /// `--exact` gives a process running this test and nothing else.
+    ///
+    /// The child's marker line is checked, not just its exit status: libtest
+    /// exits 0 when a filter matches NOTHING, so a renamed test would otherwise
+    /// turn this gate green while running no assertions at all.
+    #[test]
+    fn for_rows_mut_reserves_the_strided_hull_when_tile_threading_is_off() {
+        const MARKER: &str = "ROW_GUARD_HULL_CHILD_RAN";
+        const NAME: &str = "include::dav1d::picture::row_guard_policy_tests::\
+                            for_rows_mut_reserves_the_strided_hull_when_tile_threading_is_off";
+        if std::env::var_os("RAV1D_ROW_GUARD_CHILD").is_some() {
+            assert_hull_branch();
+            println!("{MARKER}");
+            return;
+        }
+        let exe = std::env::current_exe().expect("test binary path");
+        let out = std::process::Command::new(exe)
+            .args(["--exact", NAME, "--nocapture"])
+            .env("RAV1D_ROW_GUARD_CHILD", "1")
+            .output()
+            .expect("re-exec the test binary");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains(MARKER),
+            "the child process did not reach the assertions (renamed test? \
+             libtest exits 0 on an empty filter). status={:?}\nstdout:\n{}\nstderr:\n{}",
+            out.status,
+            stdout,
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(out.status.success(), "child failed:\n{stdout}");
+    }
+
+    /// The threading-ON half. Latches the flag itself, so it is independent of
+    /// what else in this binary has run.
+    #[test]
+    fn for_rows_mut_never_reserves_an_inter_row_gap_when_tile_threading_is_on() {
+        set_tile_threading(true);
+        assert!(tile_threading_active());
+        assert!(
+            !conflicts_with(W),
+            "with tile threading ON, `for_rows_mut` must take PER-ROW guards; a \
+             byte in the inter-row gap conflicted, which is exactly the false \
+             positive `block_mut`'s tile-threading branch and the monotone \
+             `set_tile_threading` latch exist to prevent"
+        );
+        // Anti-vacuity: without this, the assertion above would also pass with
+        // borrow tracking compiled out entirely (`--features unchecked`).
+        assert!(
+            conflicts_with(STRIDE),
+            "row 1 column 0 IS written by this block, so a live mutable borrow \
+             of it must conflict; if it does not, tracking is off in this build \
+             and this test gates nothing"
+        );
+    }
+}
