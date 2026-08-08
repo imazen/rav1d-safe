@@ -4,6 +4,54 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Changed
+- **`rav1d-disjoint-mut`: releasing a borrow no longer takes the shard lock**
+  (`1f09769`). The occupancy bitmap moved out of the lock-protected record
+  block into an `AtomicU8` on the shard, so `remove` is one `fetch_and` against
+  the `fetch_or` a registration publishes with. Registration is unchanged and
+  still re-reads `state` inside its lock (the wide-list TOCTOU fix in
+  `4af62ae`). New `threaded_churn_leaks_no_slots` test, mutation-proven against
+  the lost-update shape it guards. Isolated effect on decode: -0.9%.
+- **`rav1d-disjoint-mut`: the borrow-tracker block shift is re-openable, and can
+  size itself from the buffer** (`c003d2f`). Profiling by CALLER rather than by
+  symbol showed the tracker's cost is the shard cache line, not the
+  registration — a strided access pays one line per ROW, and the single largest
+  consumer is `rav1d_prepare_intra_edges`' 1-pixel-wide left-column read (9.19%
+  of a t=8 4K frame) at one registration per row per BYTE. New
+  `blockshift-13/14/15/16` rungs and a `blockshift-adaptive` rule
+  (`log2(len) - 8`, so a 4K 8-bit plane gets 14 and its 10-bit twin 15, both at
+  ~4.3 picture rows per block, while a 64 KiB buffer keeps 8). Sound for any
+  value — the no-missed-overlap argument constrains only that both registrants
+  agree, which the module header now states, and the premise is mutation-proven
+  (making consecutive registrations disagree by one bit fails
+  `cross_shard_overlaps_are_all_caught`).
+- **The adaptive shift is now the DEFAULT for a threaded decode** (`fd5239f`),
+  with serial decode left byte-for-byte on the old constant — the same split,
+  for the same reason, as `SHARDS_SERIAL` vs `SHARDS_CONCURRENT`. Idle box,
+  median of 5, zero foreign, ms/frame: v4k_8tile 131.3 -> 119.8 at t=4 and
+  117.9 -> 76.3 at t=8; 10bpc 162.0 -> 155.3 and 141.6 -> 97.1. Against
+  dav1d 1.5.4 `--framedelay 1` that is **t=8 3.15x -> 2.04x (8bpc) and
+  3.74x -> 2.56x (10bpc)**, t=4 2.00x -> 1.83x and 2.43x -> 2.32x. Cost,
+  measured and reproducible across all five rounds: single-tile 4K at t=8 is
+  **2.6% slower** (364.6 -> 373.9) — one tile means the concurrency is
+  post-filter tasks sharing planes, so a coarser block buys no strided-read
+  locality and only adds collisions; the tracker cannot detect that from the
+  buffer length. 1024x1024 is neutral. Output bit-identical on all 769 corpus
+  vectors; wide-path promotions zero.
+  Record: `benchmarks/tracker_blockshift_2026-08-08.meta`, raw
+  `benchmarks/tracker_blockshift_confirm_2026-08-08.tsv`.
+- **`held-row-guards` (default off), a measured negative kept on purpose**
+  (`94f1bdb`). `WithOffset::block_mut`'s compact path can hold its per-row
+  MUTABLE guards across the kernel instead of taking immutable ones to read and
+  mutable ones to write back, halving registrations from `2h` to `h` with
+  byte-identical extents and 766/766 correctness. It measures null, and
+  combined with a larger block shift it is a collapse (402-986 ms/frame against
+  a 120 ms base) because holding 64 guards overflows a shard's 7 slots onto the
+  all-shards wide path.
+- `examples/probe_tracker` gains `--features probe-wide`: wide-path promotion
+  counters that, unlike `probe-count`, keep the sharded tracker rather than
+  switching to the legacy one.
+
 ### Fixed
 - **10/12-bit CDEF on aarch64 decoded to the wrong pixels** (issue #446).
   `src/safe_simd/cdef_arm.rs`'s 16bpc filter computed `pri_tap` as
