@@ -105,6 +105,7 @@ h2 = f"{'vector':16} {'t':>2} " + "".join(f"{c:>20}" for c in CLASSES) + f"{'SUM
 print(h2)
 print("-" * len(h2))
 attrib = {}
+overlap = {}
 for vec, t in cells:
     cn = med(vec, t, "cls_none")
     cnb = band(vec, t, "cls_none")
@@ -121,14 +122,18 @@ for vec, t in cells:
         if c in PARTITION:
             s += d
         dj = "d" if (bb[1] < cnb[0] or cnb[1] < bb[0]) else "O"
-        attrib[(vec, t, c)] = d
+        # An overlapping band is a NULL for that class, not a small number. The
+        # projection table below must not quietly spend it.
+        attrib[(vec, t, c)] = d if dj == "d" else 0.0
+        overlap[(vec, t, c)] = dj == "O"
         row += f"{d:>16.1f} {dj:>3}"
     ca = med(vec, t, "cls_all")
     tot = cn - ca if ca is not None else float("nan")
     row += f"{s:>9.1f}{tot:>9.1f}{s - tot:>8.1f}"
     print(row)
-print("\nd = the class's band is disjoint from cls_none's; O = they overlap (do not")
-print("believe the number). SUM should equal `all`; resid is the interaction term.")
+print("\nd = the class's band is disjoint from cls_none's; O = they overlap, and the")
+print("class is then treated as a NULL (0.0) in the projection below, not as its")
+print("median. SUM should equal `all`; resid is the interaction term.")
 
 print("\n== gap to dav1d if one class's tracker cost went to zero ==\n")
 print("projected = (base - attributable) / dav1d.  base and dav1d are the real")
@@ -148,7 +153,11 @@ for vec, t in cells:
     row = f"{vec:16} {t:>2} {b / d:>6.3f} "
     for c in CLASSES:
         a = attrib.get((vec, t, c))
-        row += f"{'-':>11}" if a is None else f"{(b - a) / d:>11.3f}"
+        if a is None:
+            row += f"{'-':>11}"
+        else:
+            mark = "*" if overlap.get((vec, t, c)) else " "
+            row += f"{(b - a) / d:>10.3f}{mark}"
     rp = attrib.get((vec, t, "recon+big"), attrib.get((vec, t, "recon"), 0)) + attrib.get(
         (vec, t, "picwb"), 0
     )
@@ -156,3 +165,5 @@ for vec, t in cells:
     row += f"{(b - (cn - ca)) / d:>8.3f}" if ca is not None else f"{'-':>8}"
     row += f"{u / d:>10.3f}"
     print(row)
+print("\n* = that class's band overlapped cls_none's, so it is counted as zero and the")
+print("cell just repeats `now`.")
