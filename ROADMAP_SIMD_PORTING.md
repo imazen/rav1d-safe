@@ -47,7 +47,7 @@ Dispatch pattern: `incant!` for multi-tier, or `if let Some(t) = X64V4xToken::su
 | X5 | itx/cdef/loopfilter 16bpc AVX-512 | X64V4 | (after X1–X3) | — | TODO | |
 | R1 | mc 8tap dotprod + i8mm | Arm64V2/V3 | `safe_simd/mc_arm.rs`, `cpu.rs`, `build.rs` | merged | SCAFFOLDED, cfg-gated OFF (nightly intrinsics — see note). Default build = NEON | 75f044c |
 | R2 | itx NEON tier (rdm sqrdmulh) | Arm64V2 | `safe_simd/itx_arm*.rs` | — | TODO — *the Arm64V2 half*. The **baseline-NEON 16bpc tier landed 2026-08-07** (`safe_simd/itx_arm_hbd.rs`, every shape with max(w,h) ≤ 16, all 16 non-WHT types); 32/64-point 16bpc still scalar. See R2-16bpc below | 560f4ec |
-| R3 | loopfilter/cdef ARM tier | NEON (baseline) | `safe_simd/{loopfilter,cdef}_arm.rs` | p2-kernels, lf-neon-port, cdef-neon | **CDEF DONE** (filter 8bpc+16bpc, all 3 shapes, all 3 strength branches, direction search; bit-exact vs the 783-vector corpus) and **LOOP FILTER DONE** (all 4 widths x both directions x 8/10/12 bpc, bit-exact). See the R3 note below | 70c1a70, 8c1fa2d, 998d743, 3b44f6d, d751493 |
+| R3 | loopfilter/cdef/looprestoration ARM tier | NEON (baseline) | `safe_simd/{loopfilter,cdef,looprestoration}_arm.rs` | p2-kernels, lf-neon-port, cdef-neon, lr-neon-tier | **ALL THREE DONE.** CDEF (filter 8bpc+16bpc, all 3 shapes, all 3 strength branches, direction search), LOOP FILTER (all 4 widths x both directions x 8/10/12 bpc), LOOP RESTORATION (wiener7/wiener5/sgr_5x5/sgr_3x3/sgr_mix at both bit depths, 2026-08-08). All bit-exact against the corpus. See the R3 note below | 70c1a70, 8c1fa2d, 998d743, 3b44f6d, d751493, ac962fa, 2bd52c7 |
 
 ## Cross-cutting findings (2026-05-26 AVX-512/ARM wave — all merged to main)
 - **Zen4 double-pumps AVX-512** (256-bit execution units) → every AVX-512 kernel benches FLAT on this dev box. Bit-exactness (14/14 MD5 on this Zen4, which executes the V4 path) is the validation; wall-clock payoff is on native-512 hardware (Intel Ice Lake server / Sapphire Rapids, Zen5). Do NOT chase Zen4 speedups for AVX-512.
@@ -120,7 +120,8 @@ dav1d's 4.1 (17.3x), loop filter 34.2 against 3.0 (11.3x).
   `tile_threading_active()`. The sound version is a tracker API that registers N
   DISJOINT ranges in one operation (`add_multi` already does 2), which is R2/R4
   work, not a kernel port.
-- **Loop restoration: still scalar**, 1,527 lines, and measured **0.0 ms/frame**
+- **Loop restoration** (HISTORICAL — see the 2026-08-08 entry below for the
+  current state): **still scalar**, 1,527 lines, and measured **0.0 ms/frame**
   on the 4K vectors used here because loop restoration is off in those
   bitstreams. Do not port it on the strength of its line count; find a vector
   that exercises it first.
@@ -156,12 +157,37 @@ dav1d's 4.1 (17.3x), loop filter 34.2 against 3.0 (11.3x).
     So it was deleted (1,436 lines); the dispatcher returns `false` and the
     caller runs the reference. 766/766 with byte-identical per-vector MD5s,
     which is also the proof the duplicate bought nothing.
-  * **Still TODO for this row:** an actual NEON loop-restoration tier, written
-    against `src/looprestoration.rs`. The two profile-blamed starting points
-    are `selfguided_filter`'s per-pixel `.get(..).unwrap_or(0)` neighbour
-    gather and the ~300 KB of zero-initialised stack scratch each restoration
-    unit pays on entry (`sumsq` at `i64`, `sum`, `dst0`, `dst1`).
-    `lr_filter_direct` already has the `__simd_test` differential to gate on.
+  * **2026-08-08 — the tier is now WRITTEN, and R3 is DONE.** Full record:
+    `benchmarks/lr_neon_tier_2026-08-08.meta`. All five variants at both bit
+    depths (wiener7, wiener5, sgr_5x5, sgr_3x3, sgr_mix), ported from
+    `src/looprestoration.rs` rather than from a copy of it. Both starting
+    points the previous entry named were taken: the box sums are FUSED
+    (one row of vertical sums into a row buffer, slid horizontally straight
+    into the destination — row-major on the source instead of the reference's
+    390-element column stride, and no in-place aliasing), and the scratch is a
+    per-thread buffer that is never cleared instead of ~285-460 KB of stack
+    memset per restoration unit.
+
+    Measured, whole-frame decode, `__ablate` A/B on the same binary, rotated,
+    idle-verified, median of 5:
+
+    | vector | neon | scalar | ratio |
+    |---|---|---|---|
+    | `8-bit/data/00001147` (LR 42.6% of kernel px) | 172.22 | 196.70 | **0.876** |
+    | `10-bit/issues/318_tx_4x4` (LR 76.1%) | 9.121 | 9.693 | **0.941** |
+    | `8-bit/data/00000855` (LR 70.0%) | 26.334 | 26.627 | **0.989** |
+    | `8-bit/data/00000645` (LR 40.4%) | 5.568 | 5.594 | 0.995 — ranges OVERLAP, not resolvable |
+
+    Correctness: `--features __simd_test_log` over all 768 corpus vectors
+    compares EVERY loop-restoration call against the scalar reference — 766
+    PASS / 2 SKIP / **zero** `LR_MISMATCH` — and `md5_inventory` set-diffs BY
+    NAME with the actual md5 in the key. Both gates, plus the `__lrpoison`
+    read-before-write check on the reused scratch, were proved live by planting
+    hazards and watching them fire.
+
+    Still open on this row: no dotprod/i8mm and no SVE (baseline NEON only),
+    and the four A/B vectors are the corpus extremes plus two mid-range cases —
+    no claim is made about the median of the 696 LR-active vectors.
 
 ## R2-16bpc status (measured + landed 2026-08-07)
 
