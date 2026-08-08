@@ -1,0 +1,161 @@
+# aarch64 MD5 conformance: closing the 464-vector gap
+
+Branch: `fix/aarch64-mc-itx`, on top of `attrib/aarch64-md5-kernel-map` (762a346),
+itself on `verify/compose` (eb6f9ae).
+Machine: Apple M4 Pro (8P + 4E), macOS. Every build and test ran under `nice -n 19`.
+No timed measurement was taken or needed: every number below is a hash comparison
+or a set cardinality.
+
+## Instrument
+
+`examples/md5_inventory` (from the attribution pass) decodes all 766
+dav1d-test-data vectors and emits one TSV row per vector, so a before/after
+comparison is a **set-diff by name**, never a count. That distinction is
+load-bearing here: the three defect families overlap heavily, and a change that
+repairs one bucket while breaking another moves the total by zero.
+
+Baseline reproduced on this branch before any edit:
+`302 PASS / 464 MISMATCH / 2 SKIP`, and the 464 names are byte-identical to
+`benchmarks/aarch64_md5_attribution_2026-08-07/failing_464.txt`.
+
+## Movement, by commit
+
+| after | PASS | MISMATCH | newly matching | newly failing |
+|---|---|---|---|---|
+| baseline | 302 | 464 | — | — |
+| 8bpc compound (`avg`/`w_avg`/`mask`/`w_mask`) | 382 | 384 | 80 | **0** |
+| itx (16x16 eob table, 16x32/32x16 identity + eob tables) | 675 | 91 | 293 | **0** |
+| 16bpc prep + compound (PREP_BIAS convention, intermediate_bits) | **766** | **0** | 91 | **0** |
+
+The attribution's partition held element-for-element at every step:
+
+* the 80 are exactly `needs_mc_other_only_80.txt`;
+* the 293 are exactly `needs_itx_only_57.txt` + `needs_itx_and_mc_other_236.txt`;
+* the 91 that survived those two are exactly `needs_mc_prep_and_mc_other_91.txt`.
+
+End state: **766 PASS / 0 MISMATCH / 2 SKIP** (`8-bit/features/annexb` and
+`8-bit/features/section5`, both SKIP on the baseline too — those two are
+container-format variants the inventory harness does not feed).
+`cargo test --release --test decode_md5_verify` is green: 14/14, 36.8 s.
+
+## Defects fixed
+
+### 8bpc compound (`src/safe_simd/mc_arm.rs`)
+
+1. `avg_8bpc_inner`: `vqrdmulhq_n_s16(sum, 2048)` is `(sum + 8) >> 4`; the
+   reference wants `(sum + 16) >> 5`. Multiplier had to be 1024. Its scalar tail
+   was already right — the fingerprint is "passes at 4x4/4x8, fails at every
+   width >= 8".
+2. `w_avg_8bpc_inner`, `mask_8bpc_inner`: the vector paths rounded twice (an
+   inner `>> 4` / `>> 6` before the outer rounded shift); the scalar tails
+   shifted one bit too far. Both are now the exact single-shift form. Weights 0
+   and 16 agreed before the fix and everything between them did not, because at
+   the degenerate ends the inner remainder is identically zero.
+3. `w_mask_8bpc_inner`: `rnd` added `8192 * 64` where `BitDepth8::PREP_BIAS` is
+   0; `sign` was applied to the pixel blend (the reference routes it only into
+   the segmentation mask); 4:2:2 mask store dropped `sign`; 4:2:0 mask store
+   wrote `(m+n+1)>>1` on even rows only, where the reference writes `m+n` on the
+   even row and folds it with the odd row's `(m+n+2-sign)` at `>> 2`.
+
+### itx (`itx_arm_neon_16x16.rs`, `itx_arm_neon_large_rect.rs`)
+
+4. 16x16 `eob_half` was 36 for every transform type. dav1d's
+   `def_fn_16x16 <txfm1>, <txfm2>, <eob_half>` gives 8 to `dct, identity`
+   (H_DCT) and `identity, dct` (V_DCT). The threshold is a property of the
+   coefficient SCAN: H_DCT is `TX_CLASS_H`, whose `rc` is the scan index itself,
+   so eob = 8 already lands on coefficient row 8. 243 vectors.
+   V_DCT was equally mis-thresholded but never showed up in the corpus, because
+   class V cycles the column fastest and needs eob >= 128 to reach row 8.
+5. 16x32 / 32x16 identity collapsed the whole chain to `round2(c, 2)`. That is
+   exact for 8x32/32x8 — not rect2, and identity8/identity32 are exact powers of
+   two — but 16x32/32x16 ARE rect2, and both the rect2 multiply and identity16
+   round. At 16x32 a lone coefficient of 1 gives 1 from the reference and 0 from
+   the shortcut.
+6. Four sites carried `eob_32x32` = {36, 136, 300, 1024} where dav1d uses
+   `eob_16x32` = {36, 151, 279, 512}. The larger entries break out of the group
+   loop early and drop real coefficient groups.
+
+### 16bpc prep + compound (`src/safe_simd/mc_arm.rs`)
+
+7. **Convention.** The aarch64 16bpc seam ran two `PREP_BIAS` conventions at
+   once: `prep_8tap_16bpc_inner` omitted the subtraction and `avg`/`w_avg`/
+   `mask` omitted the matching addition, while `prep_bilin_16bpc_inner` and
+   `w_mask_16bpc_inner` used the biased one. That is unsurvivable in a decoder
+   that falls back to `prep_8tap_rust` for any shape its SIMD does not cover:
+   the `tmp` buffer is shared, so a scalar-produced `tmp` read by a NEON `avg`
+   is off by exactly one `PREP_BIAS`. All five now speak the SCALAR convention.
+8. `prep_8tap_16bpc_inner` was wrong in all four subpel branches, not just the
+   bias: `intermediate_bits` was a literal 4 (2 at 12bpc); the V stage used
+   `6 + intermediate_bits` where `prep` rounds at 6 (that is `put`'s shift); the
+   H-only arm carried its own copy hardcoded to `(sum + 8) >> 4`; and the
+   copy arm did a RIGHT shift by `10 - intermediate_bits` where the reference
+   does `src << intermediate_bits`.
+9. `v_filter_8tap_16bpc_to_i16_neon` hardcoded `vshrq_n_s32::<8>` while its own
+   scalar tail shifted by `sh` — the two halves of one kernel disagreed at every
+   `sh != 8`. (The H filter beside it had already been fixed the same way.)
+10. `prep_bilin_16bpc_inner` used a fixed `>> 4` for the single-axis passes,
+    which is `4 - intermediate_bits` at neither depth, and skipped the
+    `<< intermediate_bits` on the copy path.
+11. `avg`/`w_avg`/`mask`/`w_mask` at 16bpc: hardcoded `intermediate_bits`, no
+    `PREP_BIAS`, and (in w_avg/mask) the same double-rounding as their 8bpc
+    siblings. `w_mask_16bpc_inner` additionally applied `sign` to the blend and
+    had the same broken 4:2:0/4:2:2 mask store.
+
+## Evidence
+
+Three differential harnesses, all comparing against the REAL scalar reference
+(`itx::itxfm_add_scalar_fallback`, `mc::prep_8tap_rust` / `prep_bilin_rust`, or
+formulas transcribed from `mc.rs` with the constants read out of `BitDepth`),
+not a re-derivation of it. `--ablate <every family>` proves that reference
+conformant: with all SIMD off, 766/766 vectors match dav1d.
+
+* `mc_arm::compound_parity` (5 tests) — 8bpc: 294 cells over 14 block sizes,
+  7 compound weights including both degenerate ends, wedge masks 0..=64, all
+  three subsamplings, both mask polarities, pixels AND segmentation mask.
+  16bpc: 588 cells, same axes at 10 and 12 bits, plus a convention-free
+  shift-recovery arm and an `oracle_constants_come_from_the_bitdepth` guard.
+* `safe_simd::itx_arm_parity` (4 tests) — every (size, type) `itxfm_add_dispatch`
+  wires at 8bpc, coefficients placed only at positions a legal bitstream can
+  reach for the given `eob` (using `decode_coefs_class`'s own `eob -> rc`
+  mapping per transform class). One arm sweeps EVERY eob: 14,592 cells, 0.15 s.
+* `safe_simd::mc_arm_prep_parity` (2 tests) — 840 16bpc cells over 5 filters x
+  14 sizes x 6 subpel positions x 2 bit depths, plus an 8bpc control arm that
+  was green before and after (the 8bpc prep was already bit-exact, so a red
+  control would mean the harness was wrong, not the kernel).
+
+Every harness ends in a liveness gate: a minimum cell count, and — for the two
+that go through a dispatcher — `live == cells`, because a dispatcher returning
+`false` would silently turn the comparison into scalar-vs-scalar.
+
+### Planted mutations (all reverted; each verified live before crediting it)
+
+| # | mutation | caught by | cells flipped |
+|---|---|---|---|
+| M1 | `avg8` multiplier 1024 -> 2048 | compound_8bpc | 9 |
+| M2 | `w_avg8` rnd 128 -> 0 | compound_8bpc | 98 |
+| M3 | `mask8` shift 10 -> 9 | compound_8bpc | 12 |
+| M4 | `sign` re-applied to the `w_mask8` blend | compound_8bpc | 72 (first at sign=1) |
+| M5 | 4:2:0 mask store without the cross-row accumulate | compound_8bpc | 28 |
+| M6 | 16x16 eob_half 8 -> 36 | itx_arm_parity | 33 (first at `type=11 eob=8`) |
+| M7 | 16x32 identity without the rect2 scale | itx_arm_parity | 511 |
+| M8 | 32x16 identity final shift 4 -> 3 | itx_arm_parity | 511 |
+| M9 | 16x32 DCT eob table back to the 32x32 one | itx_arm_parity | 21 (first at `eob=279`) |
+| M10 | prep16 V shift 6 -> 6 + intermediate_bits | prep_parity | 336 |
+| M11 | prep16 bias -> 0 | prep_parity | 672 (diff exactly 8192) |
+| M12 | `avg16` rnd without PREP_BIAS*2 | compound_16bpc | 28 |
+| M13 | `intermediate_bits_16bpc` -> literal 4 | compound_16bpc | 294 (all 12-bit) |
+| M14 | `sign` re-applied to the `w_mask16` blend | compound_16bpc | 84 |
+
+The attribution pass recorded one mutation that was NOT caught and was correct
+not to be: `16384` -> `16385` inside `(sum*1024 + K) >> 15` is inert, because
+`sum*1024 + 16384 = 1024*(sum + 16)` is always a multiple of 1024 and a `+1`
+cannot cross the `>> 15` boundary. A mutation that does not change behaviour
+says nothing about the test.
+
+## Traps re-confirmed
+
+* `CpuLevel::Scalar` is still a no-op for safe SIMD on aarch64. Nothing under
+  `src/safe_simd/` reads `rav1d_cpu_flags_mask`.
+* A quiet `__simd_test_log` run is still not proof. The twelve compound mc
+  dispatchers have no harness in `src/mc.rs` and owned 407 of the 464.
+* Count comparisons are still worthless. Every corpus claim here is a set-diff.

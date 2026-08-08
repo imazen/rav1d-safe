@@ -60,6 +60,11 @@ pub mod itx_arm;
 #[cfg(target_arch = "aarch64")]
 mod itx_arm_parity;
 
+/// Differential parity for the aarch64 `prep` kernels vs the scalar reference.
+/// Test-only; the module itself is `#![cfg(all(test, ...))]`.
+#[cfg(target_arch = "aarch64")]
+mod mc_arm_prep_parity;
+
 // The aarch64 NEON itx kernels (issue #400) are bit-exact and dispatched for
 // 8bpc; the 16bpc variants exist but aren't NEON-dispatched yet, so allow dead
 // code in these modules.
