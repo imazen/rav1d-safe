@@ -245,9 +245,18 @@ provably pixel-inert at every thread count, not just at t=1.
     exactly this fix, so THE COMPOSITION TURNS THAT JOB GREEN (`cargo fmt --all
     --check` rc=0 on the composed tree).
 (c) `cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16"
-    -- -D warnings` fails identically on main and on head:
-    `method 'bit' is never used` (`src/ablate.rs:83`). Pre-existing; not fixed
-    here. `cargo clippy --release -p rav1d-disjoint-mut --all-targets` is clean.
+    -- -D warnings` failed identically on main and on head:
+    `method 'bit' is never used` (`src/ablate.rs:83`). Pre-existing, and FIXED
+    in a follow-up here (#463): both call sites are already inside
+    `#[cfg(feature = "__ablate")]`, so the method is gated to match its callers
+    rather than silenced with `#[allow(dead_code)]`. Clippy rc=0 after;
+    `--features __ablate` still builds; corpus re-run 766/766 set-diff clean.
+    `cargo clippy --release -p rav1d-disjoint-mut --all-targets` was already clean.
+(d) `Clippy (c-ffi)` CANNOT pass on macOS at all, before or after: `src/error.rs:45`
+    asserts `Rav1dError::EAGAIN as u8 == libc::EAGAIN as u8`, which is 11 on
+    Linux and 35 on Darwin (E0080 at const-eval). CI pins that job to
+    ubuntu-latest, where it holds. Untouched by this work — recorded so the
+    next macOS session does not chase it.
 Also re-confirmed: `test-vectors/bench/photo_4k.avif` is gitignored, so
 `mt_stress` hard-fails in any fresh worktree until it is copied in.
 
