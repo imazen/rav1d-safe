@@ -5023,7 +5023,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             //   forward: last group at (max_iter-1)*4*stride, +3 lines, +16 pixels
             //   backward: 7 (luma) / 3 (chroma) pixels horizontally
             // V filter (is_v=true): iterates columns (stridea=1), row access (strideb=stride)
-            //   forward: (max_iter*4-1) columns + 16*stride rows
+            //   forward: (max_iter*4-1) columns + tap_after*stride rows
             //   backward: 7 (luma) / 3 (chroma) rows
             //
             // The backward reach must match the plane's true tap span (luma
@@ -5033,14 +5033,34 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             // — rows the previous sbrow's CDEF task is still legitimately
             // writing. Guarding them races that task (zenavif#30).
             let tap_before = if is_y { 7 } else { 3 };
+            // True perpendicular reach PAST the edge (#457): the tap ladder
+            // is symmetric — reads span p6..q6 for luma wd16 (7 after,
+            // indices 0..=+6) and p2..q2 for chroma wd6 (3 after). The 8bpc H
+            // kernels' 4-byte chunked transpose loads round past that: wd16
+            // loads 16 B/row covering -7..8 (after = 9), wd6 loads 4 B at +1
+            // covering +1..+4 (after = 5). The previous
+            // "+16" reached a full 16 rows below a V edge — into the NEXT
+            // superblock row, whose reconstruction runs concurrently now that
+            // the deblock barrier is gone; compact_read_per_row genuinely
+            // memcpys the window, so that read RACED the neighbour's
+            // BlockMut write-back (checked builds: intermittent overlap
+            // panics at t>=2). Exact windows stay inside the rows/cols the
+            // task graph already orders.
+            let tap_after = if is_y {
+                if is_v { 7 } else { 9 }
+            } else if is_v {
+                3
+            } else {
+                5
+            };
             let (reach_before, reach_after) = if !is_v {
                 // H filter: iterates through row groups
-                (tap_before, (max_iter * 4 - 1) * byte_stride + 16)
+                (tap_before, (max_iter * 4 - 1) * byte_stride + tap_after)
             } else {
                 // V filter: iterates through column groups
                 (
                     tap_before * byte_stride,
-                    max_iter * 4 - 1 + 16 * byte_stride,
+                    max_iter * 4 - 1 + tap_after * byte_stride,
                 )
             };
 
@@ -5060,7 +5080,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             if use_compact {
                 let (cw, ch, cstart, cbase) = if !is_v {
                     (
-                        tap_before + 16,
+                        tap_before + tap_after,
                         max_iter * 4,
                         dst.offset - tap_before,
                         tap_before,
@@ -5069,7 +5089,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     let cw = max_iter * 4;
                     (
                         cw,
-                        tap_before + 16, // rows: tap_before above + 16 below
+                        tap_before + tap_after, // rows: tap_before above + tap_after below
                         dst.offset.saturating_sub(tap_before * byte_stride),
                         tap_before * cw,
                     )
@@ -5227,12 +5247,17 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             // 8bpc path (zenavif#30): a uniform 7 over-reads chroma rows the
             // previous sbrow's CDEF task is still writing.
             let tap_before = if is_y { 7 } else { 3 };
+            // Exact after-the-edge reach (#457): the symmetric tap ladder
+            // reads p6..q6 luma / p2..q2 chroma. The 16bpc kernels are pure
+            // scalar — no chunked loads — so there is no rounding past it in
+            // either direction.
+            let tap_after = if is_y { 7 } else { 3 };
             let (reach_before, reach_after) = if !is_v {
                 // H filter: iterates through row groups
-                (tap_before, (max_iter * 4 - 1) * u16_stride + 16)
+                (tap_before, (max_iter * 4 - 1) * u16_stride + tap_after)
             } else {
                 // V filter: iterates through column groups
-                (tap_before * u16_stride, max_iter * 4 - 1 + 16 * u16_stride)
+                (tap_before * u16_stride, max_iter * 4 - 1 + tap_after * u16_stride)
             };
 
             // Guard: fall back to scalar if buffer bounds are insufficient.
@@ -5247,15 +5272,15 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             if use_compact {
                 let (compact_w, compact_h, start_pixel, base) = if !is_v {
-                    // H filter: tap_before + 16 pixels wide, max_iter*4 rows tall
-                    let w = tap_before + 16;
+                    // H filter: tap_before + tap_after pixels wide, max_iter*4 rows tall
+                    let w = tap_before + tap_after;
                     let h = max_iter * 4;
                     let start = dst.offset - tap_before;
                     (w, h, start, tap_before)
                 } else {
-                    // V filter: max_iter*4 pixels wide, tap_before + 16 rows tall
+                    // V filter: max_iter*4 pixels wide, tap_before + tap_after rows tall
                     let w = max_iter * 4;
-                    let h = tap_before + 16;
+                    let h = tap_before + tap_after;
                     let start = dst.offset.saturating_sub(tap_before * u16_stride);
                     (w, h, start, tap_before * w)
                 };
