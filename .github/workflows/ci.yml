@@ -209,8 +209,19 @@ jobs:
   # Token permutation tests (exercises all SIMD tiers)
   # ==========================================================================
   permutation-tests:
-    name: SIMD Permutation Tests
-    runs-on: ubuntu-latest
+    name: SIMD Permutation Tests (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          # A permutation gate that only runs on x86_64 cannot see a defect in
+          # any `*_arm.rs` dispatcher — those files do not exist on that target.
+          # `ubuntu-24.04-arm` is a native aarch64 runner (so is `macos-latest`).
+          - os: ubuntu-24.04-arm
+            arch: aarch64
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -226,8 +237,30 @@ jobs:
   # Conformance: MD5 parity across all CPU tiers and bit depths
   # ==========================================================================
   conformance:
-    name: Conformance (decode permutations)
-    runs-on: ubuntu-latest
+    name: Conformance (decode permutations, ${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+            timeout: 30
+          # THE aarch64 LEG IS LOAD-BEARING — do not drop it back to a single
+          # x86_64 runner. `decode_permutations` is the only gate on
+          # "every archmage token permutation decodes bit-identically", and the
+          # NEON dispatchers it covers (`src/safe_simd/*_arm.rs`) are compiled
+          # out on x86_64. While this job was x86_64-only, 16 of its 19 tests
+          # were failing on aarch64 (`Arm64::summon().unwrap()` panics in
+          # mc_arm / filmgrain_arm) and CI could not see it.
+          # `macos-latest` is also an aarch64 runner if this one is unavailable.
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+            # The scalar tier now really runs the whole 8-bit/data corpus here
+            # (before the fix it panicked out in milliseconds). 605 s wall for
+            # the full 19 tests on an M-series box; give the slower Neoverse
+            # runner room.
+            timeout: 60
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -243,7 +276,7 @@ jobs:
         # Each per-tier test runs in its own process, so switching the global
         # CPU-flags mask can't race across tests (no --test-threads=1 needed).
         run: cargo nextest run --profile ci --no-default-features --features "bitdepth_8,bitdepth_16" --release --test decode_permutations
-        timeout-minutes: 30
+        timeout-minutes: ${{ matrix.timeout }}
 
   # ==========================================================================
   # Threading: tile threading under forbid(unsafe_code)

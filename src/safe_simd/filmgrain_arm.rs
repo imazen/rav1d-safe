@@ -454,8 +454,11 @@ fn fgy_inner_8bpc(
 
     let mut seed = row_seed(rows, row_num, data);
 
+    // GATE, don't assert: `for_each_token_permutation` disables the NEON token
+    // process-wide, so `None` is a state this must handle by running the scalar
+    // twin below — not a "cannot happen".
     #[cfg(target_arch = "aarch64")]
-    let token = Arm64::summon().unwrap();
+    let token = Arm64::summon();
 
     let mut offsets: [[c_int; 2]; 2] = [[0; 2]; 2];
     static W: [[i32; 2]; 2] = [[27, 17], [17, 27]];
@@ -518,27 +521,39 @@ fn fgy_inner_8bpc(
             }
 
             #[cfg(target_arch = "aarch64")]
-            fgy_row_neon_8bpc(
-                token,
-                &mut dst[base..],
-                &src[base..],
-                scaling,
-                &grain_lut[offy + y][offx..],
-                bw,
-                xstart,
-                min_value as u8,
-                max_value as u8,
-                scaling_shift,
-            );
-
-            // Scalar fallback for non-aarch64 (xstart..bw)
+            let neon_done = match token {
+                Some(token) => {
+                    fgy_row_neon_8bpc(
+                        token,
+                        &mut dst[base..],
+                        &src[base..],
+                        scaling,
+                        &grain_lut[offy + y][offx..],
+                        bw,
+                        xstart,
+                        min_value as u8,
+                        max_value as u8,
+                        scaling_shift,
+                    );
+                    true
+                }
+                None => false,
+            };
             #[cfg(not(target_arch = "aarch64"))]
-            for x in xstart..bw {
-                let sv = src[base + x] as usize;
-                let grain = grain_lut[offy + y][offx + x] as i32;
-                let sc = scaling[sv] as i32;
-                let noise = round2(sc * grain, scaling_shift);
-                dst[base + x] = ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
+            let neon_done = false;
+
+            // Scalar twin of `fgy_row_neon_8bpc` — the same arithmetic its own
+            // tail loop runs. Taken on non-aarch64, and on aarch64 when the
+            // NEON token is disabled (`tests/decode_permutations.rs`).
+            if !neon_done {
+                for x in xstart..bw {
+                    let sv = src[base + x] as usize;
+                    let grain = grain_lut[offy + y][offx + x] as i32;
+                    let sc = scaling[sv] as i32;
+                    let noise = round2(sc * grain, scaling_shift);
+                    dst[base + x] =
+                        ((src[base + x] as i32 + noise).clamp(min_value, max_value)) as u8;
+                }
             }
         }
 
@@ -691,8 +706,9 @@ fn fgy_inner_16bpc(
     let mut offsets: [[c_int; 2]; 2] = [[0; 2]; 2];
     static W: [[i32; 2]; 2] = [[27, 17], [17, 27]];
 
+    // GATE, don't assert — see `fgy_inner_8bpc`.
     #[cfg(target_arch = "aarch64")]
-    let token = Arm64::summon().unwrap();
+    let token = Arm64::summon();
 
     let row_off = |y: usize| -> usize { (y as isize * stride_u16) as usize };
 
@@ -751,23 +767,31 @@ fn fgy_inner_16bpc(
             }
 
             #[cfg(target_arch = "aarch64")]
-            fgy_row_neon_16bpc(
-                token,
-                &mut dst[base..],
-                &src[base..],
-                scaling,
-                &grain_lut[offy + y][offx..],
-                bw,
-                xstart,
-                min_value,
-                max_value,
-                scaling_shift,
-                bitdepth_max,
-            );
-
-            // Scalar fallback for non-aarch64
+            let neon_done = match token {
+                Some(token) => {
+                    fgy_row_neon_16bpc(
+                        token,
+                        &mut dst[base..],
+                        &src[base..],
+                        scaling,
+                        &grain_lut[offy + y][offx..],
+                        bw,
+                        xstart,
+                        min_value,
+                        max_value,
+                        scaling_shift,
+                        bitdepth_max,
+                    );
+                    true
+                }
+                None => false,
+            };
             #[cfg(not(target_arch = "aarch64"))]
-            {
+            let neon_done = false;
+
+            // Scalar twin of `fgy_row_neon_16bpc` — the same arithmetic its own
+            // tail loop runs.
+            if !neon_done {
                 let mut x = xstart;
                 while x < bw {
                     let sv = cmp::min(src[base + x] as usize, bitdepth_max as usize);
@@ -998,8 +1022,9 @@ fn fguv_inner_8bpc(
     let mut offsets: [[c_int; 2]; 2] = [[0; 2]; 2];
     static W: [[[i32; 2]; 2]; 2] = [[[27, 17], [17, 27]], [[23, 22], [0; 2]]];
 
+    // GATE, don't assert — see `fgy_inner_8bpc`.
     #[cfg(target_arch = "aarch64")]
-    let token = Arm64::summon().unwrap();
+    let token = Arm64::summon();
 
     let row_off = |y: usize| -> usize { (y as isize * stride) as usize };
     let luma_row_off = |y: usize| -> usize { ((y << sy) as isize * luma_stride) as usize };
@@ -1074,27 +1099,35 @@ fn fguv_inner_8bpc(
 
             // NEON inner loop
             #[cfg(target_arch = "aarch64")]
-            fguv_row_neon_8bpc(
-                token,
-                &mut dst[base..],
-                &src[base..],
-                scaling,
-                &grain_lut[offy + y][offx..],
-                &luma[luma_base..],
-                bw,
-                xstart,
-                min_value as u8,
-                max_value as u8,
-                scaling_shift,
-                is_sx,
-                sx,
-                data,
-                uv,
-            );
-
-            // Scalar fallback for non-aarch64
+            let neon_done = match token {
+                Some(token) => {
+                    fguv_row_neon_8bpc(
+                        token,
+                        &mut dst[base..],
+                        &src[base..],
+                        scaling,
+                        &grain_lut[offy + y][offx..],
+                        &luma[luma_base..],
+                        bw,
+                        xstart,
+                        min_value as u8,
+                        max_value as u8,
+                        scaling_shift,
+                        is_sx,
+                        sx,
+                        data,
+                        uv,
+                    );
+                    true
+                }
+                None => false,
+            };
             #[cfg(not(target_arch = "aarch64"))]
-            {
+            let neon_done = false;
+
+            // Scalar twin of `fguv_row_neon_8bpc` — `noise_uv` is the same
+            // `compute_uv_scaling_val` + `round2` + clamp its tail loop runs.
+            if !neon_done {
                 let mut x = xstart;
                 while x < bw {
                     let grain = grain_lut[offy + y][offx + x] as i32;
@@ -1420,8 +1453,8 @@ use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 use crate::src::strided::Strided as _;
 
-/// Safe dispatch for generate_grain_y (aarch64 NEON).
-/// NEON is always available on aarch64, so this always dispatches and returns true.
+/// Safe dispatch for generate_grain_y (aarch64).
+/// The grain LFSR is inherently serial, so this is scalar and always returns true.
 #[cfg(target_arch = "aarch64")]
 pub fn generate_grain_y_dispatch<BD: BitDepth>(
     buf: &mut GrainLut<BD::Entry>,
@@ -1447,8 +1480,8 @@ pub fn generate_grain_y_dispatch<BD: BitDepth>(
     true
 }
 
-/// Safe dispatch for generate_grain_uv (aarch64 NEON).
-/// NEON is always available on aarch64, so this always dispatches and returns true.
+/// Safe dispatch for generate_grain_uv (aarch64).
+/// The grain LFSR is inherently serial, so this is scalar and always returns true.
 #[cfg(target_arch = "aarch64")]
 pub fn generate_grain_uv_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
@@ -1485,7 +1518,10 @@ pub fn generate_grain_uv_dispatch<BD: BitDepth>(
 }
 
 /// Safe dispatch for fgy_32x32xn (aarch64 NEON).
-/// NEON is always available on aarch64, so this always dispatches and returns true.
+///
+/// Always returns true: the row kernel picks NEON or its scalar twin from
+/// `Arm64::summon()`, so this handles the block either way. The token is NOT
+/// assumed present — `for_each_token_permutation` turns it off on purpose.
 #[cfg(target_arch = "aarch64")]
 pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
     dst: &Rav1dPictureDataComponent,
@@ -1564,7 +1600,9 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
 }
 
 /// Safe dispatch for fguv_32x32xn (aarch64 NEON).
-/// NEON is always available on aarch64, so this always dispatches and returns true.
+///
+/// Always returns true: the row kernel picks NEON or its scalar twin from
+/// `Arm64::summon()`, so this handles the block either way.
 #[cfg(target_arch = "aarch64")]
 pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     layout: Rav1dPixelLayoutSubSampled,
