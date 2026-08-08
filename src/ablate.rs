@@ -80,6 +80,11 @@ impl Family {
         Family::ALL.iter().copied().find(|f| f.name() == s)
     }
 
+    /// Only the two `__ablate` call sites (`set_disabled`, `is_off`) use this,
+    /// and both are cfg-gated — so without the feature this is dead code and
+    /// `clippy -D warnings` (the CI job) rejects it. Gate it to match its
+    /// callers rather than silencing the lint.
+    #[cfg(feature = "__ablate")]
     const fn bit(self) -> u32 {
         1u32 << (self as u32)
     }
