@@ -1,0 +1,165 @@
+INDEPENDENT VERIFICATION OF #466 (perm gate) + #467 (borrow pairs) — compose-6
+================================================================================
+
+Host     Apple M4 Pro, 8P+4E (12 logical), Darwin 25.5.0.
+Base     main 8568dbb. Both branches root there (merge-base == 8568dbb for both;
+         checked FIRST, no stale branch point).
+Compose  verify/compose-6 = main + origin/fix/perm-gate-aarch64 + origin/perf/borrow-pairs.
+Build    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16".
+         No -C target-cpu=native. Builds niced; NO nice on any timed run.
+Data     verify_compose6_gap_2026-08-08.tsv (224 rows = 4 arms x 8 cells x 7 rounds)
+
+BOX WAS NOT IDLE. Another agent's benchmark (~/tmp/sitecls/bin/bench_cls) ran
+through most of the sweep; the strict idle gate starved (1 cell committed in
+3 min), so the run used ALLOW_LOAD=1 and records the foreign count per row.
+172 of 224 rows carry foreign>0. Arms interleave with rotating order inside
+every cell, so PAIRED RATIOS hold; ABSOLUTE ms are inflated. The idle-only
+subset (n=1..3) gives the same headline to three digits, which is the check
+that the ratios survived: base/dav1d_fd1 at 8bpc t=1 is 1.368 loaded, 1.374
+idle-only, and 1.368 in the pairs branch's own idle run.
+
+
+1. GAP TO dav1d 1.5.4 — median of 7, two-point wall fit (2 and 20 frames)
+--------------------------------------------------------------------------------
+                head/base   bands     base/ref  head/ref   ms short of 1.30x
+  8bpc  t=1      0.9382   disjoint     1.368     1.283          -4.2   <- MET
+  8bpc  t=2      0.9970   OVERLAP      1.584     1.579          35.5
+  8bpc  t=4      1.0168   OVERLAP      1.731     1.760          30.7
+  8bpc  t=8      0.9815   OVERLAP      1.945     1.909          23.5
+  10bpc t=1      0.9421   disjoint     1.512     1.425          31.6
+  10bpc t=2      1.0126   OVERLAP      1.597     1.617          41.0
+  10bpc t=4      1.0549   OVERLAP      1.665     1.756          31.1
+  10bpc t=8      1.0072   OVERLAP      1.957     1.971          26.6
+  ref = dav1d_fd1 (--framedelay 1). dav1d_def is 0-4% faster at t>1.
+
+  The ~1.30x bar is met at exactly ONE of eight cells (8bpc t=1, 1.283).
+  Reproduces the pairs branch's own claim (1.368 -> 1.294 8bpc t=1,
+  1.520 -> 1.437 10bpc t=1) on an independent run with a different load
+  profile. t>1 is null in BOTH directions — every band overlaps.
+
+  t1 -> t8 scaling:  base 4.54x / head 4.34x / dav1d_fd1 6.46x / dav1d_def 6.71x
+                     (10bpc: 4.94 / 4.62 / 6.39 / 6.78)
+
+
+2. PER-BUCKET PROFILE — /usr/bin/sample self-time leaves via
+   scripts/perf/sample_selftime.py + scripts/perf/bucket_selftime.py,
+   30 s per arm on v4k_8tile 8bpc; ms/frame = bucket share x the wall fit above.
+--------------------------------------------------------------------------------
+  t=1        base %   base ms/f     head %   head ms/f
+  entropy    64.96      221.1       68.37      218.4
+  tracker    12.73       43.3        9.42       30.1
+  kernels    18.37       62.5       18.16       58.0
+  runtime     1.26        4.3        1.17        3.7
+  other       2.68        9.1        2.87        9.2
+  TOTAL                 340.4                  319.4
+
+  Tracker 43.3 -> 30.1 ms/f is ~63% of the 21.0 ms/f wall win; the rest lands
+  in kernels/entropy, where `sample` attributes inlined tracker code to the
+  caller. The 43.3 ms/f base figure agrees with the 41.7 ms/f that #465's
+  bucket profile reported — independent instrument, same number.
+
+  t=8 head: entropy 38.93 / tracker 18.06 / kernels 13.53 / runtime 3.05 /
+  other 26.43 (of which __psynch_cvwait 20.06 = worker idle). These are shares
+  of CPU time across 8 threads, not of wall.
+
+
+3. WHY t>1 CANNOT REACH 1.30x — confirmed from the pairs branch's own
+   decomposition data (borrow_pairs_decomp_2026-08-08.tsv, recomputed here)
+--------------------------------------------------------------------------------
+  8bpc t=8: base 65.2, ship 65.6, tinynop 63.8, untracked 45.9, dav1d 34.4.
+  untracked/dav1d = 1.332. A tracker costing NOTHING still misses the bar at
+  t=8. The residual is scaling (4.3-4.6x vs dav1d's 6.4-6.8x), not borrow cost.
+
+
+4. CORRECTNESS — all on the composed tree
+--------------------------------------------------------------------------------
+  md5_inventory              TOTAL pass=766 mismatch=0 error=0 skip=2
+  set-diff by NAME with the ACTUAL md5 in the value, against
+  benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst:
+                             768 rows each side, 0 only-in-base, 0 only-in-head,
+                             0 differing. EMPTY.
+  decode_permutations        19/19 PASS on aarch64, 575 s (base: 2/5 on the
+                             sampled subset, panicking at mc_arm.rs:5931,
+                             filmgrain_arm.rs:458, filmgrain_arm.rs:695)
+  decode_md5_verify          14/14
+  mt_stress 1/2/4/8/16 x5    PASS
+  tile_threading_parity      3/3;  reproduce_overlap + tile_threading_overlap
+                             + reproduce_overlap_scalar 10/10 (--run-ignored all;
+                             those #[ignore]s are pre-existing on main)
+  multi_decoder_pressure     12 procs x 3 iters x t{1,2,4,8,16}, every md5 ==
+                             the serial reference
+  disjoint-mut --probe_wide  lib 26/26, soundness 25/25, shard_liveness 5/5,
+                             wide_exclusion 1/1, narrow_release 1/1
+  cargo fmt --all --check    rc=0
+
+
+5. TEETH — planted, confirmed FAIL, restored (sha256 + git diff --exit-code)
+--------------------------------------------------------------------------------
+  A  fgy_row_neon_8bpc max clamp -1        decode_permutations 8bit_film_grain
+     (NEON kernel)                         FAILS in 24 of 25 permutations
+  B  the NEW scalar twin in fgy_inner_8bpc decode_permutations FAILS in exactly
+     (+1 on the noise term)                the 1 remaining permutation — the
+                                           base-NEON-off one — while
+                                           decode_md5_verify stays 14/14 GREEN.
+                                           A and B partition all 25 permutations
+                                           exactly: the fallback the branch made
+                                           live is a surface no other gate sees.
+  C  liveness bound 2 -> 100000            reports "only 25 token permutation
+                                           ran"; the assertion is reachable and
+                                           25 >= 2, so it is not vacuous.
+  D  add()'s in-lock `state` re-read       wide_exclusion FAILS (the 4af62ae
+     deleted                               TOCTOU)
+  E  active() cut to ONE shard             wide_exclusion FAILS
+  G  for_rows_mut's tile_threading_active()  row_guard_policy ON test FAILS
+     forced to false                         ("a byte in the inter-row gap
+                                             conflicted"), OFF test still ok
+  #![forbid(unsafe_code)] proved ACTIVELY: an added `unsafe` block makes the
+  default build fail with "usage of an unsafe block"; restored, rebuild green.
+
+
+6. DEFECT FOUND — PR #467 breaks CI on the `asm` leg (NOT reported by its author)
+--------------------------------------------------------------------------------
+  main 8568dbb  CI success.  #466 (f0547d0)  CI success, 21/21 jobs.
+  #467 (5580533)  CI FAILURE: "Build & Test (ubuntu-latest, asm)".
+
+  Cause: the branch's new `row_guard_policy_tests` assert tracker behaviour, and
+  the `asm` config implies `unchecked`, which compiles borrow tracking out. Both
+  tests then fail — including on purpose, via their own anti-vacuity assertion
+  ("tracking is off in this build and this test gates nothing"). The design
+  intent is right; the cfg gate is missing.
+
+  Reproduced locally, exactly:
+    cargo test --release --no-default-features \
+      --features "bitdepth_8,bitdepth_16,unchecked" --lib
+    base    69 passed; 0 failed
+    compose 69 passed; 2 failed  <- only the two new tests; nothing else moves.
+
+  Fix is one attribute, using the idiom already in tree (src/disjoint_mut.rs:29,
+  src/safe_simd/pixel_access.rs:451, ...):
+    -#[cfg(test)]
+    +#[cfg(all(test, not(feature = "unchecked")))]
+     mod row_guard_policy_tests {
+
+  NOT a regression, checked and dismissed: the `disjoint-mut CI` failures on
+  #467 ("Test --no-default-features" x3, "Test --all-features") are PRE-EXISTING
+  on main — reproduced identically on both trees (23 and 2 errors respectively).
+  That workflow is path-filtered on crates/rav1d-disjoint-mut/**, so it simply
+  never fired on #466 or on recent main pushes.
+
+  Also pre-existing, both trees identical: `cargo clippy --all-targets
+  -D warnings` fails on aarch64 (dead code in src/safe_simd/itx_arm*.rs, plus
+  examples/md5_inventory.rs, examples/md5_ablate.rs, examples/bench_ivf_limit.rs,
+  benches/tier_isolation.rs). CI pins Clippy to x86_64 where those are cfg'd out.
+
+
+7. NOT VERIFIED
+--------------------------------------------------------------------------------
+  * x86_64 — nothing was run on it. Both branches' x86 legs rest on GitHub CI.
+  * The borrow-COUNT claims (15,646,727 -> 7,924,706 at t=1; identical
+    22,700,725 at t=8) were not re-measured; no probe-sites build was made here.
+    The committed borrow_sites_2026-08-08.tsv is internally consistent with them
+    (top 3 = 48.6%, top 7 = 65.6%, total 15,646,727).
+  * `for_rows{,_mut}`'s negative-stride branch: unreachable in the safe build,
+    untested here, same as the pairs branch reported.
+  * 12bpc has no perf cell; no tiny/256/1024 size cells (4K only, as the
+    campaign's gap harness is defined).
