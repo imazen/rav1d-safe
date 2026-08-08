@@ -43,8 +43,16 @@ busy_count() {
   ps -A -o %cpu,comm -r | awk -v me="$BIN_RE" \
     'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\/|dav1d|python3/ && $2 !~ me {c++} END {print c+0}'
 }
+# ALLOW_LOAD=1 opts OUT of the strict gate: cells commit whatever the box is
+# doing, with the foreign count recorded in the last column so a contended run
+# is visible in the data rather than hidden. Use it ONLY when another agent owns
+# the box indefinitely, and label the resulting table as loaded — the arms still
+# interleave with a rotating order inside every cell, so both see the same load,
+# but absolute ms/frame is no longer comparable to an idle campaign's.
+ALLOW_LOAD=${ALLOW_LOAD:-0}
 wait_quiet() {
   local w=0
+  [ "$ALLOW_LOAD" = 1 ] && return 0
   while [ "$(busy_count)" -gt 0 ]; do
     sleep 5; w=$((w+5))
     [ $w -ge 1800 ] && { echo "box never went idle" >&2; exit 4; }
@@ -86,9 +94,9 @@ for round in $(seq 0 $((ROUNDS-1))); do
         [ "$f" -gt 0 ] && dirty=1
         rows+=("$round	$arm	$vec	$t	$NLO	$lo	$NHI	$hi")
       done
-      if [ $dirty -eq 0 ]; then
+      if [ $dirty -eq 0 ] || [ "$ALLOW_LOAD" = 1 ]; then
         for r in "${rows[@]}"; do printf '%s\t%s\n' "$r" "$fmax" >> "$OUT"; done
-        echo "[$(date +%H:%M:%S)] r$round $vec t=$t committed (idle)" >&2
+        echo "[$(date +%H:%M:%S)] r$round $vec t=$t committed (foreign=$fmax)" >&2
         break
       fi
       echo "[$(date +%H:%M:%S)] r$round $vec t=$t DISCARDED (foreign=$fmax)" >&2
