@@ -276,6 +276,52 @@ jobs:
         timeout-minutes: 5
 
   # ==========================================================================
+  # Threading race gates (the zenavif#30 / #445 defect class).
+  #
+  # These suites were written as regression gates for the tile-threading
+  # guard-race and worker-panic-wedge bugs, but were only runnable by hand
+  # (`just test-threading-races`) — CI never invoked them, which is how #445's
+  # bug survived with a gate that "existed". tile_threading_overlap and
+  # worker_panic_recovery are self-contained (committed crash vectors / an
+  # induced panic); mt_stress_4k needs a 4K multi-tile AVIF, synthesized here
+  # so the gate runs on every push instead of only on boxes that happen to
+  # have the gitignored bench asset.
+  # ==========================================================================
+  threading-race-gates:
+    name: Threading race gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+      - name: Guard-race and overlap gates (committed crash vectors)
+        run: |
+          cargo nextest run --profile ci --no-default-features --features "bitdepth_8,bitdepth_16" --release \
+            --test tile_threading_overlap --run-ignored ignored-only
+        timeout-minutes: 15
+      - name: Worker-panic recovery gates (decode must fail, not wedge)
+        run: |
+          cargo nextest run --profile ci --no-default-features --features "bitdepth_8,bitdepth_16,__test_induce_worker_panic" --release \
+            --test worker_panic_recovery --run-ignored ignored-only
+        timeout-minutes: 10
+      - name: Synthesize the 4K multi-tile mt_stress vector
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libavif-bin imagemagick
+          mkdir -p test-vectors/bench
+          convert -size 3840x2561 -seed 7 plasma:fractal png24:/tmp/src4k.png
+          avifenc -q 60 -s 8 -y 420 --tilecolslog2 2 --tilerowslog2 1 /tmp/src4k.png test-vectors/bench/photo_4k.avif
+          ls -la test-vectors/bench/
+        timeout-minutes: 10
+      - name: mt_stress_4k (threads 1..16 x 5 trials)
+        run: |
+          cargo nextest run --profile ci --no-default-features --features "bitdepth_8,bitdepth_16" --release \
+            --test mt_stress
+        timeout-minutes: 20
+
+  # ==========================================================================
   # Code coverage
   # ==========================================================================
   coverage:
