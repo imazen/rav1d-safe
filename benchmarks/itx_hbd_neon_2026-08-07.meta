@@ -145,6 +145,37 @@ The idle-box absolutes on record are the base-vs-`block_mut` table above
 not get a clean window before the session ended and is reported as a ratio
 only.
 
+## FINAL CONFIG, idle box (this is the headline number)
+
+Branch HEAD (16bpc itx + CfL + per-row guards + the LR deletion) against the
+`fix/aarch64-mc-itx` base, same `verify_gap.sh` instrument, **median of 6
+rounds, foreign = 0 on every committed round**. Raw:
+`benchmarks/head_gap_final_2026-08-07.tsv`.
+
+    vector           t    base    HEAD   dav1d   base/dav1d  HEAD/dav1d  HEAD/base
+    v4k_8tile        1   399.9   398.3   246.4     1.62        1.62        0.996
+    v4k_8tile        8   116.5   117.6    34.6     3.37        3.40        1.009
+    v4k_8tile_10b    1   507.4   438.4   251.6     2.02        1.74        0.864
+    v4k_8tile_10b    8   138.2   132.2    36.8     3.76        3.60        0.957
+
+**10bpc t=1: 507.4 -> 438.4 ms/frame, 1.157x, ratio 2.02 -> 1.74.**
+10bpc t=8: 138.2 -> 132.2, ratio 3.76 -> 3.60.
+
+Two honest caveats:
+
+* **8bpc t=1 moved 0.4%, not the 1.0% the CfL A/B measured.** Same box, same
+  day, both idle; the two instruments differ (two-point 2/20-frame fit here vs
+  12 timed iterations there) and 0.5% is inside their disagreement. Take 0.4%
+  as the number for the shipped config and treat the 1.0% as the kernel-local
+  figure it is.
+* **8bpc t=8 is 0.9% SLOWER** (117.6 vs 116.5), and the earlier itx-only sweep
+  saw +1.4% in the same cell. Two independent sweeps agreeing on the direction
+  makes it more likely real than noise. The plausible mechanism is the per-row
+  guard trade going the other way under tile threading: CfL now takes `h`
+  narrow tracker ops per block instead of one wide one, and narrow ops contend
+  on shard locks at t=8 where at t=1 they are free. Not investigated further.
+  10bpc t=8 improves, so it is not a blanket t=8 regression.
+
 ## What this does NOT say
 
 * Nothing was measured on inter-heavy or 32/64-transform content. One 4K intra
