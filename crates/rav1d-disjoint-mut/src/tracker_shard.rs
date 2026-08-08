@@ -428,6 +428,20 @@ impl TinyLock {
         }
     }
 
+    /// Acquire without the blocking retry. `false` means somebody else holds
+    /// it and NOTHING was acquired.
+    ///
+    /// Exists so the single-block fast path can contain no `bl` at all: the
+    /// contended case tail-calls a cold function that re-takes the lock the
+    /// blocking way. A `bl` anywhere in that path forces LLVM to spill
+    /// callee-saved registers around it, which is a 0x80-byte stack frame plus
+    /// three `stp`/`ldp` pairs on EVERY registration — see
+    /// [`BorrowTracker::add_contended`].
+    #[inline(always)]
+    fn try_lock(&self) -> bool {
+        !self.0.swap(true, Ordering::Acquire)
+    }
+
     #[cold]
     #[inline(never)]
     fn lock_slow(&self) {
@@ -481,14 +495,25 @@ type OverlapHit = (usize, usize, bool, Option<&'static Location<'static>>);
 /// The records of one shard. Only ever touched while that shard's [`TinyLock`]
 /// is held.
 ///
-/// The occupancy bitmap is NOT here — it lives in [`Shard::occupied`] as an
-/// atomic, because releasing a borrow only has to clear one bit and therefore
-/// does not need the lock at all. See [`BorrowTracker::remove`].
+/// Liveness is NOT here — it lives in [`Shard::live`], one atomic byte per
+/// slot, because releasing a borrow has to be doable without the lock. See
+/// [`BorrowTracker::remove`] and [`Shard::live`].
 struct ShardRecs {
+    /// SUPERSET of the live slots: bit `i` clear ⇒ slot `i` is provably dead.
+    ///
+    /// The scan needs a *bitmap* to stay one branch wide in the common case,
+    /// but liveness itself has to be per-slot and atomic so release can be a
+    /// plain store. This reconciles the two: it is written only by lock
+    /// holders (so it is a plain field, not an atomic), and it is only ever
+    /// grown by a publish and shrunk by [`Shard::live_mask`] refreshing it
+    /// against the real flags. A stale-LARGE value costs one extra flag load;
+    /// a stale-small one would be unsound, and cannot happen because a slot
+    /// becomes live only through a publish that sets its bit here first.
+    allocated: u8,
     /// Bit `i` set iff slot `i`'s record is a mutable borrow.
     ///
-    /// Only meaningful for slots whose [`Shard::occupied`] bit is set, and only
-    /// ever read or written by a lock holder.
+    /// Only meaningful for slots that [`Shard::live_mask`] reports live, and
+    /// only ever read or written by a lock holder.
     mutable: u8,
     starts: [usize; SLOTS],
     ends: [usize; SLOTS],
@@ -505,6 +530,7 @@ struct ShardRecs {
 impl ShardRecs {
     const fn new() -> Self {
         Self {
+            allocated: 0,
             mutable: 0,
             starts: [0; SLOTS],
             ends: [0; SLOTS],
@@ -537,9 +563,9 @@ impl ShardRecs {
     /// folded in — the way the legacy tracker's two separate `find_overlap_*`
     /// functions did.
     ///
-    /// `occupied` is passed in because it now lives outside the lock, in
-    /// [`Shard::occupied`]; the caller loads it once and uses the same snapshot
-    /// for the scan and for [`Self::alloc`].
+    /// `occupied` is passed in because liveness now lives outside the lock, in
+    /// [`Shard::live`]; the caller derives it once with [`Shard::live_mask`]
+    /// and uses the same snapshot for the scan and for [`Self::alloc`].
     #[inline(always)]
     fn find<const IS_MUT: bool>(
         &self,
@@ -608,20 +634,34 @@ impl ShardRecs {
 #[repr(align(128))]
 struct Shard {
     lock: TinyLock,
-    /// Bit `i` set iff slot `i` holds a live record.
+    /// Slot `i` holds a live record iff `live[i]` is nonzero.
     ///
-    /// Atomic, and deliberately OUTSIDE [`Self::recs`]: releasing a borrow only
-    /// has to clear one bit, which `fetch_and` does without the lock. That
-    /// takes the whole of [`BorrowTracker::remove`] — measured 20.6% of a t=8
-    /// 4K frame's samples — from `swap`-acquire + bit clear + `store`-release
-    /// down to one RMW, and it stops releases from contending with each other
-    /// and with registrations for the shard lock at all.
+    /// ONE ATOMIC BYTE PER SLOT, not one shared bitmap word, and that is the
+    /// whole point: a per-slot flag has **at most one writer at a time**, so
+    /// both publish and release are plain `store`s instead of the `fetch_or` /
+    /// `fetch_and` a shared bitmap forces. Only two parties ever write
+    /// `live[i]`:
     ///
-    /// Registration still holds the lock, and must publish here with `fetch_or`
-    /// (never `store(load | bit)`) so a concurrent release cannot be lost. The
-    /// record fields in `recs` are written BEFORE the bit is set, so a bit
-    /// observed set always has complete fields behind it.
-    occupied: AtomicU8,
+    /// * the allocator, which holds the lock AND has just observed `live[i]`
+    ///   zero, so no other allocator can pick `i` and the previous owner's
+    ///   `store(0)` is already globally visible (single-location coherence);
+    /// * that borrow's own owner, exactly once, on release.
+    ///
+    /// They cannot overlap, so there is no update to lose and no RMW to pay.
+    /// Measured on an M4 Pro (`examples/probe_borrow_cost`, median of 9): the
+    /// shipped `swap` + `fetch_or` + `fetch_and` triple costs 3.68 ns per
+    /// acquire/release pair against 1.57 ns for `swap` + plain stores — 2.10 ns
+    /// of the tracker's 6.67 ns per-pair cost.
+    ///
+    /// Ordering: publish is `Release` so a lock holder that loads the flag
+    /// `Acquire` sees the record fields behind it; release is `Release` so the
+    /// borrower's writes THROUGH the reference are ordered before the slot can
+    /// be handed to anyone else. That is the same pairing the bitmap's
+    /// `fetch_or(Release)` / `fetch_and(Release)` / `load(Acquire)` gave.
+    ///
+    /// Scanning wants a bitmap, though — hence [`ShardRecs::allocated`], a
+    /// lock-protected superset that keeps the common case to one flag load.
+    live: [AtomicU8; SLOTS],
     recs: UnsafeCell<ShardRecs>,
 }
 
@@ -629,28 +669,50 @@ impl Shard {
     const fn new() -> Self {
         Self {
             lock: TinyLock::new(),
-            occupied: AtomicU8::new(0),
+            live: [const { AtomicU8::new(0) }; SLOTS],
             recs: UnsafeCell::new(ShardRecs::new()),
         }
     }
 
-    /// Publish slot `slot` as live. Must be called by the lock holder, after
-    /// [`ShardRecs::alloc`] has filled the record in.
+    /// The live-slot bitmap, refreshed from the per-slot flags.
+    ///
+    /// `allocated` is [`ShardRecs::allocated`], a superset; this narrows it to
+    /// the slots that are actually live. The caller must hold this shard's lock
+    /// (so no slot can *become* live underneath it) and should store the result
+    /// back into `allocated`, which is what keeps the superset from saturating.
     #[inline(always)]
-    fn publish(&self, slot: u8) {
-        self.occupied
-            .fetch_or(1u8 << (slot as usize).min(SLOTS - 1), Ordering::Release);
+    fn live_mask(&self, allocated: u8) -> u8 {
+        let mut m = allocated & SLOTS_MASK;
+        let mut live = 0u8;
+        while m != 0 {
+            let i = (m.trailing_zeros() as usize).min(SLOTS - 1);
+            // Acquire pairs with the retiring owner's `Release` store, so a
+            // slot observed dead carries that borrow's writes with it.
+            if self.live[i].load(Ordering::Acquire) != 0 {
+                live |= 1 << i;
+            }
+            m &= m - 1;
+        }
+        live
     }
 
-    /// Retire slot `slot`. Lock-free — see [`Self::occupied`].
+    /// Publish slot `slot` as live. Must be called by the lock holder, after
+    /// [`ShardRecs::alloc`] has filled the record in and after `allocated` has
+    /// gained the slot's bit.
+    #[inline(always)]
+    fn publish(&self, slot: u8) {
+        self.live[(slot as usize).min(SLOTS - 1)].store(1, Ordering::Release);
+    }
+
+    /// Retire slot `slot`. Lock-free — see [`Self::live`].
     #[inline(always)]
     fn retire(&self, slot: u8) {
-        let bit = 1u8 << (slot as usize).min(SLOTS - 1);
+        let i = (slot as usize).min(SLOTS - 1);
         debug_assert!(
-            self.occupied.load(Ordering::Relaxed) & bit != 0,
+            self.live[i].load(Ordering::Relaxed) != 0,
             "freeing an unoccupied shard slot"
         );
-        self.occupied.fetch_and(!bit, Ordering::Release);
+        self.live[i].store(0, Ordering::Release);
     }
 }
 
@@ -1147,6 +1209,13 @@ impl BorrowTracker {
     }
 
     /// Report an overlap violation with diagnostic info.
+    ///
+    /// Takes the existing record's four fields SEPARATELY rather than as an
+    /// `OverlapHit` tuple. A 25-byte tuple is returned and passed indirectly,
+    /// so the caller has to build it on its own stack — which is a stack frame
+    /// on the registration path even though this call never happens. Seven
+    /// scalar arguments all fit in registers, and the call becomes a tail
+    /// branch.
     #[cold]
     #[inline(never)]
     #[track_caller]
@@ -1154,9 +1223,11 @@ impl BorrowTracker {
         new_start: usize,
         new_end: usize,
         new_mutable: bool,
-        existing: OverlapHit,
+        existing_start: usize,
+        existing_end: usize,
+        existing_mutable: bool,
+        existing_loc: Option<&'static Location<'static>>,
     ) -> ! {
-        let (existing_start, existing_end, existing_mutable, existing_loc) = existing;
         let new_mut_str = if new_mutable { "&mut" } else { "   &" };
         let existing_mut_str = if existing_mutable { "&mut" } else { "   &" };
         let caller = Location::caller();
@@ -1199,6 +1270,27 @@ impl BorrowTracker {
         self.add::<false>(bounds)
     }
 
+    /// THROWAWAY (`__probe_addnop`): keep the CALL, delete the WORK.
+    ///
+    /// The question this answers: `probe-untracked` (no tracker at all) is
+    /// 77 ms/frame faster than the tracker at 8bpc t=1, but removing 26
+    /// instructions and two of the three locked RMWs from `add` moved that cell
+    /// 0.3%. Those two facts are only compatible if most of the 77 ms is not
+    /// the tracker's instructions but the fact that a call happens at all —
+    /// 15.6 M opaque calls per frame that clobber every caller-saved register
+    /// and fence the caller's optimizer. This arm keeps the call site, the
+    /// argument setup, the `Option`/`Box` indirection and the clobber, and
+    /// throws away everything inside. If it lands near `base`, no amount of
+    /// shaving inside `add` can reach the ceiling; if it lands near
+    /// `untracked`, the internals really are the cost.
+    #[cfg(feature = "__probe_addnop")]
+    #[inline(never)]
+    fn add<const IS_MUT: bool>(&self, bounds: &Bounds) -> BorrowId {
+        core::hint::black_box(bounds.range.start);
+        BorrowId::UNCHECKED
+    }
+
+    #[cfg(not(feature = "__probe_addnop"))]
     #[inline]
     #[track_caller]
     fn add<const IS_MUT: bool>(&self, bounds: &Bounds) -> BorrowId {
@@ -1207,31 +1299,65 @@ impl BorrowTracker {
         if start >= end {
             return BorrowId::EMPTY;
         }
-        let shift = self.block_shift();
-        let b0 = start >> shift;
-        let b1 = (end - 1) >> shift;
-        // One load and one branch covers poisoning, live wide records, and
-        // multi-block borrows. All three are cold.
+        // ONE-SHARD INSTANCES SKIP THE BLOCK ARITHMETIC ENTIRELY.
         //
-        // `self.mask == 0` (a serial or sub-`SHARD_MIN_LEN` instance) takes the
-        // fast path even for a multi-block span: `shard_of(b, 0)` is 0 for
-        // every block, so the span's distinct-shard set is exactly {0} and
-        // `add_slow`'s per-block classification walk — up to `MAX_BLOCKS_SCAN`
-        // `shard_of` calls per strided guard — would only rediscover that. The
-        // record stored is the same plain `[start, end)` interval either way,
-        // in the same shard, so overlap detection is unchanged (issue #458:
-        // this plus `SHARDS_SERIAL = 1` is what keeps single-threaded strided
-        // block guards off the wide path).
-        if (b0 != b1 && self.mask != 0) || self.state.load(Ordering::Acquire) != 0 {
-            return self.add_slow::<IS_MUT>(start, end, b0, b1);
-        }
+        // `shard_of(b, 0)` is 0 for every block, so on a `mask == 0` instance
+        // the shift load, both shifts, the multiplicative hash and its two
+        // masks cannot change the answer — they are pure latency at the HEAD of
+        // this function's dependency chain, feeding the address the lock
+        // acquire needs. Skipping them shortens the chain by a dependent L1
+        // load plus a multiply before anything else can start.
+        //
+        // That matters more than it looks: `probe-addnop` (keep the call,
+        // delete the body) measured 290.7 ms/frame against 365.0 for the real
+        // tracker and 287.2 with no tracker at all, at 8bpc t=1 — so the call
+        // barrier is 4% of the tracker's cost and the other 96% is this
+        // function's own latency. Two earlier attempts to cut its INSTRUCTION
+        // count (two of three locked RMWs; the 26-instruction stack frame)
+        // moved that cell 0.9% combined, which is what a throughput fix does to
+        // a latency-bound path.
+        //
+        // Every instance is `mask == 0` when no parallelism has been declared
+        // (`SHARDS_SERIAL == 1`, issue #458), and every sub-`SHARD_MIN_LEN`
+        // instance is, always. Soundness is untouched: this is the SAME shard
+        // the general path picks, and the multi-block case was already allowed
+        // through the fast path here for exactly this reason (#458).
+        // TRIED AND REVERTED: hoisting the `mask != 0` test so the one-shard
+        // case is the fallthrough, and passing shard 0 as a LITERAL through an
+        // `#[inline(always)]` body helper so its address folds to `self + 0x78`
+        // instead of a `mov`/shift/add the lock acquire waits on. It does fold
+        // — and it costs +0.9% (8bpc) / +0.8% (10bpc) at t=1, disjoint bands,
+        // idle box, n=9: duplicating the ~70-instruction body took the function
+        // from 117 to 208 instructions and put a stack frame back. The
+        // dependency-chain win is real and smaller than the I-cache and frame
+        // it buys. `benchmarks/tracker_borrowcost_2026-08-08.tsv`, arm `fold`.
+        let si = if self.mask == 0 {
+            if self.state.load(Ordering::Acquire) != 0 {
+                return self.add_slow_wide_live::<IS_MUT>(start, end);
+            }
+            0
+        } else {
+            let shift = self.block_shift();
+            let b0 = start >> shift;
+            let b1 = (end - 1) >> shift;
+            // One load and one branch covers poisoning, live wide records, and
+            // multi-block borrows. All three are cold.
+            if b0 != b1 || self.state.load(Ordering::Acquire) != 0 {
+                return self.add_slow::<IS_MUT>(start, end, b0, b1);
+            }
+            shard_of(b0, self.mask)
+        };
 
         // Fast path: the borrow lives in one shard — either one block, or any
         // span on a mask-0 instance. 99.875% of hot-plane borrows at
         // BLOCK_SHIFT = 8.
-        let si = shard_of(b0, self.mask);
         let shard = &self.shards[si];
-        shard.lock.lock();
+        // `try_lock`, not `lock`: see `TinyLock::try_lock`. A blocking acquire
+        // here puts a `bl` in the middle of the hot path and costs the whole
+        // function a stack frame.
+        if !shard.lock.try_lock() {
+            return self.add_contended::<IS_MUT>(start, end, si);
+        }
         let g = ShardGuard(&shard.lock);
         // RE-READ `state` INSIDE THE LOCK. The load above happens BEFORE this
         // lock is taken, and a wide registrant publishes into `self.wide` —
@@ -1253,20 +1379,24 @@ impl BorrowTracker {
         // through to `add_slow` (which does consult `wide`) is cold.
         if self.state.load(Ordering::Acquire) != 0 {
             drop(g);
-            return self.add_slow::<IS_MUT>(start, end, b0, b1);
+            return self.add_slow_wide_live::<IS_MUT>(start, end);
         }
         // One snapshot of the occupancy bitmap drives both the scan and the
         // slot search. A release landing between the two can only clear bits,
         // which at worst wastes a slot search — never loses a record.
-        let occ = shard.occupied.load(Ordering::Acquire);
         // SAFETY: this shard's lock is held.
         let recs = unsafe { &mut *shard.recs.get() };
+        let occ = shard.live_mask(recs.allocated);
+        recs.allocated = occ;
         if let Some(existing) = recs.find::<IS_MUT>(occ, start, end) {
             drop(g);
-            Self::overlap_panic(start, end, IS_MUT, existing);
+            Self::overlap_panic(
+                start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+            );
         }
         match recs.alloc::<IS_MUT>(occ, start, end, here()) {
             Some(slot) => {
+                recs.allocated = occ | (1u8 << (slot as usize).min(SLOTS - 1));
                 shard.publish(slot);
                 BorrowId::narrow1(si, slot)
             }
@@ -1279,6 +1409,65 @@ impl BorrowTracker {
                 self.add_wide::<IS_MUT>(start, end)
             }
         }
+    }
+
+    /// The single-block registration, but somebody else held the shard lock,
+    /// so this one blocks for it.
+    ///
+    /// Byte-for-byte the same sequence as [`Self::add`]'s fast path — INCLUDING
+    /// the in-lock `state` re-read that closes the wide-path TOCTOU (4af62ae);
+    /// deleting it here would reopen exactly the hole `tests/wide_exclusion.rs`
+    /// gates, on the path a contended multi-threaded decode actually takes. It
+    /// is a separate `#[cold] #[inline(never)]` function purely so that the
+    /// blocking acquire's call does not live inside the hot function.
+    #[cold]
+    #[inline(never)]
+    #[track_caller]
+    fn add_contended<const IS_MUT: bool>(&self, start: usize, end: usize, si: usize) -> BorrowId {
+        let shard = &self.shards[si & (N_SHARDS - 1)];
+        shard.lock.lock();
+        let g = ShardGuard(&shard.lock);
+        if self.state.load(Ordering::Acquire) != 0 {
+            drop(g);
+            return self.add_slow_wide_live::<IS_MUT>(start, end);
+        }
+        // SAFETY: this shard's lock is held.
+        let recs = unsafe { &mut *shard.recs.get() };
+        let occ = shard.live_mask(recs.allocated);
+        recs.allocated = occ;
+        if let Some(existing) = recs.find::<IS_MUT>(occ, start, end) {
+            drop(g);
+            Self::overlap_panic(
+                start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+            );
+        }
+        match recs.alloc::<IS_MUT>(occ, start, end, here()) {
+            Some(slot) => {
+                recs.allocated = occ | (1u8 << (slot as usize).min(SLOTS - 1));
+                shard.publish(slot);
+                BorrowId::narrow1(si, slot)
+            }
+            None => {
+                #[cfg(feature = "__probe_wide")]
+                wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
+                drop(g);
+                self.add_wide::<IS_MUT>(start, end)
+            }
+        }
+    }
+
+    /// [`Self::add_slow`] for a caller that never computed the block indices.
+    ///
+    /// The `mask == 0` fast path skips the shift and both block divisions
+    /// because they cannot change which shard it picks; this recomputes them
+    /// for the cold paths that DO need them (`add_slow` consults the wide list
+    /// per block). Cold, so the arithmetic is free here.
+    #[cold]
+    #[inline(never)]
+    #[track_caller]
+    fn add_slow_wide_live<const IS_MUT: bool>(&self, start: usize, end: usize) -> BorrowId {
+        let shift = self.block_shift();
+        self.add_slow::<IS_MUT>(start, end, start >> shift, (end - 1) >> shift)
     }
 
     /// Everything the fast path bailed out of: poisoned, a live wide record, or
@@ -1305,9 +1494,10 @@ impl BorrowTracker {
             let shard = &self.shards[si];
             shard.lock.lock();
             let g = ShardGuard(&shard.lock);
-            let occ = shard.occupied.load(Ordering::Acquire);
             // SAFETY: this shard's lock is held.
             let recs = unsafe { &mut *shard.recs.get() };
+            let occ = shard.live_mask(recs.allocated);
+            recs.allocated = occ;
             let mut hit = recs.find::<IS_MUT>(occ, start, end);
             if hit.is_none() {
                 // SAFETY: a shard lock is held, and wide records are only
@@ -1316,10 +1506,13 @@ impl BorrowTracker {
             }
             if let Some(existing) = hit {
                 drop(g);
-                Self::overlap_panic(start, end, IS_MUT, existing);
+                Self::overlap_panic(
+                    start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+                );
             }
             return match recs.alloc::<IS_MUT>(occ, start, end, here()) {
                 Some(slot) => {
+                    recs.allocated = occ | (1u8 << (slot as usize).min(SLOTS - 1));
                     shard.publish(slot);
                     BorrowId::narrow1(si, slot)
                 }
@@ -1378,9 +1571,10 @@ impl BorrowTracker {
         let mut hit = None;
         for &s in &set[..n] {
             let shard = &self.shards[(s as usize) & (N_SHARDS - 1)];
-            let occ = shard.occupied.load(Ordering::Acquire);
             // SAFETY: shard `s`'s lock is held.
-            let recs = unsafe { &*shard.recs.get() };
+            let recs = unsafe { &mut *shard.recs.get() };
+            let occ = shard.live_mask(recs.allocated);
+            recs.allocated = occ;
             if let Some(h) = recs.find::<IS_MUT>(occ, start, end) {
                 hit = Some(h);
                 break;
@@ -1392,7 +1586,9 @@ impl BorrowTracker {
         }
         if let Some(existing) = hit {
             Self::unlock_all(&self.shards, &set[..n]);
-            Self::overlap_panic(start, end, IS_MUT, existing);
+            Self::overlap_panic(
+                start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+            );
         }
         // Claim a slot in each. If any shard is full, roll the whole thing back
         // and go wide — a partial registration would be unsound.
@@ -1400,9 +1596,12 @@ impl BorrowTracker {
         let mut done = 0usize;
         while done < n {
             let shard = &self.shards[(set[done] as usize) & (N_SHARDS - 1)];
-            let occ = shard.occupied.load(Ordering::Acquire);
             // SAFETY: the shard's lock is held.
             let recs = unsafe { &mut *shard.recs.get() };
+            // `allocated` was refreshed to the live mask by the scan above and
+            // nothing can have published since (this thread holds every one of
+            // these locks), so it IS the occupancy snapshot here.
+            let occ = recs.allocated;
             match recs.alloc::<IS_MUT>(occ, start, end, here()) {
                 Some(slot) => {
                     slots[done] = slot;
@@ -1422,7 +1621,11 @@ impl BorrowTracker {
         // Publish only once every shard has a slot, so a partially-registered
         // borrow is never observable.
         for i in 0..n {
-            self.shards[(set[i] as usize) & (N_SHARDS - 1)].publish(slots[i]);
+            let shard = &self.shards[(set[i] as usize) & (N_SHARDS - 1)];
+            // SAFETY: the shard's lock is held.
+            let recs = unsafe { &mut *shard.recs.get() };
+            recs.allocated |= 1u8 << (slots[i] as usize).min(SLOTS - 1);
+            shard.publish(slots[i]);
         }
         Self::unlock_all(&self.shards, &set[..n]);
         BorrowId::from_pairs(&set[..n], &slots[..n])
@@ -1441,9 +1644,10 @@ impl BorrowTracker {
         }
         let mut hit = None;
         for shard in active {
-            let occ = shard.occupied.load(Ordering::Acquire);
             // SAFETY: every shard lock is held.
-            let recs = unsafe { &*shard.recs.get() };
+            let recs = unsafe { &mut *shard.recs.get() };
+            let occ = shard.live_mask(recs.allocated);
+            recs.allocated = occ;
             if let Some(h) = recs.find::<IS_MUT>(occ, start, end) {
                 hit = Some(h);
                 break;
@@ -1457,7 +1661,9 @@ impl BorrowTracker {
         }
         if let Some(existing) = hit {
             Self::unlock_every(active);
-            Self::overlap_panic(start, end, IS_MUT, existing);
+            Self::overlap_panic(
+                start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+            );
         }
         let idx = {
             // SAFETY: every shard lock is held.
@@ -1513,12 +1719,14 @@ impl BorrowTracker {
 
     /// Release a borrow.
     ///
-    /// **Lock-free.** Retiring a record is one bit-clear in [`Shard::occupied`],
-    /// and `fetch_and` does that atomically against the `fetch_or` a concurrent
-    /// registration publishes with; neither can lose the other's update. The
-    /// record's own fields are left alone — they are only ever read for slots
-    /// whose bit is set, and the next registration to claim the slot rewrites
-    /// them under the lock before publishing.
+    /// **Lock-free, and not even an atomic RMW.** Retiring a record is one
+    /// plain `Release` store to this slot's own [`Shard::live`] byte. No
+    /// `fetch_and` is needed because no other thread can be writing that byte:
+    /// the only other writer is the allocator that reuses the slot, and it
+    /// cannot pick the slot until this store is visible. The record's own
+    /// fields are left alone — they are only ever read for live slots, and the
+    /// next registration to claim the slot rewrites them under the lock before
+    /// publishing.
     ///
     /// What this does NOT change is the size of the add/remove race window.
     /// Whether a registration that overlaps a borrow being dropped sees the
@@ -1824,7 +2032,10 @@ mod tests {
             let _o = t.add_mut(&b(4 * bs..4 * bs + 4));
         }))
         .is_err();
-        assert!(caught, "overlap inside the strided span must still be caught");
+        assert!(
+            caught,
+            "overlap inside the strided span must still be caught"
+        );
         t.remove(id);
         // ...and clears cleanly.
         let again = t.add_mut(&b(4 * bs..4 * bs + 4));
@@ -2011,9 +2222,15 @@ mod tests {
     /// overlaps against borrows that had ended.
     ///
     /// Every range lives in block 0, so all eight threads hammer the same
-    /// `occupied` byte. Slot exhaustion is real here (8 threads, `SLOTS`
+    /// shard's flag bytes. Slot exhaustion is real here (8 threads, `SLOTS`
     /// slots), so some registrations legitimately go wide; those retire
     /// through `remove_wide` and must leave the shard clean too.
+    ///
+    /// This is the gate for the per-slot-flag design's one new failure mode:
+    /// publish and release are plain stores, so if the "at most one writer per
+    /// slot byte" argument were wrong, a release would be overwritten by a
+    /// publish and the slot would stay set forever. That shows up here, and
+    /// only here, as a nonzero flag after every thread has joined.
     #[test]
     fn threaded_churn_leaks_no_slots() {
         use std::sync::Arc;
@@ -2033,10 +2250,19 @@ mod tests {
             h.join().unwrap();
         }
         for (i, shard) in t.shards.iter().enumerate() {
+            for (s, flag) in shard.live.iter().enumerate() {
+                assert_eq!(
+                    flag.load(Ordering::Relaxed),
+                    0,
+                    "shard {i} slot {s} leaked: a release was lost"
+                );
+            }
+            // The lock-protected superset must also narrow back to empty, or
+            // every later scan on this shard pays for a phantom slot.
             assert_eq!(
-                shard.occupied.load(Ordering::Relaxed),
+                shard.live_mask(unsafe { (*shard.recs.get()).allocated }),
                 0,
-                "shard {i} leaked a slot: a release was lost"
+                "shard {i}: live_mask disagrees with the flags"
             );
         }
         assert_eq!(t.state.load(Ordering::Relaxed), 0, "a wide record leaked");

@@ -38,6 +38,9 @@ __probe_lockonly = []
 __probe_untracked = []
 # Wide-path reason counters. Unlike __probe_count this KEEPS the sharded tracker.
 __probe_wide = ["std"]
+# THROWAWAY: keep the add/remove CALL, delete the work. Isolates the call
+# barrier from the tracker's own instructions. UNSOUND -- measurement only.
+__probe_addnop = []
 __probe_shardsim = ["__probe_count"]
 # THROWAWAY: TinyLock spin backoff + scheduler yield, re-tested on the adaptive
 # shard set (the P1 campaign measured it null on the 32-shard base).

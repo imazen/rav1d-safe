@@ -1,0 +1,151 @@
+Per-borrow tracker cost — what it is, and what it is NOT (issue #455, #458)
+===========================================================================
+
+Host      Apple M4 Pro, 8P+4E, macOS 15.5 (Darwin 25.5.0), 24 GB
+Commit    branch perf/borrow-cost, base 6c17d8c
+Date      2026-08-08
+Build     cargo build --release, default features, NO -C target-cpu=native
+Timing    NO `nice` on any timed run (Darwin maps it to background QoS/E-cores)
+Harness   scripts/perf/tracker_ab.sh (rotating-order interleaved, in-process
+          ms/frame from bench_ab_decode's own Instant, so process startup never
+          enters the number) + scripts/perf/tracker_ab_report.py
+          scripts/perf/verify_gap.sh for the dav1d column (two-point wall fit,
+          dav1d 1.5.4 --framedelay 1, SAME interleaved sweep)
+Idle      ab_full foreign_busy_max=1, ab_fold and gap_final foreign_busy_max=0.
+          ab_leaf was taken at foreign_busy_max=6 and is NOT used for any claim.
+
+Files     tracker_borrowcost_2026-08-08.tsv        decode A/B, all arms/cells
+          tracker_borrowcost_gap_2026-08-08.tsv    raw verify_gap rows w/ dav1d
+          tracker_borrowcost_micro_2026-08-08.txt  examples/probe_borrow_cost
+
+
+THE ARMS
+--------
+base        6c17d8c, unmodified
+slotflag    per-slot live-flag bytes: publish and release become plain stores,
+            the two locked RMWs (fetch_or / fetch_and) are gone
+leaf        slotflag + `add`'s fast path made a frameless leaf (try_lock with a
+            cold outlined contended path; overlap_panic takes 7 scalars instead
+            of a 25-byte tuple).  0x80-byte frame + 3 stp/ldp pairs removed,
+            143 -> 117 instructions
+final       leaf + `mask == 0` instances skip the shift load, both block
+            divisions and the multiplicative hash entirely
+fold        REVERTED. final + the one-shard body duplicated so shard 0's
+            address constant-folds
+addnop      THROWAWAY `probe-addnop`: keeps the call, deletes the body
+untracked   THROWAWAY `probe-untracked`: no tracker at all (the ceiling)
+
+
+RESULT — decode ms/frame, median of 7, ratio vs base
+----------------------------------------------------
+  vec/threads    base   slotflag    leaf   final  addnop untracked
+  8bpc  t=1    365.77     .9894   .9844   .9553   .7955    .7849
+  8bpc  t=2    217.36     .9783   .9702   .9518   .7283    .7289
+  8bpc  t=4    116.21     .9833   .9751   .9569   .7130    .7117
+  8bpc  t=8     73.68     .9756   .9782   .9698   .6455    .6478
+  10bpc t=1    416.82     .9786   .9720   .9458   .7754    .7761
+  10bpc t=2    224.16     .9852   .9725   .9609   .7503    .7499
+  10bpc t=4    121.01     .9718   .9650   .9546   .7246    .7260
+  10bpc t=8     77.92     .9856   .9679   .9529   .6688    .6654
+
+All 6 arms x 8 cells produced the SAME plane md5 in every cell (the harness
+set-diffs them and printed no mismatch).
+
+
+GAP TO dav1d 1.5.4 — same interleaved sweep, n=5, idle box
+-----------------------------------------------------------
+  vector          t     base    final    dav1d   base    final
+  v4k_8tile       1    363.1    350.2    246.4   1.47x   1.42x
+  v4k_8tile       8     73.8     70.3     35.9   2.05x   1.96x
+  v4k_8tile_10b   1    413.7    393.9    251.2   1.65x   1.57x
+  v4k_8tile_10b   8     77.7     74.6     37.1   2.09x   2.01x
+
+The 1.30x bar (320 ms at 8bpc t=1) is NOT met.  350.2 is 1.42x.
+
+
+THE THING THIS RUN ACTUALLY ESTABLISHED
+---------------------------------------
+Three measurements, in order, each refuting the previous plan:
+
+1. `probe_borrow_cost` (microbenchmark, median of 9) prices ONE acquire+release
+   pair at 7.89 ns, of which 1.25 ns is the guard with no tracker.  The shipped
+   three-RMW sequence measured 3.50 ns in isolation against 1.54 ns for one RMW
+   plus plain stores.  15.65 M borrow pairs per frame (`probe-count`) x 2.0 ns
+   predicted about 26 ms/frame from deleting two of the three RMWs.
+
+2. Deleting them measured **-0.6% at 8bpc t=1**, not -7%.  A tight dependent
+   loop exposes an RMW's latency; the decoder's out-of-order window hides it.
+   AN ISOLATED INSTRUCTION COST DOES NOT TRANSFER TO AN OoO PIPELINE WHERE THAT
+   INSTRUCTION IS OFF THE CRITICAL PATH.
+
+3. Removing 26 more instructions (the whole stack frame) measured null on the
+   same cell.  So the plan changed again, and `probe-addnop` was built to
+   settle it: keep the call, delete the body.  It landed at 290.97 against
+   365.77 for the real tracker and 287.11 for no tracker — i.e. **the call
+   barrier is 4.4% of the tracker's cost and 95.6% is `add`'s own latency**,
+   even though neither the RMW count nor the instruction count was buying
+   anything.
+
+   What was left is the DEPENDENCY CHAIN at the head of `add`: a load of
+   `self.shift`, two shifts, a 64-bit multiply and two masks, all feeding the
+   address the lock acquire needs.  On a `mask == 0` instance every one of
+   those is dead — `shard_of(b, 0)` is 0 for every block.  Skipping them is
+   the `final` arm and it is worth **-4.5% (8bpc t=1) / -5.4% (10bpc t=1)**,
+   bands disjoint, roughly seven times what the RMW and frame work bought
+   together.
+
+Tracker cost at 8bpc t=1 (base - addnop): 74.8 -> 58.5 ms/frame, **-21.8%**.
+
+Generalisation worth keeping: on this path, LATENCY fixes pay and THROUGHPUT
+fixes do not.  Anything that shortens the chain from `self` to the lock
+acquire, or from the lock acquire to the record store, is worth measuring;
+anything that merely removes instructions from around it is not.
+
+
+MEASURED NEGATIVES (do not redo without a contradicting profile)
+----------------------------------------------------------------
+fused lock+occupancy word (fetch_or to acquire, fetch_xor to publish+release)
+    4.76 ns/pair vs 3.50 for the shipped triple.  Three RMWs on ONE address
+    serialise; the shipped ones are on two addresses and overlap.  MICRO ONLY.
+publish with Relaxed instead of Release (the lock already orders it)
+    4.82 ns/pair vs 3.50.  Slower, repeatably.  MICRO ONLY.
+duplicating the body to constant-fold shard 0's address (`fold`)
+    +0.9% (8bpc t=1) / +0.8% (10bpc t=1) vs `final`, disjoint bands, idle box,
+    n=9.  The address does fold; the function goes 117 -> 208 instructions and
+    gets its stack frame back, and that costs more.  DECODE-LEVEL.
+two of three locked RMWs, alone (`slotflag`)
+    -1.1% (8bpc t=1) / -2.1% (10bpc t=1).  Kept — every one of 8 cells is
+    below 1.000 and the mechanism removes two `lock`-prefixed RMWs per pair,
+    which on x86-64 are full fences where Apple LSE atomics are near-free
+    (#458).  NOT MEASURED ON x86-64 — do not assume the M4 number transfers.
+frameless leaf, alone (`leaf` minus `slotflag`)
+    -0.5% (8bpc t=1) / -0.7% (10bpc t=1).  Kept for the same reason; it is
+    also what makes the cold paths cold.
+
+
+SOUNDNESS
+---------
+Four hazards planted, each confirmed to FAIL the suite, each restored with a
+0-line `git diff`, green after every restore:
+  (a) delete `add`'s in-lock `state` re-read (the 4af62ae wide-path TOCTOU)
+      -> wide_exclusion FAILS on `witnesses`, 1206 missed overlaps
+  (b) `active()` cut to one shard
+      -> wide_exclusion FAILS on `witnesses`, 3 missed overlaps
+  (c) a published slot never enters `recs.allocated` (NEW invariant)
+      -> 6 tests FAIL incl. same_block_overlap_is_caught,
+         cross_shard_overlaps_are_all_caught, narrow_borrow_is_visible_to_wide
+  (d) `recs.allocated` narrowed to 0, dropping LIVE slots (NEW invariant)
+      -> shard_overflow_promotes_and_still_detects FAILS.  Only that one: the
+         publish immediately re-sets the bit, so the invariant can only be
+         broken for a slot that stays live ACROSS another registration, which
+         is exactly what that test builds.
+All four run under `--features __probe_wide`, which is what makes the
+wide_exclusion gate non-vacuous (f968094, 6c17d8c).
+
+Corpus  766/766 PASS, 2 SKIP.  scripts/perf/md5_setdiff.py against
+        benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst: 0 only-in-base,
+        0 only-in-head, 0 differing.  SETDIFF: CLEAN.
+Threads mt_stress 1/2/4/8/16 x 5 trials green.
+        multi_decoder_pressure.sh 12 procs x 3 iters x {1,2,4,8,16} threads
+        over 5 vectors: PASS, every md5 matches the serial reference.
+Suites  rav1d-disjoint-mut, all 8 test binaries green under __probe_wide.
