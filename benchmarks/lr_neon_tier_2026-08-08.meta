@@ -1,0 +1,233 @@
+# A NEON loop-restoration tier, and the tile-aware fix for the single-tile shift
+
+date:   2026-08-08
+host:   Apple M4 Pro (8 P-core + 4 E-core), macOS 26.5.2, aarch64
+build:  stable rustc, `--release`, DEFAULT features (bitdepth_8 + bitdepth_16,
+        CHECKED DisjointMut). No `-C target-cpu=native`. No `nice` on any timed
+        run (Darwin maps a niced process to background QoS; ~40x distortion).
+base:   verify/compose-2 @ 2e0ea4d (PR #454), branch perf/lr-neon-tier
+raw:    benchmarks/lr_neon_tier_2026-08-08_lr.tsv.zst   (sweeps
+          lr_v1_vs_scalar, lr_v1_vs_v2, lr_v2_vs_scalar)
+        benchmarks/lr_neon_tier_2026-08-08_gap.tsv.zst  (sweeps
+          tilegate, tilegate_dav1d)
+
+Every cell below was committed only when a whole rotated round completed with
+ZERO foreign processes over 25% CPU; a sibling agent's benchmark was resident
+on the box for part of the session and those rounds were discarded and rerun
+(`scripts/perf/lr_neon_ab.sh` and `scripts/perf/verify_gap.sh` both do this
+automatically and log every discard).
+
+
+## PART 1 — the loop-restoration NEON tier
+
+### The measurement trap this had to get past
+
+`v4k_8tile` and `v4k_8tile_10b` — the two vectors the entire gap-to-dav1d table
+is built on — do **ZERO loop restoration**. Every LR number in that campaign is
+0.0 ms because of the bitstreams, not because of the kernel. LR is active in
+**696 of 768** dav1d-test-data vectors (`md5_inventory --activity`, needs
+`--features __ablate`). So this tier CANNOT move the gap grid, and no claim
+here is made about it.
+
+The A/B is therefore run on vectors where LR actually executes, chosen as the
+corpus extremes and two mid-range cases:
+
+  | vector | LR pixels | LR as % of all counted kernel pixels | frames |
+  |---|---|---|---|
+  | `8-bit/data/00001147`   | 33.4 M | 42.6% | 3 |
+  | `10-bit/issues/318_tx_4x4` | 14.6 M | **76.1%** | 35 |
+  | `8-bit/data/00000645`   | 14.6 M | 40.4% | 140 |
+  | `8-bit/data/00000855`   |  1.5 M | 70.0% | 4 |
+
+### Arms
+
+Same binary on both arms, `__ablate` switching only which implementation the
+dispatcher routes to, so codegen and layout cannot confound it:
+
+  neon   = `safe_simd/looprestoration_arm.rs` (this tier)
+  scalar = `src/looprestoration.rs`           (the generic reference)
+
+`scripts/perf/lr_neon_ab.sh`, arm order rotated per round, whole round
+committed or discarded as a unit, median of 5.
+
+### Result — whole-frame decode, ms/frame, SHIPPED tier (sweep lr_v2_vs_scalar)
+
+    vector                        neon    scalar   ratio   neon range         scalar range
+    8-bit/data/00001147        172.218  196.704  0.8755   [171.66..173.65]   [195.67..197.26]
+    10-bit/issues/318_tx_4x4     9.121    9.693  0.9410   [  9.11..  9.29]   [  9.64..  9.71]
+    8-bit/data/00000855         26.334   26.627  0.9890   [ 26.32.. 26.36]   [ 26.62.. 26.72]
+    8-bit/data/00000645          5.568    5.594  0.9952   [  5.55..  5.65]   [  5.58..  5.62]
+
+Three of the four are real: their arms' ranges are disjoint. **`00000645` is
+NOT** — [5.5456..5.6476] against [5.5792..5.6218] overlap, so 0.9952 is not
+resolvable and must not be quoted as a delta. (In the earlier v1 sweep the same
+cell read 0.9856 with disjoint ranges, which is the honest summary: it is a
+small win of order 1%, and this sweep could not separate it.)
+
+These are WHOLE-FRAME decode ratios, not kernel-local ones. On `00001147` loop
+restoration is 42.6% of counted kernel pixels and the tier takes 12.4% off the
+entire frame; on `318_tx_4x4`, where LR is 76.1% of kernel pixels but the frame
+is 9 ms, it takes 5.9%.
+
+### Two versions were measured, and the second one is what ships
+
+v1 keeps the reference's shape: every restoration unit declares its scratch as
+zero-initialised stack arrays (`tmp`, `hor`, `sumsq`, `sum`, one or two `dst`),
+which is ~285 KB memset per 8bpc `sgr_mix` call and ~460 KB at 16bpc. That is
+why `_platform_memset` was 6.7% of decode self time on `318_tx_4x4`.
+
+v2 moves the scratch to a lazily-allocated per-thread buffer that is NEVER
+cleared, because every position these kernels read is written first in the same
+call (the argument is spelled out in the module header). See the correctness
+section for how that is checked rather than asserted.
+
+    vector                          v2       v1    v2/v1   v2 range          v1 range
+    8-bit/data/00001147        172.888  176.644   0.9787  [172.15..173.83]  [175.92..177.24]
+    8-bit/data/00000645          5.567    5.646   0.9860  [  5.54..  5.61]  [  5.62..  5.69]
+    8-bit/data/00000855         26.381   26.460   0.9970  [ 26.33.. 26.39]  [ 26.44.. 26.52]
+    10-bit/issues/318_tx_4x4     9.174    9.202   0.9970  [  9.14..  9.21]  [  9.18..  9.33]
+
+The first three have disjoint ranges. The fourth does NOT — and it is the
+vector whose profile named `_platform_memset` at 6.7% in the first place. So:
+removing that memset is worth ~2% on the big 8bpc vector and is **not
+resolvable on `318_tx_4x4`**. Reported rather than rounded away.
+
+### For scale: what was here before
+
+The module this replaces was 1,531 lines of hand-written SCALAR that
+`lr_filter_dispatch` ran unconditionally at both bit depths. Measured
+2026-08-07 the same way (`benchmarks/lr_arm_vs_reference_2026-08-07.meta`), it
+was **1.060** on `00001147` — 6% SLOWER than the reference it shadowed.
+
+
+## PART 2 — the adaptive block shift now sees the tile split
+
+`verify/compose-2` recorded exactly one regression: `v4k_1tile` at t=8 cost
+**+3.08%** from the tracker branch (362.7 -> 373.8 ms/frame, non-overlapping
+per-round ranges) while `v4k_8tile` at t=8 GAINED 39% (117.3 -> 71.3) from the
+same change at the same thread count. `block_shift_for` sizes itself from
+buffer length and reads one concurrency fact, `set_parallelism(n_tc)`, so it
+cannot tell those two cells apart.
+
+Fix: a second monotone latch, `set_tile_concurrency(tiling.cols * rows)`,
+declared in `rav1d_submit_frame` before that frame's picture is allocated
+(the deadline, since the shift is read once in `BorrowTracker::new`). The
+adaptive shift now requires threads AND more than one tile.
+
+### Result — `scripts/perf/verify_gap.sh`, 2 arms interleaved, median of 5
+
+`pre` = this branch minus the tile gate; `post` = with it. Both binaries carry
+the LR tier, which is inert here (these vectors do no LR at all), so this
+isolates the gate.
+
+Sweep `tilegate` (2 arms, cells at t=4 and t=8):
+
+    vector       t     pre     post   post/pre  pre per-round                        post per-round
+    v4k_1tile    4   383.61   362.83    0.9458  [382.5 382.7 383.6 385.1 385.3]      [360.6 361.4 362.8 363.3 363.3]
+    v4k_1tile    8   383.72   362.28    0.9441  [369.4 382.9 383.7 384.6 386.4]      [352.5 362.1 362.3 363.9 368.9]
+    v4k_8tile    4   120.06   121.33    1.0106  [119.3 119.9 120.1 120.4 121.2]      [119.8 120.1 121.3 121.7 122.1]
+    v4k_8tile    8    72.83    72.78    0.9992  [ 72.0  72.3  72.8  73.2  73.4]      [ 72.7  72.7  72.8  73.1  73.2]
+
+Sweep `tilegate_dav1d` — an independent repeat with dav1d 1.5.4 measured in the
+SAME interleave, `--framedelay 1` (the tile-threading-only model we implement):
+
+    vector       t     pre     post   dav1d   post/dav1d   pre/dav1d
+    v4k_1tile    8   382.89   362.39  240.17     1.51        1.59
+    v4k_8tile    8    72.61    73.28   34.39     2.13        2.11
+
+      pre  [382.3 382.8 382.9 384.0 385.1]   post [361.6 362.3 362.4 365.7 367.1]
+      pre  [ 71.8  72.3  72.6  72.9  74.4]   post [ 73.1  73.1  73.3  73.4  74.3]
+
+`v4k_1tile` t=8 is fixed, and it reproduced in two independent sweeps with
+disjoint per-round ranges both times: 0.9441 and 0.9465. The gap to dav1d on
+that cell goes **1.59x -> 1.51x**, which is the best t=8 ratio anywhere in this
+campaign.
+
+`v4k_8tile` t=8 is the cell that had to NOT break, and it does not: 0.9992 in
+one sweep, 1.0092 in the other, arms' ranges overlapping in both. Null. (For
+orientation: verify/compose-2 measured 73.1 composed there, and this branch's
+post arm reads 72.8 / 73.3.)
+
+`v4k_8tile` t=4 reads 1.0106 but its arms' ranges overlap too (pre
+119.33..121.17, post 119.83..122.11), so it is likewise not resolvable and is
+not claimed as a regression. The gate is inert for an 8-tile frame by
+construction — `tiles = 8 > 1` selects exactly the behaviour `pre` had.
+
+
+## CORRECTNESS
+
+Two independent gates, both run on the SHIPPED tree, both proved live by
+mutation rather than assumed.
+
+**Per call, over the whole corpus.** `--features __simd_test_log` re-runs the
+scalar reference after every loop-restoration call and compares the `w`x`h`
+output region.
+
+    768 vectors, 766 PASS / 2 SKIP / 0 mismatch / 0 error, ZERO LR_MISMATCH
+
+**Per vector.** `examples/md5_inventory` set-diffed BY NAME against
+`benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` with the ACTUAL md5 in
+the key — identical on all 768 rows, for v1 and again for v2.
+
+**Variant coverage is proved, not assumed.** The new measurement-only
+`__lrvarcov` feature prints each (bit depth, variant) pair the first time it is
+dispatched. The corpus run printed all TEN:
+
+    8bpc  wiener7  wiener5  sgr_5x5  sgr_3x3  sgr_mix
+    16bpc wiener7  wiener5  sgr_5x5  sgr_3x3  sgr_mix
+
+**The differential is live.** A `+1` planted in the 8bpc Wiener horizontal bias
+produced 996 `LR_MISMATCH` lines (variants wiener5, wiener7) and flipped
+`00001147` to MISMATCH. Weights planted in `six_i32` / `mid_i32` / `eight_i32`
+— which exist ONLY on the vector path — produced `LR_MISMATCH` on sgr_5x5 and
+sgr_mix across 8-, 10- and 12-bit vectors (145 / 12 / 36 lines). Restored,
+green.
+
+**The never-cleared scratch does not read before it writes.** `--features
+__lrpoison` fills every scratch buffer with a non-zero pattern before each
+call, so any read-before-write becomes a divergence. Full corpus under poison:
+**766 PASS / 0 mismatch / 0 LR_MISMATCH**. That instrument is live too: with a
+band of columns deliberately left unwritten, the poisoned build and the
+un-poisoned build both fail — with DIFFERENT md5s (066dc570... vs 8c1ad66f...),
+which is only possible if the poison pattern is reaching the output.
+
+**The tracker's own detection still fires.** M1 — the 4af62ae TOCTOU, i.e.
+deleting the in-lock `state` re-read from `add`'s single-block fast path — was
+planted ON TOP of the tile-gate change:
+`wide_exclusion::a_wide_borrow_excludes_every_narrow_shard` FAILED in 0.01 s
+with 135 violations. Restored, green. 25 tracker unit tests + `wide_exclusion`
++ doctests pass.
+
+
+## WHAT THIS DOES NOT SAY
+
+* It says nothing about the gap-to-dav1d grid from PART 1. Those two vectors do
+  no loop restoration; the table cannot move and was not re-measured for it.
+* The four A/B vectors are the corpus extremes by LR share plus two mid-range
+  cases. No claim is made about the median of the 696 LR-active vectors.
+* Absolute ms/frame here are NOT comparable to the verify/compose-2 campaign's
+  (this session's `pre` arm reads ~4% higher on v4k_1tile than that campaign's
+  `composed`). Only the paired, same-sweep ratios are.
+* The tier is NEON baseline only. No dotprod/i8mm, no SVE.
+
+
+## REPRODUCING
+
+    # activity counters: which vectors run LR at all
+    cargo build --release --features __ablate --example md5_inventory
+    ./target/release/examples/md5_inventory --activity > activity.tsv
+
+    # per-call bit-exactness over the corpus (slow: ~25x)
+    cargo build --release --features __simd_test_log,__lrvarcov --example md5_inventory
+    ./target/release/examples/md5_inventory > /dev/null 2> mismatches.txt
+
+    # same, with the reused scratch poisoned
+    cargo build --release --features __simd_test_log,__lrpoison --example md5_inventory
+
+    # the A/B
+    cargo build --release --features __ablate --example profile_ivf
+    BIN=./target/release/examples/profile_ivf scripts/perf/lr_neon_ab.sh out.tsv 5
+
+    # the tile gate
+    BIN=<staged bins> ARMS="pre post" CELLS="v4k_1tile:8 v4k_8tile:8" \
+      scripts/perf/verify_gap.sh tilegate.tsv 5

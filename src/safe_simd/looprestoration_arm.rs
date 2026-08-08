@@ -104,9 +104,9 @@ use crate::src::disjoint_mut::DisjointMut;
 use crate::src::looprestoration::{LooprestorationParams, LrEdgeFlags};
 
 #[cfg(target_arch = "aarch64")]
-use crate::include::common::bitdepth::BitDepth16;
-#[cfg(target_arch = "aarch64")]
 use crate::include::common::bitdepth::BitDepth8;
+#[cfg(target_arch = "aarch64")]
+use crate::include::common::bitdepth::BitDepth16;
 #[cfg(target_arch = "aarch64")]
 use crate::include::common::intops::iclip;
 #[cfg(target_arch = "aarch64")]
@@ -171,7 +171,11 @@ const DST_LEN: usize = 64 * MAXW;
 fn boxed_zeroed<T: Copy + Default, const N: usize>() -> Box<[T; N]> {
     // Through `vec!` rather than `Box::new([T::default(); N])`: the latter
     // builds a ~100 KB temporary on the stack first.
-    vec![T::default(); N].into_boxed_slice().try_into().ok().unwrap()
+    vec![T::default(); N]
+        .into_boxed_slice()
+        .try_into()
+        .ok()
+        .unwrap()
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -277,7 +281,14 @@ fn with_scratch16<R>(f: impl FnOnce(&mut Scratch16) -> R) -> R {
 /// `taps` already has the 8bpc `* 128` centre term folded into index 3.
 #[cfg(target_arch = "aarch64")]
 #[arcane]
-fn wiener_hor_8bpc(_token: Arm64, tmp: &[u8; TMP_LEN], hor: &mut [u16; TMP_LEN], w: usize, h: usize, taps: &[i16; 8]) {
+fn wiener_hor_8bpc(
+    _token: Arm64,
+    tmp: &[u8; TMP_LEN],
+    hor: &mut [u16; TMP_LEN],
+    w: usize,
+    h: usize,
+    taps: &[i16; 8],
+) {
     // (sum + rounding_off_h) >> 3, clipped to [0, (1 << 13) - 1].
     const BIAS: i32 = (1 << 14) + (1 << 2);
     let vbias = vdupq_n_s32(BIAS);
@@ -301,7 +312,10 @@ fn wiener_hor_8bpc(_token: Arm64, tmp: &[u8; TMP_LEN], hor: &mut [u16; TMP_LEN],
             }
             let lo = vminq_s32(vmaxq_s32(vshrq_n_s32::<3>(lo), vzero), vmax);
             let hi = vminq_s32(vmaxq_s32(vshrq_n_s32::<3>(hi), vzero), vmax);
-            let packed = vcombine_u16(vmovn_u32(vreinterpretq_u32_s32(lo)), vmovn_u32(vreinterpretq_u32_s32(hi)));
+            let packed = vcombine_u16(
+                vmovn_u32(vreinterpretq_u32_s32(lo)),
+                vmovn_u32(vreinterpretq_u32_s32(hi)),
+            );
             safe_simd::vst1q_u16((&mut dst[x..x + 8]).try_into().unwrap(), packed);
             x += 8;
         }
@@ -319,7 +333,14 @@ fn wiener_hor_8bpc(_token: Arm64, tmp: &[u8; TMP_LEN], hor: &mut [u16; TMP_LEN],
 /// Vertical 7-tap pass, 8bpc: `hor` (u16) -> picture (u8), one row guard per row.
 #[cfg(target_arch = "aarch64")]
 #[arcane]
-fn wiener_ver_8bpc(_token: Arm64, hor: &[u16; TMP_LEN], p: PicOffset, w: usize, h: usize, taps: &[i16; 8]) {
+fn wiener_ver_8bpc(
+    _token: Arm64,
+    hor: &[u16; TMP_LEN],
+    p: PicOffset,
+    w: usize,
+    h: usize,
+    taps: &[i16; 8],
+) {
     // -round_offset + rounding_off_v, then >> 11, clipped to [0, 255].
     const BIAS: i32 = -(1 << 18) + (1 << 10);
     let vbias = vdupq_n_s32(BIAS);
@@ -420,7 +441,10 @@ fn wiener_hor_16bpc(
             }
             let lo = vminq_s32(vmaxq_s32(vshlq_s32(lo, vsh), vzero), vmax);
             let hi = vminq_s32(vmaxq_s32(vshlq_s32(hi, vsh), vzero), vmax);
-            let packed = vcombine_u16(vmovn_u32(vreinterpretq_u32_s32(lo)), vmovn_u32(vreinterpretq_u32_s32(hi)));
+            let packed = vcombine_u16(
+                vmovn_u32(vreinterpretq_u32_s32(lo)),
+                vmovn_u32(vreinterpretq_u32_s32(hi)),
+            );
             safe_simd::vst1q_u16((&mut dst[x..x + 8]).try_into().unwrap(), packed);
             x += 8;
         }
@@ -471,7 +495,10 @@ fn wiener_ver_16bpc(
             }
             let lo = vminq_s32(vmaxq_s32(vshlq_s32(lo, vsh), vzero), vmax);
             let hi = vminq_s32(vmaxq_s32(vshlq_s32(hi, vsh), vzero), vmax);
-            let packed = vcombine_u16(vmovn_u32(vreinterpretq_u32_s32(lo)), vmovn_u32(vreinterpretq_u32_s32(hi)));
+            let packed = vcombine_u16(
+                vmovn_u32(vreinterpretq_u32_s32(lo)),
+                vmovn_u32(vreinterpretq_u32_s32(hi)),
+            );
             safe_simd::vst1q_u16((&mut dst[x..x + 8]).try_into().unwrap(), packed);
             x += 8;
         }
@@ -502,8 +529,25 @@ fn wiener_16bpc(
     with_scratch16(|sc| {
         padding::<BitDepth16>(&mut sc.tmp, p, left, lpf, lpf_off, w, h, edges);
         let bitdepth = if bitdepth_max == 1023 { 10 } else { 12 };
-        wiener_hor_16bpc(token, &sc.tmp, &mut sc.hor, w, h, &params.filter[0], bitdepth);
-        wiener_ver_16bpc(token, &sc.hor, p, w, h, &params.filter[1], bitdepth, bitdepth_max);
+        wiener_hor_16bpc(
+            token,
+            &sc.tmp,
+            &mut sc.hor,
+            w,
+            h,
+            &params.filter[0],
+            bitdepth,
+        );
+        wiener_ver_16bpc(
+            token,
+            &sc.hor,
+            p,
+            w,
+            h,
+            &params.filter[1],
+            bitdepth,
+            bitdepth_max,
+        );
     });
 }
 
@@ -579,13 +623,31 @@ fn box_row_8bpc<const N: usize>(
         let mut q0 = vdupq_n_u32(0);
         let mut q1 = vdupq_n_u32(0);
         for dx in 0..N {
-            s = vaddq_u16(s, safe_simd::vld1q_u16(vs[x + dx - half..][..8].try_into().unwrap()));
-            q0 = vaddq_u32(q0, safe_simd::vld1q_u32(vq[x + dx - half..][..4].try_into().unwrap()));
-            q1 = vaddq_u32(q1, safe_simd::vld1q_u32(vq[x + dx - half + 4..][..4].try_into().unwrap()));
+            s = vaddq_u16(
+                s,
+                safe_simd::vld1q_u16(vs[x + dx - half..][..8].try_into().unwrap()),
+            );
+            q0 = vaddq_u32(
+                q0,
+                safe_simd::vld1q_u32(vq[x + dx - half..][..4].try_into().unwrap()),
+            );
+            q1 = vaddq_u32(
+                q1,
+                safe_simd::vld1q_u32(vq[x + dx - half + 4..][..4].try_into().unwrap()),
+            );
         }
-        safe_simd::vst1q_s16((&mut out_sum[x..x + 8]).try_into().unwrap(), vreinterpretq_s16_u16(s));
-        safe_simd::vst1q_s32((&mut out_sq[x..x + 4]).try_into().unwrap(), vreinterpretq_s32_u32(q0));
-        safe_simd::vst1q_s32((&mut out_sq[x + 4..x + 8]).try_into().unwrap(), vreinterpretq_s32_u32(q1));
+        safe_simd::vst1q_s16(
+            (&mut out_sum[x..x + 8]).try_into().unwrap(),
+            vreinterpretq_s16_u16(s),
+        );
+        safe_simd::vst1q_s32(
+            (&mut out_sq[x..x + 4]).try_into().unwrap(),
+            vreinterpretq_s32_u32(q0),
+        );
+        safe_simd::vst1q_s32(
+            (&mut out_sq[x + 4..x + 8]).try_into().unwrap(),
+            vreinterpretq_s32_u32(q1),
+        );
         x += 8;
     }
     while x < bw - 2 {
@@ -654,11 +716,23 @@ fn box_row_16bpc<const N: usize>(
         let mut s = vdupq_n_u32(0);
         let mut q = vdupq_n_u32(0);
         for dx in 0..N {
-            s = vaddq_u32(s, safe_simd::vld1q_u32(vs[x + dx - half..][..4].try_into().unwrap()));
-            q = vaddq_u32(q, safe_simd::vld1q_u32(vq[x + dx - half..][..4].try_into().unwrap()));
+            s = vaddq_u32(
+                s,
+                safe_simd::vld1q_u32(vs[x + dx - half..][..4].try_into().unwrap()),
+            );
+            q = vaddq_u32(
+                q,
+                safe_simd::vld1q_u32(vq[x + dx - half..][..4].try_into().unwrap()),
+            );
         }
-        safe_simd::vst1q_s32((&mut out_sum[x..x + 4]).try_into().unwrap(), vreinterpretq_s32_u32(s));
-        safe_simd::vst1q_s32((&mut out_sq[x..x + 4]).try_into().unwrap(), vreinterpretq_s32_u32(q));
+        safe_simd::vst1q_s32(
+            (&mut out_sum[x..x + 4]).try_into().unwrap(),
+            vreinterpretq_s32_u32(s),
+        );
+        safe_simd::vst1q_s32(
+            (&mut out_sq[x..x + 4]).try_into().unwrap(),
+            vreinterpretq_s32_u32(q),
+        );
         x += 4;
     }
     while x < bw - 2 {
@@ -724,9 +798,15 @@ fn sgr_lut16(_token: Arm64, idx: uint8x16_t) -> uint8x16_t {
 #[cfg(target_arch = "aarch64")]
 #[rite]
 fn sgr_z(_token: Arm64, a: int32x4_t, b: int32x4_t, n: i32, s: u32) -> uint32x4_t {
-    let p = vmaxq_s32(vsubq_s32(vmulq_n_s32(a, n), vmulq_s32(b, b)), vdupq_n_s32(0));
+    let p = vmaxq_s32(
+        vsubq_s32(vmulq_n_s32(a, n), vmulq_s32(b, b)),
+        vdupq_n_s32(0),
+    );
     let p = vreinterpretq_u32_s32(p);
-    let z = vshrq_n_u32::<20>(vaddq_u32(vmulq_u32(p, vdupq_n_u32(s)), vdupq_n_u32(1 << 19)));
+    let z = vshrq_n_u32::<20>(vaddq_u32(
+        vmulq_u32(p, vdupq_n_u32(s)),
+        vdupq_n_u32(1 << 19),
+    ));
     vminq_u32(z, vdupq_n_u32(255))
 }
 
@@ -735,7 +815,10 @@ fn sgr_z(_token: Arm64, a: int32x4_t, b: int32x4_t, n: i32, s: u32) -> uint32x4_
 #[cfg(target_arch = "aarch64")]
 #[rite]
 fn sgr_aa(_token: Arm64, x: uint32x4_t, b: int32x4_t, one_by_x: u32) -> int32x4_t {
-    let prod = vmulq_u32(vmulq_u32(x, vreinterpretq_u32_s32(b)), vdupq_n_u32(one_by_x));
+    let prod = vmulq_u32(
+        vmulq_u32(x, vreinterpretq_u32_s32(b)),
+        vdupq_n_u32(one_by_x),
+    );
     vreinterpretq_s32_u32(vshrq_n_u32::<12>(vaddq_u32(prod, vdupq_n_u32(1 << 11))))
 }
 
@@ -790,14 +873,19 @@ fn sgr_ab_8bpc(
             let mut bs = [vdupq_n_s32(0); 4];
             for g in 0..4 {
                 let a = safe_simd::vld1q_s32(sumsq[base + i + g * 4..][..4].try_into().unwrap());
-                let b = vmovl_s16(safe_simd::vld1_s16(sum[base + i + g * 4..][..4].try_into().unwrap()));
+                let b = vmovl_s16(safe_simd::vld1_s16(
+                    sum[base + i + g * 4..][..4].try_into().unwrap(),
+                ));
                 bs[g] = b;
                 z[g] = sgr_z(token, a, b, n, s);
             }
             let xs = sgr_unpack_x(token, sgr_lut16(token, sgr_pack_idx(token, z)));
             for g in 0..4 {
                 let aa = sgr_aa(token, xs[g], bs[g], one_by_x);
-                safe_simd::vst1q_s32((&mut sumsq[base + i + g * 4..][..4]).try_into().unwrap(), aa);
+                safe_simd::vst1q_s32(
+                    (&mut sumsq[base + i + g * 4..][..4]).try_into().unwrap(),
+                    aa,
+                );
                 safe_simd::vst1_s16(
                     (&mut sum[base + i + g * 4..][..4]).try_into().unwrap(),
                     vmovn_s32(vreinterpretq_s32_u32(xs[g])),
@@ -812,7 +900,9 @@ fn sgr_ab_8bpc(
             let p = cmp::max(a_val * n - b_val * b_val, 0) as u32;
             let z = (p.wrapping_mul(s).wrapping_add(1 << 19)) >> 20;
             let x = dav1d_sgr_x_by_x[cmp::min(z, 255) as usize] as u32;
-            sumsq[idx] = ((x.wrapping_mul(b_val as u32).wrapping_mul(one_by_x)).wrapping_add(1 << 11) >> 12) as i32;
+            sumsq[idx] = ((x.wrapping_mul(b_val as u32).wrapping_mul(one_by_x))
+                .wrapping_add(1 << 11)
+                >> 12) as i32;
             sum[idx] = x as i16;
             i += 1;
         }
@@ -861,7 +951,10 @@ fn eight_i32(_token: Arm64, p: &[i32], i: usize) -> int32x4_t {
     let dnl = safe_simd::vld1q_s32(p[i + S - 1..][..4].try_into().unwrap());
     let dnr = safe_simd::vld1q_s32(p[i + S + 1..][..4].try_into().unwrap());
     vmlaq_n_s32(
-        vmulq_n_s32(vaddq_s32(vaddq_s32(vaddq_s32(c, l), vaddq_s32(r, up)), dn), 4),
+        vmulq_n_s32(
+            vaddq_s32(vaddq_s32(vaddq_s32(c, l), vaddq_s32(r, up)), dn),
+            4,
+        ),
         vaddq_s32(vaddq_s32(upl, upr), vaddq_s32(dnl, dnr)),
         3,
     )
@@ -912,7 +1005,10 @@ fn eight_i16(token: Arm64, p: &[i16], i: usize) -> int32x4_t {
     let dnl = ld4_i16(token, p, i + S - 1);
     let dnr = ld4_i16(token, p, i + S + 1);
     vmlaq_n_s32(
-        vmulq_n_s32(vaddq_s32(vaddq_s32(vaddq_s32(c, l), vaddq_s32(r, up)), dn), 4),
+        vmulq_n_s32(
+            vaddq_s32(vaddq_s32(vaddq_s32(c, l), vaddq_s32(r, up)), dn),
+            4,
+        ),
         vaddq_s32(vaddq_s32(upl, upr), vaddq_s32(dnl, dnr)),
         3,
     )
@@ -1006,9 +1102,15 @@ fn sgr_out_8bpc(
                 let mut i = 0;
                 while i + 4 <= w {
                     let (bv, av) = if phase == 0 {
-                        (six_i32(token, sumsq, rowa + i), six_i16(token, sum, rowa + i))
+                        (
+                            six_i32(token, sumsq, rowa + i),
+                            six_i16(token, sum, rowa + i),
+                        )
                     } else {
-                        (mid_i32(token, sumsq, rowa + i), mid_i16(token, sum, rowa + i))
+                        (
+                            mid_i32(token, sumsq, rowa + i),
+                            mid_i16(token, sum, rowa + i),
+                        )
                     };
                     if phase == 0 {
                         emit!(bv, av, sidx0 + i, didx0 + i, 1 << 8, 9);
@@ -1092,7 +1194,8 @@ fn eight_s(p: &[i32], i: usize) -> i32 {
 #[cfg(target_arch = "aarch64")]
 fn six_s16(p: &[i16], i: usize) -> i32 {
     (p[i - S] as i32 + p[i + S] as i32) * 6
-        + (p[i - S - 1] as i32 + p[i - S + 1] as i32 + p[i + S - 1] as i32 + p[i + S + 1] as i32) * 5
+        + (p[i - S - 1] as i32 + p[i - S + 1] as i32 + p[i + S - 1] as i32 + p[i + S + 1] as i32)
+            * 5
 }
 #[cfg(target_arch = "aarch64")]
 fn mid_s16(p: &[i16], i: usize) -> i32 {
@@ -1101,7 +1204,8 @@ fn mid_s16(p: &[i16], i: usize) -> i32 {
 #[cfg(target_arch = "aarch64")]
 fn eight_s16(p: &[i16], i: usize) -> i32 {
     (p[i] as i32 + p[i - 1] as i32 + p[i + 1] as i32 + p[i - S] as i32 + p[i + S] as i32) * 4
-        + (p[i - S - 1] as i32 + p[i - S + 1] as i32 + p[i + S - 1] as i32 + p[i + S + 1] as i32) * 3
+        + (p[i - S - 1] as i32 + p[i - S + 1] as i32 + p[i + S - 1] as i32 + p[i + S + 1] as i32)
+            * 3
 }
 
 /// Blend one or two self-guided outputs into the picture, 8bpc.
@@ -1133,7 +1237,9 @@ fn sgr_apply_8bpc(
             let lo = vshrq_n_s32::<11>(vaddq_s32(lo, vdupq_n_s32(1 << 10)));
             let hi = vshrq_n_s32::<11>(vaddq_s32(hi, vdupq_n_s32(1 << 10)));
             let add = vcombine_s16(vmovn_s32(lo), vmovn_s32(hi));
-            let px = vreinterpretq_s16_u16(vmovl_u8(safe_simd::vld1_u8(row[i..][..8].try_into().unwrap())));
+            let px = vreinterpretq_s16_u16(vmovl_u8(safe_simd::vld1_u8(
+                row[i..][..8].try_into().unwrap(),
+            )));
             safe_simd::vst1_u8(
                 (&mut row[i..i + 8]).try_into().unwrap(),
                 vqmovun_s16(vaddq_s16(px, add)),
@@ -1169,17 +1275,66 @@ fn sgr_8bpc(
         let sgr = params.sgr();
         match variant {
             2 => {
-                selfguided_8bpc(token, &mut sc.d0, &sc.tmp, w, h, 25, sgr.s0, &mut sc.sumsq, &mut sc.sum);
+                selfguided_8bpc(
+                    token,
+                    &mut sc.d0,
+                    &sc.tmp,
+                    w,
+                    h,
+                    25,
+                    sgr.s0,
+                    &mut sc.sumsq,
+                    &mut sc.sum,
+                );
                 sgr_apply_8bpc(token, p, w, h, &sc.d0, sgr.w0 as i32, None, 0);
             }
             3 => {
-                selfguided_8bpc(token, &mut sc.d0, &sc.tmp, w, h, 9, sgr.s1, &mut sc.sumsq, &mut sc.sum);
+                selfguided_8bpc(
+                    token,
+                    &mut sc.d0,
+                    &sc.tmp,
+                    w,
+                    h,
+                    9,
+                    sgr.s1,
+                    &mut sc.sumsq,
+                    &mut sc.sum,
+                );
                 sgr_apply_8bpc(token, p, w, h, &sc.d0, sgr.w1 as i32, None, 0);
             }
             _ => {
-                selfguided_8bpc(token, &mut sc.d0, &sc.tmp, w, h, 25, sgr.s0, &mut sc.sumsq, &mut sc.sum);
-                selfguided_8bpc(token, &mut sc.d1, &sc.tmp, w, h, 9, sgr.s1, &mut sc.sumsq, &mut sc.sum);
-                sgr_apply_8bpc(token, p, w, h, &sc.d0, sgr.w0 as i32, Some(&sc.d1), sgr.w1 as i32);
+                selfguided_8bpc(
+                    token,
+                    &mut sc.d0,
+                    &sc.tmp,
+                    w,
+                    h,
+                    25,
+                    sgr.s0,
+                    &mut sc.sumsq,
+                    &mut sc.sum,
+                );
+                selfguided_8bpc(
+                    token,
+                    &mut sc.d1,
+                    &sc.tmp,
+                    w,
+                    h,
+                    9,
+                    sgr.s1,
+                    &mut sc.sumsq,
+                    &mut sc.sum,
+                );
+                sgr_apply_8bpc(
+                    token,
+                    p,
+                    w,
+                    h,
+                    &sc.d0,
+                    sgr.w0 as i32,
+                    Some(&sc.d1),
+                    sgr.w1 as i32,
+                );
             }
         }
     });
@@ -1219,7 +1374,8 @@ fn sgr_ab_16bpc(
             let mut z = [vdupq_n_u32(0); 4];
             let mut braw = [vdupq_n_s32(0); 4];
             for g in 0..4 {
-                let a_raw = safe_simd::vld1q_s32(sumsq[base + i + g * 4..][..4].try_into().unwrap());
+                let a_raw =
+                    safe_simd::vld1q_s32(sumsq[base + i + g * 4..][..4].try_into().unwrap());
                 let b_raw = safe_simd::vld1q_s32(sum[base + i + g * 4..][..4].try_into().unwrap());
                 braw[g] = b_raw;
                 let a = vshlq_s32(vaddq_s32(a_raw, va_rnd), va_sh);
@@ -1229,7 +1385,10 @@ fn sgr_ab_16bpc(
             let xs = sgr_unpack_x(token, sgr_lut16(token, sgr_pack_idx(token, z)));
             for g in 0..4 {
                 let aa = sgr_aa(token, xs[g], braw[g], one_by_x);
-                safe_simd::vst1q_s32((&mut sumsq[base + i + g * 4..][..4]).try_into().unwrap(), aa);
+                safe_simd::vst1q_s32(
+                    (&mut sumsq[base + i + g * 4..][..4]).try_into().unwrap(),
+                    aa,
+                );
                 safe_simd::vst1q_s32(
                     (&mut sum[base + i + g * 4..][..4]).try_into().unwrap(),
                     vreinterpretq_s32_u32(xs[g]),
@@ -1246,7 +1405,9 @@ fn sgr_ab_16bpc(
             let p = cmp::max(a * n - b * b, 0) as u32;
             let z = (p.wrapping_mul(s).wrapping_add(1 << 19)) >> 20;
             let x = dav1d_sgr_x_by_x[cmp::min(z, 255) as usize] as u32;
-            sumsq[idx] = ((x.wrapping_mul(b_raw as u32).wrapping_mul(one_by_x)).wrapping_add(1 << 11) >> 12) as i32;
+            sumsq[idx] = ((x.wrapping_mul(b_raw as u32).wrapping_mul(one_by_x))
+                .wrapping_add(1 << 11)
+                >> 12) as i32;
             sum[idx] = x as i32;
             i += 1;
         }
@@ -1276,7 +1437,10 @@ fn sgr_out_16bpc(
                 src[$sidx..][..4].try_into().unwrap(),
             )));
             let v = vaddq_s32(vsubq_s32($bv, vmulq_s32($av, px)), vdupq_n_s32($rnd));
-            safe_simd::vst1q_s32((&mut dst[$didx..][..4]).try_into().unwrap(), vshrq_n_s32::<$sh>(v));
+            safe_simd::vst1q_s32(
+                (&mut dst[$didx..][..4]).try_into().unwrap(),
+                vshrq_n_s32::<$sh>(v),
+            );
         }};
     }
 
@@ -1290,9 +1454,15 @@ fn sgr_out_16bpc(
                 let mut i = 0;
                 while i + 4 <= w {
                     let (bv, av) = if phase == 0 {
-                        (six_i32(token, sumsq, rowa + i), six_i32(token, sum, rowa + i))
+                        (
+                            six_i32(token, sumsq, rowa + i),
+                            six_i32(token, sum, rowa + i),
+                        )
                     } else {
-                        (mid_i32(token, sumsq, rowa + i), mid_i32(token, sum, rowa + i))
+                        (
+                            mid_i32(token, sumsq, rowa + i),
+                            mid_i32(token, sum, rowa + i),
+                        )
                     };
                     if phase == 0 {
                         emit!(bv, av, sidx0 + i, didx0 + i, 1 << 8, 9);
@@ -1385,7 +1555,9 @@ fn sgr_apply_16bpc(
                 v = vmlaq_n_s32(v, b, w1);
             }
             let add = vshrq_n_s32::<11>(vaddq_s32(v, vdupq_n_s32(1 << 10)));
-            let px = vreinterpretq_s32_u32(vmovl_u16(safe_simd::vld1_u16(row[i..][..4].try_into().unwrap())));
+            let px = vreinterpretq_s32_u32(vmovl_u16(safe_simd::vld1_u16(
+                row[i..][..4].try_into().unwrap(),
+            )));
             let out = vminq_s32(vmaxq_s32(vaddq_s32(px, add), vzero), vmax);
             safe_simd::vst1_u16(
                 (&mut row[i..i + 4]).try_into().unwrap(),
@@ -1469,16 +1641,60 @@ fn sgr_16bpc(
         let bdm8 = if bitdepth_max == 1023 { 2 } else { 4 };
         match variant {
             2 => {
-                selfguided_16bpc(token, &mut sc.d0, &sc.tmp, w, h, 25, sgr.s0, bdm8, &mut sc.sumsq, &mut sc.sum);
+                selfguided_16bpc(
+                    token,
+                    &mut sc.d0,
+                    &sc.tmp,
+                    w,
+                    h,
+                    25,
+                    sgr.s0,
+                    bdm8,
+                    &mut sc.sumsq,
+                    &mut sc.sum,
+                );
                 sgr_apply_16bpc(token, p, w, h, &sc.d0, sgr.w0 as i32, None, 0, bitdepth_max);
             }
             3 => {
-                selfguided_16bpc(token, &mut sc.d0, &sc.tmp, w, h, 9, sgr.s1, bdm8, &mut sc.sumsq, &mut sc.sum);
+                selfguided_16bpc(
+                    token,
+                    &mut sc.d0,
+                    &sc.tmp,
+                    w,
+                    h,
+                    9,
+                    sgr.s1,
+                    bdm8,
+                    &mut sc.sumsq,
+                    &mut sc.sum,
+                );
                 sgr_apply_16bpc(token, p, w, h, &sc.d0, sgr.w1 as i32, None, 0, bitdepth_max);
             }
             _ => {
-                selfguided_16bpc(token, &mut sc.d0, &sc.tmp, w, h, 25, sgr.s0, bdm8, &mut sc.sumsq, &mut sc.sum);
-                selfguided_16bpc(token, &mut sc.d1, &sc.tmp, w, h, 9, sgr.s1, bdm8, &mut sc.sumsq, &mut sc.sum);
+                selfguided_16bpc(
+                    token,
+                    &mut sc.d0,
+                    &sc.tmp,
+                    w,
+                    h,
+                    25,
+                    sgr.s0,
+                    bdm8,
+                    &mut sc.sumsq,
+                    &mut sc.sum,
+                );
+                selfguided_16bpc(
+                    token,
+                    &mut sc.d1,
+                    &sc.tmp,
+                    w,
+                    h,
+                    9,
+                    sgr.s1,
+                    bdm8,
+                    &mut sc.sumsq,
+                    &mut sc.sum,
+                );
                 sgr_apply_16bpc(
                     token,
                     p,
@@ -1541,8 +1757,8 @@ pub fn lr_filter_dispatch<BD: BitDepth>(
     {
         use std::sync::atomic::{AtomicU8, Ordering};
         static SEEN: [AtomicU8; 10] = [const { AtomicU8::new(0) }; 10];
-        let cell = (BD::BPC == crate::include::common::bitdepth::BPC::BPC16) as usize * 5
-            + variant.min(4);
+        let cell =
+            (BD::BPC == crate::include::common::bitdepth::BPC::BPC16) as usize * 5 + variant.min(4);
         if SEEN[cell].swap(1, Ordering::Relaxed) == 0 {
             let name = ["wiener7", "wiener5", "sgr_5x5", "sgr_3x3", "sgr_mix"][variant.min(4)];
             let bpc = if cell >= 5 { "16bpc" } else { "8bpc" };
