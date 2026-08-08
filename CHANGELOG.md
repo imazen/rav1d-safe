@@ -4,6 +4,50 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Added
+- **10/12-bit inverse transforms now have an aarch64 NEON tier**
+  (`src/safe_simd/itx_arm_hbd.rs`). `itxfm_add_dispatch` had been 8bpc-only on
+  purpose: the `itx_arm_neon_*` kernels hold transform state in `int16x8_t`,
+  which is exactly the spec's 8bpc row/column clip and nothing wider, so their
+  `*_16bpc_*` entry points were never reachable from the safe build. The new
+  module vectorises the *generic* reference (`src/itx.rs` + `src/itx_1d.rs`)
+  in `int32x4_t` lanes instead — four independent 1-D transforms per vector,
+  each lane running the identical i32 op sequence the scalar reference runs.
+  Wired for every shape with `max(w, h) <= 16` and all 16 non-WHT types
+  (4x4, 8x8, 16x16, 4x8, 8x4, 4x16, 16x4, 8x16, 16x8); 32/64-point transforms
+  and WHT still run the reference. Measured idle-box at t=1 on a 4K 10-bit
+  still: **508.3 -> 455.8 ms/frame, 2.02x -> 1.81x of dav1d 1.5.4
+  `--framedelay 1`** (t=2 2.16 -> 2.04, t=4 2.43 -> 2.33); itx goes from 21.93%
+  to 12.79% of decode inclusive with no `itx_1d` sample left at all. 8bpc is
+  unchanged, as it must be. Record: `benchmarks/itx_hbd_neon_2026-08-07.meta`.
+- **NEON chroma-from-luma prediction on aarch64** (`cfl_pred_dispatch` in
+  `src/safe_simd/ipred_arm.rs`). `cfl_pred_direct` had an x86_64 dispatch and
+  nothing beside it; measured at t=1 the scalar loop was 2.46% of decode self
+  time at 8bpc (3.37% inclusive) and 1.79% at 10bpc.
+- **Per-family kernel activity counters** (`src/ablate.rs`
+  `note`/`activity_snapshot`/`activity_reset`, `__ablate`-gated exactly like
+  `is_off`) plus `md5_inventory --activity`, which emits them per corpus
+  vector. This is what a `sample` profile cannot tell you: whether a 0.0 ms
+  kernel is fast or simply never called. Record:
+  `benchmarks/family_activity_2026-08-07.tsv.zst`.
+- `examples/profile_ivf` gains `RAV1D_ABLATE` / `RAV1D_REPS` / `RAV1D_LABEL`,
+  so any kernel family can be A/B'd against its scalar reference from a single
+  binary; `scripts/perf/lr_ab.sh` is the rotating-order driver.
+
+### Removed
+- **`src/safe_simd/looprestoration_arm.rs`'s scalar duplicate (1,436 lines).**
+  The file claimed to be "Safe ARM NEON implementations for Loop Restoration",
+  contained zero aarch64 intrinsics, and `lr_filter_dispatch` returned `true`
+  unconditionally — so every loop restoration call on aarch64 ran a second
+  hand-written copy of `src/looprestoration.rs` rather than the reference.
+  Interleaved A/B (rotating order, median of 9): the copy was **6.01% slower
+  whole-decode at 8bpc** (204.42 vs 192.83 ms/frame on `8-bit/data/00001147`)
+  and a wash at 10bpc. Now the dispatcher returns `false` and the caller runs
+  the reference; 766/766 conformance with byte-identical per-vector MD5s, which
+  is also the proof the duplicate bought nothing. aarch64 loop restoration is
+  still scalar — a real NEON tier is named as remaining work in
+  `ROADMAP_SIMD_PORTING.md` R3 and `benchmarks/lr_arm_vs_reference_2026-08-07.meta`.
+
 ### Fixed
 - **10/12-bit CDEF on aarch64 decoded to the wrong pixels** (issue #446).
   `src/safe_simd/cdef_arm.rs`'s 16bpc filter computed `pri_tap` as
