@@ -180,11 +180,7 @@ fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
     }
 }
 
-fn decode_md5(
-    ivf_path: &Path,
-    apply_grain: bool,
-    threads: u32,
-) -> Result<(String, usize), String> {
+fn decode_md5(ivf_path: &Path, apply_grain: bool, threads: u32) -> Result<(String, usize), String> {
     let file = std::fs::File::open(ivf_path).map_err(|e| format!("open: {e}"))?;
     let mut reader = std::io::BufReader::new(file);
     let frames = ivf_parser::parse_all_frames(&mut reader).map_err(|e| format!("ivf: {e}"))?;
