@@ -179,20 +179,25 @@ fn conflicts(dm: &DisjointMut<Vec<u8>>, shape: Shape, stride: usize) -> bool {
     .is_err()
 }
 
+/// A live borrow of either shape. The two have different guard types now that
+/// a rectangle hands out its rows one at a time rather than a hull slice
+/// (`DisjointMutRect`), and this test only needs them KEPT ALIVE.
+#[allow(dead_code)]
+enum Held<'a> {
+    Rect(rav1d_disjoint_mut::DisjointMutRect<'a, Vec<u8>, u8>),
+    Interval(rav1d_disjoint_mut::DisjointMutGuard<'a, Vec<u8>, [u8]>),
+}
+
 /// Hold the borrow open, so the second one sees it.
-fn hold<'a>(
-    dm: &'a DisjointMut<Vec<u8>>,
-    shape: Shape,
-    stride: usize,
-) -> rav1d_disjoint_mut::DisjointMutGuard<'a, Vec<u8>, [u8]> {
+fn hold<'a>(dm: &'a DisjointMut<Vec<u8>>, shape: Shape, stride: usize) -> Held<'a> {
     match shape {
-        Shape::Rect { start, w, h } => dm.index_rect_mut(StridedRows {
+        Shape::Rect { start, w, h } => Held::Rect(dm.index_rect_mut(StridedRows {
             start,
             w,
             h,
             stride,
-        }),
-        Shape::Interval { start, end } => dm.index_mut(start..end),
+        })),
+        Shape::Interval { start, end } => Held::Interval(dm.index_mut(start..end)),
     }
 }
 

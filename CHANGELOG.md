@@ -18,11 +18,15 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
     proof: narrowing `cols_meet` to test only one edge (a MISSED-overlap bug,
     i.e. two aliasing `&mut`) leaves **all 9 shipped `rowmap_tests` green** and
     fails this gate on all eight plane shapes.
-  - `rect_hull_aliasing` records, under Miri, that `index_rect_mut` reserves the
-    rectangle but hands out a `&mut` over the HULL, so two blocks on the same
-    rows in different tile columns are two live overlapping `&mut`. Controls in
+  - `rect_hull_aliasing` recorded, under Miri, that `index_rect_mut` reserved the
+    rectangle but handed out a `&mut` over the HULL, so two blocks on the same
+    rows in different tile columns were two live overlapping `&mut`. Controls in
     the same file (per-row guards; one hull guard that is also reserved as the
-    hull) pass, isolating it to the rectangle guard. See the file's module doc.
+    hull) pass, isolating it to the rectangle guard. **Fixed below**; the file
+    now gates the fix and has grown two cases (an `&mut` row held ACROSS the next
+    column taking one, and the immutable rectangle against a neighbour's write)
+    plus a non-Miri liveness assertion that the rows handed out really are the
+    strided rectangle. See the file's module doc.
 
 ### Changed
 - **The borrow tracker shards a picture plane by COLUMN, and a `w x h` block is

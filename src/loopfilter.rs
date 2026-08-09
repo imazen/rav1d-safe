@@ -629,17 +629,33 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         };
         let total = (h - 1) * astride + W;
         // ONE registration, recorded as the exact rectangle on a positive
-        // stride so the inter-row gaps stay available to other tile columns.
-        let guard = if stride > 0 {
-            origin.data.rect::<BD>(rav1d_disjoint_mut::StridedRows {
+        // stride so the inter-row gaps stay available to other tile columns —
+        // and handed out ONE ROW AT A TIME, so the reference never covers a gap
+        // either (`DisjointImmutRect`).
+        if stride > 0 {
+            let guard = origin.data.rect::<BD>(rav1d_disjoint_mut::StridedRows {
                 start: lo,
                 w: W,
                 h,
                 stride: astride,
-            })
-        } else {
-            origin.data.slice::<BD, _>((lo.., ..total))
-        };
+            });
+            for row in 0..h {
+                let src: &[BD::Pixel; W] = guard
+                    .row(row)
+                    .try_into()
+                    .expect("the rectangle's rows are W pixels long");
+                let dst: &mut [BD::Pixel; W] = (&mut scratch.buf[row * LF_BW..][..W])
+                    .try_into()
+                    .expect("scratch row is LF_BW >= W long");
+                *dst = *src;
+                let pri: &mut [BD::Pixel; W] = (&mut scratch.pristine[row * LF_BW..][..W])
+                    .try_into()
+                    .expect("scratch row is LF_BW >= W long");
+                *pri = *src;
+            }
+            return;
+        }
+        let guard = origin.data.slice::<BD, _>((lo.., ..total));
         for row in 0..h {
             let idx = if stride >= 0 {
                 row * astride

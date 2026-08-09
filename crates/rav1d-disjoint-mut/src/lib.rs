@@ -374,6 +374,214 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Deref for DisjointImmutGuard<'a, T, V>
 }
 
 // =============================================================================
+// Rectangle guards — ONE registration, references handed out PER ROW
+// =============================================================================
+
+/// The out-of-line panic for a row index past the end of a rectangle guard.
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn row_out_of_bounds(row: usize, rows: usize) -> ! {
+    panic!("rectangle row out of bounds: the height is {rows} but the row is {row}")
+}
+
+/// The out-of-line panic for a rectangle base that is not aligned for `V`.
+#[cfg(feature = "zerocopy")]
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn rect_cast_failed<V>(addr: usize) -> ! {
+    panic!(
+        "DisjointMut: a rectangle based at {:#x} is not a valid [{}] (size {}, align {})",
+        addr,
+        core::any::type_name::<V>(),
+        mem::size_of::<V>(),
+        mem::align_of::<V>(),
+    );
+}
+
+/// A mutable guard over a STRIDED RECTANGLE that hands out **one row at a
+/// time**.
+///
+/// # Why this is not a `DisjointMutGuard` over the hull
+///
+/// [`StridedRows`] exists so the tracker can *record* the exact rectangle and
+/// leave the inter-row gaps to the tile columns that own them. That makes two
+/// blocks on the same rows at different columns simultaneously acceptable —
+/// which is the entire point, and which is also why the guard must not hand
+/// out a `&mut [V]` covering the hull: two such references would then be live
+/// over overlapping memory, and **the reference is what Rust's aliasing rules
+/// bind to, not the tracker's record**. Miri rejects it (see
+/// `tests/rect_hull_aliasing.rs`), and `noalias` on a `&mut` argument makes it
+/// a miscompile risk rather than a theoretical one.
+///
+/// So this guard keeps only a raw base pointer — no reference is created at
+/// construction — and materialises a `&mut [V]` for exactly one row at a time.
+/// Every reference it hands out is a subset of what the tracker reserved, and
+/// two guards from different tile columns produce disjoint references.
+///
+/// The registration is still ONE `add`, which is where the measured win lives:
+/// the reference shape and the record shape are independent.
+pub struct DisjointMutRect<'a, T: ?Sized + AsMutPtr, V> {
+    /// First element of the first (lowest-addressed) row. Never dereferenced
+    /// as a whole-hull reference.
+    base: *mut V,
+    /// Elements per row.
+    w: usize,
+    /// Number of rows.
+    h: usize,
+    /// Elements between the starts of consecutive rows.
+    stride: usize,
+
+    phantom: PhantomData<&'a mut DisjointMut<T>>,
+
+    /// Reference to parent for borrow removal on drop.
+    /// `None` when parent was created with `dangerously_unchecked`.
+    parent: Option<&'a DisjointMut<T>>,
+    /// Unique ID for this borrow registration.
+    borrow_id: checked::BorrowId,
+}
+
+impl<'a, T: ?Sized + AsMutPtr, V> DisjointMutRect<'a, T, V> {
+    /// Number of rows.
+    #[inline(always)]
+    pub fn rows(&self) -> usize {
+        self.h
+    }
+
+    /// Elements per row.
+    #[inline(always)]
+    pub fn row_len(&self) -> usize {
+        self.w
+    }
+
+    /// Row `row`, immutably.
+    #[inline(always)]
+    #[track_caller]
+    pub fn row(&self, row: usize) -> &[V] {
+        if row >= self.h {
+            row_out_of_bounds(row, self.h);
+        }
+        // SAFETY: `row < self.h`, so `base + row * stride .. + w` is inside the
+        // rectangle's hull, which `index_rect_mut` bounds-checked against the
+        // container. The tracker has reserved every element of it, and the
+        // borrow is live for as long as `self` is. Only this row is retagged.
+        unsafe {
+            core::slice::from_raw_parts(self.base.add(row * self.stride).cast_const(), self.w)
+        }
+    }
+
+    /// Row `row`, mutably.
+    ///
+    /// `&mut self` is what keeps two rows from being live at once, which is the
+    /// property that makes handing out raw-pointer-derived references sound
+    /// without any further reasoning at the call site.
+    #[inline(always)]
+    #[track_caller]
+    pub fn row_mut(&mut self, row: usize) -> &mut [V] {
+        if row >= self.h {
+            row_out_of_bounds(row, self.h);
+        }
+        // SAFETY: see `Self::row`; additionally the registration is mutable, so
+        // no other borrow of these elements is live.
+        unsafe { core::slice::from_raw_parts_mut(self.base.add(row * self.stride), self.w) }
+    }
+}
+
+#[cfg(feature = "zerocopy")]
+impl<'a, T: ?Sized + AsMutPtr> DisjointMutRect<'a, T, u8> {
+    /// Reinterpret the rows as `[V]`.
+    ///
+    /// The rectangle arrives in BYTE units (`StridedRows::mul(size_of::<V>())`),
+    /// so `w` and `stride` are exact multiples of `size_of::<V>()` by
+    /// construction and only the base alignment can fail. `size_of::<V>()` is
+    /// always a multiple of `align_of::<V>()`, so an aligned base makes every
+    /// row start aligned too — one check covers the whole rectangle, where
+    /// `cast_slice` would re-check per row.
+    #[inline]
+    #[track_caller]
+    fn cast_rows<V: IntoBytes + FromBytes + KnownLayout>(self) -> DisjointMutRect<'a, T, V> {
+        let size = mem::size_of::<V>();
+        let this = ManuallyDrop::new(self);
+        if !this.base.cast::<V>().is_aligned() || this.w % size != 0 || this.stride % size != 0 {
+            rect_cast_failed::<V>(this.base as usize);
+        }
+        DisjointMutRect {
+            base: this.base.cast::<V>(),
+            w: this.w / size,
+            h: this.h,
+            stride: this.stride / size,
+            phantom: PhantomData,
+            parent: this.parent,
+            borrow_id: this.borrow_id,
+        }
+    }
+}
+
+/// [`DisjointMutRect`], immutably. See its documentation — the aliasing
+/// argument applies to shared references too: a `&` over the hull overlaps
+/// another tile column's `&mut` in the inter-row gaps.
+pub struct DisjointImmutRect<'a, T: ?Sized + AsMutPtr, V> {
+    base: *const V,
+    w: usize,
+    h: usize,
+    stride: usize,
+
+    phantom: PhantomData<&'a DisjointMut<T>>,
+
+    parent: Option<&'a DisjointMut<T>>,
+    borrow_id: checked::BorrowId,
+}
+
+impl<'a, T: ?Sized + AsMutPtr, V> DisjointImmutRect<'a, T, V> {
+    /// Number of rows.
+    #[inline(always)]
+    pub fn rows(&self) -> usize {
+        self.h
+    }
+
+    /// Elements per row.
+    #[inline(always)]
+    pub fn row_len(&self) -> usize {
+        self.w
+    }
+
+    /// Row `row`.
+    #[inline(always)]
+    #[track_caller]
+    pub fn row(&self, row: usize) -> &[V] {
+        if row >= self.h {
+            row_out_of_bounds(row, self.h);
+        }
+        // SAFETY: see `DisjointMutRect::row`.
+        unsafe { core::slice::from_raw_parts(self.base.add(row * self.stride), self.w) }
+    }
+}
+
+#[cfg(feature = "zerocopy")]
+impl<'a, T: ?Sized + AsMutPtr> DisjointImmutRect<'a, T, u8> {
+    /// See [`DisjointMutRect::cast_rows`].
+    #[inline]
+    #[track_caller]
+    fn cast_rows<V: FromBytes + KnownLayout + Immutable>(self) -> DisjointImmutRect<'a, T, V> {
+        let size = mem::size_of::<V>();
+        let this = ManuallyDrop::new(self);
+        if !this.base.cast::<V>().is_aligned() || this.w % size != 0 || this.stride % size != 0 {
+            rect_cast_failed::<V>(this.base as usize);
+        }
+        DisjointImmutRect {
+            base: this.base.cast::<V>(),
+            w: this.w / size,
+            h: this.h,
+            stride: this.stride / size,
+            phantom: PhantomData,
+            parent: this.parent,
+            borrow_id: this.borrow_id,
+        }
+    }
+}
+
+// =============================================================================
 // AsMutPtr trait (sealed — only implemented for types in this crate)
 // =============================================================================
 
@@ -672,25 +880,25 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
 
     /// [`Self::index_mut`] for a [`StridedRows`] rectangle.
     ///
-    /// Byte-for-byte the same sequence — the reference handed out IS the hull,
-    /// so nothing about bounds checking or poisoning changes. The one
-    /// difference is that the tracker is told the SHAPE, so it can record the
-    /// rectangle instead of the hull and leave the inter-row gaps to whoever
-    /// owns them.
+    /// The tracker is told the SHAPE, so it records the rectangle instead of
+    /// the hull and leaves the inter-row gaps to whoever owns them — and the
+    /// guard hands out ONE ROW AT A TIME rather than a `&mut` over the hull,
+    /// so what is *referenced* is a subset of what was *reserved*. See
+    /// [`DisjointMutRect`] for why the two have to agree.
     ///
-    /// `#[inline(always)]` for the reason spelled out on [`Self::mut_slice_as`]:
-    /// under plain `#[inline]` LLVM declines, and the hull callers
-    /// (`for_rows`, `narrow_guard`, the loop filter's `fill_hull`) are exactly
-    /// the sites the whole design exists to make cheap. Measured **+4.0% at
-    /// 8bpc t=1** with it out of line — the tracker's whole single-threaded
-    /// cost is 13.7 ms/frame there, so an out-of-line registration path roughly
-    /// doubles it.
+    /// `#[inline(always)]` for the reason spelled out on `DisjointMut::mut_slice_as`:
+    /// under plain `#[inline]` LLVM declines, and the rectangle callers
+    /// (`for_rows`, the compact copies, the loop filter's `fill_hull`) are
+    /// exactly the sites the whole design exists to make cheap. Measured
+    /// **+4.0% at 8bpc t=1** with it out of line — the tracker's whole
+    /// single-threaded cost is 13.7 ms/frame there, so an out-of-line
+    /// registration path roughly doubles it.
     #[inline(always)]
     #[track_caller]
     pub fn index_rect_mut<'a>(
         &'a self,
         rect: StridedRows,
-    ) -> DisjointMutGuard<'a, T, [<T as AsMutPtr>::Target]>
+    ) -> DisjointMutRect<'a, T, <T as AsMutPtr>::Target>
     where
         StridedRows:
             DisjointMutIndex<[<T as AsMutPtr>::Target], Output = [<T as AsMutPtr>::Target]>,
@@ -704,11 +912,17 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         };
         let parent = self.tracker.as_ref().map(|_| self);
         let cleanup = BorrowCleanup { parent };
-        // SAFETY: The borrow has been registered (or we're unchecked).
-        let slice = unsafe { &mut *rect.get_mut(self.as_mut_slice()) };
+        // SAFETY: The borrow has been registered (or we're unchecked), and
+        // `get_mut` bounds-checks the hull against the container. NO reference
+        // is created here — only the base pointer survives, and `row`/`row_mut`
+        // retag one row at a time.
+        let hull = unsafe { rect.get_mut(self.as_mut_slice()) };
         mem::forget(cleanup);
-        DisjointMutGuard {
-            slice,
+        DisjointMutRect {
+            base: hull.cast::<<T as AsMutPtr>::Target>(),
+            w: rect.w,
+            h: rect.h,
+            stride: rect.stride,
             parent,
             borrow_id,
             phantom: PhantomData,
@@ -722,7 +936,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     pub fn index_rect<'a>(
         &'a self,
         rect: StridedRows,
-    ) -> DisjointImmutGuard<'a, T, [<T as AsMutPtr>::Target]>
+    ) -> DisjointImmutRect<'a, T, <T as AsMutPtr>::Target>
     where
         StridedRows:
             DisjointMutIndex<[<T as AsMutPtr>::Target], Output = [<T as AsMutPtr>::Target]>,
@@ -736,11 +950,14 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         };
         let parent = self.tracker.as_ref().map(|_| self);
         let cleanup = BorrowCleanup { parent };
-        // SAFETY: The borrow has been registered (or we're unchecked).
-        let slice = unsafe { &*rect.get_mut(self.as_mut_slice()).cast_const() };
+        // SAFETY: see `Self::index_rect_mut`.
+        let hull = unsafe { rect.get_mut(self.as_mut_slice()) };
         mem::forget(cleanup);
-        DisjointImmutGuard {
-            slice,
+        DisjointImmutRect {
+            base: hull.cast::<<T as AsMutPtr>::Target>().cast_const(),
+            w: rect.w,
+            h: rect.h,
+            stride: rect.stride,
             parent,
             borrow_id,
             phantom: PhantomData,
@@ -809,7 +1026,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     /// aarch64 instructions, of which a 112-byte frame, ten callee-saved
     /// spill/reload pairs and the call/ret are about half. The 112 bytes exist
     /// only to hold the `CastError` the cold `.unwrap()` path would report,
-    /// which is why this attribute and [`cast_slice_failed`] are ONE change:
+    /// which is why this attribute and `cast_slice_failed` are ONE change:
     /// they are strongly super-additive, and either alone is small enough to be
     /// mistaken for noise. Measured on 2aa00c5, v4k_8tile_10b t=1, paired
     /// per-round ratios vs that base, n=9, md5-identical, idle box:
@@ -850,7 +1067,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
 
     /// Immutably borrow a slice of a convertible type.
     ///
-    /// `#[inline(always)]` for the reason spelled out on [`Self::mut_slice_as`]:
+    /// `#[inline(always)]` for the reason spelled out on `DisjointMut::mut_slice_as`
     /// the wrapper is free at one byte per pixel and an out-of-line call with a
     /// 112-byte frame at two.
     #[inline(always)]
@@ -876,34 +1093,36 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
             .cast()
     }
 
-    /// [`Self::mut_slice_as`] for a [`StridedRows`] rectangle: the reference is
-    /// the hull, the registered record is the exact rectangle.
+    /// [`Self::mut_slice_as`] for a [`StridedRows`] rectangle: the registered
+    /// record is the exact rectangle, and the references handed out are ONE
+    /// ROW AT A TIME (see [`DisjointMutRect`]).
     ///
     /// There is no `check_cast_slice_len` here because [`StridedRows`] is not a
     /// [`SliceBounds`] — it deliberately is not, so that the blanket
     /// `From<T: SliceBounds> for Bounds` (which would erase the shape back to a
     /// plain interval) cannot apply to it. The length assertion it would make
-    /// is `slice.len() == hull.len()`, which `cast_slice` on a `V`-multiple
-    /// range already gives.
+    /// is per-row here, and holds by construction: `mul` scales `w` and
+    /// `stride` by `size_of::<V>()`, so `cast_rows` only has to check the base
+    /// alignment.
     #[inline(always)]
     #[track_caller]
-    pub fn mut_rect_as<'a, V>(&'a self, rect: StridedRows) -> DisjointMutGuard<'a, T, [V]>
+    pub fn mut_rect_as<'a, V>(&'a self, rect: StridedRows) -> DisjointMutRect<'a, T, V>
     where
         V: IntoBytes + FromBytes + KnownLayout,
     {
         self.index_rect_mut(rect.mul(mem::size_of::<V>()))
-            .cast_slice()
+            .cast_rows()
     }
 
     /// [`Self::slice_as`] for a [`StridedRows`] rectangle. See
     /// [`Self::mut_rect_as`].
     #[inline(always)]
     #[track_caller]
-    pub fn rect_as<'a, V>(&'a self, rect: StridedRows) -> DisjointImmutGuard<'a, T, [V]>
+    pub fn rect_as<'a, V>(&'a self, rect: StridedRows) -> DisjointImmutRect<'a, T, V>
     where
         V: FromBytes + KnownLayout + Immutable,
     {
-        self.index_rect(rect.mul(mem::size_of::<V>())).cast_slice()
+        self.index_rect(rect.mul(mem::size_of::<V>())).cast_rows()
     }
 }
 
@@ -1093,11 +1312,17 @@ impl<T: SliceBounds> From<T> for Bounds {
 /// traffic switching to per-row guards
 /// (`benchmarks/t8_scaling_diag_2026-08-09.meta`).
 ///
-/// This index gives the tracker the third option: the hull as the *reference*,
-/// the exact rectangle as the *record*. `Self::to_range` is the hull (that is
-/// what the returned slice covers, and what `DisjointMutIndex` hands out), while
-/// [`Bounds::row_w`]/[`Bounds::rows`] carry the shape, so the overlap test can
-/// exclude the gaps instead of reserving them.
+/// This index gives the tracker the third option: ONE registration of the
+/// exact rectangle, with the guard handing out one ROW at a time.
+/// The rectangle's HULL is the extent that gets bounds-checked against the container
+/// and is where the base pointer comes from; the shape travels to the tracker
+/// as two scalars alongside it, so the overlap test can exclude
+/// the gaps instead of reserving them.
+///
+/// The reference shape matters as much as the record shape and for a different
+/// reason: the record decides what the tracker *rejects*, the reference decides
+/// what the Rust aliasing model *permits*. A hull reference would make two
+/// accepted tile columns two overlapping `&mut`. See [`DisjointMutRect`].
 ///
 /// `stride` is in elements and must be positive; callers with a negative
 /// picture stride pass the rows in reverse order (lowest address first), which
@@ -1408,6 +1633,29 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
 }
 
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointImmutGuard<'a, T, V> {
+    fn drop(&mut self) {
+        if let Some(parent) = self.parent {
+            parent.tracker.as_ref().unwrap().remove(self.borrow_id);
+        }
+    }
+}
+
+impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointMutRect<'a, T, V> {
+    fn drop(&mut self) {
+        if let Some(parent) = self.parent {
+            let tracker = parent.tracker.as_ref().unwrap();
+            // Same rule as `DisjointMutGuard`: a mutable guard dropped during
+            // an unwind may leave the elements half-written.
+            #[cfg(feature = "std")]
+            if std::thread::panicking() {
+                tracker.poison();
+            }
+            tracker.remove(self.borrow_id);
+        }
+    }
+}
+
+impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointImmutRect<'a, T, V> {
     fn drop(&mut self) {
         if let Some(parent) = self.parent {
             parent.tracker.as_ref().unwrap().remove(self.borrow_id);

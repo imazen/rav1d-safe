@@ -155,6 +155,15 @@ pub fn with_pixel_guard_mut<BD: BitDepth, R>(
 /// for the rationale on why wide guards (`strided_slice_mut` / `narrow_guard`)
 /// are unsafe under tile threading even in the immutable case (they cover
 /// `(h-1)*stride + w` bytes and overlap with adjacent tiles' mutable ranges).
+///
+/// That rationale is why the [`StridedRows`] rectangle does NOT belong on this
+/// branch: this closure's contract is a FLAT byte slice with a stride, i.e. a
+/// hull reference, and narrowing the tracker's *record* does not narrow the
+/// *reference*. Registering the rectangle here and handing `f` the hull was
+/// tried on `perf/strided-rect` and is exactly the aliasing the row-view guard
+/// exists to prevent. The rectangle's registration win reaches this path
+/// anyway, one level down: [`Rav1dPictureDataComponentOffset::compact_read_per_row`]
+/// takes ONE rect borrow and copies through it row by row.
 #[inline]
 pub fn with_pixel_guard_immut<BD: BitDepth, R>(
     pic: &crate::src::with_offset::WithOffset<&Rav1dPictureDataComponent>,
@@ -164,7 +173,7 @@ pub fn with_pixel_guard_immut<BD: BitDepth, R>(
 ) -> R {
     use crate::src::strided::Strided as _;
     let pixel_size = core::mem::size_of::<BD::Pixel>();
-    if tile_threading_active() && !pic.rect_is_exact_for::<BD>() {
+    if tile_threading_active() {
         let (buf, byte_stride) = pic.compact_read_per_row::<BD>(w, h);
         let result = f(&buf, 0, byte_stride as isize);
         recycle_compact_scratch(buf);
@@ -198,8 +207,10 @@ use crate::src::assume::assume;
 #[cfg(feature = "c-ffi")]
 use crate::src::c_arc::RawArc;
 use crate::src::disjoint_mut::DisjointImmutGuard;
+use crate::src::disjoint_mut::DisjointImmutRect;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::disjoint_mut::DisjointMutGuard;
+use crate::src::disjoint_mut::DisjointMutRect;
 #[cfg(feature = "c-ffi")]
 use crate::src::disjoint_mut::ExternalAsMutPtr;
 use crate::src::disjoint_mut::SliceBounds;
@@ -558,23 +569,31 @@ impl Rav1dPictureDataComponent {
             .rect_exact_for(pxstride * mem::size_of::<BD::Pixel>())
     }
 
-    /// One immutable borrow covering a `w x h` strided rectangle.
+    /// One immutable borrow covering a `w x h` strided rectangle, handing out
+    /// references ONE ROW AT A TIME.
+    ///
+    /// The row view is not a convenience — it is the soundness condition. A
+    /// reference over the rectangle's hull would cover the inter-row gaps that
+    /// the record deliberately leaves to other tile columns, so two accepted
+    /// columns would hold overlapping references. See
+    /// [`rav1d_disjoint_mut::DisjointMutRect`].
     #[inline]
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub(crate) fn rect<'a, BD: BitDepth>(
         &'a self,
         rect: StridedRows,
-    ) -> DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]> {
+    ) -> DisjointImmutRect<'a, Rav1dPictureDataComponentInner, BD::Pixel> {
         self.dm().rect_as::<BD::Pixel>(rect)
     }
 
-    /// One mutable borrow covering a `w x h` strided rectangle.
+    /// One mutable borrow covering a `w x h` strided rectangle. See
+    /// [`Self::rect`].
     #[inline]
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub(crate) fn rect_mut<'a, BD: BitDepth>(
         &'a self,
         rect: StridedRows,
-    ) -> DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]> {
+    ) -> DisjointMutRect<'a, Rav1dPictureDataComponentInner, BD::Pixel> {
         self.dm().mut_rect_as::<BD::Pixel>(rect)
     }
 
@@ -866,10 +885,13 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// from the picture, because the compact buffer has its own stride.
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn block_mut<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
-        // A rectangle borrow claims no inter-row gap, so under tile threading
-        // it does the whole job of the compact copy — no scratch buffer, no
-        // read pass, no write-back pass, one registration instead of `2h`.
-        if tile_threading_active() && !self.rect_is_exact_for::<BD>() {
+        // The direct branch hands the caller a FLAT slice over the hull, which
+        // is only sound while nothing else can be writing the same rows — see
+        // `narrow_guard`. So the gate stays `tile_threading_active()`, and the
+        // rectangle's registration win reaches the compact branch from inside
+        // `compact_read_per_row` / `compact_write_back_per_row`, which reserve
+        // the block ONCE and copy through per-row references (`2h` -> `2`).
+        if tile_threading_active() {
             #[cfg(feature = "held-row-guards")]
             if w != 0 && h != 0 && h <= MAX_HELD_ROWS {
                 return self.block_mut_held::<BD>(w, h);
@@ -987,13 +1009,16 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
 
     /// Create a tracked immutable guard covering exactly a w×h pixel block.
     ///
-    /// On a positive stride the borrow is registered as a [`StridedRows`]
-    /// RECTANGLE, so the guard's inter-row gaps are covered by the reference
-    /// but NOT reserved against other tile columns wherever the tracker can
-    /// record the shape exactly ([`Rav1dPictureDataComponent::rect_exact`]).
-    /// Where it cannot, the record degrades to the hull — which is what this
-    /// always did, and is why the callers still consult
-    /// [`Self::rect_is_exact`] before choosing this over per-row borrows.
+    /// # Why this is NOT a [`StridedRows`] rectangle
+    ///
+    /// It hands the caller a FLAT slice over the hull, and a hull reference is
+    /// only sound when the hull is also what was reserved — otherwise two tile
+    /// columns of the same rows hold overlapping `&`/`&mut`, which is UB
+    /// however exact the tracker's record is. So this stays a plain hull borrow
+    /// and its callers keep gating on [`tile_threading_active`], exactly as
+    /// before. The rectangle's registration win lands on the per-row helpers
+    /// instead ([`Self::for_rows`], [`Self::compact_read_per_row`],
+    /// [`Self::compact_write_back_per_row`]), which never expose the gaps.
     #[inline]
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn narrow_guard<BD: BitDepth>(
@@ -1013,13 +1038,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             (h - 1) * abs_stride + w
         };
         if pxstride >= 0 {
-            let guard = self.data.rect::<BD>(StridedRows {
-                start: self.offset,
-                w,
-                h,
-                stride: abs_stride,
-            });
-            debug_assert_eq!(guard.len(), total);
+            let guard = self.data.slice::<BD, _>((self.offset.., ..total));
             (guard, 0)
         } else {
             let start = self.offset + 1 - total;
@@ -1116,16 +1135,19 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         // tile threading it reserves only the `w` elements of each row and the
         // gaps stay available to the tile columns that own them; as the plain
         // hull otherwise, which is the pre-existing single-threaded behaviour.
-        let guard = if pxstride > 0 {
-            self.data.rect::<BD>(StridedRows {
+        if pxstride > 0 {
+            let guard = self.data.rect::<BD>(StridedRows {
                 start: lo,
                 w,
                 h,
                 stride: abs_stride,
-            })
-        } else {
-            self.data.slice::<BD, _>((lo.., ..total))
-        };
+            });
+            for row in 0..h {
+                f(row, guard.row(row));
+            }
+            return;
+        }
+        let guard = self.data.slice::<BD, _>((lo.., ..total));
         for row in 0..h {
             let idx = if pxstride >= 0 {
                 row * abs_stride
@@ -1166,16 +1188,19 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             self.offset - (h - 1) * abs_stride
         };
         // ONE borrow — see [`Self::for_rows`].
-        let mut guard = if pxstride > 0 {
-            self.data.rect_mut::<BD>(StridedRows {
+        if pxstride > 0 {
+            let mut guard = self.data.rect_mut::<BD>(StridedRows {
                 start: lo,
                 w,
                 h,
                 stride: abs_stride,
-            })
-        } else {
-            self.data.slice_mut::<BD, _>((lo.., ..total))
-        };
+            });
+            for row in 0..h {
+                f(row, guard.row_mut(row));
+            }
+            return;
+        }
+        let mut guard = self.data.slice_mut::<BD, _>((lo.., ..total));
         for row in 0..h {
             let idx = if pxstride >= 0 {
                 row * abs_stride
@@ -1257,11 +1282,8 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
                 h,
                 stride: abs_stride,
             });
-            let src = guard.as_bytes();
-            let src_stride = abs_stride * pixel_size;
             for row in 0..h {
-                buf[row * byte_stride..][..byte_stride]
-                    .copy_from_slice(&src[row * src_stride..][..byte_stride]);
+                buf[row * byte_stride..][..byte_stride].copy_from_slice(guard.row(row).as_bytes());
             }
             return (buf, byte_stride);
         }
@@ -1331,10 +1353,10 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
                 h,
                 stride: abs_stride,
             });
-            let dst_stride = abs_stride * pixel_size;
-            let dst = guard.as_mut_bytes();
             for row in 0..h {
-                dst[row * dst_stride..][..byte_stride]
+                guard
+                    .row_mut(row)
+                    .as_mut_bytes()
                     .copy_from_slice(&buf[row * byte_stride..][..byte_stride]);
             }
             return;
@@ -1458,14 +1480,9 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             (h - 1) * abs_stride + w
         };
         if pxstride >= 0 {
-            // Registered as a RECTANGLE — see [`Self::narrow_guard`].
-            let guard = self.data.rect_mut::<BD>(StridedRows {
-                start: self.offset,
-                w,
-                h,
-                stride: pxstride.unsigned_abs(),
-            });
-            debug_assert_eq!(guard.len(), total);
+            // A FLAT hull reference, so a plain hull borrow — see
+            // [`Self::narrow_guard`] for why the rectangle does not belong here.
+            let guard = self.data.slice_mut::<BD, _>((self.offset.., ..total));
             (guard, 0)
         } else {
             // Negative stride: rows go upward, so the first pixel row

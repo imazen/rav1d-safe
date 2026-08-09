@@ -577,7 +577,7 @@ struct ShardRecs {
     /// Inclusive COLUMN range of the record, when the instance has a
     /// [`RowMap`]; `0 ..= `[`COL_ANY`] otherwise.
     ///
-    /// # Why the hull test plus this is EXACT
+    /// # Hull plus columns is exact BETWEEN TWO RECTANGLES, and only there
     ///
     /// A record is a set of rows `[r0,r1]` crossed with columns `[c0,c1]`, and
     /// its hull is `r0*S + c0 ..= r1*S + c1`. Two rectangles genuinely overlap
@@ -590,10 +590,32 @@ struct ShardRecs {
     /// two cheap comparisons together are the exact test with no row arithmetic
     /// at all.
     ///
-    /// A record whose column range is `0..=COL_ANY` is a superset claim (it is
-    /// what an interval crossing a row boundary, or any borrow on a non-strided
-    /// instance, registers), so it degrades to today's plain hull test — which
-    /// can only ever be conservative, never miss.
+    /// **That argument needs BOTH records to carry a real column range, so it
+    /// is not a claim about the predicate as a whole.** A record whose column
+    /// range is `0..=COL_ANY` is a superset claim — it is what an interval
+    /// crossing a row boundary registers ([`RowMap::locate`]'s
+    /// `c0 + width > stride` arm), and what every borrow on a non-strided
+    /// instance registers — and against one of those the test degrades to the
+    /// plain hull test, which is conservative but never misses.
+    ///
+    /// MEASURED residual (`tests/rect_oracle.rs`, byte-set oracle, eight plane
+    /// shapes, 1,600,000 randomized pairs): **0 missed overlaps** and 2,163
+    /// conservative false positives — 0.14% of the disjoint pairs — **every one
+    /// of them involving a row-crossing interval**. A false positive here is a
+    /// spurious `overlapping DisjointMut` panic, i.e. a DECODE FAILURE, so this
+    /// number is a budget, not a curiosity: it is what bounds how far the
+    /// interval-shaped call sites can be widened before the class matters.
+    ///
+    /// The exact fix, NOT implemented: a contiguous row-crossing interval
+    /// covers `[c0, S)` of its first row, everything in between, and `[0, c1]`
+    /// of its last — which one `contig` bit per slot plus a three-probe test
+    /// (at `max(ra0,rb0)`, at `min(ra1,rb1)`, and at any row strictly between,
+    /// where both records are necessarily in their "interior" state) decides
+    /// exactly. It was left out deliberately: the bit has no free home in the
+    /// 128-byte record (`SLOTS` already dropped 7 -> 5 to fit `c0`/`c1`), and
+    /// the failure mode of getting a hand-written three-probe test wrong is a
+    /// MISSED overlap — two aliasing `&mut` — which is the direction that must
+    /// never regress for a false-positive win.
     c0: [u16; SLOTS],
     c1: [u16; SLOTS],
     /// Registration site, for the overlap panic message.
@@ -1291,7 +1313,14 @@ impl RowMap {
         // `len < 2^32` is Lemire's precondition; `stride <= COL_ANY` keeps every
         // real column distinguishable from the "any column" sentinel; the lower
         // bound keeps `col_shift` meaningful and rules out degenerate strides.
-        if stride < 16 || stride > MAX_ROW_STRIDE || len >= (1usize << 32) || len < stride {
+        //
+        // The length bound is computed in `u64`, not `1usize << 32`: on a 32-bit
+        // target that shift is an overflow the `arithmetic_overflow` lint makes
+        // a hard error, and it broke both i686 CI legs and `wasm32-wasip1`
+        // (`cargo check` does not reach the MIR pass that raises it, so the
+        // cross job could not see it). Every `usize` satisfies the bound there,
+        // which is exactly what this spelling says.
+        if !(16..=MAX_ROW_STRIDE).contains(&stride) || len as u64 >= (1u64 << 32) || len < stride {
             return Self::DISABLED;
         }
         let magic = (u64::MAX / stride as u64) + 1;
@@ -1313,7 +1342,7 @@ impl RowMap {
         // land on different shards — is untouched.
         let col_shift = (stride.ilog2()).saturating_sub(COL_BAND_ADJ);
         let bands = ((stride - 1) >> col_shift) + 1;
-        let col_bits = usize::BITS - (bands as usize).leading_zeros();
+        let col_bits = usize::BITS - bands.leading_zeros();
         Self {
             stride: stride as u32,
             magic,
