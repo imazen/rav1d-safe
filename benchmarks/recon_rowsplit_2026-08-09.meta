@@ -1,0 +1,257 @@
+DESIGN A (STATIC ROW-SPLIT FOR TILE RECONSTRUCTION) — SCOUTED, BLOCKED, AND THE
+LARGEST SOUND SUBSET LANDED AND MEASURED (issue #455)
+================================================================================
+
+Host      Apple M4 Pro, 8 P + 4 E cores (12 logical), Darwin 25.5.0. Idle box.
+Base      main ee07b00 (the #467 merge). NOT 8568dbb — see section 1.
+Branch    perf/recon-rowsplit @ a996a57.
+Build     cargo build --release, default features, NO -C target-cpu=native.
+Timing    NO `nice` on any timed run. Two-point wall fit (2 and 20 frames,
+          beta = (hi - lo) / 18) so process startup drops out.
+dav1d     1.5.4 at --framedelay 1, measured in the SAME interleaved sweep.
+Files     recon_rowsplit_gap_2026-08-09.tsv    216 rows, 9 complete rounds
+          recon_rowsplit_sites_2026-08-09.tsv  registration census, base + head,
+                                               t=1 and t=8, 68 sites each
+
+
+0. WHAT WAS ASKED, AND WHAT THE DATA CHOSE
+--------------------------------------------------------------------------------
+The site-class round (perf/site-class, #455 comment) priced the borrow tracker
+by call-site class to decide between two designs:
+
+  A  static row-split of the picture buffer at tile setup, removing the tracker
+     from tile RECONSTRUCTION. `chunks_mut(stride)` yields provably disjoint
+     rows, `split_at_mut` at tile column boundaries yields provably disjoint
+     per-tile segments — safe Rust, no `unsafe`, computed once.
+  B  a non-atomic serial tracker behind the monotone parallelism latch. t=1 only.
+
+Its verdict, against a rule pre-registered at 2b5e41f: **A**, because A's share
+of the excess over the 1.30x bar HOLDS across thread counts (33-58% at every
+t > 1 cell) while B is structurally t=1-only. That reasoning was re-derived from
+its raw 480 rows here and reproduces exactly (cls_recon+big deltas 10.6 / 12.2 /
+12.4 / 7.3 ms at 8bpc t=1/2/4/8; 13.3 / 15.8 / 15.3 / 12.1 at 10bpc).
+
+This round built A. The result is in three parts, worst first.
+
+
+1. DESIGN A AS SPECIFIED CANNOT BE WRITTEN IN SAFE RUST IN THIS ARCHITECTURE
+--------------------------------------------------------------------------------
+The design's premise is that a `&mut` to the picture plane exists at tile setup
+to split. **It does not, anywhere, at any thread count.** Traced in source:
+
+  include/dav1d/picture.rs:1287  `Rav1dPicture::data: Option<Arc<Rav1dPictureData>>`
+                                 — the planes live behind an `Arc` that is
+                                 shared with `sr_cur`, the reference-frame slots
+                                 and the output queue while the frame decodes.
+  src/internal.rs:803            `Rav1dFrameContext::data: RwLock<Rav1dFrameData>`
+  src/thread_task.rs:1237        the tile task opens `fc.data.try_read()` and
+        (and :1416, :1436, :1451) calls `rav1d_decode_tile_sbrow(c, &mut tc, &f)`
+                                 with `&Rav1dFrameData`. Every filter task does
+                                 the same. Read guards are shared — that IS the
+                                 tile parallelism — so no task ever holds `&mut`.
+  src/lib.rs:221-225             workers are `'static` threads spawned once at
+                                 context creation, pulling from a global task
+                                 queue. No scoped-thread lifetime can carry a
+                                 borrow of a frame's buffer into them, and the
+                                 queue is shared across frames by design.
+
+So the only route from `&DisjointMut<PicBuf>` to `&mut [Pixel]` rows is the one
+`DisjointMut` already provides — a runtime-checked guard. A "static split" here
+would mean handing out `&mut` on a hand-written invariant instead of a compiler
+proof, i.e. writing the `unsafe` the task's soundness section says to STOP on.
+Per that instruction: STOPPED, not written.
+
+Note this is upstream of the obstacle the task expected. The expected hard part
+was recon's access pattern (overlapping simultaneous views). That part is
+actually FINE — `ipred_prepare` materialises the neighbour edge into a scratch
+array first, so the prediction kernels are pure block writers, and intra reads
+provably do not cross a tile column (`src/ipred_prepare.rs:127-131`, `:229`).
+The blocker is ownership, not aliasing.
+
+The measurement round checked the access-pattern premise in source and reported
+it holding. It did not check the `&mut`-availability premise. That is the gap
+between "A is the right target" and "A is buildable".
+
+
+2. A'S REALIZABLE MECHANISM ALREADY LANDED, 44 MINUTES AFTER THE DECISION'S BASE
+--------------------------------------------------------------------------------
+There IS a form of A that works: take ONE tracker registration over the strided
+hull, then let borrowck split THAT into rows. The `&mut` comes from a guard
+instead of from tile setup; the row-disjointness proof is still the compiler's.
+
+That is exactly `for_rows` / `for_rows_mut`, merged as #467 (ee07b00,
+2026-08-08 16:44) — after the site-class base 8568dbb. It is already applied to
+every top `recon+big` site the decision was computed on (`ipred_arm.rs` cfl_pred,
+`ipred.rs` splat_dc / z1 / z2 / paeth / smooth*, cdef read+write). Registrations
+per frame at 8bpc t=1 went 15,646,727 -> 7,924,706.
+
+**And it is gated off above one thread, by construction and necessarily.** The
+hull reserves the inter-row gaps; AV1 tiles partition a frame by COLUMNS, so a
+neighbouring tile's legitimate write lands in a reserved gap and the tracker
+reports a false overlap (#467 measured 8-9 spurious panics in 24 concurrent runs
+before the latch). Verified here: the t=8 census is 22,700,725 registrations on
+BOTH 8568dbb and ee07b00 — bit-for-bit unmoved.
+
+Consequence for the decision: **the property A was chosen for — a share that
+holds across thread counts — is not available to any realizable form of A in
+this architecture.** Every form that can be written is t=1-only, which is B's
+coverage. The choice between A and B was sound on the numbers and is moot on the
+architecture.
+
+
+3. WHAT THIS ROUND BUILT: THE ONE PICTURE SITE #467 COULD NOT CONVERT
+--------------------------------------------------------------------------------
+#467 §5c left exactly one `recon+big` site undone, and left it for the reason
+the task named as the hard part: `cfl_ac` needs a luma row AND the row below it
+LIVE AT ONCE (4:2:0 chroma AC averages a row pair), and `for_rows`'s callback
+owns a row's guard for exactly its own duration.
+
+`Rav1dPictureDataComponentOffset::for_row_pairs` adds that one degree of freedom
+— `n` logical rows at `step`, each optionally with the picture row beneath it —
+under the SAME hull-vs-per-row policy, with no copy in either branch. Both
+borrows are immutable, so the pair cannot conflict with itself: two subslices of
+one guard in the hull branch, two live guards in the per-row branch.
+
+Registrations per frame, `v4k_8tile` 8bpc, `--features probe-sites`:
+
+  cell   site (cfl_ac)              base        head       change
+  t=1    ipred_arm.rs cfl_ac      629,080      67,862     -89.2%
+         mean extent                10.2 B   31,766 B     (the hull)
+         FRAME TOTAL            7,924,706   7,363,488      -7.1%
+  t=8    ipred_arm.rs cfl_ac      629,080     629,080       0.0%
+         FRAME TOTAL           22,700,725  22,700,725       0.0%
+
+
+4. THE WALL-CLOCK RESULT IS A NULL, AT EVERY CELL
+--------------------------------------------------------------------------------
+9 complete rounds, 216 rows, 72 cells committed, 2 discarded and re-run for
+load, **ZERO rows under foreign load**. ms/frame, median [min..max] over n=9:
+
+  cell                base                    head                    dav1d   delta   disjoint
+  v4k_8tile t=1       319.2 [317.1..320.9]    318.1 [315.7..320.7]    246.5  -0.35%   no
+  v4k_8tile t=2       198.3 [197.3..198.7]    197.9 [197.3..199.8]    125.1  -0.17%   no
+  v4k_8tile t=4       107.3 [106.7..108.9]    106.9 [106.3..108.3]     65.6  -0.36%   no
+  v4k_8tile t=8        68.2 [ 65.1.. 68.8]     68.2 [ 65.0.. 69.3]     36.3  +0.08%   no
+  v4k_8tile_10b t=1   359.1 [356.9..361.1]    356.8 [355.3..360.1]    251.2  -0.63%   no
+  v4k_8tile_10b t=2   206.2 [205.5..207.9]    206.4 [204.6..207.2]    127.6  +0.11%   no
+  v4k_8tile_10b t=4   111.5 [110.4..114.1]    111.1 [110.3..113.4]     66.8  -0.40%   no
+  v4k_8tile_10b t=8    72.9 [ 69.5.. 75.2]     72.4 [ 69.3.. 73.9]     37.6  -0.69%   no
+
+  base/dav1d  1.295 1.585 1.635 1.879 (8bpc) | 1.429 1.617 1.668 1.941 (10bpc)
+  head/dav1d  1.291 1.582 1.629 1.881       | 1.420 1.618 1.662 1.928
+
+**DISJOINT AT 0 OF 8 CELLS.** Every head band overlaps its base band.
+
+Paired within-round (the statistic the interleaved rotation exists for), median
+of (head - base) per round with an exact two-sided sign test:
+
+  cell                median      %       sign(h<b)   p
+  v4k_8tile t=1        -1.33   -0.42%      6/9      0.508
+  v4k_8tile t=2        +0.17   +0.08%      3/9      0.508
+  v4k_8tile t=4        -0.28   -0.26%      8/9      0.039   <- see below
+  v4k_8tile t=8        -0.06   -0.08%      5/9      1.000
+  v4k_8tile_10b t=1    -2.17   -0.60%      6/9      0.508
+  v4k_8tile_10b t=2    +0.33   +0.16%      4/9      1.000
+  v4k_8tile_10b t=4    -0.06   -0.05%      5/9      1.000
+  v4k_8tile_10b t=8    +0.06   +0.08%      4/9      1.000
+
+**The t > 1 cells are a free NEGATIVE CONTROL**: the census proves the head
+registers byte-identical extents there, so any reading is noise by construction.
+One of them (8bpc t=4) comes back at p = 0.039. That is the harness's
+false-positive rate at n = 9 over 8 tests, and it is LARGER than every t=1
+reading's significance. So the t=1 medians (-0.42% / -0.60%, p = 0.508) are not
+distinguishable from that noise floor.
+
+Honest bound, both directions. The site-class rate for `recon+big` at 8bpc t=1
+is 10.6 ms over 4,309,973 registrations; the 561,218 removed here predict
+~1.4 ms (0.44%). The observed -1.33 ms paired median is the same order as that
+prediction — but the run-to-run spread is 4-5 ms, so this sweep **cannot resolve
+it**. This is "not resolvable at n=9", NOT "proven zero".
+
+This is the third time this campaign that cutting registration COUNT has failed
+to move wall clock (AGENT_BRIEF §6: `TinyLock`, `block_mut` held row guards).
+The count reduction here is real, verified and large (-89.2% at the site, -7.1%
+of the frame); the wall clock did not follow.
+
+
+5. GATES
+--------------------------------------------------------------------------------
+Corpus       md5_inventory over dav1d-test-data: pass=766 mismatch=0 error=0
+             skip=2. md5_setdiff.py BY NAME (md5 in the value) vs
+             benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst:
+             768 baseline / 768 head, only-in-baseline 0, only-in-head 0,
+             differing 0 — SETDIFF: CLEAN.
+Identity     decoded output byte-identical base vs head, 5 vectors x t{1,8}.
+Suite        cargo test --release: 0 failures. (decode_permutations 19/19 —
+             #455 item 6's "fails 16/19" was fixed by #466.)
+Threading    mt_stress 1/2/4/8/16 x 5 trials ok.
+             multi_decoder_pressure.sh 12 procs x 3 iters x threads {1,2,4,8,16}
+             x 5 vectors: PASS, every md5 matching the serial reference.
+disjoint-mut soundness 25/25, wide_exclusion 1/1, shard_liveness 5/5,
+             narrow_release 1/1, tracker unit 26/26.
+
+NEW MECHANISM GATE. Which extent `for_row_pairs` reserves is invisible in the
+decoded pixels, so it gets its own coverage in `row_guard_policy_tests`, both
+branches, plus a liveness test that it really yields both rows of every pair in
+the right order (without which the extent assertions would pass for a helper
+that silently yielded `None` and touched half the rows).
+
+TEETH BY MUTATION. Each planted, confirmed failing, restored from a sha256
+snapshot, re-verified green:
+
+  pad fill `last` -> `0`                     cfl_ac parity FAILS 3/3 depths
+  hull branch pairs row r with itself        cfl_ac parity FAILS 3/3 depths
+  for_row_pairs `tile_threading_active()`
+    -> `false` (hull always)                 threading-ON gate FAILS
+    -> `true`  (per-row always)              threading-OFF child gate FAILS
+
+PRE-EXISTING GATES re-proved to still have teeth on THIS tree, under
+`--features __probe_wide` (a gate this change made unreachable would be a
+regression even with everything green):
+
+  (a) the 4af62ae lock-ordering TOCTOU — `add`'s IN-LOCK `state` re-read deleted
+      -> `wide_exclusion` FAILS ("a narrow mutable borrow was granted inside a
+      wide mutable borrow that was provably still held").
+  (b) `active()` cut TO ONE shard -> `wide_exclusion` FAILS, same assertion.
+  Restored both by sha256 -c AND `git diff --exit-code`; green after.
+
+`#![forbid(unsafe_code)]` proved ACTIVELY, not by reading the attribute: a
+planted `unsafe { core::ptr::null::<u8>().read() }` in src/decode.rs fails the
+default build with "usage of an `unsafe` block"; restored, rebuild green.
+
+
+6. NOT MEASURED / STILL OPEN
+--------------------------------------------------------------------------------
+6a. DESIGN B WAS NOT BUILT and is not recommended by this round's data either.
+    Its ceiling (the whole tracker at t=1: 51.2 ms at 8bpc, 58.8 at 10bpc) is
+    still only a ceiling; its own share was never measured, by anyone.
+6b. THE t>1 COMPACT COPY IS STILL THERE and is still unmeasured. Above one
+    thread `block_mut` takes the Compact path: `compact_read_per_row` (h
+    registrations + a memcpy in) and `BlockMut::drop` ->
+    `compact_write_back_per_row` (h more + a memcpy out) — 2,662,876 +
+    1,864,816 registrations/frame at t=8 plus two memcpys per block, existing
+    ONLY because per-row guards are needed. A real static split would delete
+    the copy too. Nobody has priced the copy.
+6c. THE LARGEST REMAINING LEVERS, from this round's fresh census of ee07b00:
+      t=1 (7,363,488 total): ctx.rs:99 CaseSetter::set_disjoint 2,534,988 (34%)
+          — #467 §5b, sub-64-KiB BlockContext instances, needs a concurrency
+          argument about `f.a[t.a]` that nobody has established.
+      t=8 (22,700,725): loopfilter.rs:566 3,835,042 (17%);
+          picture.rs:1997 BlockMut write-back 2,662,876 (12%);
+          ctx.rs:99 2,534,988 (11%);
+          picture.rs:168 `with_pixel_guard_immut` per-row 2,336,708 (10%) —
+          that one is `ipred_prepare`'s LEFT-COLUMN read at w=1, i.e. 2.3 M
+          single-BYTE registrations. A column is not an interval, so no hull
+          can cover it; it would need a strided registration primitive in the
+          tracker itself.
+6d. NEITHER DESIGN CLEARS t=8 AND NEITHER CAN. The untracked ceiling is 1.339
+    (8bpc) / 1.390 (10bpc). Whatever closes t=8 is not tracker work. This round
+    changes nothing about that.
+6e. ONLY `v4k_8tile` / `v4k_8tile_10b`, only t=1/2/4/8, only aarch64. No
+    x86_64 build or run. Both 4K vectors are intra-only with loop restoration
+    OFF, so `mc_arm.rs` and `looprestoration*.rs` register ZERO borrows in this
+    grid while LR is active in 696 of 768 corpus vectors — the same structural
+    blindness AGENT_BRIEF §2 warns about, inherited unchanged.
+6f. `cfl_ac`'s scalar counterpart (`src/ipred.rs::cfl_ac_rust`) is NOT
+    converted; only the NEON dispatch path is. The scalar path runs when the
+    Arm64 token is absent or `Family::IntraPred` is ablated.
