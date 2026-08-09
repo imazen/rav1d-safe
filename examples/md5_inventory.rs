@@ -22,6 +22,17 @@
 //!                      AND at 8: at 1 the tile workers never start, so a
 //!                      single-threaded-only gate cannot see a borrow-tracker
 //!                      or threading regression at all.
+//!   --skip-group <s>   EXCLUDE meson groups whose relative path contains this;
+//!                      repeatable. The threaded run needs it: issue #479 —
+//!                      `rav1d_apply_grain_row` gives each worker one row band
+//!                      while `filmgrain_arm.rs` takes a whole-plane mutable
+//!                      guard per row — aborts 13 of 768 vectors at
+//!                      `--threads > 1` on unmodified `main`. Skipping is the
+//!                      only way to run the other 755 threaded at all, and
+//!                      naming what was skipped is the only honest way to
+//!                      report the result. The count of skipped groups is
+//!                      printed on the TOTAL line so a silently-empty filter
+//!                      cannot pass as a full run.
 
 use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
 use std::io::Write;
@@ -217,6 +228,7 @@ fn decode_md5(ivf_path: &Path, apply_grain: bool, threads: u32) -> Result<(Strin
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut group_filter: Option<String> = None;
+    let mut skip_groups: Vec<String> = Vec::new();
     let mut name_filter: Option<String> = None;
     let mut activity = false;
     // The corpus gate defaulted to one thread, which made it structurally
@@ -229,6 +241,14 @@ fn main() {
         match args[i].as_str() {
             "--group" => {
                 group_filter = args.get(i + 1).cloned();
+                i += 2;
+            }
+            "--skip-group" => {
+                skip_groups.push(
+                    args.get(i + 1)
+                        .cloned()
+                        .expect("--skip-group needs a substring"),
+                );
                 i += 2;
             }
             "--name" => {
@@ -287,11 +307,17 @@ fn main() {
 
     let (mut pass, mut fail, mut err, mut skip) = (0usize, 0usize, 0usize, 0usize);
 
+    let mut skipped_groups = 0usize;
     for &(group, grain) in MESON_GROUPS {
         if let Some(g) = &group_filter {
             if !group.contains(g.as_str()) {
                 continue;
             }
+        }
+        if skip_groups.iter().any(|s| group.contains(s.as_str())) {
+            eprintln!("SKIPPED GROUP {group}");
+            skipped_groups += 1;
+            continue;
         }
         let meson = base.join(group);
         if !meson.exists() {
@@ -369,5 +395,8 @@ fn main() {
         eprintln!("done {group_key}");
     }
 
-    eprintln!("TOTAL threads={threads} pass={pass} mismatch={fail} error={err} skip={skip}");
+    eprintln!(
+        "TOTAL threads={threads} pass={pass} mismatch={fail} error={err} skip={skip} \
+         skipped_groups={skipped_groups}"
+    );
 }

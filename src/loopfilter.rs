@@ -563,6 +563,9 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         {
             return Self::fill_hull::<W>(scratch, origin, stride, h);
         }
+        crate::include::dav1d::picture::row_branch_probe::hit(
+            &crate::include::dav1d::picture::row_branch_probe::PER_ROW,
+        );
         for row in 0..h {
             let off = origin.offset.wrapping_add_signed(row as isize * stride);
             let guard = PicOffset {
@@ -632,7 +635,15 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         // stride so the inter-row gaps stay available to other tile columns —
         // and handed out ONE ROW AT A TIME, so the reference never covers a gap
         // either (`DisjointImmutRect`).
-        if stride > 0 {
+        //
+        // `rect_is_exact_for` carries the `tile_threading_active()` latch, so
+        // with no tile worker alive this DECLINES and the plain hull guard
+        // below runs — `main`'s path, and the reason `fill_hull` existed before
+        // the rectangle did. See `Rav1dPictureDataComponentOffset::rect_is_exact`.
+        if stride > 0 && origin.rect_is_exact_for::<BD>() {
+            crate::include::dav1d::picture::row_branch_probe::hit(
+                &crate::include::dav1d::picture::row_branch_probe::RECT,
+            );
             let guard = origin.data.rect::<BD>(rav1d_disjoint_mut::StridedRows {
                 start: lo,
                 w: W,
@@ -655,6 +666,9 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             }
             return;
         }
+        crate::include::dav1d::picture::row_branch_probe::hit(
+            &crate::include::dav1d::picture::row_branch_probe::HULL,
+        );
         let guard = origin.data.slice::<BD, _>((lo.., ..total));
         for row in 0..h {
             let idx = if stride >= 0 {
@@ -1562,5 +1576,112 @@ mod neon_parity {
     #[test]
     fn neon_matches_scalar_12bpc() {
         sweep::<BitDepth16>(BitDepth16::new(4095), &ALL_WD);
+    }
+}
+
+/// MECHANISM gate for the loopfilter's copy of the hull-vs-rectangle choice.
+///
+/// [`LfBlock::fill`] is the decoder's single largest borrow site (3,835,042 of
+/// 15,646,727 registrations per frame at t=1) and it decides between the
+/// rectangle and the strided hull in its OWN code, not through
+/// `for_rows`/`for_rows_mut`. So the picture-side gate
+/// (`rect_declines_when_serial_tests`) does not cover it — verified by
+/// mutation: un-gating `fill_hull`'s `if stride > 0` left the entire `--lib`
+/// suite green (73 passed / 0 failed).
+///
+/// Same invisibility argument as the picture-side gate: with tile threading off
+/// the rectangle degrades to the very hull it is compared against, so neither
+/// the pixels nor the tracker's record can tell the branches apart, and only a
+/// `#[cfg(test)]` counter can.
+#[cfg(all(test, not(feature = "unchecked")))]
+mod lf_fill_branch_tests {
+    use super::{LfBlock, LfScratch};
+    use crate::include::common::bitdepth::BitDepth8;
+    use crate::include::dav1d::picture::{
+        Rav1dPictureDataComponent, row_branch_probe, set_tile_threading, tile_threading_active,
+    };
+    use crate::src::with_offset::WithOffset;
+
+    /// Over `SHARD_MIN_LEN` (64 KiB) so the instance is multi-shard once
+    /// parallelism is declared, which is what makes the rectangle EXACT and so
+    /// leaves the tile-threading latch as the only reason it can decline.
+    const STRIDE: usize = 1024;
+    const ROWS: usize = 256;
+    const W: usize = 4;
+    const H: usize = 4;
+
+    /// `(per_row, rect, hull)` for one `LfBlock::fill` on a fresh plane.
+    fn branch_taken() -> (usize, usize, usize) {
+        let mut buf = vec![0u8; STRIDE * ROWS];
+        let pic = Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut buf, STRIDE);
+        let origin = WithOffset {
+            data: &pic,
+            offset: 0,
+        };
+        let mut scratch = LfScratch::<BitDepth8>::new();
+        row_branch_probe::reset();
+        LfBlock::<BitDepth8>::fill::<W>(&mut scratch, origin, STRIDE as isize, H);
+        row_branch_probe::snapshot()
+    }
+
+    /// The threading-OFF half, in a CHILD PROCESS — `TILE_THREADING` is a
+    /// monotone process-global other tests in this binary latch on. The child's
+    /// MARKER LINE is checked, not its exit status: libtest exits 0 on an empty
+    /// filter (#459's vacuity mode).
+    #[test]
+    fn lf_fill_declines_the_rectangle_when_tile_threading_is_off() {
+        const MARKER: &str = "LF_FILL_DECLINE_CHILD_RAN";
+        const NAME: &str = "src::loopfilter::lf_fill_branch_tests::\
+                            lf_fill_declines_the_rectangle_when_tile_threading_is_off";
+        if std::env::var_os("RAV1D_LF_FILL_CHILD").is_some() {
+            assert!(
+                !tile_threading_active(),
+                "precondition: no decoder in this process may have latched tile \
+                 threading, or this is testing the other branch"
+            );
+            rav1d_disjoint_mut::set_parallelism(8);
+            let (per_row, rect, hull) = branch_taken();
+            assert_eq!(
+                (per_row, rect, hull),
+                (0, 0, 1),
+                "with tile threading OFF, `LfBlock::fill` must take the plain \
+                 strided hull; got (per_row, rect, hull) = ({per_row}, {rect}, {hull})"
+            );
+            println!("{MARKER}");
+            return;
+        }
+        let exe = std::env::current_exe().expect("test binary path");
+        let out = std::process::Command::new(exe)
+            .args(["--exact", NAME, "--nocapture"])
+            .env("RAV1D_LF_FILL_CHILD", "1")
+            .output()
+            .expect("re-exec the test binary");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains(MARKER),
+            "the child process did not reach the assertions (renamed test? \
+             libtest exits 0 on an empty filter). status={:?}\nstdout:\n{}\nstderr:\n{}",
+            out.status,
+            stdout,
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(out.status.success(), "child failed:\n{stdout}");
+    }
+
+    /// The threading-ON half: the rectangle must still be taken where it pays,
+    /// or deleting it outright would pass the gate above.
+    #[test]
+    fn lf_fill_still_takes_the_rectangle_when_tile_threading_is_on() {
+        rav1d_disjoint_mut::set_parallelism(8);
+        set_tile_threading(true);
+        assert!(tile_threading_active());
+        let (per_row, rect, hull) = branch_taken();
+        assert_eq!(
+            (per_row, rect, hull),
+            (0, 1, 0),
+            "with tile threading ON and a multi-shard plane the rectangle is what \
+             removes this site's per-row split; got (per_row, rect, hull) = \
+             ({per_row}, {rect}, {hull})"
+        );
     }
 }

@@ -1,0 +1,115 @@
+rect-t1-decline — REFUTED. #472's t=1 cost is NOT the rectangle code path.
+================================================================================
+
+Date        2026-08-09
+Host        Apple M4 Pro (8P + 4E, 12 logical), macOS 26.5.2, idle box
+Base        main @ cebb97f
+Branch      perf/rect-t1-decline  (main + `git merge fix/rect-rowview` + the gate)
+Data        benchmarks/rect_t1_decline_gap_2026-08-09.tsv   (288 rows, foreign_max = 0 on ALL of them)
+Reference   dav1d 1.5.4, `--framedelay 1`, measured in the SAME interleaved sweep
+Instrument  scripts/perf/verify_gap.sh, two-point wall fit at 2 and 20 frames,
+            rotating arm order, strict idle gate (3 cell-rounds discarded and re-run),
+            n = 9 complete rounds, no `nice` on any timed run, no -C target-cpu=native
+
+THE HYPOTHESIS
+--------------
+#472 (the sound strided-rectangle record) wins big at t>1 and regresses 8bpc
+t=1 from main's 1.285x to 1.320x, losing the campaign's only cell under the
+~1.30x bar. #469's verification round priced that as "+0.71 ns on every
+surviving registration while removing ZERO registrations", and the reasoning was
+that the per-row split the rectangle collapses only exists once
+`tile_threading_active()` latches — so at t=1 the rectangle can only add cost.
+
+Predicted composite from declining the rectangle at t=1: 1.285 / 1.418 / 1.417 / 1.575.
+
+THE RESULT
+----------
+ms/frame, median [min..max] over 9 rounds:
+
+  vector          t     p1_main               p1_rect (#472)        p1_gated (decline)    dav1d_fd1
+  v4k_8tile       1     321.8 [310.9..325.2]  329.2 [318.7..330.1]  328.2 [322.4..330.6]  246.5 [238.4..246.6]
+  v4k_8tile       2     197.9 [196.7..199.1]  177.6 [176.6..179.5]  177.6 [177.0..178.6]  125.1 [123.6..125.1]
+  v4k_8tile       4     106.8 [106.6..107.1]   92.7 [ 92.0.. 93.8]   92.8 [ 92.6.. 93.7]   65.6 [ 65.6.. 65.7]
+  v4k_8tile       8      66.6 [ 64.6.. 70.0]   55.9 [ 53.8.. 58.6]   56.2 [ 53.9.. 58.8]   35.6 [ 34.3.. 37.5]
+  v4k_8tile_10b   1     361.8 [359.7..366.7]  362.3 [361.0..367.8]  366.7 [363.7..368.1]  251.4 [249.6..251.8]
+  v4k_8tile_10b   2     206.6 [205.4..207.9]  191.9 [190.9..192.3]  191.5 [190.8..192.2]  127.6 [127.4..127.9]
+  v4k_8tile_10b   4     110.7 [109.8..112.1]   99.8 [ 99.2..102.6]  100.1 [ 99.7..103.1]   66.7 [ 66.7.. 66.9]
+  v4k_8tile_10b   8      71.9 [ 68.7.. 73.4]   63.4 [ 58.9.. 65.9]   64.0 [ 59.8.. 65.3]   37.5 [ 35.6.. 38.7]
+
+Ratio to dav1d --framedelay 1:
+
+                  t=1     t=2     t=4     t=8
+  8bpc  main     1.306   1.582   1.627   1.869
+  8bpc  #472     1.335   1.420   1.412   1.569
+  8bpc  gated    1.331   1.420   1.415   1.577
+  10bpc main     1.439   1.619   1.659   1.917
+  10bpc #472     1.441   1.504   1.495   1.690
+  10bpc gated    1.459   1.501   1.500   1.707
+
+PAIRED WITHIN-ROUND RATIOS (the arms in one round saw the same machine state, so
+this is far tighter than either arm's own band; exact two-sided sign test):
+
+  gated / #472         median   band              p       verdict
+  8bpc  t=1            1.0005   [0.9916..1.0151]  1.000   NULL
+  8bpc  t=2            0.9972   [0.9873..1.0091]  0.508   NULL
+  8bpc  t=4            1.0036   [0.9887..1.0096]  0.508   NULL
+  8bpc  t=8            1.0050   [0.9751..1.0136]  0.180   NULL
+  10bpc t=1            1.0109   [1.0008..1.0157]  0.004   WORSE, 9/9 rounds agree
+  10bpc t=2/4/8        0.9994 / 1.0039 / 1.0075   0.508   NULL
+
+  gated / main         median   band              p
+  8bpc  t=1            1.0175   [1.0092..1.0372]  0.004   the #472 t=1 cost SURVIVES the gate
+  10bpc t=1            1.0111   [1.0030..1.0199]  0.004   likewise
+
+**Declining the rectangle at t=1 buys NOTHING (8bpc t=1 paired 1.0005) and costs
+1.1% at 10bpc t=1 (the extra monotone-latch load in the predicate).** The whole of
+#472's t=1 regression is still there with the rectangle path provably dead.
+
+WHAT THAT MEANS, AND WHAT IS NOW RULED OUT
+------------------------------------------
+The +0.71 ns/registration is NOT paid by the rectangle. It is paid by every
+registration, including the plain hull ones the rectangle never touches. Ruled
+out, each with its measurement:
+
+  * the rectangle CODE PATH (`rect_as`/`mut_rect_as` + `DisjointMutRect::row`
+    per row in place of one flat guard) — this round, paired 1.0005 at 8bpc t=1
+    with a `#[cfg(test)]` branch counter proving the path is dead;
+  * the per-`alloc` COLUMN STORES — #472's own `cols_ab` A/B (0.9966 / 1.0139 /
+    1.0037 at n=9, every band overlapping, sign inconsistent);
+  * the ROW MAP being consulted on the hot path — by inspection, not by timing:
+    `tracker_shard.rs`'s `add` dispatches `self.mask == 0` FIRST and returns
+    before `self.rowmap.enabled()` is read, and every instance is `mask == 0`
+    when no parallelism has been declared (`SHARDS_SERIAL == 1`).
+
+What is left, and NOT measured here: `add`'s two EXTRA PARAMETERS. #469 changed
+`add<IS_MUT>(&self, bounds)` into `add<IS_MUT>(&self, bounds, row_w: u32,
+rows: u32)`, and `add_mut`/`add_immut` pass `0, 0`. That is two extra arguments
+materialised on 7,924,706 calls per frame at t=1, on a path whose own comments
+price the CALL BARRIER at 4% of the tracker and describe it as latency-bound.
+The obvious test — a separate 1-argument `add_flat` for the non-rect entry
+points — was NOT run, and it has a known trap: an earlier attempt to duplicate
+this body for a different reason cost +0.9% on I-cache alone
+(`benchmarks/tracker_borrowcost_2026-08-08.tsv`, arm `fold`).
+
+Also worth carrying: **main measures 1.306 at 8bpc t=1 here, not 1.285.**
+1.285 is #475's figure on base ee07b00; this is cebb97f on the same box. The
+band [310.9..325.2] is 4.4% wide — the widest of any cell in this sweep — so
+t=1 sub-2% claims on this vector need the paired statistic, not the medians.
+
+VERDICT
+-------
+Do not merge the decline. Kept on the branch as the record, with its gates.
+
+GATES
+-----
+Frame md5 identical across all three arms, t = 1/2/4/8/16, both depths: 30 of 30
+  (a00c11f454328023c58af14d55544cff / 4f218411bc6ee4cc9c630fe827337fa2).
+Four new MECHANISM tests (the choice is invisible in the pixels AND in the
+  tracker's record, so only a `#[cfg(test)]` branch counter can see it), teeth
+  proved by three mutations, each restored byte-exact by sha256:
+    for_rows_mut un-gated -> picture OFF half FAILS
+    rectangle deleted     -> picture ON half FAILS
+    fill_hull un-gated    -> loopfilter OFF half FAILS  (and, before the
+                             loopfilter pair existed, left the entire --lib
+                             suite green: 73 passed / 0 failed)
+`cargo test --release --lib`: 75 passed / 0 failed.

@@ -44,6 +44,72 @@ pub fn tile_threading_active() -> bool {
     TILE_THREADING.load(Ordering::Relaxed)
 }
 
+/// TEST-ONLY recorder for which of the three branches
+/// [`Rav1dPictureDataComponentOffset::for_rows`] / `for_rows_mut` took.
+///
+/// The hull-vs-rectangle choice is invisible **twice over**: the decoded pixels
+/// are identical by construction, and so is the borrow tracker's *record* —
+/// with tile threading off a big plane is single-shard
+/// (`SHARDS_SERIAL == 1`), so `rect_exact_for` answers `false` and a rectangle
+/// registration degrades to exactly the hull it is being compared against. So
+/// a conflict-probe test like `row_guard_policy_tests` cannot tell the two
+/// apart, and without this counter a regression that puts t=1 back on the
+/// rectangle path — the +0.71 ns/registration this branch exists to avoid —
+/// would leave every test in the tree green.
+///
+/// `#[cfg(test)]` only: no counter, no atomic and no call exists in a release
+/// build. `hit` is a no-op function so the call sites read the same in both
+/// configurations.
+/// The counters are THREAD-LOCAL, not global. libtest runs tests in parallel
+/// threads and `row_guard_policy_tests` exercises the same two functions, so a
+/// process-global counter is a race between the two suites — observed directly:
+/// the ON half passed alone and failed inside the suite.
+#[cfg(test)]
+pub(crate) mod row_branch_probe {
+    use core::cell::Cell;
+
+    /// One tracked borrow per row (`h` registrations).
+    pub(crate) const PER_ROW: usize = 0;
+    /// One tracked borrow recorded as an exact `w x h` rectangle.
+    pub(crate) const RECT: usize = 1;
+    /// One tracked borrow over the strided hull, gaps included.
+    pub(crate) const HULL: usize = 2;
+
+    thread_local! {
+        static COUNTS: [Cell<usize>; 3] = [const { Cell::new(0) }; 3];
+    }
+
+    #[inline(always)]
+    pub(crate) fn hit(which: &usize) {
+        let which = *which;
+        COUNTS.with(|c| c[which].set(c[which].get() + 1));
+    }
+
+    /// `(per_row, rect, hull)` on THIS thread since the last [`reset`].
+    pub(crate) fn snapshot() -> (usize, usize, usize) {
+        COUNTS.with(|c| (c[PER_ROW].get(), c[RECT].get(), c[HULL].get()))
+    }
+
+    pub(crate) fn reset() {
+        COUNTS.with(|c| {
+            for slot in c {
+                slot.set(0);
+            }
+        });
+    }
+}
+
+/// The release shape of [`row_branch_probe`]: nothing at all.
+#[cfg(not(test))]
+pub(crate) mod row_branch_probe {
+    pub(crate) const PER_ROW: usize = 0;
+    pub(crate) const RECT: usize = 1;
+    pub(crate) const HULL: usize = 2;
+
+    #[inline(always)]
+    pub(crate) fn hit(_which: &usize) {}
+}
+
 thread_local! {
     /// Reusable scratch buffers backing [`WithOffset::compact_read_per_row`]
     /// (and the pristine copy kept by the loopfilter's diff write-back).
@@ -1060,9 +1126,34 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// False on a negative stride (rows descend in memory, which
     /// [`StridedRows`] does not model) and whenever the plane's shape is
     /// outside the row map's range.
+    ///
+    /// # Why [`tile_threading_active`] is part of the predicate
+    ///
+    /// The rectangle exists to REMOVE the per-row split that
+    /// [`tile_threading_active`] switches on. With the latch clear there is no
+    /// split to remove — `for_rows`, `fill_hull` and friends already take ONE
+    /// hull registration — so a rectangle can only ADD: it registers the same
+    /// hull (a serial instance is single-shard, so
+    /// [`rav1d_disjoint_mut::DisjointMut::rect_exact_for`] would answer `false`
+    /// anyway and the record degrades to the hull) while paying the row map's
+    /// exact division and handing every row out through
+    /// [`rav1d_disjoint_mut::DisjointImmutRect::row`] instead of indexing one
+    /// flat guard.
+    ///
+    /// That cost was measured: the verification round for #469 priced it at
+    /// **+0.71 ns on every surviving registration with ZERO registrations
+    /// removed**, and #472 carried it as 8bpc t=1 **1.285x -> 1.320x** — losing
+    /// the campaign's only cell under the ~1.30x bar to buy nothing. So the
+    /// rectangle declines here and t=1 keeps `main`'s path exactly.
+    ///
+    /// Soundness is unaffected in both directions: the hull is a SUPERSET of
+    /// the rectangle, so it cannot miss an overlap, and with the latch clear no
+    /// tile worker can own the inter-row gaps it additionally reserves. That is
+    /// the same argument `block_mut` / [`with_pixel_guard_immut`] /
+    /// `compact_read` have always made for the identical latch.
     #[inline(always)]
     fn rect_is_exact<BD: BitDepth>(&self, pxstride: isize) -> bool {
-        pxstride > 0 && self.data.rect_exact::<BD>(pxstride as usize)
+        tile_threading_active() && pxstride > 0 && self.data.rect_exact::<BD>(pxstride as usize)
     }
 
     /// [`Self::rect_is_exact`] for callers that have not already loaded the
@@ -1117,6 +1208,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         }
         let pxstride = self.data.pixel_stride::<BD>();
         if tile_threading_active() && !self.rect_is_exact::<BD>(pxstride) {
+            row_branch_probe::hit(&row_branch_probe::PER_ROW);
             for row in 0..h {
                 let off = self.offset.wrapping_add_signed(row as isize * pxstride);
                 let guard = self.data.slice::<BD, _>((off.., ..w));
@@ -1131,11 +1223,13 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         } else {
             self.offset - (h - 1) * abs_stride
         };
-        // ONE borrow. Registered as a RECTANGLE on a positive stride, so under
-        // tile threading it reserves only the `w` elements of each row and the
-        // gaps stay available to the tile columns that own them; as the plain
-        // hull otherwise, which is the pre-existing single-threaded behaviour.
-        if pxstride > 0 {
+        // ONE borrow. Registered as a RECTANGLE under tile threading, so it
+        // reserves only the `w` elements of each row and the gaps stay
+        // available to the tile columns that own them. With the latch clear
+        // this is the plain strided hull below — the pre-existing
+        // single-threaded path, byte for byte. See `rect_is_exact`.
+        if self.rect_is_exact::<BD>(pxstride) {
+            row_branch_probe::hit(&row_branch_probe::RECT);
             let guard = self.data.rect::<BD>(StridedRows {
                 start: lo,
                 w,
@@ -1147,6 +1241,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             }
             return;
         }
+        row_branch_probe::hit(&row_branch_probe::HULL);
         let guard = self.data.slice::<BD, _>((lo.., ..total));
         for row in 0..h {
             let idx = if pxstride >= 0 {
@@ -1173,6 +1268,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         }
         let pxstride = self.data.pixel_stride::<BD>();
         if tile_threading_active() && !self.rect_is_exact::<BD>(pxstride) {
+            row_branch_probe::hit(&row_branch_probe::PER_ROW);
             for row in 0..h {
                 let off = self.offset.wrapping_add_signed(row as isize * pxstride);
                 let mut guard = self.data.slice_mut::<BD, _>((off.., ..w));
@@ -1188,7 +1284,8 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             self.offset - (h - 1) * abs_stride
         };
         // ONE borrow — see [`Self::for_rows`].
-        if pxstride > 0 {
+        if self.rect_is_exact::<BD>(pxstride) {
+            row_branch_probe::hit(&row_branch_probe::RECT);
             let mut guard = self.data.rect_mut::<BD>(StridedRows {
                 start: lo,
                 w,
@@ -1200,6 +1297,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             }
             return;
         }
+        row_branch_probe::hit(&row_branch_probe::HULL);
         let mut guard = self.data.slice_mut::<BD, _>((lo.., ..total));
         for row in 0..h {
             let idx = if pxstride >= 0 {
@@ -2352,6 +2450,133 @@ mod row_guard_policy_tests {
             "row 1 column 0 IS written by this block, so a live mutable borrow \
              of it must conflict; if it does not, tracking is off in this build \
              and this test gates nothing"
+        );
+    }
+}
+
+/// MECHANISM gate for the t=1 DECLINE: with no tile worker alive, `for_rows` /
+/// `for_rows_mut` must take the plain strided hull, never the rectangle.
+///
+/// # Why nothing else can catch this
+///
+/// The rectangle and the hull are indistinguishable from outside on a serial
+/// decode. The pixels are identical by construction. So is the tracker's
+/// record: with tile threading off a big plane gets `SHARDS_SERIAL == 1` shards
+/// and `rect_exact_for` answers `false`, so a rectangle registration degrades
+/// to precisely the hull. `row_guard_policy_tests`' conflict probe therefore
+/// reads the same on both branches, and so does every corpus md5.
+///
+/// What differs is only COST — the row map's exact division plus a per-row
+/// `DisjointImmutRect::row` call in place of one flat index — measured at
+/// **+0.71 ns on every surviving registration while removing NONE of them**,
+/// which carried 8bpc t=1 from 1.285x to 1.320x. That is a pure regression with
+/// no observable signature, which is exactly the class of change a
+/// `#[cfg(test)]` branch counter exists for.
+///
+/// Both halves also assert the OTHER branch's counter stayed at zero, so a
+/// mutation that takes both (or neither) fails rather than passing on a
+/// non-zero count.
+#[cfg(all(test, not(feature = "unchecked")))]
+mod rect_declines_when_serial_tests {
+    use super::{
+        Rav1dPictureDataComponent, row_branch_probe, set_tile_threading, tile_threading_active,
+    };
+    use crate::include::common::bitdepth::BitDepth8;
+    use crate::src::with_offset::WithOffset;
+
+    /// Big enough that `mask_for` gives the instance more than one shard once
+    /// parallelism is declared — `SHARD_MIN_LEN` is 64 KiB — and a power-of-two
+    /// stride the row map can describe.
+    const STRIDE: usize = 1024;
+    const ROWS: usize = 256;
+    const W: usize = 8;
+    const H: usize = 4;
+
+    fn plane() -> Rav1dPictureDataComponent {
+        let mut buf = vec![0u8; STRIDE * ROWS];
+        Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut buf, STRIDE)
+    }
+
+    /// `(per_row, rect, hull)` for one `W x H` `for_rows_mut` on a fresh plane.
+    fn branch_taken() -> (usize, usize, usize) {
+        let pic = plane();
+        let at = WithOffset {
+            data: &pic,
+            offset: 0,
+        };
+        row_branch_probe::reset();
+        at.for_rows_mut::<BitDepth8, _>(W, H, |_, row| {
+            row[0] = 1;
+        });
+        row_branch_probe::snapshot()
+    }
+
+    /// The threading-OFF half, run in a CHILD PROCESS — `TILE_THREADING` is a
+    /// monotone process-global that other tests in this binary latch on, and
+    /// libtest gives no ordering guarantee that would fix that.
+    ///
+    /// The child's MARKER LINE is checked rather than its exit status: libtest
+    /// exits 0 when a filter matches nothing, which is how `wide_exclusion`
+    /// went vacuous in #459.
+    #[test]
+    fn for_rows_declines_the_rectangle_when_tile_threading_is_off() {
+        const MARKER: &str = "RECT_DECLINE_CHILD_RAN";
+        const NAME: &str = "include::dav1d::picture::rect_declines_when_serial_tests::\
+                            for_rows_declines_the_rectangle_when_tile_threading_is_off";
+        if std::env::var_os("RAV1D_RECT_DECLINE_CHILD").is_some() {
+            assert!(
+                !tile_threading_active(),
+                "precondition: this must run in a process where no decoder has \
+                 latched tile threading, or it is testing the other branch"
+            );
+            // Declare parallelism WITHOUT the tile-threading latch, so the
+            // instance is multi-shard and the rectangle would be recorded
+            // exactly. That removes the only other reason the rectangle could
+            // decline and leaves the latch as the sole cause.
+            rav1d_disjoint_mut::set_parallelism(8);
+            let (per_row, rect, hull) = branch_taken();
+            assert_eq!(
+                (per_row, rect, hull),
+                (0, 0, 1),
+                "with tile threading OFF, `for_rows_mut` must take the plain \
+                 strided hull; got (per_row, rect, hull) = ({per_row}, {rect}, \
+                 {hull})"
+            );
+            println!("{MARKER}");
+            return;
+        }
+        let exe = std::env::current_exe().expect("test binary path");
+        let out = std::process::Command::new(exe)
+            .args(["--exact", NAME, "--nocapture"])
+            .env("RAV1D_RECT_DECLINE_CHILD", "1")
+            .output()
+            .expect("re-exec the test binary");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains(MARKER),
+            "the child process did not reach the assertions (renamed test? \
+             libtest exits 0 on an empty filter). status={:?}\nstdout:\n{}\nstderr:\n{}",
+            out.status,
+            stdout,
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(out.status.success(), "child failed:\n{stdout}");
+    }
+
+    /// The threading-ON half: the rectangle must still be taken where it pays.
+    /// Without this, deleting the rectangle entirely would pass the gate above.
+    #[test]
+    fn for_rows_still_takes_the_rectangle_when_tile_threading_is_on() {
+        rav1d_disjoint_mut::set_parallelism(8);
+        set_tile_threading(true);
+        assert!(tile_threading_active());
+        let (per_row, rect, hull) = branch_taken();
+        assert_eq!(
+            (per_row, rect, hull),
+            (0, 1, 0),
+            "with tile threading ON and a multi-shard plane the rectangle is \
+             the whole point of #469/#472; got (per_row, rect, hull) = \
+             ({per_row}, {rect}, {hull})"
         );
     }
 }
