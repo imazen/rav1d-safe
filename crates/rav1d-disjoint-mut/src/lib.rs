@@ -33,7 +33,14 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
-#[cfg(feature = "std")]
+// `std` is a FEATURE of the library and a REQUIREMENT of its unit tests: they
+// spawn threads and `catch_unwind` to prove the tracker catches overlaps, and
+// neither exists in `core`. Without the `cfg(test)` arm,
+// `cargo test -p rav1d-disjoint-mut --no-default-features` fails with 28
+// `cannot find module or crate std` errors in `tracker_shard`'s test modules —
+// which is what the three `Test (…, --no-default-features)` legs of
+// `disjoint-mut CI` have been red on (`main` @ ee07b00 included).
+#[cfg(any(feature = "std", test))]
 extern crate std;
 
 #[cfg(feature = "aligned")]

@@ -167,7 +167,24 @@ fn a_wide_borrow_excludes_every_narrow_shard() {
     // `__probe_wide` — so run this gate with
     // `--features __probe_wide` whenever you need it to prove itself, and treat
     // a plain run as the cheap regression check rather than as evidence.
-    #[cfg(feature = "__probe_wide")]
+    //
+    // The predicate below MIRRORS `lib.rs`'s re-export of `wide_probe`, which
+    // also requires the sharded tracker: the `__probe_*` / `__tracker_legacy`
+    // features select the LEGACY tracker, which has no wide path and no
+    // counters. Spelling only `__probe_wide` here is why
+    // `cargo test --all-features` (which turns on the mutually exclusive
+    // tracker selectors at once) failed to COMPILE this test binary -- red on
+    // `main` @ ee07b00 too, and it took the whole job's other test binaries
+    // down with it.
+    #[cfg(all(
+        feature = "__probe_wide",
+        not(any(
+            feature = "__probe_count",
+            feature = "__probe_noscan",
+            feature = "__probe_lockonly",
+            feature = "__tracker_legacy"
+        ))
+    ))]
     {
         use rav1d_disjoint_mut::wide_probe;
         let promotions = wide_probe::WIDE_SHARDS.load(Ordering::Relaxed)
