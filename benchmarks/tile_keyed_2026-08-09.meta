@@ -90,6 +90,14 @@ Correctness
   cargo test --release         157 passed, 0 failed, 28 ignored — including
                                decode_md5_verify 14/14, decode_permutations
                                19/19, mt_stress, tile_threading_overlap.
+  multi_decoder_pressure       12 concurrent decoders x 3 iters x t =
+                               1/2/4/8/16 over v4k_8tile, v4k_8tile_10b, v1024,
+                               v256: PASS on the DEFAULT build AND on tkboth,
+                               every md5 matching the serial reference. Worth
+                               stating for tkboth specifically: the hull's
+                               theoretical false-positive risk (an unkeyed
+                               borrow whose address hash lands on a tile's
+                               shard) did not fire under oversubscription.
 
 Soundness gates
   tests/tile_key.rs            6 mechanism tests, green WITH and WITHOUT
