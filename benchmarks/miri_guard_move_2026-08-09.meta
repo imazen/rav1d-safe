@@ -1,0 +1,172 @@
+# Miri UB in `rav1d-disjoint-mut` — root cause, reduction, and gate record
+
+    issue      imazen/rav1d-safe#477 (campaign index #455)
+    branch     fix/miri-ub-narrow-release
+    base       main @ b0f70ee
+    host       Apple M4 Pro (8P+4E), macOS, aarch64-apple-darwin
+    toolchain  nightly-aarch64-apple-darwin, miri 0.1.0 (da86f4d072 2026-07-24)
+    date       2026-08-09
+
+Every number below was run on this host on this date. Nothing is extrapolated
+except the one wall-time projection in section 4, which is labelled as a fit and
+shows its two measured points.
+
+--------------------------------------------------------------------------------
+## 1. The failure, reproduced
+
+    cargo +nightly miri test -p rav1d-disjoint-mut --test narrow_release
+
+aborts in ~20 s with the same tag CI run 31292996318 reported:
+
+    error: Undefined Behavior: not granting access to tag <129070> because that
+    would remove [Unique for <5656840>] which is strongly protected
+      --> tests/narrow_release.rs:126:29   (dm.index_mut(SHARED))
+    help: <129070> was created here, as the root tag for alloc42080
+      --> tests/narrow_release.rs:78:40    (vec![0u8; LEN])
+    help: <5656840> is this argument
+      --> tests/narrow_release.rs:141:21   (drop(g))
+    note: this is on thread `unnamed-5`
+
+Read it off the spans: the PROTECTED tag is the `&mut [u8]` inside the guard
+that thread `unnamed-5` moved by value into `drop`; the ACCESSING tag is the
+buffer's root, used by ANOTHER thread's `index_mut` for the same 8 bytes.
+
+--------------------------------------------------------------------------------
+## 2. Test construction or library? — the three-arm reduction
+
+7 threads, all contending `4096..4104` on a 32 KiB `DisjointMut<Vec<u8>>`,
+400 rounds each. The arms differ ONLY in how the guard is destroyed.
+
+    arm                          SB              TB                 granted/refused
+    -------------------------------------------------------------------------------
+    A  drop(g)      by-value     UB              UB (seeds 1,2,3;   2239 / 561
+                                                     seed 0 clean)
+    B  scope exit   no move      clean           clean              2228 / 572
+    C  eat(g)       by-value     UB              UB (seed 0)        2226 / 574
+
+The tracker grants and refuses identically in all three, so the tracker is not
+the variable — the MOVE is. `drop(g)` is ordinary safe code. **The defect is in
+the library, not in the test.**
+
+Shared guard, same reduction with 5 readers + 2 writers on one range (readers
+coexist, so a reader's release overlaps other readers' live borrows):
+
+    D  index()+drop(g)           UB              UB                 2635 / 165
+       (SB: `[SharedReadOnly for <650566>] which is strongly protected`
+        TB: `write access through <1135450> ... is forbidden`)
+    E  index(), scope exit       clean           clean              2630 / 170
+
+After the fix all six arms are clean under both models, at unchanged grant
+counts (A 2239/561 SB, 2236/564 TB; B 2228/572; D 2635/165).
+
+TB seed sensitivity, pre-fix arm A, measured not assumed:
+    seed 0  clean      seed 1  UB      seed 2  UB      seed 3  UB
+Post-fix, seeds 1/2/3 all clean.
+
+--------------------------------------------------------------------------------
+## 3. Root cause
+
+A guard is a value. Passing one by value into a call gives the reference it
+carries a PROTECTOR: for the whole call the reference must stay valid and
+nothing may invalidate it. The guard's `Drop` runs inside that call and retires
+the tracker record — which is exactly what authorises another thread to take the
+region and retag those bytes.
+
+`core::cell::RefMut` holds `NonNull<T>` for the same reason:
+
+    // NB: we use a pointer instead of `&'b mut T` to avoid `noalias`
+    // violations, because a `RefMut` argument doesn't hold exclusivity for its
+    // whole scope, only until it drops.
+
+For `DisjointMut` it is stronger than `noalias`: another thread genuinely
+retags.
+
+Fix: `slice: *mut V` / `*const V`, reference materialised in `Deref`/`DerefMut`.
+Four `unsafe impl`s restore the auto-traits the reference fields derived.
+
+Auto-trait parity, compiled against BOTH revisions:
+
+    probe                                                    main      HEAD
+    ---------------------------------------------------------------------
+    Send/Sync DisjointMutGuard<'_, Vec<u8>, [u8]>            compiles  compiles
+    Send/Sync DisjointImmutGuard<'_, Vec<u8>, [u8]>          compiles  compiles
+    Send      DisjointMutGuard<'_, Vec<u8>, *const u8>       E0277     E0277
+    Send      DisjointMutGuard<'_, Vec<*const u8>, [u8]>     E0277     E0277
+    Send      DisjointImmutGuard<'_, Vec<u8>, Cell<u8>>      E0277     E0277
+
+Neither wider nor narrower.
+
+--------------------------------------------------------------------------------
+## 4. Why `narrow_release` gets a `cfg(miri)` round count
+
+Two-point wall fit of the test itself under Stacked Borrows, `total = a + b*rounds`:
+
+    rounds   wall
+      100    23.12 s
+      400    92.19 s
+    -> b = 0.230 s/round, a = 0.10 s
+    -> 200_000 rounds = ~12.8 hours PER MEMORY MODEL   (projection, labelled)
+
+The Miri leg could never have finished it. Miri rounds = 400; the NATIVE run
+keeps 200_000 unchanged. Liveness at 400 Miri rounds:
+
+    Stacked Borrows   private_ok 8400   shared_ok 1846   refused 954
+    Tree Borrows      private_ok 8400   shared_ok 1862   refused 938
+
+Floors 4_000 / 700 are 48% / 25% of attempts, against the native floors'
+0.24% / 0.07% — proportionally tighter, not looser.
+
+--------------------------------------------------------------------------------
+## 5. Gate teeth (mutation-verified)
+
+    plant                                    gate                     result
+    -------------------------------------------------------------------------
+    pre-fix guards (git show main:lib.rs)    guard_move_release SB    FAILS (UB)
+    pre-fix guards                           guard_move_release TB    FAILS (UB)
+    pre-fix guards                           narrow_release SB @400   FAILS (UB)
+    pre-fix guards                           narrow_release TB @400   PASSES (*)
+    live_mask `allocated<=1` -> `<=2`        narrow_release native    FAILS, witnesses=1, 2.52 s
+    live_mask `<=2`                          rest of suite            all green
+    active() -> `&self.shards[..1]`          wide_exclusion __probe_wide  FAILS, 418 violations
+    4af62ae TOCTOU deleted from add_contended wide_exclusion __probe_wide FAILS 5/5, 929..1674
+    4af62ae TOCTOU deleted from add only     wide_exclusion __probe_wide  PASSES 8/8 (**)
+
+    (*)  seeds 0 and 1 tried. The shorter Miri round count costs narrow_release
+         its Tree-Borrows teeth for this defect; guard_move_release covers it.
+    (**) the wide registrant holds every shard lock while publishing, so a narrow
+         registrant in that window fails `try_lock` by construction and lands in
+         `add_contended`. The fast-path half of that hazard is NOT gated here.
+
+Every plant restored from a byte-level snapshot; `shasum -a 256 -c` OK and
+`git diff` empty against `main` in each case.
+
+`forbid(unsafe_code)` proved ACTIVELY in the parent crate: an `unsafe` block
+planted at `src/lib.rs:11` fails the default-feature build with
+`error: usage of an 'unsafe' block`. Restored, `git diff` empty.
+
+--------------------------------------------------------------------------------
+## 6. Corpus
+
+`examples/md5_inventory` (this branch adds `--threads`), per meson group, set-
+diffed BY NAME with the ACTUAL md5 in the value.
+
+    threads=1   main 768 rows / HEAD 768 rows
+                only-in-main 0, only-in-HEAD 0, differing values 0
+                statuses: PASS 766, SKIP 2  (both sides)
+    vs benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst
+                only-in-either 0, differing values 0
+
+    threads=8   main 755 rows / HEAD 755 rows
+                only-in-main 0, only-in-HEAD 0, differing values 0
+                statuses: PASS 753, SKIP 2  (both sides)
+
+The 13 missing rows at threads=8 are the film-grain groups: `md5_inventory
+--threads 8` ABORTS at the first film-grain vector, identically on `main` and on
+this branch (rc=101, same 13 vectors lost). Pre-existing whole-plane
+`full_guard_mut` in `src/safe_simd/filmgrain_arm.rs:1550` — filed as #479, not
+touched here.
+
+--------------------------------------------------------------------------------
+## 7. Performance
+
+See section 7b (appended after the interleaved run).
