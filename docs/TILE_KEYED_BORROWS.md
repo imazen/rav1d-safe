@@ -77,7 +77,36 @@ plus `src/recon.rs:3867` in `rav1d_backup_ipred_edge`. From those, 22 call sites
 build a `PicOffset` via `.with_offset::<BD>()`. **That is the entire surface**,
 and it is why this round could key reconstruction in one commit.
 
-### 1.4 The filter chain genuinely crosses tiles
+### 1.4 The premise, verified in source rather than cited
+
+Keying reconstruction is only sound if reconstruction for tile `T` touches no
+byte outside `T`'s pixel rectangle. Checked on this tree, not taken from the
+earlier round's summary:
+
+* `src/recon.rs:2269-2273` passes `have_left = t.b.x > ts.tiling.col_start`,
+  `have_top = t.b.y > ts.tiling.row_start`, and — this is the part worth
+  checking — **`ts.tiling.col_end` and `ts.tiling.row_end` as the `w`/`h`
+  clamps.** Same at `:3160-3163` and, subsampled, at `:3449-3452`.
+* Given those, every edge read in `rav1d_prepare_intra_edges` is inside the
+  tile: the top-right at `src/ipred_prepare.rs:229`
+  (`px_have = min(8 * tw, 4 * (w - x))`), the left column at `:248`
+  (`min(sz, (h - y) << 2)`), and the bottom-left at `:288-293`
+  (`have_bottomleft` requires `y + th < h`, then
+  `px_have = min(sz, (h - y - th) << 2)`).
+* Prediction kernels themselves are pure block writers — `ipred_prepare`
+  materialises the neighbour edge into scratch first — so nothing else reaches
+  out.
+* `rav1d_backup_ipred_edge` (`src/recon.rs:3866`) reads
+  `[ts.tiling.col_start, ts.tiling.col_end)` of the sbrow's last row: the
+  tile's own columns, inside the tile's own rows.
+
+**A stale doc comment to fix while you are there:** `src/ipred_prepare.rs:127-131`
+says "the vertical tile start is assumed to be `0`, and `h` is the vertical
+image end". Every caller in `src/recon.rs` passes `ts.tiling.row_end`. The
+comment describes a weaker contract than the code has, and this design depends
+on the stronger one.
+
+### 1.5 The filter chain genuinely crosses tiles
 
 `src/lf_apply.rs:563` ("fix lpf strength at tile col boundaries") and `:608`
 ("fix lpf strength at tile row boundaries") adjust filter LEVELS at boundaries —
@@ -88,7 +117,7 @@ filter chain. The filter chain's own picture accesses are 6,389,542
 registrations/frame at t=8 (#455 site-class census), the largest single site
 being `src/loopfilter.rs:566` at 3,835,042.
 
-### 1.5 The key must be an ARGUMENT, not a thread-local — measured
+### 1.6 The key must be an ARGUMENT, not a thread-local — measured
 
 The obvious zero-plumbing channel is a `thread_local!` set once per task. It is
 disqualified on this platform:
@@ -240,11 +269,35 @@ a scan of every shard or the wide path per unkeyed borrow, and #469 measured
 what volume does to the wide path (188,307 wide registrations/frame at t=8 made
 the decoder 2.28x SLOWER than base). So the sound design is:
 
-1. key the filter chain from the superblock column it is working on
-   (`col_start_sb[]` gives a sb-column -> tile-column lookup with no division);
+1. key the filter chain from the superblock column it is working on;
 2. leave genuinely straddling accesses `TILE_ANY`;
 3. route the residual `TILE_ANY` population — which must then be small and
    rarely LIVE — through the existing wide/`state` mechanism.
+
+**Scoped, with file:line, so the next round does not have to find it again.**
+The filter chain builds its picture references in per-superblock-column loops
+that already have the column in scope, so the key is a lookup and not a
+division:
+
+| site | loop | offset built |
+|---|---|---|
+| `src/lf_apply.rs:656` | `for x in 0..f.sb128w` | `py + x * 128` |
+| `src/lf_apply.rs:677` | `for x in 0..f.sb128w` | `pu/pv + x * (128 >> ss_hor)` |
+| `src/lf_apply.rs:695` | `rav1d_loopfilter_sbrow_rows`, same shape | |
+| `src/cdef_apply.rs:214` | `for sbx in 0..sb64w` | 14 `WithOffset` literals below it |
+
+`frame_hdr.tiling.col_start_sb[]` (`include/dav1d/headers.rs:2568`) turns a
+superblock column into a tile column with one array read. Two cautions the next
+round must handle rather than discover:
+
+* `filter_plane_cols_*` filters the LEFT edge of column `x`, and the deblock
+  taps reach into column `x - 1`. At a tile-column start that is the PREVIOUS
+  tile, so those iterations — roughly 3 of 30 at 4K with 4 tile columns — must
+  stay `TILE_ANY`. `have_left` is cleared only at `x == 0`, not at tile
+  boundaries, which is the source-level confirmation that deblocking crosses
+  tile columns here.
+* `rav1d_loopfilter_sbrow_rows` filters HORIZONTAL edges using the row above,
+  which at a tile-row start belongs to the previous tile ROW — same rule.
 
 Also unresolved, and independent of the tracker: **the hull hands out a `&mut`
 over the hull.** Two tile columns' hulls on the same rows are two live

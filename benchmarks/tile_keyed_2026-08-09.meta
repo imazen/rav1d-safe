@@ -1,0 +1,101 @@
+TILE-KEYED BORROWS — feasibility and prices for the three variants (issue #455)
+================================================================================
+
+Host      Apple M4 Pro, 8 P + 4 E cores (12 logical), Darwin 25.5.0.
+Base      main ee07b00 (766/766; 1.283 / 1.583 / 1.623 / 1.903 at 8bpc
+          t=1/2/4/8 per the #469 verification round).
+Branch    perf/tile-keyed.
+Build     cargo build --release, NO -C target-cpu=native. Every behavioural
+          change is behind a probe-* / __probe_* feature; `default` carries
+          only the inert TileKey field and the recon key stores.
+Timing    NO `nice` on any timed run. Two-point wall fit (2 and 20 frames,
+          beta = (hi - lo) / 18) so process startup drops out.
+Design    docs/TILE_KEYED_BORROWS.md — the feasibility half, with file:line.
+
+Files
+  tile_keyed_gap_2026-08-09.tsv        gap sweep, one row per (round, arm,
+                                       vector, threads); last column is the
+                                       foreign-load count for that cell.
+  tile_keyed_census_2026-08-09.tsv     registrations/frame by disposition
+                                       (keyed / unkeyed-sharded / single-shard).
+  tile_keyed_stitch_2026-08-09.tsv     Variant 1's copy cost and the
+                                       recon-write-locality control.
+  tile_keyed_keychannel_2026-08-09.tsv per-call cost of the three ways the tile
+                                       key could reach the tracker.
+
+Arms
+  main      pristine ee07b00. Isolates the cost of the WithOffset key FIELD and
+            the recon key stores, which are the only things `default` gains.
+  base      this branch, default features. Key present, tracker unchanged.
+  tkshard   + tile-keyed shard selection. Per-row REFERENCES unchanged, so no
+            aliasing question; only the tracker's bookkeeping is relaxed.
+  tkboth    + the strided hull for keyed references. CEILING ONLY: two tile
+            columns' hull guards are two live overlapping &mut, which is UB by
+            Rust's aliasing model whatever the tracker records (the PR #470
+            lesson from the other direction). Its wall number is an upper
+            bound from a build with UB in it, not a candidate.
+  untr      tracker compiled out (probe-untracked) — the ceiling this campaign
+            already carries.
+  dav1d_fd1 dav1d 1.5.4 --framedelay 1, the tile-threading-only model we
+            implement.
+
+  tkhull (the hull WITHOUT the key) is deliberately absent from the timed grid
+  because it DOES NOT DECODE at t > 1 on either depth:
+      overlapping DisjointMut:
+       current: &mut _[960..58576] at include/dav1d/picture.rs:804
+      existing: &mut _[0..57616]
+  Two 16x16 block hulls at pixel columns 0 and 960 — the tile-column boundary
+  at 3840/4. They share no byte; their hulls overlap because a hull spans the
+  inter-row gaps, which belong to the next tile column. That is #467's
+  documented false positive, reproduced, and it is exactly what the key removes.
+
+Correctness
+  md5_inventory                766 PASS / 0 mismatch / 0 error / 2 skip.
+  set-diff BY NAME, md5 as the value, against
+  benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst:
+                               only in baseline 0 / only in head 0 /
+                               DIFFERING 0   (768 rows both sides)
+  cross-arm frame md5          8bpc  a00c11f454328023c58af14d55544cff
+                               10bpc 4f218411bc6ee4cc9c630fe827337fa2
+                               identical over {main, base, tkshard, tkboth,
+                               untr} x t = 1, 2, 4, 8 x both depths (40 cells;
+                               tkhull matches at t=1 and fails to decode above).
+  cargo test --release         157 passed, 0 failed, 28 ignored — including
+                               decode_md5_verify 14/14, decode_permutations
+                               19/19, mt_stress, tile_threading_overlap.
+
+Soundness gates
+  tests/tile_key.rs            6 mechanism tests, green WITH and WITHOUT
+                               __probe_tilekey_shard (the file asserts the
+                               inert behaviour when the feature is off, so it
+                               cannot go vacuous by being built wrong — which
+                               is how the hull cfg bug below was caught).
+  teeth, 3 mutations           key as a global off-switch      -> 3/6 FAIL
+                               keyed twins dropping the key    -> 3/6 FAIL
+                               shard index ignoring the key    -> 3/6 FAIL
+                               each restored by sha256 AND git diff --exit-code.
+  mandatory hazard A           add's in-lock `state` re-read deleted (4af62ae)
+                               -> wide_exclusion FAILS under --features
+                               __probe_wide. Restored byte-exact, green again.
+  mandatory hazard B           active() cut to one shard
+                               -> wide_exclusion FAILS. Restored byte-exact.
+  forbid(unsafe_code)          proved ACTIVELY: a planted unsafe block gives
+                               "error: usage of an `unsafe` block" against
+                               #![forbid(unsafe_code)] at src/lib.rs:1.
+
+A bug the liveness counter caught that no test would have
+  The first hull build named the SUB-CRATE's feature in a cfg inside the parent
+  crate (`#[cfg(feature = "__probe_tilekey_hull")]` in include/dav1d/picture.rs,
+  where the feature is spelled `probe-tilekey-hull`). It compiled, decoded
+  correctly, and measured identically to base — a perfect silent null. The
+  registration COUNT is what exposed it: 26,484,179/frame on both arms, to the
+  byte. Assert on the mechanism, not the outcome.
+
+Instrument note
+  probe-tilekey-count puts three fetch_adds on the hottest path in the decoder
+  and the build runs ~20x slow (1,323 ms/frame at t=8 against a real 65). Its
+  COUNTS are load-bearing; its ms are not, and no timed arm carries it. Its
+  totals also do not reconcile with the campaign's probe-sites figure of
+  22,700,725/frame at t=8 (this instrument reports 26,484,179 for the same
+  cell). Two different instruments, not reconciled here — the arm-to-arm
+  DELTAS, which is what liveness needs, come from one instrument throughout.
