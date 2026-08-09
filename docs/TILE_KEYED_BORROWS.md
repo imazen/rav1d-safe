@@ -303,9 +303,13 @@ box, strict gate, **`foreign = 0` on every committed row**, dav1d 1.5.4
 two-point wall fit at 2 and 20 frames.
 
 **n = 4 complete rounds at 8bpc and n = 3 at 10bpc, not the 7 this campaign's
-bar asks for.** The box was shared with another agent's test suite for most of
-the window; the sweep's strict gate discarded rather than commit loaded cells,
-and it never got the remaining rounds. Every cell called "disjoint" below is
+bar asks for** — 168 rows, 21 cells discarded, foreign-load column summing to 0.
+The reason is coordination, not instrumentation: another agent's test suite
+owned the box for most of the window, and when it cleared that agent started its
+own TIMED sweep. Both were then polling for an idle box and each was making the
+other's cells dirty, so I stopped mine — every discarded attempt is ~90 s of
+decoding loaded onto their measurement. The remaining rounds were given up
+deliberately. Every cell called "disjoint" below is
 disjoint at that n; nothing here should be quoted as a settled three-digit
 figure, and the two OVERLAP cells at 8bpc t=1 are exactly the ones a larger n
 would be needed to call.

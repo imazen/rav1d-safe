@@ -30,10 +30,16 @@ RESULT, up front
   exact, no division, no per-alloc column stores -- and on this vector a slower
   one.
 
-  n = 4 complete rounds at 8bpc, n = 3 at 10bpc. BELOW this campaign's n >= 7
-  bar: the box was shared with another agent's test suite for most of the
-  window and the strict gate discarded rather than commit loaded cells. Every
-  committed row has foreign = 0; no cell mixes idle and loaded rows.
+  n = 4 complete rounds at 8bpc, n = 3 at 10bpc -- 168 rows, 21 cells
+  discarded, sum of the foreign-load column = 0. BELOW this campaign's n >= 7
+  bar, and the reason is coordination rather than instrumentation: another
+  agent's test suite owned the box for most of the window, and when it cleared,
+  that agent started its OWN timed sweep (~/tmp/indver/bin/bench_*). At that
+  point both sweeps were polling for an idle box and each was making the
+  other's cells dirty. I STOPPED MINE rather than keep discarding, because
+  every discarded attempt is ~90 s of decoding loaded onto their measurement.
+  Same conclusion the site-class round reached: two timed campaigns cannot
+  share this box. The remaining rounds were not run; they were given up.
 
 Files
   tile_keyed_gap_2026-08-09.tsv        gap sweep, one row per (round, arm,
