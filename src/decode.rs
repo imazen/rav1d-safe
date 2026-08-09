@@ -4930,6 +4930,12 @@ pub(crate) fn rav1d_decode_frame_exit(
         }
     }
 
+    // Owned per-tile reconstruction planes are per-frame state, and belong in
+    // this list with the rest of it. Holding them past frame exit would leave
+    // an idle decoder resident in `tile_columns x plane_bytes`.
+    #[cfg(feature = "tile-owned-recon")]
+    crate::src::tile_recon::release(&mut f);
+
     let _ = mem::take(&mut f.cur_segmap);
     let _ = mem::take(&mut f.prev_segmap);
     let _ = mem::take(&mut f.mvs);

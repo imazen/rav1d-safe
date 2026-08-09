@@ -190,8 +190,12 @@ pub mod src {
     mod scan;
     pub(crate) mod strided;
     /// Owned per-tile reconstruction buffers (issue #455 Variant 1).
+    ///
+    /// `pub` only so `tile_recon::accounting` (live / peak private bytes) is
+    /// reachable from `tests/tile_recon_lifetime.rs`; every other item in it is
+    /// `pub(crate)`.
     #[cfg(feature = "tile-owned-recon")]
-    pub(crate) mod tile_recon;
+    pub mod tile_recon;
     // Public ONLY under the private test feature, for the induced-worker-panic
     // hook (tests/worker_panic_recovery.rs); crate-private otherwise.
     #[cfg(feature = "__test_induce_worker_panic")]

@@ -72,12 +72,55 @@ pub(crate) struct TileReconBufs {
     /// `planes[tile_idx]` — one full-geometry plane set per tile.
     planes: Vec<[Rav1dPictureDataComponent; 3]>,
     geometry: Geometry,
+    /// Bytes this set added to [`accounting::LIVE`], returned by [`Drop`].
+    bytes: usize,
 }
 
 impl TileReconBufs {
     #[inline]
     pub(crate) fn planes(&self, tile_idx: usize) -> &[Rav1dPictureDataComponent; 3] {
         &self.planes[tile_idx]
+    }
+}
+
+impl Drop for TileReconBufs {
+    fn drop(&mut self) {
+        accounting::sub(self.bytes);
+    }
+}
+
+/// Live / high-water byte accounting for the private planes.
+///
+/// Two counters, always compiled (two relaxed atomic ops per FRAME, not per
+/// access), because the lifetime property they gate is invisible in the pixels:
+/// a decoder that never releases its tile buffers decodes byte-identically to
+/// one that does. `tests/tile_recon_lifetime.rs` asserts on these, and asserts
+/// LIVENESS from `peak` so a run where the feature silently declined cannot
+/// pass as a run where it was released.
+#[cfg(feature = "tile-owned-recon")]
+pub mod accounting {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static LIVE: AtomicUsize = AtomicUsize::new(0);
+    static PEAK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(super) fn add(bytes: usize) {
+        let now = LIVE.fetch_add(bytes, Ordering::Relaxed) + bytes;
+        PEAK.fetch_max(now, Ordering::Relaxed);
+    }
+
+    pub(super) fn sub(bytes: usize) {
+        LIVE.fetch_sub(bytes, Ordering::Relaxed);
+    }
+
+    /// Bytes of private tile planes allocated and not yet dropped.
+    pub fn live_bytes() -> usize {
+        LIVE.load(Ordering::Relaxed)
+    }
+
+    /// High-water mark of [`live_bytes`] since process start.
+    pub fn peak_bytes() -> usize {
+        PEAK.load(Ordering::Relaxed)
     }
 }
 
@@ -91,6 +134,39 @@ fn enabled() -> bool {
     use std::sync::OnceLock;
     static ON: OnceLock<bool> = OnceLock::new();
     *ON.get_or_init(|| !matches!(std::env::var("RAV1D_TILE_OWNED").as_deref(), Ok("0")))
+}
+
+/// Keep the buffers alive across frames instead of releasing them at frame
+/// exit — the pre-fix lifetime, retained ONLY so the release's cost can be
+/// A/B'd inside one binary.
+///
+/// The shipping default is to release: a decoder that has decoded one
+/// multi-tile frame must not go on holding `tile_columns x plane_bytes` of
+/// resident pages while it is idle. See [`release`].
+#[cfg(feature = "tile-owned-recon")]
+fn retain_across_frames() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| matches!(std::env::var("RAV1D_TILE_OWNED_RETAIN").as_deref(), Ok("1")))
+}
+
+/// Drop this frame's private planes.
+///
+/// Called from `rav1d_decode_frame_exit` alongside the other per-frame takes,
+/// so the buffers live exactly as long as the frame that needed them. Without
+/// this the allocation is cached on the frame context for the DECODER's whole
+/// life — 96 MB of resident pages on `v4k_8tile` 8bpc — which is the single
+/// strongest argument against ever defaulting the feature on.
+///
+/// The cost is that the next frame faults its pages in again. That is measured
+/// rather than assumed: `benchmarks/compose_rect_tileown_2026-08-09.meta`
+/// carries the release-vs-retain A/B on wall clock and on peak RSS.
+#[cfg(feature = "tile-owned-recon")]
+pub(crate) fn release(f: &mut Rav1dFrameData) {
+    if retain_across_frames() {
+        return;
+    }
+    f.tile_recon = None;
 }
 
 /// Allocate (or reuse) one owned plane set per tile, if this frame qualifies.
@@ -191,7 +267,16 @@ pub(crate) fn setup(c: &crate::src::internal::Rav1dContext, f: &mut Rav1dFrameDa
         };
         planes.push([y, u, v]);
     }
-    f.tile_recon = Some(TileReconBufs { planes, geometry });
+    // Charge the whole allocation, not the pages a tile happens to touch: this
+    // counter exists to police the LIFETIME, and an allocation the decoder
+    // still owns is still owned whether or not it is resident.
+    let bytes = n_tiles * geometry.byte_len.iter().take(n_planes).sum::<usize>();
+    accounting::add(bytes);
+    f.tile_recon = Some(TileReconBufs {
+        planes,
+        geometry,
+        bytes,
+    });
 }
 
 /// Prove the bottom-right pixel of every tile lands inside every plane, so
