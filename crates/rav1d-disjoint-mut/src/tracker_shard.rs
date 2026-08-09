@@ -327,7 +327,16 @@ const BLOCK_SHIFT: u32 = 12;
 /// spread across shards, so per-shard occupancy is ~0.005 on average. A shard
 /// that fills up anyway promotes the borrow to the wide list; correctness does
 /// not depend on this number.
-const SLOTS: usize = 7;
+///
+/// **7 -> 5 when the record gained its column range.** `starts`/`ends` are two
+/// `usize` each; adding the two `u16` column bounds costs 4 bytes per slot, and
+/// 7 slots no longer fit the 128-byte line that [`Shard`]'s `repr(align(128))`
+/// and the `size_of::<Shard>() == 128` assertion below both depend on. Five
+/// slots leave the shard at 112 bytes with the same one-line footprint. The
+/// headroom that costs is against a measured mean occupancy of 0.02 and a
+/// measured max of 1 (`probe-count`, `occ_max`), and overflow is not a
+/// correctness event — it promotes to the wide list.
+const SLOTS: usize = 5;
 
 /// Bits 0..SLOTS of the occupancy masks.
 const SLOTS_MASK: u8 = ((1u16 << SLOTS) - 1) as u8;
@@ -516,6 +525,30 @@ impl Drop for ShardGuard<'_> {
 /// `(start, end, mutable, registration_site)`.
 type OverlapHit = (usize, usize, bool, Option<&'static Location<'static>>);
 
+/// Column sentinel meaning "this record covers every column of its rows".
+///
+/// Used by every borrow the row map cannot describe as a rectangle — plain
+/// intervals on a non-strided instance, intervals that cross a row boundary,
+/// and every wide record. It is strictly greater than any real column, because
+/// [`RowMap`] refuses a stride above [`MAX_ROW_STRIDE`], so `c1 == COL_ANY`
+/// cannot be confused with a genuine right edge.
+const COL_ANY: u16 = u16::MAX;
+
+/// Largest row stride the column fields can hold. See [`COL_ANY`].
+const MAX_ROW_STRIDE: usize = COL_ANY as usize;
+
+/// Do the column ranges `[a0,a1]` and `[b0,b1]` (both inclusive) meet?
+///
+/// TRIED AND REVERTED: packing the pair into one `u32` field, so a
+/// registration stores one word instead of two. Measured 1.016 against 1.005
+/// at 8bpc t=1 (median of 4, idle box) — the second store is already free on a
+/// line the lock acquire has just dirtied, and the shift/mask the scan then
+/// needs is not.
+#[inline(always)]
+fn cols_meet(a0: u16, a1: u16, b0: u16, b1: u16) -> bool {
+    a0 <= b1 && b0 <= a1
+}
+
 /// The records of one shard. Only ever touched while that shard's [`TinyLock`]
 /// is held.
 ///
@@ -541,6 +574,28 @@ struct ShardRecs {
     mutable: u8,
     starts: [usize; SLOTS],
     ends: [usize; SLOTS],
+    /// Inclusive COLUMN range of the record, when the instance has a
+    /// [`RowMap`]; `0 ..= `[`COL_ANY`] otherwise.
+    ///
+    /// # Why the hull test plus this is EXACT
+    ///
+    /// A record is a set of rows `[r0,r1]` crossed with columns `[c0,c1]`, and
+    /// its hull is `r0*S + c0 ..= r1*S + c1`. Two rectangles genuinely overlap
+    /// iff their row ranges meet AND their column ranges meet, so the only way
+    /// hull-and-column could be a FALSE POSITIVE is hulls meeting and columns
+    /// meeting while rows do not. Say `ra1 < rb0`. Hull overlap needs
+    /// `rb0*S + cb0 <= ra1*S + ca1`, i.e. `(rb0 - ra1)*S <= ca1 - cb0`. The left
+    /// side is at least `S` and the right side is at most `S - 1`, because every
+    /// column is in `[0, S)`. Contradiction — so there is no such case, and the
+    /// two cheap comparisons together are the exact test with no row arithmetic
+    /// at all.
+    ///
+    /// A record whose column range is `0..=COL_ANY` is a superset claim (it is
+    /// what an interval crossing a row boundary, or any borrow on a non-strided
+    /// instance, registers), so it degrades to today's plain hull test — which
+    /// can only ever be conservative, never miss.
+    c0: [u16; SLOTS],
+    c1: [u16; SLOTS],
     /// Registration site, for the overlap panic message.
     ///
     /// Debug only. In release the wrapper methods do not propagate
@@ -558,6 +613,8 @@ impl ShardRecs {
             mutable: 0,
             starts: [0; SLOTS],
             ends: [0; SLOTS],
+            c0: [0; SLOTS],
+            c1: [COL_ANY; SLOTS],
             #[cfg(debug_assertions)]
             locs: [None; SLOTS],
         }
@@ -596,6 +653,8 @@ impl ShardRecs {
         occupied: u8,
         start: usize,
         end: usize,
+        nc0: u16,
+        nc1: u16,
     ) -> Option<OverlapHit> {
         // TRIED AND REVERTED: `if occupied == 0 { return None }` to skip the
         // `mutable` load on an empty shard. +2.3% at 8bpc t=1 (335.1 -> 342.7,
@@ -610,7 +669,12 @@ impl ShardRecs {
         };
         while mask != 0 {
             let i = (mask.trailing_zeros() as usize).min(SLOTS - 1);
-            if self.starts[i] < end && start < self.ends[i] {
+            // Hull AND columns. See [`Self::c0`] for why the pair is exact and
+            // not merely conservative.
+            if self.starts[i] < end
+                && start < self.ends[i]
+                && cols_meet(self.c0[i], self.c1[i], nc0, nc1)
+            {
                 return Some(self.hit(i));
             }
             mask &= mask - 1;
@@ -630,6 +694,8 @@ impl ShardRecs {
         occupied: u8,
         start: usize,
         end: usize,
+        nc0: u16,
+        nc1: u16,
         loc: Loc,
     ) -> Option<u8> {
         // Empty shard: slot 0, with no `rbit`/`clz` and constant store offsets.
@@ -640,6 +706,8 @@ impl ShardRecs {
         if occupied == 0 {
             self.starts[0] = start;
             self.ends[0] = end;
+            self.c0[0] = nc0;
+            self.c1[0] = nc1;
             // Whole-byte STORE, not `|= 1` / `&= !1`: with no live slot, no
             // other slot's mutability bit is meaningful (`find` masks with the
             // live set), so there is nothing to preserve — and that turns a
@@ -659,6 +727,8 @@ impl ShardRecs {
         }
         self.starts[free] = start;
         self.ends[free] = end;
+        self.c0[free] = nc0;
+        self.c1[free] = nc1;
         if IS_MUT {
             self.mutable |= 1 << free;
         } else {
@@ -912,9 +982,23 @@ impl Debug for BorrowId {
 // Tracker
 // =============================================================================
 
-/// A wide record: the borrow's exact interval, its mutability, and its site.
-/// `start >= end` marks a tombstone.
-type WideRec = (usize, usize, bool, Option<&'static Location<'static>>);
+/// A wide record: the borrow's exact interval, its COLUMN range, its
+/// mutability, and its site. `start >= end` marks a tombstone.
+///
+/// The column range matters as much here as it does in [`ShardRecs::c0`], and
+/// for a sharper reason: "wide" describes how many SHARD LOCKS the record needed
+/// (all of them), not how much of the buffer it covers. A 17-byte borrow that
+/// found its shard full is wide, and recording it as covering every column of
+/// its rows would make it conflict with every rectangle whose hull merely spans
+/// it — which is a false positive on a borrow that is genuinely disjoint.
+type WideRec = (
+    usize,
+    usize,
+    u16,
+    u16,
+    bool,
+    Option<&'static Location<'static>>,
+);
 
 /// All active borrows for one `DisjointMut` instance.
 ///
@@ -937,6 +1021,12 @@ pub(super) struct BorrowTracker {
     /// the array a fixed-size field, so a masked index needs no fat-pointer
     /// load and no bounds check.
     mask: usize,
+    /// This instance's 2-D reading of its address space, when it has one.
+    ///
+    /// Read on the registration path immediately after `mask`, off the same
+    /// line, and only when `mask != 0` — a serial decode never touches it, so
+    /// the single-thread column pays nothing for the map existing.
+    rowmap: RowMap,
     /// THROWAWAY (`__probe_tinynop`): this instance is shorter than
     /// [`SHARD_MIN_LEN`]. Set once in [`Self::new`]/[`Self::reprovision`] off
     /// the same line as `mask`, and read only to SKIP tracking entirely.
@@ -1094,6 +1184,236 @@ fn shard_of(block: usize, mask: usize) -> usize {
     (block & mask) & (N_SHARDS - 1)
 }
 
+// =============================================================================
+// Row map: sharding by COLUMN instead of by flat address
+// =============================================================================
+
+/// Rows per row group. See [`RowMap::grp_shift`].
+const ROW_GROUP_SHIFT: u32 = 10;
+
+/// How much finer than the row stride the column bands are, as a shift.
+///
+/// `col_shift = ilog2(stride) - COL_BAND_ADJ`, so the band count per row lands
+/// in `[2^(ADJ-1), 2^ADJ]` at every stride and bit depth — the same fraction of
+/// a tile column either way, which is the quantity that matters.
+///
+/// Swept on `v4k_8tile` 8bpc, median of 3, idle box, wall ms for 20 frames
+/// against base 2290 (t=4) / 1400 (t=8), all with the wide-path avalanche
+/// already fixed:
+///
+/// ```text
+///   ADJ  bands  t=4 ms  ratio   t=8 ms  ratio
+///     3     8     1990  0.869     1540  1.100
+///     4    15     2000  0.873     1460  1.043
+///     5    30     2010  0.878     1390  0.993   <- default
+///     6    60     2060  0.900     1420  1.014
+///     7   120     2160  0.943     1490  1.064
+/// ```
+///
+/// Both ends lose for different reasons and the middle is flat-ish: too few
+/// bands and concurrent tile columns share a shard (ADJ 1, four bands, measured
+/// **1.60x** at t=8); too many and a borrow straddles several, taking the
+/// multi-shard path (ADJ 7 costs 4-6% at both cells).
+const COL_BAND_ADJ: u32 = 5;
+
+/// The 2-D reading of a strided container's address space.
+///
+/// # The tension this resolves
+///
+/// The flat block index `offset >> shift` has to choose between two things a
+/// picture plane needs at once, and the measured ladder in [`BLOCK_SHIFT`] is
+/// the record of that choice being made badly in both directions:
+///
+/// * **Small blocks separate concurrent tile columns** — two workers 960 bytes
+///   apart on the same picture row land on different shards — but a strided
+///   `w x h` access then pays one distinct shard line PER ROW. Shift 12 measured
+///   119.0 ms/frame at t=8 against shift 14's 72.8.
+/// * **Big blocks keep a strided access on one line** — but then all four tile
+///   columns of a row share it. Shift 16 measured 75.5 and the coarse-shift
+///   experiment at t=8 collapsed scaling to 2.7x.
+///
+/// A COLUMN class has both properties at once, because a `w x h` rectangle
+/// occupies the same columns in every one of its rows: it is ONE class however
+/// tall it is, and two tile columns are different classes however close their
+/// rows are.
+///
+/// # Soundness
+///
+/// The module header's argument needs only that both registrants of a shared
+/// element agree on the class of that element and register in it. `class_of`
+/// is a pure function of the offset, fixed for the tracker's life (it moves
+/// only in [`BorrowTracker::set_row_stride`] / [`BorrowTracker::reprovision`],
+/// both `&mut self`), and every registration enumerates EVERY class its bytes
+/// touch — a rectangle its `bands x groups` grid, an interval that crosses a
+/// row boundary the all-shards wide path. Nothing is ever declared unaccessed.
+#[derive(Clone, Copy)]
+struct RowMap {
+    /// Row stride in elements. `0` disables the map and restores the flat
+    /// block scheme, which is the state of every non-picture instance.
+    stride: u32,
+    /// `floor(2^64 / stride) + 1`.
+    ///
+    /// Lemire's exact-division magic: `(n as u128 * magic) >> 64 == n / stride`
+    /// for every `n < 2^32`, which [`BorrowTracker::set_row_stride`] enforces by
+    /// refusing containers at or above that length. One `umulh` plus one
+    /// `msub`, versus a ~20-cycle `udiv`.
+    magic: u64,
+    /// `log2` of the column band width, in elements.
+    ///
+    /// Wide enough that a transform block straddles at most one boundary, and
+    /// narrow enough that a tile column is several bands across: a 4K 8-bit
+    /// plane gets 64-element bands, so a 64-pixel block spans at most two and a
+    /// 960-pixel tile column spans fifteen.
+    col_shift: u32,
+    /// Bits reserved for the band index, so the row group can sit above it
+    /// without colliding.
+    col_bits: u32,
+    /// `log2` of the rows per group. The group is what separates concurrent
+    /// tile ROWS, which share every column band. Coarse on purpose — a
+    /// rectangle that straddles a group boundary costs a second class, and at
+    /// 1024 rows a 64-row block does that 6% of the time.
+    grp_shift: u32,
+}
+
+impl RowMap {
+    const DISABLED: Self = Self {
+        stride: 0,
+        magic: 0,
+        col_shift: 0,
+        col_bits: 0,
+        grp_shift: ROW_GROUP_SHIFT,
+    };
+
+    /// Build a map for `stride`-element rows over a `len`-element container, or
+    /// [`Self::DISABLED`] when the shape is outside what the record fields and
+    /// the exact-division magic can represent.
+    fn new(stride: usize, len: usize) -> Self {
+        // `len < 2^32` is Lemire's precondition; `stride <= COL_ANY` keeps every
+        // real column distinguishable from the "any column" sentinel; the lower
+        // bound keeps `col_shift` meaningful and rules out degenerate strides.
+        if stride < 16 || stride > MAX_ROW_STRIDE || len >= (1usize << 32) || len < stride {
+            return Self::DISABLED;
+        }
+        let magic = (u64::MAX / stride as u64) + 1;
+        // Aim at ~16-31 bands per row, i.e. a band of 128 elements on a
+        // 3840-byte 4K luma row and 256 on its 10-bit twin.
+        //
+        // The band must be WIDER than the widest block, not merely narrower
+        // than a tile column, and for a reason that only shows up in the
+        // measurement: AV1 transform blocks are ALIGNED to their own width, so
+        // a `w`-wide block sits inside one band whenever the band is a
+        // power-of-two multiple of `w` — and straddles otherwise. At 32-element
+        // bands, 1.03 MILLION borrows per frame straddled and took the
+        // multi-shard path; at 128 the only straddlers left are the
+        // deliberately-unaligned edge reads (`ipred`'s x-1 left column, CDEF's
+        // x-2 padding, MC's x-3 filter margin).
+        //
+        // 128 elements still leaves a 960-element 4K tile column 7.5 bands
+        // wide, so the property the map exists for — concurrent tile columns
+        // land on different shards — is untouched.
+        let col_shift = (stride.ilog2()).saturating_sub(COL_BAND_ADJ);
+        let bands = ((stride - 1) >> col_shift) + 1;
+        let col_bits = usize::BITS - (bands as usize).leading_zeros();
+        Self {
+            stride: stride as u32,
+            magic,
+            col_shift,
+            col_bits,
+            grp_shift: ROW_GROUP_SHIFT,
+        }
+    }
+
+    #[inline(always)]
+    fn enabled(&self) -> bool {
+        self.stride != 0
+    }
+
+    /// `offset / stride`, exactly, for every offset this instance can produce.
+    #[inline(always)]
+    fn row_of(&self, offset: usize) -> usize {
+        (((offset as u128) * (self.magic as u128)) >> 64) as usize
+    }
+
+    /// The class of band `b` in row group `g`.
+    #[inline(always)]
+    fn class(&self, band: usize, group: usize) -> usize {
+        band | (group << self.col_bits)
+    }
+}
+
+/// Where a borrow has to be registered under a [`RowMap`].
+enum Located {
+    /// A single class — the overwhelmingly common case, and the whole point.
+    One { class: usize, c0: u16, c1: u16 },
+    /// A `bands x groups` grid, small enough to lock in order.
+    Grid {
+        band0: usize,
+        band1: usize,
+        grp0: usize,
+        grp1: usize,
+        c0: u16,
+        c1: u16,
+    },
+    /// Not describable in few classes: an interval that crosses a row boundary,
+    /// or a borrow spanning too many bands and groups at once. Goes to the wide
+    /// list, which every registrant already consults.
+    ///
+    /// The COLUMN range still travels with it whenever it is known, because
+    /// going wide is a statement about how many locks the record needs, not
+    /// about how much it covers. A borrow that spills across a row boundary is
+    /// the one case where it genuinely is every column, and only that case gets
+    /// [`COL_ANY`].
+    All { c0: u16, c1: u16 },
+}
+
+impl RowMap {
+    /// Locate `[start, end)` — a rectangle of `rows` rows of `row_w` elements
+    /// when `row_w != 0`, a plain interval otherwise.
+    #[inline(always)]
+    fn locate(&self, start: usize, end: usize, row_w: u32, rows: u32) -> Located {
+        let stride = self.stride as usize;
+        // One division for the whole borrow: the first row's index. Every other
+        // row is `r0 + k`, and the column range is the same in all of them.
+        let r0 = self.row_of(start);
+        let c0 = start - r0 * stride;
+        let (width, nrows) = if row_w != 0 {
+            (row_w as usize, rows as usize)
+        } else {
+            (end - start, 1)
+        };
+        // A borrow that runs off the end of its row is not a rectangle in this
+        // coordinate system; it covers every column of the rows it spills into.
+        if c0 + width > stride {
+            return Located::All { c0: 0, c1: COL_ANY };
+        }
+        let c1 = c0 + width - 1;
+        let r1 = r0 + nrows - 1;
+        let band0 = c0 >> self.col_shift;
+        let band1 = c1 >> self.col_shift;
+        let grp0 = r0 >> self.grp_shift;
+        let grp1 = r1 >> self.grp_shift;
+        let (c0, c1) = (c0 as u16, c1 as u16);
+        if band0 == band1 && grp0 == grp1 {
+            return Located::One {
+                class: self.class(band0, grp0),
+                c0,
+                c1,
+            };
+        }
+        if (band1 - band0 + 1) * (grp1 - grp0 + 1) > MAX_SHARDS_PER_BORROW {
+            return Located::All { c0, c1 };
+        }
+        Located::Grid {
+            band0,
+            band1,
+            grp0,
+            grp1,
+            c0,
+            c1,
+        }
+    }
+}
+
 /// `active_shards() - 1` when the buffer is worth spreading, else `0`.
 ///
 /// Read once per [`BorrowTracker::new`] and then immutable for that tracker's
@@ -1219,11 +1539,38 @@ impl BorrowTracker {
             shards: [const { Shard::new() }; N_SHARDS],
             shift: block_shift_for(len),
             mask: mask_for(len),
+            rowmap: RowMap::DISABLED,
             #[cfg(feature = "__probe_tinynop")]
             tiny: len < SHARD_MIN_LEN,
             wide: UnsafeCell::new(Vec::new()),
             state: AtomicU32::new(0),
         }
+    }
+
+    /// Declare this instance's row stride. See [`RowMap`].
+    ///
+    /// `&mut self`: no borrow can be outstanding, so no record can be stranded
+    /// under the old mapping.
+    pub fn set_row_stride(&mut self, stride: usize, len: usize) {
+        self.rowmap = RowMap::new(stride, len);
+    }
+
+    /// Whether a [`crate::StridedRows`] borrow with this stride is recorded
+    /// exactly rather than as its hull.
+    ///
+    /// **`mask != 0` is part of the predicate, not an optimisation.** [`Self::add`]
+    /// dispatches `mask == 0` FIRST — a one-shard instance skips all class
+    /// arithmetic because every class maps to shard 0 anyway — so on such an
+    /// instance a rectangle is recorded as its plain hull no matter how well
+    /// the row map describes it. Answering `true` there tells a caller it may
+    /// stop taking per-row borrows while the tracker is still reserving the
+    /// inter-row gaps, which is precisely the false positive the whole design
+    /// exists to remove: caught by
+    /// `picture.rs`'s `for_rows_mut_never_reserves_an_inter_row_gap_when_tile_threading_is_on`,
+    /// whose 64x4 plane is under `SHARD_MIN_LEN` and therefore always
+    /// single-shard.
+    pub fn rect_exact_for(&self, stride: usize) -> bool {
+        self.mask != 0 && self.rowmap.enabled() && self.rowmap.stride as usize == stride
     }
 
     /// Re-size the shard array after the container's length changed.
@@ -1235,6 +1582,12 @@ impl BorrowTracker {
         // there, and `&mut self` guarantees every one of them is empty.
         self.shift = block_shift_for(len);
         self.mask = mask_for(len);
+        // A row map built for the old length may now violate its own
+        // preconditions (`len < 2^32`, `len >= stride`), so rebuild it against
+        // the new one rather than carrying a stale map forward.
+        if self.rowmap.enabled() {
+            self.rowmap = RowMap::new(self.rowmap.stride as usize, len);
+        }
         #[cfg(feature = "__probe_tinynop")]
         {
             self.tiny = len < SHARD_MIN_LEN;
@@ -1338,14 +1691,29 @@ impl BorrowTracker {
     #[inline]
     #[track_caller]
     pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
-        self.add::<true>(bounds)
+        self.add::<true>(bounds, 0, 0)
+    }
+
+    /// Register a mutable borrow of a `rows x row_w` strided rectangle whose
+    /// hull is `bounds`.
+    #[inline]
+    #[track_caller]
+    pub fn add_rect_mut(&self, bounds: &Bounds, row_w: u32, rows: u32) -> BorrowId {
+        self.add::<true>(bounds, row_w, rows)
+    }
+
+    /// [`Self::add_rect_mut`], immutably.
+    #[inline]
+    #[track_caller]
+    pub fn add_rect_immut(&self, bounds: &Bounds, row_w: u32, rows: u32) -> BorrowId {
+        self.add::<false>(bounds, row_w, rows)
     }
 
     /// Register an immutable borrow. Only checks against mutable borrows.
     #[inline]
     #[track_caller]
     pub fn add_immut(&self, bounds: &Bounds) -> BorrowId {
-        self.add::<false>(bounds)
+        self.add::<false>(bounds, 0, 0)
     }
 
     /// THROWAWAY (`__probe_addnop`): keep the CALL, delete the WORK.
@@ -1363,7 +1731,7 @@ impl BorrowTracker {
     /// `untracked`, the internals really are the cost.
     #[cfg(feature = "__probe_addnop")]
     #[inline(never)]
-    fn add<const IS_MUT: bool>(&self, bounds: &Bounds) -> BorrowId {
+    fn add<const IS_MUT: bool>(&self, bounds: &Bounds, _row_w: u32, _rows: u32) -> BorrowId {
         core::hint::black_box(bounds.range.start);
         BorrowId::UNCHECKED
     }
@@ -1371,7 +1739,7 @@ impl BorrowTracker {
     #[cfg(not(feature = "__probe_addnop"))]
     #[inline]
     #[track_caller]
-    fn add<const IS_MUT: bool>(&self, bounds: &Bounds) -> BorrowId {
+    fn add<const IS_MUT: bool>(&self, bounds: &Bounds, row_w: u32, rows: u32) -> BorrowId {
         let start = bounds.range.start;
         let end = bounds.range.end;
         #[cfg(feature = "__probe_sites")]
@@ -1420,7 +1788,7 @@ impl BorrowTracker {
         // from 117 to 208 instructions and put a stack frame back. The
         // dependency-chain win is real and smaller than the I-cache and frame
         // it buys. `benchmarks/tracker_borrowcost_2026-08-08.tsv`, arm `fold`.
-        let si = if self.mask == 0 {
+        let (si, nc0, nc1) = if self.mask == 0 {
             // The pre-lock `state` check is KEPT, and it is not redundant with
             // the authoritative in-lock re-read below the way it looks. Removing
             // it measured +0.8% at 8bpc t=1 (337.4 -> 340.0, median of 9, idle):
@@ -1429,9 +1797,34 @@ impl BorrowTracker {
             // the chain, it serialises the in-lock load behind the acquire.
             // `benchmarks/tracker_borrowcost_2026-08-08.tsv`, arm `chain3`.
             if self.state.load(Ordering::Acquire) != 0 {
-                return self.add_slow_wide_live::<IS_MUT>(start, end);
+                return self.add_slow_at::<IS_MUT>(0, start, end, 0, COL_ANY);
             }
-            0
+            (0, 0, COL_ANY)
+        } else if self.rowmap.enabled() {
+            // The 2-D path. `locate` costs one exact division and a handful of
+            // shifts, and it is only reachable on an instance that has declared
+            // a row stride AND is being decoded with parallelism — a serial
+            // decode takes the `mask == 0` arm above and never pays for it.
+            match self.rowmap.locate(start, end, row_w, rows) {
+                Located::One { class, c0, c1 } => {
+                    let si = shard_of(class, self.mask);
+                    if self.state.load(Ordering::Acquire) != 0 {
+                        return self.add_slow_at::<IS_MUT>(si, start, end, c0, c1);
+                    }
+                    (si, c0, c1)
+                }
+                Located::Grid {
+                    band0,
+                    band1,
+                    grp0,
+                    grp1,
+                    c0,
+                    c1,
+                } => {
+                    return self.add_grid::<IS_MUT>(start, end, band0, band1, grp0, grp1, c0, c1);
+                }
+                Located::All { c0, c1 } => return self.add_all::<IS_MUT>(start, end, c0, c1),
+            }
         } else {
             let shift = self.block_shift();
             let b0 = start >> shift;
@@ -1441,7 +1834,7 @@ impl BorrowTracker {
             if b0 != b1 || self.state.load(Ordering::Acquire) != 0 {
                 return self.add_slow::<IS_MUT>(start, end, b0, b1);
             }
-            shard_of(b0, self.mask)
+            (shard_of(b0, self.mask), 0, COL_ANY)
         };
 
         // Fast path: the borrow lives in one shard — either one block, or any
@@ -1452,7 +1845,7 @@ impl BorrowTracker {
         // here puts a `bl` in the middle of the hot path and costs the whole
         // function a stack frame.
         if !shard.lock.try_lock() {
-            return self.add_contended::<IS_MUT>(start, end, si);
+            return self.add_contended::<IS_MUT>(start, end, si, nc0, nc1);
         }
         let g = ShardGuard(&shard.lock);
         // RE-READ `state` INSIDE THE LOCK. The load above happens BEFORE this
@@ -1475,7 +1868,7 @@ impl BorrowTracker {
         // through to `add_slow` (which does consult `wide`) is cold.
         if self.state.load(Ordering::Acquire) != 0 {
             drop(g);
-            return self.add_slow_wide_live::<IS_MUT>(start, end);
+            return self.add_slow_at::<IS_MUT>(si, start, end, nc0, nc1);
         }
         // One snapshot of the occupancy bitmap drives both the scan and the
         // slot search. A release landing between the two can only clear bits,
@@ -1489,13 +1882,13 @@ impl BorrowTracker {
         // never a subset, and the only cost of a stale bit is one extra flag
         // load in a later scan. The success path narrows it on every borrow,
         // so it cannot saturate.
-        if let Some(existing) = recs.find::<IS_MUT>(occ, start, end) {
+        if let Some(existing) = recs.find::<IS_MUT>(occ, start, end, nc0, nc1) {
             drop(g);
             Self::overlap_panic(
                 start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
             );
         }
-        match recs.alloc::<IS_MUT>(occ, start, end, here()) {
+        match recs.alloc::<IS_MUT>(occ, start, end, nc0, nc1, here()) {
             Some(slot) => {
                 recs.allocated = occ | (1u8 << (slot as usize).min(SLOTS - 1));
                 shard.publish(slot);
@@ -1507,7 +1900,7 @@ impl BorrowTracker {
                 #[cfg(feature = "__probe_wide")]
                 wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
                 drop(g);
-                self.add_wide::<IS_MUT>(start, end)
+                self.add_wide::<IS_MUT>(start, end, nc0, nc1)
             }
         }
     }
@@ -1524,25 +1917,32 @@ impl BorrowTracker {
     #[cold]
     #[inline(never)]
     #[track_caller]
-    fn add_contended<const IS_MUT: bool>(&self, start: usize, end: usize, si: usize) -> BorrowId {
+    fn add_contended<const IS_MUT: bool>(
+        &self,
+        start: usize,
+        end: usize,
+        si: usize,
+        nc0: u16,
+        nc1: u16,
+    ) -> BorrowId {
         let shard = &self.shards[si & (N_SHARDS - 1)];
         shard.lock.lock();
         let g = ShardGuard(&shard.lock);
         if self.state.load(Ordering::Acquire) != 0 {
             drop(g);
-            return self.add_slow_wide_live::<IS_MUT>(start, end);
+            return self.add_slow_at::<IS_MUT>(si, start, end, nc0, nc1);
         }
         // SAFETY: this shard's lock is held.
         let recs = unsafe { &mut *shard.recs.get() };
         let occ = shard.live_mask(recs.allocated);
         recs.allocated = occ;
-        if let Some(existing) = recs.find::<IS_MUT>(occ, start, end) {
+        if let Some(existing) = recs.find::<IS_MUT>(occ, start, end, nc0, nc1) {
             drop(g);
             Self::overlap_panic(
                 start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
             );
         }
-        match recs.alloc::<IS_MUT>(occ, start, end, here()) {
+        match recs.alloc::<IS_MUT>(occ, start, end, nc0, nc1, here()) {
             Some(slot) => {
                 recs.allocated = occ | (1u8 << (slot as usize).min(SLOTS - 1));
                 shard.publish(slot);
@@ -1552,23 +1952,149 @@ impl BorrowTracker {
                 #[cfg(feature = "__probe_wide")]
                 wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
                 drop(g);
-                self.add_wide::<IS_MUT>(start, end)
+                self.add_wide::<IS_MUT>(start, end, nc0, nc1)
             }
         }
     }
 
-    /// [`Self::add_slow`] for a caller that never computed the block indices.
+    /// Single-shard registration with a live wide record, or a poisoned
+    /// tracker: lock the shard the caller already resolved, scan it, and scan
+    /// the wide list too.
     ///
-    /// The `mask == 0` fast path skips the shift and both block divisions
-    /// because they cannot change which shard it picks; this recomputes them
-    /// for the cold paths that DO need them (`add_slow` consults the wide list
-    /// per block). Cold, so the arithmetic is free here.
+    /// **Takes the SHARD, not the block or the class, and that is the point.**
+    /// Every fast-path bail-out reaches this, and a borrow's shard set at that
+    /// moment is exactly `{si}` under whichever mapping the instance uses —
+    /// flat blocks, row-map classes, or the degenerate `mask == 0` one. Its
+    /// predecessor recomputed a BLOCK index here, which would have locked a
+    /// different shard than the one every other registrant on a [`RowMap`]
+    /// instance uses, i.e. an exclusion hole rather than a slowdown.
     #[cold]
     #[inline(never)]
     #[track_caller]
-    fn add_slow_wide_live<const IS_MUT: bool>(&self, start: usize, end: usize) -> BorrowId {
-        let shift = self.block_shift();
-        self.add_slow::<IS_MUT>(start, end, start >> shift, (end - 1) >> shift)
+    fn add_slow_at<const IS_MUT: bool>(
+        &self,
+        si: usize,
+        start: usize,
+        end: usize,
+        nc0: u16,
+        nc1: u16,
+    ) -> BorrowId {
+        #[cfg(feature = "__probe_wide")]
+        wide_probe::N_SLOW.fetch_add(1, Ordering::Relaxed);
+        if self.state.load(Ordering::Acquire) & POISON_BIT != 0 {
+            Self::poisoned_panic();
+        }
+        let si = si & (N_SHARDS - 1);
+        let shard = &self.shards[si];
+        shard.lock.lock();
+        let g = ShardGuard(&shard.lock);
+        // SAFETY: this shard's lock is held.
+        let recs = unsafe { &mut *shard.recs.get() };
+        let occ = shard.live_mask(recs.allocated);
+        recs.allocated = occ;
+        let mut hit = recs.find::<IS_MUT>(occ, start, end, nc0, nc1);
+        if hit.is_none() {
+            // SAFETY: a shard lock is held, and wide records are only written
+            // while every shard lock is held.
+            hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end, nc0, nc1);
+        }
+        if let Some(existing) = hit {
+            drop(g);
+            Self::overlap_panic(
+                start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+            );
+        }
+        match recs.alloc::<IS_MUT>(occ, start, end, nc0, nc1, here()) {
+            Some(slot) => {
+                recs.allocated = occ | (1u8 << (slot as usize).min(SLOTS - 1));
+                shard.publish(slot);
+                BorrowId::narrow1(si, slot)
+            }
+            None => {
+                #[cfg(feature = "__probe_wide")]
+                wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
+                drop(g);
+                self.add_wide::<IS_MUT>(start, end, nc0, nc1)
+            }
+        }
+    }
+
+    /// A rectangle that straddles a band and/or a row-group boundary: register
+    /// the SAME exact record in each of its (at most
+    /// [`MAX_SHARDS_PER_BORROW`]) classes, locks taken in ascending order.
+    ///
+    /// Not `#[cold]`: a 64-element-wide block straddles a 64-element band about
+    /// half the time, so this is a normal outcome, not an exceptional one. It is
+    /// `#[inline(never)]` so its shard array and sort stay out of the hot
+    /// function's frame.
+    #[inline(never)]
+    #[track_caller]
+    #[allow(clippy::too_many_arguments)]
+    fn add_grid<const IS_MUT: bool>(
+        &self,
+        start: usize,
+        end: usize,
+        band0: usize,
+        band1: usize,
+        grp0: usize,
+        grp1: usize,
+        nc0: u16,
+        nc1: u16,
+    ) -> BorrowId {
+        #[cfg(feature = "__probe_wide")]
+        wide_probe::N_MULTI.fetch_add(1, Ordering::Relaxed);
+        // ONLY poison escalates. A live wide record must NOT: `lock_and_register`
+        // consults the wide list under the locks it takes, exactly as
+        // `add_multi` does, so the grid path is already atomic against it.
+        //
+        // Escalating on `state != 0` was an AVALANCHE. One wide record makes
+        // every straddling borrow wide too, each of which keeps `state`
+        // nonzero, so the population never drains: measured 2,309 wide
+        // registrations per frame at t=2 and **188,307 at t=8** on v4k_8tile,
+        // with 867k `add_slow_at` entries behind them, and t=8 wall 2.28x WORSE
+        // than base. It is the single most expensive shape this tracker has,
+        // because a wide record holds every shard of the instance.
+        if self.state.load(Ordering::Acquire) & POISON_BIT != 0 {
+            Self::poisoned_panic();
+        }
+        let mut set = [0u16; MAX_SHARDS_PER_BORROW];
+        let mut n = 0usize;
+        for g in grp0..=grp1 {
+            for b in band0..=band1 {
+                let s = shard_of(self.rowmap.class(b, g), self.mask) as u16;
+                if set[..n].contains(&s) {
+                    continue;
+                }
+                if n == MAX_SHARDS_PER_BORROW {
+                    // Cannot happen: `locate` already bounded the product. Kept
+                    // as a correct fallback rather than an `unreachable!`,
+                    // because the wide path is always sound.
+                    return self.add_all::<IS_MUT>(start, end, nc0, nc1);
+                }
+                set[n] = s;
+                n += 1;
+            }
+        }
+        self.lock_and_register::<IS_MUT>(&mut set[..n], start, end, nc0, nc1)
+    }
+
+    /// The all-shards registration, for a borrow no small class set describes.
+    #[cold]
+    #[inline(never)]
+    #[track_caller]
+    fn add_all<const IS_MUT: bool>(
+        &self,
+        start: usize,
+        end: usize,
+        nc0: u16,
+        nc1: u16,
+    ) -> BorrowId {
+        #[cfg(feature = "__probe_wide")]
+        wide_probe::WIDE_BLOCKS.fetch_add(1, Ordering::Relaxed);
+        if self.state.load(Ordering::Acquire) & POISON_BIT != 0 {
+            Self::poisoned_panic();
+        }
+        self.add_wide::<IS_MUT>(start, end, nc0, nc1)
     }
 
     /// Everything the fast path bailed out of: poisoned, a live wide record, or
@@ -1590,40 +2116,9 @@ impl BorrowTracker {
         }
         if b0 == b1 {
             // Single block, but there is at least one live wide record, so the
-            // wide list has to be consulted too.
-            let si = shard_of(b0, self.mask);
-            let shard = &self.shards[si];
-            shard.lock.lock();
-            let g = ShardGuard(&shard.lock);
-            // SAFETY: this shard's lock is held.
-            let recs = unsafe { &mut *shard.recs.get() };
-            let occ = shard.live_mask(recs.allocated);
-            recs.allocated = occ;
-            let mut hit = recs.find::<IS_MUT>(occ, start, end);
-            if hit.is_none() {
-                // SAFETY: a shard lock is held, and wide records are only
-                // written while every shard lock is held.
-                hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end);
-            }
-            if let Some(existing) = hit {
-                drop(g);
-                Self::overlap_panic(
-                    start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
-                );
-            }
-            return match recs.alloc::<IS_MUT>(occ, start, end, here()) {
-                Some(slot) => {
-                    recs.allocated = occ | (1u8 << (slot as usize).min(SLOTS - 1));
-                    shard.publish(slot);
-                    BorrowId::narrow1(si, slot)
-                }
-                None => {
-                    #[cfg(feature = "__probe_wide")]
-                    wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
-                    drop(g);
-                    self.add_wide::<IS_MUT>(start, end)
-                }
-            };
+            // wide list has to be consulted too — which is exactly
+            // [`Self::add_slow_at`]'s job.
+            return self.add_slow_at::<IS_MUT>(shard_of(b0, self.mask), start, end, 0, COL_ANY);
         }
         self.add_multi::<IS_MUT>(start, end, b0, b1)
     }
@@ -1646,7 +2141,7 @@ impl BorrowTracker {
         if nblocks > MAX_BLOCKS_SCAN {
             #[cfg(feature = "__probe_wide")]
             wide_probe::WIDE_BLOCKS.fetch_add(1, Ordering::Relaxed);
-            return self.add_wide::<IS_MUT>(start, end);
+            return self.add_wide::<IS_MUT>(start, end, 0, COL_ANY);
         }
         let mut set = [0u16; MAX_SHARDS_PER_BORROW];
         let mut n = 0usize;
@@ -1658,12 +2153,32 @@ impl BorrowTracker {
             if n == MAX_SHARDS_PER_BORROW {
                 #[cfg(feature = "__probe_wide")]
                 wide_probe::WIDE_SHARDS.fetch_add(1, Ordering::Relaxed);
-                return self.add_wide::<IS_MUT>(start, end);
+                return self.add_wide::<IS_MUT>(start, end, 0, COL_ANY);
             }
             set[n] = s;
             n += 1;
         }
-        set[..n].sort_unstable();
+        self.lock_and_register::<IS_MUT>(&mut set[..n], start, end, 0, COL_ANY)
+    }
+
+    /// Register the same record in each of `set`'s distinct shards.
+    ///
+    /// Shared by the flat block scheme's [`Self::add_multi`] and the row map's
+    /// [`Self::add_grid`], which differ only in how they choose the set. Locks
+    /// are taken in ascending shard order — [`TinyLock`] is not reentrant and
+    /// the wide path acquires ascending too, so no cycle exists.
+    #[inline(never)]
+    #[track_caller]
+    fn lock_and_register<const IS_MUT: bool>(
+        &self,
+        set: &mut [u16],
+        start: usize,
+        end: usize,
+        nc0: u16,
+        nc1: u16,
+    ) -> BorrowId {
+        let n = set.len();
+        set.sort_unstable();
 
         for &s in &set[..n] {
             self.shards[(s as usize) & (N_SHARDS - 1)].lock.lock();
@@ -1676,14 +2191,14 @@ impl BorrowTracker {
             let recs = unsafe { &mut *shard.recs.get() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
-            if let Some(h) = recs.find::<IS_MUT>(occ, start, end) {
+            if let Some(h) = recs.find::<IS_MUT>(occ, start, end, nc0, nc1) {
                 hit = Some(h);
                 break;
             }
         }
         if hit.is_none() && self.state.load(Ordering::Relaxed) & !POISON_BIT != 0 {
             // SAFETY: shard locks are held.
-            hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end);
+            hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end, nc0, nc1);
         }
         if let Some(existing) = hit {
             Self::unlock_all(&self.shards, &set[..n]);
@@ -1703,7 +2218,7 @@ impl BorrowTracker {
             // nothing can have published since (this thread holds every one of
             // these locks), so it IS the occupancy snapshot here.
             let occ = recs.allocated;
-            match recs.alloc::<IS_MUT>(occ, start, end, here()) {
+            match recs.alloc::<IS_MUT>(occ, start, end, nc0, nc1, here()) {
                 Some(slot) => {
                     slots[done] = slot;
                     done += 1;
@@ -1717,7 +2232,7 @@ impl BorrowTracker {
             // Nothing was published yet, so the rollback has nothing to undo:
             // `alloc` only fills fields, and the occupancy bits are set below.
             Self::unlock_all(&self.shards, &set[..n]);
-            return self.add_wide::<IS_MUT>(start, end);
+            return self.add_wide::<IS_MUT>(start, end, nc0, nc1);
         }
         // Publish only once every shard has a slot, so a partially-registered
         // borrow is never observable.
@@ -1738,7 +2253,13 @@ impl BorrowTracker {
     #[cold]
     #[inline(never)]
     #[track_caller]
-    fn add_wide<const IS_MUT: bool>(&self, start: usize, end: usize) -> BorrowId {
+    fn add_wide<const IS_MUT: bool>(
+        &self,
+        start: usize,
+        end: usize,
+        nc0: u16,
+        nc1: u16,
+    ) -> BorrowId {
         let active = self.active();
         for shard in active {
             shard.lock.lock();
@@ -1749,7 +2270,7 @@ impl BorrowTracker {
             let recs = unsafe { &mut *shard.recs.get() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
-            if let Some(h) = recs.find::<IS_MUT>(occ, start, end) {
+            if let Some(h) = recs.find::<IS_MUT>(occ, start, end, nc0, nc1) {
                 hit = Some(h);
                 break;
             }
@@ -1758,7 +2279,7 @@ impl BorrowTracker {
         // before the locks drop — otherwise another thread's `&` read of the
         // same list would alias a live `&mut`.
         if hit.is_none() {
-            hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end);
+            hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end, nc0, nc1);
         }
         if let Some(existing) = hit {
             Self::unlock_every(active);
@@ -1769,7 +2290,7 @@ impl BorrowTracker {
         let idx = {
             // SAFETY: every shard lock is held.
             let wide = unsafe { &mut *self.wide.get() };
-            let rec = (start, end, IS_MUT, wide_loc());
+            let rec = (start, end, nc0, nc1, IS_MUT, wide_loc());
             match wide.iter().position(|r| r.0 >= r.1) {
                 Some(i) => {
                     wide[i] = rec;
@@ -1795,9 +2316,11 @@ impl BorrowTracker {
         wide: &[WideRec],
         start: usize,
         end: usize,
+        nc0: u16,
+        nc1: u16,
     ) -> Option<OverlapHit> {
-        for &(s, e, m, l) in wide {
-            if s < e && (IS_MUT || m) && s < end && start < e {
+        for &(s, e, c0, c1, m, l) in wide {
+            if s < e && (IS_MUT || m) && s < end && start < e && cols_meet(c0, c1, nc0, nc1) {
                 return Some((s, e, m, l));
             }
         }
@@ -1891,7 +2414,7 @@ impl BorrowTracker {
             let wide = unsafe { &mut *self.wide.get() };
             let i = id.wide_idx();
             if i < wide.len() {
-                wide[i] = (1, 0, false, None); // tombstone
+                wide[i] = (1, 0, 0, COL_ANY, false, None); // tombstone
             }
         }
         self.state.fetch_sub(1, Ordering::Relaxed);
@@ -2398,5 +2921,274 @@ mod tests {
         for h in hs {
             h.join().unwrap();
         }
+    }
+}
+
+/// MECHANISM gate for the row map.
+///
+/// The property under test is invisible in any decoded output: a
+/// [`crate::StridedRows`] borrow and a per-row borrow hand out the SAME bytes,
+/// so a decode is bit-identical whichever the tracker records. What differs is
+/// only whether a DISJOINT neighbour is rejected, and the only way to observe
+/// that is to take the two borrows and see whether the second panics.
+///
+/// Each test therefore asserts on the MECHANISM — that the map is enabled, that
+/// the rectangle path is the one taken, that a genuine overlap is still caught
+/// — and not merely that nothing blew up. A gate that passes because the
+/// interesting branch was never reached is the failure mode this repo has
+/// already hit twice (`wide_exclusion` going vacuous, `decode_permutations`
+/// pinned to the wrong runner).
+#[cfg(test)]
+mod rowmap_tests {
+    use super::*;
+    use crate::DisjointMut;
+    use crate::StridedRows;
+    use alloc::vec;
+
+    /// A 4K 8-bit luma plane: the shape the whole design is aimed at.
+    const STRIDE: usize = 3840;
+    const ROWS: usize = 2160;
+    const LEN: usize = STRIDE * ROWS;
+
+    fn plane() -> DisjointMut<alloc::vec::Vec<u8>> {
+        // The map is only consulted on an instance the tracker has sharded,
+        // which needs parallelism declared. Monotone, so this is safe to call
+        // from any test in any order.
+        set_parallelism(8);
+        let mut dm: DisjointMut<alloc::vec::Vec<u8>> = DisjointMut::new(vec![0u8; LEN]);
+        dm.set_row_stride(STRIDE);
+        dm
+    }
+
+    fn rect(start: usize, w: usize, h: usize) -> StridedRows {
+        StridedRows {
+            start,
+            w,
+            h,
+            stride: STRIDE,
+        }
+    }
+
+    /// LIVENESS: the map is on, and it puts a rectangle in ONE class.
+    ///
+    /// Without this, every test below could pass with the map disabled — the
+    /// hull path would reject the neighbours and the test would read as a
+    /// false-positive failure, but a *narrower* bug (map on, columns not
+    /// recorded) would not be distinguishable from success.
+    #[test]
+    fn map_is_live_and_a_rectangle_is_one_class() {
+        let dm = plane();
+        assert!(
+            dm.rect_exact_for(STRIDE),
+            "row map must be enabled for a 4K plane"
+        );
+        // The map is only CONSULTED on a sharded instance, so a plane too small
+        // to be sharded must report `false` however well the map fits it.
+        let mut tiny: DisjointMut<alloc::vec::Vec<u8>> = DisjointMut::new(vec![0u8; 64 * 4]);
+        tiny.set_row_stride(64);
+        assert!(
+            !tiny.rect_exact_for(64),
+            "a single-shard instance records the HULL, so it is not exact"
+        );
+        assert!(
+            !dm.rect_exact_for(STRIDE + 1),
+            "a mismatched stride must NOT report exact tracking"
+        );
+        let map = RowMap::new(STRIDE, LEN);
+        assert!(map.enabled());
+        // A 16x16 block at column 0 of row 0.
+        match map.locate(0, 15 * STRIDE + 16, 16, 16) {
+            Located::One { c0, c1, .. } => assert_eq!((c0, c1), (0, 15)),
+            _ => panic!("a 16x16 aligned block must be ONE class"),
+        }
+        // The exact division, at both ends of the plane.
+        for row in [0usize, 1, 1079, 1080, ROWS - 1] {
+            for col in [0usize, 1, STRIDE - 1] {
+                let off = row * STRIDE + col;
+                assert_eq!(map.row_of(off), row, "row_of({off})");
+            }
+        }
+    }
+
+    /// The property: two tile columns writing the SAME picture rows.
+    ///
+    /// This is the exact shape `block_mut`'s doc calls "correct single-threaded
+    /// and wrong under tile threading" — a hull reserves the gaps between the
+    /// first block's rows, and the second block lives in them.
+    #[test]
+    fn adjacent_tile_columns_on_the_same_rows_do_not_conflict() {
+        let dm = plane();
+        let mut held = alloc::vec::Vec::new();
+        // Four tile columns of a 4K frame, all writing rows 0..16.
+        for tile in 0..4 {
+            held.push(dm.index_rect_mut(rect(tile * 960, 16, 16)));
+        }
+        // ... and the 1-pixel-wide intra left column each of them reads next.
+        for tile in 1..4 {
+            held.push(dm.index_rect_mut(rect(tile * 960 - 1, 1, 16)));
+        }
+        assert_eq!(held.len(), 7);
+    }
+
+    /// The other half: a REAL overlap must still be caught. Without this the
+    /// test above is satisfied by a tracker that never conflicts at all.
+    #[test]
+    #[should_panic(expected = "overlapping DisjointMut")]
+    fn a_genuine_rectangle_overlap_is_still_caught() {
+        let dm = plane();
+        let _a = dm.index_rect_mut(rect(0, 16, 16));
+        // Same columns, rows 8..24 — overlaps rows 8..16.
+        let _b = dm.index_rect_mut(rect(8 * STRIDE, 16, 16));
+    }
+
+    /// A plain interval inside one of a rectangle's rows must be caught, and
+    /// one in the GAP between them must not.
+    #[test]
+    fn interval_versus_rectangle_is_exact_in_both_directions() {
+        let dm = plane();
+        let held = dm.index_rect_mut(rect(0, 16, 16));
+        // In the gap of row 3 — genuinely untouched by the rectangle.
+        let _gap = dm.index_mut(3 * STRIDE + 100..3 * STRIDE + 104);
+        drop(_gap);
+        drop(held);
+
+        let held = dm.index_rect_mut(rect(0, 16, 16));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // Inside row 3 of the rectangle.
+            let _hit = dm.index_mut(3 * STRIDE + 8..3 * STRIDE + 12);
+        }));
+        drop(held);
+        assert!(
+            caught.is_err(),
+            "a borrow INSIDE a rectangle's row must conflict"
+        );
+    }
+
+    /// A borrow that runs off the end of its row covers every column of the
+    /// rows it spills into, and must therefore conflict with anything in them.
+    #[test]
+    fn a_row_crossing_interval_claims_every_column() {
+        let dm = plane();
+        let map = RowMap::new(STRIDE, LEN);
+        match map.locate(STRIDE - 4, STRIDE + 4, 0, 0) {
+            Located::All { c0, c1 } => assert_eq!((c0, c1), (0, COL_ANY)),
+            _ => panic!("an interval crossing a row boundary must be All"),
+        }
+        let held = dm.index_mut(STRIDE - 4..STRIDE + 4);
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _hit = dm.index_rect_mut(rect(STRIDE + 2, 4, 2));
+        }));
+        drop(held);
+        assert!(caught.is_err(), "the spilled row must still be excluded");
+    }
+
+    /// A wide record keeps its COLUMN range: going wide is a statement about
+    /// how many locks the record needs, not about how much it covers.
+    ///
+    /// The geometry is chosen so the hull test alone CANNOT decide it — the
+    /// wide record's hull sits strictly inside the rectangle's hull, three rows
+    /// down, and only the column ranges separate them. Regression gate for the
+    /// avalanche that made t=8 measure 2.28x slower than base.
+    #[test]
+    fn a_wide_record_does_not_swallow_a_disjoint_neighbour() {
+        let dm = plane();
+        let map = RowMap::new(STRIDE, LEN);
+        // 960 elements in ONE row: more column bands than the class cap
+        // allows, so it goes to the wide list — but its columns are known.
+        let wide_start = 5 * STRIDE;
+        match map.locate(wide_start, wide_start + 960, 0, 0) {
+            Located::All { c0, c1 } => assert_eq!(
+                (c0, c1),
+                (0, 959),
+                "a long single-row borrow must keep its columns"
+            ),
+            _ => panic!("960 elements must exceed the class cap"),
+        }
+        let _wide = dm.index(wide_start..wide_start + 960);
+        // Rows 0..16 at columns 1000..1016. Its hull, [1000, 58616), strictly
+        // CONTAINS the wide record's hull [19200, 20160) — so the hull test
+        // says "overlap" and only the columns say otherwise.
+        let r = rect(1000, 16, 16);
+        let hull = r.start..r.start + 15 * STRIDE + 16;
+        assert!(
+            hull.start < wide_start && wide_start + 960 < hull.end,
+            "the test geometry must make the hulls overlap"
+        );
+        let _r = dm.index_rect_mut(r);
+    }
+
+    /// Two DISJOINT rectangles that land in the SAME shard.
+    ///
+    /// The row map's job is to keep concurrent tile COLUMNS apart, so the
+    /// common case never reaches the per-record column test — the two records
+    /// are in different shards and never see each other. Two blocks inside ONE
+    /// band do share a shard, and that is where `ShardRecs::find`'s column test
+    /// is the only thing standing between a disjoint pair and a spurious panic.
+    /// Deleting that test leaves every other case in this module green.
+    ///
+    /// (A collision between two DIFFERENT bands cannot be constructed: the
+    /// Fibonacci hash is injective on 0..128 and the map never makes more than
+    /// 64 bands per row. Same-band is the reachable case, and it is the one a
+    /// 4K decode hits constantly.)
+    #[test]
+    fn disjoint_rectangles_inside_one_band_do_not_conflict() {
+        let dm = plane();
+        let map = RowMap::new(STRIDE, LEN);
+        let band = 1usize << map.col_shift;
+        assert!(
+            band >= 32,
+            "the band must hold two 16-wide blocks for this test to mean anything"
+        );
+        let (ca, cb) = (0usize, band / 2);
+        // Same class -> same shard, by construction rather than by search.
+        assert_eq!(ca >> map.col_shift, cb >> map.col_shift);
+        match (
+            map.locate(ca, ca + 15 * STRIDE + 16, 16, 16),
+            map.locate(cb, cb + 15 * STRIDE + 16, 16, 16),
+        ) {
+            (Located::One { class: x, .. }, Located::One { class: y, .. }) => {
+                assert_eq!(x, y, "both blocks must be the same class")
+            }
+            _ => panic!("both must be ONE class"),
+        }
+        // Hulls overlap; only the column ranges separate them.
+        assert!(cb < ca + 15 * STRIDE + 16);
+        let _a = dm.index_rect_mut(rect(ca, 16, 16));
+        let _b = dm.index_rect_mut(rect(cb, 16, 16));
+    }
+
+    /// Non-strided instances keep the flat block scheme and the plain hull
+    /// semantics, unchanged.
+    #[test]
+    fn an_instance_without_a_row_stride_is_untouched() {
+        set_parallelism(8);
+        let dm: DisjointMut<alloc::vec::Vec<u8>> = DisjointMut::new(vec![0u8; LEN]);
+        assert!(!dm.rect_exact_for(STRIDE));
+        let _a = dm.index_mut(0..16);
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _b = dm.index_mut(8..24);
+        }));
+        assert!(
+            caught.is_err(),
+            "plain interval overlap must still be caught"
+        );
+    }
+
+    /// Shapes the map must refuse rather than mis-model.
+    #[test]
+    fn out_of_range_shapes_disable_the_map() {
+        assert!(!RowMap::new(8, LEN).enabled(), "stride below the floor");
+        assert!(
+            !RowMap::new(MAX_ROW_STRIDE + 1, LEN).enabled(),
+            "stride above what the column fields hold"
+        );
+        assert!(
+            !RowMap::new(STRIDE, 1usize << 32).enabled(),
+            "length past the exact-division magic's range"
+        );
+        assert!(
+            !RowMap::new(STRIDE, STRIDE - 1).enabled(),
+            "shorter than a row"
+        );
     }
 }

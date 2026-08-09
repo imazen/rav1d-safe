@@ -554,7 +554,13 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         stride: isize,
         h: usize,
     ) {
-        if !crate::include::dav1d::picture::tile_threading_active() {
+        // The hull path is now also correct WITH tile workers alive, provided
+        // the tracker can record the rectangle exactly — the gaps stop being
+        // reserved, which was the only reason this branch existed. See
+        // `fill_hull`'s doc.
+        if !crate::include::dav1d::picture::tile_threading_active()
+            || (stride > 0 && origin.rect_is_exact_for::<BD>())
+        {
             return Self::fill_hull::<W>(scratch, origin, stride, h);
         }
         for row in 0..h {
@@ -622,7 +628,18 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             origin.offset - (h - 1) * astride
         };
         let total = (h - 1) * astride + W;
-        let guard = origin.data.slice::<BD, _>((lo.., ..total));
+        // ONE registration, recorded as the exact rectangle on a positive
+        // stride so the inter-row gaps stay available to other tile columns.
+        let guard = if stride > 0 {
+            origin.data.rect::<BD>(rav1d_disjoint_mut::StridedRows {
+                start: lo,
+                w: W,
+                h,
+                stride: astride,
+            })
+        } else {
+            origin.data.slice::<BD, _>((lo.., ..total))
+        };
         for row in 0..h {
             let idx = if stride >= 0 {
                 row * astride

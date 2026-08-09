@@ -315,6 +315,32 @@ impl BorrowTracker {
     /// No-op: the legacy tracker's table does not depend on the length.
     pub fn reprovision(&mut self, _len: usize) {}
 
+    /// No-op: this tracker has one lock and one flat record table, so there is
+    /// no shard mapping for a row stride to inform.
+    pub fn set_row_stride(&mut self, _stride: usize, _len: usize) {}
+
+    /// A rectangle degrades to its hull here — see [`Self::rect_exact_for`].
+    #[inline]
+    #[track_caller]
+    pub fn add_rect_mut(&self, bounds: &Bounds, _row_w: u32, _rows: u32) -> BorrowId {
+        self.add_mut(bounds)
+    }
+
+    /// [`Self::add_rect_mut`], immutably.
+    #[inline]
+    #[track_caller]
+    pub fn add_rect_immut(&self, bounds: &Bounds, _row_w: u32, _rows: u32) -> BorrowId {
+        self.add_immut(bounds)
+    }
+
+    /// Always `false`: the legacy record is a plain interval, so a
+    /// [`crate::StridedRows`] borrow degrades to its HULL here — which reserves
+    /// the inter-row gaps and would be a false positive against a concurrent
+    /// tile column. Callers must keep taking per-row borrows on this tracker.
+    pub fn rect_exact_for(&self, _stride: usize) -> bool {
+        false
+    }
+
     /// Mark this tracker as poisoned. All future borrow attempts will panic.
     pub fn poison(&self) {
         self.poisoned.store(true, Ordering::Release);

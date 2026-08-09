@@ -16,6 +16,7 @@ pub use rav1d_disjoint_mut::DisjointMutSlice;
 #[cfg(feature = "c-ffi")]
 pub use rav1d_disjoint_mut::ExternalAsMutPtr;
 pub use rav1d_disjoint_mut::SliceBounds;
+pub use rav1d_disjoint_mut::StridedRows;
 pub use rav1d_disjoint_mut::TryResizable;
 pub use rav1d_disjoint_mut::TryResizableWith;
 

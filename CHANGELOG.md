@@ -4,6 +4,25 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Changed
+- **The borrow tracker shards a picture plane by COLUMN, and a `w x h` block is
+  ONE tracked borrow at every thread count**
+  (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`,
+  `include/dav1d/picture.rs`, `src/loopfilter.rs`). A strided block used to be
+  either `h` per-row registrations (correct under tile threading, and the
+  source of the decoder's borrow volume: 7.9 M registrations per 4K frame at
+  t=1 against 22.7 M at t>1) or one hull registration (cheap, but it reserves
+  the inter-row gaps, which belong to other tile COLUMNS). The new
+  `StridedRows` index records the hull as the *reference* and the exact
+  rectangle as the *record*: `RowMap` maps each element to
+  `(column band, row group)` via one exact division, so every row of a block
+  shares a class, and `ShardRecs` carries the record's column range so the
+  overlap test is `hull AND columns` — provably exact, not merely
+  conservative. Measured on `v4k_8tile` 8bpc against `main` ee07b00: t=8
+  registrations 22,700,725 -> **7,923,518**, i.e. the thread-count-dependent
+  explosion is gone (t=1 is 7,924,706 on both), and wall **0.780x**; t=4
+  0.837x; t=2 0.866x; t=1 within noise. Record: `benchmarks/strided_rect_2026-08-09.meta`.
+
 ### Fixed
 - **`wide_exclusion` had gone vacuous, and with it the only gate for the
   wide-path TOCTOU** (`crates/rav1d-disjoint-mut/tests/wide_exclusion.rs`).

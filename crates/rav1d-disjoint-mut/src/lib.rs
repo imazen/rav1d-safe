@@ -670,6 +670,83 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         }
     }
 
+    /// [`Self::index_mut`] for a [`StridedRows`] rectangle.
+    ///
+    /// Byte-for-byte the same sequence — the reference handed out IS the hull,
+    /// so nothing about bounds checking or poisoning changes. The one
+    /// difference is that the tracker is told the SHAPE, so it can record the
+    /// rectangle instead of the hull and leave the inter-row gaps to whoever
+    /// owns them.
+    ///
+    /// `#[inline(always)]` for the reason spelled out on [`Self::mut_slice_as`]:
+    /// under plain `#[inline]` LLVM declines, and the hull callers
+    /// (`for_rows`, `narrow_guard`, the loop filter's `fill_hull`) are exactly
+    /// the sites the whole design exists to make cheap. Measured **+4.0% at
+    /// 8bpc t=1** with it out of line — the tracker's whole single-threaded
+    /// cost is 13.7 ms/frame there, so an out-of-line registration path roughly
+    /// doubles it.
+    #[inline(always)]
+    #[track_caller]
+    pub fn index_rect_mut<'a>(
+        &'a self,
+        rect: StridedRows,
+    ) -> DisjointMutGuard<'a, T, [<T as AsMutPtr>::Target]>
+    where
+        StridedRows:
+            DisjointMutIndex<[<T as AsMutPtr>::Target], Output = [<T as AsMutPtr>::Target]>,
+    {
+        let mut bounds: Bounds = rect.into();
+        clamp_bounds(&mut bounds, self.as_mut_slice().len());
+        let (row_w, rows) = rect.shape();
+        let borrow_id = match &self.tracker {
+            Some(tracker) => tracker.add_rect_mut(&bounds, row_w, rows),
+            None => checked::BorrowId::UNCHECKED,
+        };
+        let parent = self.tracker.as_ref().map(|_| self);
+        let cleanup = BorrowCleanup { parent };
+        // SAFETY: The borrow has been registered (or we're unchecked).
+        let slice = unsafe { &mut *rect.get_mut(self.as_mut_slice()) };
+        mem::forget(cleanup);
+        DisjointMutGuard {
+            slice,
+            parent,
+            borrow_id,
+            phantom: PhantomData,
+        }
+    }
+
+    /// [`Self::index`] for a [`StridedRows`] rectangle. See
+    /// [`Self::index_rect_mut`].
+    #[inline(always)]
+    #[track_caller]
+    pub fn index_rect<'a>(
+        &'a self,
+        rect: StridedRows,
+    ) -> DisjointImmutGuard<'a, T, [<T as AsMutPtr>::Target]>
+    where
+        StridedRows:
+            DisjointMutIndex<[<T as AsMutPtr>::Target], Output = [<T as AsMutPtr>::Target]>,
+    {
+        let mut bounds: Bounds = rect.into();
+        clamp_bounds(&mut bounds, self.as_mut_slice().len());
+        let (row_w, rows) = rect.shape();
+        let borrow_id = match &self.tracker {
+            Some(tracker) => tracker.add_rect_immut(&bounds, row_w, rows),
+            None => checked::BorrowId::UNCHECKED,
+        };
+        let parent = self.tracker.as_ref().map(|_| self);
+        let cleanup = BorrowCleanup { parent };
+        // SAFETY: The borrow has been registered (or we're unchecked).
+        let slice = unsafe { &*rect.get_mut(self.as_mut_slice()).cast_const() };
+        mem::forget(cleanup);
+        DisjointImmutGuard {
+            slice,
+            parent,
+            borrow_id,
+            phantom: PhantomData,
+        }
+    }
+
     /// Immutably borrow a slice or element.
     ///
     /// Validates that the requested range doesn't overlap with any outstanding
@@ -798,6 +875,36 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
         self.index((index..index + 1).mul(mem::size_of::<V>()))
             .cast()
     }
+
+    /// [`Self::mut_slice_as`] for a [`StridedRows`] rectangle: the reference is
+    /// the hull, the registered record is the exact rectangle.
+    ///
+    /// There is no `check_cast_slice_len` here because [`StridedRows`] is not a
+    /// [`SliceBounds`] — it deliberately is not, so that the blanket
+    /// `From<T: SliceBounds> for Bounds` (which would erase the shape back to a
+    /// plain interval) cannot apply to it. The length assertion it would make
+    /// is `slice.len() == hull.len()`, which `cast_slice` on a `V`-multiple
+    /// range already gives.
+    #[inline(always)]
+    #[track_caller]
+    pub fn mut_rect_as<'a, V>(&'a self, rect: StridedRows) -> DisjointMutGuard<'a, T, [V]>
+    where
+        V: IntoBytes + FromBytes + KnownLayout,
+    {
+        self.index_rect_mut(rect.mul(mem::size_of::<V>()))
+            .cast_slice()
+    }
+
+    /// [`Self::slice_as`] for a [`StridedRows`] rectangle. See
+    /// [`Self::mut_rect_as`].
+    #[inline(always)]
+    #[track_caller]
+    pub fn rect_as<'a, V>(&'a self, rect: StridedRows) -> DisjointImmutGuard<'a, T, [V]>
+    where
+        V: FromBytes + KnownLayout + Immutable,
+    {
+        self.index_rect(rect.mul(mem::size_of::<V>())).cast_slice()
+    }
 }
 
 // =============================================================================
@@ -897,6 +1004,14 @@ pub struct Bounds {
     pub(crate) range: Range<usize>,
 }
 
+// `Bounds` is built on the stack at EVERY borrow and passed by reference, so
+// its size is on the hot path. The rectangle shape deliberately travels as two
+// extra scalar arguments to `add_rect_*` instead of as fields here: growing
+// this struct from 16 to 24 bytes measured **+3.6% at 8bpc t=1** (6,700 ->
+// 6,940 ms for 20 frames, n=3, idle box) because every plain borrow paid two
+// extra stores it had no use for.
+const _: () = assert!(core::mem::size_of::<Bounds>() == 2 * core::mem::size_of::<usize>());
+
 impl Display for Bounds {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let Range { start, end } = self.range;
@@ -960,6 +1075,106 @@ impl<T: SliceBounds> From<T> for Bounds {
         Self {
             range: range.to_range(usize::MAX),
         }
+    }
+}
+
+/// A `rows x w` STRIDED RECTANGLE, as one index and therefore one borrow.
+///
+/// # Why this exists
+///
+/// A `w x h` block of a picture plane is either `h` registrations of exactly
+/// `w` elements, or ONE registration of the hull `(h-1)*stride + w`. The hull
+/// additionally reserves the inter-row gaps, which under tile threading belong
+/// to other tile COLUMNS — so it turns genuinely disjoint neighbours into false
+/// positives, and `include/dav1d/picture.rs` has to fall back to the per-row
+/// form whenever a tile worker can be alive. That fallback is where the
+/// decoder's borrow count comes from: 7,924,706 registrations per 4K frame at
+/// t=1 against **22,700,725** at t=2/4/8, all of the growth being picture-plane
+/// traffic switching to per-row guards
+/// (`benchmarks/t8_scaling_diag_2026-08-09.meta`).
+///
+/// This index gives the tracker the third option: the hull as the *reference*,
+/// the exact rectangle as the *record*. `Self::to_range` is the hull (that is
+/// what the returned slice covers, and what `DisjointMutIndex` hands out), while
+/// [`Bounds::row_w`]/[`Bounds::rows`] carry the shape, so the overlap test can
+/// exclude the gaps instead of reserving them.
+///
+/// `stride` is in elements and must be positive; callers with a negative
+/// picture stride pass the rows in reverse order (lowest address first), which
+/// is the same rectangle.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct StridedRows {
+    /// Index of the first element of the first (lowest-addressed) row.
+    pub start: usize,
+    /// Elements per row.
+    pub w: usize,
+    /// Number of rows.
+    pub h: usize,
+    /// Elements between the starts of consecutive rows. Must be `>= w`.
+    pub stride: usize,
+}
+
+impl StridedRows {
+    /// The hull: first element of the first row up to the last element of the
+    /// last row.
+    #[inline(always)]
+    fn hull(&self) -> Range<usize> {
+        if self.w == 0 || self.h == 0 {
+            return self.start..self.start;
+        }
+        self.start..self.start + (self.h - 1) * self.stride + self.w
+    }
+}
+
+impl sealed::IndexLike for StridedRows {}
+
+impl TranslateRange for StridedRows {
+    #[inline(always)]
+    fn mul(&self, by: usize) -> Self {
+        Self {
+            start: self.start * by,
+            w: self.w * by,
+            h: self.h,
+            stride: self.stride * by,
+        }
+    }
+}
+
+impl From<StridedRows> for Bounds {
+    #[inline(always)]
+    fn from(r: StridedRows) -> Self {
+        Self { range: r.hull() }
+    }
+}
+
+impl StridedRows {
+    /// The shape as the tracker wants it: `(row_w, rows)`, or `(0, 0)` for a
+    /// borrow that is really a plain interval.
+    ///
+    /// A single row IS a plain interval, and saying so keeps it on the cheap
+    /// path. `w == 0 || h == 0` is an empty borrow, which `add` short-circuits
+    /// on `start >= end`.
+    #[inline(always)]
+    fn shape(&self) -> (u32, u32) {
+        if self.h > 1 && self.w > 0 && self.stride > self.w {
+            (self.w as u32, self.h as u32)
+        } else {
+            (0, 0)
+        }
+    }
+}
+
+impl<T> DisjointMutIndex<[T]> for StridedRows {
+    type Output = <[T] as Index<Range<usize>>>::Output;
+
+    #[inline]
+    #[track_caller]
+    unsafe fn get_mut(self, slice: *mut [T]) -> *mut Self::Output {
+        // Delegates to the hull's own implementation so that the bounds check,
+        // its panic messages and the pointer arithmetic have exactly one
+        // definition. A rectangle's reference IS its hull.
+        // SAFETY: same contract as the caller's — `slice` is valid.
+        unsafe { DisjointMutIndex::<[T]>::get_mut(self.hull(), slice) }
     }
 }
 
@@ -1237,6 +1452,49 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         let len = self.as_mut_slice().len();
         if let Some(tracker) = self.tracker.as_mut() {
             tracker.reprovision(len);
+        }
+    }
+
+    /// Declare that this container is a 2-D buffer of `stride`-element rows.
+    ///
+    /// This is what lets the tracker shard by COLUMN rather than by flat
+    /// address, which is the whole mechanism behind [`StridedRows`]: every row
+    /// of a `w x h` rectangle has the same column range, so the rectangle maps
+    /// to ONE shard however tall it is, and two tile columns of the same
+    /// picture rows map to DIFFERENT shards however close together they are.
+    /// A flat block index can have at most one of those two properties — that
+    /// tension is what the `BLOCK_SHIFT` ladder in
+    /// `benchmarks/tracker_blockshift_2026-08-08.meta` was stuck between.
+    ///
+    /// `&mut self`, so no borrow can be outstanding when the map changes:
+    /// soundness needs both registrants of a shared element to agree on the
+    /// mapping, and they do because it is fixed for the tracker's life.
+    ///
+    /// A no-op when the tracker is compiled out, when the container is too
+    /// large for the exact-division magic (`len >= 2^32`), or when the stride
+    /// is outside the range the record fields can hold — the flat block scheme
+    /// stays in use and everything still works, just with the old cost.
+    #[inline]
+    pub fn set_row_stride(&mut self, stride: usize) {
+        let len = self.as_mut_slice().len();
+        if let Some(tracker) = self.tracker.as_mut() {
+            tracker.set_row_stride(stride, len);
+        }
+    }
+
+    /// Whether [`StridedRows`] borrows on this container are recorded EXACTLY
+    /// (rather than degrading to their hull).
+    ///
+    /// Callers that must not reserve inter-row gaps — anything running while a
+    /// tile worker can be alive — have to check this before using a rectangle,
+    /// and fall back to per-row borrows when it is false.
+    #[inline]
+    pub fn rect_exact_for(&self, stride: usize) -> bool {
+        match &self.tracker {
+            Some(tracker) => tracker.rect_exact_for(stride),
+            // Untracked: there is no record, so nothing can be a false
+            // positive. The hull reference is the same either way.
+            None => true,
         }
     }
 }
