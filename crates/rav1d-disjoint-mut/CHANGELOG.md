@@ -13,10 +13,14 @@ All notable changes to `rav1d-disjoint-mut` are documented in this file. Format 
   call and retires the tracker record, which is precisely what lets ANOTHER
   thread take the region and retag those bytes. The protected reference is
   invalidated mid-call. Reachable from safe code, on the release path the
-  whole crate is built around. Both guards hold `*mut V` / `*const V` now and
+  whole crate is built around. Both guards hold `NonNull<V>` now and
   materialise the reference in `Deref`/`DerefMut`, where borrowck bounds it to
   a region in which the guard cannot be dropped — the same reason
-  `core::cell::RefMut` holds a `NonNull<T>`. The four `Send`/`Sync` impls
+  `core::cell::RefMut` holds a `NonNull<T>`. `NonNull` rather than `*mut V`
+  because a reference field carries `nonnull` into every load and a bare raw
+  pointer does not: measured +1.1-1.2% at v4k_8tile t=1 in two independent
+  interleaved runs, recovered to 1.0005 by `NonNull` plus `#[inline(always)]`
+  on the three `Deref`/`DerefMut` bodies. The four `Send`/`Sync` impls
   restore, exactly, what the compiler derived from the reference fields
   (verified by compiling the same positive and negative bound probes against
   both revisions), so there is no auto-trait change. Found by

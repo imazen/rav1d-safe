@@ -81,8 +81,11 @@ region and retag those bytes.
 For `DisjointMut` it is stronger than `noalias`: another thread genuinely
 retags.
 
-Fix: `slice: *mut V` / `*const V`, reference materialised in `Deref`/`DerefMut`.
-Four `unsafe impl`s restore the auto-traits the reference fields derived.
+Fix: `slice: NonNull<V>` in both guards, reference materialised in
+`Deref`/`DerefMut`. Four `unsafe impl`s restore the auto-traits the reference
+fields derived, and `PhantomData<(&'a mut V, &'a DisjointMut<T>)>` restores the
+lifetime and the invariance in `V` that `NonNull` (covariant) would otherwise
+drop. The first cut used a bare `*mut V`; section 7 is why it does not ship.
 
 Auto-trait parity, compiled against BOTH revisions:
 
@@ -94,7 +97,8 @@ Auto-trait parity, compiled against BOTH revisions:
     Send      DisjointMutGuard<'_, Vec<*const u8>, [u8]>     E0277     E0277
     Send      DisjointImmutGuard<'_, Vec<u8>, Cell<u8>>      E0277     E0277
 
-Neither wider nor narrower.
+Neither wider nor narrower. Re-run identically against the shipped `NonNull`
+cut: same five results.
 
 --------------------------------------------------------------------------------
 ## 4. Why `narrow_release` gets a `cfg(miri)` round count
@@ -156,17 +160,83 @@ diffed BY NAME with the ACTUAL md5 in the value.
     vs benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst
                 only-in-either 0, differing values 0
 
-    threads=8   main 755 rows / HEAD 755 rows
+    threads=8, excluding film_grain (see below)
+                main 755 rows / HEAD 755 rows
                 only-in-main 0, only-in-HEAD 0, differing values 0
                 statuses: PASS 753, SKIP 2  (both sides)
 
-The 13 missing rows at threads=8 are the film-grain groups: `md5_inventory
---threads 8` ABORTS at the first film-grain vector, identically on `main` and on
-this branch (rc=101, same 13 vectors lost). Pre-existing whole-plane
-`full_guard_mut` in `src/safe_simd/filmgrain_arm.rs:1550` — filed as #479, not
-touched here.
+    HEAD threads=1 vs HEAD threads=8, same 755 vectors
+                differing values 0
+                — the tile workers produce the same md5 as the serial path,
+                  which is the property a borrow-tracker change could break and
+                  the single-threaded gate could never see.
+
+**film_grain is excluded from the threads=8 comparison because it cannot be
+run at all.** `md5_inventory --threads 8` dies in the film-grain groups on
+`main` and on this branch alike, and dies NONDETERMINISTICALLY — one run lost
+all 13 film-grain vectors to a process abort at the first one, another got a
+caught ERROR on that vector, cleared the rest of 8-bit, and aborted in 10-bit.
+Pre-existing whole-plane `full_guard_mut` in
+`src/safe_simd/filmgrain_arm.rs:1550`, filed as #479, not touched here.
 
 --------------------------------------------------------------------------------
 ## 7. Performance
 
-See section 7b (appended after the interleaved run).
+`scripts/perf/verify_gap.sh`, rotating arm order inside each cell, two-point
+wall fit at 2 and 20 frames (process startup removed), strict idle gate — the
+foreign>25%-CPU count was **0 in every committed cell of both runs**, and no
+cell was discarded. No `nice` on any timed run, no `-C target-cpu=native`.
+Arms staged as separate binaries built from the two worktrees.
+
+Run A (n=7, arms base/head):
+
+    vec              t   base med ms/f   head/base med   [min,    max]
+    v4k_8tile        1        318.50        1.0123      [1.0003, 1.0351]
+    v4k_8tile        8         67.22        0.9975      [0.9806, 1.0246]
+    v4k_8tile_10b    8         72.78        0.9912      [0.9736, 1.0023]
+
+t=1 came back +1.2% with EVERY paired ratio above 1.0 (min 1.0003). Small, but
+the band excludes 1.000 and 7/7 agree in sign, so it is not noise. Cause: the
+first cut of the fix used a bare `*mut V`, and a reference field carries
+`nonnull` (and the niche) into every load of the guard that a raw pointer does
+not.
+
+Run B (n=9, three arms: base / head = bare `*mut V` / head2 = `NonNull` +
+`#[inline(always)]` on the three `Deref`/`DerefMut` bodies):
+
+    vec              t   base med ms/f   head/base med          head2/base med
+    v4k_8tile        1        318.44   1.0114 [1.0009,1.0337]   1.0005 [0.9331,1.0119]
+    v4k_8tile        8         67.44   1.0034 [0.9712,1.0404]   0.9926 [0.9715,1.0358]
+    v4k_8tile_10b    8         72.89   0.9838 [0.9754,1.0116]   0.9933 [0.9808,1.0108]
+
+Run B REPRODUCES the t=1 regression on `head` (1.0114, min 1.0009) and shows
+`head2` recovering it (1.0005, band straddling 1.000). Both t=8 cells are null
+for both arms in both runs. **`head2` is what ships.**
+
+Honest caveat: `NonNull` and `#[inline(always)]` were changed together and
+measured together. No per-knob attribution is claimed — see the AGENT_BRIEF
+note about strongly super-additive pairs, which is a reason to distrust
+splitting a measured pair post hoc, not a licence to assume additivity.
+
+--------------------------------------------------------------------------------
+## 8. Reproducing
+
+    # the UB, on main
+    git checkout main
+    cargo +nightly miri test -p rav1d-disjoint-mut --test narrow_release
+    MIRIFLAGS=-Zmiri-tree-borrows cargo +nightly miri test -p rav1d-disjoint-mut \
+        --test guard_move_release        # needs this branch's test file
+
+    # the gate, on this branch
+    cargo +nightly miri test -p rav1d-disjoint-mut --test guard_move_release
+    MIRIFLAGS=-Zmiri-tree-borrows cargo +nightly miri test -p rav1d-disjoint-mut \
+        --test guard_move_release
+
+    # corpus
+    cargo build --release --example md5_inventory
+    ./target/release/examples/md5_inventory --threads 1 > t1.tsv
+    ./target/release/examples/md5_inventory --threads 8 --group 8-bit/data/meson.build
+
+    # perf
+    BIN=<staged bins> ARMS="base head2" CELLS="v4k_8tile:1 v4k_8tile:8" \
+        scripts/perf/verify_gap.sh out.tsv 9
