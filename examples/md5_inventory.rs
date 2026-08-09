@@ -18,6 +18,10 @@
 //! Optional args:
 //!   --group <substr>   only run meson groups whose relative path contains this
 //!   --name <substr>    only run vectors whose name contains this
+//!   --threads <n>      decoder thread count (default 1). Run the gate at 1
+//!                      AND at 8: at 1 the tile workers never start, so a
+//!                      single-threaded-only gate cannot see a borrow-tracker
+//!                      or threading regression at all.
 
 use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
 use std::io::Write;
@@ -176,13 +180,18 @@ fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
     }
 }
 
-fn decode_md5(ivf_path: &Path, apply_grain: bool) -> Result<(String, usize), String> {
+fn decode_md5(
+    ivf_path: &Path,
+    apply_grain: bool,
+    threads: u32,
+) -> Result<(String, usize), String> {
     let file = std::fs::File::open(ivf_path).map_err(|e| format!("open: {e}"))?;
     let mut reader = std::io::BufReader::new(file);
     let frames = ivf_parser::parse_all_frames(&mut reader).map_err(|e| format!("ivf: {e}"))?;
 
     let mut settings = Settings::default();
     settings.apply_grain = apply_grain;
+    settings.threads = threads;
     let mut decoder = Decoder::with_settings(settings).map_err(|e| format!("decoder: {e}"))?;
     let mut ctx = md5::Context::new();
     let mut n = 0usize;
@@ -214,6 +223,11 @@ fn main() {
     let mut group_filter: Option<String> = None;
     let mut name_filter: Option<String> = None;
     let mut activity = false;
+    // The corpus gate defaulted to one thread, which made it structurally
+    // blind to anything the tile workers do differently — including every
+    // change to the borrow tracker, whose whole reason to exist is
+    // multi-threaded decode. Run it at 1 AND at 8 and set-diff the two.
+    let mut threads = 1u32;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -231,6 +245,13 @@ fn main() {
             // reports "never called" and "free" as the same 0.0 ms. Needs
             // `--features __ablate`; without it every count is 0 and the
             // assert below refuses to emit a misleading all-zero column.
+            "--threads" => {
+                threads = args
+                    .get(i + 1)
+                    .and_then(|v| v.parse().ok())
+                    .expect("--threads needs a number");
+                i += 2;
+            }
             "--activity" => {
                 activity = true;
                 i += 1;
@@ -305,13 +326,13 @@ fn main() {
             }
             // Marker so a `__simd_test_log` build's per-call `*_MISMATCH` lines
             // (which go to stderr) can be attributed to the vector that
-            // produced them. Sound because `Settings::threads` defaults to 1
-            // and `decode_md5` joins before returning, so no worker line can
-            // straddle two vectors.
+            // produced them. Sound at `--threads 1`, and still sound above
+            // it because `decode_md5` joins before returning, so no worker
+            // line can straddle two vectors (they may interleave WITHIN one).
             eprintln!("VECTOR\t{group_key}\t{}", v.name);
             rav1d_safe::src::ablate::activity_reset();
             let t0 = Instant::now();
-            let res = decode_md5(&v.ivf_path, grain);
+            let res = decode_md5(&v.ivf_path, grain, threads);
             let ms = t0.elapsed().as_millis();
             let act = if activity {
                 let counts = rav1d_safe::src::ablate::activity_snapshot();
@@ -352,5 +373,5 @@ fn main() {
         eprintln!("done {group_key}");
     }
 
-    eprintln!("TOTAL pass={pass} mismatch={fail} error={err} skip={skip}");
+    eprintln!("TOTAL threads={threads} pass={pass} mismatch={fail} error={err} skip={skip}");
 }
