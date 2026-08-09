@@ -1,0 +1,5 @@
+channel	ns_per_call	delta_vs_baseline_ns	note
+baseline_call_plus_xor	0.7526	0.0000	out-of-line callee, best-of-9, rotating arm order
+argument	0.7521	-0.0005	the channel this branch uses (rides on WithOffset)
+global_atomic	0.7535	0.0009	
+thread_local	1.2548	0.5022	macOS: indirect blr into _tlv_get_addr + forced stack frame

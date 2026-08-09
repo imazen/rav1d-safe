@@ -1,0 +1,5 @@
+arm	vector	threads	frames	registrations_per_frame	keyed	unkeyed_sharded	single_shard	keyed_share_of_sharded_pct
+base	v4k_8tile	1	6	9245490	0	0	9245490	0.0
+base	v4k_8tile	8	6	26484179	13212787	7501030	5770361	63.8
+tkboth	v4k_8tile	1	6	9245490	0	0	9245490	0.0
+tkboth	v4k_8tile	8	6	15540586	2269194	7501030	5770361	23.2

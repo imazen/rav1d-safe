@@ -1,0 +1,6 @@
+arm	ms_per_frame_median	ms_min	ms_max	n	note
+memcpy_flat	0.170	0.168	0.629	9	contiguous 12.44 MB, the lower bound
+stitch_whole	0.315	0.296	0.800	9	all tiles once at end of frame
+stitch_sbrow	0.315	0.304	0.351	9	34 sbrow bands x tiles, the shape a decoder needs
+write_into_pic	2.553	2.434	2.612	9	recon writes into the shared plane, picture stride
+write_into_tile	2.567	2.400	2.576	9	recon writes into a private compact tile buffer

@@ -190,22 +190,70 @@ privately and uncontended.
 
 **Not built. Not measured beyond the stitch.**
 
-### Variant 2 — one lock per tile index
+### Variant 2 — one lock per tile index — REACHABLE, BUILT, AND A MEASURED NEGATIVE
 
-**Reachable, and built here** (`probe-tilekey-shard`). A borrow that names a tile
-goes to that tile's shard: no shift load, no two divisions, no multiplicative
-hash, and no `b0 != b1` escalation however tall the region is
-(`tracker_shard.rs`, `add_at_shard`).
+**Reachable and built** (`probe-tilekey-shard`). A borrow that names a tile goes
+to that tile's shard: no shift load, no two divisions, no multiplicative hash,
+and no `b0 != b1` escalation however tall the region is (`tracker_shard.rs`,
+`add_at_shard`). References are untouched — per-row as today — so this arm has
+no aliasing question, only the keyed-vs-unkeyed one in §4.
 
-### Variant 3 — precomputed per-tile row refs
+**And on its own it does not pay.** `tkshard/base`, idle box, `foreign = 0` on
+every row, dav1d in the same sweep:
 
-Reachable, and **subsumed by something better**. The brief's framing is "a
-per-access borrow is an index into a fixed array rather than interval arithmetic
-+ hashing + locking". With the key present, the stronger move is available:
-stop taking `h` per-row borrows at all and take the strided HULL as one
-registration (`probe-tilekey-hull`), which is what the per-row split was
-avoiding. That is the count half, and it composes with Variant 2 exactly as the
-brief predicted.
+| cell | tkshard/base | bands |
+|---|---|---|
+| 8bpc t=1 | 1.0285 | disjoint (WORSE) |
+| 8bpc t=2 | 1.0338 | disjoint (WORSE) |
+| 8bpc t=4 | 0.9964 | OVERLAP |
+| 8bpc t=8 | 0.9712 | OVERLAP |
+| 10bpc t=1/2/4 | 1.0722 / 1.0687 / 1.0490 | disjoint (WORSE) |
+| 10bpc t=8 | 1.0228 | OVERLAP |
+
+**Inter-tile lock contention is not where the money is.** With 128 shards the
+multiplicative hash already separates concurrent tile columns well enough that
+naming the tile explicitly buys nothing measurable, while the key's own store
+and compare cost 2-7% at the cells where there is nothing to win. This is the
+`TinyLock`-backoff shape a third time: a plausible contention fix that the
+contention does not justify.
+
+The key's value turns out to be as an **enabler**, not as a shard selector — see
+Variant 3.
+
+### Variant 3 — precomputed per-tile row refs — SUBSUMED, AND THIS IS THE WIN
+
+The brief's framing is "a per-access borrow is an index into a fixed array
+rather than interval arithmetic + hashing + locking". With the key present the
+stronger move is available: stop taking `h` per-row borrows at all and take the
+strided HULL as ONE registration (`probe-tilekey-hull`) — which also deletes the
+per-row compact copy and its write-back, the two memcpys per block that exist
+only because per-row guards were the only sound option (#460's unpriced item 3).
+
+`tkboth` (hull + key) against base, same sweep:
+
+| cell | tkboth/base | bands | base/dav1d | tkboth/dav1d |
+|---|---|---|---|---|
+| 8bpc t=1 | 1.0203 | OVERLAP | 1.303 | 1.329 |
+| 8bpc t=2 | **0.8868** | disjoint | 1.580 | **1.401** |
+| 8bpc t=4 | **0.8490** | disjoint | 1.631 | **1.385** |
+| 8bpc t=8 | **0.8287** | disjoint | 1.860 | **1.541** |
+| 10bpc t=1 | 1.0785 | disjoint (worse) | 1.453 | 1.567 |
+| 10bpc t=2 | 0.9939 | disjoint | 1.649 | 1.639 |
+| 10bpc t=4 | 0.9693 | disjoint | 1.681 | 1.629 |
+| 10bpc t=8 | 0.9285 | disjoint | 1.900 | 1.764 |
+
+Since `tkshard` alone is null-to-negative, essentially the whole 8bpc t>1 win is
+the hull, and the key is only what makes the hull legal. The count and copy
+halves are **not separated** — the hull removes both at once and no arm here
+isolates them.
+
+**It does not beat #469.** That branch's own verification round reports
+1.309 / 1.332 / 1.323 / 1.477 at 8bpc t=1/2/4/8 against a comparable base;
+`tkboth` is 1.329 / 1.401 / 1.385 / 1.541. #469's address-derived column band
+wins at every cell. Quoted from its record, not re-measured here. So the honest
+summary of this round is that tile identity is a CLEANER key than a column band
+derived by division — exact, no Lemire magic, no per-`alloc` column stores — and
+on this vector it is also a SLOWER one.
 
 **The hull is not legal without the key, demonstrated rather than argued.** The
 hull-only arm (`probe-tilekey-hull` alone, address-hashed shards) **fails to
@@ -246,6 +294,37 @@ Reconstruction is **63.8% of the sharded registrations** at t=8. The remaining
 
 Output identity: md5 `a00c11f454328023c58af14d55544cff` across
 base / shard / hull / shard+hull / untracked x t = 1, 2, 4, 8 — 20 of 20.
+
+### 3.1 The gap sweep, and its n
+
+`benchmarks/tile_keyed_gap_2026-08-09.tsv`, `..._bands_2026-08-09.txt`. Idle
+box, strict gate, **`foreign = 0` on every committed row**, dav1d 1.5.4
+`--framedelay 1` in the same interleaved sweep with rotating arm order,
+two-point wall fit at 2 and 20 frames.
+
+**n = 4 complete rounds at 8bpc and n = 3 at 10bpc, not the 7 this campaign's
+bar asks for.** The box was shared with another agent's test suite for most of
+the window; the sweep's strict gate discarded rather than commit loaded cells,
+and it never got the remaining rounds. Every cell called "disjoint" below is
+disjoint at that n; nothing here should be quoted as a settled three-digit
+figure, and the two OVERLAP cells at 8bpc t=1 are exactly the ones a larger n
+would be needed to call.
+
+**The carrier is not free at 10bpc.** `base` (this branch, default features:
+the wider `WithOffset` plus the recon key stores) against pristine `main`:
+
+| cell | base/main | bands |
+|---|---|---|
+| 8bpc t=1/2/4/8 | 1.0070 / 0.9992 / 1.0042 / 0.9901 | all OVERLAP |
+| 10bpc t=1 | 1.0084 | OVERLAP |
+| **10bpc t=2** | **1.0164** | **disjoint** |
+| **10bpc t=4** | **1.0207** | **disjoint** |
+| 10bpc t=8 | 1.0084 | OVERLAP |
+
+So the inert key costs nothing measurable at 8bpc and **1.6-2.1% at 10bpc t=2
+and t=4**, where two bytes per pixel make `WithOffset` 24 bytes instead of 16 in
+a `Copy` struct passed by value through every kernel. That is a real cost of the
+CHANNEL, before any tracker change, and it is part of why 10bpc barely moves.
 
 ---
 
