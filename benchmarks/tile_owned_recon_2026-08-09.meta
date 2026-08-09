@@ -1,0 +1,257 @@
+# Owned per-tile reconstruction buffers — measurement record
+
+Branch `perf/tile-owned-recon`, base `main` @ `ee07b00`. Issue #455, Variant 1.
+Design + declines + gate list: `docs/TILE_OWNED_RECON.md`.
+
+Host: Apple M4 Pro (12 cores), macOS 26.5.2, aarch64. rustc stable, default
+features, **no `-C target-cpu=native`**. dav1d 1.5.4 from Homebrew.
+
+Arms, all four interleaved in ONE sweep with a rotating order:
+
+| arm | build | switch |
+|---|---|---|
+| `base` | default features | — |
+| `tkoff` | `--features tile-owned-recon` | `RAV1D_TILE_OWNED=0` |
+| `tkon` | `--features tile-owned-recon` | (default on) |
+| `dav1d_fd1` | dav1d 1.5.4 | `--threads t --framedelay 1` |
+
+`tkoff` and `tkon` are **the same binary**, so a `tkon`-vs-`tkoff` delta cannot
+be a codegen artifact, and `tkoff`-vs-`base` prices the carrier (the extra
+field, the `recon_planes` branch, the per-instance predicate) on its own.
+
+---
+
+## 1. Mechanism — the change is LIVE, and by how much
+
+`--features tile-owned-recon,probe-count`, `probe_tracker <vec> <t> 2`, adds per
+frame. This is the check that a silent null cannot survive (#473 shipped an arm
+that decoded correctly and measured identically because a `cfg` named the wrong
+crate's feature; the registration count was what exposed it).
+
+| vector | t | RAV1D_TILE_OWNED=0 | =1 | delta |
+|---|---|---|---|---|
+| v4k_8tile | 1 | 7,924,706 | 7,924,706 | 0.0% |
+| v4k_8tile | 2 | 22,700,725 | 13,372,343 | **−41.1%** |
+| v4k_8tile | 4 | 22,700,725 | 13,372,343 | **−41.1%** |
+| v4k_8tile | 8 | 22,700,725 | 13,372,343 | **−41.1%** |
+| v4k_8tile_10b | 1 | 10,853,960 | 10,853,960 | 0.0% |
+| v4k_8tile_10b | 2 | 21,119,397 | 16,665,593 | **−21.1%** |
+| v4k_8tile_10b | 4 | 21,119,397 | 16,665,593 | **−21.1%** |
+| v4k_8tile_10b | 8 | 21,119,397 | 16,665,593 | **−21.1%** |
+
+The t=1 rows are identical **by construction** — `setup` declines below two
+workers — not by luck. The base 8bpc figures reproduce #455's census
+(7,924,706 / 22,700,725) to the byte.
+
+What the residual is: at 8bpc t=8, 13,372,343 − 7,924,706 = 5,447,637
+registrations/frame still take the per-row split. That is the **filter chain**,
+which is untouched here by design. #455's site census puts the filter chain at
+6,389,542/frame, so essentially all of reconstruction's `t>1` excess is gone and
+essentially all of the filter chain's remains.
+
+10bpc moves less because less of its registration population is reconstruction.
+
+### Per SITE — the conversion missed nothing on the recon path
+
+`--features tile-owned-recon,probe-sites`, v4k_8tile 8bpc t=8, 2 frames, `lost=0`
+on both arms. Full tables: `tile_owned_recon_sites_{off,on}_2026-08-09.txt`.
+
+| site | OFF | ON | |
+|---|---|---|---|
+| `picture.rs:2061` `compact_read_per_row` | 2,662,876 | **0** | the split copy, gone |
+| `picture.rs:168` `with_pixel_guard_immut` per-row | 2,336,708 | **0** | gone |
+| `safe_simd/itx_arm.rs:8725` | 1,864,816 (8.0 B each) | **233,102** (26,888 B each) | h per-row -> ONE hull |
+| `safe_simd/ipred_arm.rs:1515` | 1,232,696 | **0** | gone |
+| `ipred.rs:532` | 736,520 | **0** | gone |
+| `safe_simd/itx_arm.rs:8894` | 564,304 | **0** | gone |
+| `ipred.rs:1238` | 299,968 | **0** | gone |
+| `picture.rs:173` `narrow_guard` hull | 0 | **280,464** (28,154 B each) | the private branch, now live |
+| `loopfilter.rs:566` | 3,835,042 | 3,835,042 | filter chain, untouched |
+| `cdef_arm.rs:{192,622,1217}` + `cdef_apply.rs` | 1,563,248 | 1,563,248 | filter chain, untouched |
+| `ctx.rs:99` | 2,534,988 | 2,534,988 | not a picture at all |
+
+**Every picture-access site on the reconstruction path either disappeared or
+collapsed to one hull registration**, and the mean-bytes column shows why: 8.0 B
+x 1.86 M becomes 26,888 B x 233 k, i.e. the same pixels reserved once per block
+instead of once per row. The residual population is the filter chain plus
+`ctx.rs` (a context array, never a picture). So the answer to "what fraction of
+recon writes went through tile buffers" is **all of them** — there is no site
+left holding the tracker on the recon path.
+
+## 2. Output identity
+
+md5 over every plane's visible pixels, `bench_ab_decode`:
+
+* v4k_8tile 8bpc `a00c11f454328023c58af14d55544cff` — base == tkon == tkoff at
+  t = 1, 2, 4, 8.
+* v4k_8tile_10b `4f218411bc6ee4cc9c630fe827337fa2` — base == tkon at
+  t = 1, 2, 4, 8, 16.
+
+Corpus, `md5_inventory`, set-diffed BY NAME with the actual md5 as the value
+(`scripts/perf/md5_setdiff.py`):
+
+| comparison | entries | PASS | differing |
+|---|---|---|---|
+| committed baseline `aarch64_md5_fixes_2026-08-07_final.tsv.zst` vs head, t=1 | 768 | **766** | **0** |
+| base vs head, threaded t=1 | 755 | 753 | **0** |
+| base vs head, threaded t=2 | 755 | 753 | **0** |
+| base vs head, threaded t=8 | 755 | 753 | **0** |
+| head t=1 vs head t=8 | 755 | 753 | **0** |
+
+755 rather than 768 because the two film-grain groups are excluded at t>1 — see
+§5.
+
+`cargo test --release --features tile-owned-recon`: `decode_md5_verify` **14/14**,
+lib **77/77** (incl. 6 new mechanism tests), `decode_cpu_levels` 6/6,
+`decode_md5_committed` 3/3, `cancellation` 6/6.
+`multi_decoder_pressure.sh` 12 concurrent decoders x 3 iters x
+{1,2,4,8,16} threads on 5 vectors, every md5 matching the serial reference:
+**PASS** on the `tkon` arm.
+
+Per-test-binary, all with the feature on, all `0 failed`: `mt_stress` 1/1
+(1/2/4/8/16 x 5 trials — and `photo_4k` was verified to ENGAGE the feature:
+22,530,490 -> 11,944,742 adds/frame at t=8, so this is a live gate, not a
+vacuous one), `tile_threading_parity` 3/3, `thread_cleanup_test` 2/2,
+`panic_safety_test` 4/4, `managed_api_test` 4/4, `safe_simd_crashes` 15/15,
+`integration_decode` 1/1 (+8 pre-existing ignored), `tile_threading_overlap`
+0/0 (3 pre-existing ignored), `reproduce_overlap{,_scalar}` (7 pre-existing
+ignored), `test_vectors` 0/0.
+
+`cargo fmt --all --check` clean. **`cargo clippy --all-targets -- -D warnings`
+is already RED on `main @ ee07b00` (79 errors)** — it is not a live gate in this
+tree, so "clippy passes" cannot be claimed by either arm. What CAN be claimed
+and was checked: **zero findings land in any file this branch touches**
+(`src/tile_recon.rs`, `src/internal.rs`, `include/dav1d/picture.rs`,
+`src/recon.rs`, `src/decode.rs`, `examples/md5_inventory.rs`); every one is in
+`benches/tier_isolation.rs`, `examples/{bench_ivf_limit,md5_ablate}.rs`,
+`tests/thread_cleanup_test.rs` or `src/safe_simd/itx_arm*.rs`. The branch's
+first draft did add one (`drop` of a `Copy` value in a new test, then the
+unused binding it left behind); both are fixed.
+
+## 3. Peak RSS — a real cost, measured not assumed
+
+`/usr/bin/time -l`, v4k_8tile 8bpc, 20 frames, maximum resident set size:
+
+| arm | t=1 | t=8 |
+|---|---|---|
+| base | 99.5 MB | 106.3 MB |
+| tkon | 99.6 MB | **202.4 MB** (+96.1 MB) |
+
+A tile writes its own columns on every row of its tile row, and a page spans
+whole rows, so the resident cost is about `tile_columns x plane_bytes` —
+4 x 24.0 MB here. t=1 is flat because the feature declines there.
+
+Two facts this measurement produced:
+
+* **`Vec::try_reserve_exact` + `resize(n, 0)` measured +192.5 MB** (313.3 MB
+  peak) because `resize` memsets, faulting in every page of an allocation whose
+  point is that most of it is never touched. `vec![0u8; n]` lowers to
+  `alloc_zeroed` and halves it. The allocation site carries a comment saying so.
+* **`v4k_8tile` is 4:4:4**, not the 4:2:0 that #473's `tile_stitch_cost.rs`
+  assumed: all three planes are 8,355,840 bytes with stride 3840
+  (`uv_stride == y_stride` means `ss_hor == 0`). Its frame is 25.1 MB, not
+  12.44 MB, so **#473's 0.315 ms/frame stitch price is for a frame half this
+  size** and should not be quoted against this vector.
+
+Buffers are cached across frames on `(n_tiles, byte_len, stride)`: one
+allocation over a 3-frame run, so the fault-in cost is paid once per sequence.
+
+## 4. Gap to dav1d
+
+n = **9** complete rounds, 288 rows, **`foreign_max = 0` on every committed row**
+(4 cells discarded and retried), rotating arm order, two-point wall fit at 2 and
+20 frames, dav1d in the same sweep. Raw:
+`tile_owned_recon_gap_2026-08-09.tsv`; bands:
+`tile_owned_recon_bands_2026-08-09.txt`.
+
+ms/frame, median [min..max]:
+
+| vector | t | base | tkoff | tkon | dav1d_fd1 |
+|---|---|---|---|---|---|
+| v4k_8tile | 1 | 318.8 [316.3..320.4] | 318.6 | 319.2 [315.7..321.7] | 246.6 |
+| v4k_8tile | 2 | 198.4 [197.4..199.8] | 199.7 | **184.9** [184.6..186.0] | 125.2 |
+| v4k_8tile | 4 | 106.7 [106.1..107.6] | 107.1 | **96.8** [95.8..98.8] | 65.7 |
+| v4k_8tile | 8 | 68.2 [64.1..69.7] | 68.8 | **58.1** [54.2..59.4] | 36.3 |
+| v4k_8tile_10b | 1 | 359.5 | 359.9 | 359.4 | 251.6 |
+| v4k_8tile_10b | 2 | 207.2 | 207.1 | **202.3** | 127.6 |
+| v4k_8tile_10b | 4 | 110.5 | 110.8 | **105.7** | 66.9 |
+| v4k_8tile_10b | 8 | 71.9 [69.2..74.2] | 73.2 | **65.2** [60.3..66.6] | 37.8 |
+
+`tkon/base` and the ratio to dav1d:
+
+| vector | t | tkon/base | bands | base/dav1d | tkon/dav1d |
+|---|---|---|---|---|---|
+| v4k_8tile | 1 | 1.0010 | OVERLAP | 1.293 | 1.295 |
+| v4k_8tile | 2 | **0.9322** | disjoint | 1.585 | **1.478** |
+| v4k_8tile | 4 | **0.9068** | disjoint | 1.625 | **1.474** |
+| v4k_8tile | 8 | **0.8525** | disjoint | 1.876 | **1.599** |
+| v4k_8tile_10b | 1 | 0.9998 | OVERLAP | 1.429 | 1.429 |
+| v4k_8tile_10b | 2 | **0.9764** | disjoint | 1.624 | 1.586 |
+| v4k_8tile_10b | 4 | **0.9563** | disjoint | 1.652 | 1.580 |
+| v4k_8tile_10b | 8 | **0.9065** | disjoint | 1.900 | **1.722** |
+
+Scaling t1 -> t8: 8bpc **4.68x -> 5.49x** (dav1d 6.79x); 10bpc 5.00x -> 5.52x
+(6.65x). t4 -> t8 inversion ratio 0.639 -> 0.600 (dav1d 0.553).
+
+### The carrier is free — all eight cells OVERLAP
+
+`tkoff` vs `base`: 0.9991 / 1.0067 / 1.0036 / 1.0090 (8bpc) and 1.0012 / 0.9995
+/ 1.0025 / 1.0178 (10bpc), **every band overlapping**. The extra
+`Rav1dFrameData` field, the `recon_planes` branch and the per-instance
+`needs_row_split` predicate cost nothing measurable at either depth. That is a
+difference from #473's tile-key carrier, which measured +1.6-2.1% at 10bpc
+t=2/t=4 because it widened `WithOffset` from 16 to 24 bytes in a `Copy` struct
+passed by value through every kernel — nothing here is on that path.
+
+### It does NOT meet the ~1.30x bar, and it does NOT beat #469
+
+* **The bar is met at exactly one cell**: 8bpc t=1, at 1.295 — and that cell is
+  base's number, because the feature is off there. Every cell the change
+  actually touches is 1.47-1.72.
+* **#469 (`perf/strided-rect`, the column-sharded tracker) is ahead at every
+  t>1.** Its independent verification round reports 8bpc
+  1.306 / 1.328 / 1.333 / 1.470 against a comparable base
+  (quoted from that record, **not re-measured here**), against this branch's
+  1.295 / 1.478 / 1.474 / 1.599.
+* **This branch is ahead at t=1**: #469 costs 1.4% there (its own report;
+  1.293 -> 1.306), this costs nothing (1.293 -> 1.295, bands overlapping).
+
+The reason is exactly the registration counts, and the arithmetic closes:
+#469 removes the per-row split from BOTH reconstruction and the filter chain
+(22.70 M -> 7.92 M, −65%), this removes it from reconstruction only
+(22.70 M -> 13.37 M, −41%). At the campaign's measured **1.00 ns per removed
+registration**, 9.33 M removed predicts ~9.3 ms; measured is 68.2 -> 58.1 =
+**10.1 ms**. The rule holds a third time.
+
+**They are complementary, not alternatives.** Private recon buffers make the
+filter chain the only remaining split population; #469's rectangle record is
+what would shrink that. Neither round measured the composition.
+
+## 5. A pre-existing panic the threaded corpus found
+
+`examples/md5_inventory` gained `--threads`; it had defaulted to 1, which is the
+blindness #455's verification round named ("the 766/766 corpus gate is
+single-threaded, so it cannot see any tile-threading hazard").
+
+At `--threads 2` or `--threads 8`, **`main`'s DEFAULT build panics** on the first
+film-grain vector, `8-bit/film_grain/av1-1-b8-23-film_grain-50`:
+
+```
+thread 'main' panicked at src/thread_task.rs:534:56:
+called `Option::unwrap()` on a `None` value
+```
+
+`ttd.delayed_fg.try_write().unwrap()` in the delayed film-grain path. Reproduced
+with no tile-owned code compiled in, at both t=2 and t=8, on `base`. Pre-existing
+and unrelated; it is why the threaded corpus rows above cover 755 of 768.
+
+## 6. Not measured
+
+x86_64. Miri. `--features unchecked`. t=16 in the timed grid. Any vector with
+loop restoration live (#455 item 4's structural blindness is unchanged — both 4K
+gap vectors are intra-only with LR off, so `looprestoration*.rs` registers zero
+borrows in this grid while LR is active in 696/768 corpus vectors). Frame
+threading (`n_fc > 1`), intrabc frames and c-ffi picture allocators all decline
+to the shared picture and were not exercised through this path.
+`decode_permutations` and the tail of the test suite after it did not complete —
+the run was stopped to free the box for the timed sweep; see §7.

@@ -557,10 +557,10 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         // The hull path is now also correct WITH tile workers alive, provided
         // the tracker can record the rectangle exactly — the gaps stop being
         // reserved, which was the only reason this branch existed. See
-        // `fill_hull`'s doc.
-        if !crate::include::dav1d::picture::tile_threading_active()
-            || (stride > 0 && origin.rect_is_exact_for::<BD>())
-        {
+        // `fill_hull`'s doc. `needs_row_split()` is the generalisation of
+        // `tile_threading_active()`: false as well for a buffer one tile task
+        // owns outright, where no other column can be writing these rows.
+        if !origin.data.needs_row_split() || (stride > 0 && origin.rect_is_exact_for::<BD>()) {
             return Self::fill_hull::<W>(scratch, origin, stride, h);
         }
         for row in 0..h {

@@ -5105,7 +5105,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             // COW: single-threaded uses the original wide guard (zero-copy),
             // multi-threaded decomposes into a 2D compact buffer with per-row guards.
-            let use_compact = crate::include::dav1d::picture::tile_threading_active();
+            let use_compact = dst.data.needs_row_split();
 
             let start_pixel = dst.offset - reach_before;
             let total_pixels = (reach_before + reach_after).min(buf_pixel_len - start_pixel);
@@ -5304,7 +5304,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             // COW: single-threaded uses the original wide guard (zero-copy),
             // multi-threaded decomposes into a 2D compact buffer with per-row guards.
-            let use_compact = crate::include::dav1d::picture::tile_threading_active();
+            let use_compact = dst.data.needs_row_split();
 
             if use_compact {
                 let (compact_w, compact_h, start_pixel, base) = if !is_v {
