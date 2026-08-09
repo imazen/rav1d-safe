@@ -1,0 +1,201 @@
+t>=4 SCALING DIAGNOSIS — measure-only round, nothing proposed for merge
+=======================================================================
+
+Base:   main @ ee07b00        Branch: diag/t8-serialize
+Host:   Apple M4 Pro, 8 P-cores + 4 E-cores (hw.ncpu 12), macOS 26.5.2
+Vector: ~/tmp/rav1d-perf/vec/v4k_8tile.avif  3840x2160 8bpc, 2 tile rows x 4
+        tile cols (136 tile-sbrow tasks/frame, 34 filter-sbrow tasks/frame).
+        10bpc cell = v4k_8tile_10b.avif.
+        NOTE both 4K gap vectors have loop restoration OFF and no superres, so
+        `loop_restore` / `superres` are structurally zero in every table below.
+        CDEF is ON here (it is OFF in test-vectors/bench/photo_4k.avif — do not
+        substitute that vector, its filter chain is a different shape).
+Rules:  no `nice` on any timed run, no -C target-cpu=native, default features
+        on the `base` arm, arms interleaved back to back with a rotating order,
+        cells discarded and re-run under foreign load (1 discard in the gap
+        sweep, 0 in the arm sweep).
+
+QUESTION ASKED: what SERIALISES at t=4 and t=8.
+ANSWER: nothing does. The pool is 90% occupied, workers are even to +-1%, and
+serial frame setup+teardown is 0.11 ms of a 65 ms frame. The deficit is not an
+Amdahl term — it is that the SAME frame costs 46% more CPU at t=8 than at t=1,
+and all of that growth is the borrow tracker.
+
+ARMS
+----
+base  default features (the shipping build)
+tt    --features probe-tasktime          per-stage timing + exact interval log
+ttu   --features probe-tasktime-untracked  tt with `tracker: None` (add/remove
+      compiled out; bounds computation, slicing and the per-row guard structure
+      all remain, so this isolates tracking specifically). UNSOUND by
+      construction, ceiling arm only.
+All arms and all thread counts produce ONE md5: a00c11f454328023c58af14d55544cff.
+
+1. WALL AND CPU, n=10 (5 rounds x 2 reps), ms/frame  [t8_scaling_arms_2026-08-09.tsv]
+-------------------------------------------------------------------------------
+ t   base wall      tt wall     ttu wall  | tt CPU  ttu CPU  tracker CPU  occupancy
+ 1     317.79       337.26       303.64   |    n/a      n/a        33.62      1.000
+ 2     197.38       205.39       163.67   | 408.63   325.58        83.05      1.990
+ 4     106.90       108.35        83.97   | 424.45   324.34       100.11      3.915
+ 8      65.09        66.14        46.09   | 475.39   326.36       149.03      7.157
+
+CPU = sum of all task-stage bodies. CPU/wall reproduces the sampled mean_active
+to 3 digits at every cell, so the two instruments agree.
+t=1 runs no worker task path at all (every stage counter is 0), so its tracker
+cost is the wall difference of two single-threaded arms.
+
+  ttu CPU is FLAT: 325.6 / 324.3 / 326.4 at t=2/4/8.
+  tt  CPU GROWS:   408.6 / 424.5 / 475.4.
+  => 100% of the thread-count-dependent work inflation is the borrow tracker.
+
+2. GAP TO dav1d 1.5.4, two-point wall fit (n=2,20), median of 5 rounds
+   [t8_scaling_gap_2026-08-09.tsv]   dav1d at --framedelay 1 (tile-threading only)
+-------------------------------------------------------------------------------
+ v4k_8tile 8bpc
+ t    base    ttu   dav1d | base/dav1d  ttu/dav1d   tracker share of the gap
+ 1  316.94 303.28  246.28 |     1.287      1.231        20%
+ 2  197.44 163.50  125.06 |     1.579      1.307        47%
+ 4  106.44  84.11   65.67 |     1.621      1.281        55%
+ 8   64.89  45.89   34.39 |     1.887      1.334        62%
+ scaling t1->t8: base 4.88x   ttu 6.61x   dav1d 7.16x
+
+ v4k_8tile_10b
+ 1  357.22 335.78  251.28 |     1.422      1.336
+ 8   69.50  48.67   35.61 |     1.952      1.367
+ scaling t1->t8: base 5.14x   ttu 6.90x   dav1d 7.06x
+
+ttu/dav1d is FLAT across an 8x thread range (1.231 -> 1.334, +8%) while
+base/dav1d rises 1.287 -> 1.887 (+47%). There is no scaling deficit left once
+the tracker is out; the residual 1.23-1.33x is a per-thread throughput gap that
+is already present at t=1.
+
+Against the 1.30x bar, 8bpc: a zero-cost tracker MEETS it at t=1 (1.231) and
+t=4 (1.281), and misses by 0.7% / 3.4% at t=2 / t=8. The tracker is 94% / 106%
+/ 97% of the excess over the bar at t=8 / t=4 / t=2.
+
+The agent brief's own arithmetic target -- "hold t=1 and apply dav1d's scaling
+ratios: t=2 -> 163, t=4 -> 85.6, t=8 -> 46.7" -- is reproduced by the untracked
+arm to within 1%: 163.50 / 84.11 / 45.89. Matching dav1d's scaling ratios and
+removing the tracker's t>1 cost are THE SAME NUMBER.
+
+Reconciliation with the campaign's numbers: my dav1d matches #467's
+(246.6 / 34.4) and my base/dav1d ratio at t=8 (1.887) matches the brief's
+(73.6/38.6 = 1.907) to 1%, but both of the brief's t=8 absolutes are ~12%
+higher than mine. The ratio is what transfers; the absolutes were taken in a
+different machine state.
+
+3. WHY THE TRACKER COSTS MORE AT MORE THREADS  [t8_scaling_probecount_2026-08-09.log]
+-------------------------------------------------------------------------------
+`--features probe-count`, examples/probe_tracker, v4k_8tile:
+
+ t   adds/frame    lock ops/frame
+ 1    7,924,706      15,849,412
+ 2   22,700,725      45,401,450
+ 4   22,700,725      45,401,450
+ 8   22,700,725      45,401,450
+
+THE COUNT IS IDENTICAL AT t=2, t=4 AND t=8. Combined with the tracker CPU from
+table 1, at a constant 22,700,725 registrations and an identical code path:
+
+ t   tracker CPU   ns per registration
+ 2       83.05          3.66
+ 4      100.11          4.41   (+21% vs t=2)
+ 8      149.03          6.57   (+79% vs t=2)
+
+Two separable halves of the 33.6 -> 149.0 ms growth from t=1 to t=8:
+  count   7.92M -> 22.70M registrations (2.86x, all of it at the t=1->t=2 step)
+          ~ +62.7 ms, 54%
+  contention  3.66 -> 6.57 ns each at constant count, 46%
+
+INSTRUMENT WARNING, stated because the numbers are tempting: the probe-count
+build also reports `contended_pct` 3.59/12.93/19.19% and `spin_wait_ns_per_frame`
+83 ms / 2,129 ms / 21,371 ms at t=2/4/8. THE ABSOLUTE WAIT NANOSECONDS ARE AN
+ARTIFACT and must not be quoted. That build puts an Instant::now() pair around
+each of 45.4 M lock ops per frame and runs at 4,406.7 ms/frame at t=8 -- 67.7x
+the real 65.1 -- which inflates every critical section and therefore the
+contention it measures. Only the COUNTS from that arm are load-bearing; the
+per-registration cost above is derived from tt-minus-ttu CPU, which has no
+instrument in the lock path.
+
+4. THE MECHANISM, IN SOURCE
+---------------------------
+include/dav1d/picture.rs:1021 / :1061 (`for_rows`/`for_rows_mut`), :1097
+(`compact_read`), plus `block_mut` and `with_pixel_guard_immut`: a w x h strided
+picture block is registered as ONE hull guard when
+`tile_threading_active()` is false, and as h PER-ROW guards when it is true.
+The latch is process-global and monotone. The hull cannot be used at t>1 for a
+real reason (#467): it also reserves the inter-row gaps, which belong to other
+tile COLUMNS, and produced 8-9 spurious overlap panics in 24 concurrent runs.
+
+That one switch is both halves of table 3: it triples the registration count the
+moment t>1, and it turns each registration into a shared-shard lock acquisition
+that N cores contend for.
+
+5. THE FILTER-CHAIN HYPOTHESIS IS WRONG — exact interval log, t=8
+   [t8_scaling_ev_*_2026-08-09.tsv.zst, scripts/perf/evlog_report.py]
+-------------------------------------------------------------------------------
+The prior round's figure was 134.5 ms/frame of filter CPU at ~1.98-way
+concurrency. Re-measured on ee07b00, after the NEON loop-filter and CDEF ports:
+
+  cdef          77.0 -> 14.8   (-81%)
+  deblock_cols  29.0 -> 25.6
+  deblock_rows  28.4 -> 11.2
+  filter total 134.5 -> 51.6   (-62%), 10.9% of the frame's 471.7 ms of CPU
+
+Per-frame structure, medians over 8 frames (`tt`, t=8, frame wall 65.81 ms):
+  serial HEAD (before any task stage)      0.103 ms   0.2%
+  serial TAIL (after the last task stage)  0.010 ms   0.0%
+  parallel BODY                           65.479 ms  99.5%, occupancy 7.193/8
+  post-tile TAIL (after last tile_recon)   8.455 ms  12.8%, filter occupancy 3.499
+  exact occupancy histogram inside BODY:  8 workers 85.31%, 1-3 workers 12.28%
+  per-worker busy 58.03..59.20 ms/frame — even to +-1%, no straggler.
+
+So the filter chain is NOT an Amdahl term at t=8. It is, however, genuinely a
+serial spine, which is worth recording because it becomes binding later:
+
+  stage         CPU ms   union ms   CPU/union   (1.000 = never overlaps itself)
+  deblock_rows  11.208     11.208      1.000
+  cdef          14.801     13.243      1.118
+  deblock_cols  25.557     10.893      2.346
+
+deblock_rows is EXACTLY serial, as `ensure_progress(fc.frame_thread_progress
+.deblock)` at src/thread_task.rs:1351 predicts. Its 11.2 ms is spread over a
+61.8 ms span, so it has slack today and does not bind; it would start binding
+at roughly a further 4x speedup.
+
+6. RANKED, ms/frame at 8bpc t=8 (base wall 64.89, dav1d 34.39)
+--------------------------------------------------------------
+  1. borrow-tracker CPU that exists only at t>1     19.0 ms   62% of the gap
+     (measured directly: base 64.89 - ttu 45.89)
+  2. occupancy shortfall, 7.16 of 8                  6.7 ms   22%
+     (of which the post-tile tail is 4.8 ms; the rest is ramp-in/out)
+  3. non-tracker t>1 work inflation                  3.2 ms   10%
+     (ttu CPU 326.4 at t>1 vs 303.6 at t=1 — the per-row compact copies)
+  4. per-thread kernel throughput                   40.8 -> 34.39 = 1.19x
+     the floor; NOT a scaling problem, it is 1.23x at t=1 too
+
+  ladder: dav1d 34.39 | untracked at perfect occupancy 40.80 (1.19x)
+        | untracked measured 45.89 (1.33x) | base 64.89 (1.89x)
+
+7. WHAT WOULD HAVE TO CHANGE (item 1 only)
+------------------------------------------
+A tracker registration primitive that describes a STRIDED RECTANGLE
+(offset, w, h, stride) as one tracked entity — neither h separate row intervals
+nor one over-wide hull. #468 already named this from the opposite direction
+("a column is not an interval, so no hull covers it"); this round prices it at
+62% of the t=8 gap and 94-106% of the excess over the 1.30x bar at t=2/4/8.
+It has to cut BOTH terms of table 3 to collect the whole 19.0 ms: the 2.86x
+count and the 1.79x per-access contention. A change that only cuts the count is
+specifically predicted to measure null — that is what brief section 6's two
+existing null results (`TinyLock`, `block_mut` held row guards) and PR #468 all
+found, three times.
+
+Not measured here: whether such a primitive is expressible in the current shard
+layout; any vector but 4K 8-tile; t=16; x86_64; any vector with loop
+restoration live (696 of 768 corpus vectors have it, and this grid has none).
+
+GATES
+-----
+Every source edit is inside `#[cfg(feature = "probe-tasktime")]`, which is not
+in `default`. `cargo check --release --all-targets` on default features: clean.
+`cargo fmt --all --check`: clean. Corpus: `decode_md5_verify` 14/14.

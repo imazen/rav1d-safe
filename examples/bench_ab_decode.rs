@@ -138,7 +138,11 @@ fn main() {
     for rep in 0..reps {
         let t0 = Instant::now();
         for _ in 0..iters {
+            #[cfg(feature = "probe-tasktime")]
+            let __fm = rav1d_safe::src::probe_tasktime::frame_begin();
             let f = dec.decode(black_box(&obu)).expect("decode");
+            #[cfg(feature = "probe-tasktime")]
+            rav1d_safe::src::probe_tasktime::frame_end(__fm);
             black_box(&f);
             drop(f);
         }
@@ -149,6 +153,14 @@ fn main() {
         );
     }
     #[cfg(feature = "probe-tasktime")]
-    rav1d_safe::src::probe_tasktime::report((reps * iters) as u64);
+    {
+        rav1d_safe::src::probe_tasktime::report((reps * iters) as u64);
+        // RAV1D_EVLOG=<path> opts into the exact interval log. Writing it is
+        // off by default so the timed reps of a plain probe run are not
+        // followed by a multi-MB file write inside the same process.
+        if let Some(p) = std::env::var_os("RAV1D_EVLOG") {
+            rav1d_safe::src::probe_tasktime::dump_events(&p.to_string_lossy());
+        }
+    }
     let _ = dec.flush();
 }

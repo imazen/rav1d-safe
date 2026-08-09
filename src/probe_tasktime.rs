@@ -131,7 +131,8 @@ pub fn stage_begin_of(stage: usize) -> Instant {
 
 #[inline]
 pub fn stage_end(t0: Instant, stage: usize) {
-    let ns = t0.elapsed().as_nanos() as u64;
+    let now = Instant::now();
+    let ns = now.duration_since(t0).as_nanos() as u64;
     ACTIVE.fetch_sub(1, Ordering::Relaxed);
     if is_filter(stage) {
         FILT_ACTIVE.fetch_sub(1, Ordering::Relaxed);
@@ -141,6 +142,7 @@ pub fn stage_end(t0: Instant, stage: usize) {
     let w = slot();
     BUSY_NS[ix(w, stage)].fetch_add(ns, Ordering::Relaxed);
     BUSY_CNT[ix(w, stage)].fetch_add(1, Ordering::Relaxed);
+    log_event(t0, ns, w, stage);
 }
 
 #[inline]
@@ -150,10 +152,118 @@ pub fn park_begin() -> Instant {
 
 #[inline]
 pub fn park_end(t0: Instant) {
-    let ns = t0.elapsed().as_nanos() as u64;
+    let now = Instant::now();
+    let ns = now.duration_since(t0).as_nanos() as u64;
     let w = slot();
     PARK_NS[w].fetch_add(ns, Ordering::Relaxed);
     PARK_CNT[w].fetch_add(1, Ordering::Relaxed);
+    log_event(t0, ns, w, STAGE_PARK);
+}
+
+// ---------------------------------------------------------------------------
+// Exact interval log.
+//
+// The sampling monitor above answers "what is the mean concurrency"; it cannot
+// answer "what is running during the last 20% of THIS frame", because a
+// 50 us sampler has no frame boundaries in it and a mean hides a bimodal
+// distribution. This log records the exact [start, start+dur) interval of every
+// stage body, every park, and every frame, so occupancy-over-time, the tail
+// composition and the critical path are all derived offline from one run
+// instead of estimated from three histograms.
+//
+// Cost: the same two clock reads the counters already took (`stage_end` now
+// reuses one `Instant::now()` for both the duration and the log), plus one
+// relaxed fetch_add and two relaxed stores. ~170 stage + ~250 park events per
+// 4K frame against a ~65 ms frame.
+// ---------------------------------------------------------------------------
+
+/// Synthetic stage ids that are not task stages.
+pub const STAGE_PARK: usize = 8;
+pub const STAGE_FRAME: usize = 9;
+pub const N_EVSTAGE: usize = 10;
+pub const EVSTAGE_NAMES: [&str; N_EVSTAGE] = [
+    "tile_entropy",
+    "tile_recon",
+    "deblock_cols",
+    "deblock_rows",
+    "cdef",
+    "superres",
+    "loop_restore",
+    "other",
+    "park",
+    "frame",
+];
+
+/// 1 M events is ~40 frames of a 4K decode at t=8 including parks. Overflow is
+/// counted and reported rather than silently wrapping, so a truncated log can
+/// never be mistaken for a complete one.
+const EV_CAP: usize = 1 << 20;
+static EV_T0: [AtomicU64; EV_CAP] = [ZERO; EV_CAP];
+static EV_PACK: [AtomicU64; EV_CAP] = [ZERO; EV_CAP];
+static EV_N: AtomicUsize = AtomicUsize::new(0);
+static EV_LOST: AtomicU64 = AtomicU64::new(0);
+
+/// Time origin for the log. Set by [`reset`]; every `t0` is ns since then.
+static ORIGIN: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+#[inline]
+fn origin() -> Instant {
+    *ORIGIN.get_or_init(Instant::now)
+}
+
+#[inline]
+fn log_event(t0: Instant, dur_ns: u64, worker: usize, stage: usize) {
+    let i = EV_N.fetch_add(1, Ordering::Relaxed);
+    if i >= EV_CAP {
+        EV_LOST.fetch_add(1, Ordering::Relaxed);
+        return;
+    }
+    let rel = t0.saturating_duration_since(origin()).as_nanos() as u64;
+    EV_T0[i].store(rel, Ordering::Relaxed);
+    EV_PACK[i].store(
+        (dur_ns.min(u32::MAX as u64) << 32) | ((worker as u64 & 0xffff) << 16) | stage as u64,
+        Ordering::Relaxed,
+    );
+}
+
+/// Mark the start of one driver-level decode call. Pair with [`frame_end`].
+pub fn frame_begin() -> Instant {
+    Instant::now()
+}
+
+pub fn frame_end(t0: Instant) {
+    let ns = Instant::now().duration_since(t0).as_nanos() as u64;
+    log_event(t0, ns, MAX_WORKERS - 1, STAGE_FRAME);
+}
+
+/// Write the log as a TSV: `t0_ns  dur_ns  worker  stage`.
+pub fn dump_events(path: &str) {
+    use std::io::Write as _;
+    let n = EV_N.load(Ordering::Relaxed).min(EV_CAP);
+    let lost = EV_LOST.load(Ordering::Relaxed);
+    let f = match std::fs::File::create(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("PROBE evlog_error {path} {e}");
+            return;
+        }
+    };
+    let mut w = std::io::BufWriter::new(f);
+    let _ = writeln!(w, "t0_ns\tdur_ns\tworker\tstage");
+    for i in 0..n {
+        let t0 = EV_T0[i].load(Ordering::Relaxed);
+        let p = EV_PACK[i].load(Ordering::Relaxed);
+        let _ = writeln!(
+            w,
+            "{}\t{}\t{}\t{}",
+            t0,
+            p >> 32,
+            (p >> 16) & 0xffff,
+            EVSTAGE_NAMES[(p & 0xffff) as usize % N_EVSTAGE]
+        );
+    }
+    let _ = w.flush();
+    println!("PROBE evlog {path} events {n} lost {lost}");
 }
 
 const SAMPLE_US: u64 = 50;
@@ -179,6 +289,11 @@ pub fn start_monitor() {
 /// Zero every counter. Call after warmup, before the timed reps, so the
 /// warmup decode and the thread-pool spin-up do not enter the numbers.
 pub fn reset() {
+    // Latch the log's time origin here, so `t0` is ns since the start of the
+    // timed reps rather than since an arbitrary earlier point.
+    let _ = origin();
+    EV_N.store(0, Ordering::Relaxed);
+    EV_LOST.store(0, Ordering::Relaxed);
     for w in 0..MAX_WORKERS {
         for s in 0..N_STAGE {
             BUSY_NS[ix(w, s)].store(0, Ordering::Relaxed);
