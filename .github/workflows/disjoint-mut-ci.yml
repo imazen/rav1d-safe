@@ -38,10 +38,16 @@ jobs:
           # trackers, so `test_new_always_tracked` and `test_overlapping_mut`
           # fail BY CONSTRUCTION -- that leg was red on main and could never
           # have been green. It tested a configuration nothing ships.
-          # This enables every SOUND feature instead, which is what the leg
-          # was presumably meant to cover.
+          # This enables the sound COUNTING probes instead, which is the
+          # coverage the leg was presumably meant to give. `__probe_wide` is
+          # deliberately NOT here: it has its own dedicated job below, and its
+          # anti-vacuity assertion is timing-sensitive -- the counting probes
+          # perturb scheduling enough that the wide registrant is refused
+          # almost every round on a shared runner, so the test correctly
+          # refuses to pass vacuously ("the race window was never exercised").
+          # That is the gate working, not a flake to paper over.
           - os: ubuntu-latest
-            features: "--features std,__probe_wide,__probe_count,__probe_sites"
+            features: "--features std,__probe_count,__probe_sites"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
