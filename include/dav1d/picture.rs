@@ -2365,7 +2365,6 @@ mod row_guard_policy_tests {
         .is_err();
         panic::set_hook(prev);
         drop(held);
-        drop(b);
         assert!(
             collides,
             "tracking is compiled out in this build; the test above gates nothing"
