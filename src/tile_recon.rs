@@ -27,9 +27,15 @@
 //! three-line seam in `recon.rs` instead of a rewrite of every offset
 //! computation.
 //!
-//! The cost is virtual, not resident: a tile only ever touches its own rows, so
-//! the rest of the (large) allocation is never written and its pages are never
-//! faulted in. `benchmarks/tile_owned_recon_*.meta` records the measured RSS.
+//! The cost is memory, and it is real. Allocation is `alloc_zeroed`, so
+//! untouched pages are never faulted in — but a tile writes its own columns
+//! across every row of its tile ROW, and a page spans whole rows, so the
+//! resident set grows by roughly `tile_columns x plane_bytes`. MEASURED on
+//! v4k_8tile 8bpc t=8: peak RSS 106.3 -> 202.4 MB (+96.1 MB, 4 tile columns x
+//! 24.0 MB of planes); t=1 is untouched at 99.5 -> 99.6 MB because the feature
+//! declines below two workers. An earlier draft that filled the buffer with
+//! `Vec::resize` instead measured +192.5 MB. See
+//! `benchmarks/tile_owned_recon_2026-08-09.meta`.
 //!
 //! # What is NOT covered
 //!

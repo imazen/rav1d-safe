@@ -71,12 +71,37 @@ acquisitions reconstruction makes, replaced by
 block copy, and that test must keep comparing against the real picture.
 
 #473 costed the translation-free alternative at "4x memory for the tile columns
-of a tile row, ~50 MB at 4K". That estimate assumed a full-width buffer covering
-only the tile's rows. Full-plane geometry is *larger* virtually and *smaller*
-resident, because a tile only ever writes its own rows and the rest of the
-allocation is never faulted in — see the measured RSS in the record. The buffers
-are also cached across frames on a `(n_tiles, byte_len, stride)` key, so the
-first-touch cost is paid once per sequence, not once per frame.
+of a tile row, ~50 MB at 4K". **That estimate is right in shape and the memory
+cost is real** — allocation is `alloc_zeroed` so untouched pages never fault in,
+but a tile writes its own columns on every row of its tile row and a page spans
+whole rows, so the resident set grows by about `tile_columns x plane_bytes`.
+
+MEASURED, v4k_8tile 8bpc, peak RSS (`/usr/bin/time -l`, 20 frames):
+
+| arm | t=1 | t=8 |
+|---|---|---|
+| base | 99.5 MB | 106.3 MB |
+| tile-owned | 99.6 MB | **202.4 MB** (+96.1) |
+
+The t=1 column being flat is a third independent liveness check: the feature
+declines below two workers, so it must not move there.
+
+Two corrections this measurement forced, both worth carrying:
+
+* **An earlier draft filled the buffers with `try_reserve_exact` + `resize(n, 0)`
+  and measured +192.5 MB** — `Vec::resize` memsets, which faults in every page
+  of an allocation whose whole point is that most of it is never touched.
+  `vec![0u8; n]` lowers to `alloc_zeroed`. The comment at the allocation site
+  says so, because the fallible-looking spelling is the tempting one.
+* **`v4k_8tile` is 4:4:4, not 4:2:0.** Its planes are 8,355,840 bytes each with
+  stride 3840 on all three — `uv_stride == y_stride` means `ss_hor == 0`.
+  #473's `tile_stitch_cost.rs` priced the stitch against "3840x2160 4:2:0,
+  12.44 MB/frame"; the real vector is 25.1 MB/frame, so **that stitch price is
+  for a frame half this one's size** and should not be quoted for this vector.
+
+The buffers are cached across frames on a `(n_tiles, byte_len, stride)` key, so
+the allocation and its first-touch faults are paid once per sequence, not once
+per frame (verified: one allocation over a 3-frame run).
 
 ## 4. Ordering, and why the filter chain still sees whole rows
 

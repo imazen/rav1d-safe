@@ -567,10 +567,13 @@ impl Rav1dPictureDataComponent {
         if usable_len == 0 {
             return None;
         }
-        let mut buf = Vec::new();
-        buf.try_reserve_exact(usable_len + RAV1D_PICTURE_ALIGNMENT)
-            .ok()?;
-        buf.resize(usable_len + RAV1D_PICTURE_ALIGNMENT, 0);
+        // `vec![0u8; n]` lowers to `alloc_zeroed`, i.e. `calloc`, which for an
+        // allocation this size hands back mmap'd zero pages. A tile only ever
+        // writes its own rows, so the rest is never faulted in. Do NOT replace
+        // this with `try_reserve_exact` + `resize(n, 0)`: that memsets the
+        // whole buffer and MEASURED +191 MB of resident set on v4k_8tile
+        // against +100 MB here (`benchmarks/tile_owned_recon_2026-08-09.meta`).
+        let buf = vec![0u8; usable_len + RAV1D_PICTURE_ALIGNMENT];
         Some(Self {
             data: crate::src::disjoint_mut::dm_new(PicBuf::from_vec_aligned(
                 buf,

@@ -1755,6 +1755,11 @@ fn mc<BD: BitDepth>(
 ) -> Result<(), ()> {
     let bd = BD::from_c(f.bitdepth_max);
     let ref_data = &refp.p.data.as_ref().unwrap().data;
+    // NOT `f.recon_planes(..)`, deliberately: this is used only for the
+    // `ref_eq` identity test below, which asks "is the reference picture the
+    // CURRENT picture", i.e. intra block copy. It must compare against the real
+    // picture. (Owned per-tile reconstruction declines on `allow_intrabc`
+    // frames for the same reason — see `crate::src::tile_recon`.)
     let cur_data = &f.cur.data.as_ref().unwrap().data;
 
     let ss_ver = (pl != 0 && f.cur.p.layout == Rav1dPixelLayout::I420) as c_int;
