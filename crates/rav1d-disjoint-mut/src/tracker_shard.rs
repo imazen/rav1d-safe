@@ -3211,6 +3211,14 @@ mod rowmap_tests {
             !RowMap::new(MAX_ROW_STRIDE + 1, LEN).enabled(),
             "stride above what the column fields hold"
         );
+        // `1usize << 32` is an `arithmetic_overflow` HARD ERROR where `usize`
+        // is 32 bits — i686 and wasm32 — and the case it asserts cannot arise
+        // there, because no `usize` reaches the bound. Gate it rather than
+        // widen it, so the i686 CI leg compiles this crate's tests at all.
+        // (`cargo check` does not reach the MIR pass that raises the lint, so
+        // the wasm32 cross job stays green either way; the i686 legs run
+        // `cargo nextest --lib` over both workspace members and do not.)
+        #[cfg(target_pointer_width = "64")]
         assert!(
             !RowMap::new(STRIDE, 1usize << 32).enabled(),
             "length past the exact-division magic's range"

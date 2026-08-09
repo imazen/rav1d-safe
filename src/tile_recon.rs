@@ -183,6 +183,18 @@ pub(crate) fn release(f: &mut Rav1dFrameData) {
 /// churning two.
 #[cfg(feature = "tile-owned-recon")]
 pub(crate) fn release_all(c: &crate::src::internal::Rav1dContext) {
+    // Measurement escape, so the flush release's own cost is a measured number
+    // rather than an inference from the gap between two builds.
+    use std::sync::OnceLock;
+    static KEEP: OnceLock<bool> = OnceLock::new();
+    if *KEEP.get_or_init(|| {
+        matches!(
+            std::env::var("RAV1D_TILE_OWNED_KEEP_ON_FLUSH").as_deref(),
+            Ok("1")
+        )
+    }) {
+        return;
+    }
     for fc in c.fc.iter() {
         if let Some(mut f) = fc.data.try_write() {
             f.tile_recon = None;

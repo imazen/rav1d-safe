@@ -1,0 +1,37 @@
+#	Borrow-tracker registrations per frame, examples/probe_tracker --features probe-sites
+#	Host: Apple M4 Pro (12c), macOS 26.5.2, aarch64. 3 iters after a warmup decode; lost=0 on every row.
+#	arms: base = main@ee07b00 | rect = main+#472 | tko = main+#474 (RAV1D_TILE_OWNED=1)
+#	      both = perf/compose-rect-tileown (RAV1D_TILE_OWNED=1)
+vec	arm	threads	registrations_per_frame	distinct_sites	lost
+v4k_8tile	base	1	7924706	68	0
+v4k_8tile	base	8	22700725	68	0
+v4k_8tile	rect	1	7924706	68	0
+v4k_8tile	rect	8	8250328	68	0
+v4k_8tile	tko	1	7924706	68	0
+v4k_8tile	tko	8	13372343	69	0
+v4k_8tile	both	1	7924706	68	0
+v4k_8tile	both	8	7975358	69	0
+v4k_8tile_10b	base	1	10853960	65	0
+v4k_8tile_10b	base	8	21119397	64	0
+v4k_8tile_10b	rect	1	10853960	65	0
+v4k_8tile_10b	rect	8	10852772	64	0
+v4k_8tile_10b	tko	1	10853960	65	0
+v4k_8tile_10b	tko	8	16665593	66	0
+v4k_8tile_10b	both	1	10853960	65	0
+v4k_8tile_10b	both	8	10904612	66	0
+#
+#	Per-site delta, v4k_8tile 8bpc t=8, rect -> both (only sites that moved)
+site	rect	both	delta
+include/dav1d/picture.rs:2159:22	326810	0	-326810
+include/dav1d/picture.rs:177:38	280464	0	-280464
+include/dav1d/picture.rs:182:33	0	280464	280464
+src/recon.rs:2725:46	188130	0	-188130
+src/recon.rs:2726:46	188130	0	-188130
+src/recon.rs:2730:46	0	188130	188130
+src/recon.rs:2731:46	0	188130	188130
+src/recon.rs:2345:49	138714	0	-138714
+src/recon.rs:2346:44	138714	0	-138714
+src/recon.rs:2350:49	0	138714	138714
+src/recon.rs:2351:44	0	138714	138714
+src/tile_recon.rs:358:38	0	25920	25920
+TOTAL	8250328	7975358	-274970
