@@ -136,37 +136,89 @@ fn enabled() -> bool {
     *ON.get_or_init(|| !matches!(std::env::var("RAV1D_TILE_OWNED").as_deref(), Ok("0")))
 }
 
-/// Keep the buffers alive across frames instead of releasing them at frame
-/// exit — the pre-fix lifetime, retained ONLY so the release's cost can be
-/// A/B'd inside one binary.
+/// Drop the private planes at every FRAME exit rather than reusing them.
 ///
-/// The shipping default is to release: a decoder that has decoded one
-/// multi-tile frame must not go on holding `tile_columns x plane_bytes` of
-/// resident pages while it is idle. See [`release`].
+/// Off by default, and that default is a MEASURED result, not a preference.
+/// Dropping per frame is the obvious fix for the retention this feature
+/// shipped with — and on this platform it makes the thing it was supposed to
+/// improve twice as bad: `v4k_8tile` 8bpc t=8 over 20 decodes,
+/// peak RSS +100.8 MB reusing vs **+205.7 MB** releasing (10bpc +200.3 vs
+/// +402.3). macOS does not hand the freed large regions back before the next
+/// frame has faulted a fresh set in, so two generations are resident at once.
+/// `benchmarks/compose_rect_tileown_rss_2026-08-09.tsv`.
+///
+/// What replaces it is [`release_all`] on flush: the buffers are reused for as
+/// long as the decoder is actively decoding, and dropped the moment it is not.
 #[cfg(feature = "tile-owned-recon")]
-fn retain_across_frames() -> bool {
+fn release_every_frame() -> bool {
     use std::sync::OnceLock;
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| matches!(std::env::var("RAV1D_TILE_OWNED_RETAIN").as_deref(), Ok("1")))
+    *ON.get_or_init(|| {
+        matches!(
+            std::env::var("RAV1D_TILE_OWNED_RELEASE").as_deref(),
+            Ok("1")
+        )
+    })
 }
 
-/// Drop this frame's private planes.
-///
-/// Called from `rav1d_decode_frame_exit` alongside the other per-frame takes,
-/// so the buffers live exactly as long as the frame that needed them. Without
-/// this the allocation is cached on the frame context for the DECODER's whole
-/// life — 96 MB of resident pages on `v4k_8tile` 8bpc — which is the single
-/// strongest argument against ever defaulting the feature on.
-///
-/// The cost is that the next frame faults its pages in again. That is measured
-/// rather than assumed: `benchmarks/compose_rect_tileown_2026-08-09.meta`
-/// carries the release-vs-retain A/B on wall clock and on peak RSS.
+/// Drop this frame's private planes at frame exit. See [`release_every_frame`]
+/// for why this is not the default.
 #[cfg(feature = "tile-owned-recon")]
 pub(crate) fn release(f: &mut Rav1dFrameData) {
-    if retain_across_frames() {
+    if !release_every_frame() {
         return;
     }
     f.tile_recon = None;
+}
+
+/// Drop every frame context's private planes.
+///
+/// Called from `rav1d_flush`, which is what `Decoder::flush()`, a seek and an
+/// end-of-stream all go through. THIS is the retention fix: #474 cached the
+/// planes on the frame context for the decoder's entire life, so a process
+/// that decoded one multi-tile still and then sat idle held
+/// `tile_columns x plane_bytes` — 100 MB at 8bpc, 200 MB at 10bpc on
+/// `v4k_8tile` — until the decoder was dropped. Now an idle decoder holds
+/// nothing, and an actively-decoding one reuses one generation instead of
+/// churning two.
+#[cfg(feature = "tile-owned-recon")]
+pub(crate) fn release_all(c: &crate::src::internal::Rav1dContext) {
+    for fc in c.fc.iter() {
+        if let Some(mut f) = fc.data.try_write() {
+            f.tile_recon = None;
+        }
+    }
+}
+
+/// Largest extra resident set this feature may ask for, in bytes.
+///
+/// Resident cost is `tile_columns x plane_set_bytes` — every tile touches a
+/// narrow column band of EVERY row it owns, and a page spans several rows, so
+/// a tile's whole row range becomes resident even though it writes a quarter
+/// of it. MEASURED on `v4k_8tile`: +100.9 MB at 8bpc, +200.3 MB at 10bpc, both
+/// at t=8 with 4 tile columns. It scales with resolution and tile columns and
+/// is NOT reducible while the tile buffer keeps the picture's stride, so it
+/// needs a ceiling rather than an argument.
+///
+/// Override with `RAV1D_TILE_OWNED_MAX_MB`. Above the ceiling the frame keeps
+/// the shared picture — the same decline path as a single-tile frame.
+#[cfg(feature = "tile-owned-recon")]
+fn max_extra_bytes() -> usize {
+    use std::sync::OnceLock;
+    static MAX: OnceLock<usize> = OnceLock::new();
+    *MAX.get_or_init(|| budget_bytes(std::env::var("RAV1D_TILE_OWNED_MAX_MB").ok().as_deref()))
+}
+
+/// [`max_extra_bytes`] without the environment, so the parse is testable.
+/// A malformed or absent value takes the default rather than disabling the
+/// ceiling — the failure mode of an unparsed budget must be conservative.
+#[cfg(feature = "tile-owned-recon")]
+fn budget_bytes(from_env: Option<&str>) -> usize {
+    const DEFAULT_MB: usize = 256;
+    let mb = from_env
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .unwrap_or(DEFAULT_MB);
+    mb.saturating_mul(1024 * 1024)
 }
 
 /// Allocate (or reuse) one owned plane set per tile, if this frame qualifies.
@@ -228,6 +280,15 @@ pub(crate) fn setup(c: &crate::src::internal::Rav1dContext, f: &mut Rav1dFrameDa
         byte_len: [0, 1, 2].map(|pl| model[pl].byte_len()),
         stride: [0, 1, 2].map(|pl| model[pl].stride()),
     };
+    // Ceiling. Charged on the ALLOCATION, which is the number a caller can
+    // reason about ahead of time; the resident share is `tile_columns /
+    // n_tiles` of it. Declining leaves `tile_recon = None`, i.e. exactly the
+    // shared-picture path a single-tile frame takes.
+    let want = n_tiles * geometry.byte_len.iter().take(n_planes).sum::<usize>();
+    if want > max_extra_bytes() {
+        f.tile_recon = None;
+        return;
+    }
     if let Some(existing) = &f.tile_recon {
         if existing.geometry == geometry {
             return; // Reuse: pages already resident.
@@ -270,7 +331,7 @@ pub(crate) fn setup(c: &crate::src::internal::Rav1dContext, f: &mut Rav1dFrameDa
     // Charge the whole allocation, not the pages a tile happens to touch: this
     // counter exists to police the LIFETIME, and an allocation the decoder
     // still owns is still owned whether or not it is resident.
-    let bytes = n_tiles * geometry.byte_len.iter().take(n_planes).sum::<usize>();
+    let bytes = want;
     accounting::add(bytes);
     f.tile_recon = Some(TileReconBufs {
         planes,
@@ -421,6 +482,21 @@ pub(crate) fn plane_rect(luma: Rect, pl: usize, layout: Rav1dPixelLayout) -> Rec
 #[cfg(all(test, feature = "tile-owned-recon"))]
 mod tests {
     use super::*;
+
+    /// The ceiling's parse. A garbage or missing value must land on the
+    /// conservative default, never on "unlimited" — an unparsed budget that
+    /// silently disables the ceiling is the failure mode worth gating.
+    #[test]
+    fn the_memory_ceiling_parses_conservatively() {
+        assert_eq!(budget_bytes(None), 256 * 1024 * 1024);
+        assert_eq!(budget_bytes(Some("64")), 64 * 1024 * 1024);
+        assert_eq!(budget_bytes(Some(" 64 ")), 64 * 1024 * 1024);
+        assert_eq!(budget_bytes(Some("")), 256 * 1024 * 1024);
+        assert_eq!(budget_bytes(Some("lots")), 256 * 1024 * 1024);
+        assert_eq!(budget_bytes(Some("-1")), 256 * 1024 * 1024);
+        // No overflow-to-small on an absurd value.
+        assert_eq!(budget_bytes(Some(&usize::MAX.to_string())), usize::MAX);
+    }
 
     /// The v4k_8tile geometry: 3840x2160, 4:2:0, 4x2 tiles, 64-pixel
     /// superblocks. `bw = 960` and `bh = 540` in 4-pixel units.

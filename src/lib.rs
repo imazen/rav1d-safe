@@ -555,6 +555,12 @@ pub(crate) fn rav1d_flush(c: &Rav1dContext) {
         }
         state.frame_thread.next = 0;
     }
+    // Private per-tile reconstruction planes are worth 100-200 MB of resident
+    // pages on a 4K multi-tile frame, and a flushed decoder is by definition
+    // not using them. See `tile_recon::release_all`.
+    #[cfg(feature = "tile-owned-recon")]
+    crate::src::tile_recon::release_all(c);
+
     c.flush.store(false, Ordering::SeqCst);
 }
 
