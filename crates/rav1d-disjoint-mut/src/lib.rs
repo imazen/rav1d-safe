@@ -209,6 +209,28 @@ impl<T: AsMutPtr> DisjointMut<T> {
         }
     }
 
+    /// THROWAWAY, UNSOUND: [`Self::dangerously_unchecked`] with the `unsafe`
+    /// contract discharged by fiat, so a `#![forbid(unsafe_code)]` consumer can
+    /// build a per-container ceiling arm.
+    ///
+    /// `forbid` cannot be locally allowed, so a consumer crate has no way to
+    /// call the `unsafe` constructor for ONE container — its only lever is the
+    /// whole-process `__probe_untracked`, which also untracks the containers
+    /// the arm is supposed to keep tracked (here: the shared picture and the
+    /// filter chain that runs on it). This exists so "price removing the
+    /// tracker from exactly the recon buffers" is answerable without either
+    /// writing `unsafe` in the consumer or doing the refactor first.
+    ///
+    /// Behind `__probe_untracked_ctor`, absent from `default` and from every
+    /// published feature. Do not merge a caller of this into a shipping path.
+    #[cfg(feature = "__probe_untracked_ctor")]
+    #[allow(unsafe_code)]
+    pub fn probe_untracked(value: T) -> Self {
+        // SAFETY: none. This is a measurement arm, documented UNSOUND at every
+        // call site and at its feature declaration.
+        unsafe { Self::dangerously_unchecked(value) }
+    }
+
     pub fn into_inner(self) -> T {
         self.inner.into_inner()
     }

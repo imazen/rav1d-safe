@@ -93,6 +93,20 @@ fn enabled() -> bool {
     *ON.get_or_init(|| !matches!(std::env::var("RAV1D_TILE_OWNED").as_deref(), Ok("0")))
 }
 
+/// Allow private per-tile buffers with a SINGLE worker thread.
+///
+/// #474 declines below two workers because there is nothing to win there: with
+/// one worker the shared picture already takes one hull guard per block and the
+/// stitch is pure added cost. But the zero-tracker CEILING arm has to be priced
+/// at t=1 too — that is the cell the campaign's bar is closest at, and the
+/// ownership argument does not depend on the thread count. Off unless asked.
+#[cfg(feature = "tile-owned-recon")]
+fn allow_single_thread() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| matches!(std::env::var("RAV1D_TILE_OWNED_T1").as_deref(), Ok("1")))
+}
+
 /// Allocate (or reuse) one owned plane set per tile, if this frame qualifies.
 ///
 /// Sets `f.tile_recon` to `None` when it does not, which restores the shared
@@ -113,7 +127,7 @@ pub(crate) fn setup(c: &crate::src::internal::Rav1dContext, f: &mut Rav1dFrameDa
         // `allow_intrabc` reads the current picture as an MC reference.
         // Frame threading (`n_fc > 1`) splits a tile into entropy and
         // reconstruction passes; out of scope for this round.
-        c.tc.len() < 2
+        (c.tc.len() < 2 && !allow_single_thread())
             || n_tiles < 2
             || frame_hdr.allow_intrabc
             || c.fc.len() > 1

@@ -36,6 +36,9 @@ __probe_count = ["std"]
 __probe_noscan = []
 __probe_lockonly = []
 __probe_untracked = []
+# THROWAWAY: a SAFE constructor for an untracked instance, so a `forbid(unsafe_code)`
+# consumer can price "this one container is not tracked". UNSOUND -- measurement only.
+__probe_untracked_ctor = []
 # Wide-path reason counters. Unlike __probe_count this KEEPS the sharded tracker.
 __probe_wide = ["std"]
 # THROWAWAY per-call-site borrow COUNTS (keeps the sharded tracker).

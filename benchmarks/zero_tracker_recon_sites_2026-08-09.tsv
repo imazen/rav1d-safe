@@ -1,0 +1,8 @@
+# tko vs ceil registration census, v4k_8tile 8bpc, --features probe-sites
+# arm<TAB>threads<TAB>total_per_frame<TAB>distinct_sites
+base	1	total_per_frame=7924706	distinct=68	lost=0
+base	8	total_per_frame=22700725	distinct=68	lost=0
+tko	1	total_per_frame=7976546	distinct=70	lost=0
+tko	8	total_per_frame=13372343	distinct=69	lost=0
+ceil	1	total_per_frame=6005602	distinct=49	lost=0
+ceil	8	total_per_frame=11401399	distinct=48	lost=0

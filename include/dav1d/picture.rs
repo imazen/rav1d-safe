@@ -574,12 +574,20 @@ impl Rav1dPictureDataComponent {
         // whole buffer and MEASURED +191 MB of resident set on v4k_8tile
         // against +100 MB here (`benchmarks/tile_owned_recon_2026-08-09.meta`).
         let buf = vec![0u8; usable_len + RAV1D_PICTURE_ALIGNMENT];
+        let inner = PicBuf::from_vec_aligned(buf, RAV1D_PICTURE_ALIGNMENT, usable_len);
+        // CEILING arm (`probe-recon-untracked`, UNSOUND, measurement only):
+        // build the private plane with NO tracker, leaving the shared picture
+        // and its filter chain tracked exactly as today. That is precisely what
+        // a complete `&mut [u8]` refactor of the reconstruction kernels would
+        // buy — every recon registration on a private plane gone, every filter
+        // registration kept — so the refactor can be PRICED before it is
+        // written. See `docs/ZERO_TRACKER_RECON.md`.
+        #[cfg(feature = "probe-recon-untracked")]
+        let data = rav1d_disjoint_mut::DisjointMut::probe_untracked(inner);
+        #[cfg(not(feature = "probe-recon-untracked"))]
+        let data = crate::src::disjoint_mut::dm_new(inner);
         Some(Self {
-            data: crate::src::disjoint_mut::dm_new(PicBuf::from_vec_aligned(
-                buf,
-                RAV1D_PICTURE_ALIGNMENT,
-                usable_len,
-            )),
+            data,
             stride: model.stride(),
             private: true,
         })
