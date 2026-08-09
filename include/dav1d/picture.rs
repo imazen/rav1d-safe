@@ -640,6 +640,20 @@ impl Rav1dPictureDataComponent {
         Rav1dPictureDataComponentOffset {
             data: self,
             offset: self.pixel_offset::<BD>(),
+            key: crate::src::with_offset::TILE_ANY,
+        }
+    }
+
+    /// [`Self::with_offset`], stamped with the tile whose reconstruction owns
+    /// this reference. See [`crate::src::with_offset::TileKey`].
+    pub fn with_offset_keyed<BD: BitDepth>(
+        &self,
+        key: crate::src::with_offset::TileKey,
+    ) -> Rav1dPictureDataComponentOffset<'_> {
+        Rav1dPictureDataComponentOffset {
+            data: self,
+            offset: self.pixel_offset::<BD>(),
+            key,
         }
     }
 
@@ -2095,6 +2109,7 @@ mod row_guard_policy_tests {
         let at = WithOffset {
             data: &pic,
             offset: 0,
+            key: crate::src::with_offset::TILE_ANY,
         };
         let prev = panic::take_hook();
         panic::set_hook(Box::new(|_| {}));

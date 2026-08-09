@@ -283,12 +283,14 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                                 WithOffset {
                                     data: &f.lf.cdef_line_buf,
                                     offset: f.lf.cdef_lpf_line[0],
+                                    key: crate::src::with_offset::TILE_ANY,
                                 } + ((sby - 1) * 4) as isize * y_stride
                                     + (bx * 4) as isize
                             } else {
                                 WithOffset {
                                     data: &f.lf.lr_line_buf,
                                     offset: f.lf.lr_lpf_line[0],
+                                    key: crate::src::with_offset::TILE_ANY,
                                 } + (sby * (4 << sb128) - 4) as isize * y_stride
                                     + (bx * 4) as isize
                             };
@@ -298,12 +300,14 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                             let top = WithOffset {
                                 data: &f.lf.cdef_line_buf,
                                 offset: f.lf.cdef_line[tf as usize][0],
+                                key: crate::src::with_offset::TILE_ANY,
                             } + (sby * 4) as isize * y_stride
                                 + (bx * 4) as isize;
                             let buf = if resize {
                                 WithOffset {
                                     data: &f.lf.cdef_line_buf,
                                     offset: f.lf.cdef_lpf_line[0],
+                                    key: crate::src::with_offset::TILE_ANY,
                                 } + (sby * 4 + 2) as isize * y_stride
                                     + (bx * 4) as isize
                             } else {
@@ -311,6 +315,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                                 WithOffset {
                                     data: &f.lf.lr_line_buf,
                                     offset: f.lf.lr_lpf_line[0],
+                                    key: crate::src::with_offset::TILE_ANY,
                                 } + line as isize * y_stride
                                     + (bx * 4) as isize
                             };
@@ -322,6 +327,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                                         stride: y_stride,
                                     }),
                                     offset: buf.offset,
+                                    key: crate::src::with_offset::TILE_ANY,
                                 },
                             ))
                         } else {
@@ -332,6 +338,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                             let top = WithOffset {
                                 data: &f.lf.cdef_line_buf,
                                 offset: f.lf.cdef_line[tf as usize][0],
+                                key: crate::src::with_offset::TILE_ANY,
                             } + have_tt as isize * (sby * 4) as isize * y_stride
                                 + (bx * 4) as isize;
                             let bottom = bptrs[0] + (8 * y_stride);
@@ -387,6 +394,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                                         WithOffset {
                                             data: &f.lf.cdef_line_buf,
                                             offset: f.lf.cdef_lpf_line[pl],
+                                            key: crate::src::with_offset::TILE_ANY,
                                         } + ((sby - 1) * 4) as isize * uv_stride
                                             + (bx * 4 >> ss_hor) as isize
                                     } else {
@@ -394,6 +402,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                                         WithOffset {
                                             data: &f.lf.lr_line_buf,
                                             offset: f.lf.lr_lpf_line[pl],
+                                            key: crate::src::with_offset::TILE_ANY,
                                         } + line as isize * uv_stride
                                             + (bx * 4 >> ss_hor) as isize
                                     };
@@ -403,12 +412,14 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                                     let top = WithOffset {
                                         data: &f.lf.cdef_line_buf,
                                         offset: f.lf.cdef_line[tf as usize][pl],
+                                        key: crate::src::with_offset::TILE_ANY,
                                     } + (sby * 8) as isize * uv_stride
                                         + (bx * 4 >> ss_hor) as isize;
                                     let buf = if resize {
                                         WithOffset {
                                             data: &f.lf.cdef_line_buf,
                                             offset: f.lf.cdef_lpf_line[pl],
+                                            key: crate::src::with_offset::TILE_ANY,
                                         } + (sby * 4 + 2) as isize * uv_stride
                                             + (bx * 4 >> ss_hor) as isize
                                     } else {
@@ -416,6 +427,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                                         WithOffset {
                                             data: &f.lf.lr_line_buf,
                                             offset: f.lf.lr_lpf_line[pl],
+                                            key: crate::src::with_offset::TILE_ANY,
                                         } + line as isize * uv_stride
                                             + (bx * 4 >> ss_hor) as isize
                                     };
@@ -427,6 +439,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                                                 stride: uv_stride,
                                             }),
                                             offset: buf.offset,
+                                            key: crate::src::with_offset::TILE_ANY,
                                         },
                                     ))
                                 } else {
@@ -437,6 +450,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                                     let top = WithOffset {
                                         data: &f.lf.cdef_line_buf,
                                         offset: f.lf.cdef_line[tf as usize][pl],
+                                        key: crate::src::with_offset::TILE_ANY,
                                     } + have_tt as isize * (sby * 8) as isize * uv_stride
                                         + (bx * 4 >> ss_hor) as isize;
                                     let bottom = bptrs[pl] + ((8 >> ss_ver) * uv_stride);

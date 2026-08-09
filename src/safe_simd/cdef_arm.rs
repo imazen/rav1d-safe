@@ -215,6 +215,7 @@ fn padding_8bpc(
                     .offset
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * stride),
+                key: crate::src::with_offset::TILE_ANY,
             };
             // Guard exactly the columns read (`x_start..x_end`) — see the
             // module note on exact-window padding guards.
@@ -239,6 +240,7 @@ fn padding_8bpc(
                     .offset
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * stride),
+                key: crate::src::with_offset::TILE_ANY,
             };
             // Same exact-window discipline as the top loop above.
             let slice = match bottom_row.data {
@@ -330,6 +332,7 @@ fn padding_16bpc(
                     .offset
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * stride),
+                key: crate::src::with_offset::TILE_ANY,
             };
             // Guard exactly the columns read (`x_start..x_end`) — see the
             // module note on exact-window padding guards.
@@ -351,6 +354,7 @@ fn padding_16bpc(
                     .offset
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * stride),
+                key: crate::src::with_offset::TILE_ANY,
             };
             // Same exact-window discipline as the top loop above.
             let dst_range = row_offset + x_start - 2..row_offset + x_end - 2;

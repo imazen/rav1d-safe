@@ -167,7 +167,7 @@ pub(crate) fn rav1d_copy_lpf<BD: BitDepth>(
         let data = &sr_cur_data[i];
         let offset =
             f.lf.lr_lpf_line[i].wrapping_add_signed(tt_off as isize * data.pixel_stride::<BD>());
-        PicOffset { data, offset }
+        PicOffset { data, offset, key: crate::src::with_offset::TILE_ANY }
     });
 
     // TODO Also check block level restore type to reduce copying.
@@ -187,6 +187,7 @@ pub(crate) fn rav1d_copy_lpf<BD: BitDepth>(
                         stride: dst[0].stride(),
                     },
                     offset: dst[0].offset,
+                    key: crate::src::with_offset::TILE_ANY,
                 },
                 src[0] - (offset_y as isize * src[0].pixel_stride::<BD>()),
                 0,
@@ -217,6 +218,7 @@ pub(crate) fn rav1d_copy_lpf<BD: BitDepth>(
                         stride: src[0].stride(),
                     },
                     offset: cdef_line_start + (cdef_off_y - cmp::min(y_span, 0)) as usize,
+                    key: crate::src::with_offset::TILE_ANY,
                 },
                 src[0] - (offset_y as isize * src[0].pixel_stride::<BD>()),
                 0,
@@ -256,6 +258,7 @@ pub(crate) fn rav1d_copy_lpf<BD: BitDepth>(
                             stride: dst[1].stride(),
                         },
                         offset: dst[1].offset,
+                        key: crate::src::with_offset::TILE_ANY,
                     },
                     src[1] - (offset_uv as isize * src[1].pixel_stride::<BD>()),
                     ss_ver,
@@ -286,6 +289,7 @@ pub(crate) fn rav1d_copy_lpf<BD: BitDepth>(
                             stride: src[1].stride(),
                         },
                         offset: cdef_line_start + (cdef_off_uv - cmp::min(uv_span, 0)) as usize,
+                        key: crate::src::with_offset::TILE_ANY,
                     },
                     src[1] - (offset_uv as isize * src[1].pixel_stride::<BD>()),
                     ss_ver,
@@ -314,6 +318,7 @@ pub(crate) fn rav1d_copy_lpf<BD: BitDepth>(
                             stride: dst[2].stride(),
                         },
                         offset: dst[2].offset,
+                        key: crate::src::with_offset::TILE_ANY,
                     },
                     src[2] - (offset_uv as isize * src[2].pixel_stride::<BD>()),
                     ss_ver,
@@ -344,6 +349,7 @@ pub(crate) fn rav1d_copy_lpf<BD: BitDepth>(
                             stride: src[2].stride(),
                         },
                         offset: cdef_line_start + (cdef_off_uv - cmp::min(uv_span, 0)) as usize,
+                        key: crate::src::with_offset::TILE_ANY,
                     },
                     src[2] - (offset_uv as isize * src[2].pixel_stride::<BD>()),
                     ss_ver,
@@ -644,6 +650,7 @@ pub(crate) fn rav1d_loopfilter_sbrow_cols<BD: BitDepth>(
     let lvl = WithOffset {
         data: &f.lf.level[..],
         offset: 4 * f.b4_stride as usize * (sby * sbsz) as usize,
+        key: crate::src::with_offset::TILE_ANY,
     };
     have_left = false;
     for x in 0..f.sb128w as usize {
@@ -665,6 +672,7 @@ pub(crate) fn rav1d_loopfilter_sbrow_cols<BD: BitDepth>(
     let lvl = WithOffset {
         data: &f.lf.level[..],
         offset: 4 * f.b4_stride as usize * (sby * sbsz >> ss_ver) as usize,
+        key: crate::src::with_offset::TILE_ANY,
     };
     have_left = false;
     for x in 0..f.sb128w as usize {
@@ -706,6 +714,7 @@ pub(crate) fn rav1d_loopfilter_sbrow_rows<BD: BitDepth>(
     let lvl = WithOffset {
         data: &f.lf.level[..],
         offset: 4 * f.b4_stride as usize * (sby * sbsz) as usize,
+        key: crate::src::with_offset::TILE_ANY,
     };
     for x in 0..f.sb128w as usize {
         filter_plane_rows_y::<BD>(
@@ -729,6 +738,7 @@ pub(crate) fn rav1d_loopfilter_sbrow_rows<BD: BitDepth>(
     let lvl = WithOffset {
         data: &f.lf.level[..],
         offset: 4 * f.b4_stride as usize * (sby * sbsz >> ss_ver) as usize,
+        key: crate::src::with_offset::TILE_ANY,
     };
     let [_, pu, pv] = p;
     for x in 0..f.sb128w as usize {

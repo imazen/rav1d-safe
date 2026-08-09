@@ -53,6 +53,7 @@ impl<'a, T: AsMutPtr<Target = u8>> WithOffset<PicOrBuf<'a, T>> {
         Self {
             data: PicOrBuf::Pic(pic.data),
             offset: pic.offset,
+            key: pic.key,
         }
     }
 
@@ -60,6 +61,7 @@ impl<'a, T: AsMutPtr<Target = u8>> WithOffset<PicOrBuf<'a, T>> {
         Self {
             data: PicOrBuf::Buf(buf.data),
             offset: buf.offset,
+            key: buf.key,
         }
     }
 }

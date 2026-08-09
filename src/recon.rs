@@ -1800,6 +1800,7 @@ fn mc<BD: BitDepth>(
             PicOffset {
                 data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
                 offset: stride * (my != 0) as usize * 3 + (mx != 0) as usize * 3,
+                key: crate::src::with_offset::TILE_ANY,
             }
         } else {
             let r#ref = &ref_data[pl];
@@ -1873,6 +1874,7 @@ fn mc<BD: BitDepth>(
             PicOffset {
                 data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
                 offset: stride * 3 + 3,
+                key: crate::src::with_offset::TILE_ANY,
             }
         } else {
             let r#ref = &ref_data[pl];
@@ -1945,6 +1947,7 @@ fn obmc<BD: BitDepth>(
                         dst: PicOffset {
                             data: &lap_component,
                             offset: 0,
+                            key: crate::src::with_offset::TILE_ANY,
                         },
                     },
                     ow4 as c_int,
@@ -1997,6 +2000,7 @@ fn obmc<BD: BitDepth>(
                         dst: PicOffset {
                             data: &lap_component,
                             offset: 0,
+                            key: crate::src::with_offset::TILE_ANY,
                         },
                     },
                     ow4 as c_int,
@@ -2085,6 +2089,7 @@ fn warp_affine<BD: BitDepth>(
                 PicOffset {
                     data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
                     offset: stride * 3 + 3,
+                    key: crate::src::with_offset::TILE_ANY,
                 }
             } else {
                 let r#ref = &ref_data[pl];
@@ -3168,6 +3173,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 PicOffset {
                     data: &tmp_component,
                     offset: 0,
+                    key: crate::src::with_offset::TILE_ANY,
                 },
                 tl_edge_array,
                 tl_edge_offset,
@@ -3457,6 +3463,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             PicOffset {
                                 data: &tmp_component,
                                 offset: 0,
+                                key: crate::src::with_offset::TILE_ANY,
                             },
                             tl_edge_array,
                             tl_edge_offset,

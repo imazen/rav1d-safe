@@ -501,6 +501,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         let origin = PicOffset {
             data: dst.data,
             offset: first as usize,
+            key: crate::src::with_offset::TILE_ANY,
         };
         // `w` is one of six values, so the row copy is monomorphized on it:
         // `copy_from_slice` at a RUNTIME length is a `memmove` CALL per row,
@@ -520,6 +521,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
                     let guard = PicOffset {
                         data: origin.data,
                         offset: off,
+                        key: crate::src::with_offset::TILE_ANY,
                     }
                     .slice::<BD>(w);
                     scratch.buf[row * LF_BW..][..w].copy_from_slice(&guard);
@@ -562,6 +564,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             let guard = PicOffset {
                 data: origin.data,
                 offset: off,
+                key: crate::src::with_offset::TILE_ANY,
             }
             .slice::<BD>(W);
             let src: &[BD::Pixel; W] = (&guard[..W]).try_into().expect("guard is W long");
@@ -735,6 +738,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             let mut guard = PicOffset {
                 data: self.origin.data,
                 offset: off,
+                key: crate::src::with_offset::TILE_ANY,
             }
             .slice_mut::<BD>(last + 1 - first);
             guard.copy_from_slice(&work[first..=last]);

@@ -5130,6 +5130,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                 let lpf_pic = crate::src::with_offset::WithOffset {
                     data: dst.data,
                     offset: cstart,
+                    key: crate::src::with_offset::TILE_ANY,
                 };
                 let (mut cb, cs) = lpf_pic.compact_read_per_row::<BitDepth8>(cw, ch);
                 // Pristine copy for the diff write-back: the filter READS 7
@@ -5323,6 +5324,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                 let lpf_pic = crate::src::with_offset::WithOffset {
                     data: dst.data,
                     offset: start_pixel,
+                    key: crate::src::with_offset::TILE_ANY,
                 };
                 let (mut compact, compact_stride) =
                     lpf_pic.compact_read_per_row::<BitDepth16>(compact_w, compact_h);

@@ -1383,6 +1383,7 @@ pub(super) fn padding_8bpc(
                     .offset
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * stride),
+                key: crate::src::with_offset::TILE_ANY,
             };
             // Same exact-window discipline as the top loop above: never guard
             // the skipped left-padding columns.
@@ -1842,6 +1843,7 @@ pub(super) fn padding_16bpc(
                     .offset
                     .wrapping_sub(2)
                     .wrapping_add_signed(dy as isize * pixel_stride),
+                key: crate::src::with_offset::TILE_ANY,
             };
             // Same exact-window discipline as the top loop above: never guard
             // the skipped left-padding columns.
