@@ -265,6 +265,18 @@ thread-invariant.
 decoder processes x 3 iters x thread counts 1/2/4/8/16 over 5 vectors — PASS,
 every md5 matching the serial t=1 reference, no wedge, no overlap panic.
 
+32-bit, A/B'd directly rather than trusted to CI — and CI CANNOT see it here:
+`ci.yml` triggers on `pull_request: branches: [main]`, so a PR based on
+`perf/strided-rect` runs only the `disjoint-mut CI` workflow. The i686 and
+wasm32 legs never fire. Verified locally instead, and `cargo build -p <lib>`
+of an RLIB needs no C linker, which is the cheap way to reach the MIR pass
+`cargo check` stops short of:
+
+    target                     c1355c4 (#469)                       this branch
+    i686-unknown-linux-gnu     error: this arithmetic operation      builds
+                               will overflow (tracker_shard.rs:1294)
+    wasm32-wasip1              same error                            builds
+
 `cargo test --release --workspace`: 254 passed, 0 failed, 30 ignored.
 `cargo fmt --check` clean. `cargo clippy -p rav1d-disjoint-mut --all-targets
 -- -D warnings` clean. `cargo doc -p rav1d-disjoint-mut --no-deps` with
