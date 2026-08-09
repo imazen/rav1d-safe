@@ -2352,10 +2352,6 @@ mod row_guard_policy_tests {
             data: &one,
             offset: 0,
         };
-        let b = WithOffset {
-            data: &one,
-            offset: W,
-        };
         let held = one.slice_mut::<BitDepth8, _>((0.., ..HULL));
         let prev = panic::take_hook();
         panic::set_hook(Box::new(|_| {}));

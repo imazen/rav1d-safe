@@ -119,9 +119,14 @@ ignored), `test_vectors` 0/0.
 
 `cargo fmt --all --check` clean. **`cargo clippy --all-targets -- -D warnings`
 is already RED on `main @ ee07b00` (79 errors)** — it is not a live gate in this
-tree. The head produced exactly ONE finding of a kind base does not have
-(`drop` of a `Copy` value in a new test); it was fixed, and the remaining
-findings are byte-identical in kind to base's.
+tree, so "clippy passes" cannot be claimed by either arm. What CAN be claimed
+and was checked: **zero findings land in any file this branch touches**
+(`src/tile_recon.rs`, `src/internal.rs`, `include/dav1d/picture.rs`,
+`src/recon.rs`, `src/decode.rs`, `examples/md5_inventory.rs`); every one is in
+`benches/tier_isolation.rs`, `examples/{bench_ivf_limit,md5_ablate}.rs`,
+`tests/thread_cleanup_test.rs` or `src/safe_simd/itx_arm*.rs`. The branch's
+first draft did add one (`drop` of a `Copy` value in a new test, then the
+unused binding it left behind); both are fixed.
 
 ## 3. Peak RSS — a real cost, measured not assumed
 
