@@ -537,6 +537,8 @@ pub struct ScalableMotionParams {
 }
 
 pub(crate) struct Rav1dFrameContextBdFn {
+    #[cfg(feature = "tile-owned-recon")]
+    pub stitch_tile_sbrow: fn(&Rav1dFrameData, &Rav1dTaskContext),
     pub recon_b_intra: ReconBIntraFn,
     pub recon_b_inter: ReconBInterFn,
     pub filter_sbrow: FilterSbrowFn,
@@ -556,6 +558,8 @@ pub(crate) struct Rav1dFrameContextBdFn {
 impl Rav1dFrameContextBdFn {
     pub const fn new<BD: BitDepth>() -> Self {
         Self {
+            #[cfg(feature = "tile-owned-recon")]
+            stitch_tile_sbrow: crate::src::tile_recon::stitch_sbrow::<BD>,
             recon_b_inter: rav1d_recon_b_inter::<BD>,
             recon_b_intra: rav1d_recon_b_intra::<BD>,
             filter_sbrow: rav1d_filter_sbrow::<BD>,
@@ -851,6 +855,10 @@ pub(crate) struct Rav1dFrameData {
     pub gmv_warp_allowed: [u8; 7],
     pub out_cdf: CdfThreadContext,
     pub tiles: Vec<Rav1dTileGroup>,
+    /// Owned per-tile reconstruction planes; see [`crate::src::tile_recon`].
+    /// `None` restores the shared picture at every seam.
+    #[cfg(feature = "tile-owned-recon")]
+    pub tile_recon: Option<crate::src::tile_recon::TileReconBufs>,
 
     // for scalable references
     pub svc: [[ScalableMotionParams; 2]; 7], /* [2 x,y][7] */
@@ -902,6 +910,26 @@ impl Rav1dFrameData {
 
     pub fn seq_hdr(&self) -> &Rav1dSequenceHeader {
         self.seq_hdr.as_ref().unwrap()
+    }
+
+    /// The plane set reconstruction of tile `tile_idx` writes into.
+    ///
+    /// This is the ENTIRE seam between reconstruction and the picture: the
+    /// three `let cur_data = &f.cur.data...` acquisitions in `recon.rs` go
+    /// through it, so switching to owned per-tile buffers is a change of one
+    /// expression rather than of the 22 offset computations downstream (which
+    /// stay in frame coordinates — the tile buffers share the picture's
+    /// geometry exactly).
+    #[inline]
+    pub(crate) fn recon_planes(
+        &self,
+        #[allow(unused_variables)] tile_idx: usize,
+    ) -> &[crate::include::dav1d::picture::Rav1dPictureDataComponent; 3] {
+        #[cfg(feature = "tile-owned-recon")]
+        if let Some(tr) = &self.tile_recon {
+            return tr.planes(tile_idx);
+        }
+        &self.cur.data.as_ref().unwrap().data
     }
 }
 

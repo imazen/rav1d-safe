@@ -6845,7 +6845,7 @@ pub fn cfl_ac_dispatch<BD: BitDepth>(
 
     let ac_block = &mut ac[..width * height];
 
-    if tile_threading_active() {
+    if y_src.data.needs_row_split() {
         // MT-safe path: per-row guards into a compact buffer.
         let (src_compact, src_stride) = y_src.compact_read_per_row::<BD>(src_w, src_h);
         let src_stride_i = src_stride as isize;
