@@ -264,3 +264,66 @@ conversion and the compact geometry in one pass; doing them in sequence pays
   rejected at `lib.rs:13`; a second plant in `include/dav1d/picture.rs` is
   rejected on the default build. **A forbid proof on a cfg'd-out file proves
   nothing** — pick a file the build under test actually compiles.
+
+## 8. Two of §6's open questions, closed in source rather than left open
+
+Both were checked after the measurement, both in minutes, and together they
+determine the whole shape of the refactor. Neither needed a build.
+
+### 8a. The `&mut` IS available — it is already in every recon signature
+
+§6 said the buffers must first move to something the task owns and called that
+uncosted. They must, and it is nearly free, because the destination already
+exists and is already `&mut`:
+
+* `src/thread_task.rs:885` — `let mut tc = Rav1dTaskContext::new(task_thread);`
+  inside `rav1d_worker_task`. One instance per WORKER THREAD, owned by it.
+* `src/decode.rs:4118-4122` — `rav1d_decode_tile_sbrow(c: &Rav1dContext,
+  t: &mut Rav1dTaskContext, f: &Rav1dFrameData)`.
+* `src/recon.rs:2127`, `:2818`, `:3864` — all three seam functions
+  (`rav1d_recon_b_intra`, `rav1d_recon_b_inter`, `rav1d_backup_ipred_edge`)
+  take `t: &mut Rav1dTaskContext`.
+
+So a plane buffer held as a FIELD of `Rav1dTaskContext` hands out a genuine
+`&mut [BD::Pixel]` at every reconstruction site, proved by borrowck, with no
+interior mutability and no `unsafe`. That is what #474 could not do: its buffers
+hang off `Rav1dFrameData`, which every task reaches through
+`fc.data.try_read()` as a SHARED reference (`src/thread_task.rs:1237`), so its
+only expressible mutation is a `DisjointMut` — i.e. the tracker.
+
+The mechanical cost is a field-level borrow split: `recon_b_intra` holds `&mut
+t` and would need `&mut t.tile_planes` live beside other `&mut t.*` uses, which
+borrowck allows inside one function but not across a `&mut self` method call.
+That is the real content of the "~27 call sites" estimate.
+
+### 8b. The buffer only has to be ONE SUPERBLOCK ROW tall — which kills the RSS problem
+
+Reconstruction never reads a picture row above the current superblock row.
+`src/recon.rs:2248` and `:3143` both gate on `t.b.y & f.sb_step - 1 == 0` and,
+at a superblock-row boundary, source the top edge from `f.ipred_edge` instead of
+from the plane; `rav1d_backup_ipred_edge` is what fills it. Below the block,
+`have_bottom_left` is `EdgeFlags::I444_LEFT_HAS_BOTTOM`, which is false wherever
+the below-left neighbour is not yet decoded — so bottom-left reads never leave
+the superblock either. Left and top-right reads are clamped to the tile
+(`src/recon.rs:2269-2273` passes `ts.tiling.col_end` / `row_end`;
+`src/ipred_prepare.rs:229`, `:248`).
+
+Combined with 8a, the shippable geometry is fully determined:
+**one buffer per WORKER, `(max_tile_width + reach)` wide with its OWN stride,
+one superblock row tall.** At 4K 4:4:4 with 8 workers that is roughly
+8 × 1024 × 128 × 3 bytes ≈ **3 MB**, against #474's measured **+96 MB** at 8bpc
+and **+191 MB** at 10bpc.
+
+And it is the same edit as the `&mut` conversion, not a second one: a kernel that
+takes `(&mut [BD::Pixel], stride)` is already parameterised on the stride that a
+compact buffer needs, and the origin bias is one subtraction at the seam.
+Sequencing them the other way — convert first, compact later — pays #473's
+22-site coordinate cost twice.
+
+**What is still not established:** whether the field-level borrow split above is
+mechanical at all 27 sites or fights borrowck at some of them; whether `cfl_ac`'s
+luma-row-pair read and the chroma write can be expressed as two disjoint `&mut`
+out of one buffer set without a `split_at_mut`-shaped helper; and the cost of the
+per-sbrow stitch at the compact stride (#474 measured the full-stride stitch at
+25,920 borrows/frame, and #473's 0.315 ms/frame estimate is for a frame HALF this
+one's size — `v4k_8tile` is 4:4:4, 25.1 MB, not 12.44 MB).
