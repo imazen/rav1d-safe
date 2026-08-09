@@ -1985,62 +1985,77 @@ pub fn cfl_ac_dispatch<BD: crate::include::common::bitdepth::BitDepth>(
     let ss_hor = is_ss_hor as u8;
     let ss_ver = is_ss_ver as u8;
 
-    let y_pxstride = y_src.pixel_stride::<BD>();
     let src_cols = active_w << ss_hor;
-    let row_stride = y_pxstride << ss_ver;
 
-    for y in 0..active_h {
-        let aci = y * width;
-        let row_pic = y_src + (y as isize * row_stride);
-        let row_guard = row_pic.slice::<BD>(src_cols);
-        let row_below_guard;
-        let below: Option<&[BD::Pixel]> = if is_ss_ver {
-            row_below_guard = (row_pic + y_pxstride).slice::<BD>(src_cols);
-            Some(&*row_below_guard)
-        } else {
-            None
-        };
-        let out = &mut ac[aci..aci + active_w];
-        match BD::BPC {
-            BPC::BPC8 => {
-                let top: &[u8] = match reinterpret_slice(&row_guard) {
-                    Some(t) => t,
-                    None => return false,
-                };
-                match (is_ss_hor, below) {
-                    (true, Some(b)) => {
-                        let bot: &[u8] = match reinterpret_slice(b) {
-                            Some(t) => t,
-                            None => return false,
-                        };
-                        ac_row_420_8bpc(token, out, top, bot, active_w);
+    // ROW GRANULARITY IS DECIDED BY `for_row_pairs`, NOT HERE. This loop used
+    // to open-code `active_h << ss_ver` per-row guards at every thread count —
+    // 629,080 registrations/frame on `v4k_8tile` 8bpc, 7.9% of what was left
+    // after #467, and the one picture-plane site that round could not convert
+    // because 4:2:0 needs a luma row AND the row below it live at once. Both
+    // borrows are immutable, so the hull branch hands out two subslices of one
+    // guard; see `for_row_pairs`'s soundness note.
+    let mut ok = true;
+    y_src.for_row_pairs::<BD, _>(
+        src_cols,
+        active_h,
+        1usize << ss_ver,
+        is_ss_ver,
+        |y, top_px, below| {
+            if !ok {
+                return;
+            }
+            let out = &mut ac[y * width..][..active_w];
+            match BD::BPC {
+                BPC::BPC8 => {
+                    let Some(top) = reinterpret_slice::<BD::Pixel, u8>(top_px) else {
+                        ok = false;
+                        return;
+                    };
+                    match (is_ss_hor, below) {
+                        (true, Some(b)) => {
+                            let Some(bot) = reinterpret_slice::<BD::Pixel, u8>(b) else {
+                                ok = false;
+                                return;
+                            };
+                            ac_row_420_8bpc(token, out, top, bot, active_w);
+                        }
+                        (true, None) => ac_row_422_8bpc(token, out, top, active_w),
+                        (false, _) => ac_row_444_8bpc(token, out, top, active_w),
                     }
-                    (true, None) => ac_row_422_8bpc(token, out, top, active_w),
-                    (false, _) => ac_row_444_8bpc(token, out, top, active_w),
+                }
+                BPC::BPC16 => {
+                    let Some(top) = reinterpret_slice::<BD::Pixel, u16>(top_px) else {
+                        ok = false;
+                        return;
+                    };
+                    match (is_ss_hor, below) {
+                        (true, Some(b)) => {
+                            let Some(bot) = reinterpret_slice::<BD::Pixel, u16>(b) else {
+                                ok = false;
+                                return;
+                            };
+                            ac_row_420_16bpc(token, out, top, bot, active_w);
+                        }
+                        (true, None) => ac_row_422_16bpc(token, out, top, active_w),
+                        (false, _) => ac_row_444_16bpc(token, out, top, active_w),
+                    }
                 }
             }
-            BPC::BPC16 => {
-                let top: &[u16] = match reinterpret_slice(&row_guard) {
-                    Some(t) => t,
-                    None => return false,
-                };
-                match (is_ss_hor, below) {
-                    (true, Some(b)) => {
-                        let bot: &[u16] = match reinterpret_slice(b) {
-                            Some(t) => t,
-                            None => return false,
-                        };
-                        ac_row_420_16bpc(token, out, top, bot, active_w);
-                    }
-                    (true, None) => ac_row_422_16bpc(token, out, top, active_w),
-                    (false, _) => ac_row_444_16bpc(token, out, top, active_w),
-                }
-            }
-        }
-        drop(row_guard);
-        // Right edge: replicate the last real column across the pad.
-        for x in active_w..width {
-            ac[aci + x] = ac[aci + x - 1];
+        },
+    );
+    if !ok {
+        return false;
+    }
+    // Right edge: replicate the last real column across the pad. Hoisted out of
+    // the row loop so no picture guard is live while it runs — strictly shorter
+    // guard duration than the `drop(row_guard)` this replaces. `active_w >= 1`
+    // because `w_pad < width` was checked above, and the original's progressive
+    // `ac[x] = ac[x-1]` propagates exactly the last real column.
+    if w_pad > 0 {
+        for y in 0..active_h {
+            let aci = y * width;
+            let last = ac[aci + active_w - 1];
+            ac[aci + active_w..aci + width].fill(last);
         }
     }
     // Bottom edge: replicate the last real row across the pad.

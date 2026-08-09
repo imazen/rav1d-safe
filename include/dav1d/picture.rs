@@ -1084,6 +1084,103 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         }
     }
 
+    /// [`Self::for_rows`], for a reader that needs TWO picture rows live at the
+    /// same time.
+    ///
+    /// Yields `n` logical rows. Logical row `y` gets picture row `y * step`
+    /// and, when `pair`, also the picture row immediately below it. The rows
+    /// touched are therefore `(n - 1) * step + 1 + pair as usize`.
+    ///
+    /// # Why `for_rows` cannot serve this
+    ///
+    /// `for_rows` owns a row's guard for exactly the duration of one callback,
+    /// so in the per-row branch a guard cannot outlive the call that produced
+    /// it and be paired with the next one. A caller that needs a row and the
+    /// row beneath it simultaneously — 4:2:0 chroma AC averages a luma row
+    /// pair — therefore has to open-code its own guards, which is how
+    /// `cfl_ac`'s per-row loop escaped the [`Self::for_rows`] policy in the
+    /// first place. This keeps the policy in ONE place instead.
+    ///
+    /// # Soundness
+    ///
+    /// Identical argument to [`Self::for_rows`], plus one addition. The hull is
+    /// the union of the per-row ranges and the gaps between them, i.e. a
+    /// SUPERSET, so widening can only ADD conflicts and can never miss an
+    /// overlap the narrow guards would have caught; the false positives that
+    /// superset creates under tile threading are what
+    /// [`tile_threading_active`] gates. The addition is that BOTH borrows here
+    /// are immutable — in the hull branch they are two subslices of one guard,
+    /// in the per-row branch two live [`DisjointImmutGuard`]s — so the pair can
+    /// never conflict with itself in either branch, at any `step`.
+    ///
+    /// Neither branch copies. The compact-scratch path
+    /// ([`with_pixel_guard_immut`]) would also serve two rows at once, but it
+    /// memcpys the block under tile threading, which would ADD cost at t > 1 to
+    /// buy a registration saving that only exists at t = 1.
+    #[inline]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
+    pub fn for_row_pairs<BD: BitDepth, F>(
+        &self,
+        w: usize,
+        n: usize,
+        step: usize,
+        pair: bool,
+        mut f: F,
+    ) where
+        F: FnMut(usize, &[BD::Pixel], Option<&[BD::Pixel]>),
+    {
+        use crate::src::strided::Strided as _;
+        if w == 0 || n == 0 || step == 0 {
+            return;
+        }
+        let pxstride = self.data.pixel_stride::<BD>();
+        if tile_threading_active() {
+            for y in 0..n {
+                let off = self
+                    .offset
+                    .wrapping_add_signed((y * step) as isize * pxstride);
+                let top = self.data.slice::<BD, _>((off.., ..w));
+                if pair {
+                    let below = off.wrapping_add_signed(pxstride);
+                    let bot = self.data.slice::<BD, _>((below.., ..w));
+                    f(y, &top, Some(&bot));
+                } else {
+                    f(y, &top, None);
+                }
+            }
+            return;
+        }
+        // Rows actually touched, counting the paired row under the last one.
+        let rows = (n - 1) * step + 1 + pair as usize;
+        let abs_stride = pxstride.unsigned_abs();
+        let total = (rows - 1) * abs_stride + w;
+        let lo = if pxstride >= 0 {
+            self.offset
+        } else {
+            self.offset - (rows - 1) * abs_stride
+        };
+        let guard = self.data.slice::<BD, _>((lo.., ..total));
+        // Row `r` of the hull, in the same orientation `for_rows` uses: with a
+        // negative stride the picture's row 0 is the LAST row of the guard.
+        let idx = |r: usize| {
+            if pxstride >= 0 {
+                r * abs_stride
+            } else {
+                (rows - 1 - r) * abs_stride
+            }
+        };
+        for y in 0..n {
+            let r = y * step;
+            let top = &guard[idx(r)..][..w];
+            if pair {
+                let bot = &guard[idx(r + 1)..][..w];
+                f(y, top, Some(bot));
+            } else {
+                f(y, top, None);
+            }
+        }
+    }
+
     /// Read a w×h pixel block into a compact Vec using per-row DisjointMut guards.
     ///
     /// When tile threading is active ([`set_tile_threading`]), each row guard covers
@@ -2108,6 +2205,66 @@ mod row_guard_policy_tests {
         r.is_err()
     }
 
+    /// [`conflicts_with`] for [`super::Rav1dPictureDataComponentOffset::for_row_pairs`].
+    ///
+    /// `n = ROWS / 2` logical rows at `step = 2` with `pair = true` touches
+    /// picture rows 0..ROWS — exactly the extent `conflicts_with` uses — so the
+    /// same `probe` values mean the same thing for both helpers.
+    fn pairs_conflicts_with(probe: usize) -> bool {
+        let pic = plane();
+        let held = pic.slice_mut::<BitDepth8, _>((probe.., ..1));
+        let at = WithOffset {
+            data: &pic,
+            offset: 0,
+        };
+        let prev = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+        let r = panic::catch_unwind(AssertUnwindSafe(|| {
+            at.for_row_pairs::<BitDepth8, _>(W, ROWS / 2, 2, true, |_, top, bot| {
+                std::hint::black_box((top[0], bot.map(|b| b[0])));
+            });
+        }));
+        panic::set_hook(prev);
+        drop(held);
+        r.is_err()
+    }
+
+    /// `for_row_pairs` must actually deliver BOTH rows of every pair, in the
+    /// right order, in whichever branch this process runs. Without this the
+    /// extent assertions below would pass for a helper that silently yielded
+    /// `None` for `bot` and touched half the rows.
+    #[test]
+    fn for_row_pairs_yields_both_rows_of_every_pair() {
+        let mut buf = vec![0u8; STRIDE * ROWS];
+        for row in 0..ROWS {
+            buf[row * STRIDE] = row as u8 + 1;
+        }
+        let pic = Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut buf, STRIDE);
+        let at = WithOffset {
+            data: &pic,
+            offset: 0,
+        };
+        let mut seen = Vec::new();
+        at.for_row_pairs::<BitDepth8, _>(W, ROWS / 2, 2, true, |y, top, bot| {
+            seen.push((y, top[0], bot.map(|b| b[0])));
+        });
+        assert_eq!(
+            seen,
+            vec![(0, 1u8, Some(2u8)), (1, 3u8, Some(4u8))],
+            "each logical row must get picture row `y*step` and the one below it"
+        );
+
+        let mut flat = Vec::new();
+        at.for_row_pairs::<BitDepth8, _>(W, ROWS, 1, false, |y, top, bot| {
+            flat.push((y, top[0], bot.map(|b| b[0])));
+        });
+        assert_eq!(
+            flat,
+            vec![(0, 1u8, None), (1, 2, None), (2, 3, None), (3, 4, None)],
+            "`pair = false` must walk consecutive rows and yield no companion"
+        );
+    }
+
     fn assert_hull_branch() {
         assert!(
             !tile_threading_active(),
@@ -2128,6 +2285,17 @@ mod row_guard_policy_tests {
         assert!(
             !conflicts_with(HULL),
             "a byte outside the hull must never conflict"
+        );
+        // Same policy, same branch, for the row-PAIR helper.
+        assert!(
+            pairs_conflicts_with(W),
+            "with tile threading off, `for_row_pairs` must take ONE hull guard; \
+             a gap byte inside [0, {HULL}) did not conflict, so the per-row \
+             branch ran instead"
+        );
+        assert!(
+            !pairs_conflicts_with(HULL),
+            "a byte outside `for_row_pairs`'s hull must never conflict"
         );
     }
 
@@ -2190,6 +2358,21 @@ mod row_guard_policy_tests {
             "row 1 column 0 IS written by this block, so a live mutable borrow \
              of it must conflict; if it does not, tracking is off in this build \
              and this test gates nothing"
+        );
+        // Same policy, same branch, for the row-PAIR helper. `for_row_pairs`
+        // must NOT widen to the hull under tile threading for the same reason
+        // `for_rows` must not: the gap belongs to another tile COLUMN.
+        assert!(
+            !pairs_conflicts_with(W),
+            "with tile threading ON, `for_row_pairs` must take PER-ROW guards; \
+             a byte in the inter-row gap conflicted, which is the false \
+             positive the monotone `set_tile_threading` latch exists to prevent"
+        );
+        assert!(
+            pairs_conflicts_with(STRIDE),
+            "row 1 column 0 IS read as the companion of the row-0 pair, so a \
+             live mutable borrow of it must conflict; if it does not, tracking \
+             is off in this build and this test gates nothing"
         );
     }
 }
