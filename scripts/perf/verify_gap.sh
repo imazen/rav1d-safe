@@ -74,7 +74,16 @@ time_one() {
   case "$arm" in
     dav1d_fd1) dav1d -i "$IVF/$vec.ivf" --muxer null --threads "$t" --framedelay 1 -q --limit "$n" >/dev/null 2>&1 ;;
     dav1d_def) dav1d -i "$IVF/$vec.ivf" --muxer null --threads "$t"                 -q --limit "$n" >/dev/null 2>&1 ;;
-    *)         "$BIN/bench_$arm" "$AVIF/$vec.avif" "$t" "$n" 1 w >/dev/null 2>&1 ;;
+    *)
+      # An arm may be a CONFIGURATION of a binary rather than a binary of its
+      # own: `ARM_BIN_<arm>` overrides the basename, `ARM_ENV_<arm>` supplies
+      # environment. That is how a runtime-switched feature gets an A and a B
+      # arm out of ONE build, which is the only way an inter-arm delta cannot
+      # be a codegen artifact (#455's probe convention).
+      local bref="ARM_BIN_$arm" eref="ARM_ENV_$arm"
+      local bin=${!bref:-bench_$arm} envs=${!eref:-}
+      # shellcheck disable=SC2086
+      env $envs "$BIN/$bin" "$AVIF/$vec.avif" "$t" "$n" 1 w >/dev/null 2>&1 ;;
   esac
   t1=$(now_ms); echo $((t1 - t0))
 }
