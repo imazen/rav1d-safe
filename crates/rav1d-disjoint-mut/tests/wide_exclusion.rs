@@ -55,7 +55,21 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 const LEN: usize = 8 * 1024 * 1024;
 
 const NARROW_THREADS: usize = 6;
-const ROUNDS: usize = 60_000;
+/// Native rounds. Under Miri this is 300, for the reason spelled out on
+/// `shard_liveness::starts()`: every round here takes a WHOLE-BUFFER borrow of
+/// an 8 MiB instance, which promotes to the wide path and locks all 128 shards,
+/// while six narrow threads contend — and Miri emulates every one of those
+/// atomics. Measured 2026-08-09 on an M4 Pro: **300 rounds takes 181.7 s**, and
+/// both liveness floors are met at that count; 60_000 rounds was still running
+/// after 10 minutes when it was killed, on both memory models. The native run
+/// is unchanged at 60_000 (0.05 s), and the `wide-path-gate` CI job — the one
+/// that proves this file is non-vacuous, via `--features __probe_wide` — is
+/// native, so the anti-vacuity evidence does not depend on the Miri count.
+const ROUNDS: usize = if cfg!(miri) { 300 } else { 60_000 };
+
+/// Narrow-side liveness floor, scaled with `ROUNDS`. The narrow threads spin
+/// until the wide loop finishes, so their count tracks the round count.
+const MIN_NARROW_OK: usize = if cfg!(miri) { 100 } else { 1000 };
 
 #[test]
 fn a_wide_borrow_excludes_every_narrow_shard() {
@@ -149,7 +163,7 @@ fn a_wide_borrow_excludes_every_narrow_shard() {
         wide_ok.load(Ordering::Relaxed)
     );
     assert!(
-        narrow_ok.load(Ordering::Relaxed) > 1000,
+        narrow_ok.load(Ordering::Relaxed) > MIN_NARROW_OK,
         "the narrow registrants were refused almost every round ({}); the race \
          window was never exercised",
         narrow_ok.load(Ordering::Relaxed)
