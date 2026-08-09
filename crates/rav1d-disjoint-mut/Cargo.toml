@@ -40,6 +40,8 @@ __probe_untracked = []
 __probe_wide = ["std"]
 # THROWAWAY per-call-site borrow COUNTS (keeps the sharded tracker).
 __probe_sites = ["std"]
+# THROWAWAY: TinyLock contention/yield counters (perf/park-not-spin A/B).
+__probe_lockstats = ["std"]
 # THROWAWAY: skip tracking on sub-SHARD_MIN_LEN instances. UNSOUND, measurement only.
 __probe_tinynop = []
 # THROWAWAY: keep the add/remove CALL, delete the work. Isolates the call

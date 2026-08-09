@@ -1101,6 +1101,8 @@ mod tracker_shard;
 )))]
 use tracker_shard as checked;
 
+#[cfg(feature = "__probe_lockstats")]
+pub use tracker_shard::lock_probe;
 /// Wide-path reason counters, when `__probe_wide` is on. See the module docs.
 #[cfg(all(
     feature = "__probe_wide",
