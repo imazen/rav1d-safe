@@ -407,8 +407,19 @@ pub mod tilekey_probe {
             "tilekey: keyed={} unkeyed_sharded={} single_shard={} total={} \
              (per frame: keyed={} unkeyed_sharded={} single_shard={} total={}) \
              keyed_share_of_sharded={:.1}%",
-            k, u, s, tot, k / f, u / f, s / f, tot / f,
-            if k + u == 0 { 0.0 } else { 100.0 * k as f64 / (k + u) as f64 }
+            k,
+            u,
+            s,
+            tot,
+            k / f,
+            u / f,
+            s / f,
+            tot / f,
+            if k + u == 0 {
+                0.0
+            } else {
+                100.0 * k as f64 / (k + u) as f64
+            }
         );
         out
     }
@@ -1160,6 +1171,15 @@ fn mask_for(len: usize) -> usize {
 /// Shards a *concurrent* instance gets. The compile-time array size, i.e. the
 /// most this build can ever hand out.
 const SHARDS_CONCURRENT: usize = N_SHARDS;
+
+/// Distinct tile keys that can each own a shard.
+///
+/// Beyond this two tiles alias onto one shard. That is SOUND — they share a
+/// record set and are compared as intervals — but it defeats the property the
+/// hull relies on, so a caller past this bound must fall back to `TILE_ANY`
+/// rather than claim a tile. AV1 permits up to 64x64 tiles, so the bound is
+/// reachable; `v4k_8tile` uses 8.
+pub const MAX_TILE_KEYS: usize = N_SHARDS;
 
 /// Shards a big instance gets when the process has declared no parallelism.
 ///

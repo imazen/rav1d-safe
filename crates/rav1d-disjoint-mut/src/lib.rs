@@ -1238,6 +1238,15 @@ mod tracker_shard;
 )))]
 use tracker_shard as checked;
 
+/// The number of distinct tile keys that can each own a shard.
+#[cfg(not(any(
+    feature = "__probe_count",
+    feature = "__probe_noscan",
+    feature = "__probe_lockonly",
+    feature = "__tracker_legacy"
+)))]
+pub use tracker_shard::MAX_TILE_KEYS;
+
 /// Tile-key liveness counters, when `__probe_tilekey_count` is on.
 #[cfg(all(
     feature = "__probe_tilekey_count",

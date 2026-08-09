@@ -85,7 +85,10 @@ fn main() {
     }
     #[cfg(feature = "probe-tilekey-count")]
     {
-        print!("{}", rav1d_disjoint_mut::tilekey_probe::report(iters as u64));
+        print!(
+            "{}",
+            rav1d_disjoint_mut::tilekey_probe::report(iters as u64)
+        );
     }
     #[cfg(not(any(
         feature = "probe-count",

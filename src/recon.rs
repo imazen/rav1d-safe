@@ -2138,7 +2138,11 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
     // Every picture reference below is inside tile `t.ts`'s rectangle:
     // AV1 resets intra prediction, MV prediction and entropy contexts at
     // tile boundaries, so reconstruction never reaches out of its tile.
-    let tk = t.ts as crate::src::with_offset::TileKey;
+    // A tile index past the shard array would ALIAS onto another tile's shard.
+    // Sound (they share a record set and are compared as intervals) but it
+    // breaks the hull's premise, so `tile_key` degrades it to TILE_ANY —
+    // today's behaviour, which is always correct.
+    let tk = crate::src::with_offset::tile_key(t.ts);
     let ts = &f.ts[t.ts];
 
     let bx4 = t.b.x & 31;
@@ -2832,7 +2836,11 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
     // Every picture reference below is inside tile `t.ts`'s rectangle:
     // AV1 resets intra prediction, MV prediction and entropy contexts at
     // tile boundaries, so reconstruction never reaches out of its tile.
-    let tk = t.ts as crate::src::with_offset::TileKey;
+    // A tile index past the shard array would ALIAS onto another tile's shard.
+    // Sound (they share a record set and are compared as intervals) but it
+    // breaks the hull's premise, so `tile_key` degrades it to TILE_ANY —
+    // today's behaviour, which is always correct.
+    let tk = crate::src::with_offset::tile_key(t.ts);
 
     let ts = &f.ts[t.ts];
     let bx4 = t.b.x & 31;
@@ -3279,7 +3287,9 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             &mut t.scratch.inter_mut().emu_edge,
                             t.b,
                             MaybeTempPixels::NonTemp {
-                                dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff + v_off,
+                                dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk)
+                                    + uvdstoff
+                                    + v_off,
                             },
                             bw4,
                             bh4,
@@ -3315,7 +3325,9 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             &mut t.scratch.inter_mut().emu_edge,
                             t.b,
                             MaybeTempPixels::NonTemp {
-                                dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff + h_off,
+                                dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk)
+                                    + uvdstoff
+                                    + h_off,
                             },
                             bw4,
                             bh4,
@@ -3347,7 +3359,10 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                         &mut t.scratch.inter_mut().emu_edge,
                         t.b,
                         MaybeTempPixels::NonTemp {
-                            dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff + h_off + v_off,
+                            dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk)
+                                + uvdstoff
+                                + h_off
+                                + v_off,
                         },
                         bw4,
                         bh4,
@@ -3876,7 +3891,11 @@ pub(crate) fn rav1d_backup_ipred_edge<BD: BitDepth>(f: &Rav1dFrameData, t: &mut 
     // Every picture reference below is inside tile `t.ts`'s rectangle:
     // AV1 resets intra prediction, MV prediction and entropy contexts at
     // tile boundaries, so reconstruction never reaches out of its tile.
-    let tk = t.ts as crate::src::with_offset::TileKey;
+    // A tile index past the shard array would ALIAS onto another tile's shard.
+    // Sound (they share a record set and are compared as intervals) but it
+    // breaks the hull's premise, so `tile_key` degrades it to TILE_ANY —
+    // today's behaviour, which is always correct.
+    let tk = crate::src::with_offset::tile_key(t.ts);
 
     let ts = &f.ts[t.ts];
     let sby = t.b.y >> f.sb_shift;

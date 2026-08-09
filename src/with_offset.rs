@@ -43,6 +43,23 @@ pub type TileKey = u16;
 /// everything, a wrongly-keyed one would not be.
 pub const TILE_ANY: TileKey = u16::MAX;
 
+/// A tile index as a [`TileKey`], or [`TILE_ANY`] when it cannot own a shard.
+///
+/// Two guards against a wrong key, both degrading to the conservative value:
+/// an index past the tracker's shard array would alias onto another tile's
+/// shard (sound — they share a record set — but it breaks the premise the
+/// strided hull relies on), and an index that happens to equal [`TILE_ANY`]
+/// would be read as "unkeyed" anyway. Either way the borrow keeps today's
+/// exact behaviour. AV1 permits up to 64x64 tiles, so the bound is reachable.
+#[inline(always)]
+pub fn tile_key(tile_idx: usize) -> TileKey {
+    if tile_idx < rav1d_disjoint_mut::MAX_TILE_KEYS && tile_idx != TILE_ANY as usize {
+        tile_idx as TileKey
+    } else {
+        TILE_ANY
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct WithOffset<T> {
     pub data: T,

@@ -223,7 +223,10 @@ fn report(name: &str, mut xs: Vec<f64>, note: &str) {
     let lo = xs.iter().cloned().fold(f64::MAX, f64::min);
     let hi = xs.iter().cloned().fold(f64::MIN, f64::max);
     let m = median(&mut xs);
-    println!("{name:<16} {m:8.3} ms  [{lo:7.3}..{hi:7.3}]  n={:<3} {note}", xs.len());
+    println!(
+        "{name:<16} {m:8.3} ms  [{lo:7.3}..{hi:7.3}]  n={:<3} {note}",
+        xs.len()
+    );
 }
 
 fn main() {

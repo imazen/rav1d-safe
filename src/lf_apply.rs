@@ -167,7 +167,11 @@ pub(crate) fn rav1d_copy_lpf<BD: BitDepth>(
         let data = &sr_cur_data[i];
         let offset =
             f.lf.lr_lpf_line[i].wrapping_add_signed(tt_off as isize * data.pixel_stride::<BD>());
-        PicOffset { data, offset, key: crate::src::with_offset::TILE_ANY }
+        PicOffset {
+            data,
+            offset,
+            key: crate::src::with_offset::TILE_ANY,
+        }
     });
 
     // TODO Also check block level restore type to reduce copying.

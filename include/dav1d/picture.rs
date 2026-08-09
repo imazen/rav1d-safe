@@ -752,7 +752,6 @@ impl Rav1dPictureDataComponent {
     }
 }
 
-
 impl Rav1dPictureDataComponent {
     /// [`Self::index`] / [`Self::slice`] and their mutable twins, attributing
     /// the borrow to a tile. See [`crate::src::with_offset::TileKey`].
@@ -839,7 +838,6 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     }
 }
 
-
 impl<'a> Rav1dPictureDataComponentOffset<'a> {
     #[inline] // Inline to see bounds checks in order to potentially elide them.
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
@@ -863,7 +861,8 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         &self,
         len: usize,
     ) -> DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]> {
-        self.data.slice_keyed::<BD, _>((self.offset.., ..len), self.key)
+        self.data
+            .slice_keyed::<BD, _>((self.offset.., ..len), self.key)
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
@@ -872,7 +871,8 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         &self,
         len: usize,
     ) -> DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]> {
-        self.data.slice_mut_keyed::<BD, _>((self.offset.., ..len), self.key)
+        self.data
+            .slice_mut_keyed::<BD, _>((self.offset.., ..len), self.key)
     }
 
     /// Create a tracked mutable guard covering a strided w×h pixel region.
@@ -1017,7 +1017,9 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             } else {
                 self.offset - row * abs_stride
             };
-            let guard = self.data.slice_mut_keyed::<BD, _>((row_off.., ..w), self.key);
+            let guard = self
+                .data
+                .slice_mut_keyed::<BD, _>((row_off.., ..w), self.key);
             buf[row * byte_stride..][..byte_stride]
                 .copy_from_slice(&guard.as_bytes()[..byte_stride]);
             rows[row] = Some(guard);
@@ -1066,7 +1068,9 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             (h - 1) * abs_stride + w
         };
         if pxstride >= 0 {
-            let guard = self.data.slice_keyed::<BD, _>((self.offset.., ..total), self.key);
+            let guard = self
+                .data
+                .slice_keyed::<BD, _>((self.offset.., ..total), self.key);
             (guard, 0)
         } else {
             let start = self.offset + 1 - total;
@@ -1174,7 +1178,9 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         } else {
             self.offset - (h - 1) * abs_stride
         };
-        let mut guard = self.data.slice_mut_keyed::<BD, _>((lo.., ..total), self.key);
+        let mut guard = self
+            .data
+            .slice_mut_keyed::<BD, _>((lo.., ..total), self.key);
         for row in 0..h {
             let idx = if pxstride >= 0 {
                 row * abs_stride
@@ -1287,7 +1293,9 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         } else {
             self.offset + 1 - total
         };
-        let mut guard = self.data.slice_mut_keyed::<BD, _>((start.., ..total), self.key);
+        let mut guard = self
+            .data
+            .slice_mut_keyed::<BD, _>((start.., ..total), self.key);
         let dst = guard.as_mut_bytes();
         let len = buf.len().min(dst.len());
         dst[..len].copy_from_slice(&buf[..len]);
@@ -1308,7 +1316,9 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             } else {
                 self.offset - row * abs_stride
             };
-            let mut guard = self.data.slice_mut_keyed::<BD, _>((row_off.., ..w), self.key);
+            let mut guard = self
+                .data
+                .slice_mut_keyed::<BD, _>((row_off.., ..w), self.key);
             guard.as_mut_bytes()[..byte_stride]
                 .copy_from_slice(&buf[row * byte_stride..][..byte_stride]);
         }
@@ -1391,7 +1401,9 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         usize,
     ) {
         let total_pixels = self.data.pixel_len::<BD>();
-        let guard = self.data.slice_mut_keyed::<BD, _>((0.., ..total_pixels), self.key);
+        let guard = self
+            .data
+            .slice_mut_keyed::<BD, _>((0.., ..total_pixels), self.key);
         (guard, self.offset)
     }
 
@@ -1421,13 +1433,17 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             (h - 1) * abs_stride + w
         };
         if pxstride >= 0 {
-            let guard = self.data.slice_mut_keyed::<BD, _>((self.offset.., ..total), self.key);
+            let guard = self
+                .data
+                .slice_mut_keyed::<BD, _>((self.offset.., ..total), self.key);
             (guard, 0)
         } else {
             // Negative stride: rows go upward, so the first pixel row
             // is at the highest address and the last row is at the lowest.
             let start = self.offset + 1 - total;
-            let guard = self.data.slice_mut_keyed::<BD, _>((start.., ..total), self.key);
+            let guard = self
+                .data
+                .slice_mut_keyed::<BD, _>((start.., ..total), self.key);
             (guard, total - 1)
         }
     }
@@ -1442,7 +1458,9 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         usize,
     ) {
         let total_pixels = self.data.pixel_len::<BD>();
-        let guard = self.data.slice_keyed::<BD, _>((0.., ..total_pixels), self.key);
+        let guard = self
+            .data
+            .slice_keyed::<BD, _>((0.., ..total_pixels), self.key);
         (guard, self.offset)
     }
 }
