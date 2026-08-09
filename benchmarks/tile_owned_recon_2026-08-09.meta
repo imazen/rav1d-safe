@@ -1,0 +1,143 @@
+# Owned per-tile reconstruction buffers — measurement record
+
+Branch `perf/tile-owned-recon`, base `main` @ `ee07b00`. Issue #455, Variant 1.
+Design + declines + gate list: `docs/TILE_OWNED_RECON.md`.
+
+Host: Apple M4 Pro (12 cores), macOS 26.5.2, aarch64. rustc stable, default
+features, **no `-C target-cpu=native`**. dav1d 1.5.4 from Homebrew.
+
+Arms, all four interleaved in ONE sweep with a rotating order:
+
+| arm | build | switch |
+|---|---|---|
+| `base` | default features | — |
+| `tkoff` | `--features tile-owned-recon` | `RAV1D_TILE_OWNED=0` |
+| `tkon` | `--features tile-owned-recon` | (default on) |
+| `dav1d_fd1` | dav1d 1.5.4 | `--threads t --framedelay 1` |
+
+`tkoff` and `tkon` are **the same binary**, so a `tkon`-vs-`tkoff` delta cannot
+be a codegen artifact, and `tkoff`-vs-`base` prices the carrier (the extra
+field, the `recon_planes` branch, the per-instance predicate) on its own.
+
+---
+
+## 1. Mechanism — the change is LIVE, and by how much
+
+`--features tile-owned-recon,probe-count`, `probe_tracker <vec> <t> 2`, adds per
+frame. This is the check that a silent null cannot survive (#473 shipped an arm
+that decoded correctly and measured identically because a `cfg` named the wrong
+crate's feature; the registration count was what exposed it).
+
+| vector | t | RAV1D_TILE_OWNED=0 | =1 | delta |
+|---|---|---|---|---|
+| v4k_8tile | 1 | 7,924,706 | 7,924,706 | 0.0% |
+| v4k_8tile | 2 | 22,700,725 | 13,372,343 | **−41.1%** |
+| v4k_8tile | 4 | 22,700,725 | 13,372,343 | **−41.1%** |
+| v4k_8tile | 8 | 22,700,725 | 13,372,343 | **−41.1%** |
+| v4k_8tile_10b | 1 | 10,853,960 | 10,853,960 | 0.0% |
+| v4k_8tile_10b | 2 | 21,119,397 | 16,665,593 | **−21.1%** |
+| v4k_8tile_10b | 4 | 21,119,397 | 16,665,593 | **−21.1%** |
+| v4k_8tile_10b | 8 | 21,119,397 | 16,665,593 | **−21.1%** |
+
+The t=1 rows are identical **by construction** — `setup` declines below two
+workers — not by luck. The base 8bpc figures reproduce #455's census
+(7,924,706 / 22,700,725) to the byte.
+
+What the residual is: at 8bpc t=8, 13,372,343 − 7,924,706 = 5,447,637
+registrations/frame still take the per-row split. That is the **filter chain**,
+which is untouched here by design. #455's site census puts the filter chain at
+6,389,542/frame, so essentially all of reconstruction's `t>1` excess is gone and
+essentially all of the filter chain's remains.
+
+10bpc moves less because less of its registration population is reconstruction.
+
+## 2. Output identity
+
+md5 over every plane's visible pixels, `bench_ab_decode`:
+
+* v4k_8tile 8bpc `a00c11f454328023c58af14d55544cff` — base == tkon == tkoff at
+  t = 1, 2, 4, 8.
+* v4k_8tile_10b `4f218411bc6ee4cc9c630fe827337fa2` — base == tkon at
+  t = 1, 2, 4, 8, 16.
+
+Corpus, `md5_inventory`, set-diffed BY NAME with the actual md5 as the value
+(`scripts/perf/md5_setdiff.py`):
+
+| comparison | entries | PASS | differing |
+|---|---|---|---|
+| committed baseline `aarch64_md5_fixes_2026-08-07_final.tsv.zst` vs head, t=1 | 768 | **766** | **0** |
+| base vs head, threaded t=1 | 755 | 753 | **0** |
+| base vs head, threaded t=2 | 755 | 753 | **0** |
+| base vs head, threaded t=8 | 755 | 753 | **0** |
+| head t=1 vs head t=8 | 755 | 753 | **0** |
+
+755 rather than 768 because the two film-grain groups are excluded at t>1 — see
+§5.
+
+`cargo test --release --features tile-owned-recon`: `decode_md5_verify` **14/14**,
+lib **77/77** (incl. 6 new mechanism tests), `decode_cpu_levels` 6/6,
+`decode_md5_committed` 3/3, `cancellation` 6/6.
+`multi_decoder_pressure.sh` 12 concurrent decoders x 3 iters x
+{1,2,4,8,16} threads on 5 vectors, every md5 matching the serial reference:
+**PASS** on the `tkon` arm.
+
+## 3. Peak RSS — a real cost, measured not assumed
+
+`/usr/bin/time -l`, v4k_8tile 8bpc, 20 frames, maximum resident set size:
+
+| arm | t=1 | t=8 |
+|---|---|---|
+| base | 99.5 MB | 106.3 MB |
+| tkon | 99.6 MB | **202.4 MB** (+96.1 MB) |
+
+A tile writes its own columns on every row of its tile row, and a page spans
+whole rows, so the resident cost is about `tile_columns x plane_bytes` —
+4 x 24.0 MB here. t=1 is flat because the feature declines there.
+
+Two facts this measurement produced:
+
+* **`Vec::try_reserve_exact` + `resize(n, 0)` measured +192.5 MB** (313.3 MB
+  peak) because `resize` memsets, faulting in every page of an allocation whose
+  point is that most of it is never touched. `vec![0u8; n]` lowers to
+  `alloc_zeroed` and halves it. The allocation site carries a comment saying so.
+* **`v4k_8tile` is 4:4:4**, not the 4:2:0 that #473's `tile_stitch_cost.rs`
+  assumed: all three planes are 8,355,840 bytes with stride 3840
+  (`uv_stride == y_stride` means `ss_hor == 0`). Its frame is 25.1 MB, not
+  12.44 MB, so **#473's 0.315 ms/frame stitch price is for a frame half this
+  size** and should not be quoted against this vector.
+
+Buffers are cached across frames on `(n_tiles, byte_len, stride)`: one
+allocation over a 3-frame run, so the fault-in cost is paid once per sequence.
+
+## 4. Gap to dav1d
+
+See §"GAP" below.
+
+## 5. A pre-existing panic the threaded corpus found
+
+`examples/md5_inventory` gained `--threads`; it had defaulted to 1, which is the
+blindness #455's verification round named ("the 766/766 corpus gate is
+single-threaded, so it cannot see any tile-threading hazard").
+
+At `--threads 2` or `--threads 8`, **`main`'s DEFAULT build panics** on the first
+film-grain vector, `8-bit/film_grain/av1-1-b8-23-film_grain-50`:
+
+```
+thread 'main' panicked at src/thread_task.rs:534:56:
+called `Option::unwrap()` on a `None` value
+```
+
+`ttd.delayed_fg.try_write().unwrap()` in the delayed film-grain path. Reproduced
+with no tile-owned code compiled in, at both t=2 and t=8, on `base`. Pre-existing
+and unrelated; it is why the threaded corpus rows above cover 755 of 768.
+
+## 6. Not measured
+
+x86_64. Miri. `--features unchecked`. t=16 in the timed grid. Any vector with
+loop restoration live (#455 item 4's structural blindness is unchanged — both 4K
+gap vectors are intra-only with LR off, so `looprestoration*.rs` registers zero
+borrows in this grid while LR is active in 696/768 corpus vectors). Frame
+threading (`n_fc > 1`), intrabc frames and c-ffi picture allocators all decline
+to the shared picture and were not exercised through this path.
+`decode_permutations` and the tail of the test suite after it did not complete —
+the run was stopped to free the box for the timed sweep; see §7.

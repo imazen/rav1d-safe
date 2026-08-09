@@ -101,7 +101,12 @@ Two corrections this measurement forced, both worth carrying:
 
 The buffers are cached across frames on a `(n_tiles, byte_len, stride)` key, so
 the allocation and its first-touch faults are paid once per sequence, not once
-per frame (verified: one allocation over a 3-frame run).
+per frame (verified: one allocation over a 3-frame run). The flip side is that
+they are **not** released at `rav1d_decode_frame_exit` — a decoder that has
+decoded one multi-tile frame holds that memory until it is dropped, the same
+lifetime as the other per-frame scratch in `Rav1dFrameData`. For a long-lived
+decoder pool that is a real steady-state cost and it is the strongest argument
+against enabling this by default as it stands.
 
 ## 4. Ordering, and why the filter chain still sees whole rows
 
