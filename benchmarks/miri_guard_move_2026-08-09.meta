@@ -233,9 +233,9 @@ floors scaled with it so neither side can silently degenerate.
     shard_liveness::exhaustive_pairs...              331_776 pr  3.7-7.4 h       11_236 pr, 991 s
                                                        (0.85 s)   (proj; ran 53
                                                                    min, unfinished)
-    wide_exclusion::a_wide_borrow_excludes...        60_000 rd   killed at 10    300 rd,  182 s
-                                                       (0.05 s)   min, unfinished,
-                                                                  both models
+    wide_exclusion::a_wide_borrow_excludes...        60_000 rd   killed at 10    300 rd,   92 s
+                                                       (0.05 s)   min, unfinished, (+ 2 narrow
+                                                                  both models      contenders)
 
 `shard_liveness`'s cost is `DisjointMut::new(vec![0u8; 24 KiB])` per pair — it
 has to be fresh, a poisoned tracker would mask later results — so every pair is
@@ -250,7 +250,25 @@ take the wide path and lock all 128 shards.
 
 `wide_exclusion`'s cost is the same thing from the other end: every round takes a
 whole-buffer borrow of an 8 MiB instance, which promotes to the wide path and
-locks every shard, against six contending narrow threads.
+locks every shard, against contending narrow threads.
+
+It also needed a SECOND Miri-only change, and the way it surfaced is worth
+recording. At the native six narrow contenders, the Tree Borrows leg failed:
+
+    the wide registrant was refused almost every round (3); the race window
+    was never exercised
+
+That is not UB and not a regression — it is the anti-vacuity assertion doing
+exactly its job, because Miri's scheduler starves the wide registrant (3 grants
+in 300 rounds, against a floor of ROUNDS/100). The fix is to stop starving the
+wide side, NOT to lower the floor: `NARROW_THREADS` is 2 under Miri, 6 natively,
+and every assertion is byte-identical. After: 91.9 s SB / 91.5 s TB, both pass,
+both floors met — and half the cost of the six-contender run (181.7 s).
+
+Note this is the same failure mode the workflow already documents for the
+`__probe_count` instrumented leg. A gate whose liveness assertions are
+scheduling-sensitive will fire under any scheduler change; the response is
+always to restore the exercise, never to lower the bar.
 
 **Conclusion: `disjoint-mut CI`'s Miri leg has never been green and could not
 have been, whatever the guards did.** Before 2026-08-09 it aborted on the
