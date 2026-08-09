@@ -22,7 +22,40 @@ const LEN: usize = 24 * 1024;
 
 /// Offsets chosen to sit on, just below, and just above every block size the
 /// tracker might be compiled with, plus a few arbitrary ones.
+///
+/// # Under Miri this list is cut to six, and that is not optional
+///
+/// The pair loop is quadratic in this list and constructs a FRESH
+/// `DisjointMut::new(vec![0u8; 24 KiB])` per pair (it has to — see the comment
+/// at the allocation). Natively that is 331_776 pairs in 0.85 s. Under Miri
+/// every one of those 24_576 zero bytes is an emulated write. Measured on an
+/// M4 Pro, 2026-08-09:
+///
+/// ```text
+///   start list          pairs     Miri wall     per pair
+///   [0, 1, 3]           2_916      117.8 s       40 ms
+///   the six below      11_236      991.2 s       80 ms   (whole binary, 5 tests)
+///   full (native)     331_776        0.85 s       —
+/// ```
+///
+/// The rate depends on the mix — the six below include offsets whose 20_000-byte
+/// `LENS` take the WIDE path and lock every shard — so the full list is
+/// somewhere between **3.7 and 7.4 hours PER MEMORY MODEL for this one test**.
+/// Either end of that is past what a CI job can do.
+///
+/// That is why the `disjoint-mut CI` Miri leg has never been observed green:
+/// before 2026-08-09 it aborted earlier, on the guard-move UB (#477), and would
+/// have parked here if it had not. The native run is UNCHANGED and stays
+/// exhaustive; the Miri run keeps one representative of each interesting class
+/// — buffer start, a block-boundary triple, a large power of two, and an offset
+/// far enough in that the long `LENS` clip — which is what the aliasing model
+/// needs to see. Coverage of the tracker's *predicate* is the native run's job,
+/// and `exhaustive_pairs_match_the_interval_predicate` asserts a scaled floor on
+/// both so neither can silently degenerate.
 fn starts() -> Vec<usize> {
+    if cfg!(miri) {
+        return vec![0, 63, 64, 65, 4096, 20000];
+    }
     let mut v = vec![0usize, 1, 3, 7, 63, 64, 65];
     for base in [256usize, 512, 1024, 2048, 4096, 8192, 16384] {
         for d in [-1isize, 0, 1] {
@@ -135,8 +168,14 @@ fn exhaustive_pairs_match_the_interval_predicate() {
         wrong.len(),
         wrong.join("\n")
     );
-    // Guard against the test silently degenerating to nothing.
-    assert!(checked > 50_000, "only {checked} pairs exercised");
+    // Guard against the test silently degenerating to nothing. The Miri floor
+    // is proportional to its own (deliberately smaller) start list — see
+    // `starts()` — not a relaxation of the native one, which is untouched.
+    let floor = if cfg!(miri) { 2_000 } else { 50_000 };
+    assert!(
+        checked > floor,
+        "only {checked} pairs exercised (floor {floor})"
+    );
     eprintln!("checked {checked} borrow pairs");
 }
 

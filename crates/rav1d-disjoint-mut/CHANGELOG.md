@@ -4,6 +4,33 @@ All notable changes to `rav1d-disjoint-mut` are documented in this file. Format 
 
 ## [Unreleased]
 
+### Fixed
+- **Soundness: moving a guard by value was UB while another thread held the
+  same region.** `DisjointMutGuard`/`DisjointImmutGuard` carried the borrowed
+  region as `&'a mut V` / `&'a V`. Passing a guard by value into a call —
+  `drop(g)` above all — gives that reference a *protector*, which requires it
+  to stay valid for the whole call; but the guard's `Drop` runs inside that
+  call and retires the tracker record, which is precisely what lets ANOTHER
+  thread take the region and retag those bytes. The protected reference is
+  invalidated mid-call. Reachable from safe code, on the release path the
+  whole crate is built around. Both guards hold `NonNull<V>` now and
+  materialise the reference in `Deref`/`DerefMut`, where borrowck bounds it to
+  a region in which the guard cannot be dropped — the same reason
+  `core::cell::RefMut` holds a `NonNull<T>`. `NonNull` rather than `*mut V`
+  because a reference field carries `nonnull` into every load and a bare raw
+  pointer does not: measured +1.1-1.2% at v4k_8tile t=1 in two independent
+  interleaved runs, recovered to 1.0005 by `NonNull` plus `#[inline(always)]`
+  on the three `Deref`/`DerefMut` bodies. The four `Send`/`Sync` impls
+  restore, exactly, what the compiler derived from the reference fields
+  (verified by compiling the same positive and negative bound probes against
+  both revisions), so there is no auto-trait change. Found by
+  `tests/narrow_release.rs` under Miri (CI run 31292996318); reproduces under
+  **both** Stacked Borrows and Tree Borrows; gated by the new
+  `tests/guard_move_release.rs`, which fails under both models against the old
+  guards. No change to the tracker, and no bitstream change: 766/766
+  dav1d-test-data vectors byte-identical at `--threads 1`, set-diffed by name
+  with the MD5 in the value.
+
 ### Added
 - **Overlap panics now report the EXISTING borrow's registration site.**
   `BorrowSlots` records `&'static Location` per active borrow, and

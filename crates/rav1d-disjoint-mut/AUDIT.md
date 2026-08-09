@@ -6,6 +6,33 @@
 
 ## Bugs Found and Fixed
 
+### CRITICAL: guards held a reference across their own release (FIXED 2026-08-09, #477)
+
+**Found after this audit, by CI, not by it.** `DisjointMutGuard` held
+`slice: &'a mut V` and `DisjointImmutGuard` held `slice: &'a V`. Moving a guard
+by value into a call — `drop(g)`, `ManuallyDrop::new(g)`, any `f(g)` — protects
+that reference for the duration of the call; the guard's `Drop` runs inside that
+call and retires the tracker record, which is what lets **another thread** take
+the region and retag those bytes. The protected reference is invalidated
+mid-call. Reachable from safe code.
+
+**Fix:** both guards hold `*mut V` / `*const V` and materialise the reference in
+`Deref`/`DerefMut`. `core::cell::RefMut` holds a `NonNull<T>` for the same
+reason. Four `unsafe impl`s restore the auto-traits the reference fields used to
+derive (verified against both revisions with identical positive and negative
+bound probes).
+
+**Why this audit missed it.** Everything above is about a retag colliding with a
+*concurrent* retag; this one needs a retag to collide with a *protector*, which
+only exists while a guard is IN a call. Nothing in the suite moved a guard by
+value under contention until `tests/narrow_release.rs` (2026-08-08) did — and it
+found it on its first Miri run. Reproduces under both Stacked Borrows and Tree
+Borrows. Gated by `tests/guard_move_release.rs`, which includes scope-exit
+control arms so a future failure that is not about the move is distinguishable.
+
+**Standing lesson:** a Miri arm that only exercises `{ let _g = dm.index_mut(r);
+… }` cannot see this class at all. Concurrency tests must move guards.
+
 ### CRITICAL: Stacked Borrows UB in `Vec<V>::as_mut_ptr` (FIXED)
 
 `(*ptr).as_mut_ptr()` auto-refs to `&mut Vec<V>`, creating a `Unique` retag on the Vec struct allocation. When two threads call `index_mut` for disjoint ranges concurrently, thread A's `Unique` retag conflicts with thread B's `SharedReadOnly` retag from `(*ptr).len()`.
@@ -64,11 +91,11 @@ Docs didn't warn about intermediate `&mut` references causing SB retagging confl
 
 1. **Core overlap tracking** — `BorrowTracker` uses `parking_lot::Mutex` to serialize registration. Registration before reference creation prevents TOCTOU. Poisoning on panic prevents access to potentially corrupted data.
 
-2. **Guard lifecycle** — RAII-based. Drop deregisters. `ManuallyDrop` in `cast_slice`/`cast` correctly transfers borrow ownership.
+2. **Guard lifecycle** — RAII-based. Drop deregisters. `ManuallyDrop` in `cast_slice`/`cast` correctly transfers borrow ownership. **Amended 2026-08-09:** the guard must hold the region as a POINTER, never as a reference — see the first entry under "Bugs Found and Fixed". Reverting that is UB, not a style choice.
 
 3. **Sealed trait** — `AsMutPtr` sealed via private supertrait. External types go through `unsafe ExternalAsMutPtr`. `Copy` bound on `Target` prevents torn reads.
 
-4. **Send/Sync bounds** — Correct: `T: Send` for `Send`, `T: Sync` for `Sync`. Tracker uses `Mutex`.
+4. **Send/Sync bounds** — Correct: `T: Send` for `Send`, `T: Sync` for `Sync`. Tracker uses `Mutex`. **Amended 2026-08-09:** the guards' bounds are now explicit `unsafe impl`s rather than derived, because their region field is a raw pointer. They reproduce the derived bounds exactly; if you touch them, re-run the positive/negative probe pair against the previous revision.
 
 5. **All AsMutPtr impls override `as_mut_slice`** — The default impl (which creates `&T`) is never used. Every concrete type uses reference-free pointer operations.
 

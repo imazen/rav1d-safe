@@ -79,10 +79,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test -p rav1d-disjoint-mut --features __probe_wide --test wide_exclusion -- --nocapture
 
+  # Miri is the ONLY thing in this repo that checks the aliasing model rather
+  # than the tracker's own bookkeeping. `rav1d-disjoint-mut` has ~65 `unsafe`
+  # uses and no `forbid(unsafe_code)`; the borrow tracker is what makes them
+  # sound, and Miri is what says whether the references it hands out obey the
+  # model. It found the guards' by-value-move defect (#477) that every tracker
+  # test and all 766 corpus vectors missed.
   miri:
-    name: Miri (${{ matrix.model }})
+    # `matrix.model` is an object, so `${{ matrix.model }}` renders "Object" for
+    # BOTH legs and a failure cannot be attributed to a memory model. In run
+    # 31292996318 one leg was `failure` and the other `cancelled` and there was
+    # no way to tell which model found the UB.
+    name: Miri (${{ matrix.model.name }})
     runs-on: ubuntu-latest
     strategy:
+      # Same reason: one model failing must not cancel the other's evidence.
+      fail-fast: false
       matrix:
         model:
           - name: "Stacked Borrows"
@@ -94,7 +106,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
-      - run: cargo +nightly miri test -p rav1d-disjoint-mut
+      # `--no-fail-fast` is load-bearing. Miri aborts the process on the first
+      # UB, and cargo stops at the first failing test TARGET — so in run
+      # 31292996318 the abort in `narrow_release` meant `soundness`,
+      # `shard_liveness`, `wide_exclusion`, `aligned_miri` and
+      # `pic_buf_overflow` never ran at all, and their silence was mistaken for
+      # health. With this flag every target reports.
+      - run: cargo +nightly miri test -p rav1d-disjoint-mut --no-fail-fast
         env:
           MIRIFLAGS: ${{ matrix.model.flags }}
 

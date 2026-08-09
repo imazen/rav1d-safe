@@ -76,6 +76,7 @@ use core::ops::RangeInclusive;
 use core::ops::RangeTo;
 use core::ops::RangeToInclusive;
 use core::ptr;
+use core::ptr::NonNull;
 use core::ptr::addr_of_mut;
 #[cfg(feature = "zerocopy")]
 use zerocopy::FromBytes;
@@ -238,10 +239,51 @@ impl<T: ?Sized + AsMutPtr> Drop for BorrowCleanup<'_, T> {
     }
 }
 
+/// A live mutable borrow of one region.
+///
+/// # Why the region is held as a POINTER and not as `&'a mut V`
+///
+/// A guard is a value, so safe code can move it: `drop(g)`, `f(g)`,
+/// `ManuallyDrop::new(g)`, returning it. Rust's aliasing model gives every
+/// reference passed **by value into a call** a *protector* — for the whole of
+/// that call the reference must stay valid, and nothing may invalidate it.
+///
+/// The guard's `Drop` runs at the end of exactly such a call, and it retires
+/// the tracker record. Retiring is what authorises **another thread** to take
+/// the same region and create its own `&mut` over those bytes — which
+/// invalidates ours while the protector is still in force. That is UB, and it
+/// is reachable from safe code: `drop(g)` is all it takes.
+///
+/// A raw pointer has no protector, so moving the guard by value carries no
+/// claim over the buffer. The reference is materialised in [`Deref`] /
+/// [`DerefMut`], where borrowck bounds it to a region in which the guard cannot
+/// be dropped.
+///
+/// This is precisely why `core::cell::RefMut` holds a `NonNull<T>`; its comment
+/// reads *"we use a pointer instead of `&'b mut T` to avoid `noalias`
+/// violations, because a `RefMut` argument doesn't hold exclusivity for its
+/// whole scope, only until it drops."* `DisjointMut`'s cross-thread release
+/// makes the same statement sharper: for us it is not only `noalias`, another
+/// thread is genuinely retagging the bytes.
+///
+/// Found 2026-08-09 by `tests/narrow_release.rs` under Miri; it reproduces
+/// under **both** Stacked Borrows and Tree Borrows. Gated by
+/// `tests/guard_move_release.rs`.
 pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
-    slice: &'a mut V,
+    /// Raw by design — see the type-level docs. Always dereferenceable for the
+    /// guard's whole life: the registration that made it exclusive is retired
+    /// only in `Drop`.
+    ///
+    /// `NonNull`, not `*mut V`: a reference field carried `nonnull` (and the
+    /// niche) into every load, and a bare raw pointer drops both. Measured, so
+    /// not a guess — see `benchmarks/miri_guard_move_2026-08-09.meta` §7.
+    slice: NonNull<V>,
 
-    phantom: PhantomData<&'a DisjointMut<T>>,
+    /// Carries everything the `&'a mut V` field used to supply except the
+    /// reference itself: the lifetime, invariance in `V`, and the auto-trait
+    /// bounds (`Send` iff `V: Send`, `Sync` iff `V: Sync`), which a bare
+    /// `*mut V` would otherwise drop on the floor.
+    phantom: PhantomData<(&'a mut V, &'a DisjointMut<T>)>,
 
     /// Reference to parent for borrow removal on drop.
     /// `None` when parent was created with `dangerously_unchecked`.
@@ -286,18 +328,23 @@ impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
     fn cast_slice<V: IntoBytes + FromBytes + KnownLayout>(self) -> DisjointMutGuard<'a, T, [V]> {
         // We don't want to drop the old guard, because we aren't changing or
         // removing the borrow from parent here.
-        let mut old_guard = ManuallyDrop::new(self);
-        let bytes = mem::take(&mut old_guard.slice);
+        let old_guard = ManuallyDrop::new(self);
+        // SAFETY: the borrow is still registered (the old guard is in
+        // `ManuallyDrop`, so nothing has retired it), which is what makes this
+        // region exclusively ours. The reference does not outlive the cast: it
+        // is consumed by `mut_from_bytes` and only its address is kept.
+        let mut raw = old_guard.slice;
+        let bytes: &mut [u8] = unsafe { raw.as_mut() };
         // Both are pure reads of values already live, so LLVM sinks them into
         // the cold arm; they exist only to give `cast_slice_failed` something
         // to report without a `CastError` on the hot path's frame.
         let (n, addr) = (bytes.len(), bytes.as_ptr() as usize);
         DisjointMutGuard {
             slice: match <[V]>::mut_from_bytes(bytes) {
-                Ok(v) => v,
+                Ok(v) => NonNull::from(v),
                 Err(_) => cast_slice_failed::<V>(n, addr),
             },
-            phantom: old_guard.phantom,
+            phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
         }
@@ -305,35 +352,78 @@ impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
 
     #[inline] // Inline to see alignment to potentially elide checks.
     fn cast<V: IntoBytes + FromBytes + KnownLayout>(self) -> DisjointMutGuard<'a, T, V> {
-        let mut old_guard = ManuallyDrop::new(self);
-        let bytes = mem::take(&mut old_guard.slice);
+        let old_guard = ManuallyDrop::new(self);
+        // SAFETY: as in `cast_slice`.
+        let mut raw = old_guard.slice;
+        let bytes: &mut [u8] = unsafe { raw.as_mut() };
         DisjointMutGuard {
-            slice: V::mut_from_bytes(bytes).unwrap(),
-            phantom: old_guard.phantom,
+            slice: NonNull::from(V::mut_from_bytes(bytes).unwrap()),
+            phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
         }
     }
 }
 
+// A raw pointer field is `!Send` and `!Sync`, and `PhantomData` cannot argue it
+// back. These four impls RESTORE, exactly, what the compiler derived while the
+// field was `&'a mut V` / `&'a V` — dropping them would be a silent semver break
+// for anything that moves a guard between threads.
+//
+// SAFETY (all four): the guard is a `Copy` pointer plus `Option<&DisjointMut<T>>`
+// plus a `u64` id. Sending or sharing it is sending or sharing exactly
+// `&'a mut V` (resp. `&'a V`) and `&'a DisjointMut<T>`, whose own auto-trait
+// rules are reproduced verbatim in the bounds below:
+//
+// * `&mut V: Send` iff `V: Send`; `&mut V: Sync` iff `V: Sync`;
+// * `&V: Send` iff `V: Sync`;   `&V: Sync` iff `V: Sync`;
+// * `&DisjointMut<T>: Send`/`Sync` iff `DisjointMut<T>: Sync`, which the impl
+//   above grants for `T: AsMutPtr + Sync`.
+//
+// The tracker registration the guard names is shared state either way, and it is
+// already `Send + Sync` (`BorrowTracker`).
+unsafe impl<T: ?Sized + AsMutPtr + Sync, V: ?Sized + Send> Send for DisjointMutGuard<'_, T, V> {}
+unsafe impl<T: ?Sized + AsMutPtr + Sync, V: ?Sized + Sync> Sync for DisjointMutGuard<'_, T, V> {}
+unsafe impl<T: ?Sized + AsMutPtr + Sync, V: ?Sized + Sync> Send for DisjointImmutGuard<'_, T, V> {}
+unsafe impl<T: ?Sized + AsMutPtr + Sync, V: ?Sized + Sync> Sync for DisjointImmutGuard<'_, T, V> {}
+
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Deref for DisjointMutGuard<'a, T, V> {
     type Target = V;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.slice
+        // SAFETY: the registration that makes this region exclusively ours is
+        // live for as long as the guard is, and it is retired only in `Drop`.
+        // Borrowck ties the result to `&self`, so the guard cannot be dropped
+        // or moved while the reference exists.
+        unsafe { self.slice.as_ref() }
     }
 }
 
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DerefMut for DisjointMutGuard<'a, T, V> {
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.slice
+        // SAFETY: as in `deref`, and the borrow is a mutable registration, so
+        // no other live borrow overlaps this region.
+        unsafe { self.slice.as_mut() }
     }
 }
 
+/// A live shared borrow of one region.
+///
+/// Holds a pointer rather than `&'a V` for the reason spelled out on
+/// [`DisjointMutGuard`]: moving the guard by value into a call — `drop(g)`
+/// above all — would protect the reference for the duration of that call,
+/// while `Drop` inside it retires the record and lets another thread take the
+/// region mutably. Same defect, same fix; `core::cell::Ref` holds a
+/// `NonNull<T>` for the same reason.
 pub struct DisjointImmutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
-    slice: &'a V,
+    /// `NonNull`, not `*const V` — see [`DisjointMutGuard::slice`].
+    slice: NonNull<V>,
 
-    phantom: PhantomData<&'a DisjointMut<T>>,
+    /// See [`DisjointMutGuard::phantom`]. `&'a V` here, so `V: Sync` is what
+    /// this guard needs to be `Send` — exactly what the reference field gave.
+    phantom: PhantomData<(&'a V, &'a DisjointMut<T>)>,
 
     parent: Option<&'a DisjointMut<T>>,
     borrow_id: checked::BorrowId,
@@ -343,17 +433,20 @@ pub struct DisjointImmutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
 impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
     #[inline]
     fn cast_slice<V: FromBytes + KnownLayout + Immutable>(self) -> DisjointImmutGuard<'a, T, [V]> {
-        let mut old_guard = ManuallyDrop::new(self);
-        let bytes = mem::take(&mut old_guard.slice);
+        let old_guard = ManuallyDrop::new(self);
+        // SAFETY: the borrow is still registered (the old guard is in
+        // `ManuallyDrop`), so no mutable borrow overlaps this region.
+        let raw = old_guard.slice;
+        let bytes: &[u8] = unsafe { raw.as_ref() };
         // See `cast_slice_failed`: the `CastError` is what puts a 112-byte
         // frame on this function's success path.
         let (n, addr) = (bytes.len(), bytes.as_ptr() as usize);
         DisjointImmutGuard {
             slice: match <[V]>::ref_from_bytes(bytes) {
-                Ok(v) => v,
+                Ok(v) => NonNull::from(v),
                 Err(_) => cast_slice_failed::<V>(n, addr),
             },
-            phantom: old_guard.phantom,
+            phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
         }
@@ -361,11 +454,13 @@ impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
 
     #[inline]
     fn cast<V: FromBytes + KnownLayout + Immutable>(self) -> DisjointImmutGuard<'a, T, V> {
-        let mut old_guard = ManuallyDrop::new(self);
-        let bytes = mem::take(&mut old_guard.slice);
+        let old_guard = ManuallyDrop::new(self);
+        // SAFETY: as in `cast_slice`.
+        let raw = old_guard.slice;
+        let bytes: &[u8] = unsafe { raw.as_ref() };
         DisjointImmutGuard {
-            slice: V::ref_from_bytes(bytes).unwrap(),
-            phantom: old_guard.phantom,
+            slice: NonNull::from(V::ref_from_bytes(bytes).unwrap()),
+            phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
         }
@@ -375,8 +470,12 @@ impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Deref for DisjointImmutGuard<'a, T, V> {
     type Target = V;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.slice
+        // SAFETY: the shared registration is live for as long as the guard is
+        // and is retired only in `Drop`, so no mutable borrow overlaps this
+        // region while the returned reference exists.
+        unsafe { self.slice.as_ref() }
     }
 }
 
@@ -666,7 +765,11 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         let cleanup = BorrowCleanup { parent };
         // SAFETY: The borrow has been registered (or we're unchecked).
         // The indexed region is guaranteed disjoint from all other active borrows.
-        let slice = unsafe { &mut *index.get_mut(self.as_mut_slice()) };
+        // No reference is created here — see [`DisjointMutGuard`] for why the
+        // guard must not carry one.
+        // SAFETY (NonNull): `get_mut` derives from `as_mut_slice`, which is a
+        // live allocation's pointer, and panics rather than returning null.
+        let slice = unsafe { NonNull::new_unchecked(index.get_mut(self.as_mut_slice())) };
         // Success — disarm the cleanup guard.
         mem::forget(cleanup);
         DisjointMutGuard {
@@ -698,8 +801,10 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         };
         let parent = self.tracker.as_ref().map(|_| self);
         let cleanup = BorrowCleanup { parent };
-        // SAFETY: The borrow has been registered (or we're unchecked).
-        let slice = unsafe { &*index.get_mut(self.as_mut_slice()).cast_const() };
+        // SAFETY: The borrow has been registered (or we're unchecked). No
+        // reference is created here — see [`DisjointImmutGuard`].
+        // SAFETY (NonNull): as in `index_mut`.
+        let slice = unsafe { NonNull::new_unchecked(index.get_mut(self.as_mut_slice())) };
         mem::forget(cleanup);
         DisjointImmutGuard {
             slice,

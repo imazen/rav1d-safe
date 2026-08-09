@@ -1,0 +1,353 @@
+# Miri UB in `rav1d-disjoint-mut` — root cause, reduction, and gate record
+
+    issue      imazen/rav1d-safe#477 (campaign index #455)
+    branch     fix/miri-ub-narrow-release
+    base       main @ b0f70ee
+    host       Apple M4 Pro (8P+4E), macOS, aarch64-apple-darwin
+    toolchain  nightly-aarch64-apple-darwin, miri 0.1.0 (da86f4d072 2026-07-24)
+    date       2026-08-09
+
+Every number below was run on this host on this date. Nothing is extrapolated
+except the one wall-time projection in section 4, which is labelled as a fit and
+shows its two measured points.
+
+--------------------------------------------------------------------------------
+## 1. The failure, reproduced
+
+    cargo +nightly miri test -p rav1d-disjoint-mut --test narrow_release
+
+aborts in ~20 s with the same tag CI run 31292996318 reported:
+
+    error: Undefined Behavior: not granting access to tag <129070> because that
+    would remove [Unique for <5656840>] which is strongly protected
+      --> tests/narrow_release.rs:126:29   (dm.index_mut(SHARED))
+    help: <129070> was created here, as the root tag for alloc42080
+      --> tests/narrow_release.rs:78:40    (vec![0u8; LEN])
+    help: <5656840> is this argument
+      --> tests/narrow_release.rs:141:21   (drop(g))
+    note: this is on thread `unnamed-5`
+
+Read it off the spans: the PROTECTED tag is the `&mut [u8]` inside the guard
+that thread `unnamed-5` moved by value into `drop`; the ACCESSING tag is the
+buffer's root, used by ANOTHER thread's `index_mut` for the same 8 bytes.
+
+--------------------------------------------------------------------------------
+## 2. Test construction or library? — the three-arm reduction
+
+7 threads, all contending `4096..4104` on a 32 KiB `DisjointMut<Vec<u8>>`,
+400 rounds each. The arms differ ONLY in how the guard is destroyed.
+
+    arm                          SB              TB                 granted/refused
+    -------------------------------------------------------------------------------
+    A  drop(g)      by-value     UB              UB (seeds 1,2,3;   2239 / 561
+                                                     seed 0 clean)
+    B  scope exit   no move      clean           clean              2228 / 572
+    C  eat(g)       by-value     UB              UB (seed 0)        2226 / 574
+
+The tracker grants and refuses identically in all three, so the tracker is not
+the variable — the MOVE is. `drop(g)` is ordinary safe code. **The defect is in
+the library, not in the test.**
+
+Shared guard, same reduction with 5 readers + 2 writers on one range (readers
+coexist, so a reader's release overlaps other readers' live borrows):
+
+    D  index()+drop(g)           UB              UB                 2635 / 165
+       (SB: `[SharedReadOnly for <650566>] which is strongly protected`
+        TB: `write access through <1135450> ... is forbidden`)
+    E  index(), scope exit       clean           clean              2630 / 170
+
+After the fix all six arms are clean under both models, at unchanged grant
+counts (A 2239/561 SB, 2236/564 TB; B 2228/572; D 2635/165).
+
+TB seed sensitivity, pre-fix arm A, measured not assumed:
+    seed 0  clean      seed 1  UB      seed 2  UB      seed 3  UB
+Post-fix, seeds 1/2/3 all clean.
+
+--------------------------------------------------------------------------------
+## 3. Root cause
+
+A guard is a value. Passing one by value into a call gives the reference it
+carries a PROTECTOR: for the whole call the reference must stay valid and
+nothing may invalidate it. The guard's `Drop` runs inside that call and retires
+the tracker record — which is exactly what authorises another thread to take the
+region and retag those bytes.
+
+`core::cell::RefMut` holds `NonNull<T>` for the same reason:
+
+    // NB: we use a pointer instead of `&'b mut T` to avoid `noalias`
+    // violations, because a `RefMut` argument doesn't hold exclusivity for its
+    // whole scope, only until it drops.
+
+For `DisjointMut` it is stronger than `noalias`: another thread genuinely
+retags.
+
+Fix: `slice: NonNull<V>` in both guards, reference materialised in
+`Deref`/`DerefMut`. Four `unsafe impl`s restore the auto-traits the reference
+fields derived, and `PhantomData<(&'a mut V, &'a DisjointMut<T>)>` restores the
+lifetime and the invariance in `V` that `NonNull` (covariant) would otherwise
+drop. The first cut used a bare `*mut V`; section 7 is why it does not ship.
+
+Auto-trait parity, compiled against BOTH revisions:
+
+    probe                                                    main      HEAD
+    ---------------------------------------------------------------------
+    Send/Sync DisjointMutGuard<'_, Vec<u8>, [u8]>            compiles  compiles
+    Send/Sync DisjointImmutGuard<'_, Vec<u8>, [u8]>          compiles  compiles
+    Send      DisjointMutGuard<'_, Vec<u8>, *const u8>       E0277     E0277
+    Send      DisjointMutGuard<'_, Vec<*const u8>, [u8]>     E0277     E0277
+    Send      DisjointImmutGuard<'_, Vec<u8>, Cell<u8>>      E0277     E0277
+
+Neither wider nor narrower. Re-run identically against the shipped `NonNull`
+cut: same five results.
+
+--------------------------------------------------------------------------------
+## 4. Why `narrow_release` gets a `cfg(miri)` round count
+
+Two-point wall fit of the test itself under Stacked Borrows, `total = a + b*rounds`:
+
+    rounds   wall
+      100    23.12 s
+      400    92.19 s
+    -> b = 0.230 s/round, a = 0.10 s
+    -> 200_000 rounds = ~12.8 hours PER MEMORY MODEL   (projection, labelled)
+
+The Miri leg could never have finished it. Miri rounds = 400; the NATIVE run
+keeps 200_000 unchanged. Liveness at 400 Miri rounds:
+
+    Stacked Borrows   private_ok 8400   shared_ok 1846   refused 954
+    Tree Borrows      private_ok 8400   shared_ok 1862   refused 938
+
+Floors 4_000 / 700 are 48% / 25% of attempts, against the native floors'
+0.24% / 0.07% — proportionally tighter, not looser.
+
+--------------------------------------------------------------------------------
+## 5. Gate teeth (mutation-verified)
+
+    plant                                    gate                     result
+    -------------------------------------------------------------------------
+    pre-fix guards (git show main:lib.rs)    guard_move_release SB    FAILS (UB)
+    pre-fix guards                           guard_move_release TB    FAILS (UB)
+    pre-fix guards                           narrow_release SB @400   FAILS (UB)
+    pre-fix guards                           narrow_release TB @400   PASSES (*)
+    live_mask `allocated<=1` -> `<=2`        narrow_release native    FAILS, witnesses=1, 2.52 s
+    live_mask `<=2`                          rest of suite            all green
+    active() -> `&self.shards[..1]`          wide_exclusion __probe_wide  FAILS, 418 violations
+    4af62ae TOCTOU deleted from add_contended wide_exclusion __probe_wide FAILS 5/5, 929..1674
+    4af62ae TOCTOU deleted from add only     wide_exclusion __probe_wide  PASSES 8/8 (**)
+
+    (*)  seeds 0 and 1 tried. The shorter Miri round count costs narrow_release
+         its Tree-Borrows teeth for this defect; guard_move_release covers it.
+    (**) the wide registrant holds every shard lock while publishing, so a narrow
+         registrant in that window fails `try_lock` by construction and lands in
+         `add_contended`. The fast-path half of that hazard is NOT gated here.
+
+Every plant restored from a byte-level snapshot; `shasum -a 256 -c` OK and
+`git diff` empty against `main` in each case.
+
+`forbid(unsafe_code)` proved ACTIVELY in the parent crate: an `unsafe` block
+planted at `src/lib.rs:11` fails the default-feature build with
+`error: usage of an 'unsafe' block`. Restored, `git diff` empty.
+
+--------------------------------------------------------------------------------
+## 6. Corpus
+
+`examples/md5_inventory` (this branch adds `--threads`), per meson group, set-
+diffed BY NAME with the ACTUAL md5 in the value.
+
+    threads=1   main 768 rows / HEAD 768 rows
+                only-in-main 0, only-in-HEAD 0, differing values 0
+                statuses: PASS 766, SKIP 2  (both sides)
+    vs benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst
+                only-in-either 0, differing values 0
+
+    threads=8, excluding film_grain (see below)
+                main 755 rows / HEAD 755 rows
+                only-in-main 0, only-in-HEAD 0, differing values 0
+                statuses: PASS 753, SKIP 2  (both sides)
+
+    HEAD threads=1 vs HEAD threads=8, same 755 vectors
+                differing values 0
+                — the tile workers produce the same md5 as the serial path,
+                  which is the property a borrow-tracker change could break and
+                  the single-threaded gate could never see.
+
+**film_grain is excluded from the threads=8 comparison because it cannot be
+run at all.** `md5_inventory --threads 8` dies in the film-grain groups on
+`main` and on this branch alike, and dies NONDETERMINISTICALLY — one run lost
+all 13 film-grain vectors to a process abort at the first one, another got a
+caught ERROR on that vector, cleared the rest of 8-bit, and aborted in 10-bit.
+Pre-existing whole-plane `full_guard_mut` in
+`src/safe_simd/filmgrain_arm.rs:1550`, filed as #479, not touched here.
+
+--------------------------------------------------------------------------------
+## 7. Performance
+
+`scripts/perf/verify_gap.sh`, rotating arm order inside each cell, two-point
+wall fit at 2 and 20 frames (process startup removed), strict idle gate — the
+foreign>25%-CPU count was **0 in every committed cell of both runs**, and no
+cell was discarded. No `nice` on any timed run, no `-C target-cpu=native`.
+Arms staged as separate binaries built from the two worktrees.
+
+Run A (n=7, arms base/head):
+
+    vec              t   base med ms/f   head/base med   [min,    max]
+    v4k_8tile        1        318.50        1.0123      [1.0003, 1.0351]
+    v4k_8tile        8         67.22        0.9975      [0.9806, 1.0246]
+    v4k_8tile_10b    8         72.78        0.9912      [0.9736, 1.0023]
+
+t=1 came back +1.2% with EVERY paired ratio above 1.0 (min 1.0003). Small, but
+the band excludes 1.000 and 7/7 agree in sign, so it is not noise. Cause: the
+first cut of the fix used a bare `*mut V`, and a reference field carries
+`nonnull` (and the niche) into every load of the guard that a raw pointer does
+not.
+
+Run B (n=9, three arms: base / head = bare `*mut V` / head2 = `NonNull` +
+`#[inline(always)]` on the three `Deref`/`DerefMut` bodies):
+
+    vec              t   base med ms/f   head/base med          head2/base med
+    v4k_8tile        1        318.44   1.0114 [1.0009,1.0337]   1.0005 [0.9331,1.0119]
+    v4k_8tile        8         67.44   1.0034 [0.9712,1.0404]   0.9926 [0.9715,1.0358]
+    v4k_8tile_10b    8         72.89   0.9838 [0.9754,1.0116]   0.9933 [0.9808,1.0108]
+
+Run B REPRODUCES the t=1 regression on `head` (1.0114, min 1.0009) and shows
+`head2` recovering it (1.0005, band straddling 1.000). Both t=8 cells are null
+for both arms in both runs. **`head2` is what ships.**
+
+Honest caveat: `NonNull` and `#[inline(always)]` were changed together and
+measured together. No per-knob attribution is claimed — see the AGENT_BRIEF
+note about strongly super-additive pairs, which is a reason to distrust
+splitting a measured pair post hoc, not a licence to assume additivity.
+
+--------------------------------------------------------------------------------
+## 8. The Miri leg could never have finished, and the UB was only one reason
+
+Item 7 of the brief was "run the WHOLE Miri suite and report every remaining
+failure by name". Doing that turned up two more tests that cannot run under Miri
+at all. Both got the same treatment as `narrow_release`: NATIVE workload
+unchanged, `cfg(miri)` workload cut to something that terminates, anti-vacuity
+floors scaled with it so neither side can silently degenerate.
+
+    test                                             native      Miri (before)   Miri (after)
+    ------------------------------------------------------------------------------------------
+    narrow_release                                   200_000 rd  ~12.8 h (fit)   400 rd,   92 s
+    shard_liveness::exhaustive_pairs...              331_776 pr  3.7-7.4 h       11_236 pr, 991 s
+                                                       (0.85 s)   (proj; ran 53
+                                                                   min, unfinished)
+    wide_exclusion::a_wide_borrow_excludes...        60_000 rd   killed at 10    300 rd,   92 s
+                                                       (0.05 s)   min, unfinished, (+ 2 narrow
+                                                                  both models      contenders)
+    lib threaded_churn_leaks_no_slots (50_000)       0.02 s for   SB 1488.8 s,    1_500 + 1_000:
+      + threaded_disjoint_is_clean   (20_000)        all 26        TB TIMED OUT    66.8 s SB
+                                                                   at 7_200 s      66.7 s TB
+
+`shard_liveness`'s cost is `DisjointMut::new(vec![0u8; 24 KiB])` per pair — it
+has to be fresh, a poisoned tracker would mask later results — so every pair is
+24_576 emulated zero-writes plus a 128-shard tracker. Two measured rates:
+
+    start list          pairs     Miri wall     per pair
+    [0, 1, 3]           2_916      117.8 s       40 ms
+    the six shipped    11_236      991.2 s       80 ms  (whole binary, 5 tests)
+
+The spread is the mix — the shipped six include offsets whose 20_000-byte `LENS`
+take the wide path and lock all 128 shards.
+
+`wide_exclusion`'s cost is the same thing from the other end: every round takes a
+whole-buffer borrow of an 8 MiB instance, which promotes to the wide path and
+locks every shard, against contending narrow threads.
+
+It also needed a SECOND Miri-only change, and the way it surfaced is worth
+recording. At the native six narrow contenders, the Tree Borrows leg failed:
+
+    the wide registrant was refused almost every round (3); the race window
+    was never exercised
+
+That is not UB and not a regression — it is the anti-vacuity assertion doing
+exactly its job, because Miri's scheduler starves the wide registrant (3 grants
+in 300 rounds, against a floor of ROUNDS/100). The fix is to stop starving the
+wide side, NOT to lower the floor: `NARROW_THREADS` is 2 under Miri, 6 natively,
+and every assertion is byte-identical. After: 91.9 s SB / 91.5 s TB, both pass,
+both floors met — and half the cost of the six-contender run (181.7 s).
+
+Note this is the same failure mode the workflow already documents for the
+`__probe_count` instrumented leg. A gate whose liveness assertions are
+scheduling-sensitive will fire under any scheduler change; the response is
+always to restore the exercise, never to lower the bar.
+
+**Conclusion: `disjoint-mut CI`'s Miri leg has never been green and could not
+have been, whatever the guards did.** Before 2026-08-09 it aborted on the
+guard-move UB (#477) and never reached these. The anti-vacuity evidence for
+`wide_exclusion` does not depend on its Miri count — that comes from the NATIVE
+`wide-path-gate` job (`--features __probe_wide`), which is untouched.
+
+--------------------------------------------------------------------------------
+## 9. The whole Miri suite, per test binary, per model
+
+Each binary run SEPARATELY, because Miri aborts the process on the first UB and
+cargo stops at the first failing target — the reason `soundness`,
+`shard_liveness`, `wide_exclusion`, `aligned_miri` and `pic_buf_overflow` never
+executed at all in the failing CI run. (`--no-fail-fast` is now on the workflow's
+Miri leg for the same reason.)
+
+    binary                  Stacked Borrows              Tree Borrows
+    -----------------------------------------------------------------------------
+    aligned_miri            ok    0 tests      0.04 s    ok    0 tests    0.04 s
+    pic_buf_overflow        ok    0 tests      0.03 s    ok    0 tests    0.03 s
+    soundness               ok   25 tests      9.59 s    ok   25 tests    9.69 s
+    wide_exclusion          ok    1 test     181.66 s    FAILED (*)     180.44 s
+    narrow_release          ok    1 test      92.76 s    ok    1 test    92.95 s
+    guard_move_release      ok    2 tests    110.99 s    ok    2 tests  112.19 s
+    shard_liveness          ok    5 tests    992.69 s    ok    5 tests  993.11 s
+    lib                     ok   26 tests   1488.78 s    TIMED OUT (**)
+
+    (*)  NOT UB, and NOT the shipped configuration. This leg ran the
+         SIX-contender `wide_exclusion`; its anti-vacuity assertion fired
+         ("the wide registrant was refused almost every round (3)") because
+         Miri's scheduler starves the wide side. Fixed by cutting Miri to two
+         narrow contenders — assertions untouched — and re-run on BOTH models
+         afterwards: ok in 91.88 s (SB) and 91.45 s (TB). That pair is the
+         shipped number; the 181.66/180.44 above are the pre-fix six-contender
+         runs.
+    (**) Hit the harness's 7_200 s cap with 22 of 26 done, inside
+         `tracker_shard::tests::threaded_disjoint_is_clean` (and having spent
+         ~83 min on `threaded_churn_leaks_no_slots` before it). rc=124, i.e.
+         `timeout`, NOT a failure. Its Stacked-Borrows twin did the same 26
+         tests in 1488.78 s — which independently matches the 1489 s CI
+         reported for the lib on `main`. So Tree Borrows is >5x slower on
+         exactly those two loops (8 threads x 50_000 and x 20_000 add/remove
+         pairs, the first all on ONE shard).
+
+         FOURTH and last blocker, fixed the same way: `cfg(miri)` counts of
+         1_500 and 1_000, native untouched. Re-measured after:
+
+             lib, Stacked Borrows   1488.78 s -> 66.77 s   26/26 ok
+             lib, Tree Borrows       >7200 s  -> 66.72 s   26/26 ok
+
+**Total per model at the shipped configuration: ~23 minutes** (0.04 + 0.03 +
+9.6 + 91.9 + 92.8 + 111 + 993 + 66.8 s), against "cannot finish" before this
+branch — on EITHER model.
+
+**No UB anywhere.** Every failure in this table is a liveness assertion or a
+timeout, and both are documented above with their fixes.
+
+--------------------------------------------------------------------------------
+## 10. Reproducing
+
+    # the UB, on main
+    git checkout main
+    cargo +nightly miri test -p rav1d-disjoint-mut --test narrow_release
+    MIRIFLAGS=-Zmiri-tree-borrows cargo +nightly miri test -p rav1d-disjoint-mut \
+        --test guard_move_release        # needs this branch's test file
+
+    # the gate, on this branch
+    cargo +nightly miri test -p rav1d-disjoint-mut --test guard_move_release
+    MIRIFLAGS=-Zmiri-tree-borrows cargo +nightly miri test -p rav1d-disjoint-mut \
+        --test guard_move_release
+
+    # corpus
+    cargo build --release --example md5_inventory
+    ./target/release/examples/md5_inventory --threads 1 > t1.tsv
+    ./target/release/examples/md5_inventory --threads 8 --group 8-bit/data/meson.build
+
+    # perf
+    BIN=<staged bins> ARMS="base head2" CELLS="v4k_8tile:1 v4k_8tile:8" \
+        scripts/perf/verify_gap.sh out.tsv 9

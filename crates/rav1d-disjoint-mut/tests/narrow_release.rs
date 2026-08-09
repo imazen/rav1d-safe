@@ -31,7 +31,21 @@
 //! still gates the same direction on the new shape; verified 2026-08-08 by
 //! widening `Shard::live_mask`'s `allocated <= 1` fast path to `<= 2`, which
 //! makes the mask a SUBSET of the live set and drops live neighbours: this
-//! test, and only this test, FAILS.
+//! test, and only this test, FAILS. RE-VERIFIED in full on 2026-08-09, both
+//! halves: with `<= 2` planted, this test fails (`witnesses` = 1, in 2.52 s, at
+//! private_ok 4_200_000 / shared_ok 1_200_246 / refused 199_754) and
+//! `--no-fail-fast` over the rest of the suite — 26 lib + 25 `soundness` + 5
+//! `shard_liveness` + `wide_exclusion` + 2 `guard_move_release` — is GREEN.
+//! The paragraph above is a live record, not a stale one.
+//!
+//! # It is also the crate's aliasing gate, and that is why it runs under Miri
+//!
+//! The tracker cannot tell you whether the REFERENCES it hands out obey Rust's
+//! aliasing model — only Miri can, and this is the only test in the suite that
+//! drives a release and an overlapping acquisition of the same bytes hard
+//! enough for Miri to schedule one inside the other. It is what found the
+//! guards' by-value-move defect (2026-08-09, `tests/guard_move_release.rs`
+//! now gates that specific shape). Do not drop it from the Miri leg.
 //!
 //! # How
 //!
@@ -62,7 +76,42 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 const LEN: usize = 32 * 1024;
 
 const THREADS: usize = 7;
-const ROUNDS: usize = 200_000;
+
+/// Native rounds. Under Miri, four orders of magnitude fewer — see below.
+const ROUNDS: usize = if cfg!(miri) { 400 } else { 200_000 };
+
+/// Liveness floors.
+///
+/// The native pair (10_000 / 1_000) is unchanged. The Miri pair is NOT a
+/// relaxation of it: at 400 rounds the arms attempt 8_400 private and 2_800
+/// shared acquisitions, so 4_000 / 700 are floors at ~48% and ~25% of
+/// attempts, where the native floors sit at ~0.24% and ~0.07%. The Miri run is
+/// held to a proportionally TIGHTER standard, not a looser one. Measured
+/// 2026-08-09, M4 Pro, `--test narrow_release` at 400 Miri rounds:
+///
+/// ```text
+///   Stacked Borrows   private_ok 8400   shared_ok 1846   refused 954
+///   Tree Borrows      private_ok 8400   shared_ok 1862   refused 938
+/// ```
+///
+/// Why the round count moves at all: Miri interprets. Two-point fit of this
+/// test's own wall time under Stacked Borrows, `total = a + b * rounds`, from
+/// 23.12 s at 100 rounds and 92.19 s at 400 (same host, same day):
+/// b = 0.230 s/round, a = 0.10 s. Extended to 200_000 that is **~12.8 hours per
+/// memory model** — the Miri leg could never have finished it, and never did:
+/// run 31292996318 reached this file only because it ABORTED on UB.
+///
+/// What the Miri leg is for is the ALIASING MODEL, and that does not need a
+/// long race. **What the shorter run costs, stated honestly:** re-run against
+/// the pre-fix guards on 2026-08-09, this file at 400 rounds still aborts under
+/// Stacked Borrows on the default seed (same tag, `<129070>`, as CI run
+/// 31292996318) — but under Tree Borrows it did NOT reproduce at either of the
+/// two seeds tried (0 and 1). Tree-Borrows coverage of that defect rests on
+/// `tests/guard_move_release.rs`, which contends the same range harder and
+/// aborts under BOTH models on the default seed. The native run here keeps the
+/// full 200_000, which is what gates the tracker's own race behaviour.
+const MIN_PRIVATE_OK: usize = if cfg!(miri) { 4_000 } else { 10_000 };
+const MIN_SHARED_OK: usize = if cfg!(miri) { 700 } else { 1_000 };
 
 /// The contended interval. Every thread tries to take exactly this range
 /// mutably, so any two simultaneous grants are a provable overlap.
@@ -161,12 +210,12 @@ fn a_lock_free_release_never_retires_a_live_neighbour() {
     // Liveness. A tracker that refused everything, or one whose threads never
     // met, would report zero witnesses for the wrong reason.
     assert!(
-        private_ok.load(Ordering::Relaxed) > 10_000,
+        private_ok.load(Ordering::Relaxed) > MIN_PRIVATE_OK,
         "private churn barely ran ({}); the release path was not exercised",
         private_ok.load(Ordering::Relaxed)
     );
     assert!(
-        shared_ok.load(Ordering::Relaxed) > 1_000,
+        shared_ok.load(Ordering::Relaxed) > MIN_SHARED_OK,
         "the shared range was granted almost never ({}); the race window was \
          never exercised",
         shared_ok.load(Ordering::Relaxed)
