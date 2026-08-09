@@ -438,6 +438,61 @@ pub mod wide_probe {
 /// on the old value, which is what the uncontended path wants. **Not
 /// reentrant** — every multi-shard operation in this module depends on that
 /// being remembered, hence the ascending acquisition order.
+/// THROWAWAY probe: how often is `TinyLock` actually contended, how long does
+/// a contended acquisition spin, and does the 64-spin bound ever get reached?
+///
+/// This exists because the campaign's "contention is ~0.02%" figure is
+/// `wide_probe::N_SLOW`, which counts `BorrowTracker::add_slow` — the
+/// poisoned / live-wide / multi-block path — and is a DIFFERENT event from
+/// `TinyLock::lock_slow`. A bounded-spin change is inert unless the bound is
+/// reached, so the yield count is the liveness assertion for it.
+///
+/// One `fetch_add` per contended acquisition, none on the fast path and none
+/// inside the spin loop (spins are accumulated in a local).
+#[cfg(feature = "__probe_lockstats")]
+pub mod lock_probe {
+    use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
+
+    /// Contended acquisitions (entries into `TinyLock::lock_slow`).
+    pub static CONTENDED: AtomicU64 = AtomicU64::new(0);
+    /// Total `spin_loop()` iterations across all contended acquisitions.
+    pub static SPINS: AtomicU64 = AtomicU64::new(0);
+    /// `yield_now()` calls — i.e. how often the 64-spin bound was reached.
+    /// Zero here means this change cannot have done anything.
+    pub static YIELDS: AtomicU64 = AtomicU64::new(0);
+    /// Longest single contended acquisition, in spin iterations.
+    pub static MAX_SPINS: AtomicU64 = AtomicU64::new(0);
+
+    #[inline]
+    pub fn record(spins: u64, yields: u64) {
+        CONTENDED.fetch_add(1, Relaxed);
+        SPINS.fetch_add(spins, Relaxed);
+        YIELDS.fetch_add(yields, Relaxed);
+        MAX_SPINS.fetch_max(spins, Relaxed);
+    }
+
+    pub fn reset() {
+        for a in [&CONTENDED, &SPINS, &YIELDS, &MAX_SPINS] {
+            a.store(0, Relaxed);
+        }
+    }
+
+    pub fn report() -> std::string::String {
+        use core::fmt::Write as _;
+        let mut out = std::string::String::new();
+        let _ = writeln!(out, "LOCKHDR\tcontended\tspins\tyields\tmax_spins");
+        let _ = writeln!(
+            out,
+            "LOCK\t{}\t{}\t{}\t{}",
+            CONTENDED.load(Relaxed),
+            SPINS.load(Relaxed),
+            YIELDS.load(Relaxed),
+            MAX_SPINS.load(Relaxed),
+        );
+        out
+    }
+}
+
 struct TinyLock(AtomicBool);
 
 impl TinyLock {
@@ -466,26 +521,92 @@ impl TinyLock {
         !self.0.swap(true, Ordering::Acquire)
     }
 
+    /// Bounded spin, then hand the core back to the scheduler.
+    ///
+    /// This used to spin without bound, and `yield_now` existed only behind
+    /// `__probe_lock_backoff`, which is not in `default` — so every shipping
+    /// build spun forever.
+    ///
+    /// **What this is measured to buy, and what it is not.** Full record:
+    /// `benchmarks/park_not_spin_2026-08-09.meta`. Idle M4 Pro (8P+4E), n=16
+    /// rounds, arms interleaved with rotating order, two-point wall fit:
+    ///
+    /// * **t=16 (oversubscribed): 8bpc 72.97 -> 69.69 ms/frame (0.955),
+    ///   10bpc 77.19 -> 74.14 (0.960).** That is the whole win.
+    /// * **t=1/2/4/8: null**, every band overlapping. There are more threads
+    ///   than cores only at t=16 on this box, and only there can a waiter be
+    ///   spinning on a holder that is not running.
+    /// * It is **NOT a tail collapse**, which is what this change was written
+    ///   on the theory of. Base band widths at t=8 are 7.7% (8bpc) and 6.4%
+    ///   (10bpc) of the median, not the ~60% the branch's original rationale
+    ///   assumed; head's bands are not systematically narrower (10bpc t=8 is
+    ///   *wider*: 12.1% vs 6.4%). The win at t=16 is a median shift.
+    ///
+    /// Mechanism, from `--features probe-lockstats` (this module's
+    /// [`lock_probe`], `v4k_8tile` 8bpc, 6 frames):
+    ///
+    /// * Contention is ~150-200 k contended acquisitions per 6-frame run at
+    ///   t=8, i.e. **~0.12% of the 22.70 M registrations** — six times the
+    ///   ~0.02% the original rationale quoted, because that figure was
+    ///   [`wide_probe::N_SLOW`], which counts `add_slow` (poisoned / live-wide
+    ///   / multi-block) and is a different event from lock contention.
+    /// * One `spin_loop()` is 8.28 ns net on this host (`isb`, not a nop).
+    ///   Unbounded, the worst single acquisition measured 1,389 spins at t=8
+    ///   (~11.5 us) and 13,262 at t=16 (~110 us) — real, but two orders of
+    ///   magnitude short of a preemption quantum, which is why no fat tail
+    ///   ever appears.
+    /// * The 64-spin bound is genuinely reached: ~2.4-3.4 k yields per
+    ///   6-frame run, ~1.4% of contended acquisitions. Aggregate spin work
+    ///   falls ~23% at t=16 (2.21 M -> 1.74 M iterations per 6 frames), but
+    ///   that is only 0.64 ms/frame of CPU against a 3.3 ms/frame wall win —
+    ///   most of the gain is the descheduled holder getting a core back, not
+    ///   the waiter's own burn.
+    ///
+    /// `no_std` has nowhere to yield to and keeps the unbounded spin; `std` is
+    /// this crate's default feature.
+    ///
+    /// The FAST path is deliberately untouched — `lock`/`try_lock`/`unlock`
+    /// remain a single atomic each. `try_lock`'s freedom from any `bl` is
+    /// load-bearing for the frameless leaf `add` (see [`BorrowTracker::add_contended`]),
+    /// so the yield lives only here, in the already-`#[cold]` slow path. It
+    /// does cost `lock_slow` its own leaf status (the `bl` to `sched_yield`
+    /// forces an `stp x29,x30` frame), which is why the bound lives here and
+    /// not one level up.
     #[cold]
     #[inline(never)]
     fn lock_slow(&self) {
-        #[cfg(feature = "__probe_lock_backoff")]
+        // Long enough that a holder which is merely mid-critical-section is
+        // waited out in userspace; short enough that a descheduled holder does
+        // not cost a quantum.
+        const SPINS_BEFORE_YIELD: u32 = 64;
         let mut spins = 0u32;
+        #[cfg(feature = "__probe_lockstats")]
+        let (mut total_spins, mut yields) = (0u64, 0u64);
         loop {
             // Spin on a load, not a swap: a read-only spin keeps the line in
             // Shared instead of ping-ponging it Exclusive between waiters.
             while self.0.load(Ordering::Relaxed) {
                 core::hint::spin_loop();
-                #[cfg(feature = "__probe_lock_backoff")]
+                spins += 1;
+                #[cfg(feature = "__probe_lockstats")]
                 {
-                    spins += 1;
-                    if spins >= 64 {
-                        spins = 0;
-                        std::thread::yield_now();
+                    total_spins += 1;
+                }
+                if spins >= SPINS_BEFORE_YIELD {
+                    spins = 0;
+                    #[cfg(feature = "__probe_lockstats")]
+                    {
+                        yields += 1;
                     }
+                    // `no_std` has nowhere to yield to, so it keeps the old
+                    // unbounded spin. `std` is this crate's default feature.
+                    #[cfg(feature = "std")]
+                    std::thread::yield_now();
                 }
             }
             if !self.0.swap(true, Ordering::Acquire) {
+                #[cfg(feature = "__probe_lockstats")]
+                lock_probe::record(total_spins, yields);
                 return;
             }
         }
