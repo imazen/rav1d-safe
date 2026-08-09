@@ -225,7 +225,30 @@ third dead gate. The same shape is in the gate the campaign has been quoting:
    `arithmetic_overflow`. `crates/rav1d-disjoint-mut/src/tracker_shard.rs`
    carried a test-side `1usize << 32` that is a hard error where `usize` is 32
    bits, and the i686 legs run `cargo nextest --lib` over both workspace
-   members. cfg-gated to 64-bit here.
+   members. cfg-gated to 64-bit here, and A/B'd directly on a 32-bit target
+   rather than argued: `cargo build --target wasm32-wasip1 -p
+   rav1d-disjoint-mut --features std --all-targets` is clean at HEAD and, with
+   the `cfg` removed, fails with `this arithmetic operation will overflow` /
+   `#[deny(arithmetic_overflow)]` in the **lib test** target. `cargo check`
+   with the same arguments is green in BOTH states — the third time this
+   campaign that `check` has been mistaken for a build gate.
+5. **`disjoint-mut CI` has been red on `main` since at least `6c17d8c`** — four
+   legs: `Test (…, --no-default-features)` ×3 and `Test (ubuntu-latest,
+   --all-features)`. The first three are fixed here (`extern crate std` was
+   gated on `feature = "std"` and not on `test`, so the unit tests, which need
+   threads and `catch_unwind`, could not compile in a `no_std` configuration:
+   28 errors → 0, `cargo test -p rav1d-disjoint-mut --no-default-features`
+   now runs 35 + 9 + 2 + 5 + 25 + … tests green). The fourth is partly fixed:
+   `wide_exclusion`'s probe block spelled only `__probe_wide` where the lib's
+   re-export of `wide_probe` also requires the sharded tracker, so
+   `--all-features` (which turns on the mutually exclusive tracker selectors at
+   once) failed to COMPILE the binary and took the job's other test binaries
+   with it. Two lib unit tests (`test_overlapping_mut`,
+   `test_new_always_tracked`) still fail there because they assert the checked
+   tracker while `--all-features` selects an untracked one. **That leg is
+   asking for a self-contradictory configuration** and the fix is a decision
+   for the crate — either drop the leg or make the tracker-selector features
+   mutually exclusive with a `compile_error!`. Not taken here.
 
 ### Running the corpus threaded immediately found a live bug on `main`
 
