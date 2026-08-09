@@ -226,6 +226,12 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut group_filter: Option<String> = None;
     let mut name_filter: Option<String> = None;
+    // Groups to leave out, so a run that CANNOT complete for a reason unrelated
+    // to what is under test still produces a comparable set. The exclusion is
+    // an ARGUMENT, never a decision buried in the runner: it has to be visible
+    // in the invocation (CI leg / justfile recipe) or the inventory silently
+    // shrinks and a set-diff by name reads it as "nothing changed".
+    let mut skip_groups: Vec<String> = Vec::new();
     let mut activity = false;
     let mut i = 1;
     while i < args.len() {
@@ -236,6 +242,15 @@ fn main() {
             }
             "--name" => {
                 name_filter = args.get(i + 1).cloned();
+                i += 2;
+            }
+            // Repeatable. See `skip_groups`.
+            "--skip-group" => {
+                let g = args.get(i + 1).cloned().unwrap_or_else(|| {
+                    eprintln!("--skip-group needs a substring");
+                    std::process::exit(2);
+                });
+                skip_groups.push(g);
                 i += 2;
             }
             // Per-family work counts alongside each vector. Answers "which
@@ -299,6 +314,10 @@ fn main() {
             if !group.contains(g.as_str()) {
                 continue;
             }
+        }
+        if let Some(g) = skip_groups.iter().find(|g| group.contains(g.as_str())) {
+            eprintln!("SKIPGROUP {group} (--skip-group {g})");
+            continue;
         }
         let meson = base.join(group);
         if !meson.exists() {
