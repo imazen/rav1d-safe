@@ -1,0 +1,235 @@
+STRIDED-RECTANGLE BORROW RECORDS: sharding a picture plane by COLUMN (issue #455)
+================================================================================
+
+Host      Apple M4 Pro, 8 P + 4 E cores (12 logical), Darwin 25.5.2. Idle box.
+Base      main ee07b00 (the #467 composition; 766/766).
+Branch    perf/strided-rect.
+Build     cargo build --release, default features, NO -C target-cpu=native.
+Timing    NO `nice` on any timed run (Darwin maps a niced process onto E-cores
+          and the wall clock distorts ~40x). Two-point wall fit at 2 and 20
+          frames, `beta = (hi - lo) / 18`, so process startup drops out.
+          dav1d 1.5.4 `--framedelay 1` measured in the SAME interleaved sweep,
+          rotating arm order inside every cell.
+Vectors   ~/tmp/rav1d-perf/vec/v4k_8tile{,_10b}.avif for our arms;
+          ~/tmp/recon-yard/vec/*.ivf for dav1d. `test-vectors/bench/photo_4k.avif`
+          is NOT a substitute — its CDEF is off and its filter chain is a
+          different shape (the diag round measured 23.7 ms against 50.5).
+
+Files     strided_rect_gap_2026-08-09.tsv     216 raw gap rows (3 arms x 8 cells x 9)
+          strided_rect_sites_2026-08-09.tsv   per-call-site registration counts
+          strided_rect_bands_2026-08-09.txt   per-cell min/median/max + disjoint verdict
+
+
+0. THE PROBLEM, IN ONE SENTENCE
+--------------------------------------------------------------------------------
+A `w x h` block of a picture plane was either `h` borrow registrations of `w`
+elements each, or ONE registration of the hull `(h-1)*stride + w`. Neither is
+right under tile threading: the per-row form is what makes a 4K frame register
+7,924,706 borrows at t=1 but 22,700,725 at t>1, and the hull form additionally
+reserves the inter-row gaps, which belong to other tile COLUMNS.
+
+The flat block index `offset >> shift` cannot break that tie, because it has to
+choose between two properties at once:
+
+  * SMALL blocks separate concurrent tile columns (two workers 960 bytes apart
+    on the same picture row land on different shards) but make a strided access
+    pay one distinct shard cache line PER ROW;
+  * LARGE blocks keep a strided access on one line but put all four tile
+    columns of a row on it.
+
+`benchmarks/tracker_blockshift_2026-08-08.meta` is the record of that trade
+being made in both directions: shift 12 measured 119.0 ms/frame at t=8, shift
+14 measured 72.8, shift 16 measured 75.5, and a later attempt to go finer to
+separate tile columns collapsed scaling to 2.7x.
+
+
+1. THE MECHANISM
+--------------------------------------------------------------------------------
+A COLUMN class has both properties at once. Every row of a `w x h` rectangle
+occupies the SAME columns, so the rectangle is one class however tall it is;
+two tile columns are different classes however close their rows are.
+
+  RowMap (crates/rav1d-disjoint-mut/src/tracker_shard.rs)
+      offset -> (column band, row group), where the row index comes from ONE
+      exact division by the declared row stride. Lemire's magic
+      (`floor(2^64/d)+1`, exact for every dividend below 2^32) so it is a
+      `umulh` plus an `msub`, not a ~20-cycle `udiv`. Consulted only when the
+      instance is BOTH strided AND sharded, so a serial decode — which takes
+      `add`'s `mask == 0` arm and skips all class arithmetic — pays nothing.
+
+  ShardRecs.c0/.c1
+      each record's inclusive column range. Hull-overlap AND column-overlap
+      together are EXACT, not merely conservative: if the row ranges are
+      disjoint, say ra1 < rb0, hull overlap needs (rb0-ra1)*S <= ca1-cb0, whose
+      left side is at least S and whose right side is at most S-1. So there is
+      no false positive to trade away. Anything the map cannot describe as a
+      rectangle keeps `0..=COL_ANY` and degrades to today's plain hull test,
+      which can only ever be conservative.
+
+  StridedRows (crates/rav1d-disjoint-mut/src/lib.rs)
+      the index type. It deliberately does NOT implement `SliceBounds` — the
+      blanket `From<T: SliceBounds> for Bounds` would erase the shape back to a
+      plain interval — and the shape travels as two scalar arguments to
+      `add_rect_*` rather than as `Bounds` fields, because growing `Bounds`
+      from 16 to 24 bytes measured **+3.6% at 8bpc t=1** on its own.
+
+Converted callers: `for_rows{,_mut}`, `narrow_guard{,_mut}`,
+`compact_read_per_row`, `compact_write_back_per_row`, `block_mut`, and the loop
+filter's `LfBlock::fill`. `block_mut` in particular stops COPYING under tile
+threading: it used to read `h` rows into a scratch buffer and write them back,
+`2h` registrations plus two memcpys per block, purely because per-row guards
+were the only sound option.
+
+SLOTS drops 7 -> 5 so the record still fits one 128-byte cache line. Measured
+mean shard occupancy is 0.02 and measured max is 1, and slot exhaustion is not
+a correctness event — it promotes to the wide list. Isolated A/B of the SLOTS
+change alone on ee07b00: 6750 vs base 6760 ms for 20 frames at 8bpc t=1
+(median of 3) — null.
+
+
+2. COUNTS (`--features probe-sites`, v4k_8tile 8bpc, per frame)
+--------------------------------------------------------------------------------
+                          base            head
+    t=1               7,924,706       7,924,706
+    t=8              22,700,725       7,923,518
+
+**The thread-count-dependent explosion is gone.** t=8 is now within 1,188
+registrations of t=1 — the residual is `picwb`-class traffic, not per-row
+guards. The base column reproduces #467's independently-counted totals exactly.
+
+
+3. TWO DEFECTS FOUND BY MEASUREMENT, BOTH NOW GATED
+--------------------------------------------------------------------------------
+(a) THE WIDE-PATH AVALANCHE. `add_grid` escalated to the all-shards path
+    whenever `state != 0` — i.e. whenever any wide record was live. One wide
+    record then makes every straddling borrow wide, each of which keeps `state`
+    nonzero, so the population never drains. Measured with `--features
+    probe-wide` on v4k_8tile:
+
+        wide registrations/frame     t=1      t=2      t=8
+        with the escalation            0    2,309  188,307
+        poison-only                    0    2,220    2,220
+
+    (t=4 not measured for this counter. `Located::All` is pure geometry, so the
+    poison-only row being IDENTICAL at t=2 and t=8 is the check that the
+    feedback loop is gone — with the escalation it was 81x higher at t=8.)
+
+    and wall at t=8 was **2.28x WORSE than base** before the fix. Only poison
+    escalates now; `lock_and_register` consults the wide list under the locks it
+    takes, exactly as `add_multi` already did.
+
+(b) `rect_exact_for` MUST REQUIRE `mask != 0`. `add` dispatches `mask == 0`
+    first — a one-shard instance skips all class arithmetic because every class
+    maps to shard 0 anyway — so on such an instance a rectangle is recorded as
+    its plain HULL however well the map describes it. Answering `true` there
+    tells a caller it may stop taking per-row borrows while the tracker is still
+    reserving the gaps: exactly the false positive this change exists to remove.
+    Caught by the EXISTING gate
+    `picture.rs::for_rows_mut_never_reserves_an_inter_row_gap_when_tile_threading_is_on`,
+    whose 64x4 plane is under `SHARD_MIN_LEN` and therefore always single-shard.
+
+
+4. THE COLUMN-BAND WIDTH IS A MEASURED CHOICE, AND BOTH ENDS LOSE
+--------------------------------------------------------------------------------
+`col_shift = ilog2(stride) - COL_BAND_ADJ`. v4k_8tile 8bpc, median of 3, idle,
+wall ms for 20 frames against base 2290 (t=4) / 1400 (t=8). All rows have (a)
+fixed and NONE of them has the loop filter's `LfBlock::fill` converted yet — the
+sweep picked the band width, and the loop filter (3,835,042 registrations per
+frame at t=8, the largest single site) landed after it. So these absolutes are
+not the shipped ones; the RATIOS between rows are what chose the constant.
+
+Rows 3-7 are one binary selected by an env knob, which was deleted afterwards;
+row 1 is a separate compile-time build.
+
+      ADJ  bands/row   t=4 ms  ratio    t=8 ms  ratio
+        1      4         2080  0.912      2240  1.600
+        3      8         1990  0.869      1540  1.100
+        4     15         2000  0.873      1460  1.043
+        5     30         2010  0.878      1390  0.993   <- COL_BAND_ADJ
+        6     60         2060  0.900      1420  1.014
+        7    120         2160  0.943      1490  1.064
+
+Too few bands and concurrent tile columns share a shard (ADJ 1 is 1.600x at
+t=8 with ZERO wide promotions — the wide path was not the problem there,
+collision was). Too many and a borrow straddles several and takes the
+multi-shard path.
+
+
+5. GAP TO dav1d — n=9, 216 rows, ZERO under foreign load
+--------------------------------------------------------------------------------
+ms/frame, median [min..max], all three arms in one interleaved sweep:
+
+  vector           t        base                  head                 dav1d_fd1
+  ------------------------------------------------------------------------------
+  v4k_8tile        1  318.1 [315.3..321.2]  322.7 [320.3..325.5]  246.5 [245.5..246.8]
+  v4k_8tile        2  197.8 [196.7..199.9]  166.8 [165.9..167.4]  125.2 [125.0..125.3]
+  v4k_8tile        4  107.0 [106.3..107.9]   86.8 [ 86.6.. 89.6]   65.6 [ 65.5.. 65.8]
+  v4k_8tile        8   67.1 [ 64.9.. 68.8]   52.7 [ 50.1.. 55.1]   35.7 [ 34.3.. 36.7]
+  v4k_8tile_10b    1  358.3 [357.2..362.8]  363.4 [361.7..366.3]  251.3 [250.9..251.6]
+  v4k_8tile_10b    2  206.1 [205.5..207.6]  188.6 [187.3..190.2]  127.6 [127.5..127.8]
+  v4k_8tile_10b    4  110.5 [110.1..113.1]   98.6 [ 97.9..101.1]   66.8 [ 66.6.. 67.1]
+  v4k_8tile_10b    8   71.2 [ 67.9.. 73.4]   60.4 [ 57.8.. 63.3]   37.2 [ 35.6.. 38.3]
+
+  vector           t  head/base   bands     base/ref  head/ref
+  -------------------------------------------------------------
+  v4k_8tile        1     1.0143   OVERLAP      1.291     1.309
+  v4k_8tile        2     0.8433  disjoint      1.580     1.332
+  v4k_8tile        4     0.8115  disjoint      1.631     1.323
+  v4k_8tile        8     0.7848  disjoint      1.882     1.477
+  v4k_8tile_10b    1     1.0141   OVERLAP      1.426     1.446
+  v4k_8tile_10b    2     0.9148  disjoint      1.616     1.478
+  v4k_8tile_10b    4     0.8919  disjoint      1.655     1.476
+  v4k_8tile_10b    8     0.8487  disjoint      1.916     1.626
+
+SCALING t1 -> t8:  8bpc base 4.74x -> head 6.13x (dav1d 6.91x)
+                  10bpc base 5.03x -> head 6.01x (dav1d 6.76x)
+
+WHAT THIS DOES NOT DO, FIRST. **t=1 is 1.4% SLOWER and the bands OVERLAP**, so
+the delta is not resolvable at n=9 — but the median is enough to move 8bpc t=1
+from 1.291 (the campaign's one cell UNDER the 1.30x bar) to 1.309, just over it.
+That is a real cost of this change and it is not hidden by the t>1 wins. The
+residual is the two column stores every `alloc` now makes and the `index_rect`
+plumbing: an UNSOUND measurement arm with the stores deleted read 0.991 of head
+at 8bpc t=1 (median of 3), which would put the cell at ~1.297. Making that arm
+sound needs a `COLS` const parameter on `alloc`/`find`, selected by the
+`mask == 0` dispatch (a one-shard instance can never carry real columns, since
+only the row-map arm writes them and that arm needs `mask != 0`), plus a reset
+of the column fields in `reprovision`, because `mask` can in principle fall back
+to 0 when a container shrinks below `SHARD_MIN_LEN` and stale narrow columns
+would then be a MISSED overlap rather than a false positive. Not attempted here.
+
+AND THE BAR IS STILL MET NOWHERE. 1.309 / 1.332 / 1.323 / 1.477 at 8bpc.
+
+What it does do: at t=2 and t=4 the remaining gap is within 0.03-0.04 of the
+UNTRACKED CEILING the diagnosis round measured (1.307 / 1.281 with the tracker
+compiled out), i.e. essentially all of the tracker's t>1 cost is now gone. The
+scaling deficit that motivated the whole round — 4.74x against dav1d's 6.91x —
+is 6.13x against 6.91x, and #455's own arithmetic target (hold t=1, apply
+dav1d's ratios: t=2 -> 163, t=4 -> 85.6, t=8 -> 46.7) is met to within 2% at
+t=2 and t=4 (166.8 and 86.8) and missed by 13% at t=8 (52.7).
+
+10bpc moves less because a larger share of its gap was never the tracker: it
+starts at 1.426 at t=1, where 8bpc starts at 1.291. That per-thread throughput
+difference is a separate problem and this change does not touch it.
+
+
+6. NOT MEASURED — SAY IT BEFORE THE WINS
+--------------------------------------------------------------------------------
+  * x86_64. Nothing here was built or run on it. The row map's cost is one
+    `umulh` + `msub` on aarch64; the x86 lowering of a u128 multiply-high is
+    `mulx`/`mul`, and the shard-line traffic this removes is more expensive on
+    a machine with a heavier coherence protocol, so the sign is likely the same
+    and the magnitude is NOT predictable. Do not extrapolate.
+  * Any vector with LOOP RESTORATION live. Both 4K gap vectors have LR off and
+    no superres, while LR is active in 696/768 corpus vectors, so
+    `looprestoration*.rs` registers zero borrows in this grid. The corpus gate
+    covers correctness there; the SPEED of LR-live content is unmeasured.
+  * t=16, 1-tile 4K, and every size below 4K, for the timed grid. (The corpus
+    gate covers 766 vectors of every size for correctness.)
+  * Negative strides. `set_row_stride` takes `|stride|` so plain intervals are
+    still classified, but every rectangle caller checks `pxstride > 0` and falls
+    back, so the rectangle path is UNEXERCISED on a negative-stride picture.
+    Reachable only through a c-ffi `Dav1dPicAllocator`.
+  * `--features unchecked` (compiles; not benchmarked) and `tracker-legacy`
+    (compiles, `rect_exact_for` returns false so every caller keeps per-row).
+  * Miri.

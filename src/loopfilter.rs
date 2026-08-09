@@ -554,7 +554,13 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         stride: isize,
         h: usize,
     ) {
-        if !crate::include::dav1d::picture::tile_threading_active() {
+        // The hull path is now also correct WITH tile workers alive, provided
+        // the tracker can record the rectangle exactly — the gaps stop being
+        // reserved, which was the only reason this branch existed. See
+        // `fill_hull`'s doc.
+        if !crate::include::dav1d::picture::tile_threading_active()
+            || (stride > 0 && origin.rect_is_exact_for::<BD>())
+        {
             return Self::fill_hull::<W>(scratch, origin, stride, h);
         }
         for row in 0..h {
@@ -622,6 +628,33 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             origin.offset - (h - 1) * astride
         };
         let total = (h - 1) * astride + W;
+        // ONE registration, recorded as the exact rectangle on a positive
+        // stride so the inter-row gaps stay available to other tile columns —
+        // and handed out ONE ROW AT A TIME, so the reference never covers a gap
+        // either (`DisjointImmutRect`).
+        if stride > 0 {
+            let guard = origin.data.rect::<BD>(rav1d_disjoint_mut::StridedRows {
+                start: lo,
+                w: W,
+                h,
+                stride: astride,
+            });
+            for row in 0..h {
+                let src: &[BD::Pixel; W] = guard
+                    .row(row)
+                    .try_into()
+                    .expect("the rectangle's rows are W pixels long");
+                let dst: &mut [BD::Pixel; W] = (&mut scratch.buf[row * LF_BW..][..W])
+                    .try_into()
+                    .expect("scratch row is LF_BW >= W long");
+                *dst = *src;
+                let pri: &mut [BD::Pixel; W] = (&mut scratch.pristine[row * LF_BW..][..W])
+                    .try_into()
+                    .expect("scratch row is LF_BW >= W long");
+                *pri = *src;
+            }
+            return;
+        }
         let guard = origin.data.slice::<BD, _>((lo.., ..total));
         for row in 0..h {
             let idx = if stride >= 0 {
