@@ -4,6 +4,26 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Added
+- **Two soundness gates for the `StridedRows` rectangle borrow**
+  (`crates/rav1d-disjoint-mut/tests/rect_oracle.rs`,
+  `crates/rav1d-disjoint-mut/tests/rect_hull_aliasing.rs`).
+  - `rect_oracle` checks the overlap predicate against a brute-force BYTE-SET
+    oracle over randomized geometries on eight plane shapes (row-map floor 16,
+    non-powers-of-two, a 4K luma row and its 10-bit twin). 1,600,000 pairs:
+    **0 missed overlaps**, and the 2,163 conservative false positives (0.14% of
+    disjoint pairs) all involve a row-crossing interval — the documented
+    `COL_ANY` degradation. Between two shapes the row map CAN describe, the
+    predicate is exact, and the test fails if that stops being true. Mutation
+    proof: narrowing `cols_meet` to test only one edge (a MISSED-overlap bug,
+    i.e. two aliasing `&mut`) leaves **all 9 shipped `rowmap_tests` green** and
+    fails this gate on all eight plane shapes.
+  - `rect_hull_aliasing` records, under Miri, that `index_rect_mut` reserves the
+    rectangle but hands out a `&mut` over the HULL, so two blocks on the same
+    rows in different tile columns are two live overlapping `&mut`. Controls in
+    the same file (per-row guards; one hull guard that is also reserved as the
+    hull) pass, isolating it to the rectangle guard. See the file's module doc.
+
 ### Changed
 - **The borrow tracker shards a picture plane by COLUMN, and a `w x h` block is
   ONE tracked borrow at every thread count**
