@@ -86,6 +86,19 @@ probe-tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
 probe-addnop = ["rav1d-disjoint-mut/__probe_addnop"]
 probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]
 probe-lockonly = ["rav1d-disjoint-mut/__probe_lockonly"]
+# TILE-KEYED BORROWS (see docs/TILE_KEYED_BORROWS.md). UNSOUND CEILING ARMS --
+# they attribute a borrow to its AV1 tile and then never compare two different
+# tiles' borrows, which is only sound once EVERY picture access is keyed. The
+# filter chain is not. Never merge into `default`; never publish.
+#   ..._hull  : a keyed reference uses the strided hull instead of `h` per-row
+#               guards under tile threading (the COUNT half).
+#   ..._shard : a keyed borrow goes to its tile's shard instead of an
+#               address-hashed one (the CONTENTION half).
+probe-tilekey-hull = ["rav1d-disjoint-mut/__probe_tilekey_hull"]
+probe-tilekey-shard = ["rav1d-disjoint-mut/__probe_tilekey_shard"]
+probe-tilekey = ["probe-tilekey-hull", "probe-tilekey-shard"]
+# Liveness COUNTS for the arms above. Never compose with a TIMED run.
+probe-tilekey-count = ["rav1d-disjoint-mut/__probe_tilekey_count"]
 # Tracking off, bounds checks untouched (isolates the tracker from `unchecked`).
 probe-untracked = ["rav1d-disjoint-mut/__probe_untracked"]
 probe-shardsim = ["probe-count", "rav1d-disjoint-mut/__probe_shardsim"]

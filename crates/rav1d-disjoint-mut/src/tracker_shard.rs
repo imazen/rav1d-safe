@@ -367,6 +367,53 @@ const MAX_BLOCKS_SCAN: usize = 64;
 ///
 /// Unlike `__probe_count`, this does NOT switch the crate to the legacy
 /// tracker — it has to observe the sharded one.
+
+/// LIVENESS counters for the tile-keyed arms (`__probe_tilekey_count`).
+///
+/// Separate from the timed arms on purpose: these are `fetch_add`s on the
+/// hottest path in the decoder, and #460 already recorded what putting an
+/// instrument there does (its `spin_wait_ns` build ran 67.7x slower than
+/// reality). A liveness build is for COUNTS; a timed build carries none.
+///
+/// The question they answer is the one a green test cannot: did the keyed
+/// path actually run, and on how much of the population? A tile-keyed arm that
+/// silently keyed NOTHING would decode correctly, measure identically to base,
+/// and look like a null result — the exact failure shape of #459's vacuous
+/// `wide_exclusion`.
+#[cfg(feature = "__probe_tilekey_count")]
+pub mod tilekey_probe {
+    use core::sync::atomic::AtomicU64;
+    use core::sync::atomic::Ordering::Relaxed;
+
+    /// Registrations that named a tile AND took the tile's shard.
+    pub static KEYED: AtomicU64 = AtomicU64::new(0);
+    /// Registrations on a sharded instance that did NOT name a tile.
+    pub static UNKEYED_SHARDED: AtomicU64 = AtomicU64::new(0);
+    /// Registrations on a single-shard instance (mask == 0): key irrelevant.
+    pub static SINGLE_SHARD: AtomicU64 = AtomicU64::new(0);
+
+    pub fn report(frames: u64) -> std::string::String {
+        use core::fmt::Write as _;
+        let (k, u, s) = (
+            KEYED.load(Relaxed),
+            UNKEYED_SHARDED.load(Relaxed),
+            SINGLE_SHARD.load(Relaxed),
+        );
+        let tot = k + u + s;
+        let f = frames.max(1);
+        let mut out = std::string::String::new();
+        let _ = writeln!(
+            out,
+            "tilekey: keyed={} unkeyed_sharded={} single_shard={} total={} \
+             (per frame: keyed={} unkeyed_sharded={} single_shard={} total={}) \
+             keyed_share_of_sharded={:.1}%",
+            k, u, s, tot, k / f, u / f, s / f, tot / f,
+            if k + u == 0 { 0.0 } else { 100.0 * k as f64 / (k + u) as f64 }
+        );
+        out
+    }
+}
+
 #[cfg(feature = "__probe_wide")]
 pub mod wide_probe {
     use core::sync::atomic::AtomicU64;
@@ -1420,6 +1467,55 @@ impl BorrowTracker {
         // from 117 to 208 instructions and put a stack frame back. The
         // dependency-chain win is real and smaller than the I-cache and frame
         // it buys. `benchmarks/tracker_borrowcost_2026-08-08.tsv`, arm `fold`.
+        // ---------------------------------------------------------------
+        // TILE-KEYED SHARD SELECTION (`__probe_tilekey_shard`) — UNSOUND ARM.
+        //
+        // A borrow that names a tile goes to THAT TILE'S shard, not to a shard
+        // derived from its address. Two properties follow structurally, and
+        // both are things the address hash can only approximate:
+        //
+        //   * two tile columns on the same picture rows are different shards,
+        //     however close their addresses (today: `shard_of` mixes the x
+        //     position in with a multiply and they collide anyway — measured at
+        //     +79% per-registration cost from t=2 to t=8);
+        //   * a STRIDED access is ONE shard however tall it is, because every
+        //     row of it is in the same tile (today: one shard line per row, and
+        //     `MAX_SHARDS_PER_BORROW = 4` pushes tall blocks onto the wide
+        //     path).
+        //
+        // WHY THIS ARM IS UNSOUND, PRECISELY. Soundness needs every pair of
+        // overlapping borrows to meet in some shard. A keyed borrow and an
+        // UNKEYED one (`TILE_ANY` — the whole filter chain, 6,389,542
+        // registrations/frame at t=8 on v4k_8tile) land in unrelated shard
+        // spaces and never meet. Making them meet costs either a scan of every
+        // shard per unkeyed borrow or the wide path, and at that volume both
+        // are ruinous — so the sound version of this design requires the FILTER
+        // CHAIN to be keyed too, which is a separate change. Until then this is
+        // a CEILING instrument, `__`-gated, absent from `default` and from
+        // every published feature. See docs/TILE_KEYED_BORROWS.md.
+        #[cfg(feature = "__probe_tilekey_count")]
+        {
+            use core::sync::atomic::Ordering::Relaxed;
+            if self.mask == 0 {
+                tilekey_probe::SINGLE_SHARD.fetch_add(1, Relaxed);
+            } else if bounds.key != crate::TILE_ANY {
+                tilekey_probe::KEYED.fetch_add(1, Relaxed);
+            } else {
+                tilekey_probe::UNKEYED_SHARDED.fetch_add(1, Relaxed);
+            }
+        }
+        #[cfg(feature = "__probe_tilekey_shard")]
+        if bounds.key != crate::TILE_ANY && self.mask != 0 {
+            // The pre-lock `state` read is kept for the reason documented on
+            // the unkeyed path below: it warms the header line while the lock
+            // acquire is in flight.
+            if self.state.load(Ordering::Acquire) != 0 {
+                return self.add_slow_wide_live::<IS_MUT>(start, end);
+            }
+            let si = (bounds.key as usize) & self.mask & (N_SHARDS - 1);
+            return self.add_at_shard::<IS_MUT>(start, end, si);
+        }
+
         let si = if self.mask == 0 {
             // The pre-lock `state` check is KEPT, and it is not redundant with
             // the authoritative in-lock re-read below the way it looks. Removing
@@ -1504,6 +1600,52 @@ impl BorrowTracker {
             None => {
                 // Shard full — release and retry on the wide path, which is
                 // atomic against everything.
+                #[cfg(feature = "__probe_wide")]
+                wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
+                drop(g);
+                self.add_wide::<IS_MUT>(start, end)
+            }
+        }
+    }
+
+    /// Register `[start, end)` in a shard the CALLER chose.
+    ///
+    /// Used by the tile-keyed arm, where the shard comes from the borrow's tile
+    /// rather than from its address, so none of `add`'s block arithmetic runs:
+    /// no shift load, no two divisions, no multiplicative hash, and no
+    /// `b0 != b1` escalation however tall the strided region is.
+    ///
+    /// Identical to `add`'s fast path from the `try_lock` onwards, including
+    /// the in-lock `state` re-read that closes the 4af62ae wide-path TOCTOU.
+    #[cfg(feature = "__probe_tilekey_shard")]
+    #[inline]
+    #[track_caller]
+    fn add_at_shard<const IS_MUT: bool>(&self, start: usize, end: usize, si: usize) -> BorrowId {
+        let shard = &self.shards[si & (N_SHARDS - 1)];
+        if !shard.lock.try_lock() {
+            return self.add_contended::<IS_MUT>(start, end, si);
+        }
+        let g = ShardGuard(&shard.lock);
+        if self.state.load(Ordering::Acquire) != 0 {
+            drop(g);
+            return self.add_slow_wide_live::<IS_MUT>(start, end);
+        }
+        // SAFETY: this shard's lock is held.
+        let recs = unsafe { &mut *shard.recs.get() };
+        let occ = shard.live_mask(recs.allocated);
+        if let Some(existing) = recs.find::<IS_MUT>(occ, start, end) {
+            drop(g);
+            Self::overlap_panic(
+                start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+            );
+        }
+        match recs.alloc::<IS_MUT>(occ, start, end, here()) {
+            Some(slot) => {
+                recs.allocated = occ | (1u8 << (slot as usize).min(SLOTS - 1));
+                shard.publish(slot);
+                BorrowId::narrow1(si, slot)
+            }
+            None => {
                 #[cfg(feature = "__probe_wide")]
                 wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
                 drop(g);

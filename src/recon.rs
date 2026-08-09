@@ -2135,6 +2135,10 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
 ) {
     let bd = BD::from_c(f.bitdepth_max);
     let cur_data = &f.cur.data.as_ref().unwrap().data;
+    // Every picture reference below is inside tile `t.ts`'s rectangle:
+    // AV1 resets intra prediction, MV prediction and entropy contexts at
+    // tile boundaries, so reconstruction never reaches out of its tile.
+    let tk = t.ts as crate::src::with_offset::TileKey;
     let ts = &f.ts[t.ts];
 
     let bx4 = t.b.x & 31;
@@ -2169,7 +2173,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
         for init_x in (0..w4).step_by(16) {
             if intra.pal_sz[0] != 0 {
                 let y_dst = &cur_data[0];
-                let y_dst = y_dst.with_offset::<BD>()
+                let y_dst = y_dst.with_offset_keyed::<BD>(tk)
                     + 4 * (t.b.y as isize * y_dst.pixel_stride::<BD>() + t.b.x as isize);
                 let scratch = t.scratch.inter_intra_mut();
                 let pal_idx = if t.frame_thread.pass != 0 {
@@ -2225,7 +2229,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
             t.b.y += init_y;
             while y < sub_h4 {
                 let y_dst = &cur_data[0];
-                let mut y_dst = y_dst.with_offset::<BD>()
+                let mut y_dst = y_dst.with_offset_keyed::<BD>(tk)
                     + 4 * (t.b.y as isize * y_dst.pixel_stride::<BD>()
                         + t.b.x as isize
                         + init_x as isize);
@@ -2438,7 +2442,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 let scratch = t.scratch.inter_intra_mut();
                 let ac = scratch.ac_txtp_map.ac_mut();
                 let y_src = &cur_data[0];
-                let y_src = y_src.with_offset::<BD>()
+                let y_src = y_src.with_offset_keyed::<BD>(tk)
                     + 4 * (t.b.x & !ss_hor) as usize
                     + 4 * (t.b.y & !ss_ver) as isize * y_src.pixel_stride::<BD>();
                 let uv_off = 4
@@ -2477,7 +2481,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                     let edge_array = scratch.interintra_edge_pal.edge.buf_mut::<BD>();
                     let edge_offset = 128;
                     let uv_dst = &cur_data[1 + pl];
-                    let uv_dst = uv_dst.with_offset::<BD>()
+                    let uv_dst = uv_dst.with_offset_keyed::<BD>(tk)
                         + 4 * ((t.b.x >> ss_hor) as isize
                             + (t.b.y >> ss_ver) as isize * uv_dst.pixel_stride::<BD>());
                     let m: IntraPredMode = rav1d_prepare_intra_edges(
@@ -2514,7 +2518,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                     ac_dump(ac, 4 * cbw4 as usize, 4 * cbh4 as usize, "ac");
                     for pl in 1..3 {
-                        let uv_dst = cur_data[pl].with_offset::<BD>() + uv_off;
+                        let uv_dst = cur_data[pl].with_offset_keyed::<BD>(tk) + uv_off;
                         hex_dump_pic::<BD>(
                             uv_dst,
                             cbw4 as usize * 4,
@@ -2550,7 +2554,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 };
 
                 for pl in 1..3 {
-                    let uv = cur_data[pl].with_offset::<BD>() + uv_dstoff;
+                    let uv = cur_data[pl].with_offset_keyed::<BD>(tk) + uv_dstoff;
                     f.dsp
                         .ipred
                         .pal_pred
@@ -2587,7 +2591,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 t.b.y += init_y;
                 while y < sub_ch4 {
                     let uv_dst = &cur_data[1 + pl];
-                    let mut uv_dst = uv_dst.with_offset::<BD>()
+                    let mut uv_dst = uv_dst.with_offset_keyed::<BD>(tk)
                         + 4 * ((t.b.y >> ss_ver) as isize * uv_dst.pixel_stride::<BD>()
                             + (t.b.x + init_x >> ss_hor) as isize);
                     x = init_x >> ss_hor;
@@ -2825,6 +2829,10 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
 ) -> Result<(), ()> {
     let bd = BD::from_c(f.bitdepth_max);
     let cur_data = &f.cur.data.as_ref().unwrap().data;
+    // Every picture reference below is inside tile `t.ts`'s rectangle:
+    // AV1 resets intra prediction, MV prediction and entropy contexts at
+    // tile boundaries, so reconstruction never reaches out of its tile.
+    let tk = t.ts as crate::src::with_offset::TileKey;
 
     let ts = &f.ts[t.ts];
     let bx4 = t.b.x & 31;
@@ -2857,7 +2865,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
     let cbh4 = bh4 + ss_ver >> ss_ver;
     let cbw4 = bw4 + ss_hor >> ss_hor;
     let y_dst = &cur_data[0];
-    let mut y_dst = y_dst.with_offset::<BD>()
+    let mut y_dst = y_dst.with_offset_keyed::<BD>(tk)
         + 4 * (t.b.y as isize * y_dst.pixel_stride::<BD>() + t.b.x as isize);
     let uvdstoff = 4
         * ((t.b.x >> ss_hor) as isize + (t.b.y >> ss_ver) as isize * BD::pxstride(f.cur.stride[1]));
@@ -2888,7 +2896,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                     &mut scratch.emu_edge,
                     t.b,
                     MaybeTempPixels::NonTemp {
-                        dst: cur_data[pl].with_offset::<BD>() + uvdstoff,
+                        dst: cur_data[pl].with_offset_keyed::<BD>(tk) + uvdstoff,
                     },
                     bw4 << (bw4 == ss_hor) as c_int,
                     bh4 << (bh4 == ss_ver) as c_int,
@@ -3050,7 +3058,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                     }
                 }
 
-                let uv_dst = cur_data[1 + pl].with_offset::<BD>() + uvdstoff;
+                let uv_dst = cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff;
                 match comp_inter_type {
                     CompInterType::Avg => {
                         f.dsp.mc.avg.call::<BD>(
@@ -3232,7 +3240,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             &mut t.scratch.inter_mut().emu_edge,
                             t.b,
                             MaybeTempPixels::NonTemp {
-                                dst: cur_data[1 + pl].with_offset::<BD>() + uvdstoff,
+                                dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff,
                             },
                             bw4,
                             bh4,
@@ -3271,7 +3279,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             &mut t.scratch.inter_mut().emu_edge,
                             t.b,
                             MaybeTempPixels::NonTemp {
-                                dst: cur_data[1 + pl].with_offset::<BD>() + uvdstoff + v_off,
+                                dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff + v_off,
                             },
                             bw4,
                             bh4,
@@ -3307,7 +3315,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             &mut t.scratch.inter_mut().emu_edge,
                             t.b,
                             MaybeTempPixels::NonTemp {
-                                dst: cur_data[1 + pl].with_offset::<BD>() + uvdstoff + h_off,
+                                dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff + h_off,
                             },
                             bw4,
                             bh4,
@@ -3339,7 +3347,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                         &mut t.scratch.inter_mut().emu_edge,
                         t.b,
                         MaybeTempPixels::NonTemp {
-                            dst: cur_data[1 + pl].with_offset::<BD>() + uvdstoff + h_off + v_off,
+                            dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff + h_off + v_off,
                         },
                         bw4,
                         bh4,
@@ -3365,7 +3373,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             &mut t.scratch.inter_mut().emu_edge,
                             t.b,
                             MaybeTempPixels::NonTemp {
-                                dst: cur_data[1 + pl].with_offset::<BD>() + uvdstoff,
+                                dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff,
                             },
                             b_dim,
                             1 + pl,
@@ -3384,7 +3392,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             &mut t.scratch.inter_mut().emu_edge,
                             t.b,
                             MaybeTempPixels::NonTemp {
-                                dst: cur_data[1 + pl].with_offset::<BD>() + uvdstoff,
+                                dst: cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff,
                             },
                             bw4 << (bw4 == ss_hor) as c_int,
                             bh4 << (bh4 == ss_ver) as c_int,
@@ -3396,7 +3404,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             inter.r#ref[0] as usize,
                             filter_2d,
                         )?;
-                        let uv_dst = cur_data[1 + pl].with_offset::<BD>() + uvdstoff;
+                        let uv_dst = cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff;
                         if inter.motion_mode == MotionMode::Obmc {
                             obmc::<BD>(f, t, uv_dst, b_dim, 1 + pl, bx4, by4, w4, h4)?;
                         }
@@ -3427,7 +3435,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             mode => mode as IntraPredMode,
                         };
                         let mut angle = 0;
-                        let uv_dst = cur_data[1 + pl].with_offset::<BD>() + uvdstoff;
+                        let uv_dst = cur_data[1 + pl].with_offset_keyed::<BD>(tk) + uvdstoff;
                         let top_sb_edge_slice = if t.b.y & f.sb_step - 1 == 0 {
                             let sby = t.b.y >> f.sb_shift;
                             let offset = (f.ipred_edge_off * (pl + 1)) as isize
@@ -3496,7 +3504,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
         );
         if has_chroma {
             for pl in 1..3 {
-                let uv_dst = cur_data[pl].with_offset::<BD>() + uvdstoff;
+                let uv_dst = cur_data[pl].with_offset_keyed::<BD>(tk) + uvdstoff;
                 hex_dump_pic::<BD>(
                     uv_dst,
                     cbw4 as usize * 4,
@@ -3583,7 +3591,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
             if has_chroma {
                 for pl in 0..2 {
                     let uv_dst = &cur_data[1 + pl];
-                    let mut uv_dst = uv_dst.with_offset::<BD>()
+                    let mut uv_dst = uv_dst.with_offset_keyed::<BD>(tk)
                         + uvdstoff
                         + (uv_dst.pixel_stride::<BD>() * init_y as isize * 4 >> ss_ver);
                     y = init_y >> ss_ver;
@@ -3865,6 +3873,10 @@ pub(crate) fn rav1d_filter_sbrow<BD: BitDepth>(
 
 pub(crate) fn rav1d_backup_ipred_edge<BD: BitDepth>(f: &Rav1dFrameData, t: &mut Rav1dTaskContext) {
     let cur_data = &f.cur.data.as_ref().unwrap().data;
+    // Every picture reference below is inside tile `t.ts`'s rectangle:
+    // AV1 resets intra prediction, MV prediction and entropy contexts at
+    // tile boundaries, so reconstruction never reaches out of its tile.
+    let tk = t.ts as crate::src::with_offset::TileKey;
 
     let ts = &f.ts[t.ts];
     let sby = t.b.y >> f.sb_shift;
@@ -3872,7 +3884,7 @@ pub(crate) fn rav1d_backup_ipred_edge<BD: BitDepth>(f: &Rav1dFrameData, t: &mut 
     let x_off = ts.tiling.col_start;
 
     let y = &cur_data[0];
-    let y = y.with_offset::<BD>()
+    let y = y.with_offset_keyed::<BD>(tk)
         + x_off as usize * 4
         + ((t.b.y + f.sb_step) * 4 - 1) as isize * y.pixel_stride::<BD>();
     let ipred_edge_off = (f.ipred_edge_off * 0) + (sby_off + x_off * 4) as usize;
@@ -3894,7 +3906,7 @@ pub(crate) fn rav1d_backup_ipred_edge<BD: BitDepth>(f: &Rav1dFrameData, t: &mut 
                 (f.ipred_edge_off * pl) + (sby_off + (x_off * 4 >> ss_hor)) as usize;
             let n = 4 * (ts.tiling.col_end - x_off) as usize >> ss_hor;
             let uv = &cur_data[pl];
-            let uv = uv.with_offset::<BD>() + uv_off;
+            let uv = uv.with_offset_keyed::<BD>(tk) + uv_off;
             BD::pixel_copy(
                 &mut f.ipred_edge.mut_slice_as((ipred_edge_off.., ..n)),
                 &uv.slice::<BD>(n),

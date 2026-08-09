@@ -637,7 +637,23 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         I: Into<Bounds> + Clone,
         I: DisjointMutIndex<[<T as AsMutPtr>::Target]>,
     {
+        self.index_mut_keyed(index, TILE_ANY)
+    }
+
+    /// [`Self::index_mut`], attributing the borrow to a tile. See [`TileKey`].
+    #[inline]
+    #[track_caller]
+    pub fn index_mut_keyed<'a, I>(
+        &'a self,
+        index: I,
+        key: TileKey,
+    ) -> DisjointMutGuard<'a, T, I::Output>
+    where
+        I: Into<Bounds> + Clone,
+        I: DisjointMutIndex<[<T as AsMutPtr>::Target]>,
+    {
         let mut bounds: Bounds = index.clone().into();
+        bounds.key = key;
         // Clamp an open-ended range (`index(..)`, `index(n..)` — both encode
         // their end as `usize::MAX`) to the real length. Sound: if the range
         // really did run past the end, `get_mut` below panics and poisons, so
@@ -682,7 +698,23 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         I: Into<Bounds> + Clone,
         I: DisjointMutIndex<[<T as AsMutPtr>::Target]>,
     {
+        self.index_keyed(index, TILE_ANY)
+    }
+
+    /// [`Self::index`], attributing the borrow to a tile. See [`TileKey`].
+    #[inline]
+    #[track_caller]
+    pub fn index_keyed<'a, I>(
+        &'a self,
+        index: I,
+        key: TileKey,
+    ) -> DisjointImmutGuard<'a, T, I::Output>
+    where
+        I: Into<Bounds> + Clone,
+        I: DisjointMutIndex<[<T as AsMutPtr>::Target]>,
+    {
         let mut bounds: Bounds = index.clone().into();
+        bounds.key = key;
         // See `index_mut` for why the clamp is here and why it is sound.
         clamp_bounds(&mut bounds, self.as_mut_slice().len());
         let borrow_id = match &self.tracker {
@@ -758,6 +790,74 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
         let slice = self.index_mut(index.mul(mem::size_of::<V>())).cast_slice();
         self.check_cast_slice_len(index, &slice);
         slice
+    }
+
+    /// [`Self::mut_slice_as`], attributing the borrow to a tile.
+    #[inline]
+    #[track_caller]
+    pub fn mut_slice_as_keyed<'a, I, V>(
+        &'a self,
+        index: I,
+        key: TileKey,
+    ) -> DisjointMutGuard<'a, T, [V]>
+    where
+        I: SliceBounds,
+        V: IntoBytes + FromBytes + KnownLayout,
+    {
+        let slice = self
+            .index_mut_keyed(index.mul(mem::size_of::<V>()), key)
+            .cast_slice();
+        self.check_cast_slice_len(index, &slice);
+        slice
+    }
+
+    /// [`Self::slice_as`], attributing the borrow to a tile.
+    #[inline(always)]
+    #[track_caller]
+    pub fn slice_as_keyed<'a, I, V>(
+        &'a self,
+        index: I,
+        key: TileKey,
+    ) -> DisjointImmutGuard<'a, T, [V]>
+    where
+        I: SliceBounds,
+        V: FromBytes + KnownLayout + Immutable,
+    {
+        let slice = self
+            .index_keyed(index.mul(mem::size_of::<V>()), key)
+            .cast_slice();
+        self.check_cast_slice_len(index, &slice);
+        slice
+    }
+
+    /// [`Self::mut_element_as`], attributing the borrow to a tile.
+    #[inline]
+    #[track_caller]
+    pub fn mut_element_as_keyed<'a, V>(
+        &'a self,
+        index: usize,
+        key: TileKey,
+    ) -> DisjointMutGuard<'a, T, V>
+    where
+        V: IntoBytes + FromBytes + KnownLayout,
+    {
+        self.index_mut_keyed((index..index + 1).mul(mem::size_of::<V>()), key)
+            .cast()
+    }
+
+    /// [`Self::element_as`], attributing the borrow to a tile.
+    #[inline]
+    #[track_caller]
+    pub fn element_as_keyed<'a, V>(
+        &'a self,
+        index: usize,
+        key: TileKey,
+    ) -> DisjointImmutGuard<'a, T, V>
+    where
+        V: FromBytes + KnownLayout + Immutable,
+    {
+        self.index_keyed((index..index + 1).mul(mem::size_of::<V>()), key)
+            .cast()
     }
 
     /// Mutably borrow an element of a convertible type.
@@ -890,11 +990,46 @@ impl TranslateRange for (RangeFrom<usize>, RangeTo<usize>) {
 // Bounds type
 // =============================================================================
 
-#[derive(Clone, Default, PartialEq, Eq)]
+/// Identity of the AV1 tile a borrow belongs to. See [`TILE_ANY`].
+pub type TileKey = u16;
+
+/// "Not attributable to a single tile."
+///
+/// A borrow registered under this key is compared against every other live
+/// borrow, exactly as every borrow is today. It is the DEFAULT, and it is the
+/// safe direction: forgetting to key a borrow costs performance, mis-keying one
+/// costs soundness.
+pub const TILE_ANY: TileKey = TileKey::MAX;
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct Bounds {
     /// A [`Range::end`]` == `[`usize::MAX`] is considered unbounded,
     /// as lengths need to be less than [`isize::MAX`] already.
     pub(crate) range: Range<usize>,
+    /// The tile this borrow belongs to, or [`TILE_ANY`].
+    ///
+    /// Carried here rather than as a separate argument so that no `add` /
+    /// `add_mut` / `add_immut` signature changes and the legacy tracker can
+    /// ignore it for free.
+    pub(crate) key: TileKey,
+}
+
+impl Default for Bounds {
+    fn default() -> Self {
+        Self {
+            range: 0..0,
+            key: TILE_ANY,
+        }
+    }
+}
+
+impl Bounds {
+    /// Attribute this borrow to a tile. See [`TileKey`].
+    #[inline(always)]
+    pub fn with_key(mut self, key: TileKey) -> Self {
+        self.key = key;
+        self
+    }
 }
 
 impl Display for Bounds {
@@ -951,6 +1086,7 @@ impl From<usize> for Bounds {
     fn from(index: usize) -> Self {
         Self {
             range: index..index.checked_add(1).expect("index overflow in Bounds"),
+            key: TILE_ANY,
         }
     }
 }
@@ -959,6 +1095,7 @@ impl<T: SliceBounds> From<T> for Bounds {
     fn from(range: T) -> Self {
         Self {
             range: range.to_range(usize::MAX),
+            key: TILE_ANY,
         }
     }
 }
@@ -1100,6 +1237,18 @@ mod tracker_shard;
     feature = "__tracker_legacy"
 )))]
 use tracker_shard as checked;
+
+/// Tile-key liveness counters, when `__probe_tilekey_count` is on.
+#[cfg(all(
+    feature = "__probe_tilekey_count",
+    not(any(
+        feature = "__probe_count",
+        feature = "__probe_noscan",
+        feature = "__probe_lockonly",
+        feature = "__tracker_legacy"
+    ))
+))]
+pub use tracker_shard::tilekey_probe;
 
 /// Wide-path reason counters, when `__probe_wide` is on. See the module docs.
 #[cfg(all(

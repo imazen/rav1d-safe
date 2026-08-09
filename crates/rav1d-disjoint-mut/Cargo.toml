@@ -45,6 +45,12 @@ __probe_tinynop = []
 # THROWAWAY: keep the add/remove CALL, delete the work. Isolates the call
 # barrier from the tracker's own instructions. UNSOUND -- measurement only.
 __probe_addnop = []
+# THROWAWAY tile-keyed borrow arms. UNSOUND -- a keyed borrow and an unkeyed
+# one never meet, so this is only a soundness-preserving design once every
+# picture access carries a key. See docs/TILE_KEYED_BORROWS.md.
+__probe_tilekey_hull = []
+__probe_tilekey_count = ["std"]
+__probe_tilekey_shard = []
 __probe_shardsim = ["__probe_count"]
 # THROWAWAY: TinyLock spin backoff + scheduler yield, re-tested on the adaptive
 # shard set (the P1 campaign measured it null on the 32-shard base).

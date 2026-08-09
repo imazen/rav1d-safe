@@ -164,7 +164,7 @@ pub fn with_pixel_guard_immut<BD: BitDepth, R>(
 ) -> R {
     use crate::src::strided::Strided as _;
     let pixel_size = core::mem::size_of::<BD::Pixel>();
-    if tile_threading_active() {
+    if tile_threading_active() && !pic.tile_keyed() {
         let (buf, byte_stride) = pic.compact_read_per_row::<BD>(w, h);
         let result = f(&buf, 0, byte_stride as isize);
         recycle_compact_scratch(buf);
@@ -216,6 +216,7 @@ use crate::src::pixels::Pixels;
 #[cfg(feature = "c-ffi")]
 use crate::src::send_sync_non_null::SendSyncNonNull;
 use crate::src::strided::Strided;
+use crate::src::with_offset::TileKey;
 use crate::src::with_offset::WithOffset;
 #[allow(non_camel_case_types)]
 type ptrdiff_t = isize;
@@ -751,7 +752,93 @@ impl Rav1dPictureDataComponent {
     }
 }
 
+
+impl Rav1dPictureDataComponent {
+    /// [`Self::index`] / [`Self::slice`] and their mutable twins, attributing
+    /// the borrow to a tile. See [`crate::src::with_offset::TileKey`].
+    #[inline]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
+    pub fn index_keyed<'a, BD: BitDepth>(
+        &'a self,
+        index: usize,
+        key: TileKey,
+    ) -> DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, BD::Pixel> {
+        self.dm().element_as_keyed(index, key)
+    }
+
+    #[inline]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
+    pub fn index_mut_keyed<'a, BD: BitDepth>(
+        &'a self,
+        index: usize,
+        key: TileKey,
+    ) -> DisjointMutGuard<'a, Rav1dPictureDataComponentInner, BD::Pixel> {
+        self.dm().mut_element_as_keyed(index, key)
+    }
+
+    #[inline]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
+    pub fn slice_keyed<'a, BD, I>(
+        &'a self,
+        index: I,
+        key: TileKey,
+    ) -> DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>
+    where
+        BD: BitDepth,
+        I: SliceBounds,
+    {
+        self.dm().slice_as_keyed(index, key)
+    }
+
+    #[inline]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
+    pub fn slice_mut_keyed<'a, BD, I>(
+        &'a self,
+        index: I,
+        key: TileKey,
+    ) -> DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>
+    where
+        BD: BitDepth,
+        I: SliceBounds,
+    {
+        self.dm().mut_slice_as_keyed(index, key)
+    }
+}
+
 pub type Rav1dPictureDataComponentOffset<'a> = WithOffset<&'a Rav1dPictureDataComponent>;
+
+impl<'a> Rav1dPictureDataComponentOffset<'a> {
+    /// Does this reference name a tile, so that the per-row split the tile-
+    /// threading branches take is unnecessary?
+    ///
+    /// The per-row split exists for ONE reason: the strided hull
+    /// `(h - 1) * stride + w` reserves the inter-row gaps, and those gaps
+    /// belong to OTHER TILE COLUMNS on the same picture rows. #467 measured 8-9
+    /// spurious `overlapping DisjointMut` panics in 24 concurrent runs from
+    /// exactly that, which is why the hull is single-thread-only today.
+    ///
+    /// A tile-keyed borrow does not have that problem: the tracker never
+    /// compares it against a borrow from a different tile, so reserving a gap
+    /// that another tile column owns cannot produce a false positive. The hull
+    /// therefore becomes legal at every thread count, and one `w x h` block is
+    /// ONE registration instead of `h` — which is the 22,700,725 -> 7,924,706
+    /// per-frame difference at t=8.
+    ///
+    /// Gated: `probe-tilekey-hull`. Without it this is a constant `false` and
+    /// every branch below keeps today's behaviour exactly.
+    #[inline(always)]
+    fn tile_keyed(&self) -> bool {
+        #[cfg(feature = "probe-tilekey-hull")]
+        {
+            self.key != crate::src::with_offset::TILE_ANY
+        }
+        #[cfg(not(feature = "probe-tilekey-hull"))]
+        {
+            false
+        }
+    }
+}
+
 
 impl<'a> Rav1dPictureDataComponentOffset<'a> {
     #[inline] // Inline to see bounds checks in order to potentially elide them.
@@ -759,7 +846,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     pub fn index<BD: BitDepth>(
         &self,
     ) -> DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, BD::Pixel> {
-        self.data.index::<BD>(self.offset)
+        self.data.index_keyed::<BD>(self.offset, self.key)
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
@@ -767,7 +854,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     pub fn index_mut<BD: BitDepth>(
         &self,
     ) -> DisjointMutGuard<'a, Rav1dPictureDataComponentInner, BD::Pixel> {
-        self.data.index_mut::<BD>(self.offset)
+        self.data.index_mut_keyed::<BD>(self.offset, self.key)
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
@@ -776,7 +863,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         &self,
         len: usize,
     ) -> DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]> {
-        self.data.slice::<BD, _>((self.offset.., ..len))
+        self.data.slice_keyed::<BD, _>((self.offset.., ..len), self.key)
     }
 
     #[inline] // Inline to see bounds checks in order to potentially elide them.
@@ -785,7 +872,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         &self,
         len: usize,
     ) -> DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]> {
-        self.data.slice_mut::<BD, _>((self.offset.., ..len))
+        self.data.slice_mut_keyed::<BD, _>((self.offset.., ..len), self.key)
     }
 
     /// Create a tracked mutable guard covering a strided w×h pixel region.
@@ -843,7 +930,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// from the picture, because the compact buffer has its own stride.
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn block_mut<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
-        if tile_threading_active() {
+        if tile_threading_active() && !self.tile_keyed() {
             #[cfg(feature = "held-row-guards")]
             if w != 0 && h != 0 && h <= MAX_HELD_ROWS {
                 return self.block_mut_held::<BD>(w, h);
@@ -930,7 +1017,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             } else {
                 self.offset - row * abs_stride
             };
-            let guard = self.data.slice_mut::<BD, _>((row_off.., ..w));
+            let guard = self.data.slice_mut_keyed::<BD, _>((row_off.., ..w), self.key);
             buf[row * byte_stride..][..byte_stride]
                 .copy_from_slice(&guard.as_bytes()[..byte_stride]);
             rows[row] = Some(guard);
@@ -979,11 +1066,11 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             (h - 1) * abs_stride + w
         };
         if pxstride >= 0 {
-            let guard = self.data.slice::<BD, _>((self.offset.., ..total));
+            let guard = self.data.slice_keyed::<BD, _>((self.offset.., ..total), self.key);
             (guard, 0)
         } else {
             let start = self.offset + 1 - total;
-            let guard = self.data.slice::<BD, _>((start.., ..total));
+            let guard = self.data.slice_keyed::<BD, _>((start.., ..total), self.key);
             (guard, total - 1)
         }
     }
@@ -1032,10 +1119,10 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             return;
         }
         let pxstride = self.data.pixel_stride::<BD>();
-        if tile_threading_active() {
+        if tile_threading_active() && !self.tile_keyed() {
             for row in 0..h {
                 let off = self.offset.wrapping_add_signed(row as isize * pxstride);
-                let guard = self.data.slice::<BD, _>((off.., ..w));
+                let guard = self.data.slice_keyed::<BD, _>((off.., ..w), self.key);
                 f(row, &guard);
             }
             return;
@@ -1047,7 +1134,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         } else {
             self.offset - (h - 1) * abs_stride
         };
-        let guard = self.data.slice::<BD, _>((lo.., ..total));
+        let guard = self.data.slice_keyed::<BD, _>((lo.., ..total), self.key);
         for row in 0..h {
             let idx = if pxstride >= 0 {
                 row * abs_stride
@@ -1072,10 +1159,10 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             return;
         }
         let pxstride = self.data.pixel_stride::<BD>();
-        if tile_threading_active() {
+        if tile_threading_active() && !self.tile_keyed() {
             for row in 0..h {
                 let off = self.offset.wrapping_add_signed(row as isize * pxstride);
-                let mut guard = self.data.slice_mut::<BD, _>((off.., ..w));
+                let mut guard = self.data.slice_mut_keyed::<BD, _>((off.., ..w), self.key);
                 f(row, &mut guard);
             }
             return;
@@ -1087,7 +1174,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         } else {
             self.offset - (h - 1) * abs_stride
         };
-        let mut guard = self.data.slice_mut::<BD, _>((lo.., ..total));
+        let mut guard = self.data.slice_mut_keyed::<BD, _>((lo.., ..total), self.key);
         for row in 0..h {
             let idx = if pxstride >= 0 {
                 row * abs_stride
@@ -1108,7 +1195,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// threading (compact layout) or the original stride when single-threaded.
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn compact_read<BD: BitDepth>(&self, w: usize, h: usize) -> (Vec<u8>, usize) {
-        if tile_threading_active() {
+        if tile_threading_active() && !self.tile_keyed() {
             self.compact_read_per_row::<BD>(w, h)
         } else {
             self.compact_read_fast::<BD>(w, h)
@@ -1133,7 +1220,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         } else {
             self.offset + 1 - total
         };
-        let guard = self.data.slice::<BD, _>((start.., ..total));
+        let guard = self.data.slice_keyed::<BD, _>((start.., ..total), self.key);
         let byte_stride = abs_stride * pixel_size;
         (guard.as_bytes().to_vec(), byte_stride)
     }
@@ -1164,7 +1251,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             } else {
                 self.offset - row * abs_stride
             };
-            let guard = self.data.slice::<BD, _>((row_off.., ..w));
+            let guard = self.data.slice_keyed::<BD, _>((row_off.., ..w), self.key);
             buf[row * byte_stride..][..byte_stride]
                 .copy_from_slice(&guard.as_bytes()[..byte_stride]);
         }
@@ -1176,7 +1263,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// Matches the layout produced by [`compact_read`].
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn compact_write_back<BD: BitDepth>(&self, w: usize, h: usize, buf: &[u8]) {
-        if tile_threading_active() {
+        if tile_threading_active() && !self.tile_keyed() {
             self.compact_write_back_per_row::<BD>(w, h, buf);
         } else {
             self.compact_write_back_fast::<BD>(w, h, buf);
@@ -1200,7 +1287,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         } else {
             self.offset + 1 - total
         };
-        let mut guard = self.data.slice_mut::<BD, _>((start.., ..total));
+        let mut guard = self.data.slice_mut_keyed::<BD, _>((start.., ..total), self.key);
         let dst = guard.as_mut_bytes();
         let len = buf.len().min(dst.len());
         dst[..len].copy_from_slice(&buf[..len]);
@@ -1221,7 +1308,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             } else {
                 self.offset - row * abs_stride
             };
-            let mut guard = self.data.slice_mut::<BD, _>((row_off.., ..w));
+            let mut guard = self.data.slice_mut_keyed::<BD, _>((row_off.., ..w), self.key);
             guard.as_mut_bytes()[..byte_stride]
                 .copy_from_slice(&buf[row * byte_stride..][..byte_stride]);
         }
@@ -1304,7 +1391,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         usize,
     ) {
         let total_pixels = self.data.pixel_len::<BD>();
-        let guard = self.data.slice_mut::<BD, _>((0.., ..total_pixels));
+        let guard = self.data.slice_mut_keyed::<BD, _>((0.., ..total_pixels), self.key);
         (guard, self.offset)
     }
 
@@ -1334,13 +1421,13 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             (h - 1) * abs_stride + w
         };
         if pxstride >= 0 {
-            let guard = self.data.slice_mut::<BD, _>((self.offset.., ..total));
+            let guard = self.data.slice_mut_keyed::<BD, _>((self.offset.., ..total), self.key);
             (guard, 0)
         } else {
             // Negative stride: rows go upward, so the first pixel row
             // is at the highest address and the last row is at the lowest.
             let start = self.offset + 1 - total;
-            let guard = self.data.slice_mut::<BD, _>((start.., ..total));
+            let guard = self.data.slice_mut_keyed::<BD, _>((start.., ..total), self.key);
             (guard, total - 1)
         }
     }
@@ -1355,7 +1442,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         usize,
     ) {
         let total_pixels = self.data.pixel_len::<BD>();
-        let guard = self.data.slice::<BD, _>((0.., ..total_pixels));
+        let guard = self.data.slice_keyed::<BD, _>((0.., ..total_pixels), self.key);
         (guard, self.offset)
     }
 }

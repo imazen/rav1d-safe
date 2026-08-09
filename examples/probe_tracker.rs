@@ -83,7 +83,16 @@ fn main() {
     {
         print!("{}", rav1d_disjoint_mut::site_probe::report(iters));
     }
-    #[cfg(not(any(feature = "probe-count", feature = "probe-wide")))]
+    #[cfg(feature = "probe-tilekey-count")]
+    {
+        print!("{}", rav1d_disjoint_mut::tilekey_probe::report(iters as u64));
+    }
+    #[cfg(not(any(
+        feature = "probe-count",
+        feature = "probe-wide",
+        feature = "probe-sites",
+        feature = "probe-tilekey-count"
+    )))]
     eprintln!("(built without --features probe-count / probe-wide; no counters)");
 
     let _ = dec.flush();
