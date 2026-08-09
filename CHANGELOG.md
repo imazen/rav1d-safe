@@ -4,7 +4,113 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Added
+- **Two soundness gates for the `StridedRows` rectangle borrow**
+  (`crates/rav1d-disjoint-mut/tests/rect_oracle.rs`,
+  `crates/rav1d-disjoint-mut/tests/rect_hull_aliasing.rs`).
+  - `rect_oracle` checks the overlap predicate against a brute-force BYTE-SET
+    oracle over randomized geometries on eight plane shapes (row-map floor 16,
+    non-powers-of-two, a 4K luma row and its 10-bit twin). 1,600,000 pairs:
+    **0 missed overlaps**, and the 2,163 conservative false positives (0.14% of
+    disjoint pairs) all involve a row-crossing interval — the documented
+    `COL_ANY` degradation. Between two shapes the row map CAN describe, the
+    predicate is exact, and the test fails if that stops being true. Mutation
+    proof: narrowing `cols_meet` to test only one edge (a MISSED-overlap bug,
+    i.e. two aliasing `&mut`) leaves **all 9 shipped `rowmap_tests` green** and
+    fails this gate on all eight plane shapes.
+  - `rect_hull_aliasing` recorded, under Miri, that `index_rect_mut` reserved the
+    rectangle but handed out a `&mut` over the HULL, so two blocks on the same
+    rows in different tile columns were two live overlapping `&mut`. Controls in
+    the same file (per-row guards; one hull guard that is also reserved as the
+    hull) pass, isolating it to the rectangle guard. **Fixed below**; the file
+    now gates the fix and has grown two cases (an `&mut` row held ACROSS the next
+    column taking one, and the immutable rectangle against a neighbour's write)
+    plus a non-Miri liveness assertion that the rows handed out really are the
+    strided rectangle. See the file's module doc.
+
+### Changed
+- **The borrow tracker shards a picture plane by COLUMN, and a `w x h` block is
+  ONE tracked borrow at every thread count**
+  (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`,
+  `include/dav1d/picture.rs`, `src/loopfilter.rs`). A strided block used to be
+  either `h` per-row registrations (correct under tile threading, and the
+  source of the decoder's borrow volume: 7.9 M registrations per 4K frame at
+  t=1 against 22.7 M at t>1) or one hull registration (cheap, but it reserves
+  the inter-row gaps, which belong to other tile COLUMNS). The new
+  `StridedRows` index records the exact rectangle rather than its hull (and,
+  since the fix below, hands out one ROW at a time so the reference matches):
+  `RowMap` maps each element to
+  `(column band, row group)` via one exact division, so every row of a block
+  shares a class, and `ShardRecs` carries the record's column range so the
+  overlap test is `hull AND columns` — provably exact **between two records
+  that both carry a real column range**, and degrading to the plain
+  (conservative, never-missing) hull test against a row-crossing interval,
+  which the oracle measures at 2,163 false positives in 1.6 M pairs.
+  Measured on `v4k_8tile` 8bpc against `main` ee07b00: t=8
+  registrations 22,700,725 -> **7,923,518**, i.e. the thread-count-dependent
+  explosion is gone (t=1 is 7,924,706 on both). Wall, n=9, idle, dav1d 1.5.4
+  `--framedelay 1` in the same interleaved sweep: **t=8 0.785x, t=4 0.812x,
+  t=2 0.843x** (bands disjoint at all three), and scaling t1->t8 **4.74x ->
+  6.13x** against dav1d's 6.91x. **t=1 is 1.4% SLOWER with overlapping bands**,
+  which is enough to move 8bpc t=1 from 1.291 to 1.309 of dav1d — a real cost,
+  and the ~1.30x bar is still met at no cell (1.309 / 1.332 / 1.323 / 1.477).
+  10bpc: 0.849 / 0.892 / 0.915 / 1.014. Record:
+  `benchmarks/strided_rect_2026-08-09.meta`.
+
 ### Fixed
+- **The `StridedRows` guard handed out a `&mut`/`&` over the HULL while
+  reserving only the rectangle — UB, now fixed by a per-ROW view**
+  (`crates/rav1d-disjoint-mut/src/lib.rs`, `include/dav1d/picture.rs`,
+  `src/loopfilter.rs`). The record/reference split above was stated on purpose
+  and was the defect: **the reference is what Rust's aliasing rules bind to,
+  not the record**, so the two tile columns the rectangle record exists to
+  ACCEPT were two simultaneously-live overlapping `&mut`. New
+  `DisjointMutRect` / `DisjointImmutRect` keep the ONE registration, store a
+  raw base pointer instead of a reference, and materialise a `&mut [V]` /
+  `&[V]` for exactly one row at a time (`row_mut` takes `&mut self`, so two
+  rows cannot be live at once either). No extra atomic and no extra lock — the
+  reference shape and the record shape are independent.
+  `for_rows{,_mut}`, `compact_read_per_row`, `compact_write_back_per_row` and
+  `LfBlock::fill_hull` were already row-indexed and convert mechanically.
+  `narrow_guard{,_mut}` could NOT be converted — they hand the caller a FLAT
+  slice over the hull plus a stride, which IS a hull reference — so they revert
+  to a plain hull borrow and their callers (`with_pixel_guard_immut`,
+  `block_mut`) revert to gating on `tile_threading_active()`. `block_mut`
+  therefore loses the copy elision, and the rectangle reaches it one level down
+  instead: the compact copies reserve the block ONCE, so it costs 2
+  registrations rather than `2h`. Miri: all NINE cases pass, including the two
+  that were UB. **Teeth measured, not assumed** — planting the TRANSIENT hull
+  reference back inside `row_mut` leaves the two original UB cases GREEN
+  (their row references die at the end of each statement), so two new cases
+  that hold a row reference ACROSS the next guard's retag were added and are
+  what catch it. **Perf: about two thirds of the previous entry's t>1 win
+  survives.** n=7, 224 rows, four arms (main / the hull-reference version /
+  this / dav1d 1.5.4 `--framedelay 1`) interleaved with rotating order — but
+  the box was shared with two other measuring agents throughout, so every row
+  is load-tagged and the PAIRED RATIOS are the result, not the absolute ms.
+  8bpc head/base **0.896 / 0.851 / 0.888** at t=2/4/8 against the unsound
+  arm's 0.841 / 0.790 / 0.802 (65% / 71% / 57% of the distance retained);
+  10bpc 0.923 / 0.898 / 0.881 against 0.910 / 0.857 / 0.862. Scaling t1→t8
+  4.30x → **4.93x** at 8bpc (unsound 5.45x, dav1d 6.25x). t=1 is unchanged by
+  the row view (1.017 against the unsound arm's 1.016 — the same number), so
+  the t=1 cost is the tracker change, not the guard. The 1.30x bar is met at
+  no cell. Record: `benchmarks/rect_rowview_2026-08-09.meta` +
+  `rect_rowview_gap_2026-08-09.tsv` + `rect_rowview_bands_2026-08-09.txt`.
+- **MEASURED NULL, reverted: skipping the tracker's column fields on a
+  one-shard instance** (`rect_rowview_cols_ab_2026-08-09.tsv`). The fix the
+  previous entry names for its t=1 cost — a `COLS` const parameter on
+  `ShardRecs::find`/`::alloc` selected by `mask == 0`, skipping both the
+  `cols_meet` test and the two stores, plus a `reprovision` reset so a later
+  `mask` 0→non-zero flip cannot read a stale narrow range — was built and
+  A/B'd at n=9 on three cells: **0.9966 / 1.0139 / 1.0037, every band
+  overlapping, sign inconsistent.** Reverted. Whatever the t=1 cost is, it is
+  not the column fields.
+- **`RowMap::new`'s `1usize << 32` is an `arithmetic_overflow` hard error on
+  32-bit** (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`) — it broke both
+  i686 CI legs and `wasm32-wasip1`, and the wasm32 cross job runs `cargo check`,
+  which stops before the MIR pass that raises it, so CI could not see that one.
+  Computed in `u64` now. Same commit clears the two clippy `-D warnings`
+  findings and three unresolved intra-doc links that were also red.
 - **`wide_exclusion` had gone vacuous, and with it the only gate for the
   wide-path TOCTOU** (`crates/rav1d-disjoint-mut/tests/wide_exclusion.rs`).
   Since `SHARDS_SERIAL = 1` (#458) an instance built by a process that has

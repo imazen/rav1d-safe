@@ -1,0 +1,331 @@
+RECTANGLE GUARD, MADE SOUND: one registration, references handed out PER ROW
+================================================================================
+
+Host      Apple M4 Pro, 8 P + 4 E cores (12 logical), Darwin 25.5.2.
+Base      main ee07b00 (arm `rsbase`).
+Arms      rsrect = perf/strided-rect @ c1355c4, the UNSOUND hull-reference form
+          rshead = fix/rect-rowview @ this commit
+          dav1d_fd1 = dav1d 1.5.4 --framedelay 1, in the SAME interleaved sweep
+Build     cargo build --release, default features, NO -C target-cpu=native.
+Timing    NO `nice` on any timed run (Darwin maps a niced process onto E-cores
+          and the wall clock distorts ~40x). Two-point wall fit at 2 and 20
+          frames, beta = (hi - lo)/18, so process startup drops out. Rotating
+          arm order inside every cell. The strict idle gate was NOT usable —
+          see §2 — so ALLOW_LOAD=1 was set and every row carries its
+          foreign-process count in the last column.
+Vectors   ~/tmp/rav1d-perf/vec/v4k_8tile{,_10b}.avif for our arms;
+          ~/tmp/recon-yard/vec/*.ivf for dav1d.
+
+Files     rect_rowview_gap_2026-08-09.tsv     224 raw gap rows (4 arms x 8 cells x 7)
+          rect_rowview_bands_2026-08-09.txt   per-cell min/median/max + disjoint
+          rect_rowview_cols_ab_2026-08-09.tsv the reverted COLS arm (§6), n=9
+
+
+0. WHAT WAS WRONG
+--------------------------------------------------------------------------------
+`index_rect_mut` registered the exact rectangle and returned a `&mut [T]` over
+the HULL. #469's CHANGELOG stated the split on purpose — "records the hull as
+the reference and the exact rectangle as the record" — and that is the defect,
+because the REFERENCE is what Rust's aliasing rules bind to, not the record.
+Two blocks on the same picture rows in different tile COLUMNS are exactly what
+the rectangle record exists to allow, and with a hull reference they are two
+simultaneously-live overlapping `&mut`. #470's Miri gate rejected it; its two
+controls (per-row guards from two tile columns; one hull guard that is also
+RESERVED as the hull) passed, which localises it to the rectangle guard.
+
+
+1. THE FIX
+--------------------------------------------------------------------------------
+`DisjointMutRect` / `DisjointImmutRect` keep the ONE registration and hand out
+one ROW at a time. No reference is created at construction — the guard keeps a
+raw base pointer derived from the same `get_mut` the old code used — so every
+reference is a subset of what the tracker reserved, and two guards from
+different tile columns produce disjoint references. `row_mut` takes `&mut self`,
+so two rows of one guard cannot be live at once either. No extra atomic, no
+extra lock: the reference shape and the record shape are independent, and only
+the record costs a registration.
+
+Converted (already row-indexed, mechanical): `for_rows`, `for_rows_mut`,
+`compact_read_per_row`, `compact_write_back_per_row`, `LfBlock::fill_hull`.
+
+NOT converted, and this is the price of the fix rather than an oversight:
+`narrow_guard` / `narrow_guard_mut` hand the caller a FLAT slice over the hull
+plus a stride. That shape IS a hull reference; narrowing the record does not
+narrow it. Both go back to a plain hull borrow, and both callers go back to
+gating on `tile_threading_active()`:
+
+  * `with_pixel_guard_immut` — the condition #469 changed sits two lines under
+    a doc comment, untouched by that diff, which already said wide guards "are
+    unsafe under tile threading even in the immutable case".
+  * `block_mut` — loses #469's copy elision under tile threading and takes the
+    compact path again. The rectangle's registration win still reaches it one
+    level down: the compact copies reserve the block ONCE and copy through
+    per-row references, so a block costs 2 registrations instead of `2h`.
+
+
+2. GAP TO dav1d — n=7, 224 rows, rect_rowview_gap_2026-08-09.tsv
+--------------------------------------------------------------------------------
+Raw rows 224, rounds 7, load-tagged rows 224 of 224.
+ms/frame is the MEDIAN over rounds of the two-point fit; [min..max] is the
+per-round band. THE BOX WAS NOT IDLE — two other agents were measuring and
+building on it throughout, so ALLOW_LOAD=1 was used and every row carries its
+foreign-process count. Absolute ms are inflated; the arms interleave with a
+rotating order inside every cell, so the PAIRED RATIOS are what to read.
+
+vector            t    base    #469    head   dav1d head/base #469/base  retained head/ref #469/ref
+---------------------------------------------------------------------------------------------------
+v4k_8tile         1   321.6   326.8   327.1   249.1    1.0171    1.0162      105%    1.313    1.312
+v4k_8tile         2   201.5   169.4   180.6   127.2    0.8963    0.8406       65%    1.420    1.332
+v4k_8tile         4   117.3    92.7    99.8    67.6    0.8508    0.7901       71%    1.477    1.372
+v4k_8tile         8    74.8    60.0    66.4    39.8    0.8878    0.8024       57%    1.667    1.506
+v4k_8tile_10b     1   363.9   367.4   365.7   253.9    1.0049    1.0096       51%    1.440    1.447
+v4k_8tile_10b     2   211.3   192.4   195.0   129.5    0.9227    0.9104       86%    1.506    1.486
+v4k_8tile_10b     4   123.4   105.8   110.8    68.9    0.8982    0.8573       71%    1.609    1.535
+v4k_8tile_10b     8    79.8    68.8    70.3    40.7    0.8809    0.8621       86%    1.728    1.691
+
+per-round bands (min..max ms/frame)
+
+  v4k_8tile         1  base [318.2..324.3]  #469 [323.9..342.8]  head [325.7..330.1]  dav1d [249.0..249.3]
+  v4k_8tile         2  base [200.2..211.4]  #469 [168.9..179.1]  head [179.4..191.4]  dav1d [126.8..131.5]
+  v4k_8tile         4  base [115.8..134.4]  #469 [91.2..96.2]  head [94.3..101.7]  dav1d [65.8..69.7]
+  v4k_8tile         8  base [73.3..79.2]  #469 [58.4..65.2]  head [59.6..71.6]  dav1d [38.3..41.6]
+  v4k_8tile_10b     1  base [362.6..383.2]  #469 [363.8..421.4]  head [364.0..416.4]  dav1d [253.7..276.4]
+  v4k_8tile_10b     2  base [209.9..259.3]  #469 [190.7..234.1]  head [193.9..270.2]  dav1d [129.3..157.2]
+  v4k_8tile_10b     4  base [121.2..127.6]  #469 [104.8..110.8]  head [106.7..114.0]  dav1d [68.3..72.1]
+  v4k_8tile_10b     8  base [78.1..84.3]  #469 [67.8..72.2]  head [69.8..73.9]  dav1d [40.3..42.5]
+
+scaling t=1 -> t=8
+
+  v4k_8tile         base 4.30x  #469 5.45x  head 4.93x  dav1d 6.25x
+  v4k_8tile_10b     base 4.56x  #469 5.34x  head 5.20x  dav1d 6.24x
+
+READ THE RATIOS, NOT THE MILLISECONDS. Every one of the 224 rows is
+load-tagged: two other agents (`perf/park-not-spin` measuring, `perf/tile-keyed`
+building and running tests) held the box for the whole window, so the strict
+idle gate could not commit a single cell in 20 minutes of waiting and the sweep
+was re-run with ALLOW_LOAD=1. The arms rotate order inside every cell, so all
+four see the same load; absolutes are inflated and the pairwise columns are the
+result.
+
+What it says:
+
+  * The win SURVIVES at every t > 1, and it is roughly two thirds of #469's.
+    8bpc head/base 0.896 / 0.851 / 0.888 at t=2/4/8 against #469's
+    0.841 / 0.790 / 0.802 — 65% / 71% / 57% of the base->#469 distance
+    retained. 10bpc keeps more: 86% / 71% / 86%.
+  * The third that is gone is `block_mut`'s copy elision, which is exactly the
+    part that needed the hull reference. Nothing else changed between the two
+    arms.
+  * Scaling t=1 -> t=8: base 4.30x -> head 4.93x (#469 5.45x, dav1d 6.25x) at
+    8bpc; base 4.56x -> head 5.20x (#469 5.34x, dav1d 6.24x) at 10bpc.
+  * t=1 is unchanged by the row view: head/base 1.017 and #469/base 1.016 at
+    8bpc are the same number. The t=1 cost is #469's tracker change, not the
+    guard, and this branch neither adds to it nor removes it (see §6).
+  * Bands (rect_rowview_bands_2026-08-09.txt): head-vs-base disjoint at 6 of 8
+    cells; the two OVERLAP cells are both 10bpc low-thread, where the load made
+    the bands wide (10bpc t=1 base [362.6..383.2] against head [364.0..416.4]).
+  * The 1.30x bar is still met at NO cell: 1.313 / 1.420 / 1.477 / 1.667 at
+    8bpc, 1.440 / 1.506 / 1.609 / 1.728 at 10bpc — all worse than #469's,
+    because #469 kept the copy elision.
+
+
+3. WHAT THIS DOES NOT FIX — the macOS-Intel CI panic is a GENUINE overlap
+--------------------------------------------------------------------------------
+#469's verification round attributed the intermittent
+`Build & Test (macos-15-intel, safe-simd)` failure to the immutable-gate change
+handing out a hull, and #455's index note attributed the false-positive class
+to the `COL_ANY` degradation. A fresh failure on the merge commit c1355c4
+(run 31294761102, job 93197936544) carries a full stack, and it is neither:
+
+    thread 'rav1d-worker-3' panicked at include/dav1d/picture.rs:568:19:
+      overlapping DisjointMut:
+       current:    & _[241..16385] on ThreadId(22)
+      existing: &mut _[16384..20240]
+       3: add_wide<false>            tracker_shard.rs:2286
+       4: add_rect_immut             tracker_shard.rs:1709
+       8: compact_read_per_row       picture.rs:1254
+       9: loopfilter_sb_dispatch     src/safe_simd/loopfilter.rs:5134
+      14: rav1d_filter_sbrow_deblock_cols
+
+Two facts follow without knowing the plane stride:
+
+  (a) The last byte of a strided rectangle's hull is, by construction, the last
+      element of its last ROW — never a gap. A's hull ends at 16385, so A
+      covers byte 16384. B covers [16384, 20240). **The two records' covered
+      byte sets intersect at 16384. It is a real overlap, not a false positive
+      from `COL_ANY` and not an artefact of the hull reference.**
+  (b) `src/safe_simd/loopfilter.rs::loopfilter_sb_dispatch` is
+      `#[cfg(target_arch = "x86_64")]` (wasm32 shares it); aarch64 dispatches
+      to `loopfilter_arm`, which never calls `compact_read_per_row`. That is
+      why the verifier's 1,600 aarch64 runs could not reproduce it — **the
+      failing call site is not compiled on this box.**
+
+What #469 changed is the WINDOW, not the extent. `main` reads the same tap
+window through `h` per-row guards, each live only for its own memcpy; the
+rectangle reserves all `h` rows for the whole copy loop. The per-row records
+and the rectangle's rows are the SAME bytes — so `main` has the same
+unsynchronized overlap and detects it only when the conflict happens to fall
+inside the one row whose guard is live at that instant. The rectangle claims
+rows before it reads them, which is a stronger claim than the code needs
+wherever dav1d's task graph orders the two accesses at finer grain than the
+loop.
+
+This is a property of "one registration for a multi-row access", not of the
+hull reference, so the row view does not remove it and this branch can still
+fail that job. It is named here rather than papered over. Two things follow
+for whoever takes it next:
+
+  * The overlapping column is the loop filter's deliberate OVER-READ. The
+    8bpc H-luma window is `tap_before + tap_after = 7 + 9 = 16` columns because
+    the kernel loads 16 B/row, while the tap ladder only reaches p6..q6 — so
+    columns +7 and +8 are read and never used, and byte 16384 is one of them.
+    The same file already documents narrowing this window once for exactly this
+    reason (the "+16 reached a full 16 rows below a V edge" comment).
+  * A cheaper containment is to put `compact_read_per_row` back on per-row
+    guards under tile threading, restoring `main`'s window at that ONE site.
+    Not done here, because it is a registration-count regression that must be
+    priced against a failure rate nobody has measured (1 in 2 macos-15-intel
+    runs on 4db4144, 1 in 1 on c1355c4 — n=3 total, and 0 in 1,600 aarch64
+    runs at a site that is not compiled there).
+
+
+4. EXACTNESS OF THE PREDICATE — the claim corrected
+--------------------------------------------------------------------------------
+#469's body says the hull+columns test is "EXACT, not conservative". That is
+true only between two records that BOTH carry a real column range.
+`ShardRecs::c0`'s own doc had it right; the body did not. An interval that runs
+off the end of its row registers `0..=COL_ANY` (`RowMap::locate`'s
+`c0 + width > stride` arm) and the pair degrades to the plain hull test:
+conservative, never missing.
+
+Re-measured here at RECT_ORACLE_ITERS=200000 (8 plane shapes, 1,600,000 pairs,
+deterministic seeds — reproduces #470's committed numbers exactly):
+
+    63,020 overlapping / 1,536,980 disjoint pairs
+    0 missed overlaps
+    2,163 conservative false positives = 0.14% of disjoint pairs,
+      EVERY one involving a row-crossing interval
+
+A false positive is a spurious `overlapping DisjointMut`, i.e. a decode
+failure, so that is a budget rather than a curiosity. The exact fix is written
+down in `ShardRecs::c0` and deliberately NOT taken: a contiguous row-crossing
+interval covers `[c0, S)` of its first row, everything between, and `[0, c1]`
+of its last, which one `contig` bit per slot plus a three-probe test decides
+exactly — but the bit has no free home in the 128-byte record (`SLOTS` already
+went 7 -> 5 to fit `c0`/`c1`), and a hand-written three-probe test that is
+wrong yields a MISSED overlap, which is the direction that must never regress
+for a false-positive win.
+
+
+5. GATES
+--------------------------------------------------------------------------------
+Miri (`cargo +nightly miri test -p rav1d-disjoint-mut --test rect_hull_aliasing
+-- --exact <name>`, one test at a time because Miri aborts on the first UB):
+9 of 9 PASS, including the two that were UB on c1355c4.
+
+TEETH, by mutation, restored byte-exact (sha256 + `git diff`). Planting the
+TRANSIENT hull reference back inside `row_mut` — rebuild
+`from_raw_parts_mut(base, (h-1)*stride + w)`, then `&mut hull[row*stride..][..w]`:
+
+    writing_through_both_guards_while_both_are_live          GREEN  (misses it)
+    four_tile_columns_the_way_the_decoder_holds_them         GREEN  (misses it)
+    a_row_reference_survives_the_next_column_taking_one      UB     (catches it)
+    an_immutable_rectangle_does_not_alias_a_neighbours_write UB     (catches it)
+    control_per_row_guards_from_two_tile_columns             GREEN  (correct)
+    control_one_hull_guard_is_exclusive                      GREEN  (correct)
+    the_rows_handed_out_are_exactly_the_rectangle            GREEN  (correct)
+
+The two cases that CAUGHT the original defect do not catch the transient form,
+because each of their row references dies at the end of its own statement.
+That is why the two "held across the next retag" cases exist; do not delete
+them as duplicates.
+
+Oracle soak `RECT_ORACLE_ITERS=200000`: see §4. Deterministic seeds, so it
+reproduces #470's committed numbers exactly.
+
+Standing hazards, both re-planted under `--features __probe_wide` and restored
+byte-exact (sha256 verified, `git diff` clean):
+    (a) 4af62ae's in-lock `state` re-read deleted  -> wide_exclusion FAILS 3/3
+    (b) `active()` cut to one shard                -> wide_exclusion FAILS 3/3
+    baseline (neither planted)                     -> wide_exclusion PASSES
+
+`#![forbid(unsafe_code)]` proved ACTIVELY on rav1d-safe: a planted `unsafe`
+block in `include/dav1d/picture.rs` errors at the attribute; restored, green.
+
+Corpus: 766/766 PASS + 2 SKIP over the 768-vector dav1d-test-data inventory.
+Set-diff BY NAME against `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst`
+with the md5 in the value: 0 only-in-baseline, 0 only-in-head, 0 differing.
+
+Output md5 identity: 5 vectors x t={1,2,4,8,16} x 3 arms (rsbase/rsrect/rshead)
+= 25 cells; all three arms agree in every cell and every vector is
+thread-invariant.
+
+`mt_stress_4k`: thread counts 1/2/4/8/16 x 5 trials, all ok (in the suite run).
+`scripts/perf/multi_decoder_pressure.sh bench_rshead 12 3 300`: 12 concurrent
+decoder processes x 3 iters x thread counts 1/2/4/8/16 over 5 vectors — PASS,
+every md5 matching the serial t=1 reference, no wedge, no overlap panic.
+
+32-bit, A/B'd directly rather than trusted to CI — and CI CANNOT see it here:
+`ci.yml` triggers on `pull_request: branches: [main]`, so a PR based on
+`perf/strided-rect` runs only the `disjoint-mut CI` workflow. The i686 and
+wasm32 legs never fire. Verified locally instead, and `cargo build -p <lib>`
+of an RLIB needs no C linker, which is the cheap way to reach the MIR pass
+`cargo check` stops short of:
+
+    target                     c1355c4 (#469)                       this branch
+    i686-unknown-linux-gnu     error: this arithmetic operation      builds
+                               will overflow (tracker_shard.rs:1294)
+    wasm32-wasip1              same error                            builds
+
+`cargo test --release --workspace`: 254 passed, 0 failed, 30 ignored.
+`cargo fmt --check` clean. `cargo clippy -p rav1d-disjoint-mut --all-targets
+-- -D warnings` clean. `cargo doc -p rav1d-disjoint-mut --no-deps` with
+`RUSTDOCFLAGS=-D warnings` clean.
+(Pre-existing on this box and NOT touched here: `cargo clippy` over the whole
+workspace on aarch64 reports dead-code findings in `src/safe_simd/itx_arm*.rs`;
+those files are not in this diff and CI's Clippy leg runs on x86_64.)
+
+
+6. NOT MEASURED / NOT DONE
+--------------------------------------------------------------------------------
+* The t=1 regression #469 priced at +0.71 ns per surviving registration is NOT
+  fixed, and the fix it names is a MEASURED NULL. Built exactly as described —
+  a `COLS` const parameter on `ShardRecs::find`/`::alloc` selected at `add`'s
+  fast path by `self.mask != 0`, skipping both the `cols_meet` test and the two
+  column stores, plus a reset of every `c0`/`c1` pair in `reprovision` so a
+  later `mask` 0 -> non-zero flip cannot read a stale narrow range (that would
+  be a MISSED overlap, not a false positive). The identity it rests on is
+  exact: on a one-shard instance every registration carries `0 ..= COL_ANY`, and
+  `cols_meet(a0, a1, 0, COL_ANY)` is unconditionally true. All 35+9+25+... tests
+  in `rav1d-disjoint-mut` pass with it.
+
+  A/B against this branch, n=9, 3 cells, near-idle (2 of 27 rows tagged),
+  `rect_rowview_cols_ab_2026-08-09.tsv`:
+
+      8bpc  t=1   cols 324.6 [323.6..337.3]  head 325.7 [323.3..334.5]  0.9966  OVERLAP
+      8bpc  t=8   cols  56.6 [ 54.9.. 83.9]  head  55.8 [ 54.6.. 83.1]  1.0139  OVERLAP
+      10bpc t=1   cols 363.7 [361.8..367.2]  head 362.3 [360.5..378.4]  1.0037  OVERLAP
+
+  Every band overlaps and the sign is inconsistent across cells. REVERTED. So
+  #469's own "0.991 with the two column stores deleted" is not reproduced as a
+  real effect either — whatever the t=1 cost is, it is not the column fields,
+  and the next attempt should profile before it patches.
+* x86_64: nothing built or run. No Rosetta on this box.
+* Loop restoration is OFF in both 4K gap vectors, so `looprestoration*.rs`
+  registers zero borrows in this grid while it is active in 696/768 corpus
+  vectors.
+* Negative strides: every rectangle caller falls back to the interval form, so
+  that path is unexercised.
+* Per-call-site registration counts (`--features probe-sites`) were not
+  re-measured for this arm.
+
+
+7. PROCESS NOTE — collateral damage to another agent's sweep
+--------------------------------------------------------------------------------
+While yielding the box, `pkill -f verify_gap.sh` was used to stop this sweep.
+That pattern also matches the concurrently-running `perf/park-not-spin` agent's
+`verify_gap.sh` invocations, and it killed two of its in-flight `gap_part*`
+runs (~23:33 and ~23:36 local). Its committed rows are on disk and its
+`run_more.sh` loop restarts into a fresh part file, so no recorded data was
+lost — but its round count is short by whatever those two parts had not yet
+committed. Kill by PID, never by a pattern another agent's harness shares.
