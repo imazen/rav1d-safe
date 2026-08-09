@@ -408,7 +408,7 @@ mod tests {
         ] {
             let ca = plane_rect(a, 1, layout);
             let cb = plane_rect(b, 1, layout);
-            assert_eq!(ca.col1, cb.col0, "{layout:?}: chroma columns must abut");
+            assert_eq!(ca.col1, cb.col0, "chroma columns must abut for this layout");
             assert!(ca.col1 > ca.col0 && cb.col1 > cb.col0);
             let ss_ver = (layout == Rav1dPixelLayout::I420) as usize;
             assert_eq!(ca.row1, a.row1 >> ss_ver);
