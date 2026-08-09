@@ -1,0 +1,53 @@
+Composing #472 (strided-rectangle record) with #474 (owned per-tile recon)
+=========================================================================
+
+Branch      perf/compose-rect-tileown, base main @ ee07b00
+Host        Apple M4 Pro, 12 cores, macOS 26.5.2, aarch64
+Build       cargo build --release, default features (+ tile-owned-recon where noted)
+            no -C target-cpu=native; no `nice` on any timed run
+Vectors     ~/tmp/rav1d-perf/vec/v4k_8tile.avif        3840x2160 4:4:4 8bpc,  4x2 tiles
+            ~/tmp/rav1d-perf/vec/v4k_8tile_10b.avif    same, 10bpc
+Reference   dav1d 1.5.4 --framedelay 1, measured in the SAME interleaved sweep
+Method      two-point wall fit: each cell timed at 2 and at 20 frames,
+            beta = (ms20 - ms2) / 18, so process startup drops out.
+            Rotating arm order inside every cell; strict idle gate
+            (a cell is DISCARDED and re-run if any foreign process exceeds
+            25% CPU during it). Box polled to a full 60 s idle window before
+            each sweep started.
+
+ARMS
+  base      main @ ee07b00
+  rect      main + #472 (fix/rect-rowview, carrying #469 + #470)
+  tko       main + #474 (perf/tile-owned-recon), RAV1D_TILE_OWNED=1
+  both      this branch, RAV1D_TILE_OWNED=1
+  bothoff   this branch, RAV1D_TILE_OWNED=0  -- same BINARY as `both`, so the
+            both-vs-bothoff delta cannot be a codegen artifact
+  dav1d_fd1 dav1d 1.5.4 --framedelay 1
+
+DATA
+  compose_rect_tileown_gap_2026-08-09.tsv     432 rows, 9 rounds x 8 cells x 6 arms
+                                              foreign_max = 0 on ALL 432 rows
+                                              8 cells DISCARDED and re-run
+  compose_rect_tileown_gap10_2026-08-09.tsv   10bpc re-run with the memory
+                                              ceiling raised -- see LIVENESS
+  compose_rect_tileown_bands_2026-08-09.txt   min/median/max + disjoint verdicts
+  compose_rect_tileown_regs_2026-08-09.tsv    registrations/frame + per-site diff
+  compose_rect_tileown_rss_2026-08-09.tsv     /usr/bin/time -l, 20 decodes, n=3
+
+LIVENESS -- one arm was measuring nothing, and the counter caught it
+  The first sweep's `both` arm at 10bpc DECLINED: the memory ceiling this
+  branch adds (default 256 MB) rejects 8 tiles x ~50 MB of 10-bit planes, so
+  the arm silently ran the shared-picture path. Proof, registrations/frame at
+  t=8: with the default ceiling 10,852,772 -- byte-identical to `rect`'s count;
+  with RAV1D_TILE_OWNED_MAX_MB=1024, 10,904,612. The 10bpc cells were re-run
+  with the ceiling raised. The 8bpc arm was always live (200.5 MB < 256 MB),
+  confirmed both by its registration count and by its +201.5 MB RSS.
+
+NOT MEASURED
+  x86_64 (do not extrapolate -- the loop-filter compact path that panics on
+  macos-15-intel is `#[cfg(target_arch = "x86_64")]` and does not exist here);
+  t=16 and t=12/24 oversubscription; any vector below 4K in the timed grid;
+  any vector with loop restoration live (unchanged campaign-wide blindness --
+  LR is off in both 4K gap vectors and active in 696/768 corpus vectors);
+  negative strides; `--features unchecked`; the film-grain corpus group at
+  t>1 (a pre-existing whole-plane double-&mut on main -- see the doc).

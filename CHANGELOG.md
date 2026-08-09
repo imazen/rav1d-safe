@@ -5,6 +5,31 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Added
+- **`tile-owned-recon` feature (default off) composed with the strided-rectangle
+  record, and MEASURED AS A REGRESSION** (`docs/COMPOSE_RECT_TILEOWN.md`,
+  `benchmarks/compose_rect_tileown_*_2026-08-09.*`). #474 predicted the two
+  mechanisms would add, because private recon buffers should leave the filter
+  chain as the only split population. They are nested, not disjoint: the
+  rectangle record already removes the reconstruction split, so composing
+  removes only 274,970 further registrations per frame (1.9% of what the
+  rectangle removed) and costs **6.7-9.7% of wall clock at every t>1 cell on
+  both depths**, bands disjoint, n=9, confirmed twice (across builds and via
+  the runtime switch inside one binary). #472 alone remains the best arm.
+- **A memory ceiling and a bounded lifetime for the private tile planes**
+  (`src/tile_recon.rs`, `src/lib.rs`, `src/decode.rs`). #474 cached them on the
+  frame context for the decoder's whole life. They are now released from
+  `rav1d_flush` and refused up front above `RAV1D_TILE_OWNED_MAX_MB` (default
+  256). Releasing them at every FRAME exit — the obvious fix — was measured and
+  rejected: peak RSS +205.7 MB against +100.8 MB reusing, because macOS does
+  not return a freed 25 MB region before the next frame faults a fresh set in.
+  Gate: `tests/tile_recon_lifetime.rs`, teeth by two mutations.
+- **`md5_inventory --skip-group`**, so the threaded corpus can run at all: at
+  `--threads 8` the film-grain group dies on `main` itself with a whole-plane
+  double-`&mut` from `full_guard_mut` in the film-grain row worker
+  (`src/safe_simd/filmgrain_arm.rs:1550`), which then wedges
+  `thread_task.rs:534`. Pre-existing; reproduced on unmodified `ee07b00`.
+- **`ARM_BIN_<arm>` / `ARM_ENV_<arm>` in `scripts/perf/verify_gap.sh`**, so a
+  runtime-switched feature contributes both arms of an A/B from one build.
 - **Two soundness gates for the `StridedRows` rectangle borrow**
   (`crates/rav1d-disjoint-mut/tests/rect_oracle.rs`,
   `crates/rav1d-disjoint-mut/tests/rect_hull_aliasing.rs`).
@@ -58,6 +83,12 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   `benchmarks/strided_rect_2026-08-09.meta`.
 
 ### Fixed
+- **`1usize << 32` in a `tracker_shard.rs` test is an `arithmetic_overflow` hard
+  error where `usize` is 32 bits**, and the i686 CI legs run
+  `cargo nextest --lib` over both workspace members. cfg-gated to 64-bit. The
+  wasm32 cross job would not have caught it — it runs `cargo check`, which stops
+  before the MIR pass that raises the lint.
+
 - **The `StridedRows` guard handed out a `&mut`/`&` over the HULL while
   reserving only the rectangle — UB, now fixed by a per-ROW view**
   (`crates/rav1d-disjoint-mut/src/lib.rs`, `include/dav1d/picture.rs`,
