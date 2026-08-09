@@ -29,13 +29,35 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         features: ["", "--no-default-features"]
+        args: [""]
         include:
+          # NOT `--all-features`. Several `__probe_*` features are throwaway
+          # measurement instruments that DELIBERATELY disable tracking
+          # (`__probe_untracked` sets `tracker: None`; `__probe_addnop` keeps
+          # the call and deletes the work; `__probe_noscan`/`__probe_tinynop`
+          # likewise). Enabling them all at once selects mutually exclusive
+          # trackers, so `test_new_always_tracked` and `test_overlapping_mut`
+          # fail BY CONSTRUCTION -- that leg was red on main and could never
+          # have been green. It tested a configuration nothing ships.
+          # This enables the sound COUNTING probes instead, which is the
+          # coverage the leg was presumably meant to give.
+          #
+          # `--lib` is load-bearing. `tests/wide_exclusion.rs` races a wide
+          # registrant against narrow ones, and its anti-vacuity assertion
+          # fails when the wide side loses nearly every round. The counting
+          # probes perturb scheduling enough to cause exactly that on a shared
+          # runner ("the wide registrant was refused almost every round (193);
+          # the race window was never exercised"). That is the gate WORKING --
+          # it refuses to report green when it cannot exercise what it exists
+          # to exercise -- so the fix is to not run it under instrumentation,
+          # not to loosen it. It has its own dedicated job below, uninstrumented.
           - os: ubuntu-latest
-            features: "--all-features"
+            features: "--features std,__probe_count,__probe_sites"
+            args: "--lib"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test -p rav1d-disjoint-mut ${{ matrix.features }}
+      - run: cargo test -p rav1d-disjoint-mut ${{ matrix.features }} ${{ matrix.args }}
 
   # The wide-path lock-ordering TOCTOU (4af62ae) has exactly ONE gate:
   # tests/wide_exclusion.rs. It went VACUOUS once before — c5d1b00 set
