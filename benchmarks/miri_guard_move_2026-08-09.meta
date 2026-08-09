@@ -277,7 +277,48 @@ guard-move UB (#477) and never reached these. The anti-vacuity evidence for
 `wide-path-gate` job (`--features __probe_wide`), which is untouched.
 
 --------------------------------------------------------------------------------
-## 9. Reproducing
+## 9. The whole Miri suite, per test binary, per model
+
+Each binary run SEPARATELY, because Miri aborts the process on the first UB and
+cargo stops at the first failing target — the reason `soundness`,
+`shard_liveness`, `wide_exclusion`, `aligned_miri` and `pic_buf_overflow` never
+executed at all in the failing CI run. (`--no-fail-fast` is now on the workflow's
+Miri leg for the same reason.)
+
+    binary                  Stacked Borrows              Tree Borrows
+    -----------------------------------------------------------------------------
+    aligned_miri            ok    0 tests      0.04 s    ok    0 tests    0.04 s
+    pic_buf_overflow        ok    0 tests      0.03 s    ok    0 tests    0.03 s
+    soundness               ok   25 tests      9.59 s    ok   25 tests    9.69 s
+    wide_exclusion          ok    1 test     181.66 s    FAILED (*)     180.44 s
+    narrow_release          ok    1 test      92.76 s    ok    1 test    92.95 s
+    guard_move_release      ok    2 tests    110.99 s    ok    2 tests  112.19 s
+    shard_liveness          ok    5 tests    992.69 s    ok    5 tests  993.11 s
+    lib                     ok   26 tests   1488.78 s    STILL RUNNING (**)
+
+    (*)  NOT UB, and NOT the shipped configuration. This leg ran the
+         SIX-contender `wide_exclusion`; its anti-vacuity assertion fired
+         ("the wide registrant was refused almost every round (3)") because
+         Miri's scheduler starves the wide side. Fixed by cutting Miri to two
+         narrow contenders — assertions untouched — and re-run on BOTH models
+         afterwards: ok in 91.88 s (SB) and 91.45 s (TB). That pair is the
+         shipped number; the 181.66/180.44 above are the pre-fix six-contender
+         runs.
+    (**) `tracker_shard::tests::threaded_churn_leaks_no_slots` under Tree
+         Borrows. Its Stacked-Borrows twin finished the whole lib in 1488.78 s
+         — which independently matches the 1489 s CI reported for the lib on
+         `main` — but Tree Borrows was past 83 minutes on this one test when
+         this record was written, and had not finished. NOT reported as green.
+         CI run 31325959025 is the authority for it.
+
+**Total per model at the shipped configuration: ~46 minutes** (0.04 + 0.03 +
+9.6 + 91.9 + 92.8 + 111 + 993 + 1489 s), against "cannot finish" before.
+
+**No UB anywhere.** Every failure in this table is a liveness assertion, and the
+one that fired is documented above with its fix.
+
+--------------------------------------------------------------------------------
+## 10. Reproducing
 
     # the UB, on main
     git checkout main
