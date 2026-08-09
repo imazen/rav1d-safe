@@ -95,9 +95,21 @@ campaigns. Every rule below cost real time to learn.
 | Allocator traffic past the first fix (zenav1-svt) | null despite malloc+memset at 15.5% self time — `sample` attributes page-fault/zone work there |
 | Lazy deblock/CDEF application (zenav1-svt) | REFUTED — changes bytes; loop restoration reads post-CDEF recon |
 | 2D-dot hoist in `compute_stats` (zenav1-svt) | 0.944-0.977x regression |
+| `cfl_ac` per-row guards -> one hull (rav1d-safe, #455) | null — site registrations -89.2% (629,080 -> 67,862/frame), frame total -7.1%, wall clock DISJOINT AT 0 OF 8 CELLS. `benchmarks/recon_rowsplit_2026-08-09.meta` |
 
 **The meta-lesson from the top two rows: a large self-time share is not automatically a large
 opportunity, and reducing the COUNT of an operation is not the same as reducing its COST.**
+The `cfl_ac` row makes it three independent count reductions with no wall-clock movement. Before
+proposing a fourth, price the thing you are removing with a NULLING instrument (`probe-class`),
+not with a count.
+
+**A negative control is usually already in your grid — find it before you believe a p-value.**
+The `cfl_ac` change is gated off above one thread, and the census proves it registers
+byte-identical extents at t=2/4/8. Those cells are therefore noise by construction — and one of
+them still came back at p = 0.039 on an exact sign test at n = 9. That is the harness's
+false-positive rate, and it was LARGER than the significance of either t=1 cell the change could
+actually act on. Run the arithmetic that way round: a "significant" cell where your mechanism
+provably cannot fire tells you what your resolution really is.
 
 ## 7. Repo-specific
 
@@ -106,6 +118,18 @@ opportunity, and reducing the COUNT of an operation is not the same as reducing 
   `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst`. Must stay 766/766.
   `CpuLevel::Scalar` does NOT disable safe SIMD — use the `__ablate` feature.
   Perf harness: `scripts/perf/verify_gap.sh`. See `docs/X64_APPLICABILITY.md` and issue #455.
+  **There is NO `&mut` to a picture plane anywhere during decode, at any thread count.** The
+  planes live behind `Arc<Rav1dPictureData>` (`include/dav1d/picture.rs:1287`) shared with
+  `sr_cur` / the ref slots / the output queue; every tile AND filter task reaches them through
+  `fc.data.try_read()` (`src/thread_task.rs:1237`, `:1416`, `:1436`, `:1451`) — a SHARED guard,
+  which is precisely what the tile parallelism is; and workers are `'static` pool threads spawned
+  once (`src/lib.rs:221`), so no scoped-thread lifetime can carry a borrow into them. Any design
+  premised on splitting a plane with `chunks_mut` / `split_at_mut` "once at setup" is therefore
+  not expressible in safe Rust here — it degrades to hand-written `unsafe`, which is exactly what
+  `DisjointMut`'s tracker exists to replace. The one form that DOES work is #467's
+  `for_rows{,_mut}` / `for_row_pairs`: take ONE tracked guard over the strided hull and let
+  borrowck split THAT into rows. It is t=1-only and necessarily so — the hull reserves inter-row
+  gaps that belong to other tile COLUMNS. Check this before costing any "static split" proposal.
 - **zenav1-svt:** C reference in-tree at `reference/svt-av1`, prebuilt at `cbuild-static/`.
   Bit-identity grid: `rust/tools/byteid_fingerprint.sh` (120 cells). Decoder gate:
   `rust/tools/decode_gate_grid.sh` (aomdec + dav1d).
