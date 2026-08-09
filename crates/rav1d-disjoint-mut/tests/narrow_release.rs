@@ -31,10 +31,12 @@
 //! still gates the same direction on the new shape; verified 2026-08-08 by
 //! widening `Shard::live_mask`'s `allocated <= 1` fast path to `<= 2`, which
 //! makes the mask a SUBSET of the live set and drops live neighbours: this
-//! test, and only this test, FAILS. That mutation was RE-VERIFIED 2026-08-09
-//! on the current shape: `witnesses` = 1, in 2.52 s, at private_ok 4_200_000 /
-//! shared_ok 1_200_246 / refused 199_754. The paragraph above is a live
-//! record, not a stale one.
+//! test, and only this test, FAILS. RE-VERIFIED in full on 2026-08-09, both
+//! halves: with `<= 2` planted, this test fails (`witnesses` = 1, in 2.52 s, at
+//! private_ok 4_200_000 / shared_ok 1_200_246 / refused 199_754) and
+//! `--no-fail-fast` over the rest of the suite — 26 lib + 25 `soundness` + 5
+//! `shard_liveness` + `wide_exclusion` + 2 `guard_move_release` — is GREEN.
+//! The paragraph above is a live record, not a stale one.
 //!
 //! # It is also the crate's aliasing gate, and that is why it runs under Miri
 //!
