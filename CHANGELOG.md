@@ -20,8 +20,14 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   overlap test is `hull AND columns` — provably exact, not merely
   conservative. Measured on `v4k_8tile` 8bpc against `main` ee07b00: t=8
   registrations 22,700,725 -> **7,923,518**, i.e. the thread-count-dependent
-  explosion is gone (t=1 is 7,924,706 on both), and wall **0.780x**; t=4
-  0.837x; t=2 0.866x; t=1 within noise. Record: `benchmarks/strided_rect_2026-08-09.meta`.
+  explosion is gone (t=1 is 7,924,706 on both). Wall, n=9, idle, dav1d 1.5.4
+  `--framedelay 1` in the same interleaved sweep: **t=8 0.785x, t=4 0.812x,
+  t=2 0.843x** (bands disjoint at all three), and scaling t1->t8 **4.74x ->
+  6.13x** against dav1d's 6.91x. **t=1 is 1.4% SLOWER with overlapping bands**,
+  which is enough to move 8bpc t=1 from 1.291 to 1.309 of dav1d — a real cost,
+  and the ~1.30x bar is still met at no cell (1.309 / 1.332 / 1.323 / 1.477).
+  10bpc: 0.849 / 0.892 / 0.915 / 1.014. Record:
+  `benchmarks/strided_rect_2026-08-09.meta`.
 
 ### Fixed
 - **`wide_exclusion` had gone vacuous, and with it the only gate for the
