@@ -261,6 +261,15 @@ This is not an oversight in the implementation, it is the design's open edge, an
 (`keyed_versus_unkeyed_overlap_is_missed_and_that_is_the_open_edge`) so that the
 day it starts detecting, the gate fails and says why.
 
+A second-order consequence worth naming because it points the other way: an
+unkeyed borrow whose address hash happens to land on shard `k` DOES get compared
+against tile `k`'s records. That is a correct comparison, but under
+`probe-tilekey-hull` the tile-`k` record may be a HULL, so the pair can produce a
+FALSE POSITIVE — a spurious overlap panic — where today it would not. It does not
+fire on `v4k_8tile` at either depth (5 arms x 4 thread counts x 2 depths all
+decode to the reference md5), but it is a property of the arm, not an absence of
+one, and a vector with different geometry could hit it.
+
 Closing it requires **keying the filter chain too**, and the reason that is a
 separate change rather than a bigger `sed` is that the filter chain legitimately
 straddles: a deblock at a tile-column boundary touches both sides, so those
