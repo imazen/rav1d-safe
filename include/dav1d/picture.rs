@@ -164,7 +164,7 @@ pub fn with_pixel_guard_immut<BD: BitDepth, R>(
 ) -> R {
     use crate::src::strided::Strided as _;
     let pixel_size = core::mem::size_of::<BD::Pixel>();
-    if tile_threading_active() {
+    if pic.data.needs_row_split() {
         let (buf, byte_stride) = pic.compact_read_per_row::<BD>(w, h);
         let result = f(&buf, 0, byte_stride as isize);
         recycle_compact_scratch(buf);
@@ -509,12 +509,18 @@ unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
 #[cfg(feature = "c-ffi")]
 pub struct Rav1dPictureDataComponent {
     data: DisjointMut<Rav1dPictureDataComponentInner>,
+    /// See [`Rav1dPictureDataComponent::needs_row_split`].
+    #[cfg(feature = "tile-owned-recon")]
+    private: bool,
 }
 
 #[cfg(not(feature = "c-ffi"))]
 pub struct Rav1dPictureDataComponent {
     data: DisjointMut<Rav1dPictureDataComponentInner>,
     stride: isize,
+    /// See [`Rav1dPictureDataComponent::needs_row_split`].
+    #[cfg(feature = "tile-owned-recon")]
+    private: bool,
 }
 
 impl Rav1dPictureDataComponent {
@@ -530,6 +536,8 @@ impl Rav1dPictureDataComponent {
     fn from_parts(inner: Rav1dPictureDataComponentInner, _stride: isize) -> Self {
         Self {
             data: crate::src::disjoint_mut::dm_new(inner),
+            #[cfg(feature = "tile-owned-recon")]
+            private: false,
         }
     }
 
@@ -538,6 +546,59 @@ impl Rav1dPictureDataComponent {
         Self {
             data: crate::src::disjoint_mut::dm_new(inner),
             stride,
+            #[cfg(feature = "tile-owned-recon")]
+            private: false,
+        }
+    }
+
+    /// Allocate a zero-filled component with the same byte length and stride
+    /// as `model`, owned exclusively by one tile task.
+    ///
+    /// The geometry is IDENTICAL to the picture plane it mirrors, so every
+    /// frame-coordinate offset reconstruction computes indexes the same pixel
+    /// in this buffer as it would in the picture — no coordinate translation
+    /// at any reconstruction site. Only the tile's own rows are ever touched,
+    /// so the untouched pages of the (virtually large) allocation are never
+    /// faulted in.
+    #[cfg(all(feature = "tile-owned-recon", not(feature = "c-ffi")))]
+    pub(crate) fn new_private_like(model: &Self) -> Option<Self> {
+        use crate::src::strided::Strided as _;
+        let usable_len = model.byte_len();
+        if usable_len == 0 {
+            return None;
+        }
+        let mut buf = Vec::new();
+        buf.try_reserve_exact(usable_len + RAV1D_PICTURE_ALIGNMENT)
+            .ok()?;
+        buf.resize(usable_len + RAV1D_PICTURE_ALIGNMENT, 0);
+        Some(Self {
+            data: crate::src::disjoint_mut::dm_new(PicBuf::from_vec_aligned(
+                buf,
+                RAV1D_PICTURE_ALIGNMENT,
+                usable_len,
+            )),
+            stride: model.stride(),
+            private: true,
+        })
+    }
+
+    /// Whether accesses to THIS component must be split into per-row borrows.
+    ///
+    /// The process-global [`tile_threading_active`] latch answers "can two tile
+    /// workers be writing the same picture ROWS at different COLUMNS right
+    /// now" — which is the only reason the per-row split and its compact copy
+    /// exist. For a buffer owned exclusively by one tile task the answer is
+    /// structurally no, whatever the latch says, so such a component keeps the
+    /// single-guard path at every thread count.
+    #[inline(always)]
+    pub fn needs_row_split(&self) -> bool {
+        #[cfg(feature = "tile-owned-recon")]
+        {
+            tile_threading_active() && !self.private
+        }
+        #[cfg(not(feature = "tile-owned-recon"))]
+        {
+            tile_threading_active()
         }
     }
 
@@ -829,7 +890,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// from the picture, because the compact buffer has its own stride.
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn block_mut<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
-        if tile_threading_active() {
+        if self.data.needs_row_split() {
             #[cfg(feature = "held-row-guards")]
             if w != 0 && h != 0 && h <= MAX_HELD_ROWS {
                 return self.block_mut_held::<BD>(w, h);
@@ -1018,7 +1079,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             return;
         }
         let pxstride = self.data.pixel_stride::<BD>();
-        if tile_threading_active() {
+        if self.data.needs_row_split() {
             for row in 0..h {
                 let off = self.offset.wrapping_add_signed(row as isize * pxstride);
                 let guard = self.data.slice::<BD, _>((off.., ..w));
@@ -1058,7 +1119,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             return;
         }
         let pxstride = self.data.pixel_stride::<BD>();
-        if tile_threading_active() {
+        if self.data.needs_row_split() {
             for row in 0..h {
                 let off = self.offset.wrapping_add_signed(row as isize * pxstride);
                 let mut guard = self.data.slice_mut::<BD, _>((off.., ..w));
@@ -1094,7 +1155,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// threading (compact layout) or the original stride when single-threaded.
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn compact_read<BD: BitDepth>(&self, w: usize, h: usize) -> (Vec<u8>, usize) {
-        if tile_threading_active() {
+        if self.data.needs_row_split() {
             self.compact_read_per_row::<BD>(w, h)
         } else {
             self.compact_read_fast::<BD>(w, h)
@@ -1162,7 +1223,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// Matches the layout produced by [`compact_read`].
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn compact_write_back<BD: BitDepth>(&self, w: usize, h: usize, buf: &[u8]) {
-        if tile_threading_active() {
+        if self.data.needs_row_split() {
             self.compact_write_back_per_row::<BD>(w, h, buf);
         } else {
             self.compact_write_back_fast::<BD>(w, h, buf);
@@ -2190,6 +2251,121 @@ mod row_guard_policy_tests {
             "row 1 column 0 IS written by this block, so a live mutable borrow \
              of it must conflict; if it does not, tracking is off in this build \
              and this test gates nothing"
+        );
+    }
+
+    /// MECHANISM gate for owned per-tile reconstruction buffers (#455 V1).
+    ///
+    /// The whole design is that a component nobody else can reach keeps the
+    /// ONE-hull-guard path even with the process-global latch on. If
+    /// [`Rav1dPictureDataComponent::needs_row_split`] stops consulting
+    /// `private`, this reverts to `h` per-row guards plus a compact copy per
+    /// block — a pure performance regression, invisible in the pixels, which
+    /// is precisely the silent null #455's tile-keyed round hit and caught
+    /// only by a registration count.
+    #[cfg(feature = "tile-owned-recon")]
+    #[test]
+    fn a_private_component_keeps_the_hull_guard_while_the_latch_is_on() {
+        set_tile_threading(true);
+        assert!(tile_threading_active());
+
+        let shared = plane();
+        let private = Rav1dPictureDataComponent::new_private_like(&shared)
+            .expect("private buffer of the model's geometry");
+        assert!(
+            shared.needs_row_split(),
+            "the shared plane must still split"
+        );
+        assert!(
+            !private.needs_row_split(),
+            "an exclusively-owned buffer has no concurrent tile column to \
+             collide with, so it must NOT split"
+        );
+
+        // And prove it at the extent, not just at the predicate: a gap byte
+        // is covered only by the hull registration.
+        let held = private.slice_mut::<BitDepth8, _>((W.., ..1));
+        let at = WithOffset {
+            data: &private,
+            offset: 0,
+        };
+        let prev = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+        let hit_gap = panic::catch_unwind(AssertUnwindSafe(|| {
+            at.for_rows_mut::<BitDepth8, _>(W, ROWS, |_, row| row[0] = 1);
+        }))
+        .is_err();
+        panic::set_hook(prev);
+        drop(held);
+        assert!(
+            hit_gap,
+            "a private component must reserve the strided hull [0, {HULL}), \
+             so a live borrow of the inter-row gap byte {W} must conflict"
+        );
+    }
+
+    /// Two tile columns writing the SAME rows at DIFFERENT columns is the
+    /// collision that forced the per-row split in the first place. In private
+    /// buffers it cannot happen, and this asserts that directly: both take the
+    /// wide hull, concurrently, without the tracker objecting — because they
+    /// are different instances, not because anything was relaxed.
+    #[cfg(feature = "tile-owned-recon")]
+    #[test]
+    fn two_tile_columns_hold_overlapping_hulls_in_private_buffers() {
+        set_tile_threading(true);
+        let model = plane();
+        let col0 = Rav1dPictureDataComponent::new_private_like(&model).unwrap();
+        let col1 = Rav1dPictureDataComponent::new_private_like(&model).unwrap();
+
+        // Same rows, adjacent columns — the 3840-wide 4-tile shape in
+        // miniature. On ONE shared plane these two hulls overlap and the
+        // tracker (correctly) refuses; the whole point is that they are not
+        // on one plane.
+        let a = WithOffset {
+            data: &col0,
+            offset: 0,
+        };
+        let b = WithOffset {
+            data: &col1,
+            offset: W,
+        };
+        let prev = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+        let ok = panic::catch_unwind(AssertUnwindSafe(|| {
+            a.for_rows_mut::<BitDepth8, _>(W, ROWS, |_, ra| {
+                ra[0] = 1;
+                b.for_rows_mut::<BitDepth8, _>(W, ROWS, |_, rb| rb[0] = 2);
+            });
+        }))
+        .is_ok();
+        panic::set_hook(prev);
+        assert!(ok, "two private tile buffers must never collide");
+
+        // Anti-vacuity: the same pair on ONE plane DOES collide, so the
+        // assertion above is about the separation and not about tracking
+        // being off in this build.
+        let one = plane();
+        let a = WithOffset {
+            data: &one,
+            offset: 0,
+        };
+        let b = WithOffset {
+            data: &one,
+            offset: W,
+        };
+        let held = one.slice_mut::<BitDepth8, _>((0.., ..HULL));
+        let prev = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+        let collides = panic::catch_unwind(AssertUnwindSafe(|| {
+            a.for_rows_mut::<BitDepth8, _>(W, ROWS, |_, r| r[0] = 1);
+        }))
+        .is_err();
+        panic::set_hook(prev);
+        drop(held);
+        drop(b);
+        assert!(
+            collides,
+            "tracking is compiled out in this build; the test above gates nothing"
         );
     }
 }

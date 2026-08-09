@@ -2129,7 +2129,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
     intra: &Av1BlockIntra,
 ) {
     let bd = BD::from_c(f.bitdepth_max);
-    let cur_data = &f.cur.data.as_ref().unwrap().data;
+    let cur_data = f.recon_planes(t.ts);
     let ts = &f.ts[t.ts];
 
     let bx4 = t.b.x & 31;
@@ -2819,7 +2819,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
     inter: &Av1BlockInter,
 ) -> Result<(), ()> {
     let bd = BD::from_c(f.bitdepth_max);
-    let cur_data = &f.cur.data.as_ref().unwrap().data;
+    let cur_data = f.recon_planes(t.ts);
 
     let ts = &f.ts[t.ts];
     let bx4 = t.b.x & 31;
@@ -3857,7 +3857,7 @@ pub(crate) fn rav1d_filter_sbrow<BD: BitDepth>(
 }
 
 pub(crate) fn rav1d_backup_ipred_edge<BD: BitDepth>(f: &Rav1dFrameData, t: &mut Rav1dTaskContext) {
-    let cur_data = &f.cur.data.as_ref().unwrap().data;
+    let cur_data = f.recon_planes(t.ts);
 
     let ts = &f.ts[t.ts];
     let sby = t.b.y >> f.sb_shift;

@@ -554,7 +554,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         stride: isize,
         h: usize,
     ) {
-        if !crate::include::dav1d::picture::tile_threading_active() {
+        if !origin.data.needs_row_split() {
             return Self::fill_hull::<W>(scratch, origin, stride, h);
         }
         for row in 0..h {

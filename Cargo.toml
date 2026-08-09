@@ -114,6 +114,11 @@ shards-256 = ["rav1d-disjoint-mut/__shards_256"]
 # taking immutable ones to read and mutable ones to write back (2h -> h
 # registrations). MEASURED NULL — see the doc comment on `block_mut_held`.
 held-row-guards = []
+# Issue #455 Variant 1: owned per-tile reconstruction buffers + per-sbrow
+# stitch, so the recon write path keeps the single-guard no-copy borrow
+# shape at every thread count. Runtime switch RAV1D_TILE_OWNED=0 turns it
+# off in the SAME binary, so an A/B cannot be a codegen artifact.
+tile-owned-recon = []
 shard-ident = ["rav1d-disjoint-mut/__shard_ident"]
 blockshift-8 = ["rav1d-disjoint-mut/__blockshift_8"]
 blockshift-10 = ["rav1d-disjoint-mut/__blockshift_10"]

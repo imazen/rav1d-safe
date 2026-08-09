@@ -4182,6 +4182,8 @@ pub(crate) fn rav1d_decode_tile_sbrow(
             }
         }
         (f.bd_fn().backup_ipred_edge)(f, t);
+        #[cfg(feature = "tile-owned-recon")]
+        (f.bd_fn().stitch_tile_sbrow)(f, t);
         return Ok(());
     }
 
@@ -4317,6 +4319,13 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     if t.frame_thread.pass != 1 {
         (f.bd_fn().backup_ipred_edge)(f, t);
     }
+
+    // Publish this tile's slice of the superblock row into the shared picture.
+    // Ordered BEFORE the caller stores `ts.progress`, which is what the filter
+    // task for this superblock row waits on, so the filter never sees a
+    // partially-stitched row.
+    #[cfg(feature = "tile-owned-recon")]
+    (f.bd_fn().stitch_tile_sbrow)(f, t);
 
     // backup t->a/l.tx_lpf_y/uv at tile boundaries to use them to "fix"
     // up the initial value in neighbour tiles when running the loopfilter
@@ -4676,6 +4685,13 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
             }
         }
     }
+
+    // Owned per-tile reconstruction buffers (issue #455 Variant 1). Must come
+    // after `f.cur`, `f.bw`/`f.bh` and the tiling are final; declines (leaving
+    // `f.tile_recon = None`, i.e. today's shared-picture path) for any frame
+    // it cannot serve.
+    #[cfg(feature = "tile-owned-recon")]
+    crate::src::tile_recon::setup(c, f);
 
     Ok(())
 }

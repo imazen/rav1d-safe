@@ -22,6 +22,8 @@
 use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 #[path = "helpers/ivf_parser.rs"]
@@ -176,6 +178,16 @@ fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
     }
 }
 
+/// Worker-thread count every vector is decoded with, set by `--threads`.
+///
+/// It defaults to 1, which is what every earlier inventory ran at — and that
+/// makes the corpus gate STRUCTURALLY BLIND to any tile-threading change,
+/// because `tile_threading_active()` never latches and the whole per-row /
+/// private-buffer branch family is never taken (the point #455's verification
+/// round made about quoting 766/766 as cover for a concurrency change). Set it
+/// above 1 to exercise those paths across all 768 vectors.
+static THREADS: AtomicU32 = AtomicU32::new(1);
+
 fn decode_md5(ivf_path: &Path, apply_grain: bool) -> Result<(String, usize), String> {
     let file = std::fs::File::open(ivf_path).map_err(|e| format!("open: {e}"))?;
     let mut reader = std::io::BufReader::new(file);
@@ -183,6 +195,7 @@ fn decode_md5(ivf_path: &Path, apply_grain: bool) -> Result<(String, usize), Str
 
     let mut settings = Settings::default();
     settings.apply_grain = apply_grain;
+    settings.threads = THREADS.load(Ordering::Relaxed);
     let mut decoder = Decoder::with_settings(settings).map_err(|e| format!("decoder: {e}"))?;
     let mut ctx = md5::Context::new();
     let mut n = 0usize;
@@ -234,6 +247,17 @@ fn main() {
             "--activity" => {
                 activity = true;
                 i += 1;
+            }
+            "--threads" => {
+                let n: u32 = args
+                    .get(i + 1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or_else(|| {
+                        eprintln!("--threads needs a number");
+                        std::process::exit(2);
+                    });
+                THREADS.store(n, Ordering::Relaxed);
+                i += 2;
             }
             other => {
                 eprintln!("unknown arg: {other}");

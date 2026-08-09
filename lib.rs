@@ -189,6 +189,9 @@ pub mod src {
     pub(crate) mod relaxed_atomic;
     mod scan;
     pub(crate) mod strided;
+    /// Owned per-tile reconstruction buffers (issue #455 Variant 1).
+    #[cfg(feature = "tile-owned-recon")]
+    pub(crate) mod tile_recon;
     // Public ONLY under the private test feature, for the induced-worker-panic
     // hook (tests/worker_panic_recovery.rs); crate-private otherwise.
     #[cfg(feature = "__test_induce_worker_panic")]
