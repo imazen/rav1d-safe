@@ -37,12 +37,16 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   source of the decoder's borrow volume: 7.9 M registrations per 4K frame at
   t=1 against 22.7 M at t>1) or one hull registration (cheap, but it reserves
   the inter-row gaps, which belong to other tile COLUMNS). The new
-  `StridedRows` index records the hull as the *reference* and the exact
-  rectangle as the *record*: `RowMap` maps each element to
+  `StridedRows` index records the exact rectangle rather than its hull (and,
+  since the fix below, hands out one ROW at a time so the reference matches):
+  `RowMap` maps each element to
   `(column band, row group)` via one exact division, so every row of a block
   shares a class, and `ShardRecs` carries the record's column range so the
-  overlap test is `hull AND columns` — provably exact, not merely
-  conservative. Measured on `v4k_8tile` 8bpc against `main` ee07b00: t=8
+  overlap test is `hull AND columns` — provably exact **between two records
+  that both carry a real column range**, and degrading to the plain
+  (conservative, never-missing) hull test against a row-crossing interval,
+  which the oracle measures at 2,163 false positives in 1.6 M pairs.
+  Measured on `v4k_8tile` 8bpc against `main` ee07b00: t=8
   registrations 22,700,725 -> **7,923,518**, i.e. the thread-count-dependent
   explosion is gone (t=1 is 7,924,706 on both). Wall, n=9, idle, dav1d 1.5.4
   `--framedelay 1` in the same interleaved sweep: **t=8 0.785x, t=4 0.812x,
@@ -54,6 +58,38 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   `benchmarks/strided_rect_2026-08-09.meta`.
 
 ### Fixed
+- **The `StridedRows` guard handed out a `&mut`/`&` over the HULL while
+  reserving only the rectangle — UB, now fixed by a per-ROW view**
+  (`crates/rav1d-disjoint-mut/src/lib.rs`, `include/dav1d/picture.rs`,
+  `src/loopfilter.rs`). The record/reference split above was stated on purpose
+  and was the defect: **the reference is what Rust's aliasing rules bind to,
+  not the record**, so the two tile columns the rectangle record exists to
+  ACCEPT were two simultaneously-live overlapping `&mut`. New
+  `DisjointMutRect` / `DisjointImmutRect` keep the ONE registration, store a
+  raw base pointer instead of a reference, and materialise a `&mut [V]` /
+  `&[V]` for exactly one row at a time (`row_mut` takes `&mut self`, so two
+  rows cannot be live at once either). No extra atomic and no extra lock — the
+  reference shape and the record shape are independent.
+  `for_rows{,_mut}`, `compact_read_per_row`, `compact_write_back_per_row` and
+  `LfBlock::fill_hull` were already row-indexed and convert mechanically.
+  `narrow_guard{,_mut}` could NOT be converted — they hand the caller a FLAT
+  slice over the hull plus a stride, which IS a hull reference — so they revert
+  to a plain hull borrow and their callers (`with_pixel_guard_immut`,
+  `block_mut`) revert to gating on `tile_threading_active()`. `block_mut`
+  therefore loses the copy elision, and the rectangle reaches it one level down
+  instead: the compact copies reserve the block ONCE, so it costs 2
+  registrations rather than `2h`. Miri: all NINE cases pass, including the two
+  that were UB. **Teeth measured, not assumed** — planting the TRANSIENT hull
+  reference back inside `row_mut` leaves the two original UB cases GREEN
+  (their row references die at the end of each statement), so two new cases
+  that hold a row reference ACROSS the next guard's retag were added and are
+  what catch it. Record: `benchmarks/rect_rowview_2026-08-09.meta`.
+- **`RowMap::new`'s `1usize << 32` is an `arithmetic_overflow` hard error on
+  32-bit** (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`) — it broke both
+  i686 CI legs and `wasm32-wasip1`, and the wasm32 cross job runs `cargo check`,
+  which stops before the MIR pass that raises it, so CI could not see that one.
+  Computed in `u64` now. Same commit clears the two clippy `-D warnings`
+  findings and three unresolved intra-doc links that were also red.
 - **`wide_exclusion` had gone vacuous, and with it the only gate for the
   wide-path TOCTOU** (`crates/rav1d-disjoint-mut/tests/wide_exclusion.rs`).
   Since `SHARDS_SERIAL = 1` (#458) an instance built by a process that has
