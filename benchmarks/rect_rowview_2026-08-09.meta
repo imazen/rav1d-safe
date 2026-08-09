@@ -10,13 +10,15 @@ Build     cargo build --release, default features, NO -C target-cpu=native.
 Timing    NO `nice` on any timed run (Darwin maps a niced process onto E-cores
           and the wall clock distorts ~40x). Two-point wall fit at 2 and 20
           frames, beta = (hi - lo)/18, so process startup drops out. Rotating
-          arm order inside every cell; strict idle gate (a cell is DISCARDED
-          and re-run whenever any foreign process exceeds 25% CPU).
+          arm order inside every cell. The strict idle gate was NOT usable —
+          see §2 — so ALLOW_LOAD=1 was set and every row carries its
+          foreign-process count in the last column.
 Vectors   ~/tmp/rav1d-perf/vec/v4k_8tile{,_10b}.avif for our arms;
           ~/tmp/recon-yard/vec/*.ivf for dav1d.
 
-Files     rect_rowview_gap_2026-08-09.tsv    raw gap rows (4 arms x 8 cells x N)
-          rect_rowview_bands_2026-08-09.txt  per-cell min/median/max + disjoint
+Files     rect_rowview_gap_2026-08-09.tsv     224 raw gap rows (4 arms x 8 cells x 7)
+          rect_rowview_bands_2026-08-09.txt   per-cell min/median/max + disjoint
+          rect_rowview_cols_ab_2026-08-09.tsv the reverted COLS arm (§6), n=9
 
 
 0. WHAT WAS WRONG
@@ -61,9 +63,70 @@ gating on `tile_threading_active()`:
     per-row references, so a block costs 2 registrations instead of `2h`.
 
 
-2. GAP TO dav1d
+2. GAP TO dav1d — n=7, 224 rows, rect_rowview_gap_2026-08-09.tsv
 --------------------------------------------------------------------------------
-(filled below from rect_rowview_gap_2026-08-09.tsv)
+Raw rows 224, rounds 7, load-tagged rows 224 of 224.
+ms/frame is the MEDIAN over rounds of the two-point fit; [min..max] is the
+per-round band. THE BOX WAS NOT IDLE — two other agents were measuring and
+building on it throughout, so ALLOW_LOAD=1 was used and every row carries its
+foreign-process count. Absolute ms are inflated; the arms interleave with a
+rotating order inside every cell, so the PAIRED RATIOS are what to read.
+
+vector            t    base    #469    head   dav1d head/base #469/base  retained head/ref #469/ref
+---------------------------------------------------------------------------------------------------
+v4k_8tile         1   321.6   326.8   327.1   249.1    1.0171    1.0162      105%    1.313    1.312
+v4k_8tile         2   201.5   169.4   180.6   127.2    0.8963    0.8406       65%    1.420    1.332
+v4k_8tile         4   117.3    92.7    99.8    67.6    0.8508    0.7901       71%    1.477    1.372
+v4k_8tile         8    74.8    60.0    66.4    39.8    0.8878    0.8024       57%    1.667    1.506
+v4k_8tile_10b     1   363.9   367.4   365.7   253.9    1.0049    1.0096       51%    1.440    1.447
+v4k_8tile_10b     2   211.3   192.4   195.0   129.5    0.9227    0.9104       86%    1.506    1.486
+v4k_8tile_10b     4   123.4   105.8   110.8    68.9    0.8982    0.8573       71%    1.609    1.535
+v4k_8tile_10b     8    79.8    68.8    70.3    40.7    0.8809    0.8621       86%    1.728    1.691
+
+per-round bands (min..max ms/frame)
+
+  v4k_8tile         1  base [318.2..324.3]  #469 [323.9..342.8]  head [325.7..330.1]  dav1d [249.0..249.3]
+  v4k_8tile         2  base [200.2..211.4]  #469 [168.9..179.1]  head [179.4..191.4]  dav1d [126.8..131.5]
+  v4k_8tile         4  base [115.8..134.4]  #469 [91.2..96.2]  head [94.3..101.7]  dav1d [65.8..69.7]
+  v4k_8tile         8  base [73.3..79.2]  #469 [58.4..65.2]  head [59.6..71.6]  dav1d [38.3..41.6]
+  v4k_8tile_10b     1  base [362.6..383.2]  #469 [363.8..421.4]  head [364.0..416.4]  dav1d [253.7..276.4]
+  v4k_8tile_10b     2  base [209.9..259.3]  #469 [190.7..234.1]  head [193.9..270.2]  dav1d [129.3..157.2]
+  v4k_8tile_10b     4  base [121.2..127.6]  #469 [104.8..110.8]  head [106.7..114.0]  dav1d [68.3..72.1]
+  v4k_8tile_10b     8  base [78.1..84.3]  #469 [67.8..72.2]  head [69.8..73.9]  dav1d [40.3..42.5]
+
+scaling t=1 -> t=8
+
+  v4k_8tile         base 4.30x  #469 5.45x  head 4.93x  dav1d 6.25x
+  v4k_8tile_10b     base 4.56x  #469 5.34x  head 5.20x  dav1d 6.24x
+
+READ THE RATIOS, NOT THE MILLISECONDS. Every one of the 224 rows is
+load-tagged: two other agents (`perf/park-not-spin` measuring, `perf/tile-keyed`
+building and running tests) held the box for the whole window, so the strict
+idle gate could not commit a single cell in 20 minutes of waiting and the sweep
+was re-run with ALLOW_LOAD=1. The arms rotate order inside every cell, so all
+four see the same load; absolutes are inflated and the pairwise columns are the
+result.
+
+What it says:
+
+  * The win SURVIVES at every t > 1, and it is roughly two thirds of #469's.
+    8bpc head/base 0.896 / 0.851 / 0.888 at t=2/4/8 against #469's
+    0.841 / 0.790 / 0.802 — 65% / 71% / 57% of the base->#469 distance
+    retained. 10bpc keeps more: 86% / 71% / 86%.
+  * The third that is gone is `block_mut`'s copy elision, which is exactly the
+    part that needed the hull reference. Nothing else changed between the two
+    arms.
+  * Scaling t=1 -> t=8: base 4.30x -> head 4.93x (#469 5.45x, dav1d 6.25x) at
+    8bpc; base 4.56x -> head 5.20x (#469 5.34x, dav1d 6.24x) at 10bpc.
+  * t=1 is unchanged by the row view: head/base 1.017 and #469/base 1.016 at
+    8bpc are the same number. The t=1 cost is #469's tracker change, not the
+    guard, and this branch neither adds to it nor removes it (see §6).
+  * Bands (rect_rowview_bands_2026-08-09.txt): head-vs-base disjoint at 6 of 8
+    cells; the two OVERLAP cells are both 10bpc low-thread, where the load made
+    the bands wide (10bpc t=1 base [362.6..383.2] against head [364.0..416.4]).
+  * The 1.30x bar is still met at NO cell: 1.313 / 1.420 / 1.477 / 1.667 at
+    8bpc, 1.440 / 1.506 / 1.609 / 1.728 at 10bpc — all worse than #469's,
+    because #469 kept the copy elision.
 
 
 3. WHAT THIS DOES NOT FIX — the macOS-Intel CI panic is a GENUINE overlap
@@ -197,6 +260,11 @@ Output md5 identity: 5 vectors x t={1,2,4,8,16} x 3 arms (rsbase/rsrect/rshead)
 = 25 cells; all three arms agree in every cell and every vector is
 thread-invariant.
 
+`mt_stress_4k`: thread counts 1/2/4/8/16 x 5 trials, all ok (in the suite run).
+`scripts/perf/multi_decoder_pressure.sh bench_rshead 12 3 300`: 12 concurrent
+decoder processes x 3 iters x thread counts 1/2/4/8/16 over 5 vectors — PASS,
+every md5 matching the serial t=1 reference, no wedge, no overlap panic.
+
 `cargo test --release --workspace`: 254 passed, 0 failed, 30 ignored.
 `cargo fmt --check` clean. `cargo clippy -p rav1d-disjoint-mut --all-targets
 -- -D warnings` clean. `cargo doc -p rav1d-disjoint-mut --no-deps` with
@@ -209,11 +277,27 @@ those files are not in this diff and CI's Clippy leg runs on x86_64.)
 6. NOT MEASURED / NOT DONE
 --------------------------------------------------------------------------------
 * The t=1 regression #469 priced at +0.71 ns per surviving registration is NOT
-  fixed. The fix it names — a `COLS` const parameter on `find`/`alloc` selected
-  by the `mask == 0` dispatch, plus resetting the column fields in
-  `reprovision` — duplicates the scan loop on the hottest path, and the same
-  file records +0.9% the last time that body was duplicated (`fold` arm,
-  `tracker_borrowcost_2026-08-08.tsv`). Box time went to the three-arm A/B.
+  fixed, and the fix it names is a MEASURED NULL. Built exactly as described —
+  a `COLS` const parameter on `ShardRecs::find`/`::alloc` selected at `add`'s
+  fast path by `self.mask != 0`, skipping both the `cols_meet` test and the two
+  column stores, plus a reset of every `c0`/`c1` pair in `reprovision` so a
+  later `mask` 0 -> non-zero flip cannot read a stale narrow range (that would
+  be a MISSED overlap, not a false positive). The identity it rests on is
+  exact: on a one-shard instance every registration carries `0 ..= COL_ANY`, and
+  `cols_meet(a0, a1, 0, COL_ANY)` is unconditionally true. All 35+9+25+... tests
+  in `rav1d-disjoint-mut` pass with it.
+
+  A/B against this branch, n=9, 3 cells, near-idle (2 of 27 rows tagged),
+  `rect_rowview_cols_ab_2026-08-09.tsv`:
+
+      8bpc  t=1   cols 324.6 [323.6..337.3]  head 325.7 [323.3..334.5]  0.9966  OVERLAP
+      8bpc  t=8   cols  56.6 [ 54.9.. 83.9]  head  55.8 [ 54.6.. 83.1]  1.0139  OVERLAP
+      10bpc t=1   cols 363.7 [361.8..367.2]  head 362.3 [360.5..378.4]  1.0037  OVERLAP
+
+  Every band overlaps and the sign is inconsistent across cells. REVERTED. So
+  #469's own "0.991 with the two column stores deleted" is not reproduced as a
+  real effect either — whatever the t=1 cost is, it is not the column fields,
+  and the next attempt should profile before it patches.
 * x86_64: nothing built or run. No Rosetta on this box.
 * Loop restoration is OFF in both 4K gap vectors, so `looprestoration*.rs`
   registers zero borrows in this grid while it is active in 696/768 corpus

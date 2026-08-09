@@ -83,7 +83,28 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   reference back inside `row_mut` leaves the two original UB cases GREEN
   (their row references die at the end of each statement), so two new cases
   that hold a row reference ACROSS the next guard's retag were added and are
-  what catch it. Record: `benchmarks/rect_rowview_2026-08-09.meta`.
+  what catch it. **Perf: about two thirds of the previous entry's t>1 win
+  survives.** n=7, 224 rows, four arms (main / the hull-reference version /
+  this / dav1d 1.5.4 `--framedelay 1`) interleaved with rotating order — but
+  the box was shared with two other measuring agents throughout, so every row
+  is load-tagged and the PAIRED RATIOS are the result, not the absolute ms.
+  8bpc head/base **0.896 / 0.851 / 0.888** at t=2/4/8 against the unsound
+  arm's 0.841 / 0.790 / 0.802 (65% / 71% / 57% of the distance retained);
+  10bpc 0.923 / 0.898 / 0.881 against 0.910 / 0.857 / 0.862. Scaling t1→t8
+  4.30x → **4.93x** at 8bpc (unsound 5.45x, dav1d 6.25x). t=1 is unchanged by
+  the row view (1.017 against the unsound arm's 1.016 — the same number), so
+  the t=1 cost is the tracker change, not the guard. The 1.30x bar is met at
+  no cell. Record: `benchmarks/rect_rowview_2026-08-09.meta` +
+  `rect_rowview_gap_2026-08-09.tsv` + `rect_rowview_bands_2026-08-09.txt`.
+- **MEASURED NULL, reverted: skipping the tracker's column fields on a
+  one-shard instance** (`rect_rowview_cols_ab_2026-08-09.tsv`). The fix the
+  previous entry names for its t=1 cost — a `COLS` const parameter on
+  `ShardRecs::find`/`::alloc` selected by `mask == 0`, skipping both the
+  `cols_meet` test and the two stores, plus a `reprovision` reset so a later
+  `mask` 0→non-zero flip cannot read a stale narrow range — was built and
+  A/B'd at n=9 on three cells: **0.9966 / 1.0139 / 1.0037, every band
+  overlapping, sign inconsistent.** Reverted. Whatever the t=1 cost is, it is
+  not the column fields.
 - **`RowMap::new`'s `1usize << 32` is an `arithmetic_overflow` hard error on
   32-bit** (`crates/rav1d-disjoint-mut/src/tracker_shard.rs`) — it broke both
   i686 CI legs and `wasm32-wasip1`, and the wasm32 cross job runs `cargo check`,
