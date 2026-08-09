@@ -466,23 +466,51 @@ impl TinyLock {
         !self.0.swap(true, Ordering::Acquire)
     }
 
+    /// Bounded spin, then hand the core back to the scheduler.
+    ///
+    /// This used to spin without bound, and `yield_now` existed only behind
+    /// `__probe_lock_backoff`, which is not in `default` — so every shipping
+    /// build spun forever. That is a bad trade on the hardware this runs on:
+    ///
+    /// * The critical section is a few instructions and contention is ~0.02%
+    ///   (measured: ~23,009 slow paths per 6-frame run against 22,700,725
+    ///   registrations), so the spin almost never runs — but when it does, it
+    ///   is because something abnormal happened to the holder.
+    /// * Apple silicon is heterogeneous (M4: 8 performance + 4 efficiency
+    ///   cores). A spinner on a P-core waiting for a holder the scheduler put
+    ///   on an E-core burns a fast core for a multiple of the hold time.
+    /// * If the holder is preempted, an unbounded spinner burns its whole
+    ///   quantum — ~1 ms against a hold time of nanoseconds.
+    ///
+    /// The signature of that pathology is a fat tail with a normal median, and
+    /// the t=8 sweeps show exactly that: 8bpc t=8 bands of [67.8..114.6] and
+    /// [73.2..112.8] around medians near 70. Judge this change on p90/max and
+    /// band width, not on the median.
+    ///
+    /// The FAST path is deliberately untouched — `lock`/`try_lock`/`unlock`
+    /// remain a single atomic each. `try_lock`'s freedom from any `bl` is
+    /// load-bearing for the frameless leaf `add` (see [`BorrowTracker::add_contended`]),
+    /// so the yield lives only here, in the already-`#[cold]` slow path.
     #[cold]
     #[inline(never)]
     fn lock_slow(&self) {
-        #[cfg(feature = "__probe_lock_backoff")]
+        // Long enough that a holder which is merely mid-critical-section is
+        // waited out in userspace; short enough that a descheduled holder does
+        // not cost a quantum.
+        const SPINS_BEFORE_YIELD: u32 = 64;
         let mut spins = 0u32;
         loop {
             // Spin on a load, not a swap: a read-only spin keeps the line in
             // Shared instead of ping-ponging it Exclusive between waiters.
             while self.0.load(Ordering::Relaxed) {
                 core::hint::spin_loop();
-                #[cfg(feature = "__probe_lock_backoff")]
-                {
-                    spins += 1;
-                    if spins >= 64 {
-                        spins = 0;
-                        std::thread::yield_now();
-                    }
+                spins += 1;
+                if spins >= SPINS_BEFORE_YIELD {
+                    spins = 0;
+                    // `no_std` has nowhere to yield to, so it keeps the old
+                    // unbounded spin. `std` is this crate's default feature.
+                    #[cfg(feature = "std")]
+                    std::thread::yield_now();
                 }
             }
             if !self.0.swap(true, Ordering::Acquire) {
