@@ -2344,7 +2344,13 @@ mod tests {
         for th in 0..8usize {
             let t = Arc::clone(&t);
             hs.push(std::thread::spawn(move || {
-                for _ in 0..50_000usize {
+                // Miri interprets every one of these atomics, and TREE
+                // BORROWS is where it bites: at the native count the whole lib
+                // leg finishes in 1488.78 s under Stacked Borrows but had not
+                // finished this test plus `threaded_disjoint_is_clean` after
+                // 7_200 s under Tree Borrows (2026-08-09, M4 Pro). Native is
+                // unchanged.
+                for _ in 0..if cfg!(miri) { 1_500 } else { 50_000usize } {
                     // Disjoint per thread, all inside block 0 => one shard.
                     let id = t.add_mut(&b(th * 4..th * 4 + 4));
                     t.remove(id);
@@ -2386,7 +2392,9 @@ mod tests {
         for th in 0..8usize {
             let t = Arc::clone(&t);
             hs.push(std::thread::spawn(move || {
-                for i in 0..20_000usize {
+                // See `threaded_churn_leaks_no_slots` for why this is cut
+                // under Miri. Native is unchanged.
+                for i in 0..if cfg!(miri) { 1_000 } else { 20_000usize } {
                     // Interleave the threads across the address space so they
                     // land in the same shards constantly.
                     let base = (i * 8 + th) * 4;

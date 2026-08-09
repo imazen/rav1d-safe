@@ -236,6 +236,9 @@ floors scaled with it so neither side can silently degenerate.
     wide_exclusion::a_wide_borrow_excludes...        60_000 rd   killed at 10    300 rd,   92 s
                                                        (0.05 s)   min, unfinished, (+ 2 narrow
                                                                   both models      contenders)
+    lib threaded_churn_leaks_no_slots (50_000)       0.02 s for   SB 1488.8 s,    1_500 + 1_000:
+      + threaded_disjoint_is_clean   (20_000)        all 26        TB TIMED OUT    66.8 s SB
+                                                                   at 7_200 s      66.7 s TB
 
 `shard_liveness`'s cost is `DisjointMut::new(vec![0u8; 24 KiB])` per pair — it
 has to be fresh, a poisoned tracker would mask later results — so every pair is
@@ -294,7 +297,7 @@ Miri leg for the same reason.)
     narrow_release          ok    1 test      92.76 s    ok    1 test    92.95 s
     guard_move_release      ok    2 tests    110.99 s    ok    2 tests  112.19 s
     shard_liveness          ok    5 tests    992.69 s    ok    5 tests  993.11 s
-    lib                     ok   26 tests   1488.78 s    STILL RUNNING (**)
+    lib                     ok   26 tests   1488.78 s    TIMED OUT (**)
 
     (*)  NOT UB, and NOT the shipped configuration. This leg ran the
          SIX-contender `wide_exclusion`; its anti-vacuity assertion fired
@@ -304,18 +307,27 @@ Miri leg for the same reason.)
          afterwards: ok in 91.88 s (SB) and 91.45 s (TB). That pair is the
          shipped number; the 181.66/180.44 above are the pre-fix six-contender
          runs.
-    (**) `tracker_shard::tests::threaded_churn_leaks_no_slots` under Tree
-         Borrows. Its Stacked-Borrows twin finished the whole lib in 1488.78 s
-         — which independently matches the 1489 s CI reported for the lib on
-         `main` — but Tree Borrows was past 83 minutes on this one test when
-         this record was written, and had not finished. NOT reported as green.
-         CI run 31325959025 is the authority for it.
+    (**) Hit the harness's 7_200 s cap with 22 of 26 done, inside
+         `tracker_shard::tests::threaded_disjoint_is_clean` (and having spent
+         ~83 min on `threaded_churn_leaks_no_slots` before it). rc=124, i.e.
+         `timeout`, NOT a failure. Its Stacked-Borrows twin did the same 26
+         tests in 1488.78 s — which independently matches the 1489 s CI
+         reported for the lib on `main`. So Tree Borrows is >5x slower on
+         exactly those two loops (8 threads x 50_000 and x 20_000 add/remove
+         pairs, the first all on ONE shard).
 
-**Total per model at the shipped configuration: ~46 minutes** (0.04 + 0.03 +
-9.6 + 91.9 + 92.8 + 111 + 993 + 1489 s), against "cannot finish" before.
+         FOURTH and last blocker, fixed the same way: `cfg(miri)` counts of
+         1_500 and 1_000, native untouched. Re-measured after:
 
-**No UB anywhere.** Every failure in this table is a liveness assertion, and the
-one that fired is documented above with its fix.
+             lib, Stacked Borrows   1488.78 s -> 66.77 s   26/26 ok
+             lib, Tree Borrows       >7200 s  -> 66.72 s   26/26 ok
+
+**Total per model at the shipped configuration: ~23 minutes** (0.04 + 0.03 +
+9.6 + 91.9 + 92.8 + 111 + 993 + 66.8 s), against "cannot finish" before this
+branch — on EITHER model.
+
+**No UB anywhere.** Every failure in this table is a liveness assertion or a
+timeout, and both are documented above with their fixes.
 
 --------------------------------------------------------------------------------
 ## 10. Reproducing
