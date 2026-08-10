@@ -154,8 +154,13 @@ small frames a 60-byte gap may be a different row rather than an adjacent column
 
 ## 5. Correctness gates, this branch
 
-Run at `84387d5`, the last code-touching commit (`e390d89` and later are docs
-and records only, so the binary under test is unchanged).
+**Re-run at `38f314b`, the last code-touching commit.** The first corpus pass
+was taken at `84387d5`; two later commits touched code
+(`7a5a910` tightened the gate's own assertion, `38f314b` fixed a clippy lint in
+its summary print), so the whole corpus was re-run afterwards rather than
+inherited. The two passes are byte-identical by name with the actual MD5 as the
+value — 0 differences over 768 keys at t=1 and 755 at t=8 — which is what a
+`tests/`-only change should produce, and is now checked rather than assumed.
 
 ### Corpus, by name, with the ACTUAL MD5 as the value
 
