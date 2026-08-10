@@ -15,6 +15,12 @@ Records: `benchmarks/verify_compose_2026-08-07.meta`, `verify_compose2_2026-08-0
 `aarch64_md5_attribution_2026-08-07/`, `p1_scaling_2026-08-07.meta`,
 `p2_kernel_profile_2026-08-07.meta`, `tracker_blockshift_2026-08-08.meta`.
 
+**x86_64 records this file originally failed to cite** — read them before any x86 perf work:
+`benchmarks/x64_i265_gap_2026-08-08.meta`, `x64_i265_postmerge_2026-08-08.meta` and their
+`x64_i265_CORRECTION_2026-08-08.md`, plus issue #458. Real Intel hardware ran this decoder two
+days before section A was written, and it measured x86 **anti-scaling** plus a **+59% x86
+single-thread regression** from the campaign's own tracker chain. Section F9 summarises.
+
 ---
 
 ## A. Architecture-independent — these should apply to x64 directly
@@ -425,9 +431,9 @@ token (F1, finding 3).
 
 Named first, because none of it is closeable on this hardware:
 
-1. **The gap to dav1d on x86_64, t=1/2/4/8, both depths — NOT MEASURED.** No wall-clock number can
-   come out of TCG. This is the single most valuable open item, because every optimisation this
-   campaign selected was selected against the aarch64 profile.
+1. **The gap to dav1d on x86_64 — not measured BY THIS PASS, but it was already measured on real
+   x86 hardware in this repo. See F9: the shape is materially different and the campaign's own
+   tracker chain regressed x86 single-thread by +59%.** Nothing new can come out of TCG.
 2. **A1's shift ladder and the `SLOTS`/128-byte-shard question — NOT MEASURED**, same reason.
 3. **#482's seam cost on x86 (0.3-1.3% on aarch64) — NOT MEASURED.** What IS checked: no
    out-of-line `ReconSrc::slice` symbol exists in either the x86 or the aarch64 release binary at
@@ -464,3 +470,50 @@ exists, "verified on x64" can honestly mean **correctness on the AVX2 tier** and
   shell script.** A `cargo build` mid-session replaced `examples/md5_inventory` under three live
   container runs. They survived (the old inode stays mapped), but the arm identity was destroyed;
   distinct `_plain` / `_sites` copies are the fix.
+
+### F9. The premise "x86 has only ever been compile-checked" is FALSE — and the x86 shape IS different
+
+**Every number in this subsection is CITED from a committed record, not measured by this pass.**
+Source: `benchmarks/x64_i265_gap_2026-08-08.meta` + `x64_i265_postmerge_2026-08-08.meta` +
+`x64_i265_CORRECTION_2026-08-08.md` + issue #458. Host: **i265 — Intel Core Ultra 7 265K**
+(Arrow Lake, 20C/20T, single-channel DDR5-6000, Ubuntu 26.04), idle, dedicated, dav1d
+1.5.3-46-g1718ff9a built on-box, `scripts/perf/ab_sweep.sh` 3 rounds x 3 reps interleaved. So real
+x86_64 hardware DID run this decoder, two days before sections A-E were written — and **sections
+A-E cite none of those files.** Read them before planning any x86 perf work.
+
+What that record says, restricted to the arms its own CORRECTION leaves standing
+(`main` = `a6a7e232` and `pre445`; the `audit445` and `attrib` arms are VOID — a silent
+`git checkout` refusal rebuilt pre-merge main for both, verified byte-identical):
+
+* **Single thread, x86 is NARROWER than aarch64 vs dav1d:** 1.51x at 8bpc and 1.99x at 10bpc
+  (v4k_8tile), against the same-week aarch64 reference's 1.62x / 2.01x.
+* **But x86-64 tile threading ANTI-SCALES, on every genuine arm.** v4k_8tile 8bpc ms/frame:
+  t=1 220.1, t=2 428.7, t=4 590.6, t=8 622.2 — **t1->t8 = 0.35x**, i.e. t=8 is 2.8x SLOWER than
+  t=1. dav1d on the same box scales 4.46x and saturates at t=8 (32.7 ms/f). **The gap therefore
+  goes 1.5x at t=1 to 19.0-20.8x at t=8**, where the aarch64 figure for the same measurement is
+  3.44x. That is the materially-different x86 shape, and it is a far bigger deal than any row in
+  section A.
+* **The campaign's tracker work costs x86 +59% at t=1** (issue #458, and the CORRECTION's
+  re-bisect): 220.6 -> 350.8 ms/frame across the compose-2 merge, 10bpc 275 -> 412 (+50%),
+  bisected to **the sharded-tracker chain itself**, with aarch64 t=1 flat (0.994) over the same
+  merge. Post-merge the x86 ST gap is therefore ~2.4x dav1d. **The base this pass verified
+  (`5e9975f`) is post-merge, so that regression is in the code above.**
+* Also standing from that record, and consistent with section F here: frame md5 identical across
+  arms x vectors x t{1,2,4,8} on x64, and #446's CDEF `pri_tap` divergence does not exist on x64.
+
+Consequences for section A, which must not be read as-is any more:
+
+* **A1's "x64 expectation: applies, but RE-FIT THE LADDER" is too optimistic in the wrong
+  direction.** On x86 the sharded-tracker chain that A1 belongs to is a measured net LOSS at t=1
+  (+59%), and the MT win it buys on aarch64 has no x86 counterpart to buy because x86 anti-scales
+  before the tracker is reached.
+* **A2's "fully applicable" is unproven on x86.** The record's `attrib` arm (which composed the
+  barrier removal) is VOID, so nobody has a valid x86 measurement of the barrier fix at all — and
+  F2 above shows the barrier's removal is what the four t=8 aborts sit behind.
+* **A5's batch factor** likewise: the only x86 datum ("audit445's batching is noise on x64") is
+  VOID.
+
+The honest x86 status of this campaign is therefore: **correctness verified on the AVX2 tier
+(F1-F6); performance UNVERIFIED and pointing the wrong way on the one real x86 record that
+exists.** A dedicated x86 box (the i265 rig, or a bare-metal CI runner) is the only way forward,
+and the first thing to run on it is not a ladder — it is why x86 anti-scales at t=2.

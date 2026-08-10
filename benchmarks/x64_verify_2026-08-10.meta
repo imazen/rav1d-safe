@@ -162,3 +162,35 @@
 #     old inode stays mapped) but the arm identity was destroyed. Distinct
 #     _plain / _sites binary copies are the fix -- same class as "never edit a
 #     shell script while it is running".
+#
+# 9. PREMISE CORRECTION (added after the runs, before commit)
+#    The task that commissioned this pass asserted "essentially nothing has been
+#    measured on x86_64; x86 has only ever been compile-checked". THAT IS FALSE,
+#    and docs/X64_APPLICABILITY.md sections A-E cite none of the files that
+#    prove it. CITED, NOT MEASURED HERE:
+#      benchmarks/x64_i265_gap_2026-08-08.meta
+#      benchmarks/x64_i265_postmerge_2026-08-08.meta
+#      benchmarks/x64_i265_CORRECTION_2026-08-08.md
+#      issue #458
+#    Host i265 = Intel Core Ultra 7 265K, Ubuntu 26.04, idle, dedicated, dav1d
+#    1.5.3 built on-box, ab_sweep.sh 3 rounds x 3 reps interleaved. Restricted
+#    to the arms its own CORRECTION leaves standing (`main` a6a7e232, `pre445`;
+#    `audit445`/`attrib` are VOID -- a silent git checkout refusal rebuilt
+#    pre-merge main for both):
+#      * x86 SINGLE-THREAD is NARROWER than aarch64 vs dav1d: 1.51x (8bpc),
+#        1.99x (10bpc) vs the same-week aarch64 1.62x / 2.01x.
+#      * x86 tile threading ANTI-SCALES: v4k_8tile 8bpc 220.1 / 428.7 / 590.6 /
+#        622.2 ms/f at t=1/2/4/8 -> t1->t8 = 0.35x, i.e. t=8 is 2.8x SLOWER than
+#        t=1, while dav1d scales 4.46x on the same box. The gap therefore goes
+#        1.5x at t=1 to 19.0-20.8x at t=8 (aarch64: 3.44x).
+#      * The campaign's sharded-tracker chain costs x86 +59% at t=1 (220.6 ->
+#        350.8; 10bpc 275 -> 412), aarch64 flat over the same merge. The base
+#        verified here (5e9975f) is post-merge, so that regression is in it.
+#      * Frame md5 identical across arms x vectors x t{1,2,4,8} on x64, and
+#        #446's CDEF pri_tap divergence does not exist there -- consistent with
+#        section 1 above.
+#    => The materially-different x86 shape the task asked for already exists on
+#       record. A1's "applies", A2's "fully applicable" and A5's batch-factor
+#       row must not be read as-is: on x86 the tracker chain is a measured net
+#       LOSS at t=1, and the only x86 data on the barrier and the batching came
+#       from the VOID arms, so nobody has a valid x86 measurement of either.
