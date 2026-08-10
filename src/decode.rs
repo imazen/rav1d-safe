@@ -310,7 +310,7 @@ fn read_tx_tree(
     if depth < 2 && from > TxfmSize::S4x4 {
         let cat = 2 * (TxfmSize::S64x64 as c_int - t_dim.max as c_int) - depth;
         let a = ((*f.a[t.a].tx.index(bx4 as usize) as u8) < txw) as c_int;
-        let l = ((*t.l.tx.index(by4 as usize) as u8) < txh) as c_int;
+        let l = ((t.l.tx.get_mut()[by4 as usize] as u8) < txh) as c_int;
 
         is_split = rav1d_msac_decode_bool_adapt(
             &mut ts_c.msac,
@@ -1352,7 +1352,7 @@ fn decode_b(
             seg = Some(&frame_hdr.segmentation.seg_data.d[b.seg_id.get()]);
         } else if frame_hdr.segmentation.seg_data.preskip != 0 {
             if frame_hdr.segmentation.temporal != 0 && {
-                let index = *ta.seg_pred.index(bx4 as usize) + *t.l.seg_pred.index(by4 as usize);
+                let index = *ta.seg_pred.index(bx4 as usize) + t.l.seg_pred.get_mut()[by4 as usize];
                 seg_pred = rav1d_msac_decode_bool_adapt(
                     &mut ts_c.msac,
                     &mut ts_c.cdf.mi.seg_pred[index as usize],
@@ -1418,7 +1418,7 @@ fn decode_b(
         && frame_hdr.skip_mode.enabled != 0
         && cmp::min(bw4, bh4) > 1
     {
-        let smctx = *ta.skip_mode.index(bx4 as usize) + *t.l.skip_mode.index(by4 as usize);
+        let smctx = *ta.skip_mode.index(bx4 as usize) + t.l.skip_mode.get_mut()[by4 as usize];
         b.skip_mode = rav1d_msac_decode_bool_adapt(
             &mut ts_c.msac,
             &mut ts_c.cdf.mi.skip_mode[smctx as usize],
@@ -1434,7 +1434,7 @@ fn decode_b(
     if b.skip_mode != 0 || seg.map(|seg| seg.skip != 0).unwrap_or(false) {
         b.skip = 1;
     } else {
-        let sctx = *ta.skip.index(bx4 as usize) + *t.l.skip.index(by4 as usize);
+        let sctx = *ta.skip.index(bx4 as usize) + t.l.skip.get_mut()[by4 as usize];
         b.skip =
             rav1d_msac_decode_bool_adapt(&mut ts_c.msac, &mut ts_c.cdf.m.skip[sctx as usize]) as u8;
         if debug_block_info!(f, t.b) {
@@ -1448,7 +1448,7 @@ fn decode_b(
         && frame_hdr.segmentation.seg_data.preskip == 0
     {
         if b.skip == 0 && frame_hdr.segmentation.temporal != 0 && {
-            let index = *ta.seg_pred.index(bx4 as usize) + *t.l.seg_pred.index(by4 as usize);
+            let index = *ta.seg_pred.index(bx4 as usize) + t.l.seg_pred.get_mut()[by4 as usize];
             seg_pred = rav1d_msac_decode_bool_adapt(
                 &mut ts_c.msac,
                 &mut ts_c.cdf.mi.seg_pred[index as usize],
@@ -1670,7 +1670,7 @@ fn decode_b(
         } else {
             &mut ts_c.cdf.kfym
                 [dav1d_intra_mode_context[*ta.mode.index(bx4 as usize) as usize] as usize]
-                [dav1d_intra_mode_context[*t.l.mode.index(by4 as usize) as usize] as usize]
+                [dav1d_intra_mode_context[t.l.mode.get_mut()[by4 as usize] as usize] as usize]
         };
         let y_mode = rav1d_msac_decode_symbol_adapt16(
             &mut ts_c.msac,
@@ -1762,7 +1762,7 @@ fn decode_b(
             let sz_ctx = b_dim[2] + b_dim[3] - 2;
             if y_mode == DC_PRED {
                 let pal_ctx = (*ta.pal_sz.index(bx4 as usize) > 0) as usize
-                    + (*t.l.pal_sz.index(by4 as usize) > 0) as usize;
+                    + (t.l.pal_sz.get_mut()[by4 as usize] > 0) as usize;
                 let use_y_pal = rav1d_msac_decode_bool_adapt(
                     &mut ts_c.msac,
                     &mut ts_c.cdf.m.pal_y[sz_ctx as usize][pal_ctx],
@@ -2893,7 +2893,8 @@ fn decode_b(
                     && inter_mode == GLOBALMV
                     && frame_hdr.gmv[r#ref[0] as usize].r#type > Rav1dWarpedMotionType::Translation)
                 // has overlappable neighbours
-                && (have_left && findoddzero(&t.l.intra.index(by4 as usize..(by4 + h4) as usize))
+                && (have_left
+                    && findoddzero(&t.l.intra.get_mut()[by4 as usize..(by4 + h4) as usize])
                     || have_top && findoddzero(&ta.intra.index(bx4 as usize..(bx4 + w4) as usize)))
             {
                 // reaching here means the block allows obmc - check warp by
@@ -4333,7 +4334,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     let start_lpf_y = (t.b.y & 16) as usize;
     f.lf.tx_lpf_right_edge.copy_from_slice_y(
         start_y..start_y + len_y,
-        &t.l.tx_lpf_y.index(start_lpf_y..start_lpf_y + len_y),
+        &t.l.tx_lpf_y.get_mut()[start_lpf_y..start_lpf_y + len_y],
     );
     let ss_ver = (f.cur.p.layout == Rav1dPixelLayout::I420) as c_int;
     align_h >>= ss_ver;
@@ -4342,7 +4343,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     let lpf_uv_start = ((t.b.y & 16) >> ss_ver) as usize;
     f.lf.tx_lpf_right_edge.copy_from_slice_uv(
         start_uv..start_uv + len_uv,
-        &t.l.tx_lpf_uv.index(lpf_uv_start..lpf_uv_start + len_uv),
+        &t.l.tx_lpf_uv.get_mut()[lpf_uv_start..lpf_uv_start + len_uv],
     );
 
     // error out on symbol decoder overread

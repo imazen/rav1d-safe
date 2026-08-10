@@ -10,12 +10,18 @@ is.
 
 ## 0. What is NOT done, and what is only measured on n=1 source per class
 
-* **The READ side of `t.l` is untouched.** This round converted the WRITE
-  population. `t.l`'s *reads* still register, and they are the next biggest
-  local population — **28,616 registrations/frame on screen UI q20 t=1, 13.5%
-  of what `head` still pays** (§6 sizes it per site). It is a bigger refactor
-  than this one because it needs the 14 `(a: &BlockContext, l: &BlockContext)`
-  helpers in `src/env.rs` to stop taking `l` behind a shared reference.
+* **The READ side is only PARTLY done.** A second commit (`f7c4e6f`, §6b)
+  converted the 17 direct `t.l.<field>.index(..)` reads in
+  `decode.rs`/`recon.rs`. It did **not** convert the 14
+  `(a: &BlockContext, l: &BlockContext)` helpers in `src/env.rs` — that needs a
+  signature change and `sm_flag`/`sm_uv_flag` are called with both roles. What
+  remains is ~**8,200 registrations/frame** on screen UI q20 t=1 (`env.rs:105:72`
+  4,288 + `env.rs:89:18` 3,926), ~4.3% of that arm's remaining population.
+* **The read-side increment is NOT established at t=8 for screen UI, nor at
+  q20 for photo** (§6b): 0.9854 at 6/11 and 1.0013 at 4/11 for UI t=8, 1.0000 at
+  5/11 for photo q20. Those rows carry `foreign_max=3` — my own Miri run was on
+  the box — so the nulls there may be load rather than signal, and they are
+  reported as not-established rather than as nulls.
 * **`decode::read_pal_indices` was profiled but NOT changed.** §5b has the
   census, and it moves the target: only ~45% of that symbol is addressable
   (`order_palette`, inlined), the other ~39% is the msac symbol decode every
@@ -329,20 +335,73 @@ they would need generalising). One gotcha found while scoping it:
 expression, which under `&mut` is two mutable borrows of one array at runtime
 indices and must be sequenced into locals first.
 
+## 6b. The read side, part one — built and priced (commit `f7c4e6f`)
+
+Reads through `&mut` need no record either: `DisjointMut::get_mut` hands back a
+plain `&mut T` and borrowck owns the exclusion. So the 17 direct
+`t.l.<field>.index(..)` sites plus the three `let l_ccoef = &t.l.ccoef[pl]`
+bindings that feed `decode_coefs` became `get_mut()` slices. `src/env.rs`'s 14
+`(a, l)` helpers were left alone — see §0.
+
+Two sites needed **sequencing rather than substitution**, and this is the one
+non-mechanical thing in the change: `filter[0]` and `filter[1]` are elements of
+ONE `[DisjointMut<_>; 2]`, so two `&mut` borrows at runtime indices cannot
+coexist. `recon.rs:3274` and `obmc`'s at `recon.rs:2014` now read each into a
+local first, and `obmc`'s pair is hoisted out of `mc`'s argument list (where the
+borrow would have had to outlive the call). Both carry a comment saying why.
+
+Registrations/frame at t=1, on top of the write-side arm:
+
+| vector | write-side arm | + reads | vs `base` composed |
+|---|---|---|---|
+| `Cui_1024x576_q20` | 212,602 | 189,450 | 268,763 → **−29.5%** |
+| `Ctext_1024x576_q20` | 134,158 | 119,983 | 175,096 → **−31.5%** |
+| `Cphoto_1024x576_q70` | 359,377 | 318,145 | 478,459 → **−33.5%** |
+
+Wall, n=11, three arms interleaved in one sweep
+(`benchmarks/ctx_tl_split_ab_reads_2026-08-10.tsv`). **`foreign_max = 3` on this
+sweep — my own Miri run was on the box — so it is noisier than §4's, and the t=8
+cells especially.** The isolated increment (reads / write-side arm):
+
+| vector | t | ratio | faster | verdict |
+|---|---|---|---|---|
+| `Ctext…q20` | 8 | 0.9552 | 11/11 | real |
+| `Ctext…q70` | 1 | 0.9645 | 11/11 | real |
+| `Ctext…q20` | 1 | 0.9678 | 11/11 | real |
+| `Ctext…q70` | 8 | 0.9770 | 11/11 | real |
+| `Cui…q20` | 1 | 0.9547 | 11/11 | real |
+| `Cui…q70` | 1 | 0.9830 | 10/11 | real |
+| `Cphoto…q70` | 1 | 0.9899 | 11/11 | real, small |
+| `Cphoto…q70` | 8 | 0.9925 | 11/11 | real, small |
+| `Cui…q20` | 8 | 0.9854 | 6/11 | **not established** |
+| `Cui…q70` | 8 | 1.0013 | 4/11 | **not established** |
+| `Cphoto…q20` | 1 | 1.0000 | 5/11 | **not established** |
+| `Cphoto…q20` | 8 | 1.0022 | 5/11 | **not established** |
+
+Composed against `base`, same sweep: screen text **0.846–0.900**, screen UI
+0.882–0.952, photo 0.942–0.983 — 11/11 on all 12 cells.
+
+The read side is the cheaper half per registration removed, which is what §11e
+of `MUT_RECON_KERNELS.md` predicted for an immutable population ("the cheap
+kind"): 23,152 registrations on `Cui…q20` t=1 bought 0.137 ms, i.e. **5.9 ns
+each** — the same order as the write side, so the "cheap kind" claim is NOT
+confirmed here at t=1. Where it does show is the four not-established cells, all
+at t=8 or on the photo class.
+
 ---
 
 ## 7. Correctness gates
 
 ### Corpus, BY NAME, with the actual md5 as the value, at t=1 AND t=8
 
-`examples/md5_inventory`, base and head, joined on `(group, name)` with
-`(status, actual_md5)` as the value:
+`examples/md5_inventory`, joined on `(group, name)` with `(status, actual_md5)`
+as the value. Both arms against `base`:
 
-| leg | rows | statuses | per-name differences |
-|---|---|---|---|
-| t=1 | 768 both arms | 766 PASS / 2 SKIP both | **0** |
-| t=8, `--skip-group film_grain` | 755 both arms | 753 PASS / 2 SKIP both | **0** |
-| t=8, no skip (for the record) | 571 both arms | 569 PASS / 2 SKIP both | **0** |
+| leg | rows | statuses | write-side arm | + read side |
+|---|---|---|---|---|
+| t=1 | 768 | 766 PASS / 2 SKIP | **0 diffs** | **0 diffs** |
+| t=8, `--skip-group film_grain` | 755 | 753 PASS / 2 SKIP | **0 diffs** | **0 diffs** |
+| t=8, no skip (for the record) | 571 | 569 PASS / 2 SKIP | **0 diffs** | — |
 
 The two SKIPs are `8-bit/features/{annexb,section5}` on both arms. The 571-row
 t=8 run is what the inventory produces unfiltered: the film-grain groups abort
@@ -368,6 +427,21 @@ the class of bug the macro exists to prevent):
 
 Restored byte-exact: `src/decode.rs` sha256
 `0f9cc569…689333f`, `git diff --exit-code` clean.
+
+And again on the read-side arm, an off-by-one on a converted read
+(`t.l.skip.get_mut()[by4 + 1]`):
+
+| | `decode_md5_verify` |
+|---|---|
+| planted off-by-one | **13 failed, 1 passed** |
+| restored | 14 passed |
+
+**Gotcha worth recording, because it cost real work:** `git checkout --
+src/decode.rs` to undo a plant on a tree whose read-side edits were still
+UNCOMMITTED reverted those edits too, silently — the sha matched the committed
+file and looked like a clean restore. Commit the change first, then plant. (The
+edits were scripted, so re-applying was mechanical; had they been hand-made they
+would have been gone.)
 
 ### `#![forbid(unsafe_code)]`, proved actively and non-vacuously
 
@@ -437,6 +511,28 @@ digest §7 of `MUT_RECON_KERNELS.md` recorded — and `git diff --exit-code` cle
 targets carry a `compile_error!` demanding `--release`; that is the repo's
 existing structure, not this branch.)
 
+### The read-side arm's gates, re-run after `f7c4e6f`
+
+Everything above was re-run on the read-side arm, not inherited:
+
+| gate | result |
+|---|---|
+| corpus by-name set-diff vs `base`, t=1 | **0 differences** (768 rows, 766 PASS / 2 SKIP) |
+| corpus by-name set-diff vs `base`, t=8 (`--skip-group film_grain`) | **0 differences** (755 rows, 753 PASS / 2 SKIP) |
+| `decode_md5_verify` | 14/14 |
+| teeth: off-by-one on a converted read | **13 of 14 FAILED**, restored |
+| 12 content vectors vs dav1d 1.5.4 | all bit-identical |
+| `forbid(unsafe_code)` plant → `lib.rs:13` | fires |
+| `mt_stress` 1/2/4/8/16 | pass |
+| `multi_decoder_pressure.sh` 12 processes | **PASS**, no wedge |
+| `cargo test --lib` DEBUG | 75 passed |
+| `cargo test --release` | **21 targets, 161 passed, 0 failed** |
+| compile matrix (6 configurations) | 0 errors each |
+
+Miri was NOT re-run for the read-side arm: `crates/rav1d-disjoint-mut` is
+byte-identical on it too, and the arm adds no new guard shape — it removes
+guards. Say that rather than claiming a run that did not happen.
+
 ### Compile matrix
 
 | configuration | |
@@ -479,7 +575,7 @@ else.
 **What Miri does NOT cover here.** Miri runs `rav1d-disjoint-mut`'s own tests,
 not the decoder. This change's soundness argument is not about the tracker's
 internals at all — it is that `&mut DisjointMut<_>` is exclusive, which is
-borrowck's claim and is checked at every one of the 22 sites by the compiler
+borrowck's claim and is checked at every one of the 22+17 sites by the compiler
 (see the `set_exclusive`-on-the-shared-direction plant in §7). There is no new
 guard SHAPE here to run Miri against, which is the case §6 of
 `OWNERSHIP_MODELS.md` says to reach for Miri on.
